@@ -69,8 +69,8 @@ func (a *API) GetStatus() Status {
 	cfg := a.app.Config()
 
 	parser, parserReady := "none", false
-	if a.app.Parser != nil {
-		info := a.app.Parser.Info()
+	if p := a.app.IntentParser(); p != nil {
+		info := p.Info()
 		parser, parserReady = info.Backend, info.Ready
 	}
 

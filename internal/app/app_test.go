@@ -3,8 +3,10 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/platten/playlistai/internal/config"
 )
@@ -16,6 +18,49 @@ func testConfig(t *testing.T) config.Config {
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
 	cfg.Enrich.CachePath = filepath.Join(cfg.DataDir, "mb.sqlite")
 	return cfg
+}
+
+func TestParserDefaultsToRules(t *testing.T) {
+	t.Parallel()
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if got := c.IntentParser().Info().Backend; got != "rules" {
+		t.Fatalf("parser backend = %q, want rules", got)
+	}
+}
+
+func TestParserStaysRulesWhenLlamaBinaryMissing(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	model := filepath.Join(cfg.DataDir, "model.gguf")
+	if err := os.WriteFile(model, []byte("not really a model but non-empty"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AI.ModelPath = model
+	cfg.AI.LlamaServerPath = filepath.Join(cfg.DataDir, "definitely-not-llama-server")
+
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	// The background attempt fails fast (binary not found); give it a moment.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if c.IntentParser().Info().Backend == "rules" {
+			time.Sleep(200 * time.Millisecond) // ensure it didn't flip afterwards
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := c.IntentParser().Info().Backend; got != "rules" {
+		t.Fatalf("parser backend = %q, want rules (llama binary is missing)", got)
+	}
 }
 
 func TestNewCreatesDataDirAndIsNotReady(t *testing.T) {

@@ -56,10 +56,12 @@ Soundiiz
   https://github.com/platten/playlistforge.
 
 ================================================================================
-Bundled binaries (added in later milestones; listed here for completeness)
+Bundled binaries
 ================================================================================
 
 llama.cpp   https://github.com/ggml-org/llama.cpp                          (MIT)
-  The llama-server binary is bundled to run the local intent parser. Model
-  weights (GGUF) are NOT bundled; the user downloads them on first launch,
-  directly from their source, and accepts that model's license at that time.
+  The optional local intent parser runs `llama-server`. It is located via
+  ai.llama_server_path, then next to the app binary, then PATH; a per-OS copy
+  will be bundled with the installer in the packaging milestone. Model weights
+  (GGUF) are NOT bundled — the user obtains them on first launch, directly from
+  their source, and accepts that model's license at that time.

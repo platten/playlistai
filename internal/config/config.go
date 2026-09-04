@@ -35,11 +35,12 @@ type CatalogConfig struct {
 
 // AIConfig configures the local llama.cpp intent parser.
 type AIConfig struct {
-	ModelID   string `toml:"model_id"`   // set after first-run download; blank => rules mode
-	ModelPath string `toml:"model_path"` // absolute path to the GGUF
-	NCtx      int    `toml:"n_ctx"`
-	NThreads  int    `toml:"n_threads"`  // 0 => auto
-	GPULayers int    `toml:"gpu_layers"` // >0 needs a GPU llama-server build
+	ModelID         string `toml:"model_id"`          // set after first-run download; blank => rules mode
+	ModelPath       string `toml:"model_path"`        // absolute path to the GGUF
+	LlamaServerPath string `toml:"llama_server_path"` // blank => look next to the app, then PATH
+	NCtx            int    `toml:"n_ctx"`
+	NThreads        int    `toml:"n_threads"`  // 0 => auto
+	GPULayers       int    `toml:"gpu_layers"` // >0 needs a GPU llama-server build
 }
 
 // EnrichConfig configures the MusicBrainz client.
