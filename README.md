@@ -11,8 +11,9 @@ tracks"* — into a playlist, then push it to Qobuz (or anywhere) via Soundiiz.
 - **Then it leaves.** Optionally resolve each track's ISRC via MusicBrainz and
   export to the Soundiiz API or a CSV you import yourself.
 
-Go + [Wails v2](https://wails.io) desktop app (macOS / Windows / Linux), React +
-TypeScript frontend.
+Go + [Wails v3](https://v3.wails.io) desktop app (macOS / Windows / Linux;
+GTK4 / WebKitGTK 6.0 on Linux), React + TypeScript frontend, pnpm + Taskfile
+build.
 
 ## Status
 
@@ -23,18 +24,19 @@ list.
 ## Develop
 
 ```bash
-# Go core (no toolchain beyond Go needed)
+# Go core — no toolchain beyond Go needed
 go test ./...
 
-# Frontend
-cd frontend && npm ci && npm run build
-
-# Full desktop app (needs the Wails CLI + platform webview deps)
-go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
-wails dev
+# Full desktop app
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
+wails3 doctor          # check system deps
+wails3 dev             # run with hot reload
+wails3 build           # build bin/playlist-ai
+wails3 package         # per-OS installers (AppImage/deb/rpm, .app/dmg, nsis)
 ```
 
-On Linux, `wails` needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev`.
+`wails3` drives pnpm and the Taskfile; you don't call them directly. On Linux it
+needs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`.
 
 ## Licensing
 

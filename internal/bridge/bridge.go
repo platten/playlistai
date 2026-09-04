@@ -1,11 +1,13 @@
-// Package bridge exposes application use-cases to the Wails/React frontend.
-// It is deliberately thin: it maps between frontend-friendly DTOs and the
-// internal ports and contains no business logic.
+// Package bridge exposes application use-cases to the Wails v3 frontend as a
+// Service. It is deliberately thin: it maps between frontend-friendly DTOs and
+// the internal ports and contains no business logic.
 package bridge
 
 import (
 	"context"
 	"log/slog"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
 )
@@ -13,15 +15,14 @@ import (
 // Version is stamped at build time via -ldflags "-X .../bridge.Version=...".
 var Version = "dev"
 
-// API is the struct bound into the Wails runtime. Every exported method becomes
-// callable from TypeScript.
+// API is registered with application.NewService; every exported method becomes
+// callable from TypeScript via the generated bindings.
 type API struct {
 	app *app.Container
 	log *slog.Logger
-	ctx context.Context
 }
 
-// New creates the bound API.
+// New creates the service.
 func New(a *app.Container, log *slog.Logger) *API {
 	if log == nil {
 		log = slog.Default()
@@ -29,12 +30,17 @@ func New(a *app.Container, log *slog.Logger) *API {
 	return &API{app: a, log: log}
 }
 
-// Startup is wired to options.App.OnStartup; it captures the Wails context used
-// for event emission and window control.
-func (a *API) Startup(ctx context.Context) {
-	a.ctx = ctx
-	a.log.Info("bridge startup", "version", Version)
+// ServiceName implements application.ServiceName.
+func (a *API) ServiceName() string { return "playlistai.bridge" }
+
+// ServiceStartup implements application.ServiceStartup.
+func (a *API) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+	a.log.Info("bridge service startup", "version", Version)
+	return nil
 }
+
+// ServiceShutdown implements application.ServiceShutdown.
+func (a *API) ServiceShutdown() error { return nil }
 
 // Status is the snapshot the frontend requests on load and after long tasks.
 type Status struct {

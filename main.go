@@ -1,7 +1,8 @@
-// Command playlistai is the Wails v2 desktop shell for Playlist AI.
+// Command playlistai is the Wails v3 desktop shell for Playlist AI.
 //
-// The Go module lays code out under internal/; this file stays at the module
-// root because the Wails toolchain builds the package in the working directory.
+// Code lives under internal/; this file stays at the module root because the
+// Wails toolchain (Taskfile + `wails3`) builds the package in the working
+// directory.
 package main
 
 import (
@@ -10,17 +11,23 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
 )
 
+// The frontend build output is embedded into the binary. `wails3 dev` serves
+// the Vite dev server instead; production builds serve this FS.
+//
 //go:embed all:frontend/dist
 var assets embed.FS
+
+func init() {
+	// Registered events get a strongly-typed binding on the frontend.
+	application.RegisterEvent[bridge.ProgressEvent](bridge.ProgressEventName)
+}
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -46,17 +53,35 @@ func run(log *slog.Logger) error {
 	}
 	defer func() { _ = container.Close() }()
 
-	api := bridge.New(container, log)
+	wapp := application.New(application.Options{
+		Name:        "Playlist AI",
+		Description: "Local-first playlist recommendations over the Deej-AI embedding catalog.",
+		LogLevel:    slog.LevelInfo,
+		Services: []application.Service{
+			application.NewService(bridge.New(container, log)),
+		},
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
+		},
+	})
 
-	return wails.Run(&options.App{
+	wapp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Playlist AI",
 		Width:            1180,
 		Height:           800,
 		MinWidth:         920,
 		MinHeight:        640,
-		BackgroundColour: &options.RGBA{R: 15, G: 15, B: 18, A: 1},
-		AssetServer:      &assetserver.Options{Assets: assets},
-		OnStartup:        api.Startup,
-		Bind:             []any{api},
+		BackgroundColour: application.NewRGB(15, 15, 18),
+		URL:              "/",
+		Mac: application.MacWindow{
+			InvisibleTitleBarHeight: 44,
+			Backdrop:                application.MacBackdropTranslucent,
+			TitleBar:                application.MacTitleBarHiddenInset,
+		},
 	})
+
+	return wapp.Run()
 }

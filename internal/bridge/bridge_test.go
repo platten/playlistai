@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/config"
 )
@@ -45,11 +47,23 @@ func TestGetStatusOnBareContainer(t *testing.T) {
 	}
 }
 
-func TestWailsProgressNilSafe(t *testing.T) {
+func TestServiceLifecycleNoWailsApp(t *testing.T) {
 	t.Parallel()
-	var w *WailsProgress
-	w.Report("x", 1, 2, "note") // nil receiver must not panic
+	api := New(newTestContainer(t), nil)
 
-	var noCtx context.Context
-	NewWailsProgress(noCtx).Report("x", 1, 2, "note") // nil context must not panic
+	if api.ServiceName() == "" {
+		t.Fatal("ServiceName empty")
+	}
+	if err := api.ServiceStartup(context.Background(), application.ServiceOptions{}); err != nil {
+		t.Fatalf("ServiceStartup: %v", err)
+	}
+	if err := api.ServiceShutdown(); err != nil {
+		t.Fatalf("ServiceShutdown: %v", err)
+	}
+}
+
+func TestWailsProgressNoAppIsNoop(t *testing.T) {
+	t.Parallel()
+	// application.Get() is nil when no Wails app is running; Report must not panic.
+	NewWailsProgress().Report("catalog", 1, 2, "downloading")
 }

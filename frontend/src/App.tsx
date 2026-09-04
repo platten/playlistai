@@ -1,7 +1,7 @@
 /**
  * Skeleton shell. The real screens (Generate, Playlist, ReviewExport, FirstRun,
  * Settings) and the design system arrive in milestone 2. This view only proves
- * the Wails <-> React bridge builds and renders.
+ * the Wails v3 <-> React bridge builds and renders.
  */
 export default function App() {
   return (
