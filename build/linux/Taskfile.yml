@@ -130,6 +130,7 @@ tasks:
     summary: Creates a deb package
     deps:
       - task: build
+      - task: fetch:llama
     cmds:
       - task: generate:dotdesktop
       - task: generate:deb
@@ -138,6 +139,7 @@ tasks:
     summary: Creates a rpm package
     deps:
       - task: build
+      - task: fetch:llama
     cmds:
       - task: generate:dotdesktop
       - task: generate:rpm
@@ -146,9 +148,15 @@ tasks:
     summary: Creates a arch linux packager package
     deps:
       - task: build
+      - task: fetch:llama
     cmds:
       - task: generate:dotdesktop
       - task: generate:aur
+
+  fetch:llama:
+    summary: Downloads the bundled llama-server CPU runtime into bin/ (see build/llama/manifest.json)
+    cmds:
+      - bash "{{.ROOT_DIR}}/build/llama/fetch.sh" linux "{{.ROOT_DIR}}/bin"
 
   generate:deb:
     summary: Creates a deb package

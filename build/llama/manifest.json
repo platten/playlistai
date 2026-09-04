@@ -1,0 +1,18 @@
+{
+  "_comment": "Pinned llama.cpp CPU-inference release bundled with the installer, matching our release.yml build matrix (ubuntu-latest/macos-latest/windows-latest, all x64 except macOS which is arm64). Verified 2026-09-04 by downloading each asset and running llama-server --version from it. Bump: check https://github.com/ggml-org/llama.cpp/releases for a recent bNNNNN build tag, update the asset names/sha256 below (sha256sum <file>), and re-run the smoke test in .github/workflows/release.yml.",
+  "tag": "b10797",
+  "assets": {
+    "linux": {
+      "name": "llama-b10797-bin-ubuntu-x64.tar.gz",
+      "sha256": "8a61fe2b9f7c0e05058c375a9c52433241897d2f4b0170b4e8bb43acaa3319d9"
+    },
+    "darwin": {
+      "name": "llama-b10797-bin-macos-arm64.tar.gz",
+      "sha256": "474a788ec73d17a066360b1c50c9733c78a47d062616e91963c65a344548e889"
+    },
+    "windows": {
+      "name": "llama-b10797-bin-win-cpu-x64.zip",
+      "sha256": "d4da390fc3eb7e3fd393941c7be6b50d25157d062ac9fde292c137bbe8b551d3"
+    }
+  }
+}

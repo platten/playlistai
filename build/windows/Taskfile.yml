@@ -117,6 +117,7 @@ tasks:
     dir: build/windows/nsis
     deps:
       - task: build
+      - task: fetch:llama
     preconditions:
       - sh: '[ "{{.INSTALL_SCOPE}}" = "user" ] || [ "{{.INSTALL_SCOPE}}" = "machine" ]'
         msg: "INSTALL_SCOPE must be 'user' or 'machine', got '{{.INSTALL_SCOPE}}'"
@@ -133,6 +134,11 @@ tasks:
       ARCH: '{{.ARCH | default ARCH}}'
       ARG_FLAG: '{{if eq .ARCH "amd64"}}AMD64{{else}}ARM64{{end}}'
       INSTALL_SCOPE: '{{.INSTALL_SCOPE | default "machine"}}'
+
+  fetch:llama:
+    summary: Downloads the bundled llama-server CPU runtime into bin/ (see build/llama/manifest.json)
+    cmds:
+      - bash "{{.ROOT_DIR}}/build/llama/fetch.sh" windows "{{.ROOT_DIR}}/{{.BIN_DIR}}"
 
   create:msix:package:
     summary: Creates an MSIX package

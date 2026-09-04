@@ -58,6 +58,9 @@ jobs:
       - name: Package (AppImage + deb + rpm + Arch)
         run: wails3 task linux:package
 
+      - name: Smoke-test the bundled llama-server
+        run: bin/llama-server --version
+
       - name: Sign .deb/.rpm with PGP
         if: env.HAS_PGP_KEY == 'true'
         env:
@@ -74,8 +77,10 @@ jobs:
           done
           shred -u "$key" 2>/dev/null || rm -f "$key"
 
-      - name: Portable archive (raw binary)
-        run: tar -C bin -czf "bin/playlist-ai-linux-amd64.tar.gz" playlist-ai
+      - name: Portable archive (raw binary + bundled llama-server)
+        run: |
+          cd bin
+          tar -czf "playlist-ai-linux-amd64.tar.gz" -- playlist-ai llama-server *.so* licenses
 
       - uses: actions/upload-artifact@v4
         with:
@@ -150,19 +155,30 @@ jobs:
       - name: Package (.app bundle, ad-hoc signed)
         run: wails3 task darwin:package
 
+      - name: Smoke-test the bundled llama-server
+        run: "bin/playlist-ai.app/Contents/MacOS/llama-server --version"
+
       - name: Sign with Developer ID
         if: env.HAS_APPLE_CERT == 'true'
         env:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           set -euo pipefail
-          if [ "$HAS_NOTARY_CREDS" = "true" ]; then
-            wails3 tool sign -input "bin/playlist-ai.app" -identity "$MACOS_SIGNING_IDENTITY" \
-              -notarize -keychain-profile "playlistai-notary"
-          else
-            echo "::notice::APPLE_ID/APPLE_TEAM_ID/APPLE_APP_SPECIFIC_PASSWORD not set — signing without notarization."
-            wails3 tool sign -input "bin/playlist-ai.app" -identity "$MACOS_SIGNING_IDENTITY"
-          fi
+          # --deep also (re-)signs the bundled llama-server + its dylibs with
+          # our identity. --options runtime (hardened runtime) and --timestamp
+          # are both required for the binary to be notarization-eligible.
+          codesign --force --deep --options runtime --timestamp \
+            --sign "$MACOS_SIGNING_IDENTITY" "bin/playlist-ai.app"
+          codesign --verify --deep --strict "bin/playlist-ai.app"
+
+      - name: Notarize and staple
+        if: env.HAS_APPLE_CERT == 'true' && env.HAS_NOTARY_CREDS == 'true'
+        run: |
+          set -euo pipefail
+          ditto -c -k --keepParent "bin/playlist-ai.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --keychain-profile "playlistai-notary" --keychain "build.keychain" --wait
+          xcrun stapler staple "bin/playlist-ai.app"
 
       - name: Build the .dmg from the (possibly signed) .app
         run: wails3 task darwin:create:dmg
@@ -208,6 +224,10 @@ jobs:
       - name: Package (NSIS installer)
         run: wails3 task windows:package
 
+      - name: Smoke-test the bundled llama-server
+        shell: bash
+        run: bin/llama-server.exe --version
+
       - name: Sign the installer with Authenticode
         if: env.HAS_CERT == 'true'
         shell: bash
@@ -226,11 +246,11 @@ jobs:
           done
           rm -f "$cert"
 
-      - name: Portable archive (raw binary)
+      - name: Portable archive (raw binary + bundled llama-server)
         shell: bash
         run: |
           cd bin
-          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe"
+          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe" "llama-server.exe" "*.dll"
 
       - uses: actions/upload-artifact@v4
         with:

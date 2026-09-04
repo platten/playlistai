@@ -18,9 +18,16 @@ build.
 
 ## Status
 
-Early implementation — milestone 1 (skeleton). See
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design and the milestone
-list.
+All nine planned milestones are done — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+for the design and the milestone list, and [`docs/RELEASING.md`](docs/RELEASING.md)
+for how releases are cut.
+
+Every installer/portable archive (except AppImage — see `docs/RELEASING.md`'s
+known gaps) bundles a CPU build of `llama-server` so the local model works out
+of the box; set `ai.llama_server_path` in your config (`PLAYLISTAI_CONFIG=path/to/config.toml`)
+to point at a GPU-accelerated llama.cpp build instead if you want one (see
+[llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for
+CUDA/ROCm/Vulkan variants).
 
 ## Develop
 
