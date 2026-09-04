@@ -1,0 +1,73 @@
+/* Placeholder styling only. The design system replaces this in milestone 2. */
+:root {
+  color-scheme: dark;
+  --bg: #0f0f12;
+  --fg: #ececf0;
+  --muted: #8a8a99;
+  --accent: #7c8cff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+  border-bottom: 1px solid #ffffff14;
+}
+
+.app__mark {
+  color: var(--accent);
+  font-size: 18px;
+}
+
+.app__title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.app__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.app__lede {
+  max-width: 46ch;
+  margin: 0;
+}
+
+.app__muted {
+  color: var(--muted);
+  margin: 0;
+}

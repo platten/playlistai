@@ -1,25 +1,45 @@
 # Playlist AI
 
-A cross-platform desktop app that builds music playlists by *listening* to your
-local library. Go + [Wails v2](https://wails.io) backend, React (Vite + TS)
-frontend.
+Turn a plain-language prompt — *"upbeat instrumental stuff like Justice, 20
+tracks"* — into a playlist, then push it to Qobuz (or anywhere) via Soundiiz.
 
-- **Fully local.** Audio analysis, vector search, and natural-language
-  understanding all run on your machine. The only network call the app ever
-  makes is a one-time, user-initiated LLM download on first launch.
-- **The LLM only parses your prompt** into a structured `MusicIntent`. It never
-  picks or ranks tracks — that is deterministic Go over local audio embeddings.
-- **Swappable backends** behind four interfaces: `IntentParser`, `AudioEncoder`,
-  `SimilarityEngine`, `RecommendationEngine`.
+- **Local-first.** A local llama.cpp model parses your prompt into a small
+  structured intent; a vector walk over a locally-stored music-embedding catalog
+  picks the tracks. No account, no cloud inference, works offline.
+- **The model never picks songs.** It only translates text → intent. Track
+  selection is deterministic and reproducible.
+- **Then it leaves.** Optionally resolve each track's ISRC via MusicBrainz and
+  export to the Soundiiz API or a CSV you import yourself.
 
-The core recommendation technique is derived from
-[`teticio/Deej-AI`](https://github.com/teticio/Deej-AI), ported to ONNX + Go.
-
-## Documentation
-
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — full architecture: boundaries,
-  ports, data-flow diagram, MusicIntent schema, Deej-AI porting plan, milestones.
+Go + [Wails v2](https://wails.io) desktop app (macOS / Windows / Linux), React +
+TypeScript frontend.
 
 ## Status
 
-Pre-implementation. The architecture document is the current deliverable.
+Early implementation — milestone 1 (skeleton). See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design and the milestone
+list.
+
+## Develop
+
+```bash
+# Go core (no toolchain beyond Go needed)
+go test ./...
+
+# Frontend
+cd frontend && npm ci && npm run build
+
+# Full desktop app (needs the Wails CLI + platform webview deps)
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+wails dev
+```
+
+On Linux, `wails` needs `libgtk-3-dev` and `libwebkit2gtk-4.1-dev`.
+
+## Licensing
+
+GPL-3.0. The recommendation technique is ported from
+[teticio/Deej-AI](https://github.com/teticio/Deej-AI) and
+[teticio/deej-ai.online-app](https://github.com/teticio/deej-ai.online-app)
+(both GPL-3.0), and the bundled embedding catalog is derived from Deej-AI's
+pre-computed datasets. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
