@@ -36,8 +36,8 @@ func TestGetStatusOnBareContainer(t *testing.T) {
 	if st.CatalogLoaded {
 		t.Fatal("no catalog => CatalogLoaded must be false")
 	}
-	if st.ParserBackend != "none" {
-		t.Fatalf("ParserBackend = %q, want none", st.ParserBackend)
+	if st.ParserBackend != "rules" || !st.ParserReady {
+		t.Fatalf("parser = %q ready=%v, want rules/true (always available)", st.ParserBackend, st.ParserReady)
 	}
 	if st.PreviewMode != config.PreviewDeezer {
 		t.Fatalf("PreviewMode = %q, want deezer", st.PreviewMode)

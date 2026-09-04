@@ -10,14 +10,16 @@ import (
 // knobs — no natural language — so the frontend can re-run it on every slider
 // change without re-parsing an intent.
 type BuildPlaylistRequest struct {
-	SeedIDs        []string `json:"seedIds"`
-	Mode           string   `json:"mode"` // "", "similar", "journey" ("" auto-picks by seed count)
-	Creativity     float64  `json:"creativity"`
-	Noise          float64  `json:"noise"`
-	Lookback       int      `json:"lookback"`
-	Count          int      `json:"count"`
-	Seed           int64    `json:"seed"` // 0 → engine picks one and echoes it back
-	NoRepeatArtist bool     `json:"noRepeatArtist"`
+	SeedIDs           []string `json:"seedIds"`
+	Mode              string   `json:"mode"` // "", "similar", "journey" ("" auto-picks by seed count)
+	Creativity        float64  `json:"creativity"`
+	Noise             float64  `json:"noise"`
+	Lookback          int      `json:"lookback"`
+	Count             int      `json:"count"`
+	Seed              int64    `json:"seed"` // 0 → engine picks one and echoes it back
+	NoRepeatArtist    bool     `json:"noRepeatArtist"`
+	ArtistsExclude    []string `json:"artistsExclude"`
+	ExcludeSeedArtist bool     `json:"excludeSeedArtist"`
 }
 
 // PlaylistTrack is one row of a generated playlist, with its provenance.
@@ -36,22 +38,30 @@ type PlaylistResult struct {
 	Seed   int64           `json:"seed"` // the RNG seed actually used (for "regenerate")
 }
 
-// BuildPlaylist runs the recommendation walk. It errors if the engine is not
-// ready or the seeds resolve to nothing.
+// BuildPlaylist runs the recommendation walk from an explicit knob set.
 func (a *API) BuildPlaylist(req BuildPlaylistRequest) (PlaylistResult, error) {
+	return a.runBuild(req)
+}
+
+// runBuild is the shared path for BuildPlaylist and GenerateFromPrompt.
+func (a *API) runBuild(req BuildPlaylistRequest) (PlaylistResult, error) {
 	if a.app.Reco == nil {
 		return PlaylistResult{}, errors.New("recommendation engine not ready — load the catalog first")
 	}
 
 	intent := core.MusicIntent{
-		Seeds:       core.IntentSeeds{TrackIDs: req.SeedIDs},
-		Mode:        core.Mode(req.Mode),
-		Count:       req.Count,
-		Creativity:  req.Creativity,
-		Noise:       req.Noise,
-		Lookback:    req.Lookback,
-		Seed:        req.Seed,
-		Constraints: core.IntentConstraints{NoRepeatArtistBackToBack: req.NoRepeatArtist},
+		Seeds:      core.IntentSeeds{TrackIDs: req.SeedIDs},
+		Mode:       core.Mode(req.Mode),
+		Count:      req.Count,
+		Creativity: req.Creativity,
+		Noise:      req.Noise,
+		Lookback:   req.Lookback,
+		Seed:       req.Seed,
+		Constraints: core.IntentConstraints{
+			NoRepeatArtistBackToBack: req.NoRepeatArtist,
+			ArtistsExclude:           req.ArtistsExclude,
+			ExcludeSeedArtists:       req.ExcludeSeedArtist,
+		},
 	}
 
 	pl, err := a.app.Reco.Build(a.context(), intent)

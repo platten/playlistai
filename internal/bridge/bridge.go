@@ -58,7 +58,8 @@ type Status struct {
 	LLMReady      bool   `json:"llmReady"`      // a local GGUF is configured and present
 	CatalogLoaded bool   `json:"catalogLoaded"` // the embedding catalog is in memory
 	ParserBackend string `json:"parserBackend"` // "llama" | "rules" | "none"
-	PreviewMode   string `json:"previewMode"`   // "deezer" | "spotify" | "off"
+	ParserReady   bool   `json:"parserReady"`
+	PreviewMode   string `json:"previewMode"` // "deezer" | "spotify" | "off"
 	Version       string `json:"version"`
 }
 
@@ -67,9 +68,10 @@ type Status struct {
 func (a *API) GetStatus() Status {
 	cfg := a.app.Config()
 
-	parser := "none"
+	parser, parserReady := "none", false
 	if a.app.Parser != nil {
-		parser = a.app.Parser.Info().Backend
+		info := a.app.Parser.Info()
+		parser, parserReady = info.Backend, info.Ready
 	}
 
 	return Status{
@@ -77,6 +79,7 @@ func (a *API) GetStatus() Status {
 		LLMReady:      cfg.LLMReady(),
 		CatalogLoaded: a.app.Catalog != nil,
 		ParserBackend: parser,
+		ParserReady:   parserReady,
 		PreviewMode:   cfg.Preview.Provider,
 		Version:       Version,
 	}

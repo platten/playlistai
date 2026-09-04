@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { API, type PlaylistResult } from "../lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { API, type BuildPlaylistRequest, type PlaylistResult } from "../lib/api";
 import {
   Button,
   EmptyState,
@@ -12,12 +12,6 @@ import {
   type Provenance,
 } from "../components";
 
-export interface PlaylistSeed {
-  id: string;
-  artist: string;
-  title: string;
-}
-
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
   nearest: "nearest",
@@ -25,14 +19,23 @@ const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   fallback: "fallback",
 };
 
-/** Generate and shape a playlist from one seed track. Every control re-runs the
- *  walk directly — there is no intent to re-parse. */
-export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: () => void }) {
-  const [creativity, setCreativity] = useState(0.5);
-  const [noise, setNoise] = useState(0.1);
-  const [lookback, setLookback] = useState(3);
-  const [count, setCount] = useState(25);
-  const [runSeed, setRunSeed] = useState(1);
+/** Generate and shape a playlist from a resolved request (from a seed track or
+ *  a parsed prompt). Every control re-runs the walk directly — there is no
+ *  intent to re-parse. */
+export function PlaylistScreen({
+  request,
+  heading,
+  onBack,
+}: {
+  request: BuildPlaylistRequest;
+  heading: string;
+  onBack: () => void;
+}) {
+  const [creativity, setCreativity] = useState(request.creativity);
+  const [noise, setNoise] = useState(request.noise);
+  const [lookback, setLookback] = useState(request.lookback || 3);
+  const [count, setCount] = useState(request.count || 25);
+  const [runSeed, setRunSeed] = useState<number>(request.seed || 1);
 
   const [result, setResult] = useState<PlaylistResult | null>(null);
   const [busy, setBusy] = useState(true);
@@ -41,23 +44,36 @@ export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: (
 
   const debounce = useRef<number | undefined>(undefined);
 
+  // request identity resets local state when the caller hands us a new one.
+  const requestKey = useMemo(
+    () => `${(request.seedIds ?? []).join(",")}|${request.mode}`,
+    [request.seedIds, request.mode],
+  );
+  useEffect(() => {
+    setCreativity(request.creativity);
+    setNoise(request.noise);
+    setLookback(request.lookback || 3);
+    setCount(request.count || 25);
+    setRunSeed(request.seed || 1);
+    setExpanded(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestKey]);
+
   const build = useCallback(() => {
     setBusy(true);
     setError(null);
     API.BuildPlaylist({
-      seedIds: [seed.id],
-      mode: "similar",
+      ...request,
       creativity,
       noise,
       lookback,
       count,
       seed: runSeed,
-      noRepeatArtist: true,
     })
       .then((r) => setResult(r ?? null))
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [seed.id, creativity, noise, lookback, count, runSeed]);
+  }, [request, creativity, noise, lookback, count, runSeed]);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
@@ -66,6 +82,7 @@ export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: (
   }, [build]);
 
   const tracks = result?.tracks ?? [];
+  const isJourney = (result?.mode ?? request.mode) === "journey";
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[880px] flex-col px-6 py-6">
@@ -79,11 +96,10 @@ export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: (
           <Icon.ArrowLeft size={16} />
         </button>
         <div className="min-w-0">
-          <h1 className="truncate text-[15px] font-semibold">
-            {seed.artist} — {seed.title}
-          </h1>
+          <h1 className="truncate text-[15px] font-semibold">{heading}</h1>
           <p className="text-[12px] text-faint">
-            similarity walk · {tracks.length} tracks{result ? ` · seed ${result.seed}` : ""}
+            {isJourney ? "journey" : "similarity walk"} · {tracks.length} tracks
+            {result ? ` · seed ${result.seed}` : ""}
           </p>
         </div>
         <Button
@@ -114,8 +130,21 @@ export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: (
           leftHint="faithful"
           rightHint="wandering"
         />
-        <Stepper label="Lookback" value={lookback} onChange={setLookback} min={1} max={10} hint="picks averaged" />
-        <Stepper label="Count" value={count} onChange={setCount} min={2} max={100} />
+        <Stepper
+          label="Lookback"
+          value={lookback}
+          onChange={setLookback}
+          min={1}
+          max={10}
+          hint="picks averaged"
+        />
+        <Stepper
+          label={isJourney ? "Per segment" : "Count"}
+          value={count}
+          onChange={setCount}
+          min={2}
+          max={100}
+        />
       </div>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
@@ -124,7 +153,7 @@ export function PlaylistScreen({ seed, onBack }: { seed: PlaylistSeed; onBack: (
         ) : busy && tracks.length === 0 ? (
           <LoadingRows rows={8} />
         ) : tracks.length === 0 ? (
-          <EmptyState title="No playlist" description="The seed didn't resolve to anything." />
+          <EmptyState title="No playlist" description="The seeds didn't resolve to anything." />
         ) : (
           tracks.map((t, i) => (
             <TrackRow
