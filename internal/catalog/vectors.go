@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"unsafe"
 
 	mmap "github.com/edsrzf/mmap-go"
 )
@@ -27,6 +28,7 @@ const (
 
 type vectorStore struct {
 	mm     mmap.MMap
+	body   []int8 // zero-copy reinterpretation of mm[vecHeaderSize:]
 	count  int
 	dim    int
 	spaces int
@@ -72,7 +74,12 @@ func openVectors(path string) (*vectorStore, error) {
 		return nil, fmt.Errorf("%s: size %d, expected %d", path, len(mm), want)
 	}
 
-	return &vectorStore{mm: mm, count: count, dim: dim, spaces: spaces}, nil
+	payload := mm[vecHeaderSize:]
+	// int8 and byte have identical layout; view the mapped payload as int8
+	// without copying. The view is valid until Unmap.
+	body := unsafe.Slice((*int8)(unsafe.Pointer(unsafe.SliceData(payload))), len(payload)) //nolint:gosec
+
+	return &vectorStore{mm: mm, body: body, count: count, dim: dim, spaces: spaces}, nil
 }
 
 // at returns the dequantized sub-vectors for a row: space 0 (audio) and space 1
@@ -93,10 +100,21 @@ func (v *vectorStore) at(row int) (audio, track []float32) {
 	return audio, track
 }
 
+// rawAt returns zero-copy int8 views of a row's two sub-vectors.
+func (v *vectorStore) rawAt(row int) (audio, track []int8, ok bool) {
+	if row < 0 || row >= v.count {
+		return nil, nil, false
+	}
+	stride := v.spaces * v.dim
+	off := row * stride
+	return v.body[off : off+v.dim : off+v.dim], v.body[off+v.dim : off+2*v.dim : off+2*v.dim], true
+}
+
 func (v *vectorStore) close() error {
 	if v.mm == nil {
 		return nil
 	}
+	v.body = nil
 	err := v.mm.Unmap()
 	v.mm = nil
 	return err

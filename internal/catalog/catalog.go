@@ -173,6 +173,10 @@ func (c *Catalog) Vectors(id string) (ports.Vectors, bool) {
 	return c.VectorsByRow(row)
 }
 
+func (c *Catalog) RawRow(row int) (audio, track []int8, ok bool) {
+	return c.vec.rawAt(row)
+}
+
 // Resolve runs a token-substring search over the normalized "artist title"
 // string: every token must be a substring (Deej-AI's /search semantics).
 // Results are row-ordered and capped at max (or an internal ceiling).

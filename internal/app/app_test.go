@@ -60,12 +60,10 @@ func TestLoadCatalogFromFixture(t *testing.T) {
 	if c.Catalog.Len() != 256 {
 		t.Fatalf("catalog Len = %d, want 256", c.Catalog.Len())
 	}
-	if !c.Ready() {
-		// Ready needs Sim + Reco too (later milestones); Catalog alone is fine here.
-		if c.Catalog == nil {
-			t.Fatal("catalog missing")
-		}
+	if c.Sim == nil || c.Sim.Len() != 256 {
+		t.Fatalf("similarity engine not wired to the loaded catalog")
 	}
+	// Ready() also needs Reco (a later milestone).
 }
 
 func TestEnsureCatalogWithoutManifest(t *testing.T) {

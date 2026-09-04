@@ -1,5 +1,7 @@
 package bridge
 
+import "github.com/platten/playlistai/internal/ports"
+
 // Catalog-facing bridge methods. All are safe to call before the catalog is
 // loaded; they return zero values or a clear error.
 
@@ -44,6 +46,67 @@ func (a *API) SearchCatalog(query string, limit int) []TrackHit {
 		hits = append(hits, TrackHit{ID: r.ID, Artist: r.Artist, Title: r.Title})
 	}
 	return hits
+}
+
+// SimilarResult is the payload for SimilarTracks.
+type SimilarResult struct {
+	Seed TrackHit   `json:"seed"`
+	Hits []TrackHit `json:"hits"`
+}
+
+// SimilarTracks returns the catalog tracks most similar to a seed track, blended
+// between the two embedding spaces by creativity (0 = playlist co-occurrence,
+// 1 = pure audio). The seed itself is excluded. Empty when the catalog or
+// similarity engine is not ready.
+func (a *API) SimilarTracks(id string, k int, creativity float64) SimilarResult {
+	res := SimilarResult{Hits: []TrackHit{}}
+	if a.app.Catalog == nil || a.app.Sim == nil {
+		return res
+	}
+	if k <= 0 {
+		k = 25
+	}
+	creativity = clamp01(creativity)
+
+	meta, ok := a.app.Catalog.Meta(id)
+	if !ok {
+		return res
+	}
+	res.Seed = TrackHit{ID: id, Artist: meta.Ref.Artist, Title: meta.Ref.Title}
+
+	v, ok := a.app.Catalog.Vectors(id)
+	if !ok {
+		return res
+	}
+
+	matches := a.app.Sim.Search(ports.SimilarityQuery{
+		AudioSum: v.Audio,
+		TrackSum: v.Track,
+		Weights:  [2]float32{float32(creativity), float32(1 - creativity)},
+		K:        k + 1,
+		Exclude:  map[string]struct{}{id: {}},
+	})
+	for _, m := range matches {
+		mm, ok := a.app.Catalog.Meta(m.ID)
+		if !ok {
+			continue
+		}
+		res.Hits = append(res.Hits, TrackHit{ID: m.ID, Artist: mm.Ref.Artist, Title: mm.Ref.Title})
+		if len(res.Hits) >= k {
+			break
+		}
+	}
+	return res
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
 
 // DownloadCatalog fetches the catalog (with resume + checksum) and loads it,

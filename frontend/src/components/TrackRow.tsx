@@ -1,5 +1,5 @@
 import { cn } from "./cn";
-import { Play } from "./icons";
+import { Play, Similar } from "./icons";
 
 export type Provenance = "seed" | "nearest" | "noise-jump" | "interp" | "fallback";
 
@@ -29,6 +29,8 @@ export interface TrackRowProps {
   active?: boolean;
   onPlay?: () => void;
   onClick?: () => void;
+  /** When set, a hover-revealed "find similar" action renders at the row's end. */
+  onSimilar?: () => void;
   /** Rationale text; when present a caption row renders under the track. */
   reason?: string;
   className?: string;
@@ -51,6 +53,7 @@ export function TrackRow({
   active,
   onPlay,
   onClick,
+  onSimilar,
   reason,
   className,
 }: TrackRowProps) {
@@ -58,7 +61,10 @@ export function TrackRow({
     <div className={cn("flex flex-col", className)}>
       <div
         className={cn(
-          "group grid h-[46px] grid-cols-[26px_26px_1fr_112px_54px] items-center gap-3 rounded-lg px-2.5",
+          "group grid h-[46px] items-center gap-3 rounded-lg px-2.5",
+          onSimilar
+            ? "grid-cols-[26px_26px_1fr_112px_54px_28px]"
+            : "grid-cols-[26px_26px_1fr_112px_54px]",
           "hover:bg-white/[0.035]",
           active && "bg-accent-quiet shadow-[inset_0_0_0_1px_var(--pai-accent-quiet)]",
           onClick && "cursor-pointer",
@@ -88,6 +94,20 @@ export function TrackRow({
           {provenance ? PROVENANCE_LABEL[provenance] : ""}
         </span>
         <span className="text-right font-mono text-[12px] text-faint">{fmtDuration(durationSec)}</span>
+        {onSimilar && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSimilar();
+            }}
+            className="grid size-6 place-items-center rounded text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.06] hover:text-accent focus-visible:opacity-100"
+            aria-label={`Find tracks similar to ${artist} — ${title}`}
+            title="Find similar"
+          >
+            <Similar size={15} />
+          </button>
+        )}
       </div>
       {reason && (
         <p className="ml-[64px] flex items-center gap-2 pb-2.5 pt-0.5 text-[12px] text-accent/80">
