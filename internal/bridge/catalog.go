@@ -10,17 +10,26 @@ type CatalogInfo struct {
 	Loaded     bool `json:"loaded"`
 	TrackCount int  `json:"trackCount"`
 	Dim        int  `json:"dim"`
+	// Configured reports whether catalog.manifest_url (or a pre-populated
+	// catalog.dir) is set at all. This project does not ship or host a
+	// catalog itself — see docs/CATALOG.md — so a fresh install is
+	// unconfigured until an operator points it at a self-hosted one.
+	// DownloadCatalog fails immediately when this is false; the UI should
+	// explain that rather than offer a download that's guaranteed to error.
+	Configured bool `json:"configured"`
 }
 
-// GetCatalogInfo reports whether the embedding catalog is loaded and its size.
+// GetCatalogInfo reports whether the embedding catalog is loaded, its size,
+// and whether a source is configured at all.
 func (a *API) GetCatalogInfo() CatalogInfo {
 	if a.app.Catalog == nil {
-		return CatalogInfo{}
+		return CatalogInfo{Configured: a.app.Config().Catalog.ManifestURL != ""}
 	}
 	return CatalogInfo{
 		Loaded:     true,
 		TrackCount: a.app.Catalog.Len(),
 		Dim:        a.app.Catalog.Dim(),
+		Configured: true,
 	}
 }
 

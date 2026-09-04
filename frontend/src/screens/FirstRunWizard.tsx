@@ -96,9 +96,10 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
   const progress = useProgress("catalog");
 
   const refresh = useCallback(() => {
+    const fallback = { loaded: false, trackCount: 0, dim: 0, configured: false };
     API.GetCatalogInfo()
-      .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0 }))
-      .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0 }));
+      .then((i) => setInfo(i ?? fallback))
+      .catch(() => setInfo(fallback));
   }, []);
 
   useEffect(refresh, [refresh]);
@@ -125,6 +126,14 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
         <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2.5 text-[13px] text-text">
           <Icon.Check size={15} className="text-good" />
           {info.trackCount.toLocaleString()} tracks ready.
+        </div>
+      ) : info && !info.configured ? (
+        <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-[13px] text-muted">
+          <Icon.Warn size={15} className="flex-none text-faint" />
+          No catalog source is set up for this build. An operator needs to
+          self-host one and point it at <code className="font-mono text-[12px]">catalog.manifest_url</code> —
+          see the project's docs. Skip this for now; the rest of the app still
+          works.
         </div>
       ) : (
         <div className="flex flex-col gap-3">

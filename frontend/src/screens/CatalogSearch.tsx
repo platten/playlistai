@@ -38,7 +38,7 @@ export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: See
   const player = usePreviewPlayer();
 
   const refreshInfo = useCallback(() => {
-    const fallback: CatalogInfo = { loaded: false, trackCount: 0, dim: 0 };
+    const fallback: CatalogInfo = { loaded: false, trackCount: 0, dim: 0, configured: false };
     API.GetCatalogInfo()
       .then((i) => setInfo(i ?? fallback))
       .catch(() => setInfo(fallback));
@@ -97,13 +97,32 @@ export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: See
     );
   }
 
+  if (!info.loaded && !info.configured) {
+    return (
+      <div className="mx-auto flex w-full max-w-[560px] flex-col gap-5 px-8 py-16">
+        <EmptyState
+          icon={<Icon.Warn size={18} />}
+          title="No catalog source configured"
+          description={
+            <>
+              Playlist AI recommends over a ~1M-track embedding catalog, but this build
+              doesn't ship or host one — an operator needs to self-host it and set{" "}
+              <code className="font-mono text-[12px]">catalog.manifest_url</code> (see the
+              project's docs) before this screen can offer a download.
+            </>
+          }
+        />
+      </div>
+    );
+  }
+
   if (!info.loaded) {
     return (
       <div className="mx-auto flex w-full max-w-[560px] flex-col gap-5 px-8 py-16">
         <EmptyState
           icon={<Icon.Download size={18} />}
           title="No catalog yet"
-          description="Playlist AI recommends over a bundled ~1M-track embedding catalog. It's a one-time download (~250 MB) that stays on your machine."
+          description="A one-time download (~250 MB) of the track catalog Playlist AI recommends over. It stays on your machine."
           action={
             <Button variant="primary" onClick={download} disabled={downloading}>
               {downloading ? "Downloading…" : "Download catalog"}

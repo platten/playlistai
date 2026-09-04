@@ -199,12 +199,18 @@ The recommendation technique comes from [teticio/Deej-AI] and its web backend
   similarity walk over two 100-dimensional embedding spaces (`spotifytovec.p`,
   audio-content; `tracktovec.p`, Spotify-playlist co-occurrence), blended by a
   `creativity` weight, with additive Gaussian "noise" and artist/id dedup.
-- The bundled catalog is those pre-computed vectors, converted to L2-normalized
-  int8 + SQLite and rehosted, downloaded on first launch.
+- The catalog is those pre-computed vectors, converted to L2-normalized int8 +
+  SQLite (`python/convert_pickles.py`) and downloaded on first launch from
+  `catalog.manifest_url`. **This project does not build, host, or embed that
+  catalog itself** — `catalog.manifest_url` defaults to empty, so a fresh
+  install has nothing to recommend over until an operator self-hosts one; see
+  [`docs/CATALOG.md`](CATALOG.md) for the (untested-against-real-data, but
+  fully wired) conversion + hosting steps.
 
 Consequently **Playlist AI is licensed GPL-3.0**. See `LICENSE` and `NOTICE`;
-distributions that ship the converted catalog include a written offer of source
-for the data and `python/convert_pickles.py`.
+an operator who hosts and distributes the converted catalog takes on the
+written offer of source for the data and `python/convert_pickles.py` that
+implies.
 
 ---
 
@@ -217,7 +223,12 @@ for the data and `python/convert_pickles.py`.
    `LoadingState`, `ErrorState`, `Slider`, `TrackRow`, `Button`). *(done)*
 3. **Catalog** — `catalogfmt.py` + `convert_pickles.py` + synthetic fixtures;
    `internal/catalog` mmap + SQLite loader + token search; `internal/dataset`
-   resumable checksummed download; `CatalogSearch` screen + bridge methods. *(done)*
+   resumable checksummed download; `CatalogSearch` screen + bridge methods.
+   The plumbing is done and tested against synthetic fixtures; converting and
+   hosting a *real* catalog from the actual Deej-AI pickles was never done —
+   see [`docs/CATALOG.md`](CATALOG.md). `GetCatalogInfo` reports whether a
+   source is even configured so the UI can say so plainly instead of offering
+   a download that's guaranteed to fail. *(done)*
 4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
    (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
    view with a creativity slider in the Catalog screen. *(done)*
