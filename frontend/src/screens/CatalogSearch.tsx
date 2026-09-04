@@ -12,9 +12,15 @@ import {
   useProgress,
 } from "../components";
 
+export interface Seed {
+  id: string;
+  artist: string;
+  title: string;
+}
+
 /** Browse / search the embedding catalog, view "similar to X", or download the
  *  catalog on first launch. */
-export function CatalogSearch() {
+export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: Seed) => void }) {
   const [info, setInfo] = useState<CatalogInfo | null>(null);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<TrackHit[]>([]);
@@ -151,6 +157,7 @@ export function CatalogSearch() {
             showSimilar(similar.seed.id, c);
           }}
           onSimilar={(id) => showSimilar(id)}
+          onPlaylist={onBuildPlaylist}
           onBack={() => setSimilar(null)}
         />
       ) : (
@@ -172,6 +179,7 @@ export function CatalogSearch() {
                 title={h.title}
                 artist={h.artist}
                 onSimilar={() => showSimilar(h.id)}
+                onPlaylist={() => onBuildPlaylist({ id: h.id, artist: h.artist, title: h.title })}
               />
             ))
           )}
@@ -187,6 +195,7 @@ function SimilarPanel({
   busy,
   onCreativity,
   onSimilar,
+  onPlaylist,
   onBack,
 }: {
   result: SimilarResult;
@@ -194,9 +203,11 @@ function SimilarPanel({
   busy: boolean;
   onCreativity: (c: number) => void;
   onSimilar: (id: string) => void;
+  onPlaylist: (seed: Seed) => void;
   onBack: () => void;
 }) {
   const hits = result.hits ?? [];
+  const seed = result.seed;
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-card border border-line bg-surface">
       <div className="flex items-center gap-3 border-b border-line px-3 py-2.5">
@@ -210,10 +221,10 @@ function SimilarPanel({
         </button>
         <div className="min-w-0">
           <div className="truncate text-[13px] font-medium">
-            Similar to {result.seed.artist} — {result.seed.title}
+            Similar to {seed.artist} — {seed.title}
           </div>
         </div>
-        <div className="ml-auto w-[220px]">
+        <div className="mx-auto w-[200px]">
           <Slider
             aria-label="Creativity"
             value={creativity}
@@ -223,6 +234,14 @@ function SimilarPanel({
             rightHint="sound"
           />
         </div>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconLeft={<Icon.ListPlus size={14} />}
+          onClick={() => onPlaylist({ id: seed.id, artist: seed.artist, title: seed.title })}
+        >
+          Build playlist
+        </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
         {busy && hits.length === 0 ? (
@@ -237,6 +256,7 @@ function SimilarPanel({
               title={h.title}
               artist={h.artist}
               onSimilar={() => onSimilar(h.id)}
+              onPlaylist={() => onPlaylist({ id: h.id, artist: h.artist, title: h.title })}
             />
           ))
         )}

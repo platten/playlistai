@@ -4,7 +4,10 @@
  */
 export { API } from "../../bindings/github.com/platten/playlistai/internal/bridge";
 export type {
+  BuildPlaylistRequest,
   CatalogInfo,
+  PlaylistResult,
+  PlaylistTrack,
   SimilarResult,
   Status,
   TrackHit,

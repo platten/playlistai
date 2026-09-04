@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { cn } from "./cn";
-import { Play, Similar } from "./icons";
+import { ListPlus, Play, Similar } from "./icons";
 
 export type Provenance = "seed" | "nearest" | "noise-jump" | "interp" | "fallback";
 
@@ -29,8 +30,10 @@ export interface TrackRowProps {
   active?: boolean;
   onPlay?: () => void;
   onClick?: () => void;
-  /** When set, a hover-revealed "find similar" action renders at the row's end. */
+  /** Hover-revealed "find similar" action. */
   onSimilar?: () => void;
+  /** Hover-revealed "build a playlist from this" action. */
+  onPlaylist?: () => void;
   /** Rationale text; when present a caption row renders under the track. */
   reason?: string;
   className?: string;
@@ -43,7 +46,33 @@ function fmtDuration(sec?: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-/** One row in a generated playlist: index, play, Artist–Title, provenance, duration. */
+function ActionButton({
+  onClick,
+  label,
+  children,
+}: {
+  onClick: () => void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      className="grid size-6 place-items-center rounded text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.06] hover:text-accent focus-visible:opacity-100"
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** One row in a playlist / result list: index, play, Artist–Title, provenance,
+ *  duration, and up to two hover actions. */
 export function TrackRow({
   index,
   title,
@@ -54,17 +83,19 @@ export function TrackRow({
   onPlay,
   onClick,
   onSimilar,
+  onPlaylist,
   reason,
   className,
 }: TrackRowProps) {
+  const hasActions = Boolean(onSimilar || onPlaylist);
   return (
     <div className={cn("flex flex-col", className)}>
       <div
         className={cn(
           "group grid h-[46px] items-center gap-3 rounded-lg px-2.5",
-          onSimilar
-            ? "grid-cols-[26px_26px_1fr_112px_54px_28px]"
-            : "grid-cols-[26px_26px_1fr_112px_54px]",
+          hasActions
+            ? "grid-cols-[26px_26px_1fr_100px_46px_auto]"
+            : "grid-cols-[26px_26px_1fr_100px_46px]",
           "hover:bg-white/[0.035]",
           active && "bg-accent-quiet shadow-[inset_0_0_0_1px_var(--pai-accent-quiet)]",
           onClick && "cursor-pointer",
@@ -90,27 +121,32 @@ export function TrackRow({
           <span className="block truncate font-medium text-text">{title}</span>
           <span className="block truncate text-[12.5px] text-muted">{artist}</span>
         </span>
-        <span className={cn("truncate text-[12px]", provenance ? PROVENANCE_CLASS[provenance] : "text-faint")}>
+        <span
+          className={cn(
+            "truncate text-[12px]",
+            provenance ? PROVENANCE_CLASS[provenance] : "text-faint",
+          )}
+        >
           {provenance ? PROVENANCE_LABEL[provenance] : ""}
         </span>
         <span className="text-right font-mono text-[12px] text-faint">{fmtDuration(durationSec)}</span>
-        {onSimilar && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSimilar();
-            }}
-            className="grid size-6 place-items-center rounded text-faint opacity-0 transition-opacity group-hover:opacity-100 hover:bg-white/[0.06] hover:text-accent focus-visible:opacity-100"
-            aria-label={`Find tracks similar to ${artist} — ${title}`}
-            title="Find similar"
-          >
-            <Similar size={15} />
-          </button>
+        {hasActions && (
+          <span className="flex items-center gap-0.5">
+            {onSimilar && (
+              <ActionButton onClick={onSimilar} label={`Find tracks similar to ${artist} — ${title}`}>
+                <Similar size={15} />
+              </ActionButton>
+            )}
+            {onPlaylist && (
+              <ActionButton onClick={onPlaylist} label={`Build a playlist from ${artist} — ${title}`}>
+                <ListPlus size={15} />
+              </ActionButton>
+            )}
+          </span>
         )}
       </div>
       {reason && (
-        <p className="ml-[64px] flex items-center gap-2 pb-2.5 pt-0.5 text-[12px] text-accent/80">
+        <p className="ml-[64px] flex items-center gap-2 pt-0.5 pb-2.5 text-[12px] text-accent/80">
           <span className="rounded-pill bg-accent-quiet px-1.5 py-px text-[11px] text-accent">
             {provenance ? PROVENANCE_LABEL[provenance] : "why"}
           </span>

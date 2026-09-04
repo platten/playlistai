@@ -1,0 +1,28 @@
+{
+  "params": {
+    "mode": "journey",
+    "seeds": [
+      "seed0001",
+      "seed0003",
+      "seed0005"
+    ],
+    "creativity": 0.7,
+    "lookback": 3,
+    "count": 5
+  },
+  "track_ids": [
+    "seed0001",
+    "trk00195",
+    "trk00062",
+    "trk00030",
+    "trk00227",
+    "trk00077",
+    "seed0003",
+    "trk00118",
+    "trk00173",
+    "trk00250",
+    "trk00230",
+    "trk00053",
+    "seed0005"
+  ]
+}

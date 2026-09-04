@@ -63,7 +63,12 @@ func TestLoadCatalogFromFixture(t *testing.T) {
 	if c.Sim == nil || c.Sim.Len() != 256 {
 		t.Fatalf("similarity engine not wired to the loaded catalog")
 	}
-	// Ready() also needs Reco (a later milestone).
+	if c.Reco == nil {
+		t.Fatal("recommendation engine not wired to the loaded catalog")
+	}
+	if !c.Ready() {
+		t.Fatal("Ready() should be true once catalog + sim + reco are wired")
+	}
 }
 
 func TestEnsureCatalogWithoutManifest(t *testing.T) {
