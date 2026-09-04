@@ -1,0 +1,22 @@
+{
+  "name": "playlist-ai-catalog",
+  "format_version": 1,
+  "dim": 100,
+  "spaces": 2,
+  "quant": "int8-global-127",
+  "track_count": 256,
+  "source": "synthetic test fixture",
+  "created": 1788518923,
+  "files": [
+    {
+      "name": "vectors.i8",
+      "size": 51232,
+      "sha256": "e50591a425933151338188d4bad7a3d8f83d52b320b36f980a68eb90921c51e8"
+    },
+    {
+      "name": "catalog.sqlite",
+      "size": 40960,
+      "sha256": "636bc919ecd36d44fddbde7cd96a4f59152a8b679552ae1c59d68ab4ec9edfde"
+    }
+  ]
+}

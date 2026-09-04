@@ -22,11 +22,17 @@ build/linux/appimage/build
 build/linux/playlist-ai.desktop
 build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 
+# Python tooling
+__pycache__/
+*.pyc
+
 # Downloaded assets — never committed; fetched on first launch
 /models/*.gguf
 /models/*.onnx
 /models/*.bin
 /models/*.sqlite
+# a converted catalog build output (fixtures under internal/**/testdata stay tracked)
+/build/catalog/
 
 # Local dev
 *.log
