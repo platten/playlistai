@@ -20,6 +20,7 @@ var Version = "dev"
 type API struct {
 	app *app.Container
 	log *slog.Logger
+	ctx context.Context
 }
 
 // New creates the service.
@@ -27,16 +28,25 @@ func New(a *app.Container, log *slog.Logger) *API {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &API{app: a, log: log}
+	return &API{app: a, log: log, ctx: context.Background()}
 }
 
 // ServiceName implements application.ServiceName.
 func (a *API) ServiceName() string { return "playlistai.bridge" }
 
 // ServiceStartup implements application.ServiceStartup.
-func (a *API) ServiceStartup(_ context.Context, _ application.ServiceOptions) error {
+func (a *API) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	a.ctx = ctx
 	a.log.Info("bridge service startup", "version", Version)
 	return nil
+}
+
+// context returns the service context, falling back to Background.
+func (a *API) context() context.Context {
+	if a.ctx != nil {
+		return a.ctx
+	}
+	return context.Background()
 }
 
 // ServiceShutdown implements application.ServiceShutdown.

@@ -43,6 +43,44 @@ func TestNewRejectsInvalidConfig(t *testing.T) {
 	}
 }
 
+func TestLoadCatalogFromFixture(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	cfg.Catalog.Dir = filepath.Join("..", "catalog", "testdata")
+
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if c.Catalog == nil {
+		t.Fatal("catalog should have loaded from the fixture dir")
+	}
+	if c.Catalog.Len() != 256 {
+		t.Fatalf("catalog Len = %d, want 256", c.Catalog.Len())
+	}
+	if !c.Ready() {
+		// Ready needs Sim + Reco too (later milestones); Catalog alone is fine here.
+		if c.Catalog == nil {
+			t.Fatal("catalog missing")
+		}
+	}
+}
+
+func TestEnsureCatalogWithoutManifest(t *testing.T) {
+	t.Parallel()
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if err := c.EnsureCatalog(context.Background(), nil); err == nil {
+		t.Fatal("EnsureCatalog should error when no manifest is configured")
+	}
+}
+
 func TestCloseRunsClosersLIFOAndReturnsFirstError(t *testing.T) {
 	t.Parallel()
 	c, err := New(context.Background(), testConfig(t), nil)

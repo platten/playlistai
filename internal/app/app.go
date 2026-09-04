@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -48,7 +50,49 @@ func New(_ context.Context, cfg config.Config, log *slog.Logger) (*Container, er
 		"llm_ready", cfg.LLMReady(),
 		"preview", cfg.Preview.Provider,
 	)
+
+	// Best-effort: if a catalog is already present, load it now.
+	if err := c.LoadCatalog(); err != nil {
+		log.Info("catalog not loaded at startup", "dir", cfg.Catalog.Dir, "err", err)
+	}
+
 	return c, nil
+}
+
+// LoadCatalog opens the catalog in the configured directory and wires it as the
+// Catalog port. It is a no-op if a catalog is already loaded, and returns an
+// error (without mutating the container) if the directory has no valid catalog.
+func (c *Container) LoadCatalog() error {
+	if c.Catalog != nil {
+		return nil
+	}
+	cat, err := catalog.Open(c.cfg.Catalog.Dir)
+	if err != nil {
+		return err
+	}
+	c.Catalog = cat
+	c.RegisterCloser(cat.Close)
+	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
+	return nil
+}
+
+// EnsureCatalog downloads the catalog (per cfg.Catalog.ManifestURL) if it is not
+// already present, then loads it. Progress is reported via p.
+func (c *Container) EnsureCatalog(ctx context.Context, p ports.Progress) error {
+	if c.Catalog != nil {
+		return nil
+	}
+	if c.cfg.Catalog.ManifestURL == "" {
+		return fmt.Errorf("app: no catalog configured (set catalog.manifest_url or catalog.dir)")
+	}
+	m, err := dataset.LoadManifest(ctx, c.cfg.Catalog.ManifestURL)
+	if err != nil {
+		return err
+	}
+	if err := dataset.Fetch(ctx, c.cfg.Catalog.Dir, m, p); err != nil {
+		return err
+	}
+	return c.LoadCatalog()
 }
 
 // Config returns the immutable configuration snapshot.
