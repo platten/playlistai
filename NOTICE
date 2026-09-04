@@ -1,0 +1,55 @@
+Playlist AI
+Copyright (C) 2026 the Playlist AI authors
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. See the LICENSE file for the full text.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+================================================================================
+Third-party components and data
+================================================================================
+
+Deej-AI
+  https://github.com/teticio/Deej-AI                                  (GPL-3.0)
+deej-ai.online-app
+  https://github.com/teticio/deej-ai.online-app                       (GPL-3.0)
+
+  The recommendation algorithm in internal/reco/deejai is a Go port of
+  backend/deejai.py from deej-ai.online-app.
+
+  The bundled track-embedding catalog is derived from the pre-computed datasets
+  published by the Deej-AI project (spotifytovec.p, tracktovec.p,
+  spotify_tracks.p, spotify_urls.p). A written offer of the corresponding source
+  and data-conversion tooling (python/convert_pickles.py) accompanies every
+  distribution that ships the converted catalog.
+
+Track metadata is derived from data originating with Spotify. Only 30-second
+preview URLs and derived embedding vectors are redistributed; no audio and no
+cover art.
+
+MusicBrainz
+  https://musicbrainz.org
+
+  Queried at runtime for ISRC and release metadata under the MusicBrainz API
+  terms. Every request identifies this application with a contact URL as those
+  terms require.
+
+Deezer
+  https://developers.deezer.com
+
+  The public search API is queried at runtime to resolve optional 30-second
+  preview URLs. No API key is used.
+
+================================================================================
+Bundled binaries (added in later milestones; listed here for completeness)
+================================================================================
+
+llama.cpp   https://github.com/ggml-org/llama.cpp                          (MIT)
+  The llama-server binary is bundled to run the local intent parser. Model
+  weights (GGUF) are NOT bundled; the user downloads them on first launch,
+  directly from their source, and accepts that model's license at that time.
