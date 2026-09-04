@@ -242,8 +242,16 @@ for the data and `python/convert_pickles.py`.
    `POST /go/import-playlist`, validated share URL, opened in the browser);
    `Container.Enrich / Exporter(name)`; bridge `EnrichPlaylist / ExportCSV /
    OpenSoundiizHandoff`; the ReviewExport screen (enrich progress → per-track
-   match table with editable ISRC + include toggle → name + export). *(current)*
-8. **Preview** — Deezer + Spotify-CDN fallback; play control.
+   match table with editable ISRC + include toggle → name + export). *(done)*
+8. **Preview** — `internal/preview/deezer` (public Deezer search API, no key,
+   in-memory cache, falls back to the bundled Spotify CDN URL on a miss or a
+   request failure) and `internal/preview/spotifycdn` (bundled URL only, no
+   network — used when `preview.provider = "spotify"`); `Container.wirePreview`
+   picks one by `preview.provider` (`"off"` leaves it nil); bridge
+   `GetPreviewURL(id)`. Frontend: `PreviewPlayerProvider` / `usePreviewPlayer`
+   own a single `<audio>` element and resolve a track's URL on first play;
+   `MiniPlayerBar` (play/pause, scrub, close) wired into `TrackRow.onPlay` on
+   the Playlist and Catalog screens. *(current)*
 9. **Polish & ship** — per-OS installers + portable binaries; signing;
    first-run wizard; expand this document.
 

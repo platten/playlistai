@@ -38,6 +38,14 @@ export function Play({ size = 12, ...rest }: IconProps) {
   );
 }
 
+export function Pause({ size = 12, ...rest }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>
+      <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+    </svg>
+  );
+}
+
 export const Gear = (p: IconProps) => (
   <svg {...base(p)}>
     <circle cx="12" cy="12" r="3" />

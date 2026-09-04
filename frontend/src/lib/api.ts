@@ -14,6 +14,7 @@ export type {
   ModelStatus,
   PlaylistResult,
   PlaylistTrack,
+  PreviewResult,
   SimilarResult,
   Status,
   TrackHit,

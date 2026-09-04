@@ -10,6 +10,7 @@ import {
   Slider,
   TrackRow,
   useProgress,
+  usePreviewPlayer,
 } from "../components";
 
 export interface Seed {
@@ -34,6 +35,7 @@ export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: See
 
   const progress = useProgress("catalog");
   const debounce = useRef<number | undefined>(undefined);
+  const player = usePreviewPlayer();
 
   const refreshInfo = useCallback(() => {
     const fallback: CatalogInfo = { loaded: false, trackCount: 0, dim: 0 };
@@ -178,6 +180,8 @@ export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: See
                 index={i + 1}
                 title={h.title}
                 artist={h.artist}
+                active={player.track?.id === h.id}
+                onPlay={() => player.toggle({ id: h.id, artist: h.artist, title: h.title })}
                 onSimilar={() => showSimilar(h.id)}
                 onPlaylist={() => onBuildPlaylist({ id: h.id, artist: h.artist, title: h.title })}
               />
@@ -208,6 +212,7 @@ function SimilarPanel({
 }) {
   const hits = result.hits ?? [];
   const seed = result.seed;
+  const player = usePreviewPlayer();
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-card border border-line bg-surface">
       <div className="flex items-center gap-3 border-b border-line px-3 py-2.5">
@@ -255,6 +260,8 @@ function SimilarPanel({
               index={i + 1}
               title={h.title}
               artist={h.artist}
+              active={player.track?.id === h.id}
+              onPlay={() => player.toggle({ id: h.id, artist: h.artist, title: h.title })}
               onSimilar={() => onSimilar(h.id)}
               onPlaylist={() => onPlaylist({ id: h.id, artist: h.artist, title: h.title })}
             />

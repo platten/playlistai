@@ -16,6 +16,8 @@ import (
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/preview/deezer"
+	"github.com/platten/playlistai/internal/preview/spotifycdn"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/similarity/brute"
 )
@@ -70,6 +72,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 
 	c := &Container{cfg: cfg, log: log}
 	c.wireEnrichExport()
+	c.wirePreview()
 	c.chooseParser(ctx)
 
 	log.Info("container initialized",
@@ -114,6 +117,21 @@ func (c *Container) Exporter(name string) (ports.Exporter, bool) {
 		}
 	}
 	return nil, false
+}
+
+// wirePreview installs the configured preview backend. "deezer" queries the
+// public Deezer search API (falling back to the catalog's bundled Spotify CDN
+// URL on a miss); "spotify" uses only that bundled URL, no network; "off" (or
+// anything else) leaves Preview nil and the UI disables playback.
+func (c *Container) wirePreview() {
+	switch c.cfg.Preview.Provider {
+	case config.PreviewDeezer:
+		c.Preview = deezer.New(deezer.Config{})
+	case config.PreviewSpotify:
+		c.Preview = spotifycdn.New()
+	default:
+		c.Preview = nil
+	}
 }
 
 // chooseParser installs the rules parser immediately, then — if a model is
