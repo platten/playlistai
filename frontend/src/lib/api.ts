@@ -8,6 +8,8 @@ export type {
   CatalogInfo,
   GenerateResult,
   IntentPreview,
+  ModelInfo,
+  ModelStatus,
   PlaylistResult,
   PlaylistTrack,
   SimilarResult,

@@ -67,6 +67,42 @@ func TestLoadRejectsBadProvider(t *testing.T) {
 	}
 }
 
+func TestPrefsRoundTrip(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	if p := LoadPrefs(dir); p != (Prefs{}) {
+		t.Fatalf("empty dir should load zero prefs, got %+v", p)
+	}
+
+	want := Prefs{ModelPath: "/models/llama.gguf", ModelID: "llama-3.2-3b-instruct-q4km"}
+	if err := want.Save(dir); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if got := LoadPrefs(dir); got != want {
+		t.Fatalf("LoadPrefs = %+v, want %+v", got, want)
+	}
+
+	// clearing
+	if err := (Prefs{}).Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := LoadPrefs(dir); got != (Prefs{}) {
+		t.Fatalf("after clear: %+v", got)
+	}
+}
+
+func TestLoadPrefsToleratesGarbage(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "prefs.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if p := LoadPrefs(dir); p != (Prefs{}) {
+		t.Fatalf("garbage prefs should load zero value, got %+v", p)
+	}
+}
+
 func TestLLMReady(t *testing.T) {
 	t.Parallel()
 	cfg := Default()

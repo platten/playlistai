@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
@@ -33,10 +32,15 @@ type Container struct {
 	Preview ports.PreviewProvider
 
 	// parser can be swapped at runtime (rules → llama once a model is ready), so
-	// it is behind IntentParser()/swapParser() rather than a bare field.
-	mu      sync.Mutex
-	parser  ports.IntentParser
-	closers []func() error
+	// it is behind IntentParser() rather than a bare field. All fields below the
+	// mutex are guarded by it.
+	mu          sync.Mutex
+	parser      ports.IntentParser
+	rulesParser ports.IntentParser
+	llama       *llama.Parser // active managed llama parser, if any
+	modelPath   string
+	modelID     string
+	closers     []func() error
 }
 
 // New validates config, ensures the data directory exists, wires the intent
@@ -50,6 +54,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return nil, fmt.Errorf("app: create data dir %s: %w", cfg.DataDir, err)
+	}
+
+	// Runtime prefs (a model chosen in Settings) override the TOML config.
+	if prefs := config.LoadPrefs(cfg.DataDir); prefs.ModelPath != "" {
+		cfg.AI.ModelPath = prefs.ModelPath
+		cfg.AI.ModelID = prefs.ModelID
 	}
 
 	c := &Container{cfg: cfg, log: log}
@@ -73,30 +83,35 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 // configured — spins up llama-server in the background and swaps it in once it
 // is healthy. Startup is never blocked on the model.
 func (c *Container) chooseParser(_ context.Context) {
-	c.swapParser(rules.New())
+	r := rules.New()
+	c.mu.Lock()
+	c.rulesParser = r
+	c.parser = r
+	modelPath, modelID := c.cfg.AI.ModelPath, c.cfg.AI.ModelID
+	c.mu.Unlock()
+
 	if !c.cfg.LLMReady() {
 		return
 	}
 
 	go func() {
-		startCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		startCtx, cancel := context.WithTimeout(context.Background(), modelStartTimeout)
 		defer cancel()
 
 		p, err := llama.New(startCtx, llama.Options{
 			BinaryPath:   c.cfg.AI.LlamaServerPath,
-			ModelPath:    c.cfg.AI.ModelPath,
+			ModelPath:    modelPath,
 			NCtx:         c.cfg.AI.NCtx,
 			NThreads:     c.cfg.AI.NThreads,
-			StartTimeout: 2 * time.Minute,
+			StartTimeout: modelStartTimeout,
 			Logger:       c.log,
 		})
 		if err != nil {
 			c.log.Warn("llama parser unavailable; staying on rules", "err", err)
 			return
 		}
-		c.RegisterCloser(p.Close)
-		c.swapParser(p)
-		c.log.Info("llama parser ready", "model", c.cfg.AI.ModelPath)
+		c.setLlama(p, modelPath, modelID)
+		c.log.Info("llama parser ready", "model", modelPath)
 	}()
 }
 
@@ -105,12 +120,6 @@ func (c *Container) IntentParser() ports.IntentParser {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.parser
-}
-
-func (c *Container) swapParser(p ports.IntentParser) {
-	c.mu.Lock()
-	c.parser = p
-	c.mu.Unlock()
 }
 
 // LoadCatalog opens the catalog in the configured directory and wires the
@@ -170,14 +179,21 @@ func (c *Container) RegisterCloser(fn func() error) {
 	c.mu.Unlock()
 }
 
-// Close releases every registered resource in reverse order of registration.
+// Close stops the managed llama-server (if any) and releases every registered
+// resource in reverse order of registration.
 func (c *Container) Close() error {
 	c.mu.Lock()
 	closers := c.closers
-	c.closers = nil
+	lm := c.llama
+	c.closers, c.llama = nil, nil
 	c.mu.Unlock()
 
 	var firstErr error
+	if lm != nil {
+		if err := lm.Close(); err != nil {
+			firstErr = err
+		}
+	}
 	for i := len(closers) - 1; i >= 0; i-- {
 		if err := closers[i](); err != nil && firstErr == nil {
 			firstErr = err

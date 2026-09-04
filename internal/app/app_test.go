@@ -63,6 +63,64 @@ func TestParserStaysRulesWhenLlamaBinaryMissing(t *testing.T) {
 	}
 }
 
+func TestModelErrorPathsLeaveRulesParser(t *testing.T) {
+	t.Parallel()
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if path, id := c.CurrentModel(); path != "" || id != "" {
+		t.Fatalf("CurrentModel = %q/%q, want empty", path, id)
+	}
+
+	// bad GGUF path → error, parser unchanged
+	if err := c.SetModel(context.Background(), filepath.Join(t.TempDir(), "nope.gguf"), "x"); err == nil {
+		t.Fatal("SetModel should reject a missing file")
+	}
+	// unknown catalog id → error
+	if err := c.DownloadModel(context.Background(), "not-a-real-model", nil); err == nil {
+		t.Fatal("DownloadModel should reject an unknown id")
+	}
+	// clearing when nothing is set is a no-op that keeps rules
+	if err := c.ClearModel(); err != nil {
+		t.Fatalf("ClearModel: %v", err)
+	}
+	if got := c.IntentParser().Info().Backend; got != "rules" {
+		t.Fatalf("parser backend = %q, want rules", got)
+	}
+}
+
+func TestPrefsOverrideConfigModelPath(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	// a real (dummy) GGUF so LLMReady() passes and the overlay is exercised
+	model := filepath.Join(cfg.DataDir, "chosen.gguf")
+	if err := os.WriteFile(model, append([]byte("GGUF"), make([]byte, 32)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := (config.Prefs{ModelPath: model, ModelID: "chosen"}).Save(cfg.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	cfg.AI.LlamaServerPath = filepath.Join(cfg.DataDir, "no-such-llama-server")
+
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	// The background llama start fails (no binary); parser stays rules.
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && c.IntentParser().Info().Backend != "rules" {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if got := c.IntentParser().Info().Backend; got != "rules" {
+		t.Fatalf("parser = %q, want rules (llama binary missing)", got)
+	}
+}
+
 func TestNewCreatesDataDirAndIsNotReady(t *testing.T) {
 	t.Parallel()
 	c, err := New(context.Background(), testConfig(t), nil)
