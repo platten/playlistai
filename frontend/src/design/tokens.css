@@ -1,0 +1,179 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens for Playlist AI.
+ *
+ * The palette lives in plain CSS variables so it can be swapped at runtime by
+ * theme. `@theme inline` maps Tailwind color utilities to those variables, so
+ * `bg-bg`, `text-muted`, `border-line`, `bg-accent` etc. react to theme changes
+ * without a rebuild. Dark is the primary; light is a faithful counterpart.
+ */
+
+:root {
+  --pai-bg: #0f0f12;
+  --pai-surface: #16161b;
+  --pai-panel: #1b1b21;
+  --pai-line: rgb(255 255 255 / 0.08);
+  --pai-line-strong: rgb(255 255 255 / 0.14);
+  --pai-text: #eceef2;
+  --pai-muted: #9a9aa7;
+  --pai-faint: #63636f;
+  --pai-accent: #7c8cff;
+  --pai-accent-hover: #93a0ff;
+  --pai-accent-quiet: rgb(124 140 255 / 0.14);
+  --pai-on-accent: #0d0d14;
+  --pai-good: #58c093;
+  --pai-warn: #e0a44a;
+  --pai-bad: #e06a6a;
+  --pai-elev: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 50px -24px rgb(0 0 0 / 0.7);
+}
+
+/* System-driven light (no explicit choice stamped on <html>). */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --pai-bg: #f7f7f9;
+    --pai-surface: #ffffff;
+    --pai-panel: #ffffff;
+    --pai-line: rgb(0 0 0 / 0.09);
+    --pai-line-strong: rgb(0 0 0 / 0.14);
+    --pai-text: #1b1b21;
+    --pai-muted: #6b6b78;
+    --pai-faint: #9a9aa6;
+    --pai-accent: #5b6ef0;
+    --pai-accent-hover: #4a5bd8;
+    --pai-accent-quiet: rgb(91 110 240 / 0.10);
+    --pai-on-accent: #ffffff;
+    --pai-good: #2ea777;
+    --pai-warn: #b9791f;
+    --pai-bad: #cf4a4a;
+    --pai-elev: 0 1px 0 rgb(0 0 0 / 0.02) inset, 0 18px 40px -22px rgb(20 22 60 / 0.28);
+  }
+}
+
+/* Explicit choices win over the system in both directions. */
+:root[data-theme="light"] {
+  --pai-bg: #f7f7f9;
+  --pai-surface: #ffffff;
+  --pai-panel: #ffffff;
+  --pai-line: rgb(0 0 0 / 0.09);
+  --pai-line-strong: rgb(0 0 0 / 0.14);
+  --pai-text: #1b1b21;
+  --pai-muted: #6b6b78;
+  --pai-faint: #9a9aa6;
+  --pai-accent: #5b6ef0;
+  --pai-accent-hover: #4a5bd8;
+  --pai-accent-quiet: rgb(91 110 240 / 0.10);
+  --pai-on-accent: #ffffff;
+  --pai-good: #2ea777;
+  --pai-warn: #b9791f;
+  --pai-bad: #cf4a4a;
+  --pai-elev: 0 1px 0 rgb(0 0 0 / 0.02) inset, 0 18px 40px -22px rgb(20 22 60 / 0.28);
+}
+:root[data-theme="dark"] {
+  --pai-bg: #0f0f12;
+  --pai-surface: #16161b;
+  --pai-panel: #1b1b21;
+  --pai-line: rgb(255 255 255 / 0.08);
+  --pai-line-strong: rgb(255 255 255 / 0.14);
+  --pai-text: #eceef2;
+  --pai-muted: #9a9aa7;
+  --pai-faint: #63636f;
+  --pai-accent: #7c8cff;
+  --pai-accent-hover: #93a0ff;
+  --pai-accent-quiet: rgb(124 140 255 / 0.14);
+  --pai-on-accent: #0d0d14;
+  --pai-good: #58c093;
+  --pai-warn: #e0a44a;
+  --pai-bad: #e06a6a;
+  --pai-elev: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 20px 50px -24px rgb(0 0 0 / 0.7);
+}
+
+@theme inline {
+  --color-bg: var(--pai-bg);
+  --color-surface: var(--pai-surface);
+  --color-panel: var(--pai-panel);
+  --color-line: var(--pai-line);
+  --color-line-strong: var(--pai-line-strong);
+  --color-text: var(--pai-text);
+  --color-muted: var(--pai-muted);
+  --color-faint: var(--pai-faint);
+  --color-accent: var(--pai-accent);
+  --color-accent-hover: var(--pai-accent-hover);
+  --color-accent-quiet: var(--pai-accent-quiet);
+  --color-on-accent: var(--pai-on-accent);
+  --color-good: var(--pai-good);
+  --color-warn: var(--pai-warn);
+  --color-bad: var(--pai-bad);
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-pill: 999px;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+    border-color: var(--pai-line);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--pai-bg);
+    color: var(--pai-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--pai-accent) 32%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--pai-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* Indeterminate progress sliver. */
+@keyframes pai-indeterminate {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+.pai-indeterminate {
+  animation: pai-indeterminate 1.15s ease-in-out infinite;
+}
+
+/* Skeleton shimmer. */
+@keyframes pai-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .pai-indeterminate {
+    left: 0 !important;
+    width: 100% !important;
+  }
+}

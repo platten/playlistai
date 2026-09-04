@@ -8,8 +8,9 @@ tracks"* — into a playlist, then push it to Qobuz (or anywhere) via Soundiiz.
   picks the tracks. No account, no cloud inference, works offline.
 - **The model never picks songs.** It only translates text → intent. Track
   selection is deterministic and reproducible.
-- **Then it leaves.** Optionally resolve each track's ISRC via MusicBrainz and
-  export to the Soundiiz API or a CSV you import yourself.
+- **Then it leaves.** Optionally resolve each track's ISRC via MusicBrainz, then
+  hand off to Soundiiz (a tokenless browser handoff — it matches the catalog and
+  writes to your service) or download a CSV you import yourself.
 
 Go + [Wails v3](https://v3.wails.io) desktop app (macOS / Windows / Linux;
 GTK4 / WebKitGTK 6.0 on Linux), React + TypeScript frontend, pnpm + Taskfile

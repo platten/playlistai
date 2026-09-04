@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #93a0ff; text-decoration: none; }
+    a:hover { color: #b3bcff; }
+    ::selection { background: rgba(124,140,255,0.30); }
+    .pai-root {
+      width: 1180px; height: 800px; overflow: hidden;
+      background:
+        radial-gradient(900px 480px at 50% -10%, rgba(124,140,255,0.12), transparent 62%),
+        #0f0f12;
+      color: #eceef2;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-font-smoothing: antialiased;
+    }
+    .pai-mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .pai-card {
+      width: 620px;
+      border-radius: 16px; border: 1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(180deg, #17171d, #131318);
+      box-shadow: 0 30px 80px -30px rgba(0,0,0,0.75), 0 1px 0 rgba(255,255,255,0.05) inset;
+      overflow: hidden;
+    }
+    .pai-card-head { padding: 22px 28px 16px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .pai-card-head .mark { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: 0.01em; }
+    .pai-card-head .mark svg { width: 16px; height: 16px; color: #7c8cff; }
+    .pai-card-head h1 { margin: 12px 0 4px; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+    .pai-card-head p { margin: 0; color: #9a9aa7; font-size: 13px; }
+
+    .pai-steps { padding: 8px 14px 12px; display: flex; flex-direction: column; }
+    .pai-step { padding: 13px 14px; border-radius: 12px; }
+    .pai-step + .pai-step { margin-top: 4px; }
+    .pai-step-top { display: flex; align-items: center; gap: 12px; }
+    .pai-num {
+      width: 22px; height: 22px; flex: none; border-radius: 999px; display: grid; place-items: center;
+      font-size: 12px; font-weight: 600;
+    }
+    .pai-num.done { background: rgba(88,192,147,0.16); color: #58c093; }
+    .pai-num.active { background: #7c8cff; color: #0d0d14; }
+    .pai-num.wait { background: rgba(255,255,255,0.06); color: #7f7f8c; }
+    .pai-step-top .title { font-weight: 500; }
+    .pai-step-top .meta { color: #7f7f8c; font-size: 12px; }
+    .pai-step-body { padding: 12px 0 0 34px; display: flex; flex-direction: column; gap: 10px; }
+
+    .pai-choice {
+      display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.02);
+    }
+    .pai-choice.sel { border-color: rgba(124,140,255,0.42); background: rgba(124,140,255,0.10); }
+    .pai-radio { width: 15px; height: 15px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,0.22); flex: none; display: grid; place-items: center; }
+    .pai-choice.sel .pai-radio { border-color: #7c8cff; }
+    .pai-choice.sel .pai-radio::after { content: ""; width: 7px; height: 7px; border-radius: 999px; background: #7c8cff; }
+    .pai-choice .c-title { font-size: 13px; }
+    .pai-choice .c-sub { color: #7f7f8c; font-size: 11.5px; }
+    .pai-choice .c-size { margin-left: auto; color: #9a9aa7; font-size: 12px; }
+
+    .pai-dl { display: flex; flex-direction: column; gap: 8px; }
+    .pai-dl-top { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; }
+    .pai-dl-top .a { color: #cfcfd8; }
+    .pai-dl-top .b { color: #7f7f8c; }
+    .pai-track { height: 6px; border-radius: 999px; background: rgba(255,255,255,0.09); overflow: hidden; }
+    .pai-track .f { height: 100%; background: linear-gradient(90deg, #7c8cff, #93a0ff); }
+
+    .pai-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      height: 32px; padding: 0 13px; border-radius: 8px; font-family: inherit; font-size: 12.5px;
+      font-weight: 500; border: 1px solid transparent; cursor: pointer;
+    }
+    .pai-btn--sm-primary { background: #7c8cff; color: #0d0d14; font-weight: 600; }
+    .pai-btn--sm-ghost { background: rgba(255,255,255,0.04); color: #cfcfd8; border-color: rgba(255,255,255,0.12); }
+
+    .pai-card-foot {
+      display: flex; align-items: center; gap: 12px; padding: 16px 22px;
+      border-top: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.015);
+    }
+    .pai-foot-note { color: #7f7f8c; font-size: 12px; }
+    .pai-btn--primary { background: #7c8cff; color: #0d0d14; font-weight: 600; height: 38px; padding: 0 16px; border-radius: 9px; font-size: 13.5px; }
+    .pai-btn--link { background: transparent; color: #9a9aa7; height: 38px; padding: 0 8px; font-size: 13px; }
+  </style>
+</helmet>
+
+<div class="pai-root">
+  <div class="pai-card">
+    <div class="pai-card-head">
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+        Playlist AI
+      </div>
+      <h1>Two downloads and you&rsquo;re set</h1>
+      <p>Both are one-time and land on your machine. You can start in rules mode and add the model later.</p>
+    </div>
+
+    <div class="pai-steps">
+      <div class="pai-step" style="background: rgba(124,140,255,0.06);">
+        <div class="pai-step-top">
+          <span class="pai-num active">1</span>
+          <span class="title">Local language model</span>
+          <span class="meta">&middot; parses your prompt into an intent</span>
+        </div>
+        <div class="pai-step-body">
+          <div class="pai-choice sel">
+            <span class="pai-radio"></span>
+            <div><div class="c-title">Llama 3.2 3B Instruct <span class="pai-mono" style="color:#7f7f8c">Q4_K_M</span></div><div class="c-sub">recommended &middot; Qwen2.5 3B also available</div></div>
+            <span class="c-size">2.0 GB</span>
+          </div>
+          <div class="pai-choice">
+            <span class="pai-radio"></span>
+            <div><div class="c-title">Use a GGUF file I already have&hellip;</div><div class="c-sub">point at a local path</div></div>
+          </div>
+
+          <div class="pai-dl">
+            <div class="pai-dl-top"><span class="a">Downloading Llama 3.2 3B Instruct</span><span class="b pai-mono">0.82 / 2.0 GB &middot; 6.1 MB/s &middot; ~3m left</span></div>
+            <div class="pai-track"><div class="f" style="width:41%"></div></div>
+          </div>
+          <div style="font-size:11.5px; color:#63636f">You accept the <a>Llama Community License</a> on download. Fetched from Hugging Face; we don&rsquo;t redistribute weights.</div>
+        </div>
+      </div>
+
+      <div class="pai-step">
+        <div class="pai-step-top">
+          <span class="pai-num done"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>
+          <span class="title">Embedding catalog</span>
+          <span class="meta">&middot; ~1M tracks, int8 vectors + metadata</span>
+        </div>
+        <div class="pai-step-body">
+          <div class="pai-dl">
+            <div class="pai-dl-top"><span class="a" style="color:#58c093">Ready</span><span class="b pai-mono">247 MB &middot; verified</span></div>
+            <div class="pai-track"><div class="f" style="width:100%; background:#58c093"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pai-card-foot">
+      <span class="pai-foot-note">You can change either of these later in Settings.</span>
+      <div style="flex:1"></div>
+      <button class="pai-btn pai-btn--link">Skip for now</button>
+      <button class="pai-btn pai-btn--primary">Continue</button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":800}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

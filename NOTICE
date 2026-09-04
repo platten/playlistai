@@ -45,6 +45,16 @@ Deezer
   The public search API is queried at runtime to resolve optional 30-second
   preview URLs. No API key is used.
 
+Soundiiz
+  https://soundiiz.com
+
+  Optional playlist export uses Soundiiz's public handoff endpoint
+  (POST https://soundiiz.com/go/import-playlist). Only the playlist title,
+  description, and track/artist names are sent; the returned share URL is opened
+  in the user's browser to complete the transfer. No account or token is used by
+  this app, and no streaming credentials pass through it. The mechanism follows
+  https://github.com/platten/playlistforge.
+
 ================================================================================
 Bundled binaries (added in later milestones; listed here for completeness)
 ================================================================================

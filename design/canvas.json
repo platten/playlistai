@@ -1,0 +1,15 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",        "x": 0,    "y": 0,   "w": 1180, "h": 800, "title": "Generate" },
+    { "file": "Playlist.dc.html",    "x": 1280, "y": 0,   "w": 1180, "h": 800, "title": "Playlist" },
+    { "file": "ReviewExport.dc.html","x": 2560, "y": 0,   "w": 1180, "h": 800, "title": "Review & export" },
+    { "file": "FirstRun.dc.html",    "x": 0,    "y": 960, "w": 1180, "h": 800, "title": "First run" },
+    { "file": "Settings.dc.html",    "x": 1280, "y": 960, "w": 1180, "h": 800, "title": "Settings" },
+    { "file": "LightTheme.dc.html",  "x": 2560, "y": 960, "w": 1180, "h": 800, "title": "Generate — light" }
+  ],
+  "annotations": [
+    { "id": "flow", "x": 0, "y": -96, "w": 620, "text": "Core loop, left to right: describe it → shape the walk → resolve ISRCs and export. Everything up to export is local." },
+    { "id": "setup", "x": 0, "y": 872, "w": 520, "text": "First run (two one-time downloads) and Settings. The light artboard shows the same Generate screen as the theme counterpart." }
+  ],
+  "launch": { "view": "canvas" }
+}

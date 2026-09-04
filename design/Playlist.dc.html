@@ -1,0 +1,282 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #93a0ff; text-decoration: none; }
+    a:hover { color: #b3bcff; }
+    ::selection { background: rgba(124,140,255,0.30); }
+    .pai-root {
+      width: 1180px; height: 800px; overflow: hidden;
+      background: #0f0f12; color: #eceef2;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5; display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .pai-mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .pai-bar {
+      display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px; flex: none;
+      border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(20,20,25,0.6);
+    }
+    .pai-brand { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+    .pai-diamond { width: 15px; height: 15px; color: #7c8cff; }
+    .pai-crumb { color: #63636f; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .pai-crumb b { color: #cfcfd8; font-weight: 500; }
+    .pai-pill {
+      display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px;
+      border-radius: 999px; border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.03); color: #b9b9c4; font-size: 12.5px;
+    }
+    .pai-dot { width: 6px; height: 6px; border-radius: 999px; background: #58c093; box-shadow: 0 0 0 3px rgba(88,192,147,0.16); }
+
+    .pai-body { flex: 1; display: flex; min-height: 0; }
+    .pai-list { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .pai-list-head {
+      display: flex; align-items: baseline; gap: 10px; padding: 16px 22px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .pai-list-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+    .pai-list-head span { color: #8a8a97; font-size: 12.5px; }
+    .pai-rows { flex: 1; overflow: hidden; padding: 6px 12px; }
+    .pai-row {
+      display: grid; grid-template-columns: 26px 26px 1fr 128px 62px 22px;
+      align-items: center; gap: 12px; height: 46px; padding: 0 10px; border-radius: 9px;
+    }
+    .pai-row:hover { background: rgba(255,255,255,0.035); }
+    .pai-row.is-active { background: rgba(124,140,255,0.10); box-shadow: inset 0 0 0 1px rgba(124,140,255,0.22); }
+    .pai-idx { color: #5c5c67; font-size: 12px; text-align: right; }
+    .pai-play { width: 24px; height: 24px; display: grid; place-items: center; color: #9a9aa7; border-radius: 6px; }
+    .pai-row:hover .pai-play { color: #eceef2; background: rgba(255,255,255,0.06); }
+    .pai-track { min-width: 0; }
+    .pai-track .t { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pai-track .a { color: #8a8a97; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pai-src { color: #7f7f8c; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .pai-dur { color: #7f7f8c; font-size: 12.5px; text-align: right; }
+    .pai-why { color: #5c5c67; }
+    .pai-row:hover .pai-why { color: #9a9aa7; }
+    .pai-reason {
+      grid-column: 3 / -1; color: #9aa0c8; font-size: 12px; padding: 2px 0 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .pai-reason .tag {
+      font-size: 11px; padding: 1px 7px; border-radius: 999px;
+      background: rgba(124,140,255,0.14); color: #cfd4ff;
+    }
+
+    .pai-panel {
+      width: 350px; flex: none; border-left: 1px solid rgba(255,255,255,0.07);
+      background: rgba(22,22,27,0.5); display: flex; flex-direction: column;
+    }
+    .pai-panel-in { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 20px; overflow: hidden; }
+    .pai-panel h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8a97; }
+    .pai-field { display: flex; flex-direction: column; gap: 9px; }
+    .pai-field-top { display: flex; align-items: baseline; justify-content: space-between; }
+    .pai-field-top .lab { font-size: 13px; font-weight: 500; }
+    .pai-field-top .val { font-size: 12.5px; color: #cfd4ff; }
+    .pai-field .ends { display: flex; justify-content: space-between; color: #63636f; font-size: 11px; }
+    .pai-slider { position: relative; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.10); }
+    .pai-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #7c8cff; }
+    .pai-slider .knob {
+      position: absolute; top: 50%; width: 15px; height: 15px; border-radius: 999px;
+      background: #eef0ff; transform: translate(-50%, -50%);
+      box-shadow: 0 0 0 4px rgba(124,140,255,0.25), 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .pai-step { display: flex; align-items: center; gap: 8px; }
+    .pai-step button {
+      width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #cfcfd8;
+    }
+    .pai-step .num { width: 44px; text-align: center; font-size: 14px; }
+    .pai-seeds { display: flex; flex-wrap: wrap; gap: 7px; }
+    .pai-seed {
+      display: inline-flex; align-items: center; gap: 7px; height: 27px; padding: 0 6px 0 10px;
+      border-radius: 999px; background: rgba(124,140,255,0.14); border: 1px solid rgba(124,140,255,0.32);
+      color: #cfd4ff; font-size: 12.5px;
+    }
+    .pai-seed .x { width: 16px; height: 16px; display: grid; place-items: center; border-radius: 999px; color: #9aa0c8; }
+    .pai-add {
+      height: 27px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; color: #9a9aa7;
+      border: 1px dashed rgba(255,255,255,0.16); background: transparent;
+    }
+    .pai-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      height: 38px; padding: 0 15px; border-radius: 9px; font-family: inherit;
+      font-size: 13.5px; font-weight: 500; border: 1px solid transparent; cursor: pointer;
+    }
+    .pai-btn--primary { background: #7c8cff; color: #0d0d14; font-weight: 600; }
+    .pai-btn--primary:hover { background: #93a0ff; }
+    .pai-btn--ghost { background: rgba(255,255,255,0.04); color: #cfcfd8; border-color: rgba(255,255,255,0.12); }
+    .pai-panel-foot { margin-top: auto; padding: 14px 18px; border-top: 1px solid rgba(255,255,255,0.07); }
+  </style>
+</helmet>
+
+<div class="pai-root">
+  <div class="pai-bar">
+    <div class="pai-brand">
+      <svg class="pai-diamond" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+    </div>
+    <div class="pai-crumb">Generate <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg> <b>Playlist</b></div>
+    <div style="flex:1"></div>
+    <span class="pai-pill"><span class="pai-dot"></span> 1,041,900 tracks loaded</span>
+  </div>
+
+  <div class="pai-body">
+    <div class="pai-list">
+      <div class="pai-list-head">
+        <h2>24 tracks</h2>
+        <span>similar walk from <span style="color:#cfd4ff">Justice</span> &middot; seed 4817 &middot; deterministic</span>
+      </div>
+      <div class="pai-rows">
+        <div class="pai-row">
+          <div class="pai-idx">1</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Genesis</div><div class="a">Justice</div></div>
+          <div class="pai-src"><span class="pai-dot" style="background:#7c8cff; box-shadow:none"></span> seed</div>
+          <div class="pai-dur">3:53</div>
+          <div class="pai-why"></div>
+        </div>
+
+        <div class="pai-row is-active">
+          <div class="pai-idx">2</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Rerun</div><div class="a">SebastiAn</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">4:05</div>
+          <div class="pai-why"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></div>
+        </div>
+        <div class="pai-reason">
+          <span class="tag">nearest</span>
+          cos 0.71 to the running average of the last 3 picks &middot; same-artist rule held &middot; 0 noise
+        </div>
+
+        <div class="pai-row">
+          <div class="pai-idx">3</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Tetra</div><div class="a">Kavinsky</div></div>
+          <div class="pai-src"><span style="color:#e0a44a">noise jump</span></div>
+          <div class="pai-dur">3:41</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">4</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Roygbiv</div><div class="a">Boards of Canada</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">2:31</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">5</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Windowlicker</div><div class="a">Aphex Twin</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">6:07</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">6</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Get Myself to You</div><div class="a">The Avalanches</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">3:34</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">7</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Midnight City</div><div class="a">M83</div></div>
+          <div class="pai-src"><span style="color:#e0a44a">noise jump</span></div>
+          <div class="pai-dur">4:03</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">8</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Outrun</div><div class="a">Kavinsky</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">3:38</div>
+          <div class="pai-why"></div>
+        </div>
+        <div class="pai-row">
+          <div class="pai-idx">9</div>
+          <div class="pai-play"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></div>
+          <div class="pai-track"><div class="t">Star Guitar</div><div class="a">The Chemical Brothers</div></div>
+          <div class="pai-src">nearest</div>
+          <div class="pai-dur">6:23</div>
+          <div class="pai-why"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pai-panel">
+      <div class="pai-panel-in">
+        <h3>Shape it</h3>
+
+        <div class="pai-field">
+          <div class="pai-field-top"><span class="lab">Creativity</span><span class="val pai-mono">0.62</span></div>
+          <div class="pai-slider"><div class="fill" style="width:62%"></div><div class="knob" style="left:62%"></div></div>
+          <div class="ends"><span>playlist co-occurrence</span><span>pure sound</span></div>
+        </div>
+
+        <div class="pai-field">
+          <div class="pai-field-top"><span class="lab">Noise <span style="color:#7f7f8c; font-weight:400">&ldquo;drunk&rdquo;</span></span><span class="val pai-mono">0.30</span></div>
+          <div class="pai-slider"><div class="fill" style="width:30%"></div><div class="knob" style="left:30%"></div></div>
+          <div class="ends"><span>faithful</span><span>wandering</span></div>
+        </div>
+
+        <div class="pai-field">
+          <div class="pai-field-top"><span class="lab">Lookback</span></div>
+          <div class="pai-step">
+            <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+            <div class="num pai-mono">3</div>
+            <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            <span style="color:#63636f; font-size:11.5px; margin-left:4px">picks averaged into the query</span>
+          </div>
+        </div>
+
+        <div class="pai-field">
+          <div class="pai-field-top"><span class="lab">Count</span></div>
+          <div class="pai-step">
+            <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+            <div class="num pai-mono">24</div>
+            <button><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          </div>
+        </div>
+
+        <div class="pai-field">
+          <div class="pai-field-top"><span class="lab">Seeds</span></div>
+          <div class="pai-seeds">
+            <span class="pai-seed">Justice <span class="x"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+            <button class="pai-add">+ add seed</button>
+          </div>
+        </div>
+
+        <button class="pai-btn pai-btn--primary">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5"/></svg>
+          Regenerate
+        </button>
+      </div>
+
+      <div class="pai-panel-foot">
+        <button class="pai-btn pai-btn--ghost" style="width:100%">
+          Review &amp; export
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":800}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
