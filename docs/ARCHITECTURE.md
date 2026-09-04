@@ -133,9 +133,12 @@ internal/
   reco/       deejai/ — Go port of backend/deejai.py: make_playlist (single seed) +
               join_the_dots (>=2 seeds), seeded Gaussian noise, id/display/artist
               dedup; deterministic given (intent, catalog, intent.Seed)
-  intent/     rules/ — dependency-free regex/keyword prompt → core.MusicIntent
-              (always available; the llama fallback)
-              [M6b] llama/ (llama-server subprocess), schema/ (GBNF), modelmgr/
+  intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
+                        (always available; the fallback)
+              schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
+              llama/  — llama-server child process (Server) + /v1/chat/completions
+                        client; Parser swaps in when a model is configured
+              [M6c] modelmgr/ — first-launch model catalog + download
   enrich/     [M7] musicbrainz/
   export/     [M7] soundiizcsv/ soundiizhandoff/
   preview/    [M8] deezer/ spotifycdn/
@@ -222,10 +225,13 @@ for the data and `python/convert_pickles.py`.
    creativity / noise / lookback / count controls + Regenerate. *(done)*
 6a. **IntentParser (rules)** — `internal/intent/rules` regex/keyword parser;
     `ParseIntent` / `GenerateFromPrompt` bridge methods; Generate screen
-    (prompt → parsed-intent chips → playlist). *(current)*
-6b. **IntentParser (llama)** — GBNF `schema`; `llama-server` subprocess +
-    lifecycle; `modelmgr` first-launch model download; parser switches to
-    `llama` when a model is configured.
+    (prompt → parsed-intent chips → playlist). *(done)*
+6b. **IntentParser (llama)** — `internal/intent/schema` (GBNF + response parse);
+    `internal/intent/llama` (`Server` child process + chat `Client`, subprocess-
+    lifecycle tested against a compiled fake); `app` swaps `rules → llama` in the
+    background when `ai.model_path` is set. *(current)*
+6c. **Model manager** — `internal/intent/modelmgr` first-launch model catalog +
+    resumable download; Settings model panel; runtime model switching.
 7. **Enrichment + export** — MusicBrainz client + cache; CSV + Soundiiz handoff;
    match-review screen.
 8. **Preview** — Deezer + Spotify-CDN fallback; play control.
