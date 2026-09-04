@@ -17,6 +17,14 @@ secrets first and is skipped, with a log line, if they're absent. An unsigned
 release is still a complete, working release; signing only removes OS trust
 warnings (Gatekeeper, SmartScreen, `apt`/`dnf` signature checks).
 
+Every installer and portable archive (except AppImage — see Known gaps) also
+bundles a pinned CPU build of **llama-server** from
+[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), so the local
+model works out of the box with nothing else to install. This is fetched
+automatically by `task <os>:package` (`build/llama/fetch.sh`, pinned tag +
+per-OS SHA-256 in `build/llama/manifest.json`) and needs no configuration —
+see "Bundled llama-server runtime" below only if you need to update it.
+
 ## Cutting a release
 
 1. Bump the version in two places (they must match):
@@ -83,6 +91,44 @@ be dropped into CI as a base64 secret — this path assumes a standard
 will warn on first run until the binary builds enough install reputation on
 its own; this is expected and not a bug.
 
+## Bundled llama-server runtime
+
+`build/llama/manifest.json` pins one llama.cpp release tag plus the exact
+asset name + SHA-256 for each OS in our build matrix (`ubuntu-x64`,
+`macos-arm64`, `win-cpu-x64` — CPU-only builds; macOS's build includes Metal,
+which needs no separate driver so it doesn't count as "GPU-only" for this
+purpose). `build/llama/fetch.sh <os> <bin-dir>`:
+
+1. Downloads that one pinned asset and verifies it against the pinned SHA-256
+   (hard failure on mismatch — never silently proceeds).
+2. Extracts `llama-server[.exe]` plus the runtime libraries it actually needs
+   (`.so`/`.dylib`/`.dll` — skipping the extra CLI tools like `llama-cli`,
+   `llama-quantize`, ... this app never runs) into `<bin-dir>`, alongside the
+   app binary — the first place `internal/intent/llama`'s `resolveBinary()`
+   looks.
+3. Copies its MIT `LICENSE` file(s) into `<bin-dir>/licenses/`.
+4. Stamps the tag into `<bin-dir>/.llama-runtime-tag` so a re-run with the
+   same pin is a no-op.
+
+It's wired in as an automatic dependency of the relevant per-OS packaging
+tasks (`linux:create:deb/rpm/aur`, `darwin:create:app:bundle`,
+`windows:create:nsis:installer`) — `task <os>:package` just does the right
+thing, network permitting. `build/linux/nfpm/nfpm.yaml` picks the staged files
+up via a glob (`./bin/*.so*`), `build/darwin/Taskfile.yml`'s
+`create:app:bundle` copies them into `Contents/MacOS/` before ad-hoc signing
+(so `--deep` ad-hoc-signs them too), and `build/windows/nsis/project.nsi`
+embeds them via `File` directives. `release.yml` also runs
+`bin/llama-server[.exe] --version` right after each OS's packaging step as a
+smoke test.
+
+**To bump the pinned build**: check
+[llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for a
+recent `bNNNNN` tag with binary assets (the plain `latest` tag usually has
+none), update the tag + the three asset names + their `sha256sum <file>` in
+`build/llama/manifest.json`, delete any stale `bin/.llama-runtime-tag` you
+have locally, and re-run `task linux:create:deb` (or the smoke test in CI) to
+confirm it still runs.
+
 ## Known gaps
 
 - The app icon (`build/appicon.png`, `build/darwin/icons.icns`,
@@ -94,7 +140,15 @@ its own; this is expected and not a bug.
   installer.
 - `wails3 package` (the bare CLI command) only builds the platform's default
   artifact (an unpackaged `.app` on macOS, no `.dmg`); the release workflow
-  calls the more specific `wails3 task linux:package` /
-  `darwin:package` + `darwin:create:dmg` / `windows:package` tasks directly,
-  with `wails3 tool sign` run in between on macOS/Windows so the signed
-  binary ends up inside the final package.
+  calls the more specific `wails3 task linux:package` / `darwin:package` +
+  `darwin:create:dmg` / `windows:package` tasks directly, with `codesign` /
+  `xcrun notarytool` run directly (not through `wails3 tool sign`) on macOS
+  for the deep-signing + notarization the bundled llama-server needs, and
+  `wails3 tool sign` on Windows.
+- The AppImage build does **not** bundle llama-server yet — `wails3 generate
+  appimage` is a black box (linuxdeploy under the hood) that only deploys the
+  dependencies of the one binary it's given, so there's no clean hook to add
+  a second executable + its libraries to the AppDir. AppImage users who want
+  the local model can install llama-server separately (see llama.cpp's
+  releases) and set `ai.llama_server_path`, or use the `.deb`/`.rpm`/Arch
+  package instead, which do bundle it.

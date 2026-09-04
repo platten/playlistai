@@ -90,8 +90,15 @@ Section
     !insertmacro wails.webview2runtime
 
     SetOutPath $INSTDIR
-    
+
     !insertmacro wails.files
+
+    # Bundled llama-server runtime (build/llama/fetch.sh, staged into bin/ by
+    # `task windows:create:nsis:installer` before makensis runs) — must land
+    # beside the app executable; that's where internal/intent/llama's
+    # resolveBinary() looks first.
+    File "..\..\..\bin\llama-server.exe"
+    File "..\..\..\bin\*.dll"
 
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

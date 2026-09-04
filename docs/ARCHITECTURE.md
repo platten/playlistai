@@ -270,7 +270,14 @@ for the data and `python/convert_pickles.py`.
    `ClearModel` were fixed to read-modify-write prefs.json instead of
    overwriting it, which used to silently erase these new fields);
    `Container.SetPreviewProvider` makes the preview backend swappable at
-   runtime, also exposed in Settings. *(current)*
+   runtime, also exposed in Settings. Bundled `llama-server` runtime: every
+   installer/portable archive except AppImage ships a pinned CPU build of
+   llama.cpp's `llama-server` (`build/llama/manifest.json` pins the release
+   tag + per-OS SHA-256; `build/llama/fetch.sh` downloads, verifies, and
+   stages it beside the app binary — automatically, as a dependency of the
+   per-OS packaging tasks) so the local model works with nothing else to
+   install; see [`docs/RELEASING.md`](RELEASING.md#bundled-llama-server-runtime).
+   *(current)*
 
 Remaining known gap: no custom app icon (still the Wails default) — cosmetic,
 not a release blocker.
