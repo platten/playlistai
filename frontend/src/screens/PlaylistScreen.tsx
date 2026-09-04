@@ -9,6 +9,7 @@ import {
   Slider,
   Stepper,
   TrackRow,
+  usePreviewPlayer,
   type Provenance,
 } from "../components";
 
@@ -43,6 +44,7 @@ export function PlaylistScreen({
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const player = usePreviewPlayer();
 
   const debounce = useRef<number | undefined>(undefined);
 
@@ -174,6 +176,8 @@ export function PlaylistScreen({
               artist={t.artist}
               provenance={KIND_TO_PROVENANCE[t.kind]}
               reason={expanded.has(i) ? t.detail : undefined}
+              active={player.track?.id === t.id}
+              onPlay={() => player.toggle({ id: t.id, artist: t.artist, title: t.title })}
               onClick={() =>
                 setExpanded((prev) => {
                   const next = new Set(prev);

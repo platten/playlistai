@@ -10,3 +10,9 @@ export { ErrorState, type ErrorStateProps } from "./ErrorState";
 export { Slider, type SliderProps } from "./Slider";
 export { Stepper, type StepperProps } from "./Stepper";
 export { TrackRow, type TrackRowProps, type Provenance } from "./TrackRow";
+export {
+  PreviewPlayerProvider,
+  MiniPlayerBar,
+  usePreviewPlayer,
+  type PreviewTrack,
+} from "./PreviewPlayer";
