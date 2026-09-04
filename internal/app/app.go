@@ -10,6 +10,7 @@ import (
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/similarity/brute"
 )
 
@@ -74,6 +75,7 @@ func (c *Container) LoadCatalog() error {
 	c.Catalog = cat
 	c.RegisterCloser(cat.Close)
 	c.Sim = brute.New(cat)
+	c.Reco = deejai.New(cat, c.Sim)
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
 	return nil
 }

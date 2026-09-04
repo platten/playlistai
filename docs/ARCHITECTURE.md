@@ -130,7 +130,9 @@ internal/
               reads int8 rows via RawRow (no float32 copy), precomputed per-row
               inverse norms, bounded top-K heap, deterministic tie-break by row.
               Matches deej-ai.online-app most_similar.
-  reco/       [M5] deejai/ — port of backend/deejai.py
+  reco/       deejai/ — Go port of backend/deejai.py: make_playlist (single seed) +
+              join_the_dots (>=2 seeds), seeded Gaussian noise, id/display/artist
+              dedup; deterministic given (intent, catalog, intent.Seed)
   intent/     [M6] llama/ rules/ schema/ modelmgr/
   enrich/     [M7] musicbrainz/
   export/     [M7] soundiizcsv/ soundiizhandoff/
@@ -171,10 +173,11 @@ required — cache path, min match score), `[preview]` (`deezer` | `spotify` |
   step.
 - Each port is exercised through its fake; the real implementations add
   contract/parity tests.
-- The load-bearing test (M5) is a golden-parity check: `python/parity_playlist.py`
-  runs upstream `backend/deejai.py` with `noise=0` and pinned params; the Go
-  `RecommendationEngine` must reproduce the track sequence exactly on a float32
-  reference build.
+- The load-bearing test is a golden-parity check: `python/parity_playlist.py`
+  (a stdlib-only reimplementation of upstream `backend/deejai.py`, `noise=0`)
+  emits `internal/reco/deejai/testdata/golden/*.json` from the synthetic
+  catalog; the Go engine must reproduce each sequence within edit distance 1
+  (exact on the first 3 picks). It currently matches all 7 fixtures exactly.
 
 ---
 
@@ -208,9 +211,11 @@ for the data and `python/convert_pickles.py`.
    resumable checksummed download; `CatalogSearch` screen + bridge methods. *(done)*
 4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
    (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
-   view with a creativity slider in the Catalog screen. *(current)*
-5. **Recommendation** — port the walk + `join_the_dots`; golden-parity test;
-   live sliders.
+   view with a creativity slider in the Catalog screen. *(done)*
+5. **Recommendation** — `internal/reco/deejai` port of `make_playlist` +
+   `join_the_dots` + noise + dedup; `parity_playlist.py` golden fixtures (exact
+   match); `BuildPlaylist` bridge method; Playlist screen with live
+   creativity / noise / lookback / count controls + Regenerate. *(current)*
 6. **IntentParser** — `rules`; GBNF schema; `llama` subprocess + `modelmgr`.
 7. **Enrichment + export** — MusicBrainz client + cache; CSV + Soundiiz handoff;
    match-review screen.

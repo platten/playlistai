@@ -46,15 +46,19 @@ type IntentConstraints struct {
 // UI controls: changing any of them re-runs RecommendationEngine.Build with the
 // same resolved seeds and no re-parse.
 type MusicIntent struct {
-	Version      int               `json:"version"`
-	Seeds        IntentSeeds       `json:"seeds"`
-	Count        int               `json:"count"`
-	Mode         Mode              `json:"mode"`
-	Creativity   float64           `json:"creativity"` // 0..1 blend of the two embedding spaces
-	Noise        float64           `json:"noise"`      // 0..1 "drunk" — std of Gaussian added to the query vector
-	Lookback     int               `json:"lookback"`
-	Constraints  IntentConstraints `json:"constraints"`
-	NotesForUser string            `json:"notesForUser"` // shown in UI, never used for selection
+	Version     int               `json:"version"`
+	Seeds       IntentSeeds       `json:"seeds"`
+	Count       int               `json:"count"`
+	Mode        Mode              `json:"mode"`
+	Creativity  float64           `json:"creativity"` // 0..1 blend of the two embedding spaces
+	Noise       float64           `json:"noise"`      // 0..1 "drunk" — std of Gaussian added to the query vector
+	Lookback    int               `json:"lookback"`
+	Constraints IntentConstraints `json:"constraints"`
+	// Seed makes a walk reproducible. 0 lets the engine pick one (and echo it
+	// back on Playlist.Seed); "regenerate" in the UI supplies a fresh value.
+	// Only matters when Noise > 0.
+	Seed         int64  `json:"seed"`
+	NotesForUser string `json:"notesForUser"` // shown in UI, never used for selection
 }
 
 // Normalized returns a copy with every field clamped to a valid range and

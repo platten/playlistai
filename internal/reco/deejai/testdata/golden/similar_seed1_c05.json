@@ -1,0 +1,28 @@
+{
+  "params": {
+    "mode": "similar",
+    "seeds": [
+      "seed0001"
+    ],
+    "creativity": 0.5,
+    "lookback": 3,
+    "count": 15
+  },
+  "track_ids": [
+    "seed0001",
+    "trk00109",
+    "trk00062",
+    "trk00123",
+    "trk00249",
+    "trk00027",
+    "trk00091",
+    "trk00111",
+    "trk00129",
+    "trk00189",
+    "trk00088",
+    "seed0006",
+    "trk00221",
+    "trk00012",
+    "trk00241"
+  ]
+}

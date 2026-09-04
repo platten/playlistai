@@ -144,3 +144,9 @@ export const Similar = (p: IconProps) => (
     <path d="M3 15.5c2-2.2 4-2.2 6 0s4 2.2 6 0 4-2.2 6 0" />
   </svg>
 );
+
+export const ListPlus = (p: IconProps) => (
+  <svg {...base(p, 2)}>
+    <path d="M4 6h11M4 12h8M4 18h8M16 15h6M19 12v6" />
+  </svg>
+);
