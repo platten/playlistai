@@ -1,19 +1,41 @@
 import { useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
 import { Button, Icon } from "./components";
+import type { BuildPlaylistRequest } from "./lib/api";
+import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { Gallery } from "./screens/Gallery";
 
-type Screen = "catalog" | "playlist" | "components";
+type Screen = "generate" | "catalog" | "playlist" | "components";
+
+interface PlaylistState {
+  request: BuildPlaylistRequest;
+  heading: string;
+}
+
+function seedToRequest(seed: Seed): BuildPlaylistRequest {
+  return {
+    seedIds: [seed.id],
+    mode: "similar",
+    creativity: 0.5,
+    noise: 0.1,
+    lookback: 3,
+    count: 25,
+    seed: 0,
+    noRepeatArtist: true,
+    artistsExclude: [],
+    excludeSeedArtist: false,
+  };
+}
 
 export default function App() {
   const { choice, cycle } = useTheme();
-  const [screen, setScreen] = useState<Screen>("catalog");
-  const [seed, setSeed] = useState<Seed | null>(null);
+  const [screen, setScreen] = useState<Screen>("generate");
+  const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
 
-  const buildPlaylist = (s: Seed) => {
-    setSeed(s);
+  const openPlaylist = (request: BuildPlaylistRequest, heading: string) => {
+    setPlaylist({ request, heading });
     setScreen("playlist");
   };
 
@@ -23,13 +45,16 @@ export default function App() {
         <Icon.Diamond size={15} className="text-accent" />
         <span className="font-semibold tracking-[0.01em]">Playlist AI</span>
         <nav className="ml-3 flex items-center gap-1">
+          <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
+            Generate
+          </NavButton>
           <NavButton active={screen === "catalog"} onClick={() => setScreen("catalog")}>
             Catalog
           </NavButton>
           <NavButton
             active={screen === "playlist"}
             onClick={() => setScreen("playlist")}
-            disabled={!seed}
+            disabled={!playlist}
           >
             Playlist
           </NavButton>
@@ -44,12 +69,23 @@ export default function App() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        {screen === "catalog" && <CatalogSearch onBuildPlaylist={buildPlaylist} />}
+        {screen === "generate" && (
+          <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
+        )}
+        {screen === "catalog" && (
+          <CatalogSearch
+            onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+          />
+        )}
         {screen === "playlist" &&
-          (seed ? (
-            <PlaylistScreen seed={seed} onBack={() => setScreen("catalog")} />
+          (playlist ? (
+            <PlaylistScreen
+              request={playlist.request}
+              heading={playlist.heading}
+              onBack={() => setScreen("generate")}
+            />
           ) : (
-            <CatalogSearch onBuildPlaylist={buildPlaylist} />
+            <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
           ))}
         {screen === "components" && <Gallery />}
       </main>

@@ -6,6 +6,8 @@ export { API } from "../../bindings/github.com/platten/playlistai/internal/bridg
 export type {
   BuildPlaylistRequest,
   CatalogInfo,
+  GenerateResult,
+  IntentPreview,
   PlaylistResult,
   PlaylistTrack,
   SimilarResult,

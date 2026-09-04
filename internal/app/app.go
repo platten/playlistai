@@ -9,6 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/dataset"
+	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/similarity/brute"
@@ -47,8 +48,14 @@ func New(_ context.Context, cfg config.Config, log *slog.Logger) (*Container, er
 	}
 
 	c := &Container{cfg: cfg, log: log}
+
+	// The rule-based parser is always available. The llama backend replaces it
+	// once a model is configured (a later milestone).
+	c.Parser = rules.New()
+
 	log.Info("container initialized",
 		"data_dir", cfg.DataDir,
+		"parser", c.Parser.Info().Backend,
 		"llm_ready", cfg.LLMReady(),
 		"preview", cfg.Preview.Provider,
 	)
