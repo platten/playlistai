@@ -5,6 +5,7 @@
 export { API } from "../../bindings/github.com/platten/playlistai/internal/bridge";
 export type {
   CatalogInfo,
+  SimilarResult,
   Status,
   TrackHit,
 } from "../../bindings/github.com/platten/playlistai/internal/bridge";

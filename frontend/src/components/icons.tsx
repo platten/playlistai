@@ -131,3 +131,16 @@ export const X = (p: IconProps) => (
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
+
+export const ArrowLeft = (p: IconProps) => (
+  <svg {...base(p, 2.2)}>
+    <path d="M19 12H5M11 6l-6 6 6 6" />
+  </svg>
+);
+
+export const Similar = (p: IconProps) => (
+  <svg {...base(p, 2)}>
+    <path d="M3 8.5c2-2.2 4-2.2 6 0s4 2.2 6 0 4-2.2 6 0" />
+    <path d="M3 15.5c2-2.2 4-2.2 6 0s4 2.2 6 0 4-2.2 6 0" />
+  </svg>
+);

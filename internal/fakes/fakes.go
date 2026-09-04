@@ -24,6 +24,7 @@ type Catalog struct {
 	rowOf map[string]int
 	meta  map[string]core.TrackMeta
 	vecs  map[string]ports.Vectors
+	raw   [][2][]int8 // per row: quantized [audio, track], to mirror the real catalog
 }
 
 // CatalogTrack is one row to seed a fake Catalog with.
@@ -52,8 +53,23 @@ func NewCatalog(dim int, rows ...CatalogTrack) *Catalog {
 			PreviewURL: r.PreviewURL,
 		}
 		c.vecs[r.ID] = ports.Vectors{Audio: r.Audio, Track: r.Track}
+		c.raw = append(c.raw, [2][]int8{quantizeI8(r.Audio), quantizeI8(r.Track)})
 	}
 	return c
+}
+
+func quantizeI8(v []float32) []int8 {
+	out := make([]int8, len(v))
+	for i, x := range v {
+		if x > 1 {
+			x = 1
+		} else if x < -1 {
+			x = -1
+		}
+		q := math.Round(float64(x) * 127)
+		out[i] = int8(q)
+	}
+	return out
 }
 
 func (c *Catalog) Len() int { return len(c.ids) }
@@ -86,6 +102,13 @@ func (c *Catalog) VectorsByRow(row int) (ports.Vectors, bool) {
 func (c *Catalog) Vectors(id string) (ports.Vectors, bool) {
 	v, ok := c.vecs[id]
 	return v, ok
+}
+
+func (c *Catalog) RawRow(row int) (audio, track []int8, ok bool) {
+	if row < 0 || row >= len(c.raw) {
+		return nil, nil, false
+	}
+	return c.raw[row][0], c.raw[row][1], true
 }
 
 // Resolve does a naive case-insensitive substring match over the display string.

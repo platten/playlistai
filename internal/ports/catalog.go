@@ -37,6 +37,13 @@ type Catalog interface {
 	// Vectors returns the embedding vectors for an id.
 	Vectors(id string) (Vectors, bool)
 
+	// RawRow returns the row's two quantized (int8, scale 1/127) sub-vectors as
+	// views into the catalog's backing memory. The views are valid for the
+	// catalog's lifetime and must not be mutated. Used by the similarity engine
+	// to avoid materializing a float32 copy of the whole catalog. Returns
+	// nil, nil, false for an out-of-range row.
+	RawRow(row int) (audio, track []int8, ok bool)
+
 	// Resolve runs a token-substring search over "Artist - Title" (the same
 	// normalization as deej-ai.online-app's /search) and returns up to max
 	// matches, best-first.

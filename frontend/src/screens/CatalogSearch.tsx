@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API, type CatalogInfo, type TrackHit } from "../lib/api";
+import { API, type CatalogInfo, type SimilarResult, type TrackHit } from "../lib/api";
 import {
   Button,
   EmptyState,
@@ -7,11 +7,13 @@ import {
   Icon,
   LoadingRows,
   ProgressBar,
+  Slider,
   TrackRow,
   useProgress,
 } from "../components";
 
-/** Browse / search the embedding catalog, or download it on first launch. */
+/** Browse / search the embedding catalog, view "similar to X", or download the
+ *  catalog on first launch. */
 export function CatalogSearch() {
   const [info, setInfo] = useState<CatalogInfo | null>(null);
   const [query, setQuery] = useState("");
@@ -19,6 +21,11 @@ export function CatalogSearch() {
   const [searching, setSearching] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [similar, setSimilar] = useState<SimilarResult | null>(null);
+  const [creativity, setCreativity] = useState(0.5);
+  const [similarBusy, setSimilarBusy] = useState(false);
+
   const progress = useProgress("catalog");
   const debounce = useRef<number | undefined>(undefined);
 
@@ -49,6 +56,17 @@ export function CatalogSearch() {
     }, 180);
     return () => window.clearTimeout(debounce.current);
   }, [query, info?.loaded]);
+
+  const showSimilar = useCallback(
+    (id: string, c = creativity) => {
+      setSimilarBusy(true);
+      API.SimilarTracks(id, 30, c)
+        .then((r) => r && setSimilar(r))
+        .catch(() => undefined)
+        .finally(() => setSimilarBusy(false));
+    },
+    [creativity],
+  );
 
   const download = async () => {
     setDownloading(true);
@@ -109,30 +127,117 @@ export function CatalogSearch() {
       <div className="relative">
         <Icon.Search
           size={16}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint"
+          className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-faint"
         />
         <input
           autoFocus
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            if (e.target.value.trim()) setSimilar(null);
+          }}
           placeholder="Search by artist or title…"
           className="h-10 w-full rounded-control border border-line bg-surface pr-3 pl-9 text-[14px] text-text outline-none placeholder:text-faint focus:border-accent"
         />
       </div>
 
-      <div className="mt-3 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
-        {searching && hits.length === 0 ? (
-          <LoadingRows rows={5} />
-        ) : hits.length === 0 ? (
-          <EmptyState
-            title={query.trim() ? "No matches" : "Type to search"}
-            description={
-              query.trim() ? "Every word must appear in the artist or title." : undefined
-            }
+      {similar ? (
+        <SimilarPanel
+          result={similar}
+          creativity={creativity}
+          busy={similarBusy}
+          onCreativity={(c) => {
+            setCreativity(c);
+            showSimilar(similar.seed.id, c);
+          }}
+          onSimilar={(id) => showSimilar(id)}
+          onBack={() => setSimilar(null)}
+        />
+      ) : (
+        <div className="mt-3 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
+          {searching && hits.length === 0 ? (
+            <LoadingRows rows={5} />
+          ) : hits.length === 0 ? (
+            <EmptyState
+              title={query.trim() ? "No matches" : "Type to search"}
+              description={
+                query.trim() ? "Every word must appear in the artist or title." : undefined
+              }
+            />
+          ) : (
+            hits.map((h, i) => (
+              <TrackRow
+                key={h.id}
+                index={i + 1}
+                title={h.title}
+                artist={h.artist}
+                onSimilar={() => showSimilar(h.id)}
+              />
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SimilarPanel({
+  result,
+  creativity,
+  busy,
+  onCreativity,
+  onSimilar,
+  onBack,
+}: {
+  result: SimilarResult;
+  creativity: number;
+  busy: boolean;
+  onCreativity: (c: number) => void;
+  onSimilar: (id: string) => void;
+  onBack: () => void;
+}) {
+  const hits = result.hits ?? [];
+  return (
+    <div className="mt-3 flex min-h-0 flex-1 flex-col rounded-card border border-line bg-surface">
+      <div className="flex items-center gap-3 border-b border-line px-3 py-2.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="grid size-7 place-items-center rounded-md text-muted hover:bg-white/[0.05] hover:text-text"
+          aria-label="Back to search"
+        >
+          <Icon.ArrowLeft size={16} />
+        </button>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-medium">
+            Similar to {result.seed.artist} — {result.seed.title}
+          </div>
+        </div>
+        <div className="ml-auto w-[220px]">
+          <Slider
+            aria-label="Creativity"
+            value={creativity}
+            onValueChange={onCreativity}
+            format={(v) => v.toFixed(2)}
+            leftHint="playlists"
+            rightHint="sound"
           />
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        {busy && hits.length === 0 ? (
+          <LoadingRows rows={6} />
+        ) : hits.length === 0 ? (
+          <EmptyState title="Nothing close enough" />
         ) : (
           hits.map((h, i) => (
-            <TrackRow key={h.id} index={i + 1} title={h.title} artist={h.artist} />
+            <TrackRow
+              key={h.id}
+              index={i + 1}
+              title={h.title}
+              artist={h.artist}
+              onSimilar={() => onSimilar(h.id)}
+            />
           ))
         )}
       </div>

@@ -126,7 +126,10 @@ internal/
               over a normalized search column; search.go mirrors python normalize_search)
   dataset/    LoadManifest + Fetch: HTTP Range resume, sha256 verify, atomic rename,
               byte progress under op "catalog"
-  similarity/ [M4] brute/ — blended two-space cosine
+  similarity/ brute/ — brute-force blended-cosine engine over ports.Catalog;
+              reads int8 rows via RawRow (no float32 copy), precomputed per-row
+              inverse norms, bounded top-K heap, deterministic tie-break by row.
+              Matches deej-ai.online-app most_similar.
   reco/       [M5] deejai/ — port of backend/deejai.py
   intent/     [M6] llama/ rules/ schema/ modelmgr/
   enrich/     [M7] musicbrainz/
@@ -202,8 +205,10 @@ for the data and `python/convert_pickles.py`.
    `LoadingState`, `ErrorState`, `Slider`, `TrackRow`, `Button`). *(done)*
 3. **Catalog** — `catalogfmt.py` + `convert_pickles.py` + synthetic fixtures;
    `internal/catalog` mmap + SQLite loader + token search; `internal/dataset`
-   resumable checksummed download; `CatalogSearch` screen + bridge methods. *(current)*
-4. **Similarity** — `brute/` blended cosine; "tracks similar to X".
+   resumable checksummed download; `CatalogSearch` screen + bridge methods. *(done)*
+4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
+   (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
+   view with a creativity slider in the Catalog screen. *(current)*
 5. **Recommendation** — port the walk + `join_the_dots`; golden-parity test;
    live sliders.
 6. **IntentParser** — `rules`; GBNF schema; `llama` subprocess + `modelmgr`.
