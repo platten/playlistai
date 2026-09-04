@@ -26,10 +26,12 @@ export function PlaylistScreen({
   request,
   heading,
   onBack,
+  onReview,
 }: {
   request: BuildPlaylistRequest;
   heading: string;
   onBack: () => void;
+  onReview: (trackIds: string[], heading: string) => void;
 }) {
   const [creativity, setCreativity] = useState(request.creativity);
   const [noise, setNoise] = useState(request.noise);
@@ -110,6 +112,15 @@ export function PlaylistScreen({
           onClick={() => setRunSeed(Date.now())}
         >
           Regenerate
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          iconRight={<Icon.ArrowRight size={14} />}
+          disabled={tracks.length === 0}
+          onClick={() => onReview(tracks.map((t) => t.id), heading)}
+        >
+          Review &amp; export
         </Button>
       </div>
 

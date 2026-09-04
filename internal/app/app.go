@@ -10,6 +10,9 @@ import (
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/dataset"
+	"github.com/platten/playlistai/internal/enrich/musicbrainz"
+	"github.com/platten/playlistai/internal/export/soundiizcsv"
+	"github.com/platten/playlistai/internal/export/soundiizhandoff"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
@@ -28,8 +31,11 @@ type Container struct {
 	Sim     ports.SimilarityEngine
 	Reco    ports.RecommendationEngine
 	Enrich  ports.Enricher
-	Export  ports.Exporter
 	Preview ports.PreviewProvider
+
+	// exporters are the wired ports.Exporter implementations, looked up by
+	// Name() via Exporter(). Order is display order.
+	exporters []ports.Exporter
 
 	// parser can be swapped at runtime (rules → llama once a model is ready), so
 	// it is behind IntentParser() rather than a bare field. All fields below the
@@ -63,6 +69,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 
 	c := &Container{cfg: cfg, log: log}
+	c.wireEnrichExport()
 	c.chooseParser(ctx)
 
 	log.Info("container initialized",
@@ -77,6 +84,36 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 
 	return c, nil
+}
+
+// wireEnrichExport builds the MusicBrainz enricher and the two exporters. The
+// enricher needs an on-disk cache; if it cannot be opened the app runs without
+// enrichment (the review screen still works, just with no ISRC/metadata).
+func (c *Container) wireEnrichExport() {
+	mb, err := musicbrainz.New(musicbrainz.Config{
+		UserAgent: c.cfg.Enrich.UserAgent,
+		CachePath: c.cfg.Enrich.CachePath,
+		MirrorURL: c.cfg.Enrich.MirrorURL,
+		MinScore:  c.cfg.Enrich.MinScore,
+	})
+	if err != nil {
+		c.log.Warn("enricher unavailable; continuing without MusicBrainz", "err", err)
+	} else {
+		c.Enrich = mb
+		c.RegisterCloser(mb.Close)
+	}
+
+	c.exporters = []ports.Exporter{soundiizhandoff.New(), soundiizcsv.New()}
+}
+
+// Exporter returns the wired exporter with the given Name(), or false.
+func (c *Container) Exporter(name string) (ports.Exporter, bool) {
+	for _, e := range c.exporters {
+		if e.Name() == name {
+			return e, true
+		}
+	}
+	return nil, false
 }
 
 // chooseParser installs the rules parser immediately, then — if a model is
