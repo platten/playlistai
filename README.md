@@ -29,6 +29,13 @@ to point at a GPU-accelerated llama.cpp build instead if you want one (see
 [llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for
 CUDA/ROCm/Vulkan variants).
 
+**The recommendation catalog itself is not shipped, embedded, or hosted by
+this project.** A fresh install has nothing to recommend over until an
+operator converts and self-hosts one from the real Deej-AI dataset — the
+tooling is written and tested against synthetic fixtures, but the ~1.4 GB
+source pickles were never fetched and the conversion was never run for real.
+See [`docs/CATALOG.md`](docs/CATALOG.md).
+
 ## Develop
 
 ```bash
@@ -51,5 +58,6 @@ needs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`.
 GPL-3.0. The recommendation technique is ported from
 [teticio/Deej-AI](https://github.com/teticio/Deej-AI) and
 [teticio/deej-ai.online-app](https://github.com/teticio/deej-ai.online-app)
-(both GPL-3.0), and the bundled embedding catalog is derived from Deej-AI's
+(both GPL-3.0), and the embedding catalog it recommends over (self-hosted —
+see [`docs/CATALOG.md`](docs/CATALOG.md)) is derived from Deej-AI's
 pre-computed datasets. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
