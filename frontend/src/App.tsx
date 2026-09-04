@@ -5,9 +5,10 @@ import type { BuildPlaylistRequest } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
+import { SettingsScreen } from "./screens/SettingsScreen";
 import { Gallery } from "./screens/Gallery";
 
-type Screen = "generate" | "catalog" | "playlist" | "components";
+type Screen = "generate" | "catalog" | "playlist" | "settings" | "components";
 
 interface PlaylistState {
   request: BuildPlaylistRequest;
@@ -66,6 +67,19 @@ export default function App() {
         <Button size="sm" variant="ghost" onClick={cycle}>
           theme: {choice}
         </Button>
+        <button
+          type="button"
+          onClick={() => setScreen("settings")}
+          aria-label="Settings"
+          className={
+            "grid size-8 place-items-center rounded-md " +
+            (screen === "settings"
+              ? "bg-accent-quiet text-accent"
+              : "text-muted hover:bg-white/[0.05] hover:text-text")
+          }
+        >
+          <Icon.Gear size={16} />
+        </button>
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
@@ -87,6 +101,7 @@ export default function App() {
           ) : (
             <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
           ))}
+        {screen === "settings" && <SettingsScreen />}
         {screen === "components" && <Gallery />}
       </main>
     </div>

@@ -16,7 +16,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// ProgressOp is the op label used in progress reports.
+// ProgressOp is the op label used by Fetch's progress reports.
 const ProgressOp = "catalog"
 
 const partSuffix = ".part"
@@ -57,10 +57,11 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 		}
 
 		p.Report(ProgressOp, done, total, "downloading "+f.Name)
-		n, err := downloadFile(ctx, m.fileURL(f), target, f, func(fileDone int64) {
-			p.Report(ProgressOp, done+fileDone, total, f.Name)
+		base := done
+		n, err := Download(ctx, m.fileURL(f), target, f.Size, f.SHA256, func(fileDone, _ int64) {
+			p.Report(ProgressOp, base+fileDone, total, f.Name)
 		})
-		done += n
+		done = base + n
 		if err != nil {
 			return fmt.Errorf("fetch %s: %w", f.Name, err)
 		}
@@ -70,27 +71,32 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 	return nil
 }
 
-// downloadFile fetches url into target (via target+".part"), resuming from any
-// existing part file. Returns the total bytes of the file on success.
-func downloadFile(ctx context.Context, url, target string, f File, onProgress func(int64)) (int64, error) {
+// Download fetches url into target (via target+".part"), resuming from any
+// existing part file via an HTTP range request. size and sha256hex are optional
+// integrity checks — pass 0 / "" to skip. onProgress, when non-nil, is called
+// with (bytesDone, expectedTotal); expectedTotal is size, or -1 when unknown.
+// Returns the total size of the file on success.
+func Download(ctx context.Context, url, target string, size int64, sha256hex string, onProgress func(done, total int64)) (int64, error) {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return 0, err
+	}
 	part := target + partSuffix
+	verify := sha256hex != ""
 
 	h := sha256.New()
 	var have int64
-	if fi, err := os.Stat(part); err == nil && fi.Size() > 0 && fi.Size() < f.Size {
-		// Feed the existing prefix through the hash so we can verify at the end.
-		existing, err := os.Open(part) //nolint:gosec // path derived from dir + manifest name
-		if err != nil {
-			return 0, err
+	if fi, err := os.Stat(part); err == nil && fi.Size() > 0 && (size == 0 || fi.Size() < size) {
+		existing, oerr := os.Open(part) //nolint:gosec // path derived from a validated target dir
+		if oerr != nil {
+			return 0, oerr
 		}
-		have, err = io.Copy(h, existing)
+		have, oerr = io.Copy(h, existing)
 		existing.Close()
-		if err != nil {
-			return 0, err
+		if oerr != nil {
+			return 0, oerr
 		}
-	} else if err == nil && fi.Size() >= f.Size {
+	} else if err == nil && size > 0 && fi.Size() >= size {
 		_ = os.Remove(part) // stale / oversized — start over
-		have = 0
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -107,12 +113,16 @@ func downloadFile(ctx context.Context, url, target string, f File, onProgress fu
 	}
 	defer resp.Body.Close()
 
+	total := size
+	if total == 0 {
+		total = -1
+	}
+
 	var out *os.File
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
 		out, err = os.OpenFile(part, os.O_WRONLY|os.O_APPEND, 0o644) //nolint:gosec
 	case http.StatusOK:
-		// Server ignored the range; restart cleanly.
 		have = 0
 		h.Reset()
 		out, err = os.Create(part) //nolint:gosec
@@ -124,28 +134,34 @@ func downloadFile(ctx context.Context, url, target string, f File, onProgress fu
 	}
 	defer out.Close()
 
-	written, err := copyHashed(out, h, resp.Body, have, onProgress)
-	total := have + written
+	written, err := copyHashed(out, h, resp.Body, have, func(done int64) {
+		if onProgress != nil {
+			onProgress(done, total)
+		}
+	})
+	got := have + written
 	if err != nil {
-		return total, err
+		return got, err
 	}
 
-	if f.Size > 0 && total != f.Size {
-		return total, fmt.Errorf("size %d, expected %d", total, f.Size)
+	if size > 0 && got != size {
+		return got, fmt.Errorf("size %d, expected %d", got, size)
 	}
-	if sum := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(sum, f.SHA256) {
-		_ = os.Remove(part)
-		return total, fmt.Errorf("sha256 %s, expected %s", sum, f.SHA256)
+	if verify {
+		if sum := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(sum, sha256hex) {
+			_ = os.Remove(part)
+			return got, fmt.Errorf("sha256 %s, expected %s", sum, sha256hex)
+		}
 	}
 
 	if err := out.Sync(); err != nil {
-		return total, err
+		return got, err
 	}
 	out.Close()
 	if err := os.Rename(part, target); err != nil {
-		return total, err
+		return got, err
 	}
-	return total, nil
+	return got, nil
 }
 
 func copyHashed(dst io.Writer, h hash.Hash, src io.Reader, startAt int64, onProgress func(int64)) (int64, error) {
@@ -179,6 +195,9 @@ func verifyFile(path string, size int64, wantHex string) error {
 	}
 	if size > 0 && fi.Size() != size {
 		return fmt.Errorf("size %d, expected %d", fi.Size(), size)
+	}
+	if wantHex == "" {
+		return nil
 	}
 	fp, err := os.Open(path) //nolint:gosec
 	if err != nil {

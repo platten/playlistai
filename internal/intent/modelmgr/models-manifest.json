@@ -1,0 +1,33 @@
+{
+  "note": "Curated GGUF models for the local intent parser. size/sha256 are left empty until pinned; downloads proceed without an integrity check and log a warning (tracked for the packaging milestone).",
+  "models": [
+    {
+      "id": "llama-3.2-3b-instruct-q4km",
+      "label": "Llama 3.2 3B Instruct (Q4_K_M)",
+      "params": "3B",
+      "quant": "Q4_K_M",
+      "size_approx": 2019377152,
+      "size": 0,
+      "sha256": "",
+      "url": "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+      "license_name": "Llama 3.2 Community License",
+      "license_url": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct/blob/main/LICENSE.txt",
+      "ram_gb": 4,
+      "recommended": true
+    },
+    {
+      "id": "qwen2.5-3b-instruct-q4km",
+      "label": "Qwen2.5 3B Instruct (Q4_K_M)",
+      "params": "3B",
+      "quant": "Q4_K_M",
+      "size_approx": 1929355264,
+      "size": 0,
+      "sha256": "",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-3B-Instruct-GGUF/resolve/main/Qwen2.5-3B-Instruct-Q4_K_M.gguf",
+      "license_name": "Qwen Research License",
+      "license_url": "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct/blob/main/LICENSE",
+      "ram_gb": 4,
+      "recommended": false
+    }
+  ]
+}
