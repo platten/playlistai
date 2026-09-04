@@ -1,0 +1,184 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #93a0ff; text-decoration: none; }
+    a:hover { color: #b3bcff; }
+    ::selection { background: rgba(124,140,255,0.30); }
+    .pai-root {
+      width: 1180px; height: 800px; overflow: hidden;
+      background:
+        radial-gradient(1100px 520px at 78% -8%, rgba(124,140,255,0.10), transparent 60%),
+        #0f0f12;
+      color: #eceef2;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5;
+      display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .pai-mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .pai-bar {
+      display: flex; align-items: center; gap: 12px;
+      height: 52px; padding: 0 20px; flex: none;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: rgba(20,20,25,0.6);
+    }
+    .pai-brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: 0.01em; }
+    .pai-diamond { width: 15px; height: 15px; color: #7c8cff; }
+    .pai-spacer { flex: 1; }
+    .pai-pill {
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 28px; padding: 0 11px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.03);
+      color: #b9b9c4; font-size: 12.5px;
+    }
+    .pai-dot { width: 6px; height: 6px; border-radius: 999px; background: #58c093; box-shadow: 0 0 0 3px rgba(88,192,147,0.16); }
+    .pai-iconbtn {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      border-radius: 8px; color: #9a9aa7;
+      border: 1px solid transparent;
+    }
+    .pai-iconbtn:hover { color: #eceef2; border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }
+
+    .pai-stage {
+      flex: 1; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 22px; padding: 40px 40px 34px;
+    }
+    .pai-h1 { font-size: 27px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+    .pai-sub { margin: -12px 0 0; color: #9a9aa7; font-size: 14.5px; }
+
+    .pai-composer {
+      width: 720px; border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: linear-gradient(180deg, #17171d, #131318);
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 50px -24px rgba(0,0,0,0.7);
+      overflow: hidden;
+    }
+    .pai-composer-in { padding: 18px 18px 16px; }
+    .pai-prompt {
+      font-family: inherit; font-size: 16px; line-height: 1.55; color: #eceef2;
+    }
+    .pai-prompt .ph { color: #6a6a76; }
+    .pai-composer-foot {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.07);
+      background: rgba(255,255,255,0.015);
+    }
+    .pai-hint { color: #63636f; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .pai-btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      height: 36px; padding: 0 15px; border-radius: 9px;
+      font-family: inherit; font-size: 13.5px; font-weight: 500;
+      border: 1px solid transparent; cursor: pointer;
+    }
+    .pai-btn--primary { background: #7c8cff; color: #0d0d14; font-weight: 600; }
+    .pai-btn--primary:hover { background: #93a0ff; }
+    .pai-btn--ghost { background: rgba(255,255,255,0.04); color: #cfcfd8; border-color: rgba(255,255,255,0.12); }
+    .pai-btn--ghost:hover { background: rgba(255,255,255,0.07); color: #fff; }
+
+    .pai-intent { width: 720px; }
+    .pai-intent-head {
+      display: flex; align-items: center; gap: 8px;
+      color: #8a8a97; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 10px;
+    }
+    .pai-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pai-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 30px; padding: 0 11px; border-radius: 8px;
+      background: rgba(255,255,255,0.045); border: 1px solid rgba(255,255,255,0.09);
+      font-size: 12.5px; color: #d4d4dd;
+    }
+    .pai-chip .k { color: #7f7f8c; }
+    .pai-chip--seed { background: rgba(124,140,255,0.14); border-color: rgba(124,140,255,0.34); color: #cfd4ff; }
+    .pai-notes { margin-top: 12px; color: #8a8a97; font-size: 12.5px; font-style: italic; }
+    .pai-foot {
+      flex: none; height: 40px; display: flex; align-items: center; justify-content: center; gap: 7px;
+      color: #55555f; font-size: 12px; border-top: 1px solid rgba(255,255,255,0.05);
+    }
+  </style>
+</helmet>
+
+<div class="pai-root">
+  <div class="pai-bar">
+    <div class="pai-brand">
+      <svg class="pai-diamond" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+      Playlist AI
+    </div>
+    <div class="pai-spacer" style="flex:1"></div>
+    <span class="pai-pill"><span class="pai-dot"></span> Local model ready</span>
+    <div class="pai-iconbtn" title="Settings">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 8 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.31.22.66.22 1s-.08.69-.22 1z"/></svg>
+    </div>
+  </div>
+
+  <div class="pai-stage">
+    <div style="text-align:center; display:flex; flex-direction:column; gap:20px; align-items:center;">
+      <h1 class="pai-h1">What do you want to hear?</h1>
+      <p class="pai-sub">Describe it in plain language. The model turns it into an intent &mdash; it never picks the songs.</p>
+    </div>
+
+    <div class="pai-composer">
+      <div class="pai-composer-in">
+        <div class="pai-prompt">upbeat but instrumental tracks like <span style="color:#cfd4ff">Justice</span>, leaning 90s, no vocals &mdash; about 25 songs<span class="ph">, keep it a little unpredictable</span></div>
+      </div>
+      <div class="pai-composer-foot">
+        <span class="pai-hint">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M3 12h18"/></svg>
+          Enter to parse &middot; Shift+Enter for a new line
+        </span>
+        <div style="flex:1"></div>
+        <button class="pai-btn pai-btn--ghost">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9l-3.6 3 1 5-3.9-2.6L8.1 17l1-5L5.5 9l4.6-1.4z"/></svg>
+          Surprise me
+        </button>
+        <button class="pai-btn pai-btn--primary">
+          Generate playlist
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="pai-intent">
+      <div class="pai-intent-head">
+        Parsed intent
+        <span style="font-size:11px; letter-spacing:0.04em; color:#5c5c67; text-transform:none;">&mdash; editable before you generate</span>
+      </div>
+      <div class="pai-chips">
+        <span class="pai-chip pai-chip--seed">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+          seed <span class="pai-mono">Justice</span>
+        </span>
+        <span class="pai-chip"><span class="k">years</span> <span class="pai-mono">1990&ndash;1999</span></span>
+        <span class="pai-chip"><span class="k">count</span> <span class="pai-mono">25</span></span>
+        <span class="pai-chip"><span class="k">mode</span> similar walk</span>
+        <span class="pai-chip"><span class="k">creativity</span> <span class="pai-mono">0.62</span></span>
+        <span class="pai-chip"><span class="k">noise</span> <span class="pai-mono">0.30</span></span>
+        <span class="pai-chip">instrumental only</span>
+        <span class="pai-chip">no back-to-back artist</span>
+      </div>
+      <div class="pai-notes">&ldquo;Energetic, instrumental, 90s-leaning electronic with a bit of drift.&rdquo;</div>
+    </div>
+  </div>
+
+  <div class="pai-foot">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+    Nothing leaves your machine until you export
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":800}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

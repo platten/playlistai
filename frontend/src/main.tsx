@@ -1,6 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { initTheme } from "./design/theme";
+import "./design/tokens.css";
+
+initTheme();
 
 const root = document.getElementById("root");
 if (!root) {

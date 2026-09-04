@@ -1,0 +1,212 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #93a0ff; text-decoration: none; }
+    a:hover { color: #b3bcff; }
+    ::selection { background: rgba(124,140,255,0.30); }
+    .pai-root {
+      width: 1180px; height: 800px; overflow: hidden;
+      background: #0f0f12; color: #eceef2;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5; display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .pai-mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .pai-bar {
+      display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px; flex: none;
+      border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(20,20,25,0.6);
+    }
+    .pai-diamond { width: 15px; height: 15px; color: #7c8cff; }
+    .pai-crumb { color: #63636f; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .pai-crumb b { color: #cfcfd8; font-weight: 500; }
+
+    .pai-body { flex: 1; display: flex; min-height: 0; }
+    .pai-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .pai-head { padding: 18px 24px 12px; }
+    .pai-head h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+    .pai-head p { margin: 0; color: #8a8a97; font-size: 12.5px; }
+    .pai-progress { margin-top: 12px; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.09); overflow: hidden; }
+    .pai-progress .bar { height: 100%; width: 100%; background: linear-gradient(90deg,#7c8cff,#58c093); }
+
+    .pai-table { flex: 1; overflow: hidden; padding: 6px 14px 14px; }
+    .pai-tr {
+      display: grid; grid-template-columns: 1.15fr 1.35fr 150px 96px 92px;
+      align-items: center; gap: 14px; padding: 11px 12px; border-radius: 10px;
+    }
+    .pai-tr.h { color: #7f7f8c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; padding-bottom: 6px; }
+    .pai-tr:not(.h):hover { background: rgba(255,255,255,0.03); }
+    .pai-tr .src .t { font-weight: 500; }
+    .pai-tr .src .a { color: #8a8a97; font-size: 12px; }
+    .pai-match { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .pai-match .txt { min-width: 0; }
+    .pai-match .txt .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pai-match .txt .a { color: #8a8a97; font-size: 12px; }
+    .pai-mk { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 999px; }
+    .pai-mk.ok { background: rgba(88,192,147,0.16); color: #58c093; }
+    .pai-mk.low { background: rgba(224,164,74,0.16); color: #e0a44a; }
+    .pai-mk.none { background: rgba(224,106,106,0.14); color: #e06a6a; }
+    .pai-isrc { font-size: 12.5px; color: #c7c7d1; }
+    .pai-isrc.dim { color: #55555f; }
+    .pai-conf { display: flex; align-items: center; gap: 8px; }
+    .pai-conf .track { flex: 1; height: 5px; border-radius: 999px; background: rgba(255,255,255,0.10); overflow: hidden; }
+    .pai-conf .track .f { height: 100%; }
+    .pai-conf .n { font-size: 12px; width: 22px; text-align: right; color: #9a9aa7; }
+    .pai-act button {
+      height: 27px; padding: 0 10px; border-radius: 8px; font-family: inherit; font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #cfcfd8;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .pai-act .confirm { color: #58c093; border: none; background: transparent; }
+
+    .pai-side {
+      width: 344px; flex: none; border-left: 1px solid rgba(255,255,255,0.07);
+      background: rgba(22,22,27,0.5); padding: 20px 20px; display: flex; flex-direction: column; gap: 18px;
+    }
+    .pai-side h3 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8a97; }
+    .pai-inp { display: flex; flex-direction: column; gap: 6px; }
+    .pai-inp label { font-size: 12px; color: #9a9aa7; }
+    .pai-inp .box {
+      height: 34px; padding: 0 11px; border-radius: 8px; display: flex; align-items: center;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #eceef2; font-size: 13px;
+    }
+    .pai-summary { display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: #9a9aa7; }
+    .pai-summary .r { display: flex; justify-content: space-between; }
+    .pai-summary .r b { color: #d4d4dd; font-weight: 500; }
+    .pai-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+      height: 40px; padding: 0 15px; border-radius: 9px; font-family: inherit; font-size: 13.5px;
+      font-weight: 500; border: 1px solid transparent; cursor: pointer;
+    }
+    .pai-btn--primary { background: #7c8cff; color: #0d0d14; font-weight: 600; }
+    .pai-btn--primary:hover { background: #93a0ff; }
+    .pai-btn--ghost { background: rgba(255,255,255,0.04); color: #cfcfd8; border-color: rgba(255,255,255,0.12); }
+    .pai-note { font-size: 11.5px; color: #63636f; display: flex; gap: 6px; }
+  </style>
+</helmet>
+
+<div class="pai-root">
+  <div class="pai-bar">
+    <svg class="pai-diamond" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+    <div class="pai-crumb">Playlist <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg> <b>Review &amp; export</b></div>
+  </div>
+
+  <div class="pai-body">
+    <div class="pai-main">
+      <div class="pai-head">
+        <h2>Review matches</h2>
+        <p>22 of 24 tracks matched on MusicBrainz &middot; ISRCs make the CSV import exact; the browser handoff matches on title + artist &middot; low-confidence rows are flagged for a look</p>
+        <div class="pai-progress"><div class="bar"></div></div>
+      </div>
+
+      <div class="pai-table">
+        <div class="pai-tr h">
+          <div>Your track</div><div>MusicBrainz match</div><div>ISRC</div><div>Confidence</div><div></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Genesis</div><div class="a">Justice</div></div>
+          <div class="pai-match"><span class="pai-mk ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span><div class="txt"><div class="t">Genesis</div><div class="a">Justice &middot; &dagger; (2007)</div></div></div>
+          <div class="pai-isrc pai-mono">FRV840700010</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:97%; background:#58c093"></div></div><span class="n">97</span></div>
+          <div class="pai-act"><button class="confirm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg> ok</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Rerun</div><div class="a">SebastiAn</div></div>
+          <div class="pai-match"><span class="pai-mk ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span><div class="txt"><div class="t">Rerun</div><div class="a">SebastiAn &middot; Total (2011)</div></div></div>
+          <div class="pai-isrc pai-mono">FRUM71100338</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:93%; background:#58c093"></div></div><span class="n">93</span></div>
+          <div class="pai-act"><button class="confirm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg> ok</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Roygbiv</div><div class="a">Boards of Canada</div></div>
+          <div class="pai-match"><span class="pai-mk low"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 8v5M12 16h.01"/></svg></span><div class="txt"><div class="t">Roygbiv</div><div class="a">Boards of Canada &middot; 3 releases &mdash; which?</div></div></div>
+          <div class="pai-isrc pai-mono dim">pick a release</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:61%; background:#e0a44a"></div></div><span class="n">61</span></div>
+          <div class="pai-act"><button><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg> Fix</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Windowlicker</div><div class="a">Aphex Twin</div></div>
+          <div class="pai-match"><span class="pai-mk ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span><div class="txt"><div class="t">Windowlicker</div><div class="a">Aphex Twin &middot; Windowlicker (1999)</div></div></div>
+          <div class="pai-isrc pai-mono">GBCEL9900116</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:99%; background:#58c093"></div></div><span class="n">99</span></div>
+          <div class="pai-act"><button class="confirm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg> ok</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Get Myself to You</div><div class="a">The Avalanches</div></div>
+          <div class="pai-match"><span class="pai-mk none"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></span><div class="txt"><div class="t" style="color:#9a9aa7">No confident match</div><div class="a">try a manual search</div></div></div>
+          <div class="pai-isrc pai-mono dim">&mdash;</div>
+          <div class="pai-conf"><div class="track"></div><span class="n">&mdash;</span></div>
+          <div class="pai-act"><button><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg> Search</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Midnight City</div><div class="a">M83</div></div>
+          <div class="pai-match"><span class="pai-mk ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span><div class="txt"><div class="t">Midnight City</div><div class="a">M83 &middot; Hurry Up, We&rsquo;re Dreaming (2011)</div></div></div>
+          <div class="pai-isrc pai-mono">FR6V81100014</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:95%; background:#58c093"></div></div><span class="n">95</span></div>
+          <div class="pai-act"><button class="confirm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg> ok</button></div>
+        </div>
+
+        <div class="pai-tr">
+          <div class="src"><div class="t">Star Guitar</div><div class="a">The Chemical Brothers</div></div>
+          <div class="pai-match"><span class="pai-mk ok"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span><div class="txt"><div class="t">Star Guitar</div><div class="a">The Chemical Brothers &middot; Come with Us (2002)</div></div></div>
+          <div class="pai-isrc pai-mono">GBAA02100544</div>
+          <div class="pai-conf"><div class="track"><div class="f" style="width:90%; background:#58c093"></div></div><span class="n">90</span></div>
+          <div class="pai-act"><button class="confirm"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg> ok</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pai-side">
+      <h3>Export</h3>
+      <div class="pai-inp">
+        <label>Playlist name</label>
+        <div class="box">Playlist AI &mdash; Justice walk</div>
+      </div>
+
+      <div class="pai-summary">
+        <div class="r"><span>Tracks</span><b>24</b></div>
+        <div class="r"><span>With ISRC</span><b>22</b></div>
+        <div class="r"><span>Needs a look</span><b style="color:#e0a44a">2</b></div>
+      </div>
+
+      <button class="pai-btn pai-btn--primary">
+        Open Soundiiz handoff
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>
+      </button>
+      <button class="pai-btn pai-btn--ghost">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M8 13h8M8 17h5M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+        Download CSV
+      </button>
+
+      <div class="pai-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        The handoff opens Soundiiz in your browser with the title and track names only. It matches the catalog and writes to Qobuz &mdash; no account here, no credentials touch this app.
+      </div>
+      <div class="pai-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5M9 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+        CSV carries the ISRCs above for an exact import.
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":800}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

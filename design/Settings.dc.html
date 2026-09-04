@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    a { color: #93a0ff; text-decoration: none; }
+    a:hover { color: #b3bcff; }
+    ::selection { background: rgba(124,140,255,0.30); }
+    .pai-root {
+      width: 1180px; height: 800px; overflow: hidden;
+      background: #0f0f12; color: #eceef2;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+      font-size: 14px; line-height: 1.5; display: flex; flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+    .pai-mono { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+    .pai-bar {
+      display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px; flex: none;
+      border-bottom: 1px solid rgba(255,255,255,0.07); background: rgba(20,20,25,0.6);
+    }
+    .pai-diamond { width: 15px; height: 15px; color: #7c8cff; }
+    .pai-crumb { color: #63636f; font-size: 13px; }
+    .pai-crumb b { color: #cfcfd8; font-weight: 500; }
+
+    .pai-body { flex: 1; display: flex; min-height: 0; }
+    .pai-nav { width: 208px; flex: none; border-right: 1px solid rgba(255,255,255,0.07); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; }
+    .pai-navitem {
+      display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border-radius: 8px;
+      color: #9a9aa7; font-size: 13px;
+    }
+    .pai-navitem svg { width: 16px; height: 16px; }
+    .pai-navitem:hover { color: #eceef2; background: rgba(255,255,255,0.035); }
+    .pai-navitem.sel { color: #cfd4ff; background: rgba(124,140,255,0.12); }
+
+    .pai-pane { flex: 1; overflow: hidden; padding: 22px 30px; }
+    .pai-pane h2 { margin: 0 0 2px; font-size: 16px; font-weight: 600; }
+    .pai-pane .lede { color: #8a8a97; font-size: 12.5px; margin: 0 0 20px; }
+
+    .pai-sec { padding: 16px 0; border-top: 1px solid rgba(255,255,255,0.06); }
+    .pai-sec:first-of-type { border-top: none; padding-top: 4px; }
+    .pai-sec h3 { margin: 0 0 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #8a8a97; }
+    .pai-grid { display: grid; grid-template-columns: 150px 1fr; gap: 12px 18px; align-items: center; }
+    .pai-grid .k { color: #9a9aa7; font-size: 12.5px; }
+    .pai-val { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .pai-input {
+      flex: 1; min-width: 0; height: 32px; padding: 0 11px; border-radius: 8px; font-size: 12.5px;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #eceef2;
+      display: flex; align-items: center;
+    }
+    .pai-input.pw { letter-spacing: 2px; color: #9a9aa7; }
+    .pai-mini {
+      height: 28px; padding: 0 10px; border-radius: 7px; font-family: inherit; font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); color: #cfcfd8;
+    }
+    .pai-tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(88,192,147,0.16); color: #58c093; }
+
+    .pai-seg { display: inline-flex; padding: 3px; border-radius: 9px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); }
+    .pai-seg button {
+      height: 26px; padding: 0 12px; border-radius: 6px; font-family: inherit; font-size: 12px;
+      border: none; background: transparent; color: #9a9aa7;
+    }
+    .pai-seg button.on { background: #7c8cff; color: #0d0d14; font-weight: 600; }
+
+    .pai-slider { width: 220px; position: relative; height: 6px; border-radius: 999px; background: rgba(255,255,255,0.10); }
+    .pai-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: #7c8cff; }
+    .pai-slider .knob { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 999px; background: #eef0ff; transform: translate(-50%,-50%); box-shadow: 0 0 0 4px rgba(124,140,255,0.25); }
+    .pai-hint { color: #63636f; font-size: 11.5px; margin-top: 6px; }
+  </style>
+</helmet>
+
+<div class="pai-root">
+  <div class="pai-bar">
+    <svg class="pai-diamond" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l10 10-10 10L2 12z"/></svg>
+    <div class="pai-crumb"><b>Settings</b></div>
+  </div>
+
+  <div class="pai-body">
+    <div class="pai-nav">
+      <div class="pai-navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg> AI model</div>
+      <div class="pai-navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg> Catalog</div>
+      <div class="pai-navitem sel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M3 12h18M12 3v18"/></svg> Enrichment</div>
+      <div class="pai-navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Export</div>
+      <div class="pai-navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12s3.5-7 9-7 9 7 9 7-3.5 7-9 7-9-7-9-7z"/><circle cx="12" cy="12" r="2.5"/></svg> Preview</div>
+      <div class="pai-navitem"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg> About</div>
+    </div>
+
+    <div class="pai-pane">
+      <h2>Enrichment</h2>
+      <p class="lede">How tracks are matched to ISRCs before export.</p>
+
+      <div class="pai-sec">
+        <h3>MusicBrainz</h3>
+        <div class="pai-grid">
+          <div class="k">User-Agent</div>
+          <div class="pai-val"><span class="pai-input pai-mono">PlaylistAI/0.1 ( https://github.com/platten/playlistai )</span></div>
+
+          <div class="k">Rate limit</div>
+          <div class="pai-val" style="color:#9a9aa7; font-size:12.5px">1 request / second &middot; <span style="color:#63636f">required by MusicBrainz; not adjustable</span></div>
+
+          <div class="k">Cache</div>
+          <div class="pai-val"><span class="pai-input pai-mono" style="color:#9a9aa7">~/.config/playlist-ai/musicbrainz-cache.sqlite</span> <button class="pai-mini">Clear</button></div>
+
+          <div class="k">Mirror URL</div>
+          <div class="pai-val"><span class="pai-input" style="color:#63636f">optional &mdash; a self-hosted MusicBrainz mirror</span></div>
+        </div>
+      </div>
+
+      <div class="pai-sec">
+        <h3>Match confidence</h3>
+        <div class="pai-grid">
+          <div class="k">Flag below</div>
+          <div class="pai-val">
+            <div class="pai-slider"><div class="fill" style="width:85%"></div><div class="knob" style="left:85%"></div></div>
+            <span class="pai-mono" style="color:#cfd4ff">85</span>
+          </div>
+        </div>
+        <div class="pai-hint">Rows scoring under this are surfaced for review on the export screen. ISRC, when present, is treated as authoritative.</div>
+      </div>
+
+      <div class="pai-sec">
+        <h3>Export</h3>
+        <div class="pai-grid">
+          <div class="k">Soundiiz</div>
+          <div class="pai-val" style="font-size:12px; color:#9a9aa7">Opens in your browser &mdash; Soundiiz does the catalog matching and writes to your service. Nothing to set up here.</div>
+          <div class="k">CSV</div>
+          <div class="pai-val" style="font-size:12px; color:#9a9aa7">Downloaded files include ISRC, title, artist, album &mdash; ready for Soundiiz&rsquo;s file import.</div>
+        </div>
+      </div>
+
+      <div class="pai-sec">
+        <h3>Preview audio</h3>
+        <div class="pai-grid">
+          <div class="k">Provider</div>
+          <div class="pai-val">
+            <div class="pai-seg">
+              <button class="on">Deezer</button>
+              <button>Spotify CDN</button>
+              <button>Off</button>
+            </div>
+          </div>
+        </div>
+        <div class="pai-hint">Deezer&rsquo;s public search resolves a 30-second preview with no API key. Spotify CDN uses the preview URL bundled in the catalog (often empty).</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1180,"height":800}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

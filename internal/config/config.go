@@ -20,7 +20,6 @@ type Config struct {
 	Catalog CatalogConfig `toml:"catalog"`
 	AI      AIConfig      `toml:"ai"`
 	Enrich  EnrichConfig  `toml:"enrich"`
-	Export  ExportConfig  `toml:"export"`
 	Preview PreviewConfig `toml:"preview"`
 }
 
@@ -55,12 +54,6 @@ type EnrichConfig struct {
 	// MinScore is the match-score threshold below which a row is flagged for
 	// user review (0..100).
 	MinScore int `toml:"min_score"`
-}
-
-// ExportConfig holds export destination credentials.
-type ExportConfig struct {
-	// SoundiizToken enables the Soundiiz API exporter. Empty => CSV only.
-	SoundiizToken string `toml:"soundiiz_token"`
 }
 
 // PreviewConfig selects the preview backend.
