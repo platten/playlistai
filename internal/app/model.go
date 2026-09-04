@@ -47,7 +47,9 @@ func (c *Container) SetModel(ctx context.Context, modelPath, modelID string) err
 	}
 
 	c.setLlama(p, modelPath, modelID)
-	if serr := (config.Prefs{ModelPath: modelPath, ModelID: modelID}).Save(c.cfg.DataDir); serr != nil {
+	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs.ModelPath, prefs.ModelID = modelPath, modelID
+	if serr := prefs.Save(c.cfg.DataDir); serr != nil {
 		c.log.Warn("could not persist model choice", "err", serr)
 	}
 	c.log.Info("model set", "path", modelPath, "id", modelID)
@@ -72,7 +74,9 @@ func (c *Container) DownloadModel(ctx context.Context, id string, p ports.Progre
 // ClearModel stops llama-server and reverts to the rules parser.
 func (c *Container) ClearModel() error {
 	c.setLlama(nil, "", "")
-	if serr := (config.Prefs{}).Save(c.cfg.DataDir); serr != nil {
+	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs.ModelPath, prefs.ModelID = "", ""
+	if serr := prefs.Save(c.cfg.DataDir); serr != nil {
 		c.log.Warn("could not persist model choice", "err", serr)
 	}
 	c.log.Info("model cleared; using rules parser")

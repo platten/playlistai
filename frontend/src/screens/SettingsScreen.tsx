@@ -7,6 +7,12 @@ function fmtGB(bytes: number): string {
   return (bytes / 1e9).toFixed(1) + " GB";
 }
 
+const PREVIEW_OPTIONS: { id: string; label: string }[] = [
+  { id: "deezer", label: "Deezer" },
+  { id: "spotify", label: "Bundled only" },
+  { id: "off", label: "Off" },
+];
+
 /** Settings — currently just the AI-model panel. */
 export function SettingsScreen() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
@@ -15,6 +21,7 @@ export function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [filePath, setFilePath] = useState("");
   const progress = useProgress("model");
+  const [previewProvider, setPreviewProviderState] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     API.GetModelStatus()
@@ -27,7 +34,15 @@ export function SettingsScreen() {
     API.GetModelCatalog()
       .then((c) => setCatalog(c ?? []))
       .catch(() => setCatalog([]));
+    API.GetPreviewProviderName()
+      .then((p) => setPreviewProviderState(p || "deezer"))
+      .catch(() => setPreviewProviderState("deezer"));
   }, [refresh]);
+
+  const choosePreview = (id: string) => {
+    setPreviewProviderState(id);
+    API.SetPreviewProvider(id).catch(() => undefined);
+  };
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     setBusy(key);
@@ -112,6 +127,15 @@ export function SettingsScreen() {
                         recommended
                       </span>
                     )}
+                    {m.verified && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-pill bg-good/10 px-1.5 py-px text-[10.5px] text-good"
+                        title="Size and SHA-256 are pinned; the download is checked against them."
+                      >
+                        <Icon.Lock size={9} />
+                        verified
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11.5px] text-faint">
                     {m.params} · {m.quant} · ~{fmtGB(m.sizeApprox)} · ~{m.ramGb} GB RAM ·{" "}
@@ -163,6 +187,33 @@ export function SettingsScreen() {
           The model only translates your prompt into an intent — it never picks the songs.
           Downloads run once and stay on your machine; you accept the model's license when
           you download it.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
+          Track previews
+        </h2>
+        <div className="flex gap-2">
+          {PREVIEW_OPTIONS.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => choosePreview(o.id)}
+              className={
+                "h-8 rounded-control border px-3 text-[12.5px] transition-colors " +
+                (previewProvider === o.id
+                  ? "border-accent/50 bg-accent-quiet text-accent"
+                  : "border-line bg-surface text-muted hover:border-line-strong hover:text-text")
+              }
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11.5px] text-faint">
+          Deezer looks up a 30s preview per track (no account needed). "Bundled only" uses just
+          the preview link shipped with the catalog, no network calls. "Off" disables playback.
         </p>
       </section>
     </div>

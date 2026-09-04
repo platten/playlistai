@@ -33,21 +33,23 @@ type Container struct {
 	Sim     ports.SimilarityEngine
 	Reco    ports.RecommendationEngine
 	Enrich  ports.Enricher
-	Preview ports.PreviewProvider
 
 	// exporters are the wired ports.Exporter implementations, looked up by
 	// Name() via Exporter(). Order is display order.
 	exporters []ports.Exporter
 
-	// parser can be swapped at runtime (rules → llama once a model is ready), so
-	// it is behind IntentParser() rather than a bare field. All fields below the
-	// mutex are guarded by it.
+	// parser and preview can both be swapped at runtime (rules → llama once a
+	// model is ready; preview provider from Settings/the first-run wizard), so
+	// they sit behind accessor methods rather than bare fields. Every field
+	// below the mutex is guarded by it.
 	mu          sync.Mutex
 	parser      ports.IntentParser
 	rulesParser ports.IntentParser
 	llama       *llama.Parser // active managed llama parser, if any
 	modelPath   string
 	modelID     string
+	preview     ports.PreviewProvider
+	previewName string
 	closers     []func() error
 }
 
@@ -64,22 +66,27 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 		return nil, fmt.Errorf("app: create data dir %s: %w", cfg.DataDir, err)
 	}
 
-	// Runtime prefs (a model chosen in Settings) override the TOML config.
-	if prefs := config.LoadPrefs(cfg.DataDir); prefs.ModelPath != "" {
+	// Runtime prefs (from Settings or the first-run wizard) override the TOML
+	// config.
+	prefs := config.LoadPrefs(cfg.DataDir)
+	if prefs.ModelPath != "" {
 		cfg.AI.ModelPath = prefs.ModelPath
 		cfg.AI.ModelID = prefs.ModelID
+	}
+	if isValidPreviewProvider(prefs.PreviewProvider) {
+		cfg.Preview.Provider = prefs.PreviewProvider
 	}
 
 	c := &Container{cfg: cfg, log: log}
 	c.wireEnrichExport()
-	c.wirePreview()
+	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
 
 	log.Info("container initialized",
 		"data_dir", cfg.DataDir,
 		"parser", c.IntentParser().Info().Backend,
 		"llm_ready", cfg.LLMReady(),
-		"preview", cfg.Preview.Provider,
+		"preview", c.PreviewProviderName(),
 	)
 
 	if err := c.LoadCatalog(); err != nil {
@@ -119,19 +126,81 @@ func (c *Container) Exporter(name string) (ports.Exporter, bool) {
 	return nil, false
 }
 
-// wirePreview installs the configured preview backend. "deezer" queries the
-// public Deezer search API (falling back to the catalog's bundled Spotify CDN
-// URL on a miss); "spotify" uses only that bundled URL, no network; "off" (or
-// anything else) leaves Preview nil and the UI disables playback.
-func (c *Container) wirePreview() {
-	switch c.cfg.Preview.Provider {
-	case config.PreviewDeezer:
-		c.Preview = deezer.New(deezer.Config{})
-	case config.PreviewSpotify:
-		c.Preview = spotifycdn.New()
+// isValidPreviewProvider reports whether s is one of the recognized
+// preview.provider values.
+func isValidPreviewProvider(s string) bool {
+	switch s {
+	case config.PreviewDeezer, config.PreviewSpotify, config.PreviewOff:
+		return true
 	default:
-		c.Preview = nil
+		return false
 	}
+}
+
+// wirePreview installs a preview backend by provider name. "deezer" queries
+// the public Deezer search API (falling back to the catalog's bundled Spotify
+// CDN URL on a miss); "spotify" uses only that bundled URL, no network; "off"
+// (or anything unrecognized) leaves the provider nil and the UI disables
+// playback.
+func (c *Container) wirePreview(provider string) {
+	var p ports.PreviewProvider
+	switch provider {
+	case config.PreviewDeezer:
+		p = deezer.New(deezer.Config{})
+	case config.PreviewSpotify:
+		p = spotifycdn.New()
+	default:
+		provider = config.PreviewOff
+	}
+
+	c.mu.Lock()
+	c.preview, c.previewName = p, provider
+	c.mu.Unlock()
+}
+
+// PreviewProvider returns the active preview backend, or nil if previews are
+// off.
+func (c *Container) PreviewProvider() ports.PreviewProvider {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.preview
+}
+
+// PreviewProviderName returns the active provider's name ("deezer" | "spotify" | "off").
+func (c *Container) PreviewProviderName() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.previewName
+}
+
+// SetPreviewProvider switches the preview backend and persists the choice.
+// Rejects anything other than "deezer", "spotify", or "off".
+func (c *Container) SetPreviewProvider(provider string) error {
+	if !isValidPreviewProvider(provider) {
+		return fmt.Errorf("app: unknown preview provider %q", provider)
+	}
+	c.wirePreview(provider)
+
+	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs.PreviewProvider = provider
+	if err := prefs.Save(c.cfg.DataDir); err != nil {
+		c.log.Warn("could not persist preview provider", "err", err)
+	}
+	c.log.Info("preview provider set", "provider", provider)
+	return nil
+}
+
+// Onboarded reports whether the first-run wizard has been completed (or
+// explicitly skipped).
+func (c *Container) Onboarded() bool {
+	return config.LoadPrefs(c.cfg.DataDir).OnboardingDone
+}
+
+// SetOnboarded marks the first-run wizard done, persisting the flag.
+func (c *Container) SetOnboarded() error {
+	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs.OnboardingDone = true
+	return prefs.Save(c.cfg.DataDir)
 }
 
 // chooseParser installs the rules parser immediately, then — if a model is

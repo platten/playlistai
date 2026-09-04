@@ -3,26 +3,29 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "playlistai"
+name: "playlist-ai"
 arch: ${GOARCH}
 platform: "linux"
+# Keep in sync with build/config.yml's info.version (re-run
+# `wails3 update build-assets` after bumping it, then reapply the fields below —
+# that command doesn't know about section/maintainer/homepage/license).
 version: "0.1.0"
-section: "default"
+section: "sound"
 priority: "extra"
-maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A playlistai application"
-vendor: "My Company"
-homepage: "https://wails.io"
-license: "MIT"
+maintainer: "Playlist AI authors <https://github.com/platten/playlistai>"
+description: "Local-first playlist recommendations over the Deej-AI embedding catalog."
+vendor: "Playlist AI"
+homepage: "https://github.com/platten/playlistai"
+license: "GPL-3.0-only"
 release: "1"
 
 contents:
-  - src: "./bin/playlistai"
-    dst: "/usr/local/bin/playlistai"
+  - src: "./bin/playlist-ai"
+    dst: "/usr/local/bin/playlist-ai"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/playlistai.png"
-  - src: "./build/linux/playlistai.desktop"
-    dst: "/usr/share/applications/playlistai.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/playlist-ai.png"
+  - src: "./build/linux/playlist-ai.desktop"
+    dst: "/usr/share/applications/playlist-ai.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

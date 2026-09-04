@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
-Name=My Product
-Comment=A playlistai application
+Name=Playlist AI
+Comment=Local-first playlist recommendations over the Deej-AI embedding catalog.
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/playlistai %u
+Exec=/usr/local/bin/playlist-ai %u
 Terminal=false
 Type=Application
-Icon=playlistai
+Icon=playlist-ai
 Categories=Utility;
-StartupWMClass=playlistai
+StartupWMClass=playlist-ai
 
  

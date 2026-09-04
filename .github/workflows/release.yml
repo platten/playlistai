@@ -1,0 +1,263 @@
+name: Release
+
+# Builds per-OS installers + portable archives and publishes them to a GitHub
+# Release. Triggered by pushing a `vX.Y.Z` tag — bump build/config.yml's
+# info.version and build/linux/nfpm/nfpm.yaml's version first (see
+# docs/RELEASING.md), then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+#
+# Code signing on every OS is best-effort: each signing step is skipped
+# (artifacts stay unsigned/ad-hoc-signed) unless the matching secrets are
+# configured. See docs/RELEASING.md for exactly which secrets enable which
+# step — nothing here fails the build for their absence.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "9"
+  WAILS3_VERSION: v3.0.0-beta.16
+
+jobs:
+  linux:
+    name: Package (Linux)
+    runs-on: ubuntu-latest
+    env:
+      HAS_PGP_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Linux system dependencies (GTK4 + WebKitGTK 6.0 + packaging tools)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Wails v3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
+
+      - name: Package (AppImage + deb + rpm + Arch)
+        run: wails3 task linux:package
+
+      - name: Sign .deb/.rpm with PGP
+        if: env.HAS_PGP_KEY == 'true'
+        env:
+          PGP_PRIVATE_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY }}
+          PGP_PASSWORD: ${{ secrets.LINUX_PGP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          key="$(mktemp)"
+          printf '%s' "$PGP_PRIVATE_KEY" > "$key"
+          shopt -s nullglob
+          for f in bin/*.deb bin/*.rpm; do
+            echo "Signing $f"
+            wails3 tool sign -input "$f" -pgp-key "$key" ${PGP_PASSWORD:+-pgp-password "$PGP_PASSWORD"}
+          done
+          shred -u "$key" 2>/dev/null || rm -f "$key"
+
+      - name: Portable archive (raw binary)
+        run: tar -C bin -czf "bin/playlist-ai-linux-amd64.tar.gz" playlist-ai
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            bin/*.AppImage
+            bin/*.deb
+            bin/*.rpm
+            bin/*.pkg.tar.zst
+            bin/playlist-ai-linux-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    name: Package (macOS)
+    runs-on: macos-latest
+    env:
+      HAS_APPLE_CERT: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_SIGNING_IDENTITY != '' && 'true' || 'false' }}
+      HAS_NOTARY_CREDS: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install Wails v3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
+
+      - name: Import Developer ID certificate
+        if: env.HAS_APPLE_CERT == 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="build.keychain"
+          keychain_pw="$(openssl rand -base64 24)"
+          security create-keychain -p "$keychain_pw" "$keychain"
+          security set-keychain-settings -lut 900 "$keychain"
+          security unlock-keychain -p "$keychain_pw" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain
+
+          cert="$(mktemp).p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$cert"
+          security import "$cert" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_pw" "$keychain"
+          rm -f "$cert"
+
+      - name: Store notarization credentials
+        if: env.HAS_APPLE_CERT == 'true' && env.HAS_NOTARY_CREDS == 'true'
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "playlistai-notary" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "build.keychain"
+
+      - name: Package (.app bundle, ad-hoc signed)
+        run: wails3 task darwin:package
+
+      - name: Sign with Developer ID
+        if: env.HAS_APPLE_CERT == 'true'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_NOTARY_CREDS" = "true" ]; then
+            wails3 tool sign -input "bin/playlist-ai.app" -identity "$MACOS_SIGNING_IDENTITY" \
+              -notarize -keychain-profile "playlistai-notary"
+          else
+            echo "::notice::APPLE_ID/APPLE_TEAM_ID/APPLE_APP_SPECIFIC_PASSWORD not set — signing without notarization."
+            wails3 tool sign -input "bin/playlist-ai.app" -identity "$MACOS_SIGNING_IDENTITY"
+          fi
+
+      - name: Build the .dmg from the (possibly signed) .app
+        run: wails3 task darwin:create:dmg
+
+      - name: Portable archive (.app bundle)
+        run: ditto -c -k --sequesterRsrc --keepParent "bin/playlist-ai.app" "bin/playlist-ai-macos.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: |
+            bin/*.dmg
+            bin/playlist-ai-macos.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Package (Windows)
+    runs-on: windows-latest
+    env:
+      HAS_CERT: ${{ secrets.WINDOWS_CERTIFICATE_PFX != '' && secrets.WINDOWS_CERTIFICATE_PASSWORD != '' && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install Wails v3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
+
+      - name: Package (NSIS installer)
+        run: wails3 task windows:package
+
+      - name: Sign the installer with Authenticode
+        if: env.HAS_CERT == 'true'
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cert="$(mktemp).pfx"
+          printf '%s' "$WINDOWS_CERTIFICATE_PFX" | base64 --decode > "$cert"
+          shopt -s nullglob
+          for f in bin/*.exe; do
+            echo "Signing $f"
+            wails3 tool sign -input "$f" -certificate "$cert" -password "$WINDOWS_CERTIFICATE_PASSWORD" \
+              -timestamp "http://timestamp.digicert.com"
+          done
+          rm -f "$cert"
+
+      - name: Portable archive (raw binary)
+        shell: bash
+        run: |
+          cd bin
+          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: |
+            bin/*-installer.exe
+            bin/playlist-ai-windows-amd64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: true

@@ -1,12 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
 import { Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
-import type { BuildPlaylistRequest } from "./lib/api";
+import { API, type BuildPlaylistRequest } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { FirstRunWizard } from "./screens/FirstRunWizard";
 import { Gallery } from "./screens/Gallery";
 
 type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings" | "components";
@@ -41,6 +42,13 @@ export default function App() {
   const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
+  const [onboarded, setOnboarded] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    API.GetOnboarded()
+      .then((v) => setOnboarded(Boolean(v)))
+      .catch(() => setOnboarded(true)); // fail open — never trap the user behind a broken check
+  }, []);
 
   const openPlaylist = (request: BuildPlaylistRequest, heading: string) => {
     setPlaylist({ request, heading });
@@ -51,6 +59,15 @@ export default function App() {
     setReview({ trackIds, heading });
     setScreen("reviewexport");
   };
+
+  if (onboarded === null) {
+    // Avoid a flash of the wizard (or the main shell) while the one check
+    // resolves — this is a local read, effectively instant.
+    return <div className="h-full bg-bg" />;
+  }
+  if (!onboarded) {
+    return <FirstRunWizard onDone={() => setOnboarded(true)} />;
+  }
 
   return (
     <PreviewPlayerProvider>

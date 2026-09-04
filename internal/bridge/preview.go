@@ -12,7 +12,8 @@ type PreviewResult struct {
 // error) whenever preview is off, the catalog isn't loaded, or the id is
 // unknown — the UI just hides the play control in that case.
 func (a *API) GetPreviewURL(id string) (PreviewResult, error) {
-	if a.app.Preview == nil || a.app.Catalog == nil {
+	provider := a.app.PreviewProvider()
+	if provider == nil || a.app.Catalog == nil {
 		return PreviewResult{}, nil
 	}
 	meta, ok := a.app.Catalog.Meta(id)
@@ -20,9 +21,20 @@ func (a *API) GetPreviewURL(id string) (PreviewResult, error) {
 		return PreviewResult{}, nil
 	}
 
-	url, ok, err := a.app.Preview.PreviewURL(a.context(), meta.Ref, meta.PreviewURL)
+	url, ok, err := provider.PreviewURL(a.context(), meta.Ref, meta.PreviewURL)
 	if err != nil {
 		return PreviewResult{}, err
 	}
 	return PreviewResult{URL: url, Available: ok}, nil
+}
+
+// GetPreviewProviderName returns the active preview backend's name
+// ("deezer" | "spotify" | "off").
+func (a *API) GetPreviewProviderName() string {
+	return a.app.PreviewProviderName()
+}
+
+// SetPreviewProvider switches the preview backend and persists the choice.
+func (a *API) SetPreviewProvider(provider string) error {
+	return a.app.SetPreviewProvider(provider)
 }

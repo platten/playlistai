@@ -233,9 +233,9 @@ for the data and `python/convert_pickles.py`.
     lifecycle tested against a compiled fake); `app` swaps `rules → llama` in the
     background when `ai.model_path` is set. *(done)*
 6c. **Model manager** — `internal/intent/modelmgr` (embedded GGUF catalog +
-    resumable download); `config.Prefs` persistence; `Container.SetModel /
-    DownloadModel / ClearModel`; Settings AI-model panel with live download
-    progress. Model integrity hashes are not yet pinned — a known gap for M9. *(done)*
+    resumable download, size + SHA-256 pinned and verified — see M9);
+    `config.Prefs` persistence; `Container.SetModel / DownloadModel /
+    ClearModel`; Settings AI-model panel with live download progress. *(done)*
 7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz
    file import) and `internal/export/soundiizhandoff` (tokenless
@@ -251,9 +251,29 @@ for the data and `python/convert_pickles.py`.
    `GetPreviewURL(id)`. Frontend: `PreviewPlayerProvider` / `usePreviewPlayer`
    own a single `<audio>` element and resolve a track's URL on first play;
    `MiniPlayerBar` (play/pause, scrub, close) wired into `TrackRow.onPlay` on
-   the Playlist and Catalog screens. *(current)*
-9. **Polish & ship** — per-OS installers + portable binaries; signing;
-   first-run wizard; expand this document.
+   the Playlist and Catalog screens. *(done)*
+9. **Polish & ship** — model integrity hashes pinned (size + SHA-256 in
+   `models-manifest.json`, verified against a fresh download of each file;
+   surfaced as a "verified" badge in Settings); `.github/workflows/release.yml`
+   packages per-OS installers (Linux AppImage/deb/rpm/Arch, macOS `.dmg`,
+   Windows NSIS) plus a portable archive per OS on a `vX.Y.Z` tag push, and
+   opens a draft GitHub Release — see [`docs/RELEASING.md`](RELEASING.md) for
+   the version-bump steps and the optional signing secrets (PGP on Linux,
+   Developer ID + notarization on macOS, Authenticode on Windows — each step
+   skips cleanly without its secrets); fixed several stale placeholder values
+   left over from the M1 scaffold (`nfpm.yaml`, `.desktop` files, macOS
+   `Info.plist`s, the Windows manifest/NSIS defines — wrong binary name,
+   `MIT`/`My Company`/`com.example.*` instead of the real GPL-3.0 metadata).
+   First-run wizard (`FirstRunWizard.tsx`): welcome → catalog download → model
+   choice/download/skip → preview provider choice → done; `config.Prefs`
+   gains `PreviewProvider` + `OnboardingDone` (and `Container.SetModel` /
+   `ClearModel` were fixed to read-modify-write prefs.json instead of
+   overwriting it, which used to silently erase these new fields);
+   `Container.SetPreviewProvider` makes the preview backend swappable at
+   runtime, also exposed in Settings. *(current)*
+
+Remaining known gap: no custom app icon (still the Wails default) — cosmetic,
+not a release blocker.
 
 [Wails v3]: https://v3.wails.io
 [teticio/Deej-AI]: https://github.com/teticio/Deej-AI

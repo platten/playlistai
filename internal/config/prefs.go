@@ -8,11 +8,20 @@ import (
 
 // Prefs are the small set of settings the app writes at runtime (as opposed to
 // the read-only TOML config). Persisted to <DataDir>/prefs.json.
+//
+// Save replaces the whole file, so any code that sets one field must load the
+// current Prefs first and mutate just that field — never construct a fresh
+// Prefs{} with only the field it cares about, or it silently erases the rest.
 type Prefs struct {
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.
 	ModelPath string `json:"modelPath"`
 	// ModelID is the catalog id when the model came from the built-in catalog.
 	ModelID string `json:"modelId"`
+	// PreviewProvider overrides preview.provider from the TOML config when set
+	// ("deezer" | "spotify" | "off"). Empty → use the TOML value.
+	PreviewProvider string `json:"previewProvider"`
+	// OnboardingDone marks the first-run wizard as complete (or skipped).
+	OnboardingDone bool `json:"onboardingDone"`
 }
 
 func prefsPath(dataDir string) string { return filepath.Join(dataDir, "prefs.json") }
