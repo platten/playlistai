@@ -235,9 +235,14 @@ for the data and `python/convert_pickles.py`.
 6c. **Model manager** — `internal/intent/modelmgr` (embedded GGUF catalog +
     resumable download); `config.Prefs` persistence; `Container.SetModel /
     DownloadModel / ClearModel`; Settings AI-model panel with live download
-    progress. Model integrity hashes are not yet pinned — a known gap for M9. *(current)*
-7. **Enrichment + export** — MusicBrainz client + cache; CSV + Soundiiz handoff;
-   match-review screen.
+    progress. Model integrity hashes are not yet pinned — a known gap for M9. *(done)*
+7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
+   metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz
+   file import) and `internal/export/soundiizhandoff` (tokenless
+   `POST /go/import-playlist`, validated share URL, opened in the browser);
+   `Container.Enrich / Exporter(name)`; bridge `EnrichPlaylist / ExportCSV /
+   OpenSoundiizHandoff`; the ReviewExport screen (enrich progress → per-track
+   match table with editable ISRC + include toggle → name + export). *(current)*
 8. **Preview** — Deezer + Spotify-CDN fallback; play control.
 9. **Polish & ship** — per-OS installers + portable binaries; signing;
    first-run wizard; expand this document.

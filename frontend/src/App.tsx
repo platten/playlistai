@@ -5,13 +5,19 @@ import type { BuildPlaylistRequest } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
+import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { Gallery } from "./screens/Gallery";
 
-type Screen = "generate" | "catalog" | "playlist" | "settings" | "components";
+type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings" | "components";
 
 interface PlaylistState {
   request: BuildPlaylistRequest;
+  heading: string;
+}
+
+interface ReviewState {
+  trackIds: string[];
   heading: string;
 }
 
@@ -34,10 +40,16 @@ export default function App() {
   const { choice, cycle } = useTheme();
   const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
+  const [review, setReview] = useState<ReviewState | null>(null);
 
   const openPlaylist = (request: BuildPlaylistRequest, heading: string) => {
     setPlaylist({ request, heading });
     setScreen("playlist");
+  };
+
+  const openReview = (trackIds: string[], heading: string) => {
+    setReview({ trackIds, heading });
+    setScreen("reviewexport");
   };
 
   return (
@@ -58,6 +70,13 @@ export default function App() {
             disabled={!playlist}
           >
             Playlist
+          </NavButton>
+          <NavButton
+            active={screen === "reviewexport"}
+            onClick={() => setScreen("reviewexport")}
+            disabled={!review}
+          >
+            Export
           </NavButton>
           <NavButton active={screen === "components"} onClick={() => setScreen("components")}>
             Components
@@ -97,6 +116,17 @@ export default function App() {
               request={playlist.request}
               heading={playlist.heading}
               onBack={() => setScreen("generate")}
+              onReview={openReview}
+            />
+          ) : (
+            <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
+          ))}
+        {screen === "reviewexport" &&
+          (review ? (
+            <ReviewExport
+              trackIds={review.trackIds}
+              heading={review.heading}
+              onBack={() => setScreen("playlist")}
             />
           ) : (
             <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
