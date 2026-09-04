@@ -207,3 +207,96 @@ func TestCloseRunsClosersLIFOAndReturnsFirstError(t *testing.T) {
 		t.Fatalf("closers not LIFO: %v", order)
 	}
 }
+
+func TestSetPreviewProviderSwapsAndPersists(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	cfg.Preview.Provider = config.PreviewDeezer
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if got := c.PreviewProviderName(); got != config.PreviewDeezer {
+		t.Fatalf("initial provider = %q, want deezer", got)
+	}
+	if c.PreviewProvider() == nil {
+		t.Fatal("deezer provider should be non-nil")
+	}
+
+	if err := c.SetPreviewProvider(config.PreviewOff); err != nil {
+		t.Fatalf("SetPreviewProvider: %v", err)
+	}
+	if got := c.PreviewProviderName(); got != config.PreviewOff {
+		t.Fatalf("provider = %q, want off", got)
+	}
+	if c.PreviewProvider() != nil {
+		t.Fatal("off should leave the provider nil")
+	}
+
+	if err := c.SetPreviewProvider("napster"); err == nil {
+		t.Fatal("expected an error for an unknown provider")
+	}
+
+	// Persisted: a fresh container in the same DataDir picks it up.
+	c2, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New (reload): %v", err)
+	}
+	defer func() { _ = c2.Close() }()
+	if got := c2.PreviewProviderName(); got != config.PreviewOff {
+		t.Fatalf("reloaded provider = %q, want off (persisted)", got)
+	}
+}
+
+func TestOnboardingDefaultsFalseThenPersists(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if c.Onboarded() {
+		t.Fatal("a fresh data dir should not be onboarded")
+	}
+	if err := c.SetOnboarded(); err != nil {
+		t.Fatalf("SetOnboarded: %v", err)
+	}
+	if !c.Onboarded() {
+		t.Fatal("Onboarded should be true after SetOnboarded")
+	}
+}
+
+// A real latent bug this guards against: Prefs.Save replaces the whole file,
+// so setting the model must not erase a previously-saved preview provider (or
+// the onboarding flag), and vice versa.
+func TestPrefFieldsDoNotClobberEachOther(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+
+	if err := c.SetPreviewProvider(config.PreviewOff); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetOnboarded(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ClearModel(); err != nil { // exercises the model-prefs save path
+		t.Fatal(err)
+	}
+
+	got := config.LoadPrefs(cfg.DataDir)
+	if got.PreviewProvider != config.PreviewOff {
+		t.Fatalf("ClearModel clobbered PreviewProvider: %+v", got)
+	}
+	if !got.OnboardingDone {
+		t.Fatalf("ClearModel clobbered OnboardingDone: %+v", got)
+	}
+}

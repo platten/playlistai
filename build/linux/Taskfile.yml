@@ -170,12 +170,15 @@ tasks:
     dir: build
     cmds:
       - mkdir -p {{.ROOT_DIR}}/build/linux/appimage
-      - wails3 generate .desktop -name "{{.APP_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}"
+      - wails3 generate .desktop -name "{{.DISPLAY_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}" -comment "{{.COMMENT}}" -keywords "{{.KEYWORDS}}"
     vars:
       APP_NAME: '{{.APP_NAME}}'
+      DISPLAY_NAME: 'Playlist AI'
       EXEC: '{{.APP_NAME}}'
       ICON: '{{.APP_NAME}}'
-      CATEGORIES: 'Development;'
+      CATEGORIES: 'AudioVideo;Audio;'
+      COMMENT: 'Local-first playlist recommendations over the Deej-AI embedding catalog'
+      KEYWORDS: 'music;playlist;recommendations;'
       OUTPUTFILE: '{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop'
 
   run:

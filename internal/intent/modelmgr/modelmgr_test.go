@@ -39,6 +39,11 @@ func TestCatalog(t *testing.T) {
 		if got, ok := Get(m.ID); !ok || got.URL != m.URL {
 			t.Fatalf("Get(%q) mismatch", m.ID)
 		}
+		// Every curated model must carry a pinned size + sha256 so Download
+		// verifies it — no silent, unverified downloads of a multi-GB model.
+		if !m.Verified() || m.Size == 0 || len(m.SHA256) != 64 {
+			t.Fatalf("model %q is not integrity-pinned: size=%d sha256=%q", m.ID, m.Size, m.SHA256)
+		}
 	}
 	if !seenRecommended {
 		t.Fatal("no recommended model")

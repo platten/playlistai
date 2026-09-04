@@ -80,7 +80,7 @@ func (a *API) GetStatus() Status {
 		CatalogLoaded: a.app.Catalog != nil,
 		ParserBackend: parser,
 		ParserReady:   parserReady,
-		PreviewMode:   cfg.Preview.Provider,
+		PreviewMode:   a.app.PreviewProviderName(),
 		Version:       Version,
 	}
 }

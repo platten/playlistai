@@ -27,3 +27,21 @@ func TestGetPreviewURLUnknownID(t *testing.T) {
 		t.Fatalf("unknown id should be a clean miss, got %+v", res)
 	}
 }
+
+func TestSetAndGetPreviewProviderName(t *testing.T) {
+	t.Parallel()
+	api := New(newTestContainer(t), nil)
+
+	if got := api.GetPreviewProviderName(); got != "deezer" {
+		t.Fatalf("default provider = %q, want deezer", got)
+	}
+	if err := api.SetPreviewProvider("off"); err != nil {
+		t.Fatalf("SetPreviewProvider: %v", err)
+	}
+	if got := api.GetPreviewProviderName(); got != "off" {
+		t.Fatalf("provider = %q, want off", got)
+	}
+	if err := api.SetPreviewProvider("bogus"); err == nil {
+		t.Fatal("expected an error for an unknown provider")
+	}
+}

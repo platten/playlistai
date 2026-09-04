@@ -8,27 +8,27 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="playlistai"
+        Path="playlist-ai"
         Arguments=""
-        InstallLocation="C:\Program Files\My Company\My Product">
+        InstallLocation="C:\Program Files\Playlist AI\Playlist AI">
     </Installer>
     <PackageInformation
-        PackageName="My Product"
-        PackageDisplayName="My Product"
-        PublisherName="CN=My Company"
-        PublisherDisplayName="My Company"
+        PackageName="Playlist AI"
+        PackageDisplayName="Playlist AI"
+        PublisherName="CN=Playlist AI"
+        PublisherDisplayName="Playlist AI"
         Version="0.1.0.0"
-        PackageDescription="A playlistai application">
+        PackageDescription="Local-first playlist recommendations over the Deej-AI embedding catalog.">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.playlistai"
-                Description="A playlistai application"
-                DisplayName="My Product"
-                ExecutableName="playlistai"
+                Id="com.platten.playlistai"
+                Description="Local-first playlist recommendations over the Deej-AI embedding catalog."
+                DisplayName="Playlist AI"
+                ExecutableName="playlist-ai"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -41,13 +41,13 @@
         </Dependencies>
         <Properties>
             <Framework>false</Framework>
-            <DisplayName>My Product</DisplayName>
-            <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A playlistai application</Description>
+            <DisplayName>Playlist AI</DisplayName>
+            <PublisherDisplayName>Playlist AI</PublisherDisplayName>
+            <Description>Local-first playlist recommendations over the Deej-AI embedding catalog.</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="playlistai.msix" />
+    <SaveLocation PackagePath="playlist-ai.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

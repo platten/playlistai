@@ -17,6 +17,9 @@ type ModelInfo struct {
 	LicenseURL  string `json:"licenseUrl"`
 	RAMGB       int    `json:"ramGb"`
 	Recommended bool   `json:"recommended"`
+	// Verified reports whether size + sha256 are pinned in the manifest, so
+	// Download checks the file against them rather than trusting the host.
+	Verified bool `json:"verified"`
 }
 
 // ModelStatus is the active-parser snapshot for the Settings screen.
@@ -36,7 +39,7 @@ func (a *API) GetModelCatalog() []ModelInfo {
 		out = append(out, ModelInfo{
 			ID: m.ID, Label: m.Label, Params: m.Params, Quant: m.Quant,
 			SizeApprox: m.SizeApprox, LicenseName: m.LicenseName, LicenseURL: m.LicenseURL,
-			RAMGB: m.RAMGB, Recommended: m.Recommended,
+			RAMGB: m.RAMGB, Recommended: m.Recommended, Verified: m.Verified(),
 		})
 	}
 	return out
