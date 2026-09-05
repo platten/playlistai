@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
 import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest } from "./lib/api";
@@ -38,16 +38,43 @@ function seedToRequest(seed: Seed): BuildPlaylistRequest {
 
 export default function App() {
   const { choice, cycle } = useTheme();
-  const [screen, setScreen] = useState<Screen>("generate");
+  const [screen, setScreen] = useState<Screen>("catalog");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  // Prompt-driven generation needs a llama.cpp runtime AND a model. Until both
+  // are present, the Generate screen is hidden entirely (catalog search still
+  // builds playlists from a seed track).
+  const [generateReady, setGenerateReady] = useState(false);
 
   useEffect(() => {
     API.GetOnboarded()
       .then((v) => setOnboarded(Boolean(v)))
       .catch(() => setOnboarded(true)); // fail open — never trap the user behind a broken check
   }, []);
+
+  // Re-check on every screen change so setting up a model in Settings makes
+  // Generate appear without a restart.
+  useEffect(() => {
+    if (onboarded !== true) return;
+    API.GetStatus()
+      .then((s) => setGenerateReady(Boolean(s?.generateReady)))
+      .catch(() => setGenerateReady(false));
+  }, [onboarded, screen]);
+
+  useEffect(() => {
+    if (!generateReady && screen === "generate") setScreen("catalog");
+  }, [generateReady, screen]);
+
+  // Land on Generate the first time we learn it's available (fresh launch of a
+  // fully set-up app), without hijacking navigation after that.
+  const landedRef = useRef(false);
+  useEffect(() => {
+    if (generateReady && !landedRef.current) {
+      landedRef.current = true;
+      setScreen("generate");
+    }
+  }, [generateReady]);
 
   const openPlaylist = (request: BuildPlaylistRequest, heading: string) => {
     setPlaylist({ request, heading });
@@ -75,9 +102,11 @@ export default function App() {
           <AppIcon size={20} className="shrink-0 rounded-[5px]" />
           <span className="shrink-0 font-semibold tracking-[0.01em]">Playlist AI</span>
           <nav className="ml-3 flex shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1">
-            <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
-              Generate
-            </NavButton>
+            {generateReady && (
+              <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
+                Generate
+              </NavButton>
+            )}
             <NavButton active={screen === "catalog"} onClick={() => setScreen("catalog")}>
               Catalog
             </NavButton>
@@ -116,7 +145,7 @@ export default function App() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-hidden">
-          {screen === "generate" && (
+          {screen === "generate" && generateReady && (
             <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
           )}
           {screen === "catalog" && (
@@ -129,11 +158,13 @@ export default function App() {
               <PlaylistScreen
                 request={playlist.request}
                 heading={playlist.heading}
-                onBack={() => setScreen("generate")}
+                onBack={() => setScreen(generateReady ? "generate" : "catalog")}
                 onReview={openReview}
               />
             ) : (
-              <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
+              <CatalogSearch
+                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+              />
             ))}
           {screen === "reviewexport" &&
             (review ? (
@@ -143,7 +174,9 @@ export default function App() {
                 onBack={() => setScreen("playlist")}
               />
             ) : (
-              <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
+              <CatalogSearch
+                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+              />
             ))}
           {screen === "settings" && <SettingsScreen />}
         </main>

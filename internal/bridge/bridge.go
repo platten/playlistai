@@ -61,6 +61,13 @@ type Status struct {
 	ParserReady   bool   `json:"parserReady"`
 	PreviewMode   string `json:"previewMode"` // "deezer" | "spotify" | "off"
 	Version       string `json:"version"`
+	// LlamaRuntimeReady reports whether a llama.cpp runtime (app-staged or a
+	// detected one) is available on the machine.
+	LlamaRuntimeReady bool `json:"llamaRuntimeReady"`
+	// GenerateReady gates the Generate screen: prompt-driven generation needs
+	// both a llama.cpp runtime and a model on disk. The rules parser alone is
+	// not enough.
+	GenerateReady bool `json:"generateReady"`
 }
 
 // GetStatus reports what is wired and ready. Safe to call before any milestone's
@@ -74,13 +81,18 @@ func (a *API) GetStatus() Status {
 		parser, parserReady = info.Backend, info.Ready
 	}
 
+	rt, _ := a.app.LlamaRuntime()
+	llmReady := cfg.LLMReady()
+
 	return Status{
-		CoreReady:     a.app.Ready(),
-		LLMReady:      cfg.LLMReady(),
-		CatalogLoaded: a.app.Catalog != nil,
-		ParserBackend: parser,
-		ParserReady:   parserReady,
-		PreviewMode:   a.app.PreviewProviderName(),
-		Version:       Version,
+		CoreReady:         a.app.Ready(),
+		LLMReady:          llmReady,
+		CatalogLoaded:     a.app.Catalog != nil,
+		ParserBackend:     parser,
+		ParserReady:       parserReady,
+		PreviewMode:       a.app.PreviewProviderName(),
+		Version:           Version,
+		LlamaRuntimeReady: rt.Available,
+		GenerateReady:     rt.Available && llmReady,
 	}
 }
