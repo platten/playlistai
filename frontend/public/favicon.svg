@@ -1,0 +1,51 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pai-bg" x1="256" y1="0" x2="256" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#271c4b"/>
+      <stop offset=".52" stop-color="#151327"/>
+      <stop offset="1" stop-color="#0b0b12"/>
+    </linearGradient>
+    <radialGradient id="pai-vinyl" cx="256" cy="228" r="196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a3a45"/>
+      <stop offset=".58" stop-color="#191920"/>
+      <stop offset="1" stop-color="#070709"/>
+    </radialGradient>
+    <linearGradient id="pai-label" x1="256" y1="192" x2="256" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a7b0ff"/>
+      <stop offset="1" stop-color="#5b6ef0"/>
+    </linearGradient>
+    <linearGradient id="pai-spark" x1="120" y1="96" x2="420" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#93a0ff"/>
+    </linearGradient>
+    <radialGradient id="pai-glow" cx="256" cy="242" r="214" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c8cff" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#7c8cff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="pai-soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <clipPath id="pai-disc"><circle cx="256" cy="256" r="178"/></clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#pai-bg)"/>
+  <circle cx="256" cy="242" r="214" fill="url(#pai-glow)"/>
+
+  <circle cx="256" cy="256" r="178" fill="url(#pai-vinyl)"/>
+  <g clip-path="url(#pai-disc)">
+    <g fill="none" stroke="#ffffff"><circle cx="256" cy="256" r="168" stroke-opacity="0.05" stroke-width="2.4"/><circle cx="256" cy="256" r="151" stroke-opacity="0.06" stroke-width="2.4"/><circle cx="256" cy="256" r="134" stroke-opacity="0.05" stroke-width="2.4"/><circle cx="256" cy="256" r="117" stroke-opacity="0.06" stroke-width="2.4"/><circle cx="256" cy="256" r="101" stroke-opacity="0.05" stroke-width="2.4"/><circle cx="256" cy="256" r="86" stroke-opacity="0.06" stroke-width="2.4"/></g>
+    <path d="M 120 188 A 172 172 0 0 1 286 96" fill="none" stroke="#ffffff" stroke-opacity=".13"
+          stroke-width="16" stroke-linecap="round" filter="url(#pai-soft)"/>
+    <path d="M 128 176 A 168 168 0 0 1 236 100" fill="none" stroke="#ffffff" stroke-opacity=".16"
+          stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <circle cx="256" cy="256" r="178" fill="none" stroke="#000000" stroke-opacity=".5" stroke-width="2"/>
+
+  <circle cx="256" cy="256" r="62" fill="url(#pai-label)"/>
+  <circle cx="256" cy="256" r="62" fill="none" stroke="#ffffff" stroke-opacity=".2" stroke-width="2"/>
+  <circle cx="256" cy="256" r="7" fill="#0b0b12"/>
+
+  <g filter="url(#pai-soft)" fill="#7c8cff" opacity=".45"><path d="M 372.00 96.00 C 378.48 128.40 393.60 143.52 426.00 150.00 C 393.60 156.48 378.48 171.60 372.00 204.00 C 365.52 171.60 350.40 156.48 318.00 150.00 C 350.40 143.52 365.52 128.40 372.00 96.00 Z"/><path d="M 150.00 339.00 C 153.24 355.20 160.80 362.76 177.00 366.00 C 160.80 369.24 153.24 376.80 150.00 393.00 C 146.76 376.80 139.20 369.24 123.00 366.00 C 139.20 362.76 146.76 355.20 150.00 339.00 Z"/><path d="M 398.00 317.00 C 400.04 327.20 404.80 331.96 415.00 334.00 C 404.80 336.04 400.04 340.80 398.00 351.00 C 395.96 340.80 391.20 336.04 381.00 334.00 C 391.20 331.96 395.96 327.20 398.00 317.00 Z"/><path d="M 298.00 176.00 C 299.44 183.20 302.80 186.56 310.00 188.00 C 302.80 189.44 299.44 192.80 298.00 200.00 C 296.56 192.80 293.20 189.44 286.00 188.00 C 293.20 186.56 296.56 183.20 298.00 176.00 Z"/></g>
+  <g fill="url(#pai-spark)"><path d="M 372.00 96.00 C 378.48 128.40 393.60 143.52 426.00 150.00 C 393.60 156.48 378.48 171.60 372.00 204.00 C 365.52 171.60 350.40 156.48 318.00 150.00 C 350.40 143.52 365.52 128.40 372.00 96.00 Z"/><path d="M 150.00 339.00 C 153.24 355.20 160.80 362.76 177.00 366.00 C 160.80 369.24 153.24 376.80 150.00 393.00 C 146.76 376.80 139.20 369.24 123.00 366.00 C 139.20 362.76 146.76 355.20 150.00 339.00 Z"/><path d="M 398.00 317.00 C 400.04 327.20 404.80 331.96 415.00 334.00 C 404.80 336.04 400.04 340.80 398.00 351.00 C 395.96 340.80 391.20 336.04 381.00 334.00 C 391.20 331.96 395.96 327.20 398.00 317.00 Z"/><path d="M 298.00 176.00 C 299.44 183.20 302.80 186.56 310.00 188.00 C 302.80 189.44 299.44 192.80 298.00 200.00 C 296.56 192.80 293.20 189.44 286.00 188.00 C 293.20 186.56 296.56 183.20 298.00 176.00 Z"/></g>
+  <circle cx="372" cy="150" r="5.4" fill="#fff"/><circle cx="150" cy="366" r="2.7" fill="#fff"/><circle cx="398" cy="334" r="1.7" fill="#fff"/><circle cx="298" cy="188" r="1.5" fill="#fff"/>
+</svg>

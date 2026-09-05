@@ -9,7 +9,7 @@ function fmtGB(bytes: number): string {
 
 const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "deezer", label: "Deezer" },
-  { id: "spotify", label: "Bundled only" },
+  { id: "spotify", label: "Spotify" },
   { id: "off", label: "Off" },
 ];
 
@@ -224,8 +224,8 @@ export function SettingsScreen() {
           ))}
         </div>
         <p className="text-[11.5px] text-faint">
-          Deezer looks up a 30s preview per track (no account needed). "Bundled only" uses just
-          the preview link shipped with the catalog, no network calls. "Off" disables playback.
+          Deezer looks up a 30s preview per track (no account needed). "Spotify" uses just the
+          preview link shipped with the catalog, no network calls. "Off" disables playback.
         </p>
       </section>
     </div>

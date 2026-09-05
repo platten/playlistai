@@ -53,6 +53,9 @@ type GenerateResult struct {
 	Playlist PlaylistResult       `json:"playlist"`
 	Request  BuildPlaylistRequest `json:"request"`
 	Notes    string               `json:"notes"`
+	// Name is a short (<= 6 words) label for the playlist — the model's title
+	// when a local model is active, otherwise derived from the parsed intent.
+	Name string `json:"name"`
 }
 
 // GenerateFromPrompt parses a prompt, resolves its seed phrases against the
@@ -116,9 +119,10 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 	}
 	req.Seed = pl.Seed // pin the seed the engine chose so re-runs are stable
 
-	a.saveGenerated(prompt, m, req, pl)
+	name := a.playlistName(prompt, m)
+	a.saveGenerated(name, prompt, m, req, pl)
 
-	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser}, nil
+	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name}, nil
 }
 
 func orEmpty(s []string) []string {

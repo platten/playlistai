@@ -22,14 +22,6 @@ function base({ size = 16, ...rest }: IconProps, strokeWidth = 1.8): SVGProps<SV
   };
 }
 
-export function Diamond({ size = 16, ...rest }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>
-      <path d="M12 2l10 10-10 10L2 12z" />
-    </svg>
-  );
-}
-
 export function Play({ size = 12, ...rest }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>

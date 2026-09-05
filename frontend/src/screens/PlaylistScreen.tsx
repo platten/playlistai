@@ -118,9 +118,13 @@ export function PlaylistScreen({
         <Button
           variant="primary"
           size="sm"
-          iconRight={<Icon.ArrowRight size={14} />}
           disabled={tracks.length === 0}
-          onClick={() => onReview(tracks.map((t) => t.id), heading)}
+          onClick={() =>
+            onReview(
+              tracks.map((t) => t.id),
+              heading,
+            )
+          }
         >
           Review &amp; export
         </Button>

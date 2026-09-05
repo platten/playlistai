@@ -55,16 +55,22 @@ func (a *API) DeleteSavedPlaylist(id string) error {
 	return a.app.History.Delete(a.context(), id)
 }
 
-// saveGenerated persists a just-generated playlist. Best-effort: a failure is
-// logged, never surfaced to the caller.
-func (a *API) saveGenerated(prompt string, m core.MusicIntent, req BuildPlaylistRequest, pl PlaylistResult) {
-	if a.app.History == nil {
-		return
-	}
-
+// playlistName produces a short (<= 6 words) label for a generated playlist:
+// the local model's title when one is available, otherwise one derived from the
+// parsed intent.
+func (a *API) playlistName(prompt string, m core.MusicIntent) string {
 	name := deriveTitle(m, prompt)
 	if llm := sanitizeTitle(a.app.SuggestTitle(a.context(), prompt, 0)); llm != "" {
 		name = llm
+	}
+	return clampWords(name, 6)
+}
+
+// saveGenerated persists a just-generated playlist. Best-effort: a failure is
+// logged, never surfaced to the caller.
+func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPlaylistRequest, pl PlaylistResult) {
+	if a.app.History == nil {
+		return
 	}
 
 	intentJSON, _ := json.Marshal(m)
@@ -139,4 +145,13 @@ func clip(s string, max int) string {
 		return s
 	}
 	return strings.TrimSpace(string(r[:max-1])) + "…"
+}
+
+// clampWords keeps at most the first n whitespace-separated words of s.
+func clampWords(s string, n int) string {
+	f := strings.Fields(s)
+	if len(f) <= n {
+		return strings.TrimSpace(s)
+	}
+	return strings.Join(f[:n], " ")
 }

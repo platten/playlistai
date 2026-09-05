@@ -11,6 +11,27 @@ import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "
 const PLACEHOLDER =
   "upbeat instrumental tracks like Justice, leaning 90s, about 25 songs — keep it a little unpredictable";
 
+// Prompts for the "Surprise me" button. Each names a well-known seed artist so
+// it resolves against the catalog, and varies mode/knobs/mood for variety.
+const SURPRISES = [
+  "something like Bonobo, 25 tracks, keep it mellow",
+  "a journey from Justice to Boards of Canada",
+  "upbeat instrumental like Justice, leaning 90s, about 20 songs",
+  "like Aphex Twin but a little unpredictable, 30 tracks",
+  "chill beats like Nujabes, 20 songs",
+  "like Fleetwood Mac, 25 tracks, no back-to-back artists",
+  "a set that drifts from Radiohead to Sigur Rós",
+  "like Daft Punk, adventurous, 30 tracks",
+  "like Tame Impala, dreamy, 25 songs",
+  "something like Burial, late-night, 20 tracks",
+  "like The Chemical Brothers, high energy, 30 songs",
+  "like Khruangbin, 25 tracks, keep it faithful",
+  "a journey from Kraftwerk to Aphex Twin",
+  "like Massive Attack, moody, 20 tracks",
+  "like Four Tet, 30 tracks, a little wandering",
+  "like Portishead, 20 tracks",
+];
+
 /** The prompt entry point: type it, see the parsed intent, generate. */
 export function GenerateScreen({
   onGenerated,
@@ -73,17 +94,31 @@ export function GenerateScreen({
   // and say so rather than letting it fail server-side.
   const needsSeed = preview !== null && (preview.seeds ?? []).length === 0;
 
-  const generate = useCallback(() => {
-    if (prompt.trim() === "") return;
-    setGenerating(true);
-    setError(null);
-    API.GenerateFromPrompt(prompt)
-      .then((res) => {
-        if (res) onGenerated(res.request, prompt.trim());
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setGenerating(false));
-  }, [prompt, onGenerated]);
+  const runGenerate = useCallback(
+    (text: string) => {
+      const q = text.trim();
+      if (q === "") return;
+      setGenerating(true);
+      setError(null);
+      API.GenerateFromPrompt(q)
+        .then((res) => {
+          if (res) onGenerated(res.request, res.name || q);
+        })
+        .catch((e) => setError(String(e)))
+        .finally(() => setGenerating(false));
+    },
+    [onGenerated],
+  );
+
+  const generate = useCallback(() => runGenerate(prompt), [runGenerate, prompt]);
+
+  const surprise = useCallback(() => {
+    const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+    setPrompt(pick);
+    setSource("fresh");
+    setSavedId("");
+    runGenerate(pick);
+  }, [runGenerate]);
 
   if (info && !info.loaded) {
     return (
@@ -103,7 +138,7 @@ export function GenerateScreen({
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-6 px-8">
+    <div className="mx-auto flex h-full w-full max-w-[820px] flex-col items-center justify-center gap-6 px-8">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
         <p className="text-[14px] text-muted">
@@ -176,13 +211,21 @@ export function GenerateScreen({
           className="w-full resize-none bg-transparent px-4 py-3.5 text-[15.5px] leading-relaxed text-text outline-none placeholder:text-faint"
         />
         <div className="flex items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
-          <span className="text-[11.5px] text-faint">
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
             Name a seed artist · Enter to generate · Shift+Enter for a new line
           </span>
-          <span className="ml-1 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
+          <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
             {preview?.backend === "llama" ? "local model" : "rules"}
           </span>
-          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Icon.Sparkle size={14} />}
+            disabled={generating}
+            onClick={surprise}
+          >
+            Surprise me
+          </Button>
           <Button
             variant="primary"
             size="sm"

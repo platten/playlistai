@@ -7,7 +7,7 @@ import {
   type ModelInfo,
   type ModelStatus,
 } from "../lib/api";
-import { Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 
 type Step = "welcome" | "catalog" | "model" | "preview" | "done";
 const STEPS: Step[] = ["welcome", "catalog", "model", "preview", "done"];
@@ -67,9 +67,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
 function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 text-center">
-      <div className="grid size-14 place-items-center rounded-card border border-line bg-surface text-accent">
-        <Icon.Diamond size={24} />
-      </div>
+      <AppIcon size={56} className="rounded-[15px]" />
       <div className="flex flex-col gap-2">
         <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Welcome to Playlist AI</h1>
         <p className="max-w-[46ch] text-[14px] text-muted">
