@@ -22,21 +22,27 @@ All nine planned milestones are done — see [`docs/ARCHITECTURE.md`](docs/ARCHI
 for the design and the milestone list, and [`docs/RELEASING.md`](docs/RELEASING.md)
 for how releases are cut.
 
-Every installer/portable archive (except AppImage — see `docs/RELEASING.md`'s
-known gaps) bundles a CPU build of `llama-server` so the local model works out
-of the box; set `ai.llama_server_path` in your config (`PLAYLISTAI_CONFIG=path/to/config.toml`)
-to point at a GPU-accelerated llama.cpp build instead if you want one (see
-[llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for
-CUDA/ROCm/Vulkan variants).
+The installers **don't** bundle a llama.cpp runtime — that keeps them small.
+On first run the setup wizard installs llama.cpp via ggml-org's official
+installer (`llama.app/install.sh` / `install.ps1`): a **GPU build** (CUDA /
+ROCm / Vulkan / Metal) when one is available **plus a CPU build**, so the
+parser can fall back to CPU if a GPU build won't run a given model. Already
+have `llama-server` or the unified `llama` binary? It's picked up from
+PATH / `~/.local/bin` / `~/.llama-app`, or point `ai.llama_server_path` at
+it. `ai.gpu_layers` pins/limits GPU offload.
 
-**The recommendation catalog itself is not shipped, embedded, or hosted by
-this project.** A fresh install has nothing to recommend over until an
-operator converts and self-hosts one from the real Deej-AI dataset — the
-tooling is written and tested against synthetic fixtures, but the ~1.4 GB
-source pickles were never fetched and the conversion was never run for real.
-See [`docs/CATALOG.md`](docs/CATALOG.md).
+The **recommendation catalog** (~957k tracks, derived from the Deej-AI
+dataset) is a compressed ~210 MB archive the app **downloads on first
+launch** (`catalog.archive_url` — a hosted `catalog.tar.zst`), then
+decompresses into your data dir behind a one-time progress popup. Nothing to
+configure, no account. It is not in the repo and not in the installers. See
+[`docs/CATALOG.md`](docs/CATALOG.md) for the hosting details and how to
+regenerate it.
 
 ## Develop
+
+Nothing special — no Git LFS, no large blobs in the repo. `go test ./...`
+needs only Go.
 
 ```bash
 # Go core — no toolchain beyond Go needed

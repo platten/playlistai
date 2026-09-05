@@ -21,6 +21,7 @@ func main() {
 	port := flag.Int("port", 8080, "")
 	_ = flag.Int("ctx-size", 4096, "")
 	_ = flag.Int("threads", 0, "")
+	_ = flag.Int("n-gpu-layers", 0, "")
 	flag.Parse()
 
 	if *model == "" {

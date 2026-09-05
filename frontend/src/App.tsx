@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
-import { Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
+import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
@@ -8,9 +8,8 @@ import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FirstRunWizard } from "./screens/FirstRunWizard";
-import { Gallery } from "./screens/Gallery";
 
-type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings" | "components";
+type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings";
 
 interface PlaylistState {
   request: BuildPlaylistRequest;
@@ -73,9 +72,9 @@ export default function App() {
     <PreviewPlayerProvider>
       <div className="flex h-full flex-col bg-bg text-text">
         <header className="flex h-13 flex-none items-center gap-3 border-b border-line bg-surface/60 px-5">
-          <Icon.Diamond size={15} className="text-accent" />
-          <span className="font-semibold tracking-[0.01em]">Playlist AI</span>
-          <nav className="ml-3 flex items-center gap-1">
+          <AppIcon size={20} className="shrink-0 rounded-[5px]" />
+          <span className="shrink-0 font-semibold tracking-[0.01em]">Playlist AI</span>
+          <nav className="ml-3 flex shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1">
             <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
               Generate
             </NavButton>
@@ -96,13 +95,10 @@ export default function App() {
             >
               Export
             </NavButton>
-            <NavButton active={screen === "components"} onClick={() => setScreen("components")}>
-              Components
-            </NavButton>
           </nav>
           <div className="flex-1" />
           <Button size="sm" variant="ghost" onClick={cycle}>
-            theme: {choice}
+            {choice.charAt(0).toUpperCase() + choice.slice(1)}
           </Button>
           <button
             type="button"
@@ -150,7 +146,6 @@ export default function App() {
               <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
             ))}
           {screen === "settings" && <SettingsScreen />}
-          {screen === "components" && <Gallery />}
         </main>
         <MiniPlayerBar />
       </div>
@@ -175,8 +170,10 @@ function NavButton({
       onClick={onClick}
       disabled={disabled}
       className={
-        "h-7 rounded-md px-2.5 text-[12.5px] transition-colors disabled:opacity-40 " +
-        (active ? "bg-accent-quiet text-accent" : "text-muted hover:text-text")
+        "h-7 shrink-0 whitespace-nowrap rounded-md px-3 text-[12.5px] font-medium transition-colors disabled:opacity-40 " +
+        (active
+          ? "bg-accent/20 text-accent"
+          : "text-text/75 hover:text-text")
       }
     >
       {children}

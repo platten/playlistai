@@ -143,17 +143,17 @@
   }
 }
 
-/* Indeterminate progress sliver. */
+/* Indeterminate progress sliver — bounces back and forth. */
 @keyframes pai-indeterminate {
   0% {
-    left: -40%;
+    left: 0%;
   }
   100% {
-    left: 100%;
+    left: 60%;
   }
 }
 .pai-indeterminate {
-  animation: pai-indeterminate 1.15s ease-in-out infinite;
+  animation: pai-indeterminate 1.25s ease-in-out infinite alternate;
 }
 
 /* Skeleton shimmer. */

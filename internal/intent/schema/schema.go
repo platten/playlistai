@@ -28,17 +28,11 @@ type Wire struct {
 // GBNF is the llama.cpp grammar for Wire. Keys are emitted in a fixed order so
 // the grammar (and constrained decoding) stays simple; the model must emit all
 // of them.
-const GBNF = `root ::= "{" ws
-  "\"seeds\":" ws strlist ws "," ws
-  "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws
-  "\"count\":" ws int ws "," ws
-  "\"creativity\":" ws num ws "," ws
-  "\"noise\":" ws num ws "," ws
-  "\"lookback\":" ws int ws "," ws
-  "\"exclude_artists\":" ws strlist ws "," ws
-  "\"no_repeat_artist\":" ws ("true" | "false") ws "," ws
-  "\"notes\":" ws str ws
-"}" ws
+//
+// Every rule body is on a single physical line: the pinned llama-server's GBNF
+// parser rejects rules whose body wraps across lines ("failed to parse
+// grammar"). Do not reflow this for readability.
+const GBNF = `root ::= "{" ws "\"seeds\":" ws strlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"count\":" ws int ws "," ws "\"creativity\":" ws num ws "," ws "\"noise\":" ws num ws "," ws "\"lookback\":" ws int ws "," ws "\"exclude_artists\":" ws strlist ws "," ws "\"no_repeat_artist\":" ws ("true" | "false") ws "," ws "\"notes\":" ws str ws "}" ws
 strlist ::= "[" ws ( str (ws "," ws str)* )? ws "]"
 str ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
 int ::= "-"? ("0" | [1-9] [0-9]*)

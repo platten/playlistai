@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/app"
@@ -72,6 +73,13 @@ func TestGenerateFromPrompt(t *testing.T) {
 	}
 	if res.Playlist.Tracks[0].Kind != "seed" {
 		t.Fatalf("first track kind = %q", res.Playlist.Tracks[0].Kind)
+	}
+	// The generated name is a short label (<= 6 words), not the raw prompt.
+	if res.Name == "" {
+		t.Fatal("GenerateResult.Name is empty")
+	}
+	if w := len(strings.Fields(res.Name)); w > 6 {
+		t.Fatalf("GenerateResult.Name has %d words (%q), want <= 6", w, res.Name)
 	}
 
 	// A prompt with no findable seed is an error, not a panic.

@@ -1,17 +1,31 @@
-# Self-hosting the embedding catalog
+# The embedding catalog
 
-**This project does not ship, embed, or host the recommendation catalog.**
-`config.Default()` leaves `catalog.manifest_url` empty, so a fresh install has
-no catalog and no way to get one until an operator (you) builds and hosts one
-and points the app at it. The plumbing for all of this exists and is tested —
-what's missing is the ~1M-track dataset itself, which the app was designed
-around but which nobody has run end-to-end against real data yet (see
-`git log` / `docs/ARCHITECTURE.md` milestone 3 for the wiring; this doc is
-about the one manual step that was never finished).
+Playlist AI's recommendation catalog is a compressed **~210 MB**
+`catalog.tar.zst` (~957k tracks, derived from the Deej-AI pre-computed
+dataset). It is **not** in the repo and **not** in the installers — the app
+**downloads it on first launch** and decompresses it into the data dir.
+
+- **Where it's hosted**: `config.Default()` sets `catalog.archive_url` to a hosted `catalog.tar.zst` (Cloudflare R2), plus a pinned `catalog.archive_size` and
+  `catalog.archive_sha256`. Override any of these in a TOML config to
+  self-host (clear the size/hash if you point at a different build).
+- **First-run wizard**: the first-run wizard's catalog step calls
+  `DownloadCatalog` automatically (no button), showing a progress popup:
+  `internal/dataset.DownloadArchive` fetches the archive (resumable HTTP
+  range, size + SHA-256 verified) to `<data dir>/catalog.tar.zst`, then
+  `internal/dataset.Unpack` decompresses it into `catalog.dir` and the
+  archive is deleted. `Container.EnsureCatalog` drives this — see its doc
+  comment for the full source-precedence order.
+
+Nothing to configure, no account. A pre-staged local archive
+(`catalog.bundle_path`, or `catalog.tar.zst` next to the executable) and
+`catalog.manifest_url` also still work and take precedence — see "Other ways
+to point the app at a catalog".
 
 ## What "the catalog" is
 
-Two things, read entirely by `internal/catalog`:
+Two files, read entirely by `internal/catalog`, packed together into
+`catalog.tar.zst` (tar + zstd `SpeedBestCompression`) alongside the
+`catalog-manifest.json` that describes them:
 
 - `vectors.i8` — one row per track, two L2-normalized 100-dim embedding
   spaces (Deej-AI's audio-content space and its playlist-co-occurrence
@@ -25,74 +39,90 @@ Both come from converting **Deej-AI's pre-computed pickles**
 (`spotifytovec.p`, `tracktovec.p`, `spotify_tracks.p`, `spotify_urls.p`,
 ~1.4 GB) — see [teticio/Deej-AI](https://github.com/teticio/Deej-AI) and
 [teticio/deej-ai.online-app](https://github.com/teticio/deej-ai.online-app)'s
-`scripts/download.py` for where those live (Google Drive; not fetched by this
-repo, and not linked here because that link moves — check the source repos
-for the current one).
+`scripts/download.py` for where those live (Google Drive).
 
-## Step by step
+## Regenerating and re-hosting the catalog
 
-1. **Get the pickles.** Download the four `.p` files above into one directory
-   (e.g. `./model/`).
+Do this when the upstream dataset changes, or to rebuild from scratch. The
+output, `build/catalog-dist/catalog.tar.zst`, is git-ignored — you upload it
+to a host and point `catalog.archive_url` at it.
+
+1. **Get the pickles.** `python/fetch_pickles.py` downloads all four from
+   Google Drive by their known file IDs and sanity-checks each one (Drive
+   serves an HTML interstitial instead of the file for large/popular
+   downloads, or quota-blocks them outright — the script catches both and
+   tells you the manual-download URL rather than leaving a corrupt `.p` file
+   behind):
+   ```sh
+   python3 -m venv .venv && .venv/bin/pip install -r python/requirements.txt
+   .venv/bin/python python/fetch_pickles.py --out ./pickles
+   ```
+   If a file fails automated fetch (Drive quota-exceeded is the most likely
+   failure), the script prints `https://drive.google.com/uc?id=<ID>` — open
+   that in a browser and save the result as `<name>.p` in the same directory.
 
 2. **Convert them** (needs `numpy`; everything else here is stdlib):
    ```sh
    cd python
    python3 convert_pickles.py \
-     --pickles ./model \
+     --pickles ../pickles \
      --out ../build/catalog \
      --manifest ../build/catalog/catalog-manifest.json
    ```
    This writes `build/catalog/{vectors.i8,catalog.sqlite,catalog-manifest.json}`
    and prints each file's exact size + SHA-256 (also embedded in the
-   manifest, so the app's downloader verifies them automatically — same
-   mechanism as the model-hash pinning in `internal/intent/modelmgr`).
+   manifest; `internal/dataset.Unpack` verifies extracted files against it).
    `--limit N` caps the track count if you want a smaller/faster test catalog
    first.
 
-3. **Host all three files together**, at any URL the app can reach —
-   GitHub Releases (works well: this repo already publishes installers there,
-   and Release assets support files up to 2 GB), a Cloudflare R2 / S3 bucket,
-   or your own server. Upload `catalog-manifest.json`, `vectors.i8`, and
-   `catalog.sqlite` to the *same* location: `dataset.Manifest` resolves each
-   file's URL relative to wherever the manifest itself was fetched from when
-   the manifest doesn't set an explicit per-file `url` (skip `--base-url` in
-   step 2 for this — the default). If you'd rather host the manifest
-   separately from the blobs (e.g. a versioned manifest in this repo pointing
-   at blobs on R2), pass `--base-url https://your-host/path/` instead and
-   it'll write absolute URLs into the manifest.
+3. **Compress it** (tar + zstd `SpeedBestCompression`, ~50% smaller):
+   ```sh
+   go run ./cmd/catalogpack -in build/catalog -out build/catalog-dist/catalog.tar.zst
+   ```
+   It prints the archive's size and SHA-256.
 
-4. **Point the app at it.** Two ways:
-   - **Download on demand** (matches the original "first launch" design):
-     set `catalog.manifest_url` to the hosted manifest's URL in a TOML config,
-     then run with `PLAYLISTAI_CONFIG=/path/to/config.toml`. The Catalog
-     screen's "Download catalog" button (and the first-run wizard's catalog
-     step) will then actually work instead of showing "no catalog source
-     configured."
-   - **Pre-populate locally** (no download UI at all, useful for your own
-     testing): just set `catalog.dir` to a directory that already has
-     `vectors.i8` + `catalog.sqlite` in it — `manifest_url` isn't needed in
-     this case.
+4. **Upload** `build/catalog-dist/catalog.tar.zst` to a host that supports
+   HTTP range requests (Google Drive's `drive.usercontent.google.com/download`
+   form, an S3/R2 bucket, GitHub Releases, ...). Update `config.Default()`'s
+   `catalog.archive_url` / `catalog.archive_size` / `catalog.archive_sha256`
+   in `internal/config/config.go` to match (or ship a TOML config that does).
 
-   Example `config.toml`:
+Both `build/catalog/` and `build/catalog-dist/` are git-ignored — nothing
+about the dataset is committed.
+
+## Other ways to point the app at a catalog
+
+`EnsureCatalog` tries these in order (first hit wins):
+
+1. **A staged local archive** — `catalog.tar.zst` next to the executable, or
+   wherever `catalog.bundle_path` points. Decompressed, no network. Handy for
+   testing the unpack path without a download.
+2. **`catalog.archive_url`** — the default (a hosted archive). Download + verify +
+   decompress.
+3. **`catalog.manifest_url`** — a hosted `catalog-manifest.json` listing the
+   two raw files (`vectors.i8` + `catalog.sqlite`) instead of one archive.
+   Pass `convert_pickles.py --base-url` if the manifest lives apart from the
+   blobs.
+4. **`catalog.dir`** already holding `vectors.i8` + `catalog.sqlite` — no
+   setup at all. Useful for dev against `build/catalog/` directly:
    ```toml
    [catalog]
-   manifest_url = "https://github.com/<you>/<repo>/releases/download/catalog-v1/catalog-manifest.json"
+   dir = "build/catalog"
    ```
 
 ## Licensing note
 
-The converted catalog is derivative of Deej-AI's GPL-3.0-licensed model +
-data. If you host and distribute it, `NOTICE` already documents the
-attribution and source-offer requirement this implies — read that before
-publishing a `manifest_url` anyone else will use.
+The catalog is derivative of Deej-AI's GPL-3.0-licensed model + data, and the
+project redistributes it (from the hosted archive). `NOTICE` documents the
+attribution and written-offer-of-source requirement that implies — keep it
+accurate if you fork and re-host.
 
 ## Verifying it worked
 
-`internal/catalog`'s tests run against a tiny synthetic fixture
-(`python3 make_test_catalog.py`, already committed under
-`internal/catalog/testdata/`) and don't need any of the above — they pass
-today regardless of whether a real catalog exists anywhere. To check your
-real conversion:
+`internal/catalog` / `internal/dataset` tests run against tiny synthetic
+fixtures (`python3 make_test_catalog.py`, committed under
+`internal/*/testdata/`) and don't need the real catalog. To check a
+regenerated one end to end:
 
 ```sh
 # from the repo root, with build/catalog/ populated per step 2 above
@@ -103,4 +133,7 @@ EOF
 PLAYLISTAI_CONFIG=/tmp/playlistai-dev.toml go run .
 ```
 then open the Catalog screen and search for something you know is in the
-Deej-AI dataset (e.g. "Justice").
+Deej-AI dataset (e.g. "Justice"). To exercise the download+unpack path
+instead, leave `catalog.dir` at its default and let first launch fetch from
+`catalog.archive_url`, or point `catalog.bundle_path` at a
+`catalog.tar.zst` you built with `catalogpack`.

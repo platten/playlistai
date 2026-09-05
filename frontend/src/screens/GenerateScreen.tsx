@@ -4,11 +4,33 @@ import {
   type BuildPlaylistRequest,
   type CatalogInfo,
   type IntentPreview,
+  type SavedPlaylistSummary,
 } from "../lib/api";
-import { Button, EmptyState, ErrorState, Icon } from "../components";
+import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 
 const PLACEHOLDER =
   "upbeat instrumental tracks like Justice, leaning 90s, about 25 songs — keep it a little unpredictable";
+
+// Prompts for the "Surprise me" button. Each names a well-known seed artist so
+// it resolves against the catalog, and varies mode/knobs/mood for variety.
+const SURPRISES = [
+  "something like Bonobo, 25 tracks, keep it mellow",
+  "a journey from Justice to Boards of Canada",
+  "upbeat instrumental like Justice, leaning 90s, about 20 songs",
+  "like Aphex Twin but a little unpredictable, 30 tracks",
+  "chill beats like Nujabes, 20 songs",
+  "like Fleetwood Mac, 25 tracks, no back-to-back artists",
+  "a set that drifts from Radiohead to Sigur Rós",
+  "like Daft Punk, adventurous, 30 tracks",
+  "like Tame Impala, dreamy, 25 songs",
+  "something like Burial, late-night, 20 tracks",
+  "like The Chemical Brothers, high energy, 30 songs",
+  "like Khruangbin, 25 tracks, keep it faithful",
+  "a journey from Kraftwerk to Aphex Twin",
+  "like Massive Attack, moody, 20 tracks",
+  "like Four Tet, 30 tracks, a little wandering",
+  "like Portishead, 20 tracks",
+];
 
 /** The prompt entry point: type it, see the parsed intent, generate. */
 export function GenerateScreen({
@@ -24,12 +46,34 @@ export function GenerateScreen({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounce = useRef<number | undefined>(undefined);
+  const intentProgress = useProgress("intent");
+
+  // Optional "start from a past playlist" source, gated behind a radio button.
+  const [saved, setSaved] = useState<SavedPlaylistSummary[]>([]);
+  const [source, setSource] = useState<"fresh" | "saved">("fresh");
+  const [savedId, setSavedId] = useState<string>("");
+
+  const refreshSaved = useCallback(() => {
+    API.ListSavedPlaylists()
+      .then((list) => setSaved(list ?? []))
+      .catch(() => setSaved([]));
+  }, []);
+
+  useEffect(() => {
+    refreshSaved();
+  }, [refreshSaved]);
 
   useEffect(() => {
     API.GetCatalogInfo()
-      .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0, configured: false }))
-      .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false }));
+      .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false }))
+      .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false }));
   }, []);
+
+  const pickSaved = (id: string) => {
+    setSavedId(id);
+    const hit = saved.find((s) => s.id === id);
+    if (hit) setPrompt(hit.prompt);
+  };
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
@@ -45,17 +89,36 @@ export function GenerateScreen({
     return () => window.clearTimeout(debounce.current);
   }, [prompt]);
 
-  const generate = useCallback(() => {
-    if (prompt.trim() === "") return;
-    setGenerating(true);
-    setError(null);
-    API.GenerateFromPrompt(prompt)
-      .then((res) => {
-        if (res) onGenerated(res.request, prompt.trim());
-      })
-      .catch((e) => setError(String(e)))
-      .finally(() => setGenerating(false));
-  }, [prompt, onGenerated]);
+  // The engine walks outward from a seed track, so the request has to name an
+  // artist. Once the debounced parse comes back with no seeds, block Generate
+  // and say so rather than letting it fail server-side.
+  const needsSeed = preview !== null && (preview.seeds ?? []).length === 0;
+
+  const runGenerate = useCallback(
+    (text: string) => {
+      const q = text.trim();
+      if (q === "") return;
+      setGenerating(true);
+      setError(null);
+      API.GenerateFromPrompt(q)
+        .then((res) => {
+          if (res) onGenerated(res.request, res.name || q);
+        })
+        .catch((e) => setError(String(e)))
+        .finally(() => setGenerating(false));
+    },
+    [onGenerated],
+  );
+
+  const generate = useCallback(() => runGenerate(prompt), [runGenerate, prompt]);
+
+  const surprise = useCallback(() => {
+    const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+    setPrompt(pick);
+    setSource("fresh");
+    setSavedId("");
+    runGenerate(pick);
+  }, [runGenerate]);
 
   if (info && !info.loaded) {
     return (
@@ -75,13 +138,62 @@ export function GenerateScreen({
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-6 px-8">
+    <div className="mx-auto flex h-full w-full max-w-[820px] flex-col items-center justify-center gap-6 px-8">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
         <p className="text-[14px] text-muted">
-          Plain language. The parser turns it into an intent — it never picks the songs.
+          Name an artist as the starting point — plain language for the rest. The
+          parser turns it into an intent; it never picks the songs.
         </p>
       </div>
+
+      {saved.length > 0 && (
+        <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px]">
+          <span className="text-faint">Start from</span>
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="prompt-source"
+              className="accent-accent"
+              checked={source === "fresh"}
+              onChange={() => {
+                setSource("fresh");
+                setSavedId("");
+              }}
+            />
+            a fresh idea
+          </label>
+          <label className="inline-flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="prompt-source"
+              className="accent-accent"
+              checked={source === "saved"}
+              onChange={() => {
+                setSource("saved");
+                if (savedId) pickSaved(savedId);
+              }}
+            />
+            a past playlist
+          </label>
+          {source === "saved" && (
+            <select
+              value={savedId}
+              onChange={(e) => pickSaved(e.target.value)}
+              className="min-w-0 max-w-[340px] flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text outline-none focus:border-line-strong"
+            >
+              <option value="" disabled>
+                Pick a previous playlist…
+              </option>
+              {saved.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} · {s.trackCount} tracks
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       <div className="w-full overflow-hidden rounded-card border border-line-strong bg-surface shadow-[var(--pai-elev)]">
         <textarea
@@ -99,18 +211,26 @@ export function GenerateScreen({
           className="w-full resize-none bg-transparent px-4 py-3.5 text-[15.5px] leading-relaxed text-text outline-none placeholder:text-faint"
         />
         <div className="flex items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
-          <span className="text-[11.5px] text-faint">
-            Enter to generate · Shift+Enter for a new line
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
+            Name a seed artist · Enter to generate · Shift+Enter for a new line
           </span>
-          <span className="ml-1 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
+          <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
             {preview?.backend === "llama" ? "local model" : "rules"}
           </span>
-          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="sm"
+            iconLeft={<Icon.Sparkle size={14} />}
+            disabled={generating}
+            onClick={surprise}
+          >
+            Surprise me
+          </Button>
           <Button
             variant="primary"
             size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
-            disabled={generating || prompt.trim() === ""}
+            disabled={generating || prompt.trim() === "" || needsSeed}
             onClick={generate}
           >
             {generating ? "Generating…" : "Generate playlist"}
@@ -118,10 +238,24 @@ export function GenerateScreen({
         </div>
       </div>
 
+      {generating && (
+        <ProgressBar
+          className="w-full"
+          label={intentProgress?.note || "Understanding your request"}
+          total={0}
+          note={preview?.backend === "llama" ? "local model" : undefined}
+        />
+      )}
+
       {preview && (
         <div className="w-full">
           <div className="mb-2 text-[11px] tracking-[0.08em] text-faint uppercase">Parsed intent</div>
           <div className="flex flex-wrap gap-2">
+            {needsSeed && (
+              <Chip>
+                <Icon.Warn size={12} className="text-faint" /> name a seed artist to generate
+              </Chip>
+            )}
             {(preview.seeds ?? []).map((s) => (
               <Chip key={s} accent>
                 <Icon.ListPlus size={12} /> {s}

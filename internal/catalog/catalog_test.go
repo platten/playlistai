@@ -115,6 +115,13 @@ func TestResolve(t *testing.T) {
 		{"", nil, true},
 		{"   ", nil, true},
 		{"zzzznotarealthing", nil, true},
+		// fallback: filler words dropped when a strict match finds nothing
+		{"songs like justice", []string{"seed0001", "seed0002", "seed0007"}, true},
+		{"a justice playlist", []string{"seed0001", "seed0002", "seed0007"}, true},
+		// fallback: trailing tokens dropped, leading name kept
+		{"justice zzzznotarealthing", []string{"seed0001", "seed0002", "seed0007"}, true},
+		// fallback still can't invent a match
+		{"songs like zzzznotarealthing", nil, true},
 	}
 	for _, tc := range cases {
 		got := c.Resolve(tc.query, 50)

@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "Playlist AI"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "0.1.0"
+    !define INFO_PRODUCTVERSION "0.5.0"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "(c) 2026, the Playlist AI authors. GPL-3.0."

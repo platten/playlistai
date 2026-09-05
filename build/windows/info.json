@@ -1,10 +1,10 @@
 {
 	"fixed": {
-		"file_version": "0.1.0"
+		"file_version": "0.5.0"
 	},
 	"info": {
 		"0000": {
-			"ProductVersion": "0.1.0",
+			"ProductVersion": "0.5.0",
 			"CompanyName": "Playlist AI",
 			"FileDescription": "Local-first playlist recommendations over the Deej-AI embedding catalog.",
 			"LegalCopyright": "(c) 2026, the Playlist AI authors. GPL-3.0.",

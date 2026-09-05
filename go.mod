@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/edsrzf/mmap-go v1.2.0
+	github.com/klauspost/compress v1.20.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.16
 	golang.org/x/text v0.41.0
 	modernc.org/sqlite v1.58.0

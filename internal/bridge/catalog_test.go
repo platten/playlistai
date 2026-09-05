@@ -11,17 +11,16 @@ import (
 
 func TestGetCatalogInfoUnconfigured(t *testing.T) {
 	t.Parallel()
-	// newTestContainer leaves catalog.manifest_url unset and points dir at a
-	// path with nothing in it — the state of a fresh install today, since
-	// this project doesn't ship or host a catalog (see docs/CATALOG.md).
+	// newTestContainer clears every catalog source (archive_url, manifest_url)
+	// and points dir at an empty path — the "no source at all" state.
 	api := New(newTestContainer(t), nil)
 
 	info := api.GetCatalogInfo()
 	if info.Loaded {
 		t.Fatal("nothing should be loaded")
 	}
-	if info.Configured {
-		t.Fatal("no manifest_url set => Configured must be false")
+	if info.Configured || info.AutoSetup {
+		t.Fatal("no catalog source => Configured and AutoSetup must be false")
 	}
 }
 

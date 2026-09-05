@@ -9,7 +9,7 @@ platform: "linux"
 # Keep in sync with build/config.yml's info.version (re-run
 # `wails3 update build-assets` after bumping it, then reapply the fields below —
 # that command doesn't know about section/maintainer/homepage/license).
-version: "0.1.0"
+version: "0.5.0"
 section: "sound"
 priority: "extra"
 maintainer: "Playlist AI authors <https://github.com/platten/playlistai>"
@@ -26,15 +26,6 @@ contents:
     dst: "/usr/share/icons/hicolor/128x128/apps/playlist-ai.png"
   - src: "./build/linux/playlist-ai.desktop"
     dst: "/usr/share/applications/playlist-ai.desktop"
-  # Bundled llama-server runtime (build/llama/fetch.sh, run automatically by
-  # `task linux:package`) — must land in the same directory as playlist-ai
-  # itself; that's where internal/intent/llama's resolveBinary() looks first.
-  - src: "./bin/llama-server"
-    dst: "/usr/local/bin/llama-server"
-  - src: "./bin/*.so*"
-    dst: "/usr/local/bin/"
-  - src: "./bin/licenses/*"
-    dst: "/usr/share/doc/playlist-ai/"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

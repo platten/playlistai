@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	"github.com/platten/playlistai/internal/browser"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/export/soundiizcsv"
+	"github.com/platten/playlistai/internal/export/soundiizhandoff"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -130,6 +134,9 @@ func (a *API) ExportCSV(name string, tracks []EnrichedTrackDTO) (ExportSaveResul
 	if canceled {
 		return ExportSaveResult{Canceled: true, Count: res.Count}, nil
 	}
+	// The OS save dialog lets the user type a name with no extension (or the
+	// wrong one); make sure what lands on disk is still a .csv.
+	target = soundiizcsv.EnsureCSVExt(target)
 
 	if err := os.WriteFile(target, res.Data, 0o644); err != nil {
 		return ExportSaveResult{}, fmt.Errorf("write %s: %w", target, err)
@@ -161,25 +168,42 @@ func (a *API) chooseCSVPath(suggestedName string) (path string, canceled bool, e
 	return filepath.Join(dir, suggestedName), false, nil
 }
 
+// SoundiizHandoffResult is the outcome of OpenSoundiizHandoff.
+type SoundiizHandoffResult struct {
+	URL    string `json:"url"`    // validated Soundiiz share URL
+	Count  int    `json:"count"`  // tracks handed off
+	Opened bool   `json:"opened"` // a browser was launched; if false, the UI must show the URL to copy
+}
+
 // OpenSoundiizHandoff posts the playlist to Soundiiz's tokenless import endpoint,
 // validates the returned share URL, opens it in the user's browser, and returns
 // it. Only the playlist name and the track/artist names leave the machine.
-func (a *API) OpenSoundiizHandoff(name string, tracks []EnrichedTrackDTO) (string, error) {
+func (a *API) OpenSoundiizHandoff(name string, tracks []EnrichedTrackDTO) (SoundiizHandoffResult, error) {
 	exp, ok := a.app.Exporter("soundiiz-handoff")
 	if !ok {
-		return "", errors.New("soundiiz exporter not wired")
+		return SoundiizHandoffResult{}, errors.New("soundiiz exporter not wired")
 	}
 
 	res, err := exp.Export(a.context(), a.exportRequest(name, tracks), NewWailsProgress())
 	if err != nil {
-		return "", err
+		return SoundiizHandoffResult{}, err
 	}
 
-	if appInst := application.Get(); appInst != nil && appInst.Browser != nil {
-		if oerr := appInst.Browser.OpenURL(res.Location); oerr != nil {
-			a.log.Warn("could not open the Soundiiz handoff in a browser", "err", oerr)
-		}
+	opened := true
+	if oerr := browser.OpenURL(res.Location); oerr != nil {
+		opened = false
+		a.log.Warn("soundiiz handoff ready but no browser could be launched", "err", oerr, "url", res.Location)
 	}
-	a.log.Info("soundiiz handoff ready", "url", res.Location, "tracks", res.Count)
-	return res.Location, nil
+	a.log.Info("soundiiz handoff ready", "url", res.Location, "tracks", res.Count, "browserOpened", opened)
+	return SoundiizHandoffResult{URL: res.Location, Count: res.Count, Opened: opened}, nil
+}
+
+// OpenExternalURL re-opens an already-issued Soundiiz share URL in the browser.
+// It re-validates against the fixed Soundiiz import prefix so the frontend can
+// never drive the system opener with an arbitrary URL.
+func (a *API) OpenExternalURL(raw string) error {
+	if !strings.HasPrefix(raw, soundiizhandoff.SharePrefix) {
+		return errors.New("refusing to open a non-Soundiiz URL")
+	}
+	return browser.OpenURL(raw)
 }

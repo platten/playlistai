@@ -12,12 +12,14 @@ import (
 	"time"
 )
 
-// Server manages a llama-server child process bound to loopback.
+// Server manages a llama runtime child process bound to loopback.
 type Server struct {
 	bin     string
+	subcmd  []string // e.g. ["serve"] for the unified `llama` binary
 	model   string
 	nCtx    int
 	threads int
+	ngl     int
 	log     *slog.Logger
 
 	mu   sync.Mutex
@@ -28,10 +30,12 @@ type Server struct {
 
 // ServerOptions configures a Server.
 type ServerOptions struct {
-	BinaryPath string // path to llama-server
-	ModelPath  string // path to the GGUF
-	NCtx       int    // context size (0 → 4096)
-	NThreads   int    // 0 → let llama-server decide
+	BinaryPath string   // path to llama-server or the unified llama binary
+	Subcmd     []string // prepended to the args (["serve"] for unified llama)
+	ModelPath  string   // path to the GGUF
+	NCtx       int      // context size (0 → 4096)
+	NThreads   int      // 0 → let the runtime decide
+	GPULayers  int      // >0 that many; 0 offload all; <0 force CPU
 	Logger     *slog.Logger
 }
 
@@ -44,7 +48,10 @@ func newServer(o ServerOptions) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{bin: o.BinaryPath, model: o.ModelPath, nCtx: nctx, threads: o.NThreads, log: log}
+	return &Server{
+		bin: o.BinaryPath, subcmd: o.Subcmd, model: o.ModelPath,
+		nCtx: nctx, threads: o.NThreads, ngl: o.GPULayers, log: log,
+	}
 }
 
 // Start launches the process and blocks until /health is green or ctx is done.
@@ -60,14 +67,24 @@ func (s *Server) Start(ctx context.Context) error {
 		s.mu.Unlock()
 		return err
 	}
-	args := []string{
+	args := append([]string{}, s.subcmd...)
+	args = append(args,
 		"--model", s.model,
 		"--host", "127.0.0.1",
 		"--port", strconv.Itoa(port),
 		"--ctx-size", strconv.Itoa(s.nCtx),
-	}
+	)
 	if s.threads > 0 {
 		args = append(args, "--threads", strconv.Itoa(s.threads))
+	}
+	// GPU offload. 0 (the default) passes nothing — a GPU build of llama.cpp
+	// already offloads every layer by default, and a CPU build has nowhere to
+	// offload. >0 pins the layer count; <0 forces CPU (n-gpu-layers 0).
+	switch {
+	case s.ngl > 0:
+		args = append(args, "--n-gpu-layers", strconv.Itoa(s.ngl))
+	case s.ngl < 0:
+		args = append(args, "--n-gpu-layers", "0")
 	}
 
 	cmd := exec.Command(s.bin, args...) //nolint:gosec // bin/model come from validated config
@@ -75,7 +92,7 @@ func (s *Server) Start(ctx context.Context) error {
 	cmd.Stderr = logWriter{s.log, "llama-server"}
 	if err := cmd.Start(); err != nil {
 		s.mu.Unlock()
-		return fmt.Errorf("start llama-server: %w", err)
+		return fmt.Errorf("start llama runtime: %w", err)
 	}
 
 	done := make(chan struct{})

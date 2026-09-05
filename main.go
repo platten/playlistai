@@ -70,9 +70,9 @@ func run(log *slog.Logger) error {
 
 	wapp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:            "Playlist AI",
-		Width:            1180,
-		Height:           800,
-		MinWidth:         920,
+		Width:            1280,
+		Height:           820,
+		MinWidth:         1040,
 		MinHeight:        640,
 		BackgroundColour: application.NewRGB(15, 15, 18),
 		URL:              "/",

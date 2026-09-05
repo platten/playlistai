@@ -17,13 +17,16 @@ secrets first and is skipped, with a log line, if they're absent. An unsigned
 release is still a complete, working release; signing only removes OS trust
 warnings (Gatekeeper, SmartScreen, `apt`/`dnf` signature checks).
 
-Every installer and portable archive (except AppImage — see Known gaps) also
-bundles a pinned CPU build of **llama-server** from
-[ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp), so the local
-model works out of the box with nothing else to install. This is fetched
-automatically by `task <os>:package` (`build/llama/fetch.sh`, pinned tag +
-per-OS SHA-256 in `build/llama/manifest.json`) and needs no configuration —
-see "Bundled llama-server runtime" below only if you need to update it.
+The installers **don't** bundle a llama.cpp runtime (that's the bulk of the
+old package size). The app installs one on first run via ggml-org's official
+installer — GPU build when available, CPU otherwise — see
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md) and `internal/intent/llama/runtime.go`.
+Nothing about llama.cpp is fetched or staged at package time.
+
+The **recommendation catalog** is *not* in the installers or the repo — the
+app downloads it (~210 MB, `catalog.archive_url`) and decompresses it on
+first launch. Releases need nothing for this. See
+[`docs/CATALOG.md`](CATALOG.md).
 
 ## Cutting a release
 
@@ -91,49 +94,38 @@ be dropped into CI as a base64 secret — this path assumes a standard
 will warn on first run until the binary builds enough install reputation on
 its own; this is expected and not a bug.
 
-## Bundled llama-server runtime
+## The llama.cpp runtime (not part of releases)
 
-`build/llama/manifest.json` pins one llama.cpp release tag plus the exact
-asset name + SHA-256 for each OS in our build matrix (`ubuntu-x64`,
-`macos-arm64`, `win-cpu-x64` — CPU-only builds; macOS's build includes Metal,
-which needs no separate driver so it doesn't count as "GPU-only" for this
-purpose). `build/llama/fetch.sh <os> <bin-dir>`:
+Nothing about llama.cpp is bundled, fetched, or staged at package time. On
+first run the wizard's model step calls `InstallLlamaRuntime`, which runs
+ggml-org's official installer (`sh -c 'curl -fsSL https://llama.app/install.sh | sh'`
+on macOS/Linux, `powershell -c 'irm https://llama.app/install.ps1 | iex'` on
+Windows) **twice**: once for a GPU-capable build (CUDA / ROCm / Vulkan /
+Metal when the machine has one, CPU otherwise), once with the GPU probes
+skipped to get a plain CPU build. Both are copied into
+`<data dir>/llama/{llama-primary,llama-cpu}` (macOS gets only the Metal
+build). `internal/intent/llama` tries `primary` first and falls back to
+`cpu` if it won't start / go healthy for a model. `DetectRuntime` still
+covers a manually-installed runtime (PATH, `~/.local/bin`, `~/.llama-app`,
+next to the app, or `ai.llama_server_path`) and knows to run the unified
+binary as `llama serve`.
 
-1. Downloads that one pinned asset and verifies it against the pinned SHA-256
-   (hard failure on mismatch — never silently proceeds).
-2. Extracts `llama-server[.exe]` plus the runtime libraries it actually needs
-   (`.so`/`.dylib`/`.dll` — skipping the extra CLI tools like `llama-cli`,
-   `llama-quantize`, ... this app never runs) into `<bin-dir>`, alongside the
-   app binary — the first place `internal/intent/llama`'s `resolveBinary()`
-   looks.
-3. Copies its MIT `LICENSE` file(s) into `<bin-dir>/licenses/`.
-4. Stamps the tag into `<bin-dir>/.llama-runtime-tag` so a re-run with the
-   same pin is a no-op.
+## The catalog (not part of releases)
 
-It's wired in as an automatic dependency of the relevant per-OS packaging
-tasks (`linux:create:deb/rpm/aur`, `darwin:create:app:bundle`,
-`windows:create:nsis:installer`) — `task <os>:package` just does the right
-thing, network permitting. `build/linux/nfpm/nfpm.yaml` picks the staged files
-up via a glob (`./bin/*.so*`), `build/darwin/Taskfile.yml`'s
-`create:app:bundle` copies them into `Contents/MacOS/` before ad-hoc signing
-(so `--deep` ad-hoc-signs them too), and `build/windows/nsis/project.nsi`
-embeds them via `File` directives. `release.yml` also runs
-`bin/llama-server[.exe] --version` right after each OS's packaging step as a
-smoke test.
-
-**To bump the pinned build**: check
-[llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for a
-recent `bNNNNN` tag with binary assets (the plain `latest` tag usually has
-none), update the tag + the three asset names + their `sha256sum <file>` in
-`build/llama/manifest.json`, delete any stale `bin/.llama-runtime-tag` you
-have locally, and re-run `task linux:create:deb` (or the smoke test in CI) to
-confirm it still runs.
+The recommendation catalog is downloaded by the app on first launch, not
+shipped. Releases don't touch it. The compressed archive is hosted off-repo
+at `catalog.archive_url` (`config.Default()`), with a pinned size + SHA-256;
+the first-run wizard's catalog step fetches and unpacks it behind
+a progress popup the first time the app runs. To rebuild or re-host it, see
+[`docs/CATALOG.md`](CATALOG.md).
 
 ## Known gaps
 
-- The app icon (`build/appicon.png`, `build/darwin/icons.icns`,
-  `build/windows/icon.ico`) is still the Wails default diamond — a custom
-  Playlist AI icon is a nice-to-have, not tracked as a release blocker.
+- The macOS "Liquid Glass" icon (`Assets.car`, built from
+  `build/appicon.icon/`) is only regenerated during a macOS packaging run;
+  `build/darwin/icons.icns` / `build/windows/icon.ico` / `build/appicon.png`
+  (regenerated from `build/appicon.svg` via `wails3 generate icons`) are the
+  cross-platform fallbacks and are checked in.
 - MSIX packaging is scaffolded (`build/windows/msix/`) but not part of the
   release matrix — `wails3 tool msix` currently expects a Wails v2-style
   `wails.json` this project doesn't have. NSIS is the supported Windows
@@ -142,13 +134,7 @@ confirm it still runs.
   artifact (an unpackaged `.app` on macOS, no `.dmg`); the release workflow
   calls the more specific `wails3 task linux:package` / `darwin:package` +
   `darwin:create:dmg` / `windows:package` tasks directly, with `codesign` /
-  `xcrun notarytool` run directly (not through `wails3 tool sign`) on macOS
-  for the deep-signing + notarization the bundled llama-server needs, and
-  `wails3 tool sign` on Windows.
-- The AppImage build does **not** bundle llama-server yet — `wails3 generate
-  appimage` is a black box (linuxdeploy under the hood) that only deploys the
-  dependencies of the one binary it's given, so there's no clean hook to add
-  a second executable + its libraries to the AppDir. AppImage users who want
-  the local model can install llama-server separately (see llama.cpp's
-  releases) and set `ai.llama_server_path`, or use the `.deb`/`.rpm`/Arch
-  package instead, which do bundle it.
+  `xcrun notarytool` run directly (not through `wails3 tool sign`) on macOS,
+  and `wails3 tool sign` on Windows.
+- The catalog and the llama.cpp runtime are both set up by the app on first
+  launch, so every package format (AppImage included) behaves the same.

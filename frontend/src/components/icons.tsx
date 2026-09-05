@@ -22,14 +22,6 @@ function base({ size = 16, ...rest }: IconProps, strokeWidth = 1.8): SVGProps<SV
   };
 }
 
-export function Diamond({ size = 16, ...rest }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>
-      <path d="M12 2l10 10-10 10L2 12z" />
-    </svg>
-  );
-}
-
 export function Play({ size = 12, ...rest }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden {...rest}>
@@ -156,5 +148,12 @@ export const Similar = (p: IconProps) => (
 export const ListPlus = (p: IconProps) => (
   <svg {...base(p, 2)}>
     <path d="M4 6h11M4 12h8M4 18h8M16 15h6M19 12v6" />
+  </svg>
+);
+
+export const Copy = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
   </svg>
 );

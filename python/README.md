@@ -1,12 +1,14 @@
 # python
 
 Build-time tooling. Not shipped with the app; needs only the Python standard
-library (`convert_pickles.py` additionally needs `numpy` to read the pickles).
+library (`convert_pickles.py` and `fetch_pickles.py` additionally need the
+packages in `requirements.txt`: `numpy` and `gdown`).
 
 | script | purpose |
 |---|---|
 | `catalogfmt.py` | Shared on-disk catalog format: `vectors.i8` header + writer, the SQLite schema, and `normalize_search()` (reproduced byte-for-byte in `internal/catalog/search.go`). Both scripts below go through it. |
-| `convert_pickles.py` | Convert Deej-AI's `spotifytovec.p` / `tracktovec.p` / `spotify_tracks.p` / `spotify_urls.p` into `vectors.i8` + `catalog.sqlite` + `models/catalog-manifest.json`. The pickles live only on Google Drive (~1.4 GB) and are not fetched here. |
+| `fetch_pickles.py` | Download Deej-AI's four pickles from Google Drive (by the file IDs `deej-ai.online-app/scripts/download.py` uses) and sanity-check each one. See `docs/CATALOG.md`. |
+| `convert_pickles.py` | Convert `spotifytovec.p` / `tracktovec.p` / `spotify_tracks.p` / `spotify_urls.p` into `vectors.i8` + `catalog.sqlite` + `catalog-manifest.json`. |
 | `make_test_catalog.py` | Write a small deterministic synthetic catalog in the same format. |
 | `parity_playlist.py` | Stdlib-only reimplementation of upstream `backend/deejai.py` (`make_playlist` / `most_similar` / `join_the_dots`, `noise=0`) run over `internal/catalog/testdata` → golden playlist fixtures under `internal/reco/deejai/testdata/golden/` for the Go parity test. |
 
