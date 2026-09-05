@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { API, type ModelInfo, type ModelStatus } from "../lib/api";
+import { API, type LlamaRuntimeInfo, type ModelInfo, type ModelStatus } from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+
+/** ggml-org's official llama.cpp installer landing page. */
+const LLAMA_INSTALLER_URL = "https://llama.app";
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -16,17 +19,22 @@ const PREVIEW_OPTIONS: { id: string; label: string }[] = [
 /** Settings — currently just the AI-model panel. */
 export function SettingsScreen() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
-  const [busy, setBusy] = useState<string | null>(null); // model id or "file"
+  const [busy, setBusy] = useState<string | null>(null); // model id, "file", "clear", "llama"
   const [error, setError] = useState<string | null>(null);
   const [filePath, setFilePath] = useState("");
   const progress = useProgress("model");
+  const installProgress = useProgress("llama-install");
   const [previewProvider, setPreviewProviderState] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     API.GetModelStatus()
       .then((s) => setStatus(s ?? null))
       .catch(() => setStatus(null));
+    API.GetLlamaRuntime()
+      .then((r) => setRuntime(r ?? null))
+      .catch(() => setRuntime(null));
     API.GetModelCatalog()
       .then((c) => setCatalog(c ?? []))
       .catch(() => setCatalog([]));
@@ -58,6 +66,8 @@ export function SettingsScreen() {
   };
 
   const isLlama = status?.backend === "llama";
+  const runtimeReady = runtime?.available ?? false;
+  const runtimeBusy = busy === "llama";
   // True only while a real network download is running — a model that's
   // already on disk is a no-op fetch, so no download bar for it.
   const downloadingModel = busy !== null && catalog.some((m) => m.id === busy && !m.installed);
@@ -70,6 +80,62 @@ export function SettingsScreen() {
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
           Language model
         </h2>
+
+        {/* llama.cpp runtime — required before any model can be used */}
+        <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5">
+          <span
+            className={"size-2 flex-none rounded-pill " + (runtimeReady ? "bg-good" : "bg-warn")}
+          />
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-medium">
+              {runtimeReady ? "llama.cpp installed" : "llama.cpp not installed"}
+              {runtimeReady && (runtime?.builds?.length ?? 0) > 0 && (
+                <span className="text-faint"> · {runtime?.builds?.join(" + ")}</span>
+              )}
+            </div>
+            <div className="text-[12px] text-faint">
+              {runtimeReady
+                ? "the local engine that runs the model"
+                : "required before a model can be downloaded or used"}
+              {" — "}
+              <a
+                href={LLAMA_INSTALLER_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                the llama.cpp installer
+              </a>
+            </div>
+          </div>
+          <Button
+            className="ml-auto"
+            size="sm"
+            variant={runtimeReady ? "ghost" : "primary"}
+            disabled={busy !== null}
+            iconLeft={!runtimeReady && !runtimeBusy ? <Icon.Download size={14} /> : undefined}
+            onClick={() =>
+              run("llama", () =>
+                runtimeReady ? API.ReinstallLlamaRuntime() : API.InstallLlamaRuntime(),
+              )
+            }
+          >
+            {runtimeBusy
+              ? runtimeReady
+                ? "Reinstalling…"
+                : "Installing…"
+              : runtimeReady
+                ? "Reinstall"
+                : "Install llama.cpp"}
+          </Button>
+        </div>
+
+        {runtimeBusy && (
+          <ProgressBar
+            label="Installing llama.cpp"
+            note={installProgress?.note ?? "starting the installer…"}
+          />
+        )}
 
         <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5">
           <span
@@ -118,6 +184,12 @@ export function SettingsScreen() {
         )}
         {error && <ErrorState variant="inline" message={error} />}
 
+        {!runtimeReady && (
+          <p className="text-[12px] text-warn">
+            Install llama.cpp above before downloading or selecting a model.
+          </p>
+        )}
+
         <div className="rounded-card border border-line bg-surface">
           {catalog.length === 0 ? (
             <EmptyState title="No models listed" />
@@ -156,7 +228,7 @@ export function SettingsScreen() {
                   className="ml-auto"
                   size="sm"
                   variant={status?.modelId === m.id ? "ghost" : "primary"}
-                  disabled={busy !== null || status?.modelId === m.id}
+                  disabled={busy !== null || !runtimeReady || status?.modelId === m.id}
                   onClick={() => run(m.id, () => API.DownloadModel(m.id))}
                   iconLeft={!m.installed && busy !== m.id ? <Icon.Download size={14} /> : undefined}
                 >
@@ -187,7 +259,7 @@ export function SettingsScreen() {
             <Button
               variant="ghost"
               size="md"
-              disabled={busy !== null || filePath.trim() === ""}
+              disabled={busy !== null || !runtimeReady || filePath.trim() === ""}
               onClick={() => run("file", () => API.UseModelFile(filePath.trim()))}
             >
               Use

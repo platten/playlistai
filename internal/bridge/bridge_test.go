@@ -46,6 +46,9 @@ func TestGetStatusOnBareContainer(t *testing.T) {
 	if st.Version != Version {
 		t.Fatalf("Version = %q, want %q", st.Version, Version)
 	}
+	if st.GenerateReady || st.LLMReady {
+		t.Fatal("no model configured => GenerateReady and LLMReady must be false")
+	}
 }
 
 func TestServiceLifecycleNoWailsApp(t *testing.T) {

@@ -283,14 +283,21 @@ function ModelStep({ onNext }: { onNext: () => void }) {
     return (
       <StepShell
         title="Install llama.cpp"
-        description="The local engine that turns your prompt into a structured request. A GPU build is installed when one is available (CUDA / ROCm / Vulkan / Metal) plus a CPU fallback build. Everything goes in the app's config directory. This step can't be skipped."
+        description="The local engine that turns a typed prompt into a structured request. A GPU build is installed when one is available (CUDA / ROCm / Vulkan / Metal) plus a CPU fallback. Everything goes in the app's config directory. Skip it and the Generate screen stays hidden until you set this up in Settings — Catalog search still builds playlists from a seed track."
       >
         <div className="flex flex-col gap-3">
           <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={() => void installRuntime()}>
             Install llama.cpp
           </Button>
           <div className="rounded-lg border border-line bg-surface px-3 py-2.5 text-[12px] text-muted">
-            Runs ggml-org's official installer. Or do it yourself:
+            Runs ggml-org's official installer (<a
+              className="text-accent hover:underline"
+              href="https://llama.app"
+              target="_blank"
+              rel="noreferrer"
+            >
+              llama.app
+            </a>). Or do it yourself:
             <pre className="mt-1.5 overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-[11.5px] text-text">
               {"curl https://llama.app/install.sh | sh        # macOS / Linux\n"}
               {"irm https://llama.app/install.ps1 | iex       # Windows (PowerShell)"}
@@ -311,6 +318,9 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         </div>
 
         <StepFooter>
+          <Button variant="subtle" size="sm" onClick={onNext}>
+            Skip for now
+          </Button>
           <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
             Continue
           </Button>
@@ -322,7 +332,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
   return (
     <StepShell
       title="Language model"
-      description="It turns your typed prompt into a structured request — it never picks tracks. Required to continue. Runs locally, no account."
+      description="It turns a typed prompt into a structured request — it never picks tracks. Runs locally, no account. Needed for the Generate screen; skip it and set one up later in Settings."
     >
       <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[12.5px] text-text">
         <Icon.Check size={14} className="flex-none text-good" />
@@ -423,11 +433,14 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
       {!usingLocal && !busy && (
         <p className="text-[12px] text-faint">
-          Download a model to continue — this step can't be skipped.
+          Pick a model to enable the Generate screen, or skip and do it later in Settings.
         </p>
       )}
 
       <StepFooter>
+        <Button variant="subtle" size="sm" disabled={busy !== null} onClick={onNext}>
+          Skip for now
+        </Button>
         <Button
           variant="primary"
           size="sm"
