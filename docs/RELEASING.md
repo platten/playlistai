@@ -5,11 +5,15 @@ recommended path) and a **portable archive** of the raw binary. Both are built
 by [`.github/workflows/release.yml`](../.github/workflows/release.yml) and
 attached to a draft GitHub Release.
 
-| OS      | Installer                                  | Portable            |
-| ------- | ------------------------------------------- | -------------------- |
-| Linux   | `.AppImage`, `.deb`, `.rpm`, `.pkg.tar.zst` | `playlist-ai-linux-amd64.tar.gz` |
-| macOS   | `.dmg`                                      | `playlist-ai-macos.zip` (the `.app`) |
-| Windows | `<name>-<arch>-installer.exe` (NSIS)        | `playlist-ai-windows-amd64.zip` |
+| OS      | Arches        | Installer                                  | Portable            |
+| ------- | ------------- | ------------------------------------------- | -------------------- |
+| Linux   | amd64, arm64  | `.AppImage`, `.deb`, `.rpm`, `.pkg.tar.zst` | `playlist-ai-linux-<arch>.tar.gz` |
+| macOS   | arm64         | `.dmg`                                      | `playlist-ai-macos.zip` (the `.app`) |
+| Windows | amd64, arm64  | `playlist-ai-<arch>-installer.exe` (NSIS)   | `playlist-ai-windows-<arch>.zip` |
+
+Linux arm64 builds natively on a `ubuntu-24.04-arm` runner (the build is CGO);
+Windows arm64 is a pure-Go cross-compile on the x86 runner. `ci.yml` builds
+every one of these on each push, so a broken arch shows up before a tag is cut.
 
 Packaging itself (AppImage/deb/rpm/dmg/NSIS) always runs — it needs no secrets.
 **Code signing is best-effort and additive**: every signing step checks for its
@@ -119,6 +123,25 @@ the first-run wizard's catalog step fetches and unpacks it behind
 a progress popup the first time the app runs. To rebuild or re-host it, see
 [`docs/CATALOG.md`](CATALOG.md).
 
+## winget
+
+The NSIS installer is winget-compatible (`InstallerType: nullsoft`, supports
+`/S` and registers a `QuietUninstallString`).
+
+- **On each release**, the `winget` job in `release.yml` renders the manifest
+  templates in `build/windows/winget/` with this version, the release download
+  URLs, and the installers' SHA-256s, and attaches them to the release as
+  `platten.PlaylistAI-<version>-winget.zip` — usable directly with
+  `winget install --manifest <unzipped dir>`.
+- **When you publish the draft release**, `winget-submit.yml` opens the
+  version-bump PR against `microsoft/winget-pkgs` via
+  `vedantmgoyal9/winget-releaser`. It only runs if the optional `WINGET_TOKEN`
+  secret is set (a classic PAT with `public_repo` scope, on an account that has
+  forked `microsoft/winget-pkgs`). You can also trigger it by hand
+  (`workflow_dispatch`, passing the tag).
+
+Bump `ManifestVersion` in the three template files if the winget schema moves on.
+
 ## Known gaps
 
 - The macOS "Liquid Glass" icon (`Assets.car`, built from
@@ -129,7 +152,7 @@ a progress popup the first time the app runs. To rebuild or re-host it, see
 - MSIX packaging is scaffolded (`build/windows/msix/`) but not part of the
   release matrix — `wails3 tool msix` currently expects a Wails v2-style
   `wails.json` this project doesn't have. NSIS is the supported Windows
-  installer.
+  installer (and is what winget consumes — see above).
 - `wails3 package` (the bare CLI command) only builds the platform's default
   artifact (an unpackaged `.app` on macOS, no `.dmg`); the release workflow
   calls the more specific `wails3 task linux:package` / `darwin:package` +

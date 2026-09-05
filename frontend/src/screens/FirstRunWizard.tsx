@@ -444,7 +444,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
 const PREVIEW_OPTIONS: { id: string; label: string; description: string }[] = [
   { id: "deezer", label: "Deezer (recommended)", description: "Looks up a 30s preview per track. No account needed." },
-  { id: "spotify", label: "Bundled only", description: "Uses only the preview link shipped with the catalog — no network calls. Many tracks will have none." },
+  { id: "spotify", label: "Spotify", description: "Uses only the preview link shipped with the catalog — no network calls. Many tracks will have none." },
   { id: "off", label: "Off", description: "No playback previews anywhere in the app." },
 ];
 

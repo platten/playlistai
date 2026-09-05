@@ -1,0 +1,20 @@
+# Rendered by .github/workflows/release.yml at release time. Schema: https://aka.ms/winget-manifest
+PackageIdentifier: platten.PlaylistAI
+PackageVersion: "<VERSION>"
+InstallerType: nullsoft
+Scope: machine
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: "<RELEASE_DATE>"
+Installers:
+  - Architecture: x64
+    InstallerUrl: "<AMD64_URL>"
+    InstallerSha256: "<AMD64_SHA256>"
+  - Architecture: arm64
+    InstallerUrl: "<ARM64_URL>"
+    InstallerSha256: "<ARM64_SHA256>"
+ManifestType: installer
+ManifestVersion: 1.6.0

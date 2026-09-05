@@ -84,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -130,11 +130,16 @@ jobs:
         if: runner.os != 'Windows'
         run: wails3 build
 
-      # Windows runs the actual release command so CI catches packaging breaks
-      # (e.g. a missing makensis) before a tag is cut.
-      - name: Build + package (NSIS installer)
+      # Windows runs the actual release commands so CI catches packaging breaks
+      # (a missing makensis, a broken arm64 syso) before a tag is cut. Both
+      # arches are cross-compiled here on the x86 runner.
+      - name: Build + package (NSIS installer, amd64)
         if: runner.os == 'Windows'
-        run: wails3 task windows:package
+        run: wails3 task windows:package ARCH=amd64
+
+      - name: Build + package (NSIS installer, arm64)
+        if: runner.os == 'Windows'
+        run: wails3 task windows:package ARCH=arm64
 
       - uses: actions/upload-artifact@v6
         with:

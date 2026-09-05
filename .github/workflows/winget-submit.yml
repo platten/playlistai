@@ -1,0 +1,38 @@
+name: Submit to winget-pkgs
+
+# Fires when a GitHub Release is published (i.e. after you review and publish
+# the draft the Release workflow created). Opens the version-bump PR against
+# microsoft/winget-pkgs. No-op unless the WINGET_TOKEN secret is set — a
+# classic PAT with `public_repo` scope, on an account that has forked
+# microsoft/winget-pkgs. See docs/RELEASING.md.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to submit (e.g. v0.5.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    env:
+      HAS_WINGET_TOKEN: ${{ secrets.WINGET_TOKEN != '' && 'true' || 'false' }}
+    steps:
+      - name: Submit to winget-pkgs
+        if: env.HAS_WINGET_TOKEN == 'true'
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          identifier: platten.PlaylistAI
+          version: ${{ github.event.inputs.tag || github.event.release.tag_name }}
+          installers-regex: '-(amd64|arm64)-installer\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
+
+      - name: No token configured
+        if: env.HAS_WINGET_TOKEN != 'true'
+        run: echo "WINGET_TOKEN not set — skipping winget-pkgs submission."

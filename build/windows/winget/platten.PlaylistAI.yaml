@@ -1,0 +1,7 @@
+# Rendered by .github/workflows/release.yml at release time (placeholders
+# filled from the published installers). Schema: https://aka.ms/winget-manifest
+PackageIdentifier: platten.PlaylistAI
+PackageVersion: "<VERSION>"
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

@@ -5,6 +5,10 @@ name: Release
 # info.version and build/linux/nfpm/nfpm.yaml's version first (see
 # docs/RELEASING.md), then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 #
+# Linux and Windows are built for both amd64 and arm64. macOS is arm64
+# (the hosted runner). Windows arm64 is a pure-Go cross-compile on the x86
+# runner; Linux arm64 builds natively on an arm64 runner (the build is CGO).
+#
 # Code signing on every OS is best-effort: each signing step is skipped
 # (artifacts stay unsigned/ad-hoc-signed) unless the matching secrets are
 # configured. See docs/RELEASING.md for exactly which secrets enable which
@@ -25,8 +29,16 @@ env:
 
 jobs:
   linux:
-    name: Package (Linux)
-    runs-on: ubuntu-latest
+    name: Package (Linux ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     env:
       HAS_PGP_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY != '' && 'true' || 'false' }}
     steps:
@@ -47,7 +59,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Linux system dependencies (GTK4 + WebKitGTK 6.0 + packaging tools)
+      - name: Linux system dependencies (GTK4 + WebKitGTK 6.0)
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
@@ -77,17 +89,17 @@ jobs:
       - name: Portable archive (raw binary)
         run: |
           cd bin
-          tar -czf "playlist-ai-linux-amd64.tar.gz" -- playlist-ai
+          tar -czf "playlist-ai-linux-${{ matrix.arch }}.tar.gz" -- playlist-ai
 
       - uses: actions/upload-artifact@v6
         with:
-          name: linux-packages
+          name: linux-packages-${{ matrix.arch }}
           path: |
             bin/*.AppImage
             bin/*.deb
             bin/*.rpm
             bin/*.pkg.tar.zst
-            bin/playlist-ai-linux-amd64.tar.gz
+            bin/playlist-ai-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -189,8 +201,12 @@ jobs:
           retention-days: 7
 
   windows:
-    name: Package (Windows)
+    name: Package (Windows ${{ matrix.arch }})
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
     env:
       HAS_CERT: ${{ secrets.WINDOWS_CERTIFICATE_PFX != '' && secrets.WINDOWS_CERTIFICATE_PASSWORD != '' && 'true' || 'false' }}
     steps:
@@ -226,8 +242,11 @@ jobs:
           & "$dir\makensis.exe" /VERSION
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Package (NSIS installer)
-        run: wails3 task windows:package
+      # winget consumes this NSIS installer (InstallerType: nullsoft). It
+      # supports /S (silent) and registers a QuietUninstallString, so
+      # `winget install` / `winget uninstall` work unattended.
+      - name: Package (NSIS installer, ${{ matrix.arch }})
+        run: wails3 task windows:package ARCH=${{ matrix.arch }}
 
       - name: Sign the installer with Authenticode
         if: env.HAS_CERT == 'true'
@@ -251,14 +270,14 @@ jobs:
         shell: bash
         run: |
           cd bin
-          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe"
+          7z a "playlist-ai-windows-${{ matrix.arch }}.zip" "playlist-ai.exe"
 
       - uses: actions/upload-artifact@v6
         with:
-          name: windows-packages
+          name: windows-packages-${{ matrix.arch }}
           path: |
             bin/*-installer.exe
-            bin/playlist-ai-windows-amd64.zip
+            bin/playlist-ai-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -282,3 +301,43 @@ jobs:
           files: dist/*
           generate_release_notes: true
           draft: true
+
+  winget:
+    name: winget manifests
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Render winget manifests + attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+
+          # The release is still a draft here, so hash the installers via the
+          # authenticated API rather than the public download URL.
+          gh release download "$TAG" --dir dl \
+            --pattern 'playlist-ai-amd64-installer.exe' \
+            --pattern 'playlist-ai-arm64-installer.exe'
+          amd64_sha="$(sha256sum dl/playlist-ai-amd64-installer.exe | cut -d' ' -f1 | tr 'a-f' 'A-F')"
+          arm64_sha="$(sha256sum dl/playlist-ai-arm64-installer.exe | cut -d' ' -f1 | tr 'a-f' 'A-F')"
+
+          base="https://github.com/platten/playlistai/releases/download/${TAG}"
+          out="winget-out"; mkdir -p "$out"
+          for f in build/windows/winget/*.yaml; do
+            sed -e "s|<VERSION>|${version}|g" \
+                -e "s|<RELEASE_DATE>|$(date -u +%Y-%m-%d)|g" \
+                -e "s|<AMD64_URL>|${base}/playlist-ai-amd64-installer.exe|g" \
+                -e "s|<AMD64_SHA256>|${amd64_sha}|g" \
+                -e "s|<ARM64_URL>|${base}/playlist-ai-arm64-installer.exe|g" \
+                -e "s|<ARM64_SHA256>|${arm64_sha}|g" \
+                "$f" > "$out/$(basename "$f")"
+          done
+          echo "---- rendered installer manifest ----"; cat "$out/platten.PlaylistAI.installer.yaml"
+          ( cd "$out" && zip -q "../platten.PlaylistAI-${version}-winget.zip" ./*.yaml )
+          gh release upload "$TAG" "platten.PlaylistAI-${version}-winget.zip" --clobber

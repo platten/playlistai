@@ -1,0 +1,29 @@
+# Rendered by .github/workflows/release.yml at release time. Schema: https://aka.ms/winget-manifest
+PackageIdentifier: platten.PlaylistAI
+PackageVersion: "<VERSION>"
+PackageLocale: en-US
+Publisher: Playlist AI authors
+PublisherUrl: https://github.com/platten/playlistai
+PublisherSupportUrl: https://github.com/platten/playlistai/issues
+PackageName: Playlist AI
+PackageUrl: https://github.com/platten/playlistai
+License: GPL-3.0-only
+LicenseUrl: https://github.com/platten/playlistai/blob/main/LICENSE
+Copyright: (c) 2026, the Playlist AI authors. GPL-3.0.
+ShortDescription: Turn a plain-language prompt into a playlist, on your machine.
+Description: >-
+  A local-first desktop app that turns a natural-language prompt into a playlist
+  by walking a music-embedding catalog on your machine, then hands it to a
+  streaming service via Soundiiz. A local model only parses your words into an
+  intent - it never picks the songs.
+Moniker: playlist-ai
+Tags:
+  - music
+  - playlist
+  - ai
+  - local-first
+  - recommendations
+  - soundiiz
+ReleaseNotesUrl: https://github.com/platten/playlistai/releases/tag/v<VERSION>
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
