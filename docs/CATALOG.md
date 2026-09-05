@@ -1,32 +1,25 @@
-# The bundled embedding catalog
+# The embedding catalog
 
-Playlist AI ships its recommendation catalog **in the repo**, compressed, at
-`build/catalog-dist/catalog.tar.zst` (~210 MB), tracked with **Git LFS**
-(`.gitattributes`). ~957k tracks, derived from the Deej-AI pre-computed
-dataset.
+Playlist AI's recommendation catalog is a compressed **~210 MB**
+`catalog.tar.zst` (~957k tracks, derived from the Deej-AI pre-computed
+dataset). It is **not** in the repo and **not** in the installers — the app
+**downloads it on first launch** and decompresses it into the data dir.
 
-- **Packaging** (`build/Taskfile.yml`'s `stage:catalog`, a dependency of
-  every per-OS packaging task) copies it next to the app binary as
-  `bin/catalog.tar.zst`; nfpm / NSIS / the `.app` bundle then include it.
-- **First launch**: if the app finds `catalog.tar.zst` beside its executable
-  and hasn't decompressed it yet, `internal/dataset.Unpack` extracts it into
-  the data dir — a blocking "Decompressing dataset" step
-  (`frontend/src/components/CatalogUnpackGate.tsx`), no button, no network,
-  typically under a second. `internal/dataset.FindBundledArchive` is what
-  locates it; `Container.EnsureCatalog` prefers it over the
-  `catalog.manifest_url` network-download path.
+- **Where it's hosted**: `config.Default()` sets `catalog.archive_url` to a hosted `catalog.tar.zst` (Cloudflare R2), plus a pinned `catalog.archive_size` and
+  `catalog.archive_sha256`. Override any of these in a TOML config to
+  self-host (clear the size/hash if you point at a different build).
+- **First-run wizard**: the first-run wizard's catalog step calls
+  `DownloadCatalog` automatically (no button), showing a progress popup:
+  `internal/dataset.DownloadArchive` fetches the archive (resumable HTTP
+  range, size + SHA-256 verified) to `<data dir>/catalog.tar.zst`, then
+  `internal/dataset.Unpack` decompresses it into `catalog.dir` and the
+  archive is deleted. `Container.EnsureCatalog` drives this — see its doc
+  comment for the full source-precedence order.
 
-Nothing to download, no account, no config for the end user. The download
-path (`catalog.manifest_url`) and a pre-populated `catalog.dir` still work
-and still take precedence if set — see "Other ways to point the app at a
-catalog" below — but the default install needs neither.
-
-**If you cloned without Git LFS**, `build/catalog-dist/catalog.tar.zst` is a
-~130-byte text pointer, not the archive. Run `git lfs pull` once. `go test
-./...` and `wails3 build` don't care; only `wails3 package` does, and
-`stage:catalog` guards against it (it packs `build/catalog/` on the fly if
-present, else stages a 0-byte placeholder that the app reads as "no
-catalog").
+Nothing to configure, no account. A pre-staged local archive
+(`catalog.bundle_path`, or `catalog.tar.zst` next to the executable) and
+`catalog.manifest_url` also still work and take precedence — see "Other ways
+to point the app at a catalog".
 
 ## What "the catalog" is
 
@@ -48,11 +41,11 @@ Both come from converting **Deej-AI's pre-computed pickles**
 [teticio/deej-ai.online-app](https://github.com/teticio/deej-ai.online-app)'s
 `scripts/download.py` for where those live (Google Drive).
 
-## Regenerating the catalog
+## Regenerating and re-hosting the catalog
 
 Do this when the upstream dataset changes, or to rebuild from scratch. The
-output is `build/catalog-dist/catalog.tar.zst` — commit it (Git LFS handles
-the rest).
+output, `build/catalog-dist/catalog.tar.zst`, is git-ignored — you upload it
+to a host and point `catalog.archive_url` at it.
 
 1. **Get the pickles.** `python/fetch_pickles.py` downloads all four from
    Google Drive by their known file IDs and sanity-checks each one (Drive
@@ -82,46 +75,47 @@ the rest).
    `--limit N` caps the track count if you want a smaller/faster test catalog
    first.
 
-3. **Compress it** into the committed archive:
+3. **Compress it** (tar + zstd `SpeedBestCompression`, ~50% smaller):
    ```sh
    go run ./cmd/catalogpack -in build/catalog -out build/catalog-dist/catalog.tar.zst
    ```
+   It prints the archive's size and SHA-256.
 
-4. **Commit** `build/catalog-dist/catalog.tar.zst` (Git LFS tracks it via
-   `.gitattributes`; `git add` + `git commit` as usual, `git push` uploads
-   the LFS object).
+4. **Upload** `build/catalog-dist/catalog.tar.zst` to a host that supports
+   HTTP range requests (Google Drive's `drive.usercontent.google.com/download`
+   form, an S3/R2 bucket, GitHub Releases, ...). Update `config.Default()`'s
+   `catalog.archive_url` / `catalog.archive_size` / `catalog.archive_sha256`
+   in `internal/config/config.go` to match (or ship a TOML config that does).
 
-`build/catalog/` (the intermediate) stays git-ignored — only the compressed
-archive is committed.
+Both `build/catalog/` and `build/catalog-dist/` are git-ignored — nothing
+about the dataset is committed.
 
 ## Other ways to point the app at a catalog
 
-The bundled archive is the default, but two overrides still work and take
-precedence over it:
+`EnsureCatalog` tries these in order (first hit wins):
 
-- **Download on demand** — set `catalog.manifest_url` to a hosted
-  `catalog-manifest.json` (with `vectors.i8` + `catalog.sqlite` beside it) in
-  a TOML config, then run with `PLAYLISTAI_CONFIG=/path/to/config.toml`. Host
-  the three files together with `catalogpack`'s inputs, e.g. on GitHub
-  Releases or an S3/R2 bucket; pass `convert_pickles.py --base-url` if the
-  manifest lives apart from the blobs.
-- **Pre-populate locally** — set `catalog.dir` to a directory that already
-  holds `vectors.i8` + `catalog.sqlite`. Useful for dev against
-  `build/catalog/` directly:
-  ```toml
-  [catalog]
-  dir = "build/catalog"
-  ```
-  There's also `catalog.bundle_path` to point at a `catalog.tar.zst`
-  somewhere other than beside the executable (mostly for testing the unpack
-  path without a real install).
+1. **A staged local archive** — `catalog.tar.zst` next to the executable, or
+   wherever `catalog.bundle_path` points. Decompressed, no network. Handy for
+   testing the unpack path without a download.
+2. **`catalog.archive_url`** — the default (a hosted archive). Download + verify +
+   decompress.
+3. **`catalog.manifest_url`** — a hosted `catalog-manifest.json` listing the
+   two raw files (`vectors.i8` + `catalog.sqlite`) instead of one archive.
+   Pass `convert_pickles.py --base-url` if the manifest lives apart from the
+   blobs.
+4. **`catalog.dir`** already holding `vectors.i8` + `catalog.sqlite` — no
+   setup at all. Useful for dev against `build/catalog/` directly:
+   ```toml
+   [catalog]
+   dir = "build/catalog"
+   ```
 
 ## Licensing note
 
-The catalog is derivative of Deej-AI's GPL-3.0-licensed model + data, and
-this repo now redistributes it. `NOTICE` documents the attribution and
-written-offer-of-source requirement that implies — keep it accurate if you
-fork and re-host.
+The catalog is derivative of Deej-AI's GPL-3.0-licensed model + data, and the
+project redistributes it (from the hosted archive). `NOTICE` documents the
+attribution and written-offer-of-source requirement that implies — keep it
+accurate if you fork and re-host.
 
 ## Verifying it worked
 
@@ -139,5 +133,7 @@ EOF
 PLAYLISTAI_CONFIG=/tmp/playlistai-dev.toml go run .
 ```
 then open the Catalog screen and search for something you know is in the
-Deej-AI dataset (e.g. "Justice"). To exercise the *bundled* path instead,
-point `catalog.bundle_path` at your `build/catalog-dist/catalog.tar.zst`.
+Deej-AI dataset (e.g. "Justice"). To exercise the download+unpack path
+instead, leave `catalog.dir` at its default and let first launch fetch from
+`catalog.archive_url`, or point `catalog.bundle_path` at a
+`catalog.tar.zst` you built with `catalogpack`.

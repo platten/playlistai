@@ -38,7 +38,7 @@ export function CatalogSearch({ onBuildPlaylist }: { onBuildPlaylist: (seed: See
   const player = usePreviewPlayer();
 
   const refreshInfo = useCallback(() => {
-    const fallback: CatalogInfo = { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false };
+    const fallback: CatalogInfo = { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false };
     API.GetCatalogInfo()
       .then((i) => setInfo(i ?? fallback))
       .catch(() => setInfo(fallback));

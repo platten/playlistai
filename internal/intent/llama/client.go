@@ -4,6 +4,7 @@
 package llama
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -28,7 +29,10 @@ type Client struct {
 func NewClient(baseURL string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
-		hc:      &http.Client{Timeout: 60 * time.Second},
+		// Generous: the first request pays uncached prompt processing for the
+		// system + few-shot prefix, and CPU-only boxes are slow. A failure
+		// here isn't fatal — app.Container.ParseIntent falls back to rules.
+		hc: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -50,19 +54,38 @@ type chatResponse struct {
 	Choices []struct {
 		Message chatMessage `json:"message"`
 	} `json:"choices"`
-	Error json.RawMessage `json:"error"`
 }
 
-// Parse sends the prompt (with the system instruction and few-shot examples) and
-// returns the model's intent.
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+}
+
+// Parse sends the prompt (system instruction + few-shot examples) and returns
+// the model's intent.
 func (c *Client) Parse(ctx context.Context, in ports.IntentInput) (core.MusicIntent, error) {
+	return c.parse(ctx, in, nil)
+}
+
+// ParseWithProgress is Parse plus an onDelta callback, invoked with the running
+// character count of the model's output as tokens stream in — the Generate
+// screen turns this into a live "understanding your request" bar. onDelta may
+// be nil.
+func (c *Client) ParseWithProgress(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
+	return c.parse(ctx, in, onDelta)
+}
+
+func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
 	body := chatRequest{
 		Messages:    buildMessages(in),
 		Grammar:     schema.GBNF,
 		Temperature: 0.2,
 		NPredict:    400,
 		CachePrompt: true,
-		Stream:      false,
+		Stream:      true,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -74,6 +97,7 @@ func (c *Client) Parse(ctx context.Context, in ports.IntentInput) (core.MusicInt
 		return core.MusicIntent{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -81,24 +105,117 @@ func (c *Client) Parse(ctx context.Context, in ports.IntentInput) (core.MusicInt
 	}
 	defer resp.Body.Close()
 
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return core.MusicIntent{}, fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
 
-	var cr chatResponse
-	if err := json.Unmarshal(raw, &cr); err != nil {
-		return core.MusicIntent{}, fmt.Errorf("llama: bad response: %w", err)
+	var content string
+	if strings.Contains(resp.Header.Get("Content-Type"), "event-stream") {
+		content, err = readSSE(resp.Body, onDelta)
+	} else {
+		content, err = readWhole(resp.Body, onDelta)
 	}
-	if len(cr.Choices) == 0 || strings.TrimSpace(cr.Choices[0].Message.Content) == "" {
-		return core.MusicIntent{}, fmt.Errorf("llama: empty completion")
-	}
-
-	m, err := schema.Parse([]byte(cr.Choices[0].Message.Content))
 	if err != nil {
 		return core.MusicIntent{}, err
 	}
-	return m, nil
+	if strings.TrimSpace(content) == "" {
+		return core.MusicIntent{}, fmt.Errorf("llama: empty completion")
+	}
+	return schema.Parse([]byte(content))
+}
+
+// readSSE consumes an OpenAI-style `data: {...}` stream, accumulating
+// choices[].delta.content and reporting the running length via onDelta.
+func readSSE(body io.Reader, onDelta func(int)) (string, error) {
+	var out strings.Builder
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
+	for sc.Scan() {
+		data, ok := strings.CutPrefix(strings.TrimSpace(sc.Text()), "data:")
+		if !ok {
+			continue
+		}
+		data = strings.TrimSpace(data)
+		if data == "" || data == "[DONE]" {
+			continue
+		}
+		var chunk streamChunk
+		if json.Unmarshal([]byte(data), &chunk) != nil {
+			continue
+		}
+		for _, ch := range chunk.Choices {
+			if ch.Delta.Content != "" {
+				out.WriteString(ch.Delta.Content)
+				if onDelta != nil {
+					onDelta(out.Len())
+				}
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return "", fmt.Errorf("llama: stream read: %w", err)
+	}
+	return out.String(), nil
+}
+
+// readWhole handles a non-streaming JSON response (test servers, proxies that
+// buffer). onDelta, if set, fires once with the final length.
+func readWhole(body io.Reader, onDelta func(int)) (string, error) {
+	raw, _ := io.ReadAll(io.LimitReader(body, 1<<20))
+	var cr chatResponse
+	if err := json.Unmarshal(raw, &cr); err != nil {
+		return "", fmt.Errorf("llama: bad response: %w", err)
+	}
+	if len(cr.Choices) == 0 {
+		return "", nil
+	}
+	content := cr.Choices[0].Message.Content
+	if onDelta != nil && content != "" {
+		onDelta(len(content))
+	}
+	return content, nil
+}
+
+// Complete runs a plain (no-grammar, non-streaming) chat completion and returns
+// the assistant text. Used for short auxiliary generations like a playlist
+// title — not the intent parse, which is grammar-constrained.
+func (c *Client) Complete(ctx context.Context, system, user string, maxTokens int) (string, error) {
+	if maxTokens <= 0 {
+		maxTokens = 32
+	}
+	body := chatRequest{
+		Messages: []chatMessage{
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
+		},
+		Temperature: 0.4,
+		NPredict:    maxTokens,
+		CachePrompt: false,
+		Stream:      false,
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(buf))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("llama: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return "", fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
+	}
+	return readWhole(resp.Body, nil)
 }
 
 // Healthy reports whether the server answers /health with 200.

@@ -26,6 +26,31 @@ const bundleArchiveName = "catalog.tar.zst"
 
 const manifestEntryName = "catalog-manifest.json"
 
+// DownloadArchive fetches a compressed catalog (catalog.tar.zst) from url into
+// target, resuming a partial download via HTTP range and verifying size +
+// SHA-256 when given (pass 0 / "" to skip). Progress is reported under
+// BundleOp as bytes downloaded. Skips the download entirely when target is
+// already present and valid.
+func DownloadArchive(ctx context.Context, url, target string, size int64, sha256hex string, p ports.Progress) error {
+	if p == nil {
+		p = ports.NopProgress{}
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	if verifyFile(target, size, sha256hex) == nil {
+		if size > 0 {
+			p.Report(BundleOp, size, size, "have catalog archive")
+		}
+		return nil
+	}
+	p.Report(BundleOp, 0, size, "downloading dataset")
+	_, err := Download(ctx, url, target, size, sha256hex, func(done, total int64) {
+		p.Report(BundleOp, done, total, "downloading dataset")
+	})
+	return err
+}
+
 // FindBundledArchive looks for a pre-packaged, compressed catalog next to the
 // running executable — the same place internal/intent/llama's resolveBinary
 // looks for llama-server, and where every packaging target
@@ -64,6 +89,13 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+
+	// Already unpacked? If dir holds a catalog whose files match a
+	// catalog-manifest.json sitting next to it, there is nothing to do.
+	if m, err := LoadManifest(ctx, filepath.Join(dir, manifestEntryName)); err == nil && allPresent(dir, m) {
+		p.Report(BundleOp, 1, 1, "ready")
+		return nil
 	}
 
 	fi, err := os.Stat(archivePath)
@@ -128,6 +160,9 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 				return fmt.Errorf("unpack: parse manifest entry: %w", err)
 			}
 			m = &mm
+			// Drop the manifest in dir so a later Unpack/LoadCatalog can tell
+			// the catalog is already unpacked without touching the archive.
+			_ = os.WriteFile(filepath.Join(dir, manifestEntryName), raw, 0o644) //nolint:gosec
 			continue
 		}
 
@@ -181,6 +216,20 @@ func (m *Manifest) has(name string) bool {
 		}
 	}
 	return false
+}
+
+// allPresent reports whether every file m lists already exists in dir with the
+// right size + SHA-256.
+func allPresent(dir string, m *Manifest) bool {
+	if m == nil || len(m.Files) == 0 {
+		return false
+	}
+	for _, f := range m.Files {
+		if verifyFile(filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 type countingReader struct {

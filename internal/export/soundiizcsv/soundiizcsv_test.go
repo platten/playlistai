@@ -56,6 +56,36 @@ func TestExportCSV(t *testing.T) {
 	}
 }
 
+func TestExportCSVFilenameNotDoubledWhenNameHasExtension(t *testing.T) {
+	t.Parallel()
+	res, err := New().Export(context.Background(), req("My Mix.csv",
+		core.EnrichedTrack{Ref: core.TrackRef{Artist: "Justice", Title: "Genesis"}},
+	), nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if res.Location != "My Mix.csv" {
+		t.Fatalf("filename = %q, want %q (no doubled extension)", res.Location, "My Mix.csv")
+	}
+}
+
+func TestEnsureCSVExt(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"playlist":        "playlist.csv",
+		"playlist.csv":    "playlist.csv",
+		"playlist.CSV":    "playlist.CSV",
+		"my.mix":          "my.mix.csv",
+		"/home/u/a b":     "/home/u/a b.csv",
+		"/home/u/a b.csv": "/home/u/a b.csv",
+	}
+	for in, want := range cases {
+		if got := EnsureCSVExt(in); got != want {
+			t.Errorf("EnsureCSVExt(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestSanitizeFilename(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

@@ -93,20 +93,6 @@ Section
 
     !insertmacro wails.files
 
-    # Bundled llama-server runtime (build/llama/fetch.sh, staged into bin/ by
-    # `task windows:create:nsis:installer` before makensis runs) — must land
-    # beside the app executable; that's where internal/intent/llama's
-    # resolveBinary() looks first.
-    File "..\..\..\bin\llama-server.exe"
-    File "..\..\..\bin\*.dll"
-
-    # Compressed catalog (common:stage:catalog, staged into bin/ before
-    # makensis runs) — a real archive if a local catalog build existed at
-    # package time, otherwise a 0-byte placeholder; either way this file
-    # always exists once staged, so no !ifexist guard is needed. Same drop
-    # location as llama-server. See internal/dataset.FindBundledArchive.
-    File "..\..\..\bin\catalog.tar.zst"
-
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

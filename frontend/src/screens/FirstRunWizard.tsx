@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   API,
   type CatalogInfo,
+  type InstalledModel,
+  type LlamaRuntimeInfo,
   type ModelInfo,
   type ModelStatus,
 } from "../lib/api";
@@ -49,11 +51,6 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
           ))}
         </div>
         <div className="flex-1" />
-        {step !== "done" && (
-          <Button variant="subtle" size="sm" disabled={finishing} onClick={finish}>
-            Skip setup
-          </Button>
-        )}
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -76,7 +73,7 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
       <div className="flex flex-col gap-2">
         <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Welcome to Playlist AI</h1>
         <p className="max-w-[46ch] text-[14px] text-muted">
-          Local-first playlist recommendations over a bundled ~1M-track embedding catalog.
+          Local-first playlist recommendations over a ~957k-track embedding catalog.
           Nothing you type or play leaves your machine except optional, explicit lookups —
           MusicBrainz for metadata, Deezer for previews, Soundiiz if you choose to export.
         </p>
@@ -89,80 +86,96 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
   );
 }
 
+const CATALOG_FALLBACK: CatalogInfo = {
+  loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false,
+};
+
 function CatalogStep({ onNext }: { onNext: () => void }) {
   const [info, setInfo] = useState<CatalogInfo | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const progress = useProgress("catalog");
 
-  const refresh = useCallback(() => {
-    const fallback = { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false };
-    API.GetCatalogInfo()
-      .then((i) => setInfo(i ?? fallback))
-      .catch(() => setInfo(fallback));
-  }, []);
+  const advanced = useRef(false);
+  const advance = useCallback(() => {
+    if (advanced.current) return;
+    advanced.current = true;
+    onNext();
+  }, [onNext]);
 
-  useEffect(refresh, [refresh]);
-
-  const download = async () => {
+  const download = useCallback(async () => {
     setDownloading(true);
     setError(null);
     try {
+      // No-op on the backend if the catalog is already unpacked and loaded;
+      // otherwise fetches the archive (skipping the download if the file is
+      // already there) and decompresses it (skipping if the files match).
       await API.DownloadCatalog();
-      refresh();
+      advance();
     } catch (e) {
       setError(String(e));
-    } finally {
       setDownloading(false);
     }
-  };
+  }, [advance]);
+
+  // On entering the step: if the catalog is already available, skip straight
+  // past — no screen, no work. Otherwise start the fetch+decompress.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    void (async () => {
+      const i = (await API.GetCatalogInfo().catch(() => CATALOG_FALLBACK)) ?? CATALOG_FALLBACK;
+      setInfo(i);
+      if (i.loaded) {
+        advance();
+      } else if (i.autoSetup) {
+        void download();
+      }
+    })();
+  }, [advance, download]);
+
+  // Already loaded (auto-advancing) or still checking → render nothing.
+  if (!info || info.loaded) return null;
+
+  const noteText = progress?.note ?? "";
+  const phase = noteText.startsWith("downloading") ? "Downloading the catalog" : "Decompressing the catalog";
 
   return (
     <StepShell
       title="The embedding catalog"
-      description="A one-time download (~250 MB) of the track catalog Playlist AI recommends over. It stays on your machine; no account needed."
+      description="The ~957k-track catalog Playlist AI recommends over — a one-time ~210 MB download, then it stays on your machine. No account."
     >
-      {info?.loaded ? (
-        <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2.5 text-[13px] text-text">
-          <Icon.Check size={15} className="text-good" />
-          {info.trackCount.toLocaleString()} tracks ready.
-        </div>
-      ) : info && !info.configured ? (
+      {!info.configured ? (
         <div className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-[13px] text-muted">
           <Icon.Warn size={15} className="flex-none text-faint" />
-          No catalog source is set up for this build. An operator needs to
-          self-host one and point it at <code className="font-mono text-[12px]">catalog.manifest_url</code> —
-          see the project's docs. Skip this for now; the rest of the app still
-          works.
+          No catalog source is configured for this build. See the project's
+          docs (<code className="font-mono text-[12px]">catalog.archive_url</code>).
+          Skip for now; the rest of the app still works.
         </div>
+      ) : downloading ? (
+        <ProgressBar
+          label={phase}
+          done={progress?.done ?? 0}
+          total={progress?.total ?? 0}
+          note={progress?.note}
+        />
       ) : (
         <div className="flex flex-col gap-3">
-          <Button
-            variant="primary"
-            iconLeft={<Icon.Download size={14} />}
-            disabled={downloading}
-            onClick={download}
-          >
-            {downloading ? "Downloading…" : "Download catalog"}
+          <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={download}>
+            Download catalog
           </Button>
-          {downloading && (
-            <ProgressBar
-              label="Catalog"
-              done={progress?.done ?? 0}
-              total={progress?.total ?? 0}
-              note={progress?.note}
-            />
-          )}
           {error && <ErrorState variant="inline" message={error} onRetry={download} />}
         </div>
       )}
 
       <StepFooter>
-        <Button variant="subtle" size="sm" onClick={onNext}>
-          {info?.loaded ? "Continue" : "Skip for now"}
-        </Button>
-        {info?.loaded && (
-          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} onClick={onNext}>
+        {!info.configured ? (
+          <Button variant="subtle" size="sm" onClick={onNext}>
+            Skip for now
+          </Button>
+        ) : (
+          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
             Continue
           </Button>
         )}
@@ -173,30 +186,52 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
 
 function ModelStep({ onNext }: { onNext: () => void }) {
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+  const [onDisk, setOnDisk] = useState<InstalledModel[]>([]);
   const [status, setStatus] = useState<ModelStatus | null>(null);
+  const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
+  const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const progress = useProgress("model");
+  const installProgress = useProgress("llama-install");
 
-  const refresh = useCallback(() => {
-    API.GetModelStatus()
-      .then((s) => setStatus(s ?? null))
-      .catch(() => setStatus(null));
+  const refresh = useCallback(async () => {
+    const [s, r, d, c] = await Promise.all([
+      API.GetModelStatus().catch(() => null),
+      API.GetLlamaRuntime().catch(() => null),
+      API.GetInstalledModels().catch(() => null),
+      API.GetModelCatalog().catch(() => null),
+    ]);
+    setStatus(s ?? null);
+    setRuntime(r ?? null);
+    setOnDisk(d ?? []);
+    if (c) setCatalog(c);
+    return { status: s, runtime: r };
   }, []);
 
   useEffect(() => {
-    refresh();
-    API.GetModelCatalog()
-      .then((c) => setCatalog(c ?? []))
-      .catch(() => setCatalog([]));
+    void refresh();
   }, [refresh]);
+
+  const installRuntime = async (reinstall = false) => {
+    setInstalling(true);
+    setError(null);
+    try {
+      await (reinstall ? API.ReinstallLlamaRuntime() : API.InstallLlamaRuntime());
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   const download = async (id: string) => {
     setBusy(id);
     setError(null);
     try {
       await API.DownloadModel(id);
-      refresh();
+      await refresh();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -204,13 +239,137 @@ function ModelStep({ onNext }: { onNext: () => void }) {
     }
   };
 
+  const useFile = async (path: string) => {
+    setBusy(path);
+    setError(null);
+    try {
+      await API.UseModelFile(path);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // GGUFs already on disk that aren't one of the curated models (those are
+  // covered by the catalog list's "Use" button).
+  const strayModels = onDisk.filter((m) => !m.catalogId);
+
   const usingLocal = status?.backend === "llama";
+  const runtimeReady = runtime?.available ?? false;
+  const builds = runtime?.builds ?? [];
+  // A model that's already on disk is a no-op fetch — only show the download
+  // bar for a model that actually has to be downloaded.
+  const downloadingModel = busy !== null && catalog.some((m) => m.id === busy && !m.installed);
+
+  // While (re)installing, take over the whole step with a bouncing bar.
+  if (installing) {
+    return (
+      <StepShell
+        title="Installing llama.cpp"
+        description="Downloading a GPU-capable build and a CPU fallback into the app's config directory. Nothing is put on your PATH."
+      >
+        {/* total omitted → indeterminate: the sliver bounces back and forth */}
+        <ProgressBar label="llama.cpp" note={installProgress?.note ?? "starting the installer…"} />
+        <StepFooter>
+          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
+            Continue
+          </Button>
+        </StepFooter>
+      </StepShell>
+    );
+  }
+
+  if (!runtimeReady) {
+    return (
+      <StepShell
+        title="Install llama.cpp"
+        description="The local engine that turns your prompt into a structured request. A GPU build is installed when one is available (CUDA / ROCm / Vulkan / Metal) plus a CPU fallback build. Everything goes in the app's config directory. This step can't be skipped."
+      >
+        <div className="flex flex-col gap-3">
+          <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={() => void installRuntime()}>
+            Install llama.cpp
+          </Button>
+          <div className="rounded-lg border border-line bg-surface px-3 py-2.5 text-[12px] text-muted">
+            Runs ggml-org's official installer. Or do it yourself:
+            <pre className="mt-1.5 overflow-x-auto rounded bg-bg px-2 py-1.5 font-mono text-[11.5px] text-text">
+              {"curl https://llama.app/install.sh | sh        # macOS / Linux\n"}
+              {"irm https://llama.app/install.ps1 | iex       # Windows (PowerShell)"}
+            </pre>
+            <a
+              className="mt-1.5 inline-flex items-center gap-1 text-accent hover:underline"
+              href="https://github.com/ggml-org/llama.cpp"
+              target="_blank"
+              rel="noreferrer"
+            >
+              llama.cpp docs <Icon.ExternalLink size={11} />
+            </a>
+          </div>
+          <Button variant="subtle" size="sm" onClick={() => void refresh()}>
+            Re-check
+          </Button>
+          {error && <ErrorState variant="inline" message={error} onRetry={() => void installRuntime()} />}
+        </div>
+
+        <StepFooter>
+          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
+            Continue
+          </Button>
+        </StepFooter>
+      </StepShell>
+    );
+  }
 
   return (
     <StepShell
-      title="A local language model (optional)"
-      description="Only used to turn a typed prompt into a structured request — it never picks tracks. Skip this and prompts still work via a built-in keyword parser, no download required."
+      title="Language model"
+      description="It turns your typed prompt into a structured request — it never picks tracks. Required to continue. Runs locally, no account."
     >
+      <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[12.5px] text-text">
+        <Icon.Check size={14} className="flex-none text-good" />
+        <span>
+          llama.cpp is installed
+          {builds.length > 0 && ` (${builds.join(" + ")} build${builds.length > 1 ? "s" : ""})`}.
+        </span>
+        <button
+          type="button"
+          className="ml-auto text-[12px] text-muted underline decoration-dotted hover:text-text"
+          onClick={() => void installRuntime(true)}
+        >
+          Reinstall
+        </button>
+      </div>
+
+      {strayModels.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="text-[11px] tracking-[0.08em] text-faint uppercase">Already on disk</div>
+          {strayModels.map((m) => (
+            <div
+              key={m.path}
+              className="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-[13px] font-medium">{m.name}</div>
+                <div className="text-[11.5px] text-faint">
+                  {m.sizeBytes ? "~" + fmtGB(m.sizeBytes) : "—"} · no re-download
+                </div>
+              </div>
+              <Button
+                className="ml-auto"
+                size="sm"
+                variant={m.active ? "ghost" : "primary"}
+                disabled={busy !== null || m.active}
+                onClick={() => useFile(m.path)}
+              >
+                {m.active ? "In use" : busy === m.path ? "Switching…" : "Use"}
+              </Button>
+            </div>
+          ))}
+          <div className="text-[11px] tracking-[0.08em] text-faint uppercase pt-1">Or download one</div>
+        </div>
+      )}
+
       <div className="flex flex-col gap-2">
         {catalog.slice(0, 2).map((m) => (
           <div
@@ -237,31 +396,49 @@ function ModelStep({ onNext }: { onNext: () => void }) {
               disabled={busy !== null || status?.modelId === m.id}
               onClick={() => download(m.id)}
             >
-              {status?.modelId === m.id ? "In use" : busy === m.id ? "Downloading…" : "Download & use"}
+              {status?.modelId === m.id
+                ? "In use"
+                : busy === m.id
+                  ? m.installed
+                    ? "Switching…"
+                    : "Downloading…"
+                  : m.installed
+                    ? "Use"
+                    : "Download & use"}
             </Button>
           </div>
         ))}
       </div>
 
-      {busy && (
-        <ProgressBar
-          label="Downloading model"
-          done={progress?.done ?? 0}
-          total={progress?.total ?? 0}
-          note={progress?.note}
-        />
-      )}
+      {busy &&
+        (downloadingModel ? (
+          <ProgressBar
+            label="Downloading model"
+            done={progress?.done ?? 0}
+            total={progress?.total ?? 0}
+            note={progress?.note}
+          />
+        ) : (
+          <p className="text-[12px] text-faint">Starting the model…</p>
+        ))}
       {error && <ErrorState variant="inline" message={error} />}
 
+      {!usingLocal && !busy && (
+        <p className="text-[12px] text-faint">
+          Download a model to continue — this step can't be skipped.
+        </p>
+      )}
+
       <StepFooter>
-        <Button variant="subtle" size="sm" onClick={onNext}>
-          {usingLocal ? "Continue" : "Skip — use the keyword parser"}
+        <Button
+          variant="primary"
+          size="sm"
+          iconRight={<Icon.ArrowRight size={14} />}
+          disabled={!usingLocal || busy !== null}
+          onClick={onNext}
+        >
+          Continue
         </Button>
-        {usingLocal && (
-          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} onClick={onNext}>
-            Continue
-          </Button>
-        )}
       </StepFooter>
     </StepShell>
   );

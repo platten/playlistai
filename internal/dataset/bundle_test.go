@@ -120,6 +120,55 @@ func TestUnpack(t *testing.T) {
 	}
 }
 
+func TestUnpackSkipsWhenAlreadyExtracted(t *testing.T) {
+	t.Parallel()
+	files := map[string][]byte{
+		"vectors.i8":     bytes.Repeat([]byte{7}, 20_000),
+		"catalog.sqlite": bytes.Repeat([]byte("x"), 20_000),
+	}
+	archive := buildArchive(t, t.TempDir(), files, "")
+	destDir := filepath.Join(t.TempDir(), "catalog")
+
+	if err := Unpack(context.Background(), archive, destDir, nil); err != nil {
+		t.Fatalf("first Unpack: %v", err)
+	}
+	// First run leaves a manifest behind so a second run can short-circuit.
+	if _, err := os.Stat(filepath.Join(destDir, "catalog-manifest.json")); err != nil {
+		t.Fatalf("manifest not written: %v", err)
+	}
+
+	// Tamper with a file's bytes but keep its size; a real re-extract would
+	// overwrite it, the short-circuit leaves it (the point of this test is
+	// only that Unpack didn't do the work — we then assert it *would* detect
+	// a size change).
+	before, _ := os.Stat(filepath.Join(destDir, "vectors.i8"))
+
+	rec := &fakes.RecordingProgress{}
+	if err := Unpack(context.Background(), archive, destDir, rec); err != nil {
+		t.Fatalf("second Unpack: %v", err)
+	}
+	after, _ := os.Stat(filepath.Join(destDir, "vectors.i8"))
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("second Unpack rewrote vectors.i8 instead of skipping")
+	}
+	rows := rec.Snapshot()
+	if len(rows) != 1 || rows[0].Note != "ready" {
+		t.Fatalf("expected a single 'ready' progress row, got %+v", rows)
+	}
+
+	// If a file no longer matches the manifest, the short-circuit must not fire.
+	if err := os.WriteFile(filepath.Join(destDir, "catalog.sqlite"), []byte("short"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Unpack(context.Background(), archive, destDir, nil); err != nil {
+		t.Fatalf("re-extract after tamper: %v", err)
+	}
+	got, _ := os.ReadFile(filepath.Join(destDir, "catalog.sqlite"))
+	if !bytes.Equal(got, files["catalog.sqlite"]) {
+		t.Fatalf("tampered file not re-extracted: %d bytes", len(got))
+	}
+}
+
 func TestUnpackRejectsBadChecksum(t *testing.T) {
 	t.Parallel()
 	files := map[string][]byte{

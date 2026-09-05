@@ -180,6 +180,26 @@ func (c *Catalog) RawRow(row int) (audio, track []int8, ok bool) {
 // Resolve runs a token-substring search over the normalized "artist title"
 // string: every token must be a substring (Deej-AI's /search semantics).
 // Results are row-ordered and capped at max (or an internal ceiling).
+// fillerTokens are words that show up in natural-language seed phrases
+// ("songs like Radiohead", "a Daft Punk mix") but never in an "Artist -
+// Title". They're dropped only as a fallback, when a strict all-token match
+// found nothing.
+var fillerTokens = map[string]struct{}{
+	"song": {}, "songs": {}, "track": {}, "tracks": {}, "tune": {}, "tunes": {},
+	"music": {}, "stuff": {}, "vibe": {}, "vibes": {}, "playlist": {}, "mix": {},
+	"like": {}, "similar": {}, "radio": {}, "the": {}, "a": {}, "an": {},
+	"some": {}, "and": {}, "by": {}, "feat": {}, "ft": {},
+}
+
+// Resolve runs a token-substring search over the normalized "artist title"
+// (the same normalization as deej-ai.online-app's /search) and returns up to
+// max matches in row order.
+//
+// If a strict match on every token finds nothing, it retries with filler
+// words removed ("songs like Radiohead" -> "Radiohead"), then by dropping
+// trailing tokens one at a time — so a seed phrase with a real artist name in
+// it still resolves even when the LLM or the rules parser tacked on extra
+// words. A non-empty strict result is never overridden by the fallback.
 func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 	tokens := tokenize(query)
 	if len(tokens) == 0 {
@@ -187,6 +207,47 @@ func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 	}
 	if max <= 0 || max > c.resolveMax {
 		max = c.resolveMax
+	}
+
+	if out := c.resolveTokens(tokens, max); len(out) > 0 {
+		return out
+	}
+
+	if lean := dropFiller(tokens); len(lean) > 0 && len(lean) < len(tokens) {
+		if out := c.resolveTokens(lean, max); len(out) > 0 {
+			return out
+		}
+		tokens = lean
+	}
+
+	for n := len(tokens) - 1; n >= 1; n-- {
+		if out := c.resolveTokens(tokens[:n], max); len(out) > 0 {
+			return out
+		}
+	}
+	return nil
+}
+
+func dropFiller(tokens []string) []string {
+	out := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		if _, drop := fillerTokens[t]; !drop {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// rankWindow is how many row-ordered matches resolveTokens pulls before
+// re-ranking, so that a small max (seed resolution passes max=1) can still
+// prefer a track whose *artist* matches over an incidental title hit —
+// "justice" should seed from Justice, not "…King's Justice" by Ramin Djawadi.
+const rankWindow = 60
+
+func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
+	limit := max
+	if limit < rankWindow {
+		limit = rankWindow
 	}
 
 	var sb strings.Builder
@@ -200,7 +261,7 @@ func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 		args = append(args, "%"+tok+"%")
 	}
 	sb.WriteString(" ORDER BY row LIMIT ?")
-	args = append(args, max)
+	args = append(args, limit)
 
 	rows, err := c.db.Query(sb.String(), args...)
 	if err != nil {
@@ -212,11 +273,44 @@ func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 	for rows.Next() {
 		var ref core.TrackRef
 		if err := rows.Scan(&ref.ID, &ref.Artist, &ref.Title); err != nil {
-			return out
+			break
 		}
 		out = append(out, ref)
 	}
-	return out
+	if len(out) <= 1 {
+		return out
+	}
+
+	// Stable 3-tier re-rank (row order kept within each tier), then trim to
+	// the caller's max:
+	//   1. artist is exactly the query    ("justice" -> Justice, not Justice Toch)
+	//   2. artist contains every token    (an incidental-title hit loses to this)
+	//   3. everything else                (title-only matches)
+	joined := strings.Join(tokens, " ")
+	tier := func(r core.TrackRef) int {
+		a := normalizeSearch(r.Artist)
+		if a == joined {
+			return 0
+		}
+		for _, t := range tokens {
+			if !strings.Contains(a, t) {
+				return 2
+			}
+		}
+		return 1
+	}
+	ranked := make([]core.TrackRef, 0, len(out))
+	for want := 0; want <= 2; want++ {
+		for _, r := range out {
+			if tier(r) == want {
+				ranked = append(ranked, r)
+			}
+		}
+	}
+	if len(ranked) > max {
+		ranked = ranked[:max]
+	}
+	return ranked
 }
 
 var _ ports.Catalog = (*Catalog)(nil)

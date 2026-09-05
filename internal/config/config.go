@@ -25,28 +25,41 @@ type Config struct {
 
 // CatalogConfig points at the converted Deej-AI dataset.
 type CatalogConfig struct {
-	// Dir contains vectors.bin + catalog.sqlite once downloaded. Empty until
-	// the first-launch download completes.
+	// Dir contains vectors.i8 + catalog.sqlite once the catalog is set up.
+	// Empty until the first-launch download + decompress completes.
 	Dir string `toml:"dir"`
-	// ManifestURL is the hosted catalog-manifest.json used by the first-launch
-	// downloader.
+	// ArchiveURL is the compressed catalog (catalog.tar.zst) the app fetches
+	// on first launch, then decompresses into Dir. Defaults to a hosted copy;
+	// override to self-host. ArchiveSize / ArchiveSHA256 are integrity checks
+	// for that download — clear them if you point ArchiveURL at a different
+	// build.
+	ArchiveURL    string `toml:"archive_url"`
+	ArchiveSize   int64  `toml:"archive_size"`
+	ArchiveSHA256 string `toml:"archive_sha256"`
+	// ManifestURL is an alternative first-launch source: a hosted
+	// catalog-manifest.json listing the two raw files (used when ArchiveURL
+	// is empty).
 	ManifestURL string `toml:"manifest_url"`
 	// BundlePath overrides where to look for a pre-packaged, compressed
-	// catalog.tar.zst (see cmd/catalogpack, internal/dataset.Unpack). Blank
-	// means "look next to the running executable" — where every packaging
-	// target stages one when a local catalog build was available at package
-	// time. Set this only for testing or a nonstandard install layout.
+	// catalog.tar.zst staged next to the running executable. Blank means "look
+	// next to the executable". Set only for testing or a nonstandard layout.
 	BundlePath string `toml:"bundle_path"`
 }
 
 // AIConfig configures the local llama.cpp intent parser.
 type AIConfig struct {
-	ModelID         string `toml:"model_id"`          // set after first-run download; blank => rules mode
-	ModelPath       string `toml:"model_path"`        // absolute path to the GGUF
-	LlamaServerPath string `toml:"llama_server_path"` // blank => look next to the app, then PATH
+	ModelID   string `toml:"model_id"`   // set after first-run download; blank => rules mode
+	ModelPath string `toml:"model_path"` // absolute path to the GGUF
+	// LlamaServerPath is an explicit path to `llama-server` or the unified
+	// `llama` binary. Blank => auto-detect (next to the app, ~/.local/bin,
+	// ~/.llama-app, PATH). The first-run wizard installs llama.cpp via
+	// ggml-org's official installer if none is found.
+	LlamaServerPath string `toml:"llama_server_path"`
 	NCtx            int    `toml:"n_ctx"`
-	NThreads        int    `toml:"n_threads"`  // 0 => auto
-	GPULayers       int    `toml:"gpu_layers"` // >0 needs a GPU llama-server build
+	NThreads        int    `toml:"n_threads"` // 0 => auto
+	// GPULayers: 0 => the runtime's default (a GPU build already offloads
+	// everything); >0 => pin that many layers to the GPU; <0 => force CPU.
+	GPULayers int `toml:"gpu_layers"`
 }
 
 // EnrichConfig configures the MusicBrainz client.
@@ -86,6 +99,12 @@ func Default() Config {
 		DataDir: data,
 		Catalog: CatalogConfig{
 			Dir: filepath.Join(data, "catalog"),
+			// Deej-AI catalog (~957k tracks), tar+zstd, ~210 MB. Hosted on
+			// Cloudflare R2; the first-run wizard downloads + decompresses it.
+			// Size + hash pin the exact build.
+			ArchiveURL:    "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/catalog.tar.zst",
+			ArchiveSize:   219618902,
+			ArchiveSHA256: "f1198694f6c63bcb891e3a8461d3da97acf66d998ecd8a2998c8b23ea9f6a7e6",
 		},
 		AI: AIConfig{
 			NCtx:     4096,

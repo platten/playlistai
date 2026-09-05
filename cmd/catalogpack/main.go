@@ -16,9 +16,10 @@
 //
 //	go run ./cmd/catalogpack -in build/catalog -out build/catalog-dist/catalog.tar.zst
 //
-// build/catalog-dist/catalog.tar.zst is committed to the repo via Git LFS
-// (.gitattributes) and is what ships in every installer. Re-run this and
-// commit the result when the underlying dataset changes.
+// build/catalog-dist/ is git-ignored. Upload the resulting catalog.tar.zst to
+// wherever config.Default() points catalog.archive_url (currently Google
+// Drive) and update its pinned size + sha256, then re-run when the underlying
+// dataset changes. See docs/CATALOG.md.
 package main
 
 import (
@@ -46,7 +47,7 @@ type manifest struct {
 
 func main() {
 	in := flag.String("in", "build/catalog", "directory holding vectors.i8, catalog.sqlite, catalog-manifest.json")
-	out := flag.String("out", "build/catalog-dist/catalog.tar.zst", "output archive path (committed via Git LFS)")
+	out := flag.String("out", "build/catalog-dist/catalog.tar.zst", "output archive path (git-ignored; upload to catalog.archive_url's host)")
 	flag.Parse()
 
 	if err := run(*in, *out); err != nil {

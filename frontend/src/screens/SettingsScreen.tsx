@@ -27,13 +27,13 @@ export function SettingsScreen() {
     API.GetModelStatus()
       .then((s) => setStatus(s ?? null))
       .catch(() => setStatus(null));
+    API.GetModelCatalog()
+      .then((c) => setCatalog(c ?? []))
+      .catch(() => setCatalog([]));
   }, []);
 
   useEffect(() => {
     refresh();
-    API.GetModelCatalog()
-      .then((c) => setCatalog(c ?? []))
-      .catch(() => setCatalog([]));
     API.GetPreviewProviderName()
       .then((p) => setPreviewProviderState(p || "deezer"))
       .catch(() => setPreviewProviderState("deezer"));
@@ -58,6 +58,9 @@ export function SettingsScreen() {
   };
 
   const isLlama = status?.backend === "llama";
+  // True only while a real network download is running — a model that's
+  // already on disk is a no-op fetch, so no download bar for it.
+  const downloadingModel = busy !== null && catalog.some((m) => m.id === busy && !m.installed);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[720px] flex-col gap-6 overflow-auto px-8 py-8">
@@ -100,13 +103,18 @@ export function SettingsScreen() {
           )}
         </div>
 
-        {busy && progress && (
+        {downloadingModel && progress && (
           <ProgressBar
             label="Downloading model"
             done={progress.done}
             total={progress.total}
             note={progress.note}
           />
+        )}
+        {busy && !downloadingModel && (
+          <p className="text-[12px] text-faint">
+            {busy === "clear" ? "Switching to the rules parser…" : "Starting the model…"}
+          </p>
         )}
         {error && <ErrorState variant="inline" message={error} />}
 
@@ -150,13 +158,17 @@ export function SettingsScreen() {
                   variant={status?.modelId === m.id ? "ghost" : "primary"}
                   disabled={busy !== null || status?.modelId === m.id}
                   onClick={() => run(m.id, () => API.DownloadModel(m.id))}
-                  iconLeft={busy !== m.id ? <Icon.Download size={14} /> : undefined}
+                  iconLeft={!m.installed && busy !== m.id ? <Icon.Download size={14} /> : undefined}
                 >
                   {status?.modelId === m.id
                     ? "In use"
                     : busy === m.id
-                      ? "Downloading…"
-                      : "Download & use"}
+                      ? m.installed
+                        ? "Switching…"
+                        : "Downloading…"
+                      : m.installed
+                        ? "Use"
+                        : "Download & use"}
                 </Button>
               </div>
             ))

@@ -74,6 +74,64 @@ func TestClientParseSuccess(t *testing.T) {
 	}
 }
 
+func TestClientParseStreamingWithProgress(t *testing.T) {
+	t.Parallel()
+	full := `{"seeds":["Bonobo"],"mode":"similar","count":18,"creativity":0.5,"noise":0.1,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":"n"}`
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl, _ := w.(http.Flusher)
+		for _, tok := range chunkString(full, 7) {
+			b, _ := json.Marshal(map[string]any{
+				"choices": []map[string]any{{"delta": map[string]string{"content": tok}}},
+			})
+			_, _ = io.WriteString(w, "data: "+string(b)+"\n\n")
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	})
+	s := httptest.NewServer(mux)
+	defer s.Close()
+
+	var deltas []int
+	m, err := NewClient(s.URL).ParseWithProgress(
+		context.Background(),
+		ports.IntentInput{Prompt: "like Bonobo"},
+		func(n int) { deltas = append(deltas, n) },
+	)
+	if err != nil {
+		t.Fatalf("ParseWithProgress: %v", err)
+	}
+	if len(m.Seeds.Queries) != 1 || m.Seeds.Queries[0] != "Bonobo" || m.Count != 18 {
+		t.Fatalf("intent = %+v", m)
+	}
+	if len(deltas) < 2 {
+		t.Fatalf("expected multiple progress deltas, got %v", deltas)
+	}
+	for i := 1; i < len(deltas); i++ {
+		if deltas[i] < deltas[i-1] {
+			t.Fatalf("progress went backwards: %v", deltas)
+		}
+	}
+	if deltas[len(deltas)-1] != len(full) {
+		t.Fatalf("final delta %d, want %d", deltas[len(deltas)-1], len(full))
+	}
+}
+
+func chunkString(s string, n int) []string {
+	var out []string
+	for i := 0; i < len(s); i += n {
+		end := i + n
+		if end > len(s) {
+			end = len(s)
+		}
+		out = append(out, s[i:end])
+	}
+	return out
+}
+
 func TestClientParseProseWrapped(t *testing.T) {
 	t.Parallel()
 	srv := chatServer(t, func([]byte) (int, string) {

@@ -5,14 +5,18 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/export/soundiizcsv"
 	"github.com/platten/playlistai/internal/export/soundiizhandoff"
+	"github.com/platten/playlistai/internal/history"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
@@ -33,6 +37,10 @@ type Container struct {
 	Sim     ports.SimilarityEngine
 	Reco    ports.RecommendationEngine
 	Enrich  ports.Enricher
+
+	// History persists generated playlists for the Generate screen's
+	// "start from a past playlist" option. nil if the DB could not be opened.
+	History *history.Store
 
 	// exporters are the wired ports.Exporter implementations, looked up by
 	// Name() via Exporter(). Order is display order.
@@ -78,6 +86,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 
 	c := &Container{cfg: cfg, log: log}
+	if hs, err := history.Open(cfg.DataDir); err != nil {
+		log.Warn("playlist history unavailable; continuing without it", "err", err)
+	} else {
+		c.History = hs
+		c.RegisterCloser(hs.Close)
+	}
 	c.wireEnrichExport()
 	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
@@ -224,10 +238,12 @@ func (c *Container) chooseParser(_ context.Context) {
 
 		p, err := llama.New(startCtx, llama.Options{
 			BinaryPath:   c.cfg.AI.LlamaServerPath,
+			Runtimes:     c.LlamaRuntimes(),
 			ModelPath:    modelPath,
 			NCtx:         c.cfg.AI.NCtx,
 			NThreads:     c.cfg.AI.NThreads,
-			StartTimeout: modelStartTimeout,
+			GPULayers:    c.cfg.AI.GPULayers,
+			StartTimeout: runtimeStartTimeout,
 			Logger:       c.log,
 		})
 		if err != nil {
@@ -244,6 +260,57 @@ func (c *Container) IntentParser() ports.IntentParser {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.parser
+}
+
+// ParseIntent parses in with the active parser, falling back to the
+// always-available rules parser when the active one (llama) errors — a model
+// timeout, a dead server, or unparseable output must never leave the user
+// without an intent. When prog is non-nil and the model backend is active, it
+// receives streaming progress under op "intent". Returns the intent and the
+// backend that produced it ("llama" | "rules").
+func (c *Container) ParseIntent(ctx context.Context, in ports.IntentInput, prog ports.Progress) (core.MusicIntent, string) {
+	c.mu.Lock()
+	active, rp := c.parser, c.rulesParser
+	c.mu.Unlock()
+
+	var m core.MusicIntent
+	var err error
+	if lp, ok := active.(*llama.Parser); ok {
+		m, err = lp.ParseWithProgress(ctx, in, prog)
+	} else {
+		m, err = active.Parse(ctx, in)
+	}
+	if err == nil {
+		return m, active.Info().Backend
+	}
+	if active.Info().Backend == "rules" {
+		return m, "rules" // rules parser never errors; return whatever it gave
+	}
+	c.log.Warn("intent parse failed; falling back to rules parser", "err", err)
+
+	if rp == nil {
+		rp = rules.New()
+	}
+	m, _ = rp.Parse(ctx, in)
+	return m, "rules"
+}
+
+// SuggestTitle asks the active model for a short playlist name for prompt,
+// bounded by timeout. It returns "" when the model backend is not active or
+// produces nothing usable; the caller then derives a name locally.
+func (c *Container) SuggestTitle(ctx context.Context, prompt string, timeout time.Duration) string {
+	c.mu.Lock()
+	lp, ok := c.parser.(*llama.Parser)
+	c.mu.Unlock()
+	if !ok {
+		return ""
+	}
+	if timeout <= 0 {
+		timeout = 12 * time.Second
+	}
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return lp.Title(tctx, prompt)
 }
 
 // LoadCatalog opens the catalog in the configured directory and wires the
@@ -266,30 +333,57 @@ func (c *Container) LoadCatalog() error {
 }
 
 // EnsureCatalog gets the catalog onto disk and loads it, if it is not already
-// present: it prefers a pre-packaged, compressed catalog.tar.zst staged next
-// to the app (see cmd/catalogpack, internal/dataset.Unpack) — a fast, offline,
-// one-time decompression — and falls back to downloading one over the network
-// per cfg.Catalog.ManifestURL when no bundled archive is found. Progress is
-// reported via p either way, under the same op, so the caller doesn't need to
-// know which path ran.
+// present. In order:
+//
+//  1. a pre-packaged catalog.tar.zst staged next to the app (bundle_path or
+//     beside the executable) — decompress it, no network;
+//  2. cfg.Catalog.ArchiveURL — download the compressed archive (resumable,
+//     checksummed), then decompress it;
+//  3. cfg.Catalog.ManifestURL — download the two raw files.
+//
+// Progress is reported via p under the "catalog" op throughout, so the caller
+// (the first-run gate) doesn't need to know which path ran.
 func (c *Container) EnsureCatalog(ctx context.Context, p ports.Progress) error {
 	if c.Catalog != nil {
 		return nil
 	}
-	if archive, ok := dataset.FindBundledArchive(c.cfg.Catalog.BundlePath); ok {
-		if err := dataset.Unpack(ctx, archive, c.cfg.Catalog.Dir, p); err != nil {
+	// Already unpacked on disk from a previous run? Load it — no download,
+	// no decompress.
+	if err := c.LoadCatalog(); err == nil {
+		return nil
+	}
+	cat := c.cfg.Catalog
+
+	if archive, ok := dataset.FindBundledArchive(cat.BundlePath); ok {
+		if err := dataset.Unpack(ctx, archive, cat.Dir, p); err != nil {
 			return fmt.Errorf("app: unpack bundled catalog: %w", err)
 		}
 		return c.LoadCatalog()
 	}
-	if c.cfg.Catalog.ManifestURL == "" {
-		return fmt.Errorf("app: no catalog configured (set catalog.manifest_url or catalog.dir)")
+
+	if cat.ArchiveURL != "" {
+		archive := filepath.Join(c.cfg.DataDir, "catalog.tar.zst")
+		if err := dataset.DownloadArchive(ctx, cat.ArchiveURL, archive, cat.ArchiveSize, cat.ArchiveSHA256, p); err != nil {
+			return fmt.Errorf("app: download catalog: %w", err)
+		}
+		if err := dataset.Unpack(ctx, archive, cat.Dir, p); err != nil {
+			return fmt.Errorf("app: unpack catalog: %w", err)
+		}
+		if err := c.LoadCatalog(); err != nil {
+			return err
+		}
+		_ = os.Remove(archive) // decompressed copy is what we use from here
+		return nil
 	}
-	m, err := dataset.LoadManifest(ctx, c.cfg.Catalog.ManifestURL)
+
+	if cat.ManifestURL == "" {
+		return fmt.Errorf("app: no catalog source configured (set catalog.archive_url, catalog.manifest_url, or catalog.dir)")
+	}
+	m, err := dataset.LoadManifest(ctx, cat.ManifestURL)
 	if err != nil {
 		return err
 	}
-	if err := dataset.Fetch(ctx, c.cfg.Catalog.Dir, m, p); err != nil {
+	if err := dataset.Fetch(ctx, cat.Dir, m, p); err != nil {
 		return err
 	}
 	return c.LoadCatalog()

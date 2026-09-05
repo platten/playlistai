@@ -3,6 +3,7 @@ package bridge
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -21,12 +22,15 @@ type IntentPreview struct {
 	Backend        string   `json:"backend"` // "rules" | "llama" | "none"
 }
 
-// ParseIntent turns a prompt into a preview without generating anything.
+// ParseIntent turns a prompt into a preview without generating anything. It
+// uses the active parser, falling back to the rules parser if the model
+// errors (see app.Container.ParseIntent).
 func (a *API) ParseIntent(prompt string) IntentPreview {
 	if a.app.IntentParser() == nil {
 		return IntentPreview{Backend: "none", Seeds: []string{}, ArtistsExclude: []string{}}
 	}
-	m, _ := a.app.IntentParser().Parse(a.context(), ports.IntentInput{Prompt: prompt})
+	// No progress bar for the live, keystroke-debounced preview.
+	m, backend := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, nil)
 	m = m.Normalized()
 	return IntentPreview{
 		Seeds:          orEmpty(m.Seeds.Queries),
@@ -38,7 +42,7 @@ func (a *API) ParseIntent(prompt string) IntentPreview {
 		ArtistsExclude: orEmpty(m.Constraints.ArtistsExclude),
 		NoRepeatArtist: m.Constraints.NoRepeatArtistBackToBack,
 		Notes:          m.NotesForUser,
-		Backend:        a.app.IntentParser().Info().Backend,
+		Backend:        backend,
 	}
 }
 
@@ -58,7 +62,10 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 		return GenerateResult{}, errors.New("not ready — download the catalog first")
 	}
 
-	m, _ := a.app.IntentParser().Parse(a.context(), ports.IntentInput{Prompt: prompt})
+	// Stream intent-parse progress to the Generate screen ("intent" op).
+	prog := NewWailsProgress()
+	prog.Report("intent", 0, -1, "understanding your request")
+	m, _ := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, prog)
 	m = m.Normalized()
 
 	var seedIDs []string
@@ -82,8 +89,13 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 		}
 	}
 	if len(seedIDs) == 0 {
+		if len(m.Seeds.Queries) == 0 {
+			return GenerateResult{}, errors.New(
+				"name an artist as the starting point, e.g. \"something like Bonobo, 20 tracks\"")
+		}
 		return GenerateResult{}, fmt.Errorf(
-			"couldn't find a seed track for %q — try naming an artist, e.g. \"like Bonobo\"", prompt)
+			"no catalog match for %s — the catalog is ~957k tracks and plenty of artists aren't in it; "+
+				"try a different, better-known artist as the starting point", quoteList(m.Seeds.Queries))
 	}
 
 	req := BuildPlaylistRequest{
@@ -103,6 +115,9 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 		return GenerateResult{}, err
 	}
 	req.Seed = pl.Seed // pin the seed the engine chose so re-runs are stable
+
+	a.saveGenerated(prompt, m, req, pl)
+
 	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser}, nil
 }
 
@@ -111,4 +126,13 @@ func orEmpty(s []string) []string {
 		return []string{}
 	}
 	return s
+}
+
+// quoteList renders ["a","b"] as `"a", "b"` for an error message.
+func quoteList(ss []string) string {
+	q := make([]string, len(ss))
+	for i, s := range ss {
+		q[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(q, ", ")
 }

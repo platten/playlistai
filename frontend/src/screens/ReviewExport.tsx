@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Clipboard } from "@wailsio/runtime";
 import { API, type EnrichedTrackDTO } from "../lib/api";
 import {
   Button,
@@ -17,7 +18,7 @@ interface Row {
 }
 
 type Saved =
-  | { kind: "handoff"; url: string; count: number }
+  | { kind: "handoff"; url: string; count: number; opened: boolean }
   | { kind: "csv"; path: string; count: number }
   | { kind: "csv-canceled" };
 
@@ -40,6 +41,16 @@ export function ReviewExport({
   const [exporting, setExporting] = useState<null | "handoff" | "csv">(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyURL = (url: string) => {
+    Clipboard.SetText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => setExportError("Could not copy the link to the clipboard."));
+  };
 
   const enrichProgress = useProgress("enrich");
   const exportProgress = useProgress("export");
@@ -91,8 +102,8 @@ export function ReviewExport({
     setSaved(null);
     const call =
       kind === "handoff"
-        ? API.OpenSoundiizHandoff(name.trim() || "Playlist", includedTracks).then((url) =>
-            setSaved({ kind: "handoff", url, count: includedTracks.length }),
+        ? API.OpenSoundiizHandoff(name.trim() || "Playlist", includedTracks).then((res) =>
+            setSaved({ kind: "handoff", url: res.url, count: res.count, opened: res.opened }),
           )
         : API.ExportCSV(name.trim() || "Playlist", includedTracks).then((res) =>
             setSaved(
@@ -235,19 +246,34 @@ export function ReviewExport({
             {exportError && <ErrorState variant="inline" message={exportError} />}
 
             {saved?.kind === "handoff" && (
-              <div className="flex items-center gap-2 rounded-lg border border-accent/30 bg-accent-quiet px-3 py-2 text-[12.5px]">
-                <Icon.Check size={14} className="text-accent" />
-                <span className="text-text">
-                  Soundiiz import ready for {saved.count} tracks.
-                </span>
-                <a
-                  href={saved.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="ml-auto inline-flex items-center gap-1 font-medium text-accent hover:underline"
-                >
-                  Open <Icon.ExternalLink size={12} />
-                </a>
+              <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-quiet px-3 py-2.5 text-[12.5px]">
+                <div className="flex items-center gap-2">
+                  <Icon.Check size={14} className="text-accent" />
+                  <span className="text-text">
+                    {saved.opened
+                      ? `Soundiiz import for ${saved.count} tracks opened in your browser.`
+                      : `Soundiiz import ready for ${saved.count} tracks — open this link to finish:`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 select-all truncate rounded bg-black/20 px-2 py-1 font-mono text-[11.5px] text-muted">
+                    {saved.url}
+                  </code>
+                  <Button
+                    variant="ghost"
+                    iconLeft={<Icon.Copy size={13} />}
+                    onClick={() => copyURL(saved.url)}
+                  >
+                    {copied ? "Copied" : "Copy"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    iconRight={<Icon.ExternalLink size={13} />}
+                    onClick={() => API.OpenExternalURL(saved.url).catch(() => undefined)}
+                  >
+                    Open
+                  </Button>
+                </div>
               </div>
             )}
             {saved?.kind === "csv" && (

@@ -22,29 +22,27 @@ All nine planned milestones are done — see [`docs/ARCHITECTURE.md`](docs/ARCHI
 for the design and the milestone list, and [`docs/RELEASING.md`](docs/RELEASING.md)
 for how releases are cut.
 
-Every installer/portable archive (except AppImage — see `docs/RELEASING.md`'s
-known gaps) bundles a CPU build of `llama-server` so the local model works out
-of the box; set `ai.llama_server_path` in your config (`PLAYLISTAI_CONFIG=path/to/config.toml`)
-to point at a GPU-accelerated llama.cpp build instead if you want one (see
-[llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for
-CUDA/ROCm/Vulkan variants).
+The installers **don't** bundle a llama.cpp runtime — that keeps them small.
+On first run the setup wizard installs llama.cpp via ggml-org's official
+installer (`llama.app/install.sh` / `install.ps1`): a **GPU build** (CUDA /
+ROCm / Vulkan / Metal) when one is available **plus a CPU build**, so the
+parser can fall back to CPU if a GPU build won't run a given model. Already
+have `llama-server` or the unified `llama` binary? It's picked up from
+PATH / `~/.local/bin` / `~/.llama-app`, or point `ai.llama_server_path` at
+it. `ai.gpu_layers` pins/limits GPU offload.
 
 The **recommendation catalog** (~957k tracks, derived from the Deej-AI
-dataset) ships too — compressed to ~210 MB and committed to the repo via
-Git LFS at `build/catalog-dist/catalog.tar.zst`. Every installer/portable
-archive (again except AppImage) carries it, and the app decompresses it on
-first launch behind a one-time "Decompressing dataset" step. Nothing to
-download, no account, no config. See [`docs/CATALOG.md`](docs/CATALOG.md) for
-how it's built and how to regenerate it.
+dataset) is a compressed ~210 MB archive the app **downloads on first
+launch** (`catalog.archive_url` — a hosted `catalog.tar.zst`), then
+decompresses into your data dir behind a one-time progress popup. Nothing to
+configure, no account. It is not in the repo and not in the installers. See
+[`docs/CATALOG.md`](docs/CATALOG.md) for the hosting details and how to
+regenerate it.
 
 ## Develop
 
-This repo uses **Git LFS** for the compressed catalog
-(`build/catalog-dist/catalog.tar.zst`, ~210 MB). Install it *before* cloning
-(`git lfs install`), or, if you already cloned, run `git lfs pull` once —
-otherwise that path is a small text pointer and `wails3 package` will ship an
-empty catalog. `go test ./...` and `wails3 build` don't need it; only
-packaging does.
+Nothing special — no Git LFS, no large blobs in the repo. `go test ./...`
+needs only Go.
 
 ```bash
 # Go core — no toolchain beyond Go needed

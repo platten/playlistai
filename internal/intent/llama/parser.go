@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -18,13 +15,23 @@ import (
 
 // Options configure a llama-backed Parser.
 type Options struct {
-	// BinaryPath to llama-server. If empty, it is looked for next to the running
-	// executable and then on PATH.
+	// BinaryPath to a llama runtime (`llama-server`, or the unified `llama`
+	// binary run as `llama serve`). Used only when Runtimes is empty; if that
+	// is also blank, DetectRuntime looks in the usual places (next to the
+	// app, ~/.local/bin, ~/.llama-app, PATH).
 	BinaryPath string
+	// Runtimes, when set, is an ordered list of candidate runtimes: New tries
+	// each in turn and keeps the first that starts and reports healthy. This
+	// is how "GPU build, fall back to CPU build" works.
+	Runtimes []Runtime
 	// ModelPath to the GGUF. Required.
 	ModelPath string
 	NCtx      int
 	NThreads  int
+	// GPULayers passed through to the runtime: >0 → pin that many layers to
+	// the GPU; 0 → leave it to the build (a GPU build already offloads
+	// everything); <0 → force CPU. The runtime labeled "cpu" always forces CPU.
+	GPULayers int
 	// StartTimeout for the server to become healthy (default 90s).
 	StartTimeout time.Duration
 	Logger       *slog.Logger
@@ -50,10 +57,15 @@ func New(ctx context.Context, o Options) (*Parser, error) {
 		return nil, fmt.Errorf("llama: model not usable: %s", o.ModelPath)
 	}
 
-	bin, err := resolveBinary(o.BinaryPath)
-	if err != nil {
-		return nil, err
+	candidates := o.Runtimes
+	if len(candidates) == 0 {
+		rt := DetectRuntime(o.BinaryPath)
+		if !rt.Available {
+			return nil, errRuntimeMissing
+		}
+		candidates = []Runtime{rt.asRuntime()}
 	}
+
 	log := o.Logger
 	if log == nil {
 		log = slog.Default()
@@ -63,19 +75,35 @@ func New(ctx context.Context, o Options) (*Parser, error) {
 	if timeout <= 0 {
 		timeout = 90 * time.Second
 	}
-	sctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
-	srv := newServer(ServerOptions{
-		BinaryPath: bin, ModelPath: o.ModelPath,
-		NCtx: o.NCtx, NThreads: o.NThreads, Logger: log,
-	})
-	if err := srv.Start(sctx); err != nil {
-		return nil, err
+	var lastErr error
+	for i, rt := range candidates {
+		// GPU offload only makes sense for a GPU-capable build; force CPU
+		// (-1) for the one explicitly labeled "cpu".
+		ngl := o.GPULayers
+		if rt.Label == "cpu" {
+			ngl = -1
+		}
+		srv := newServer(ServerOptions{
+			BinaryPath: rt.Path, Subcmd: rt.subcmd(), ModelPath: o.ModelPath,
+			NCtx: o.NCtx, NThreads: o.NThreads, GPULayers: ngl, Logger: log,
+		})
+		sctx, cancel := context.WithTimeout(ctx, timeout)
+		err := srv.Start(sctx)
+		cancel()
+		if err == nil {
+			if i > 0 || rt.Label == "cpu" {
+				log.Info("llama runtime selected", "path", rt.Path, "label", rt.Label)
+			}
+			return &Parser{srv: srv, cli: NewClient(srv.BaseURL()), log: log, ready: true}, nil
+		}
+		lastErr = err
+		if i+1 < len(candidates) {
+			log.Warn("llama runtime failed to start; trying the next one",
+				"path", rt.Path, "label", rt.Label, "err", err)
+		}
 	}
-
-	p := &Parser{srv: srv, cli: NewClient(srv.BaseURL()), log: log, ready: true}
-	return p, nil
+	return nil, lastErr
 }
 
 // NewWithClient wires a Parser to an already-running server (tests, or a shared
@@ -95,7 +123,26 @@ func (p *Parser) Info() ports.ParserInfo {
 // Parse implements ports.IntentParser. If the request fails and the managed
 // server has died, it restarts once and retries.
 func (p *Parser) Parse(ctx context.Context, in ports.IntentInput) (core.MusicIntent, error) {
-	m, err := p.cli.Parse(ctx, in)
+	return p.parse(ctx, in, nil)
+}
+
+// ParseWithProgress is Parse with a progress reporter: while the model streams
+// its output, prog is called under op "intent" with the running character
+// count (total is -1 — indeterminate). onDelta is best-effort; a nil prog is
+// fine.
+func (p *Parser) ParseWithProgress(ctx context.Context, in ports.IntentInput, prog ports.Progress) (core.MusicIntent, error) {
+	var onDelta func(int)
+	if prog != nil {
+		onDelta = func(chars int) { prog.Report(IntentProgressOp, int64(chars), -1, "understanding your request") }
+	}
+	return p.parse(ctx, in, onDelta)
+}
+
+// IntentProgressOp is the progress op label for a running intent parse.
+const IntentProgressOp = "intent"
+
+func (p *Parser) parse(ctx context.Context, in ports.IntentInput, onDelta func(int)) (core.MusicIntent, error) {
+	m, err := p.cli.ParseWithProgress(ctx, in, onDelta)
 	if err == nil {
 		return m, nil
 	}
@@ -112,7 +159,29 @@ func (p *Parser) Parse(ctx context.Context, in ports.IntentInput) (core.MusicInt
 		return core.MusicIntent{}, fmt.Errorf("llama: restart failed: %w", rerr)
 	}
 	p.cli = NewClient(p.srv.BaseURL())
-	return p.cli.Parse(ctx, in)
+	return p.cli.ParseWithProgress(ctx, in, onDelta)
+}
+
+// titleSystemPrompt steers Complete toward a terse playlist name.
+const titleSystemPrompt = "You name music playlists. Given a listener's request, reply with ONLY a 2 to 5 word playlist title. " +
+	"No quotation marks, no trailing punctuation, no explanation."
+
+// Title asks the model for a short playlist name for prompt. It returns an
+// empty string (no error) when the parser is not ready or the model gives
+// nothing usable — callers fall back to a locally derived name.
+func (p *Parser) Title(ctx context.Context, prompt string) string {
+	p.mu.Lock()
+	ready, cli := p.ready, p.cli
+	p.mu.Unlock()
+	if !ready || cli == nil {
+		return ""
+	}
+	out, err := cli.Complete(ctx, titleSystemPrompt, prompt, 24)
+	if err != nil {
+		p.log.Warn("llama title generation failed", "err", err)
+		return ""
+	}
+	return out
 }
 
 // Close stops the managed server, if any.
@@ -128,34 +197,6 @@ func (p *Parser) setReady(v bool) {
 	p.mu.Lock()
 	p.ready = v
 	p.mu.Unlock()
-}
-
-// resolveBinary finds llama-server: explicit path → next to the executable →
-// PATH.
-func resolveBinary(explicit string) (string, error) {
-	name := "llama-server"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-
-	if explicit != "" {
-		if fi, err := os.Stat(explicit); err == nil && !fi.IsDir() {
-			return explicit, nil
-		}
-		return "", fmt.Errorf("llama: llama-server not found at %s", explicit)
-	}
-
-	if exe, err := os.Executable(); err == nil {
-		cand := filepath.Join(filepath.Dir(exe), name)
-		if fi, serr := os.Stat(cand); serr == nil && !fi.IsDir() {
-			return cand, nil
-		}
-	}
-
-	if p, err := exec.LookPath(name); err == nil {
-		return p, nil
-	}
-	return "", fmt.Errorf("llama: %s not found (set ai.llama_server_path or put it on PATH)", name)
 }
 
 var _ ports.IntentParser = (*Parser)(nil)

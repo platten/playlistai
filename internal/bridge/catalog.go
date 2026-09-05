@@ -10,27 +10,33 @@ type CatalogInfo struct {
 	Loaded     bool `json:"loaded"`
 	TrackCount int  `json:"trackCount"`
 	Dim        int  `json:"dim"`
-	// Configured reports whether a catalog source is available at all: either
-	// a pre-packaged archive staged next to the app (Bundled) or
-	// catalog.manifest_url (or a pre-populated catalog.dir) pointing at a
-	// self-hosted one. DownloadCatalog fails immediately when this is false;
-	// the UI should explain that rather than offer an action guaranteed to error.
+	// Configured reports whether any catalog source exists: a local archive
+	// (Bundled), catalog.archive_url, catalog.manifest_url, or a pre-populated
+	// catalog.dir. DownloadCatalog fails immediately when this is false.
 	Configured bool `json:"configured"`
-	// Bundled reports whether getting the catalog means a fast, offline,
-	// one-time local decompression (DownloadCatalog can be — and should be —
-	// run automatically, no user action) rather than a network download the
-	// user must opt into.
+	// Bundled reports that a real catalog.tar.zst is staged next to the app —
+	// setup is a local decompress, no download.
 	Bundled bool `json:"bundled"`
+	// AutoSetup reports that EnsureCatalog can get the catalog with no user
+	// action (a bundled archive, or catalog.archive_url is set) — the
+	// first-run gate runs it automatically on launch. When false but
+	// Configured is true (manifest_url only), the user triggers it with a button.
+	AutoSetup bool `json:"autoSetup"`
 }
 
 // GetCatalogInfo reports whether the embedding catalog is loaded, its size,
-// and whether a source is configured at all.
+// and whether/how a source is configured.
 func (a *API) GetCatalogInfo() CatalogInfo {
 	bundled := a.app.CatalogBundled()
+	cat := a.app.Config().Catalog
+	hasArchive := cat.ArchiveURL != ""
+	autoSetup := bundled || hasArchive
+
 	if a.app.Catalog == nil {
 		return CatalogInfo{
-			Configured: bundled || a.app.Config().Catalog.ManifestURL != "",
+			Configured: autoSetup || cat.ManifestURL != "",
 			Bundled:    bundled,
+			AutoSetup:  autoSetup,
 		}
 	}
 	return CatalogInfo{
@@ -39,6 +45,7 @@ func (a *API) GetCatalogInfo() CatalogInfo {
 		Dim:        a.app.Catalog.Dim(),
 		Configured: true,
 		Bundled:    bundled,
+		AutoSetup:  autoSetup,
 	}
 }
 
@@ -127,13 +134,11 @@ func clamp01(v float64) float64 {
 	return v
 }
 
-// DownloadCatalog gets the catalog and loads it, emitting playlistai:progress
-// events under op "catalog". Blocks until done; the frontend awaits it while
-// listening for progress. Prefers unpacking a pre-packaged, compressed
-// catalog.tar.zst staged next to the app (see CatalogInfo.Bundled) — fast and
-// offline — falling back to a network download (with resume + checksum) when
-// no bundled archive is present. Returns a descriptive error if neither a
-// bundled archive nor a catalog manifest is configured.
+// DownloadCatalog gets the catalog onto disk and loads it, emitting
+// playlistai:progress events under op "catalog". Blocks until done; the
+// frontend awaits it while listening for progress. Uses whichever source is
+// configured (bundled archive → catalog.archive_url download → manifest_url);
+// see app.Container.EnsureCatalog. Returns a descriptive error if none is set.
 func (a *API) DownloadCatalog() error {
 	if a.app.Catalog != nil {
 		return nil

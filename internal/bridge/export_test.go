@@ -73,6 +73,27 @@ func TestExportCSVFallbackPath(t *testing.T) {
 	}
 }
 
+func TestExportCSVAlwaysHasCSVExtension(t *testing.T) {
+	t.Parallel()
+	c := newLoadedContainer(t)
+	api := New(c, nil)
+	rows := []EnrichedTrackDTO{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}}
+
+	for _, name := range []string{"weekend jams", "weekend jams.csv", "weekend jams.CSV", "mix.2026"} {
+		res, err := api.ExportCSV(name, rows)
+		if err != nil {
+			t.Fatalf("ExportCSV(%q): %v", name, err)
+		}
+		base := filepath.Base(res.Path)
+		if ext := filepath.Ext(base); ext != ".csv" && ext != ".CSV" {
+			t.Errorf("ExportCSV(%q) -> %q: want a .csv extension", name, base)
+		}
+		if bytes.Count([]byte(base), []byte(".csv"))+bytes.Count([]byte(base), []byte(".CSV")) > 1 {
+			t.Errorf("ExportCSV(%q) -> %q: extension doubled", name, base)
+		}
+	}
+}
+
 func TestDTORoundTrip(t *testing.T) {
 	t.Parallel()
 	in := core.EnrichedTrack{

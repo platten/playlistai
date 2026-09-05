@@ -16,6 +16,7 @@ func newTestContainer(t *testing.T) *app.Container {
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
+	cfg.Catalog.ArchiveURL = "" // tests never hit the network for the catalog
 	cfg.Enrich.CachePath = filepath.Join(cfg.DataDir, "mb.sqlite")
 	c, err := app.New(context.Background(), cfg, nil)
 	if err != nil {

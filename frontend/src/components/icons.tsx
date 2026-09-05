@@ -158,3 +158,10 @@ export const ListPlus = (p: IconProps) => (
     <path d="M4 6h11M4 12h8M4 18h8M16 15h6M19 12v6" />
   </svg>
 );
+
+export const Copy = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);

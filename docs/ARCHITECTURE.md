@@ -116,8 +116,8 @@ Taskfile.yml                wails3 build/package entry (per-OS Taskfiles in buil
 build/                      generated packaging assets (icons, Info.plist, nsis, nfpm, appimage)
 cmd/
   catalogpack/  maintainer tool: build/catalog/ -> build/catalog-dist/catalog.tar.zst
-                (tar + zstd; that archive is committed via Git LFS). Not shipped in the app.
-build/catalog-dist/catalog.tar.zst   the compressed catalog, committed via Git LFS (.gitattributes)
+                (tar + zstd). That archive is git-ignored and hosted off-repo
+                (catalog.archive_url); the app downloads it on first launch.
 internal/
   core/       domain types only — zero framework imports
   ports/      the interfaces (+ Progress helpers)
@@ -130,8 +130,9 @@ internal/
               over a normalized search column; search.go mirrors python normalize_search)
   dataset/    Download (HTTP Range resume, optional sha256/size, atomic rename) +
               LoadManifest + Fetch; Download is reused by modelmgr.
-              FindBundledArchive + Unpack (bundle.go): locate + decompress a
-              packaged catalog.tar.zst staged next to the app (cmd/catalogpack)
+              bundle.go: DownloadArchive (fetch a hosted catalog.tar.zst),
+              Unpack (decompress + verify into catalog.dir), FindBundledArchive
+              (a locally-staged archive next to the app)
   similarity/ brute/ — brute-force blended-cosine engine over ports.Catalog;
               reads int8 rows via RawRow (no float32 copy), precomputed per-row
               inverse norms, bounded top-K heap, deterministic tie-break by row.
@@ -142,10 +143,13 @@ internal/
   intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
                         (always available; the fallback)
               schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
-              llama/  — llama-server child process (Server) + /v1/chat/completions
-                        client; Parser swaps in when a model is configured
+              llama/  — llama runtime child process (Server; `llama-server` or
+                        the unified `llama serve`) + streaming
+                        /v1/chat/completions client; runtime.go: DetectRuntime
+                        (PATH / ~/.local/bin / ~/.llama-app / next-to-app) +
+                        InstallOfficial (ggml-org's installer, GPU-aware)
               modelmgr/ — embedded GGUF catalog (models-manifest.json),
-                          resumable download, GGUF magic check, Installed()
+                          resumable download (skips if present), GGUF magic check
   enrich/     [M7] musicbrainz/
   export/     [M7] soundiizcsv/ soundiizhandoff/
   preview/    [M8] deezer/ spotifycdn/
@@ -153,7 +157,7 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
   src/design/     tokens.css (dark + light palette, @theme inline) · theme.ts (system/explicit/reduced-motion)
   src/components/ ProgressBar (+ useProgress), EmptyState, LoadingState,
                   ErrorState, Slider, Stepper, TrackRow, Button, icons,
-                  CatalogUnpackGate (auto-decompresses a bundled catalog behind
+                  (catalog download+unpack lives in the first-run wizard's
                   a blocking popup before the app renders, if one is present)
   src/screens/    GenerateScreen (prompt → parsed-intent chips → playlist),
                   CatalogSearch (search / "similar to X" / first-launch download),
@@ -173,9 +177,10 @@ models/       catalog-manifest.json  (asset URLs + checksums; blobs never commit
 ## 6. Configuration
 
 One TOML file over `config.Default()`; missing keys keep defaults; `Validate()`
-runs before the app starts. Key sections: `[catalog]` (dir + manifest URL +
-`bundle_path` override for a packaged `catalog.tar.zst` — blank means "look
-next to the executable"), `[ai]` (model id/path, n_ctx, threads), `[enrich]`
+runs before the app starts. Key sections: `[catalog]` (`dir`; `archive_url` +
+`archive_size` + `archive_sha256` for the first-launch download — defaulted;
+`manifest_url` and `bundle_path` alternatives), `[ai]` (model id/path, n_ctx,
+threads), `[enrich]`
 (MusicBrainz user-agent — required — cache path, min match score), `[preview]`
 (`deezer` | `spotify` | `off`). Export needs no configuration — the Soundiiz
 handoff is tokenless.
@@ -238,9 +243,9 @@ implies.
    `GetCatalogInfo` reports whether a source is even configured so the UI can
    say so plainly instead of offering a download that's guaranteed to fail.
    The real Deej-AI pickles (`python/fetch_pickles.py`, Google Drive) are
-   fetched + converted (956,917 tracks, end-to-end verified) and the
-   compressed result is committed to the repo via Git LFS — every install
-   ships with a catalog by default (milestone 9). See
+   fetched + converted (956,917 tracks, end-to-end verified), compressed
+   (`cmd/catalogpack`), and hosted off-repo; the app downloads + unpacks it
+   on first launch (`catalog.archive_url`, milestone 9). See
    [`docs/CATALOG.md`](CATALOG.md). *(done)*
 4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
    (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
@@ -294,29 +299,29 @@ implies.
    `ClearModel` were fixed to read-modify-write prefs.json instead of
    overwriting it, which used to silently erase these new fields);
    `Container.SetPreviewProvider` makes the preview backend swappable at
-   runtime, also exposed in Settings. Bundled `llama-server` runtime: every
-   installer/portable archive except AppImage ships a pinned CPU build of
-   llama.cpp's `llama-server` (`build/llama/manifest.json` pins the release
-   tag + per-OS SHA-256; `build/llama/fetch.sh` downloads, verifies, and
-   stages it beside the app binary — automatically, as a dependency of the
-   per-OS packaging tasks) so the local model works with nothing else to
-   install; see [`docs/RELEASING.md`](RELEASING.md#bundled-llama-server-runtime).
-   Bundled catalog: the same idea for the embedding catalog. `cmd/catalogpack`
-   compresses the converted catalog (tar + zstd `SpeedBestCompression`, ~50%
-   smaller — ~210 MB for 956,917 tracks) into
-   `build/catalog-dist/catalog.tar.zst`, which is **committed to the repo via
-   Git LFS** (`.gitattributes`). `build/Taskfile.yml`'s `stage:catalog`
-   copies it beside the app binary as a dependency of every per-OS packaging
-   task (falling back to packing `build/catalog/` on the fly, then to a
-   0-byte placeholder, if the LFS blob wasn't pulled — nfpm/NSIS need a fixed
-   path either way). `internal/dataset.Unpack` decompresses it into the data
-   dir on first launch, behind a blocking "Decompressing dataset" popup
-   (`CatalogUnpackGate.tsx`) — no download, typically under a second;
-   `Container.EnsureCatalog` prefers it over the `catalog.manifest_url`
-   network path, `CatalogInfo.Bundled` tells the frontend which applies. So
-   every install ships with a working catalog by default — see
-   [`docs/RELEASING.md`](RELEASING.md#bundled-catalog) and
-   [`docs/CATALOG.md`](CATALOG.md). *(current)*
+   runtime, also exposed in Settings. llama.cpp runtime — **not bundled**
+   (that's most of the old installer size): the wizard's model step runs
+   ggml-org's official installer (`InstallLlamaRuntime` → `llama.app/install.sh`
+   / `install.ps1`) twice, staging a GPU-capable build (CUDA / ROCm / Vulkan
+   / Metal) and a CPU build into `<data dir>/llama/`; a determinate 2-step
+   progress bar (op `"llama-install"`). `llama.New` tries the GPU build then
+   the CPU build — if the GPU one won't start or go healthy for a model, the
+   CPU one is used. `DetectRuntime` also covers a manual install (PATH,
+   `~/.local/bin`, `~/.llama-app`, next to the app, `ai.llama_server_path`)
+   and runs the unified binary as `llama serve`; `ai.gpu_layers` pins/limits
+   GPU offload. Catalog on first launch: the app has no catalog in the repo or
+   the installer — `cmd/catalogpack` compresses the converted catalog (tar + zstd
+   `SpeedBestCompression`, ~210 MB for 956,917 tracks) and it's hosted off-repo (`catalog.archive_url`, Cloudflare R2, with a pinned size + SHA-256). The first-run wizard's catalog step calls
+   `DownloadCatalog` automatically: `internal/dataset.DownloadArchive` fetches
+   it (resumable, verified), `internal/dataset.Unpack` decompresses it into
+   the data dir, both behind one progress popup;
+   `Container.EnsureCatalog` drives the source-precedence order (staged local
+   archive → `archive_url` → `manifest_url`). Also this milestone: the intent
+   parse now streams — the Generate screen shows a live progress bar while the
+   local model works (`ParseWithProgress`, op `"intent"`), and it falls back
+   to the rules parser if the model errors or times out. See
+   [`docs/RELEASING.md`](RELEASING.md) and [`docs/CATALOG.md`](CATALOG.md).
+   *(current)*
 
 Remaining known gap: no custom app icon (still the Wails default) — cosmetic,
 not a release blocker.

@@ -6,6 +6,8 @@ package modelmgr
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -78,6 +80,11 @@ func Get(id string) (Model, bool) {
 // Download fetches a catalog model into destDir/<id>.gguf, resuming a partial
 // download and verifying size/sha256 when the entry provides them. Progress is
 // reported in bytes under ProgressOp. Returns the model path.
+//
+// If destDir/<id>.gguf is already present and passes the same checks
+// (size when pinned, sha256 when pinned, GGUF magic always), it is returned
+// as-is with no network request — re-selecting an already-downloaded model
+// must not re-download it.
 func Download(ctx context.Context, m Model, destDir string, p ports.Progress) (string, error) {
 	if p == nil {
 		p = ports.NopProgress{}
@@ -86,6 +93,11 @@ func Download(ctx context.Context, m Model, destDir string, p ports.Progress) (s
 		return "", fmt.Errorf("modelmgr: model %q has no URL", m.ID)
 	}
 	target := filepath.Join(destDir, m.Filename())
+
+	if IsInstalled(m, destDir) {
+		p.Report(ProgressOp, m.Size, m.Size, "ready")
+		return target, nil
+	}
 
 	p.Report(ProgressOp, 0, m.Size, "downloading "+m.Label)
 	if _, err := dataset.Download(ctx, m.URL, target, m.Size, m.SHA256, func(done, total int64) {
@@ -125,6 +137,41 @@ func ValidateGGUF(path string) error {
 		return fmt.Errorf("modelmgr: %s is not a GGUF file (bad magic)", path)
 	}
 	return nil
+}
+
+// IsInstalled reports whether m's GGUF is already downloaded into destDir and
+// passes m's integrity checks (exact size when the manifest pins one, sha256
+// when it pins one, GGUF magic always). Used to skip a redundant download and
+// to label the model in the UI.
+func IsInstalled(m Model, destDir string) bool {
+	target := filepath.Join(destDir, m.Filename())
+	fi, err := os.Stat(target)
+	if err != nil || fi.IsDir() || fi.Size() < 8 {
+		return false
+	}
+	if m.Size > 0 && fi.Size() != m.Size {
+		return false
+	}
+	if ValidateGGUF(target) != nil {
+		return false
+	}
+	if m.SHA256 != "" && !fileHasSHA256(target, m.SHA256) {
+		return false
+	}
+	return true
+}
+
+func fileHasSHA256(path, want string) bool {
+	f, err := os.Open(path) //nolint:gosec // manifest-derived path
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return strings.EqualFold(hex.EncodeToString(h.Sum(nil)), want)
 }
 
 // Installed lists the .gguf files present in destDir.

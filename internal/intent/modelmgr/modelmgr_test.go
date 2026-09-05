@@ -117,6 +117,56 @@ func TestDownload(t *testing.T) {
 	}
 }
 
+func TestDownloadSkipsAlreadyInstalled(t *testing.T) {
+	t.Parallel()
+	blob := fakeGGUF(50000)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.ServeContent(w, r, "m.gguf", time.Time{}, bytes.NewReader(blob))
+	}))
+	defer srv.Close()
+
+	m := Model{ID: "test-model", Label: "Test", URL: srv.URL + "/m.gguf", Size: int64(len(blob))}
+	dir := t.TempDir()
+
+	if _, err := Download(context.Background(), m, dir, nil); err != nil {
+		t.Fatalf("first Download: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("first download made %d requests, want 1", hits)
+	}
+	// Second call: the file is already there and valid — no network.
+	rec := &fakes.RecordingProgress{}
+	path, err := Download(context.Background(), m, dir, rec)
+	if err != nil {
+		t.Fatalf("second Download: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("second Download re-fetched (%d requests total)", hits)
+	}
+	if path != filepath.Join(dir, "test-model.gguf") {
+		t.Fatalf("path = %s", path)
+	}
+	if rows := rec.Snapshot(); len(rows) == 0 || rows[len(rows)-1].Note != "ready" {
+		t.Fatalf("expected a terminal 'ready' progress report, got %+v", rows)
+	}
+
+	// A size mismatch on disk => not "installed" => re-download.
+	if err := os.WriteFile(path, fakeGGUF(10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if IsInstalled(m, dir) {
+		t.Fatal("truncated file reported as installed")
+	}
+	if _, err := Download(context.Background(), m, dir, nil); err != nil {
+		t.Fatalf("re-Download after truncation: %v", err)
+	}
+	if hits != 2 {
+		t.Fatalf("expected a re-fetch after truncation, hits=%d", hits)
+	}
+}
+
 func TestDownloadRejectsNonGGUF(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

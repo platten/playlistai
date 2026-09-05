@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -60,10 +61,20 @@ func (*Exporter) Export(_ context.Context, req ports.ExportRequest, p ports.Prog
 
 	return ports.ExportResult{
 		Kind:     "csv",
-		Location: sanitizeFilename(req.Name) + ".csv",
+		Location: EnsureCSVExt(sanitizeFilename(req.Name)),
 		Data:     buf.Bytes(),
 		Count:    len(req.Tracks),
 	}, nil
+}
+
+// EnsureCSVExt returns name with a ".csv" extension, adding one only when it
+// isn't already there (case-insensitive), so "list" -> "list.csv" but
+// "list.csv" and "list.CSV" are left as-is.
+func EnsureCSVExt(name string) string {
+	if strings.EqualFold(filepath.Ext(name), ".csv") {
+		return name
+	}
+	return name + ".csv"
 }
 
 var unsafeName = regexp.MustCompile(`[^\w \-.]+`)

@@ -157,9 +157,6 @@ tasks:
 
   create:app:bundle:
     summary: Creates an `.app` bundle
-    deps:
-      - task: fetch:llama
-      - task: common:stage:catalog
     cmds:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
@@ -170,25 +167,7 @@ tasks:
         fi
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
-      - |
-        # Bundled llama-server runtime (build/llama/fetch.sh) — must land beside
-        # playlist-ai itself; that's where internal/intent/llama's
-        # resolveBinary() looks first. Copied here (not just left in bin/) so it
-        # rides along inside the .app / .dmg.
-        cp "{{.BIN_DIR}}/llama-server" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
-        cp -P "{{.BIN_DIR}}"/*.dylib "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
-      - |
-        # Compressed catalog (common:stage:catalog) — real archive or a 0-byte
-        # "nothing bundled" placeholder either way, so this file always
-        # exists once staged. Same drop location as llama-server: next to the
-        # binary, where internal/dataset.FindBundledArchive looks.
-        cp "{{.BIN_DIR}}/catalog.tar.zst" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
-
-  fetch:llama:
-    summary: Downloads the bundled llama-server CPU runtime into bin/ (see build/llama/manifest.json)
-    cmds:
-      - bash "{{.ROOT_DIR}}/build/llama/fetch.sh" darwin "{{.ROOT_DIR}}/{{.BIN_DIR}}"
 
   codesign:adhoc:
     summary: Ad-hoc signs the app bundle (macOS only)
