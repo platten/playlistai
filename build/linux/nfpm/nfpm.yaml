@@ -33,6 +33,15 @@ contents:
     dst: "/usr/local/bin/llama-server"
   - src: "./bin/*.so*"
     dst: "/usr/local/bin/"
+  # Compressed catalog (build/Taskfile.yml's stage:catalog, run automatically
+  # by `task linux:package`) — a real archive if a local catalog build
+  # existed at package time, otherwise a 0-byte placeholder. nfpm needs a
+  # fixed path here (a glob errors out on zero matches, unlike the *.so*
+  # entry above, which fetch:llama guarantees at least one match for), so
+  # stage:catalog always writes *something* to this path. See
+  # internal/dataset.FindBundledArchive and docs/CATALOG.md.
+  - src: "./bin/catalog.tar.zst"
+    dst: "/usr/local/bin/catalog.tar.zst"
   - src: "./bin/licenses/*"
     dst: "/usr/share/doc/playlist-ai/"
 

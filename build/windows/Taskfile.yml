@@ -118,6 +118,7 @@ tasks:
     deps:
       - task: build
       - task: fetch:llama
+      - task: common:stage:catalog
     preconditions:
       - sh: '[ "{{.INSTALL_SCOPE}}" = "user" ] || [ "{{.INSTALL_SCOPE}}" = "machine" ]'
         msg: "INSTALL_SCOPE must be 'user' or 'machine', got '{{.INSTALL_SCOPE}}'"

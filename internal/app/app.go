@@ -265,11 +265,22 @@ func (c *Container) LoadCatalog() error {
 	return nil
 }
 
-// EnsureCatalog downloads the catalog (per cfg.Catalog.ManifestURL) if it is not
-// already present, then loads it. Progress is reported via p.
+// EnsureCatalog gets the catalog onto disk and loads it, if it is not already
+// present: it prefers a pre-packaged, compressed catalog.tar.zst staged next
+// to the app (see cmd/catalogpack, internal/dataset.Unpack) — a fast, offline,
+// one-time decompression — and falls back to downloading one over the network
+// per cfg.Catalog.ManifestURL when no bundled archive is found. Progress is
+// reported via p either way, under the same op, so the caller doesn't need to
+// know which path ran.
 func (c *Container) EnsureCatalog(ctx context.Context, p ports.Progress) error {
 	if c.Catalog != nil {
 		return nil
+	}
+	if archive, ok := dataset.FindBundledArchive(c.cfg.Catalog.BundlePath); ok {
+		if err := dataset.Unpack(ctx, archive, c.cfg.Catalog.Dir, p); err != nil {
+			return fmt.Errorf("app: unpack bundled catalog: %w", err)
+		}
+		return c.LoadCatalog()
 	}
 	if c.cfg.Catalog.ManifestURL == "" {
 		return fmt.Errorf("app: no catalog configured (set catalog.manifest_url or catalog.dir)")
@@ -282,6 +293,16 @@ func (c *Container) EnsureCatalog(ctx context.Context, p ports.Progress) error {
 		return err
 	}
 	return c.LoadCatalog()
+}
+
+// CatalogBundled reports whether a pre-packaged, compressed catalog is staged
+// next to the app and ready to be unpacked by EnsureCatalog — used by the
+// bridge to tell the frontend whether "get the catalog" means an instant
+// local decompression (auto-run, no user action) or a network download
+// (user-initiated, per cfg.Catalog.ManifestURL).
+func (c *Container) CatalogBundled() bool {
+	_, ok := dataset.FindBundledArchive(c.cfg.Catalog.BundlePath)
+	return ok
 }
 
 // Config returns the immutable configuration snapshot.

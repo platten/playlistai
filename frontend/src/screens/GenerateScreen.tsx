@@ -27,8 +27,8 @@ export function GenerateScreen({
 
   useEffect(() => {
     API.GetCatalogInfo()
-      .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0, configured: false }))
-      .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false }));
+      .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false }))
+      .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false }));
   }, []);
 
   useEffect(() => {

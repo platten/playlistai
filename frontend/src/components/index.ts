@@ -10,6 +10,7 @@ export { ErrorState, type ErrorStateProps } from "./ErrorState";
 export { Slider, type SliderProps } from "./Slider";
 export { Stepper, type StepperProps } from "./Stepper";
 export { TrackRow, type TrackRowProps, type Provenance } from "./TrackRow";
+export { CatalogUnpackGate } from "./CatalogUnpackGate";
 export {
   PreviewPlayerProvider,
   MiniPlayerBar,

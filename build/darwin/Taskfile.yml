@@ -159,6 +159,7 @@ tasks:
     summary: Creates an `.app` bundle
     deps:
       - task: fetch:llama
+      - task: common:stage:catalog
     cmds:
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
@@ -176,6 +177,12 @@ tasks:
         # rides along inside the .app / .dmg.
         cp "{{.BIN_DIR}}/llama-server" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
         cp -P "{{.BIN_DIR}}"/*.dylib "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
+      - |
+        # Compressed catalog (common:stage:catalog) — real archive or a 0-byte
+        # "nothing bundled" placeholder either way, so this file always
+        # exists once staged. Same drop location as llama-server: next to the
+        # binary, where internal/dataset.FindBundledArchive looks.
+        cp "{{.BIN_DIR}}/catalog.tar.zst" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS/"
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
 
   fetch:llama:

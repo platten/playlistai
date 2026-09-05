@@ -31,6 +31,8 @@ jobs:
       HAS_PGP_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-go@v5
         with:
@@ -80,7 +82,7 @@ jobs:
       - name: Portable archive (raw binary + bundled llama-server)
         run: |
           cd bin
-          tar -czf "playlist-ai-linux-amd64.tar.gz" -- playlist-ai llama-server *.so* licenses
+          tar -czf "playlist-ai-linux-amd64.tar.gz" -- playlist-ai llama-server *.so* licenses catalog.tar.zst
 
       - uses: actions/upload-artifact@v4
         with:
@@ -102,6 +104,8 @@ jobs:
       HAS_NOTARY_CREDS: ${{ secrets.APPLE_ID != '' && secrets.APPLE_TEAM_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-go@v5
         with:
@@ -202,6 +206,8 @@ jobs:
       HAS_CERT: ${{ secrets.WINDOWS_CERTIFICATE_PFX != '' && secrets.WINDOWS_CERTIFICATE_PASSWORD != '' && 'true' || 'false' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - uses: actions/setup-go@v5
         with:
@@ -250,7 +256,7 @@ jobs:
         shell: bash
         run: |
           cd bin
-          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe" "llama-server.exe" "*.dll"
+          7z a "playlist-ai-windows-amd64.zip" "playlist-ai.exe" "llama-server.exe" "*.dll" "catalog.tar.zst"
 
       - uses: actions/upload-artifact@v4
         with:

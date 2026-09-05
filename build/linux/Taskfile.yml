@@ -131,6 +131,7 @@ tasks:
     deps:
       - task: build
       - task: fetch:llama
+      - task: common:stage:catalog
     cmds:
       - task: generate:dotdesktop
       - task: generate:deb
@@ -140,6 +141,7 @@ tasks:
     deps:
       - task: build
       - task: fetch:llama
+      - task: common:stage:catalog
     cmds:
       - task: generate:dotdesktop
       - task: generate:rpm
@@ -149,6 +151,7 @@ tasks:
     deps:
       - task: build
       - task: fetch:llama
+      - task: common:stage:catalog
     cmds:
       - task: generate:dotdesktop
       - task: generate:aur

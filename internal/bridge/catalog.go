@@ -10,26 +10,35 @@ type CatalogInfo struct {
 	Loaded     bool `json:"loaded"`
 	TrackCount int  `json:"trackCount"`
 	Dim        int  `json:"dim"`
-	// Configured reports whether catalog.manifest_url (or a pre-populated
-	// catalog.dir) is set at all. This project does not ship or host a
-	// catalog itself — see docs/CATALOG.md — so a fresh install is
-	// unconfigured until an operator points it at a self-hosted one.
-	// DownloadCatalog fails immediately when this is false; the UI should
-	// explain that rather than offer a download that's guaranteed to error.
+	// Configured reports whether a catalog source is available at all: either
+	// a pre-packaged archive staged next to the app (Bundled) or
+	// catalog.manifest_url (or a pre-populated catalog.dir) pointing at a
+	// self-hosted one. DownloadCatalog fails immediately when this is false;
+	// the UI should explain that rather than offer an action guaranteed to error.
 	Configured bool `json:"configured"`
+	// Bundled reports whether getting the catalog means a fast, offline,
+	// one-time local decompression (DownloadCatalog can be — and should be —
+	// run automatically, no user action) rather than a network download the
+	// user must opt into.
+	Bundled bool `json:"bundled"`
 }
 
 // GetCatalogInfo reports whether the embedding catalog is loaded, its size,
 // and whether a source is configured at all.
 func (a *API) GetCatalogInfo() CatalogInfo {
+	bundled := a.app.CatalogBundled()
 	if a.app.Catalog == nil {
-		return CatalogInfo{Configured: a.app.Config().Catalog.ManifestURL != ""}
+		return CatalogInfo{
+			Configured: bundled || a.app.Config().Catalog.ManifestURL != "",
+			Bundled:    bundled,
+		}
 	}
 	return CatalogInfo{
 		Loaded:     true,
 		TrackCount: a.app.Catalog.Len(),
 		Dim:        a.app.Catalog.Dim(),
 		Configured: true,
+		Bundled:    bundled,
 	}
 }
 
@@ -118,10 +127,13 @@ func clamp01(v float64) float64 {
 	return v
 }
 
-// DownloadCatalog fetches the catalog (with resume + checksum) and loads it,
-// emitting playlistai:progress events under op "catalog". Blocks until done; the
-// frontend awaits it while listening for progress. Returns a descriptive error
-// if no catalog manifest is configured.
+// DownloadCatalog gets the catalog and loads it, emitting playlistai:progress
+// events under op "catalog". Blocks until done; the frontend awaits it while
+// listening for progress. Prefers unpacking a pre-packaged, compressed
+// catalog.tar.zst staged next to the app (see CatalogInfo.Bundled) — fast and
+// offline — falling back to a network download (with resume + checksum) when
+// no bundled archive is present. Returns a descriptive error if neither a
+// bundled archive nor a catalog manifest is configured.
 func (a *API) DownloadCatalog() error {
 	if a.app.Catalog != nil {
 		return nil

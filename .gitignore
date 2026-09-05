@@ -10,6 +10,9 @@ coverage.txt
 .task
 /bin
 
+#Pickles
+/pickles
+
 # Frontend
 frontend/dist
 frontend/node_modules
@@ -25,14 +28,17 @@ build/windows/nsis/MicrosoftEdgeWebview2Setup.exe
 # Python tooling
 __pycache__/
 *.pyc
+.venv/
 
 # Downloaded assets — never committed; fetched on first launch
 /models/*.gguf
 /models/*.onnx
 /models/*.bin
 /models/*.sqlite
-# a converted catalog build output (fixtures under internal/**/testdata stay tracked)
+# the intermediate converted catalog (fixtures under internal/**/testdata stay
+# tracked; the compressed build/catalog-dist/catalog.tar.zst is committed via Git LFS)
 /build/catalog/
+/build/catalog-dist/*.tmp
 
 # Local dev
 *.log

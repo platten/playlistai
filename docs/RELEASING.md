@@ -25,6 +25,13 @@ automatically by `task <os>:package` (`build/llama/fetch.sh`, pinned tag +
 per-OS SHA-256 in `build/llama/manifest.json`) and needs no configuration —
 see "Bundled llama-server runtime" below only if you need to update it.
 
+Every installer and portable archive (again except AppImage) also bundles the
+**recommendation catalog**, compressed — it lives in the repo at
+`build/catalog-dist/catalog.tar.zst` (Git LFS), and the app decompresses it
+automatically behind a "Decompressing dataset" step on first launch, no
+download. The release runner must have the LFS blob (`actions/checkout` with
+`lfs: true`). See "Bundled catalog" below.
+
 ## Cutting a release
 
 1. Bump the version in two places (they must match):
@@ -129,6 +136,47 @@ none), update the tag + the three asset names + their `sha256sum <file>` in
 have locally, and re-run `task linux:create:deb` (or the smoke test in CI) to
 confirm it still runs.
 
+## Bundled catalog
+
+The compressed catalog lives in the repo at
+`build/catalog-dist/catalog.tar.zst` — a tar archive of
+`vectors.i8` + `catalog.sqlite` + `catalog-manifest.json`, zstd-compressed at
+klauspost/compress's `SpeedBestCompression` (~50% smaller; ~210 MB for the
+956,917-track catalog), tracked with **Git LFS** (`.gitattributes`). Rebuild
+it with `go run ./cmd/catalogpack` and commit — see `docs/CATALOG.md`.
+
+`build/Taskfile.yml`'s `stage:catalog` task runs automatically as part of
+every `task <os>:package` (Linux `create:deb`/`create:rpm`/`create:aur`,
+macOS `create:app:bundle`, Windows `create:nsis:installer`) and stages that
+archive into `bin/catalog.tar.zst`, next to the app binary — the same place
+`resolveBinary()` looks for llama-server. It:
+
+1. copies `build/catalog-dist/catalog.tar.zst` if it's present and larger
+   than 1 MB (i.e. the real LFS blob, not an un-pulled ~130-byte pointer);
+2. else, if `build/catalog/` exists, packs it on the fly with
+   `cmd/catalogpack`;
+3. else writes a **0-byte placeholder**.
+
+`bin/catalog.tar.zst` always exists once staged, because nfpm's content list
+and the NSIS `File` directive both need a fixed path that's always there
+(unlike the `*.so*`/`*.dll` globs, which `fetch:llama` guarantees at least
+one match for). `internal/dataset.FindBundledArchive` finds it at runtime and
+treats a 0-byte file as "nothing bundled" (`fi.Size() > 0` is the check),
+falling back to the normal unconfigured-catalog state.
+
+**On first launch**, if a real bundled archive is present and the catalog
+hasn't been decompressed into the data dir yet, the app does that
+automatically — a blocking "Decompressing dataset" step
+(`frontend/src/components/CatalogUnpackGate.tsx`), no button, no network,
+typically well under a second. `internal/app.Container.EnsureCatalog` prefers
+this path over `catalog.manifest_url` network download; `CatalogInfo.Bundled`
+is what tells the frontend which one applies.
+
+**CI must check out LFS.** `release.yml`'s `actions/checkout` steps set
+`lfs: true` so the runner gets the real archive, not the pointer. Without it,
+`stage:catalog`'s size guard falls through to the placeholder branch and
+installers ship without a catalog.
+
 ## Known gaps
 
 - The app icon (`build/appicon.png`, `build/darwin/icons.icns`,
@@ -152,3 +200,8 @@ confirm it still runs.
   the local model can install llama-server separately (see llama.cpp's
   releases) and set `ai.llama_server_path`, or use the `.deb`/`.rpm`/Arch
   package instead, which do bundle it.
+- The same AppImage limitation applies to the bundled catalog (`create:appimage`
+  has no `stage:catalog` dependency) — AppImage users get the normal
+  unconfigured-catalog state and need `catalog.manifest_url` or
+  `catalog.bundle_path`/`catalog.dir` set by hand, or should use the `.deb`/
+  `.rpm`/Arch package instead.

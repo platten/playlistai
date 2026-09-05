@@ -96,7 +96,7 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
   const progress = useProgress("catalog");
 
   const refresh = useCallback(() => {
-    const fallback = { loaded: false, trackCount: 0, dim: 0, configured: false };
+    const fallback = { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false };
     API.GetCatalogInfo()
       .then((i) => setInfo(i ?? fallback))
       .catch(() => setInfo(fallback));

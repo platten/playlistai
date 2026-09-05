@@ -29,14 +29,22 @@ to point at a GPU-accelerated llama.cpp build instead if you want one (see
 [llama.cpp's releases](https://github.com/ggml-org/llama.cpp/releases) for
 CUDA/ROCm/Vulkan variants).
 
-**The recommendation catalog itself is not shipped, embedded, or hosted by
-this project.** A fresh install has nothing to recommend over until an
-operator converts and self-hosts one from the real Deej-AI dataset — the
-tooling is written and tested against synthetic fixtures, but the ~1.4 GB
-source pickles were never fetched and the conversion was never run for real.
-See [`docs/CATALOG.md`](docs/CATALOG.md).
+The **recommendation catalog** (~957k tracks, derived from the Deej-AI
+dataset) ships too — compressed to ~210 MB and committed to the repo via
+Git LFS at `build/catalog-dist/catalog.tar.zst`. Every installer/portable
+archive (again except AppImage) carries it, and the app decompresses it on
+first launch behind a one-time "Decompressing dataset" step. Nothing to
+download, no account, no config. See [`docs/CATALOG.md`](docs/CATALOG.md) for
+how it's built and how to regenerate it.
 
 ## Develop
+
+This repo uses **Git LFS** for the compressed catalog
+(`build/catalog-dist/catalog.tar.zst`, ~210 MB). Install it *before* cloning
+(`git lfs install`), or, if you already cloned, run `git lfs pull` once —
+otherwise that path is a small text pointer and `wails3 package` will ship an
+empty catalog. `go test ./...` and `wails3 build` don't need it; only
+packaging does.
 
 ```bash
 # Go core — no toolchain beyond Go needed

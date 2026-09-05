@@ -100,6 +100,13 @@ Section
     File "..\..\..\bin\llama-server.exe"
     File "..\..\..\bin\*.dll"
 
+    # Compressed catalog (common:stage:catalog, staged into bin/ before
+    # makensis runs) — a real archive if a local catalog build existed at
+    # package time, otherwise a 0-byte placeholder; either way this file
+    # always exists once staged, so no !ifexist guard is needed. Same drop
+    # location as llama-server. See internal/dataset.FindBundledArchive.
+    File "..\..\..\bin\catalog.tar.zst"
+
     CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
     CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
 

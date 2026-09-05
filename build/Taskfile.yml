@@ -230,6 +230,43 @@ tasks:
     cmds:
       - bun run dev --port {{.VITE_PORT}} --strictPort
 
+  stage:catalog:
+    summary: Stages the compressed catalog.tar.zst into bin/ for packaging (see cmd/catalogpack, docs/CATALOG.md)
+    desc: |
+      The compressed catalog ships in the repo at
+      build/catalog-dist/catalog.tar.zst, committed via Git LFS
+      (.gitattributes). This copies it next to the app binary in bin/, where
+      packaging (nfpm/NSIS/the .app bundle) picks it up and
+      internal/dataset.FindBundledArchive finds it at runtime.
+
+      nfpm/NSIS/the .app bundle all reference bin/catalog.tar.zst as a fixed
+      path, so it must exist once staged. If the committed archive is
+      missing or is still a Git LFS pointer (a checkout without `git lfs
+      pull` — the pointer is a ~130-byte text file), this falls back to
+      packing build/catalog/ on the fly, and failing that stages an empty
+      0-byte placeholder. internal/dataset.FindBundledArchive treats an
+      empty file as "not bundled" (size 0), so the app degrades to its
+      normal unconfigured-catalog state rather than shipping something
+      broken. Safe to re-run; only touches bin/catalog.tar.zst.
+    cmds:
+      - mkdir -p "{{.ROOT_DIR}}/{{.BIN_DIR}}"
+      - |
+        set -e
+        committed="{{.ROOT_DIR}}/build/catalog-dist/catalog.tar.zst"
+        staged="{{.ROOT_DIR}}/{{.BIN_DIR}}/catalog.tar.zst"
+        # >1 MB rules out a Git LFS pointer file (~130 bytes) as well as an
+        # empty placeholder.
+        if [ -f "$committed" ] && [ "$(wc -c < "$committed")" -gt 1000000 ]; then
+          cp "$committed" "$staged"
+          echo "staged committed catalog ($(wc -c < "$staged") bytes)"
+        elif [ -f "{{.ROOT_DIR}}/build/catalog/catalog-manifest.json" ]; then
+          echo "build/catalog-dist/catalog.tar.zst missing or an un-pulled LFS pointer — packing build/catalog/ instead"
+          go run "{{.ROOT_DIR}}/cmd/catalogpack" -in "{{.ROOT_DIR}}/build/catalog" -out "$staged"
+        else
+          echo "no catalog available (run 'git lfs pull', or see docs/CATALOG.md) — shipping an empty catalog.tar.zst placeholder"
+          : > "$staged"
+        fi
+
   update:build-assets:
     summary: Updates the build assets
     dir: build

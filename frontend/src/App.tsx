@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
-import { Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
+import { Button, CatalogUnpackGate, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
@@ -38,6 +38,14 @@ function seedToRequest(seed: Seed): BuildPlaylistRequest {
 }
 
 export default function App() {
+  return (
+    <CatalogUnpackGate>
+      <AppShell />
+    </CatalogUnpackGate>
+  );
+}
+
+function AppShell() {
   const { choice, cycle } = useTheme();
   const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);

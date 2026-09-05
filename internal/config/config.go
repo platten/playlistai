@@ -31,6 +31,12 @@ type CatalogConfig struct {
 	// ManifestURL is the hosted catalog-manifest.json used by the first-launch
 	// downloader.
 	ManifestURL string `toml:"manifest_url"`
+	// BundlePath overrides where to look for a pre-packaged, compressed
+	// catalog.tar.zst (see cmd/catalogpack, internal/dataset.Unpack). Blank
+	// means "look next to the running executable" — where every packaging
+	// target stages one when a local catalog build was available at package
+	// time. Set this only for testing or a nonstandard install layout.
+	BundlePath string `toml:"bundle_path"`
 }
 
 // AIConfig configures the local llama.cpp intent parser.
