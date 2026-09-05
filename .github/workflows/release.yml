@@ -214,10 +214,17 @@ jobs:
       - name: Install Wails v3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
 
-      - name: Install NSIS
+      - name: Install NSIS (makensis) — not on the runner image
+        shell: pwsh
         run: |
-          choco install nsis --no-progress -y
-          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install nsis --no-progress --no-color --yes
+          $dir = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$dir\makensis.exe")) { $dir = "C:\Program Files\NSIS" }
+          if (-not (Test-Path "$dir\makensis.exe")) {
+            throw "makensis.exe not found after 'choco install nsis'"
+          }
+          & "$dir\makensis.exe" /VERSION
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
 
       - name: Package (NSIS installer)
         run: wails3 task windows:package

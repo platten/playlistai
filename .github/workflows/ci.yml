@@ -113,8 +113,28 @@ jobs:
       - name: Install Wails v3 CLI
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
 
+      - name: Install NSIS (makensis) — not on the runner image
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --no-progress --no-color --yes
+          $dir = "C:\Program Files (x86)\NSIS"
+          if (-not (Test-Path "$dir\makensis.exe")) { $dir = "C:\Program Files\NSIS" }
+          if (-not (Test-Path "$dir\makensis.exe")) {
+            throw "makensis.exe not found after 'choco install nsis'"
+          }
+          & "$dir\makensis.exe" /VERSION
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
       - name: Build
+        if: runner.os != 'Windows'
         run: wails3 build
+
+      # Windows runs the actual release command so CI catches packaging breaks
+      # (e.g. a missing makensis) before a tag is cut.
+      - name: Build + package (NSIS installer)
+        if: runner.os == 'Windows'
+        run: wails3 task windows:package
 
       - uses: actions/upload-artifact@v6
         with:
