@@ -121,9 +121,11 @@ a progress popup the first time the app runs. To rebuild or re-host it, see
 
 ## Known gaps
 
-- The app icon (`build/appicon.png`, `build/darwin/icons.icns`,
-  `build/windows/icon.ico`) is still the Wails default diamond — a custom
-  Playlist AI icon is a nice-to-have, not tracked as a release blocker.
+- The macOS "Liquid Glass" icon (`Assets.car`, built from
+  `build/appicon.icon/`) is only regenerated during a macOS packaging run;
+  `build/darwin/icons.icns` / `build/windows/icon.ico` / `build/appicon.png`
+  (regenerated from `build/appicon.svg` via `wails3 generate icons`) are the
+  cross-platform fallbacks and are checked in.
 - MSIX packaging is scaffolded (`build/windows/msix/`) but not part of the
   release matrix — `wails3 tool msix` currently expects a Wails v2-style
   `wails.json` this project doesn't have. NSIS is the supported Windows
