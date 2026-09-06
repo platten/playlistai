@@ -3,10 +3,12 @@ package app
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -330,10 +332,25 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 		rp = rules.New()
 	}
 	m, fallbackErr := rp.Parse(ctx, in)
+	reason := parserFallbackReason(err)
 	if fallbackErr != nil {
-		return ParseOutcome{Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: "parser_error"}, fallbackErr
+		return ParseOutcome{Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason}, fallbackErr
 	}
-	return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: "parser_error"}, nil
+	return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason}, nil
+}
+
+func parserFallbackReason(err error) string {
+	var truncated *llama.TruncatedCompletionError
+	if errors.As(err, &truncated) {
+		return "truncated_output"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	if strings.Contains(err.Error(), "schema:") {
+		return "invalid_output"
+	}
+	return "parser_error"
 }
 
 // ParserIdentity identifies every input that can change parsing without
@@ -442,7 +459,9 @@ func (c *Container) LoadCatalog() error {
 				c.log.Info("semantic sidecar loaded", "tracks", info.TrackCount, "feature_version", info.FeatureVersion, "model", info.TextModel, "query_encoder", info.QueryEncoder)
 			}
 		}
-		if semanticSearch != nil {
+		if c.Features != nil {
+			// Feature-only sidecars still enforce grounded constraints even when
+			// they do not contain a compatible query encoder.
 			c.Reco = multichannel.NewWithSemantic(cat, c.Sim, cat, c.Features, semanticSearch, mc)
 		} else {
 			c.Reco = multichannel.New(cat, c.Sim, cat, mc)

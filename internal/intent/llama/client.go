@@ -53,7 +53,8 @@ type chatRequest struct {
 
 type chatResponse struct {
 	Choices []struct {
-		Message chatMessage `json:"message"`
+		Message      chatMessage `json:"message"`
+		FinishReason string      `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -62,7 +63,24 @@ type streamChunk struct {
 		Delta struct {
 			Content string `json:"content"`
 		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
+}
+
+type completionResult struct {
+	Content      string
+	FinishReason string
+}
+
+// TruncatedCompletionError is distinguishable by lifecycle callers so a
+// grammar-valid prefix is never silently reinterpreted by the rules fallback.
+type TruncatedCompletionError struct {
+	FinishReason string
+	Attempts     int
+}
+
+func (e *TruncatedCompletionError) Error() string {
+	return fmt.Sprintf("llama: intent completion truncated after %d bounded attempts (finish_reason=%q)", e.Attempts, e.FinishReason)
 }
 
 // Parse sends the prompt (system instruction + few-shot examples) and returns
@@ -80,57 +98,80 @@ func (c *Client) ParseWithProgress(ctx context.Context, in ports.IntentInput, on
 }
 
 func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
+	for attempt, tokenBudget := range []int{900, 1400} {
+		intent, result, err := c.parseAttempt(ctx, in, onDelta, tokenBudget)
+		if err == nil && result.FinishReason != "length" {
+			return intent, nil
+		}
+		if result.FinishReason != "length" {
+			return core.MusicIntent{}, err
+		}
+		if attempt == 1 {
+			return core.MusicIntent{}, &TruncatedCompletionError{FinishReason: result.FinishReason, Attempts: attempt + 1}
+		}
+	}
+	return core.MusicIntent{}, fmt.Errorf("llama: intent parse failed")
+}
+
+func (c *Client) parseAttempt(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int) (core.MusicIntent, completionResult, error) {
 	body := chatRequest{
 		Messages:           buildMessages(in),
 		Grammar:            schema.GBNF,
 		ChatTemplateKwargs: map[string]any{"enable_thinking": false},
 		Temperature:        0.2,
-		NPredict:           400,
+		NPredict:           tokenBudget,
 		CachePrompt:        true,
 		Stream:             true,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
-		return core.MusicIntent{}, err
+		return core.MusicIntent{}, completionResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/v1/chat/completions", bytes.NewReader(buf))
 	if err != nil {
-		return core.MusicIntent{}, err
+		return core.MusicIntent{}, completionResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return core.MusicIntent{}, fmt.Errorf("llama: %w", err)
+		return core.MusicIntent{}, completionResult{}, fmt.Errorf("llama: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return core.MusicIntent{}, fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
+		return core.MusicIntent{}, completionResult{}, fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
 
-	var content string
+	var result completionResult
 	if strings.Contains(resp.Header.Get("Content-Type"), "event-stream") {
-		content, err = readSSE(resp.Body, onDelta)
+		result, err = readSSECompletion(resp.Body, onDelta)
 	} else {
-		content, err = readWhole(resp.Body, onDelta)
+		result, err = readWholeCompletion(resp.Body, onDelta)
 	}
 	if err != nil {
-		return core.MusicIntent{}, err
+		return core.MusicIntent{}, result, err
 	}
-	if strings.TrimSpace(content) == "" {
-		return core.MusicIntent{}, fmt.Errorf("llama: empty completion")
+	if strings.TrimSpace(result.Content) == "" {
+		return core.MusicIntent{}, result, fmt.Errorf("llama: empty completion (finish_reason=%q)", result.FinishReason)
 	}
-	return schema.Parse([]byte(content))
+	intent, err := schema.ParseForPrompt([]byte(result.Content), in.Prompt)
+	return intent, result, err
 }
 
 // readSSE consumes an OpenAI-style `data: {...}` stream, accumulating
 // choices[].delta.content and reporting the running length via onDelta.
 func readSSE(body io.Reader, onDelta func(int)) (string, error) {
+	result, err := readSSECompletion(body, onDelta)
+	return result.Content, err
+}
+
+func readSSECompletion(body io.Reader, onDelta func(int)) (completionResult, error) {
 	var out strings.Builder
+	var finishReason string
 	sc := bufio.NewScanner(body)
 	sc.Buffer(make([]byte, 0, 64<<10), 1<<20)
 	for sc.Scan() {
@@ -143,13 +184,16 @@ func readSSE(body io.Reader, onDelta func(int)) (string, error) {
 			continue
 		}
 		if data == "[DONE]" {
-			return out.String(), nil
+			return completionResult{Content: out.String(), FinishReason: finishReason}, nil
 		}
 		var chunk streamChunk
 		if json.Unmarshal([]byte(data), &chunk) != nil {
 			continue
 		}
 		for _, ch := range chunk.Choices {
+			if ch.FinishReason != "" {
+				finishReason = ch.FinishReason
+			}
 			if ch.Delta.Content != "" {
 				out.WriteString(ch.Delta.Content)
 				if onDelta != nil {
@@ -159,30 +203,35 @@ func readSSE(body io.Reader, onDelta func(int)) (string, error) {
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return "", fmt.Errorf("llama: stream read: %w", err)
+		return completionResult{}, fmt.Errorf("llama: stream read: %w", err)
 	}
-	return out.String(), nil
+	return completionResult{Content: out.String(), FinishReason: finishReason}, nil
 }
 
 // readWhole handles a non-streaming JSON response (test servers, proxies that
 // buffer). onDelta, if set, fires once with the final length.
 func readWhole(body io.Reader, onDelta func(int)) (string, error) {
+	result, err := readWholeCompletion(body, onDelta)
+	return result.Content, err
+}
+
+func readWholeCompletion(body io.Reader, onDelta func(int)) (completionResult, error) {
 	raw, err := io.ReadAll(io.LimitReader(body, 1<<20))
 	if err != nil {
-		return "", fmt.Errorf("llama: response read: %w", err)
+		return completionResult{}, fmt.Errorf("llama: response read: %w", err)
 	}
 	var cr chatResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
-		return "", fmt.Errorf("llama: bad response: %w", err)
+		return completionResult{}, fmt.Errorf("llama: bad response: %w", err)
 	}
 	if len(cr.Choices) == 0 {
-		return "", nil
+		return completionResult{}, nil
 	}
 	content := cr.Choices[0].Message.Content
 	if onDelta != nil && content != "" {
 		onDelta(len(content))
 	}
-	return content, nil
+	return completionResult{Content: content, FinishReason: cr.Choices[0].FinishReason}, nil
 }
 
 // Complete runs a plain (no-grammar, non-streaming) chat completion and returns

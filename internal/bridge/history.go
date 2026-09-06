@@ -100,10 +100,12 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	result := PlaylistResult{
 		Tracks: orEmptyTracks(tracks), Mode: string(request.Intent.Mode), Seed: request.Intent.Seed,
 		Intent: request.Intent, Reproducibility: request.Reproducibility,
-		Status: GenerationStatus{State: "complete", PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
+		Outcome: core.GenerationOutcome{State: core.OutcomeFulfilled, Reasons: []core.OutcomeReason{}},
+		Status:  GenerationStatus{State: string(core.OutcomeFulfilled), Reasons: []core.OutcomeReason{}, PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
 	}
 	if len(result.Tracks) < request.Intent.Count {
-		result.Status.State = "partial"
+		result.Status.State = string(core.OutcomePartial)
+		result.Outcome.State = core.OutcomePartial
 		reason := PlaylistNotice{
 			Code: "legacy_partial_result", Detail: "the saved result contains fewer tracks than requested",
 			Requested: request.Intent.Count, Actual: len(result.Tracks),
@@ -116,6 +118,7 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 			return SavedPlaylist{}, fmt.Errorf("decode saved result: %w", err)
 		}
 	}
+	result = migrateLoadedResult(result)
 	return SavedPlaylist{
 		Summary: SavedPlaylistSummary{
 			ID: record.ID, Name: record.Name, Prompt: record.Prompt, Notes: record.Notes,
@@ -125,6 +128,35 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 		Tracks:  orEmptyTracks(result.Tracks),
 		Result:  result,
 	}, nil
+}
+
+func migrateLoadedResult(result PlaylistResult) PlaylistResult {
+	result.Tracks = orEmptyTracks(result.Tracks)
+	if result.Status.State == "complete" {
+		result.Status.State = string(core.OutcomeFulfilled)
+	}
+	if result.Outcome.State == "" {
+		result.Outcome.State = core.GenerationOutcomeState(result.Status.State)
+		if result.Outcome.State == "" {
+			result.Outcome.State = core.OutcomeFulfilled
+		}
+	}
+	if result.Status.State == "" {
+		result.Status.State = string(result.Outcome.State)
+	}
+	if result.Outcome.Reasons == nil {
+		result.Outcome.Reasons = []core.OutcomeReason{}
+	}
+	if result.Status.Reasons == nil {
+		result.Status.Reasons = append([]core.OutcomeReason(nil), result.Outcome.Reasons...)
+	}
+	if result.Status.PartialReasons == nil {
+		result.Status.PartialReasons = []PlaylistNotice{}
+	}
+	if result.Status.Timings == nil {
+		result.Status.Timings = []StageTiming{}
+	}
+	return result
 }
 
 // playlistName produces a short (<= 6 words) label for a generated playlist:

@@ -2,7 +2,7 @@ package core
 
 // CurrentFeatureSchemaVersion versions the semantic sidecar contract. Readers
 // explicitly decide which older versions remain compatible.
-const CurrentFeatureSchemaVersion = 2
+const CurrentFeatureSchemaVersion = 3
 
 type FeatureMissingness string
 
@@ -57,6 +57,10 @@ type TrackFeatures struct {
 	VocalEvidence   FeatureValue        `json:"vocalEvidence"` // vocal | instrumental | mixed | unknown
 	ReleaseDates    ReleaseDateFeatures `json:"releaseDates"`
 	Preview         PreviewCoverage     `json:"previewCoverage"`
+	// FacetCoverage declares which facets were reviewed comprehensively for
+	// this recording. A known tag does not imply absent tags are known false.
+	// This field is empty for schema-v1/v2 rows and therefore safely incomplete.
+	FacetCoverage []string `json:"facetCoverage"`
 }
 
 type FeatureStoreInfo struct {
@@ -75,4 +79,18 @@ type FeatureStoreInfo struct {
 type SemanticHit struct {
 	TrackID string  `json:"trackId"`
 	Score   float64 `json:"score"` // cosine similarity, not a probability
+}
+
+// QueryCoverage records which normalized concepts the sidecar could encode.
+// Essential concepts may only be enforced when each defining concept matched.
+type QueryCoverage struct {
+	Matched   []string `json:"matched"`
+	Unmatched []string `json:"unmatched"`
+	Complete  bool     `json:"complete"`
+}
+
+type SemanticScore struct {
+	TrackID string        `json:"trackId"`
+	Score   float64       `json:"score"` // cosine similarity, not a probability
+	State   EvidenceState `json:"state"`
 }

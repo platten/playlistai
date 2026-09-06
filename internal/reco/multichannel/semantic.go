@@ -21,6 +21,9 @@ func semanticQueryText(intent core.MusicIntent) (string, string) {
 	add(intent.Preferences.Moods)
 	add(intent.Preferences.Instrumentation)
 	add(intent.Preferences.TextureDescriptions)
+	for _, criterion := range intent.EssentialCriteria {
+		positive = appendUniqueString(positive, criterion.Value)
+	}
 	if vocal := intent.Preferences.VocalPreference; vocal != nil {
 		if vocal.Influence == core.InfluenceNegative {
 			negative = appendUniqueString(negative, vocal.Value)

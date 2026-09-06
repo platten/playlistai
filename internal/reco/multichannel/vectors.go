@@ -28,6 +28,13 @@ func negativeReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []refe
 
 func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influence core.Influence) []referenceVectors {
 	references := append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...)
+	if influence == core.InfluencePositive {
+		for _, anchor := range intent.InferredAnchors {
+			if anchor.Suitability.State == core.EvidenceMatch {
+				references = append(references, anchor.Reference)
+			}
+		}
+	}
 	seen := map[string]struct{}{}
 	result := make([]referenceVectors, 0, len(references))
 	for index, reference := range references {

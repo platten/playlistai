@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/platten/playlistai/internal/core"
 )
 
 func WriteReportJSON(path string, report Report) error { return writeJSON(path, report) }
@@ -32,10 +34,11 @@ func WriteReportMarkdown(path string, report Report) error {
 }
 
 func writeVariantTable(out *strings.Builder, title string, results []VariantResult) {
-	fmt.Fprintf(out, "## %s\n\n| Variant | Cases | Recall@K | NDCG@K | Hard violations | Duplicates | Artist diversity | Transition | Total µs |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n", title)
+	fmt.Fprintf(out, "## %s\n\n| Variant | Cases | Recall@K | NDCG@K | Hard violations | Essential violations | Fulfilled/partial/unsupported/clarify | Duplicates | Artist diversity | Transition | Total µs |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n", title)
 	for _, item := range results {
 		a := item.Aggregate
-		fmt.Fprintf(out, "| %s | %d | %s | %s | %d | %d | %.3f | %s | %d |\n", item.Name, a.SuccessfulCases, estimate(item.Uncertainty["recallAtK"]), estimate(item.Uncertainty["ndcgAtK"]), a.HardConstraintViolations, a.RecordingDuplicates, a.ArtistDiversity, estimate(item.Uncertainty["transitionQuality"]), a.Latency.TotalMicros)
+		outcomes := fmt.Sprintf("%d/%d/%d/%d", a.OutcomeCounts[core.OutcomeFulfilled], a.OutcomeCounts[core.OutcomePartial], a.OutcomeCounts[core.OutcomeUnsupported], a.OutcomeCounts[core.OutcomeNeedsClarification])
+		fmt.Fprintf(out, "| %s | %d | %s | %s | %d | %d | %s | %d | %.3f | %s | %d |\n", item.Name, a.SuccessfulCases, estimate(item.Uncertainty["recallAtK"]), estimate(item.Uncertainty["ndcgAtK"]), a.HardConstraintViolations, a.EssentialCriterionViolations, outcomes, a.RecordingDuplicates, a.ArtistDiversity, estimate(item.Uncertainty["transitionQuality"]), a.Latency.TotalMicros)
 	}
 	fmt.Fprintln(out)
 }

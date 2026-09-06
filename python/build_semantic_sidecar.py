@@ -15,7 +15,7 @@ import struct
 import unicodedata
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 QUERY_ENCODER = "precomputed-query-v1"
 FACETS = ("tags", "descriptions", "styles", "moods", "instrumentation", "vocal_evidence", "release_dates")
 STOP_WORDS = {"a", "an", "and", "but", "for", "in", "of", "or", "the", "to", "with"}
@@ -25,15 +25,19 @@ def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", type=Path, required=True, help="catalog.sqlite used to ground track IDs")
     parser.add_argument("--input", type=Path, required=True, help="UTF-8 JSONL evidence")
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--model", type=Path, required=True, help="already-downloaded Sentence Transformers model")
-    parser.add_argument("--model-name", required=True)
-    parser.add_argument("--model-revision", required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--model", type=Path, help="already-downloaded Sentence Transformers model")
+    parser.add_argument("--model-name")
+    parser.add_argument("--model-revision")
     parser.add_argument("--feature-version", required=True)
     parser.add_argument("--limit", type=int, default=5000)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--musicbrainz-cache", type=Path, help="optional existing cache; never queried over the network")
     parser.add_argument("--min-musicbrainz-score", type=int, default=85)
+    parser.add_argument(
+        "--validate-only", action="store_true",
+        help="validate grounded IDs, evidence, provenance, and coverage without loading an embedding model",
+    )
     return parser.parse_args()
 
 
@@ -81,6 +85,9 @@ def query_keys(text: str) -> list[str]:
 
 
 def build_feature(record: dict, catalog_version: str) -> tuple[dict, str, list[str]]:
+    coverage = record.get("facet_coverage", [])
+    if not isinstance(coverage, list) or any(facet not in FACETS for facet in coverage):
+        raise ValueError("facet_coverage must be a list of supported facet names")
     feature = {
         "schemaVersion": SCHEMA_VERSION,
         "catalogVersion": catalog_version,
@@ -101,6 +108,7 @@ def build_feature(record: dict, catalog_version: str) -> tuple[dict, str, list[s
             "available": False, "startSeconds": 0, "endSeconds": 0,
             "coveredSeconds": 0, "source": "",
         }),
+        "facetCoverage": coverage,
     }
     text_parts: list[str] = []
     for key in ("descriptions", "tags", "styles", "moods", "instrumentation"):
@@ -150,7 +158,8 @@ def main() -> None:
     args = arguments()
     if args.limit < 1:
         raise ValueError("--limit must be positive")
-    from sentence_transformers import SentenceTransformer
+    if not args.validate_only and (not args.output or not args.model or not args.model_name or not args.model_revision):
+        raise ValueError("--output, --model, --model-name, and --model-revision are required unless --validate-only is used")
 
     catalog = sqlite3.connect(f"file:{args.catalog}?mode=ro", uri=True)
     catalog_ids = {row[0] for row in catalog.execute("SELECT id FROM tracks")}
@@ -178,6 +187,39 @@ def main() -> None:
     records.sort(key=lambda item: item[0]["trackId"])
     if not records:
         raise ValueError("no grounded records were accepted")
+
+    coverage = {facet: 0 for facet in FACETS}
+    complete_coverage = {facet: 0 for facet in FACETS}
+    for feature, _, _ in records:
+        for facet in FACETS:
+            if facet == "vocal_evidence":
+                present = feature["vocalEvidence"]["missingness"] == "known"
+            elif facet == "release_dates":
+                present = any(v["missingness"] == "known" for v in feature["releaseDates"].values())
+            else:
+                present = bool(feature[facet])
+            coverage[facet] += int(present)
+            complete_coverage[facet] += int(facet in feature["facetCoverage"])
+
+    report = {
+        "schemaVersion": SCHEMA_VERSION, "catalogVersion": catalog_version,
+        "featureVersion": args.feature_version, "model": args.model_name or "",
+        "modelRevision": args.model_revision or "", "embeddingDimension": 0,
+        "queryEncoder": QUERY_ENCODER, "queryTerms": 0,
+        "catalogTracks": len(catalog_ids), "pilotTracks": len(records),
+        "coverage": coverage, "completeFacetCoverage": complete_coverage, "rejected": rejected,
+        "indexBytes": 0, "status": "validation_only" if args.validate_only else "built",
+    }
+    if args.validate_only:
+        catalog.close()
+        output = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
+        if args.report:
+            args.report.write_text(output, encoding="utf-8")
+        print(output, end="")
+        return
+
+    from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(str(args.model), local_files_only=True)
     embeddings = model.encode_document(
         [text for _, text, _ in records], normalize_embeddings=True,
@@ -230,25 +272,11 @@ def main() -> None:
         db.close()
         catalog.close()
 
-    coverage = {facet: 0 for facet in FACETS}
-    for feature, _, _ in records:
-        for facet in FACETS:
-            if facet == "vocal_evidence":
-                present = feature["vocalEvidence"]["missingness"] == "known"
-            elif facet == "release_dates":
-                present = any(v["missingness"] == "known" for v in feature["releaseDates"].values())
-            else:
-                present = bool(feature[facet])
-            coverage[facet] += int(present)
-    report = {
-        "schemaVersion": SCHEMA_VERSION, "catalogVersion": catalog_version,
-        "featureVersion": args.feature_version, "model": args.model_name,
-        "modelRevision": args.model_revision, "embeddingDimension": dimension,
-        "queryEncoder": QUERY_ENCODER, "queryTerms": len(query_terms),
-        "catalogTracks": len(catalog_ids), "pilotTracks": len(records),
-        "coverage": coverage, "rejected": rejected,
+    report.update({
+        "model": args.model_name, "modelRevision": args.model_revision,
+        "embeddingDimension": dimension, "queryTerms": len(query_terms),
         "indexBytes": args.output.stat().st_size,
-    }
+    })
     output = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     if args.report:
         args.report.write_text(output, encoding="utf-8")

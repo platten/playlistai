@@ -32,11 +32,12 @@ type ParserStatus struct {
 }
 
 type GenerationStatus struct {
-	State              string           `json:"state"` // complete | partial
-	ParsedIntentReused bool             `json:"parsedIntentReused"`
-	Parser             ParserStatus     `json:"parser"`
-	PartialReasons     []PlaylistNotice `json:"partialReasons"`
-	Timings            []StageTiming    `json:"timings"`
+	State              string               `json:"state"` // fulfilled | partial | unsupported | needs_clarification
+	ParsedIntentReused bool                 `json:"parsedIntentReused"`
+	Parser             ParserStatus         `json:"parser"`
+	PartialReasons     []PlaylistNotice     `json:"partialReasons"`
+	Reasons            []core.OutcomeReason `json:"reasons"`
+	Timings            []StageTiming        `json:"timings"`
 }
 
 type Reproducibility struct {

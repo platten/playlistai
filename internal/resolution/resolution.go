@@ -11,9 +11,12 @@ import (
 
 type Issue struct {
 	Kind         core.ReferenceKind         `json:"kind"`
+	Influence    core.Influence             `json:"influence"`
 	Query        string                     `json:"query"`
 	Status       core.ResolutionStatus      `json:"status"`
 	Required     bool                       `json:"required"`
+	Inferred     bool                       `json:"inferred"`
+	Role         string                     `json:"role"`
 	Alternatives []core.ResolutionCandidate `json:"alternatives"`
 }
 
@@ -27,6 +30,16 @@ func Apply(resolver ports.ReferenceResolver, intent core.MusicIntent) (core.Musi
 	intent.References, issues = applyList(resolver, intent.References, false, issues)
 	intent.Journey.Waypoints, issues = applyList(resolver, intent.Journey.Waypoints, false, issues)
 	intent.RequiredTracks, issues = applyList(resolver, intent.RequiredTracks, true, issues)
+	for index := range intent.InferredAnchors {
+		before := len(issues)
+		resolved, next := applyList(resolver, []core.IntentReference{intent.InferredAnchors[index].Reference}, false, issues)
+		issues = next
+		intent.InferredAnchors[index].Reference = resolved[0]
+		if len(issues) > before {
+			issues[len(issues)-1].Inferred = true
+			issues[len(issues)-1].Role = intent.InferredAnchors[index].Role
+		}
+	}
 	return intent.Normalized(), issues
 }
 
@@ -45,7 +58,7 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 			reference.TrackID = result.Selected.Representatives[0].TrackID
 		} else {
 			reference.TrackID = ""
-			issues = append(issues, Issue{Kind: reference.Kind, Query: reference.Query, Status: result.Status, Required: required, Alternatives: result.Alternatives})
+			issues = append(issues, Issue{Kind: reference.Kind, Influence: reference.Influence, Query: reference.Query, Status: result.Status, Required: required, Alternatives: result.Alternatives})
 		}
 		out[i] = reference
 	}
@@ -58,7 +71,7 @@ func BlockingError(issues []Issue) error {
 		if label == "" {
 			label = string(issue.Kind)
 		}
-		if issue.Status == core.ResolutionAmbiguous {
+		if issue.Status == core.ResolutionAmbiguous && !issue.Inferred {
 			return fmt.Errorf("%w: %q matches %s", core.ErrAmbiguousReference, label, alternativeNames(issue.Alternatives))
 		}
 		if issue.Required && issue.Status == core.ResolutionUnresolved {

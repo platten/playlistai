@@ -55,6 +55,8 @@ type IntentLabels struct {
 	JourneyWaypoints    []string  `json:"journeyWaypoints"`
 	Unsupported         []string  `json:"unsupported"`
 	EvidenceSpans       []string  `json:"evidenceSpans"`
+	EssentialCriteria   []string  `json:"essentialCriteria"`
+	InferredAnchors     []string  `json:"inferredAnchors"`
 }
 
 type ResolutionCase struct {
@@ -118,46 +120,51 @@ type Latency struct {
 }
 
 type CaseMetrics struct {
-	CaseID                   string           `json:"caseId"`
-	Generation               GenerationRecord `json:"generation"`
-	RecallAtK                *float64         `json:"recallAtK,omitempty"`
-	NDCGAtK                  *float64         `json:"ndcgAtK,omitempty"`
-	HardConstraintViolations int              `json:"hardConstraintViolations"`
-	RecordingDuplicates      int              `json:"recordingDuplicates"`
-	ArtistDiversity          float64          `json:"artistDiversity"`
-	MaxArtistShare           float64          `json:"maxArtistShare"`
-	CatalogCoverage          float64          `json:"catalogCoverage"`
-	RecentExposureRepetition float64          `json:"recentExposureRepetition"`
-	TransitionQuality        *float64         `json:"transitionQuality,omitempty"`
-	Latency                  Latency          `json:"latency"`
-	Error                    string           `json:"error,omitempty"`
+	CaseID                       string                      `json:"caseId"`
+	Generation                   GenerationRecord            `json:"generation"`
+	RecallAtK                    *float64                    `json:"recallAtK,omitempty"`
+	NDCGAtK                      *float64                    `json:"ndcgAtK,omitempty"`
+	HardConstraintViolations     int                         `json:"hardConstraintViolations"`
+	EssentialCriterionViolations int                         `json:"essentialCriterionViolations"`
+	OutcomeState                 core.GenerationOutcomeState `json:"outcomeState"`
+	RecordingDuplicates          int                         `json:"recordingDuplicates"`
+	ArtistDiversity              float64                     `json:"artistDiversity"`
+	MaxArtistShare               float64                     `json:"maxArtistShare"`
+	CatalogCoverage              float64                     `json:"catalogCoverage"`
+	RecentExposureRepetition     float64                     `json:"recentExposureRepetition"`
+	TransitionQuality            *float64                    `json:"transitionQuality,omitempty"`
+	Latency                      Latency                     `json:"latency"`
+	Error                        string                      `json:"error,omitempty"`
 }
 
 type GenerationRecord struct {
-	TrackIDs           []string     `json:"trackIds"`
-	CatalogVersion     string       `json:"catalogVersion"`
-	AlgorithmVersion   string       `json:"algorithmVersion"`
-	IntentFingerprint  string       `json:"intentFingerprint"`
-	ContextFingerprint string       `json:"contextFingerprint"`
-	IntentVersion      int          `json:"intentVersion"`
-	ProfileVersion     string       `json:"profileVersion"`
-	ProfileSnapshot    string       `json:"profileSnapshot"`
-	RNGSeed            core.RNGSeed `json:"rngSeed"`
+	TrackIDs           []string                    `json:"trackIds"`
+	CatalogVersion     string                      `json:"catalogVersion"`
+	AlgorithmVersion   string                      `json:"algorithmVersion"`
+	IntentFingerprint  string                      `json:"intentFingerprint"`
+	ContextFingerprint string                      `json:"contextFingerprint"`
+	IntentVersion      int                         `json:"intentVersion"`
+	ProfileVersion     string                      `json:"profileVersion"`
+	ProfileSnapshot    string                      `json:"profileSnapshot"`
+	RNGSeed            core.RNGSeed                `json:"rngSeed"`
+	OutcomeState       core.GenerationOutcomeState `json:"outcomeState"`
 }
 
 type AggregateMetrics struct {
-	Cases                    int      `json:"cases"`
-	SuccessfulCases          int      `json:"successfulCases"`
-	RecallAtK                *float64 `json:"recallAtK,omitempty"`
-	NDCGAtK                  *float64 `json:"ndcgAtK,omitempty"`
-	HardConstraintViolations int      `json:"hardConstraintViolations"`
-	RecordingDuplicates      int      `json:"recordingDuplicates"`
-	ArtistDiversity          float64  `json:"artistDiversity"`
-	MaxArtistShare           float64  `json:"maxArtistShare"`
-	CatalogCoverage          float64  `json:"catalogCoverage"`
-	RecentExposureRepetition float64  `json:"recentExposureRepetition"`
-	TransitionQuality        *float64 `json:"transitionQuality,omitempty"`
-	Latency                  Latency  `json:"latency"`
+	Cases                        int                                 `json:"cases"`
+	SuccessfulCases              int                                 `json:"successfulCases"`
+	RecallAtK                    *float64                            `json:"recallAtK,omitempty"`
+	NDCGAtK                      *float64                            `json:"ndcgAtK,omitempty"`
+	HardConstraintViolations     int                                 `json:"hardConstraintViolations"`
+	EssentialCriterionViolations int                                 `json:"essentialCriterionViolations"`
+	OutcomeCounts                map[core.GenerationOutcomeState]int `json:"outcomeCounts"`
+	RecordingDuplicates          int                                 `json:"recordingDuplicates"`
+	ArtistDiversity              float64                             `json:"artistDiversity"`
+	MaxArtistShare               float64                             `json:"maxArtistShare"`
+	CatalogCoverage              float64                             `json:"catalogCoverage"`
+	RecentExposureRepetition     float64                             `json:"recentExposureRepetition"`
+	TransitionQuality            *float64                            `json:"transitionQuality,omitempty"`
+	Latency                      Latency                             `json:"latency"`
 }
 
 type VariantResult struct {

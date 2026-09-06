@@ -58,13 +58,14 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
-	Tracks          []PlaylistTrack  `json:"tracks"`
-	Mode            string           `json:"mode"`
-	Seed            core.RNGSeed     `json:"seed"`
-	Notices         []PlaylistNotice `json:"notices"`
-	Intent          core.MusicIntent `json:"intent"`
-	Status          GenerationStatus `json:"status"`
-	Reproducibility Reproducibility  `json:"reproducibility"`
+	Tracks          []PlaylistTrack        `json:"tracks"`
+	Mode            string                 `json:"mode"`
+	Seed            core.RNGSeed           `json:"seed"`
+	Notices         []PlaylistNotice       `json:"notices"`
+	Intent          core.MusicIntent       `json:"intent"`
+	Status          GenerationStatus       `json:"status"`
+	Outcome         core.GenerationOutcome `json:"outcome"`
+	Reproducibility Reproducibility        `json:"reproducibility"`
 }
 
 type PlaylistNotice struct {
@@ -126,6 +127,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	}
 	out := PlaylistResult{
 		Mode: string(playlist.Mode), Seed: playlist.Seed, Intent: playlist.Intent,
+		Outcome: playlist.Outcome,
 		Tracks:  make([]PlaylistTrack, 0, len(playlist.Tracks)),
 		Notices: make([]PlaylistNotice, 0, len(playlist.Notices)),
 	}
@@ -147,14 +149,19 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
+	if out.Outcome.State == "" {
+		out.Outcome.State = core.OutcomeFulfilled
+		if len(out.Tracks) < out.Intent.Count {
+			out.Outcome.State = core.OutcomePartial
+		}
+	}
 	out.Status = GenerationStatus{
-		State: "complete", PartialReasons: []PlaylistNotice{},
+		State: string(out.Outcome.State), Reasons: append([]core.OutcomeReason(nil), out.Outcome.Reasons...), PartialReasons: []PlaylistNotice{},
 		Timings: []StageTiming{profileTiming, {
 			Stage: "recommend", Milliseconds: time.Since(started).Milliseconds(),
 		}},
 	}
-	if len(out.Tracks) < out.Intent.Count {
-		out.Status.State = "partial"
+	if out.Outcome.State == core.OutcomePartial {
 		out.Status.PartialReasons = append(out.Status.PartialReasons, out.Notices...)
 		if len(out.Status.PartialReasons) == 0 {
 			reason := PlaylistNotice{

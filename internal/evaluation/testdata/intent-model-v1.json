@@ -32,6 +32,7 @@
       "expected": {
         "positivePreferences": ["ambient electronic", "relaxing", "microdetail", "a deep groove", "occasional sparkle"],
         "negativePreferences": ["sleepy", "abstract drone"],
+		"essentialCriteria": ["playlist:style:ambient electronic"],
         "hardConstraints": ["exclude_style:abstract drone"],
         "unsupported": ["no abstract drone"]
       },
@@ -120,6 +121,48 @@
         "typedReferences": []
       },
       "tags": ["no_invention", "controls"]
+	},
+	{
+	  "id": "essential-electronic",
+	  "prompt": "electronic music",
+	  "expected": {
+		"typedReferences": [],
+		"positivePreferences": ["electronic"],
+		"essentialCriteria": ["playlist:style:electronic"]
+	  },
+	  "tags": ["genre", "essential", "no_invention"]
+	},
+	{
+	  "id": "essential-electronic-no-rock",
+	  "prompt": "electronic music, no rock",
+	  "expected": {
+		"typedReferences": [],
+		"positivePreferences": ["electronic"],
+		"negativePreferences": ["rock"],
+		"hardConstraints": ["exclude_style:rock"],
+		"essentialCriteria": ["playlist:style:electronic"]
+	  },
+	  "tags": ["genre", "essential", "negation", "hard_constraint"]
+	},
+	{
+	  "id": "electronic-rock-influence",
+	  "prompt": "electronic music with some rock influence",
+	  "expected": {
+		"typedReferences": [],
+		"positivePreferences": ["electronic", "rock"],
+		"essentialCriteria": ["playlist:style:electronic"]
+	  },
+	  "tags": ["genre", "essential", "hybrid"]
+	},
+	{
+	  "id": "electronic-rock-journey",
+	  "prompt": "a journey from electronic to rock",
+	  "expected": {
+		"mode": "journey",
+		"typedReferences": [],
+		"essentialCriteria": ["journey_start:style:electronic", "journey_end:style:rock"]
+	  },
+	  "tags": ["genre", "essential", "journey"]
     }
   ],
   "resolutionCases": [],

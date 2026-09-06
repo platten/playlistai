@@ -176,6 +176,8 @@ func intentLabelCount(labels IntentLabels) int {
 		labels.JourneyWaypoints != nil,
 		labels.Unsupported != nil,
 		labels.EvidenceSpans != nil,
+		labels.EssentialCriteria != nil,
+		labels.InferredAnchors != nil,
 	} {
 		if labeled {
 			count++
@@ -239,6 +241,20 @@ func intentChecks(intent core.MusicIntent, want IntentLabels) []bool {
 	if want.EvidenceSpans != nil {
 		checks = append(checks, equalLabels(evidenceSpans(intent), want.EvidenceSpans))
 	}
+	if want.EssentialCriteria != nil {
+		criteria := make([]string, 0, len(intent.EssentialCriteria))
+		for _, criterion := range intent.EssentialCriteria {
+			criteria = append(criteria, criterion.Scope+":"+criterion.Kind+":"+criterion.Value)
+		}
+		checks = append(checks, equalLabels(criteria, want.EssentialCriteria))
+	}
+	if want.InferredAnchors != nil {
+		anchors := make([]string, 0, len(intent.InferredAnchors))
+		for _, anchor := range intent.InferredAnchors {
+			anchors = append(anchors, string(anchor.Reference.Kind)+":"+anchor.Reference.Query)
+		}
+		checks = append(checks, equalLabels(anchors, want.InferredAnchors))
+	}
 	return checks
 }
 
@@ -267,6 +283,12 @@ func evidenceSpans(intent core.MusicIntent) []string {
 		for _, item := range group {
 			add(item.Evidence)
 		}
+	}
+	for _, anchor := range intent.InferredAnchors {
+		add(anchor.Reference.Evidence)
+	}
+	for _, criterion := range intent.EssentialCriteria {
+		add(criterion.Evidence)
 	}
 	for _, group := range [][]core.IntentPreference{intent.Preferences.Styles, intent.Preferences.Moods, intent.Preferences.Instrumentation, intent.Preferences.TextureDescriptions} {
 		for _, item := range group {
@@ -461,8 +483,17 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 		metrics.NDCGAtK = &value
 	}
 	metrics.HardConstraintViolations = HardConstraintViolations(ctx, playlist, r.Features)
+	metrics.EssentialCriterionViolations = EssentialCriterionViolations(ctx, playlist, r.Features)
+	outcome := playlist.Outcome.State
+	if outcome == "" { // versioned baseline engines predate structured outcomes
+		outcome = core.OutcomeFulfilled
+		if len(playlist.Tracks) < intent.Count {
+			outcome = core.OutcomePartial
+		}
+	}
+	metrics.OutcomeState = outcome
 	metrics.RecordingDuplicates, metrics.ArtistDiversity, metrics.MaxArtistShare, metrics.CatalogCoverage, metrics.RecentExposureRepetition, metrics.TransitionQuality = PlaylistDiagnostics(r.Catalog, playlist, item.RecentExposures)
-	metrics.Generation = GenerationRecord{TrackIDs: ids, CatalogVersion: r.Resolver.CatalogVersion(), AlgorithmVersion: algorithmVersion(v.engine), IntentFingerprint: fingerprintJSON(intent.Normalized()), ContextFingerprint: fingerprintJSON(item.RecentExposures), IntentVersion: playlist.Intent.Version, ProfileVersion: profile.AlgorithmVersion, ProfileSnapshot: profile.SnapshotID, RNGSeed: playlist.Seed}
+	metrics.Generation = GenerationRecord{TrackIDs: ids, CatalogVersion: r.Resolver.CatalogVersion(), AlgorithmVersion: algorithmVersion(v.engine), IntentFingerprint: fingerprintJSON(intent.Normalized()), ContextFingerprint: fingerprintJSON(item.RecentExposures), IntentVersion: playlist.Intent.Version, ProfileVersion: profile.AlgorithmVersion, ProfileSnapshot: profile.SnapshotID, RNGSeed: playlist.Seed, OutcomeState: outcome}
 	return metrics
 }
 

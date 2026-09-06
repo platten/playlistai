@@ -118,7 +118,9 @@ defaults; the engine never trusts a raw parse.
 type MusicIntent struct {
     Version         int
     References      []IntentReference        // typed, positive/negative; not implicitly output
+    InferredAnchors []InferredAnchor          // model proposals; resolved and suitability-checked
     RequiredTracks  []IntentReference        // positive track references that must appear
+    EssentialCriteria []MusicalCriterion     // affirmative evidence required for fulfillment
     Preferences     SemanticPreferences      // preserved style/mood/instrument/vocal/texture intent
     HardConstraints []HardConstraint         // each declares whether execution is supported
     Controls        IntentControls           // total, weights, discovery, diversity, smoothness
@@ -133,7 +135,7 @@ Those meanings are preserved with source evidence, but are not presented as
 enforced. Live controls re-run `Build` with the complete resolved intent plus
 explicit overrides; they never reconstruct intent from a knob-only DTO.
 
-The current version 5 contract also stores catalog resolution on each typed reference: the selected
+The current version 6 contract also stores catalog resolution on each typed reference: the selected
 artist or track, match confidence/evidence, ranked alternatives, catalog
 version, and weighted real-track representatives. Prompt generation and direct
 recommendation share one resolver port. Ambiguity remains explicit until the
@@ -171,9 +173,9 @@ internal/
               inverse norms, bounded top-K heap, deterministic tie-break by row.
               Matches deej-ai.online-app most_similar.
   reco/       deejai/ — versioned compatibility/evaluation baseline
-              multichannel/ — exact per-reference/channel retrieval, hard
-              eligibility, transparent personalized ranking, relevance-floored
-              MMR selection, waypoint/transition sequencing, semantic pilot
+              multichannel/ — exact per-reference/channel retrieval, whole-union
+              semantic scoring, essential/hard eligibility, transparent personalized
+              ranking, relevance-floored MMR selection, journey/transition sequencing
   intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
                         (always available; the fallback)
               schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
@@ -190,7 +192,7 @@ internal/
   export/     [M7] soundiizcsv/ soundiizhandoff/
   preview/    [M8] deezer/ spotifycdn/
   semantic/   optional grounded-feature sidecar + exact semantic scan; schema
-              v2 includes precomputed query vectors consumed entirely in Go
+              v3 adds facet completeness and query vectors consumed entirely in Go
 frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
   src/design/     tokens.css (dark + light palette, @theme inline) · theme.ts (system/explicit/reduced-motion)
   src/components/ ProgressBar (+ useProgress), EmptyState, LoadingState,
@@ -266,7 +268,7 @@ The original recommendation baseline comes from [teticio/Deej-AI] and its web ba
   similarity walk over two 100-dimensional embedding spaces (`spotifytovec.p`,
   audio-content; `tracktovec.p`, Spotify-playlist co-occurrence), blended by a
   `creativity` weight, with additive Gaussian "noise" and artist/id dedup.
-- The current `multichannel/v3` strategy uses the same two embedding spaces but
+- The current `multichannel/v4` strategy uses the same two embedding spaces but
   replaces Gaussian exploration with bounded exploration, independently queries
   every reference and taste cluster, and separates hard eligibility, ranking,
   diversity selection, and sequencing.

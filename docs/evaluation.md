@@ -52,9 +52,11 @@ then maximizes development NDCG@K. Held-out results are never used to tune.
 
 ## Metrics and ablations
 
-The report covers labeled intent fields and negation, typed resolver status and
-entity accuracy, raw candidate Recall@K, output NDCG@K, runtime hard-constraint
-violations, provisional recording duplicates, unique-artist ratio, maximum
+The report covers labeled intent fields, negation, essential categories and
+inferred anchors, typed resolver status and entity accuracy, raw candidate
+Recall@K, output NDCG@K, runtime hard-constraint and essential-criterion
+violations, fulfilled/partial/unsupported/clarification outcomes, provisional
+recording duplicates, unique-artist ratio, maximum
 artist share, catalog coverage, recent-recording repetition, and mean adjacent
 audio/co-occurrence cosine. Parse, exact retrieval, ranking, selection plus
 sequencing, and end-to-end build latency are recorded in microseconds. Stage

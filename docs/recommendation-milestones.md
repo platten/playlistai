@@ -313,7 +313,7 @@ silently restored to their defaults, so the components could not be disabled.
 ## Post-milestone Runtime and Onboarding Updates
 
 The desktop recommendation runtime is now fully compiled Go. Semantic sidecar
-schema v2 stores the bounded query vocabulary needed by its Unicode-aware Go
+schema v3 stores facet completeness and the bounded query vocabulary needed by its Unicode-aware Go
 query composer; Python and Sentence Transformers remain offline dataset-builder
 dependencies only. The complete test gate includes a `CGO_ENABLED=0` compile of
 all packages below the Wails bridge to prevent an interpreter or native library
@@ -321,8 +321,9 @@ dependency from entering the core application.
 
 Generate now remains visible in both parser modes. Catalog-only/rules mode
 clearly requires a seed artist or track. A ready local LLM may infer a grounded,
-non-required starting reference when none is explicit; if model parsing fails
-and generation falls back to rules, the catalog seed requirement is restored.
+non-required starting reference when none is explicit. If model parsing fails,
+the rules fallback preserves the category request and reports its fallback; it
+does not silently turn requested LLM mode into catalog-only artist lookup.
 
 The curated model catalog now contains pinned Q4_K_M artifacts for Qwen3.5 35B
 A3B, Qwen3.5 9B, Mistral Small 3.1 24B, Gemma 3 12B, and Qwen3.5 4B in product
@@ -344,3 +345,29 @@ all curated models. A separate policy benchmark reports model counts and
 allocation cost without pretending to measure GPU inference. Intent evaluation
 report v2 records the actual llama.cpp device inventory and run settings, and
 `-device` can pin a multi-GPU benchmark to one accelerator.
+
+## Milestone 11 — Recommendation Correctness
+
+Intent v6 distinguishes essential musical criteria, soft preferences, hard
+exclusions, explicit references, and model-inferred anchors. The rules and LLM
+contracts now preserve category-led requests such as “electronic music”; model
+anchors resolve to real entities but steer retrieval only after independent
+musical-suitability validation. LLM truncation gets one bounded retry, parser
+fallback reasons remain structured, and requested model mode no longer becomes
+an artist lookup when fallback parsing occurs.
+
+`multichannel/v4` now unions every channel before batch semantic scoring,
+applies affirmative essential eligibility and strict exclusions before fixed-
+scale ranking, reserves and orders grounded category-journey stages, and
+returns `fulfilled`, `partial`, `unsupported`, or `needs_clarification` based on
+evidence rather than count. Feature-only sidecars remain connected. Schema-v3
+facets declare completeness so an unrelated known tag cannot prove an excluded
+style absent.
+
+A seven-track reviewed pilot input validates against all 956,917 catalog IDs;
+six rows declare complete style evidence and one is intentionally incomplete.
+No generated sidecar is shipped, so production semantic coverage is still
+zero and unsupported category requests fail honestly. Next dependencies are a
+licensed, independently reviewed full-catalog evidence source, a built and
+versioned local semantic index, and held-out blind listening judgments. See
+[`recommendation-correctness.md`](recommendation-correctness.md).

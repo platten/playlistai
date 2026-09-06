@@ -2,7 +2,6 @@ package multichannel
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 
@@ -15,6 +14,7 @@ type semanticFixture struct {
 	info               core.FeatureStoreInfo
 	features           map[string]core.TrackFeatures
 	positive, negative []core.SemanticHit
+	coverage           *core.QueryCoverage
 }
 
 func (s *semanticFixture) Info() core.FeatureStoreInfo { return s.info }
@@ -27,6 +27,27 @@ func (s *semanticFixture) Search(_ context.Context, text string, _ int) ([]core.
 		return append([]core.SemanticHit(nil), s.negative...), nil
 	}
 	return append([]core.SemanticHit(nil), s.positive...), nil
+}
+func (s *semanticFixture) Score(_ context.Context, text string, ids []string) (core.QueryCoverage, []core.SemanticScore, error) {
+	hits, _ := s.Search(context.Background(), text, len(ids))
+	byID := map[string]float64{}
+	for _, hit := range hits {
+		byID[hit.TrackID] = hit.Score
+	}
+	result := make([]core.SemanticScore, 0, len(ids))
+	for _, id := range ids {
+		score, ok := byID[id]
+		state := core.EvidenceUnknown
+		if ok && score > 0 {
+			state = core.EvidenceMatch
+		}
+		result = append(result, core.SemanticScore{TrackID: id, Score: score, State: state})
+	}
+	coverage := core.QueryCoverage{Matched: []string{text}, Complete: true}
+	if s.coverage != nil {
+		coverage = *s.coverage
+	}
+	return coverage, result, nil
 }
 
 func TestSeedlessSemanticRequestReturnsGroundedCatalogTracks(t *testing.T) {
@@ -69,6 +90,11 @@ func TestSemanticNegationPenalizesMatchingCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
+	candidates, _, _, err = engine.scoreSemanticUnion(context.Background(), candidates, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ranked, err := NewRanker(cat, DefaultConfig()).Rank(context.Background(), candidates, ports.RankRequest{Intent: intent})
 	if err != nil {
 		t.Fatal(err)
@@ -103,8 +129,9 @@ func TestStrictNoVocalsExcludesVocalAndUnknownEvidence(t *testing.T) {
 	conflict := intent
 	conflict.RequiredTracks = []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "sleepy", Influence: core.InfluencePositive}}
 	conflict.Controls.TotalTrackCount = 1
-	if _, err := engine.Build(context.Background(), conflict); !errors.Is(err, core.ErrRequiredTrackConflict) {
-		t.Fatalf("required vocal track conflict = %v", err)
+	conflicted, err := engine.Build(context.Background(), conflict)
+	if err != nil || conflicted.Outcome.State != core.OutcomeNeedsClarification {
+		t.Fatalf("required vocal track conflict = outcome %+v, err %v", conflicted.Outcome, err)
 	}
 }
 
@@ -138,7 +165,7 @@ func semanticCatalog() *fakes.Catalog {
 
 func semanticData() *semanticFixture {
 	known := func(id, vocal string) core.TrackFeatures {
-		return core.TrackFeatures{SchemaVersion: 1, CatalogVersion: "fake:v1", TrackID: id, VocalEvidence: core.FeatureValue{Value: vocal, Missingness: core.FeatureKnown, Confidence: .9}}
+		return core.TrackFeatures{SchemaVersion: 1, CatalogVersion: "fake:v1", TrackID: id, VocalEvidence: core.FeatureValue{Value: vocal, Missingness: core.FeatureKnown, Confidence: .9, Provenance: []core.FeatureProvenance{{Source: "review", SourceID: id, SourceVersion: "1", Confidence: .9}}}}
 	}
 	return &semanticFixture{
 		info:     core.FeatureStoreInfo{SchemaVersion: 2, CatalogVersion: "fake:v1", FeatureVersion: "pilot/v1", ModelRevision: "abc123", QueryEncoder: "precomputed-query-v1", SupportedFacets: []string{"vocal_evidence", "styles"}},
@@ -167,3 +194,4 @@ func noticeCode(notices []core.PlaylistNotice, code string) bool {
 
 var _ ports.FeatureStore = (*semanticFixture)(nil)
 var _ ports.SemanticSearcher = (*semanticFixture)(nil)
+var _ ports.SemanticScorer = (*semanticFixture)(nil)

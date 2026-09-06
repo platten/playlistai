@@ -194,6 +194,28 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 	return violations
 }
 
+// EssentialCriterionViolations is intentionally conservative. Unknown or
+// unavailable evidence counts as a violation when tracks were returned; an
+// honest unsupported empty result does not.
+func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore) int {
+	if len(playlist.Tracks) == 0 || len(playlist.Intent.EssentialCriteria) == 0 {
+		return 0
+	}
+	violations := 0
+	for _, track := range playlist.Tracks {
+		feature, ok, err := core.TrackFeatures{}, false, error(nil)
+		if features != nil {
+			feature, ok, err = features.Features(ctx, track.ID)
+		}
+		for _, criterion := range playlist.Intent.EssentialCriteria {
+			if err != nil || !ok || criterion.Kind != "style" || !featureHas(criterion.Value, feature.Styles, feature.Tags) {
+				violations++
+			}
+		}
+	}
+	return violations
+}
+
 func featureHas(want string, groups ...[]core.FeatureValue) bool {
 	want = normalizeLabel(want)
 	for _, group := range groups {
@@ -265,7 +287,7 @@ func normalizeLabel(value string) string {
 }
 
 func aggregate(cases []CaseMetrics) AggregateMetrics {
-	result := AggregateMetrics{Cases: len(cases)}
+	result := AggregateMetrics{Cases: len(cases), OutcomeCounts: map[core.GenerationOutcomeState]int{}}
 	var recall, ndcg, diversity, share, coverage, repetition, transition float64
 	var recallN, ndcgN, transitionN int
 	for _, item := range cases {
@@ -282,6 +304,8 @@ func aggregate(cases []CaseMetrics) AggregateMetrics {
 			ndcgN++
 		}
 		result.HardConstraintViolations += item.HardConstraintViolations
+		result.EssentialCriterionViolations += item.EssentialCriterionViolations
+		result.OutcomeCounts[item.OutcomeState]++
 		result.RecordingDuplicates += item.RecordingDuplicates
 		diversity += item.ArtistDiversity
 		share += item.MaxArtistShare
@@ -325,7 +349,7 @@ func aggregate(cases []CaseMetrics) AggregateMetrics {
 }
 
 func uncertainty(cases []CaseMetrics) map[string]Interval {
-	values := map[string][]float64{"artistDiversity": {}, "maxArtistShare": {}, "catalogCoverage": {}, "recentExposureRepetition": {}, "hardConstraintViolations": {}, "recordingDuplicates": {}, "totalLatencyMicros": {}}
+	values := map[string][]float64{"artistDiversity": {}, "maxArtistShare": {}, "catalogCoverage": {}, "recentExposureRepetition": {}, "hardConstraintViolations": {}, "essentialCriterionViolations": {}, "recordingDuplicates": {}, "totalLatencyMicros": {}}
 	for _, item := range cases {
 		if item.Error != "" {
 			continue
@@ -335,6 +359,7 @@ func uncertainty(cases []CaseMetrics) map[string]Interval {
 		values["catalogCoverage"] = append(values["catalogCoverage"], item.CatalogCoverage)
 		values["recentExposureRepetition"] = append(values["recentExposureRepetition"], item.RecentExposureRepetition)
 		values["hardConstraintViolations"] = append(values["hardConstraintViolations"], float64(item.HardConstraintViolations))
+		values["essentialCriterionViolations"] = append(values["essentialCriterionViolations"], float64(item.EssentialCriterionViolations))
 		values["recordingDuplicates"] = append(values["recordingDuplicates"], float64(item.RecordingDuplicates))
 		values["totalLatencyMicros"] = append(values["totalLatencyMicros"], float64(item.Latency.TotalMicros))
 		if item.RecallAtK != nil {

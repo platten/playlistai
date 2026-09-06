@@ -29,20 +29,25 @@ flowchart LR
     Resolve --> Retrieve[Audio + co-occurrence + taste + exploration]
     Profile[Local taste profile] --> Retrieve
     Semantic[Optional grounded sidecar] --> Retrieve
-    Retrieve --> Rules[Hard eligibility]
+    Retrieve --> Score[Whole-union semantic scoring]
+    Score --> Rules[Essential + hard eligibility]
     Rules --> Rank[Transparent ranking]
     Rank --> Select[MMR diversity]
     Select --> Order[Transition sequencing]
     Order --> Playlist[Playlist + evidence + versions]
 ```
 
-References are retrieved independently instead of being collapsed into one
-query. Hard artist/track exclusions and normalized recording deduplication run
-before ranking. Ranking can use seed affinity, explicit positive/negative
+Explicit references and inferred retrieval anchors remain distinguishable.
+Inferred anchors must resolve to real catalog entities and independently pass
+musical-suitability checks. References are retrieved independently instead of
+being collapsed into one query. Essential categories, hard exclusions, and
+normalized recording deduplication run before ranking. Ranking can use seed affinity, explicit positive/negative
 feedback, recent exposure, and listener novelty. MMR selection limits embedding,
 artist, and reliable-album repetition; sequencing preserves required tracks and
 ordered journey waypoints. When eligibility is exhausted, the app returns a
-structured partial result rather than silently bypassing a rule.
+structured partial result rather than silently bypassing a rule. Unsupported
+essential requests return an actionable inability-to-fulfill result instead of
+an unrelated full playlist.
 
 Every generation records the catalog, algorithm, resolved intent, profile
 snapshot, session context, and full-width RNG seed needed for replay. Slider

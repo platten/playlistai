@@ -126,6 +126,9 @@ func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
 		loaded.Result.Seed != maxSeed || loaded.Result.Reproducibility.RNGSeed != maxSeed {
 		t.Fatalf("full-width seed changed during history replay: %+v", loaded)
 	}
+	if loaded.Result.Status.State != string(core.OutcomeFulfilled) || loaded.Result.Outcome.State != core.OutcomeFulfilled {
+		t.Fatalf("legacy complete status was not migrated: %+v", loaded.Result)
+	}
 }
 
 func TestSanitizeTitle(t *testing.T) {

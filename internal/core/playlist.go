@@ -80,16 +80,41 @@ type PlaylistNotice struct {
 	Actual    int    `json:"actual"`
 }
 
+type GenerationOutcomeState string
+
+const (
+	OutcomeFulfilled          GenerationOutcomeState = "fulfilled"
+	OutcomePartial            GenerationOutcomeState = "partial"
+	OutcomeUnsupported        GenerationOutcomeState = "unsupported"
+	OutcomeNeedsClarification GenerationOutcomeState = "needs_clarification"
+)
+
+type OutcomeReason struct {
+	Code      string `json:"code"`
+	Detail    string `json:"detail"`
+	Criterion string `json:"criterion"`
+	Action    string `json:"action"`
+}
+
+// GenerationOutcome reports fulfillment independently of requested count.
+// A full-length playlist with unverified essential criteria is unsupported,
+// never fulfilled.
+type GenerationOutcome struct {
+	State   GenerationOutcomeState `json:"state"`
+	Reasons []OutcomeReason        `json:"reasons"`
+}
+
 // Playlist is the output of RecommendationEngine.Build. Reproduction also
 // requires the catalog, algorithm, profile snapshot, and generation context
 // recorded by the bridge alongside this value.
 type Playlist struct {
-	Tracks    []TrackRef       `json:"tracks"`
-	Mode      Mode             `json:"mode"`
-	Seed      RNGSeed          `json:"seed"` // lossless full-width RNG seed
-	Rationale []StepReason     `json:"rationale"`
-	Intent    MusicIntent      `json:"intent"`
-	Notices   []PlaylistNotice `json:"notices"`
+	Tracks    []TrackRef        `json:"tracks"`
+	Mode      Mode              `json:"mode"`
+	Seed      RNGSeed           `json:"seed"` // lossless full-width RNG seed
+	Rationale []StepReason      `json:"rationale"`
+	Intent    MusicIntent       `json:"intent"`
+	Notices   []PlaylistNotice  `json:"notices"`
+	Outcome   GenerationOutcome `json:"outcome"`
 }
 
 // IDs returns the track ids in order.

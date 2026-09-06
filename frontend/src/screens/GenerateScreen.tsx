@@ -167,17 +167,19 @@ export function GenerateScreen({
 
   // Catalog-only parsing can only retrieve by a catalog reference. A local
   // model may infer that starting point, or use grounded seedless retrieval.
-  // If a model parse falls back to rules, the preview backend restores the
-  // catalog-only requirement.
-  const activeBackend = preview?.backend || parserBackend;
+  // A rules fallback for a requested local-model parse preserves the semantic
+  // request; only an explicitly catalog-only session requires a named seed.
+  const activeBackend = preview?.parser?.requestedBackend || preview?.backend || parserBackend;
   const catalogOnly = activeBackend !== "llama";
   const needsSeed =
     source === "fresh" &&
     catalogOnly &&
     (preview === null ||
       ((preview.seeds ?? []).length === 0 && (preview.requiredTracks ?? []).length === 0));
-  const ambiguousIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "ambiguous");
-  const unresolvedIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "unresolved");
+  const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred);
+  const inferredIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.inferred);
+  const ambiguousIssues = explicitIssues.filter((issue) => issue.status === "ambiguous");
+  const unresolvedIssues = explicitIssues.filter((issue) => issue.status === "unresolved");
   const ambiguityNeedsChoice = ambiguousIssues.some(
     (issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)],
   );
@@ -460,6 +462,11 @@ export function GenerateScreen({
             {unresolvedIssues.map((issue) => (
               <Chip key={`unresolved-${issue.kind}-${issue.query}`}>
                 <Icon.Warn size={12} className="text-faint" /> no catalog match: {issue.query}
+              </Chip>
+            ))}
+            {inferredIssues.map((issue) => (
+              <Chip key={`inferred-${issue.kind}-${issue.query}`}>
+                <Icon.Warn size={12} className="text-faint" /> optional starting point unavailable: {issue.query}
               </Chip>
             ))}
           </div>

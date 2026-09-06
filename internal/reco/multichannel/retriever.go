@@ -75,7 +75,7 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 
 	byID := make(map[string]*core.Candidate)
 	var exploration []explorationOption
-	positiveSemantic, negativeSemantic := semanticQueryText(intent)
+	positiveSemantic, _ := semanticQueryText(intent)
 	if positiveSemantic != "" && r.semantic != nil {
 		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget)
 		if err != nil {
@@ -89,9 +89,6 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 				}
 				match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
 				r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
-				if candidate := byID[hit.TrackID]; candidate != nil {
-					candidate.Scores.SemanticMatch, candidate.Available.SemanticMatch = hit.Score, true
-				}
 			}
 		}
 	}
@@ -135,16 +132,8 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			}
 		}
 	}
-	if negativeSemantic != "" && r.semantic != nil && len(byID) > 0 {
-		hits, err := r.semantic.Search(ctx, negativeSemantic, r.cfg.SemanticBudget)
-		if err == nil {
-			for _, hit := range hits {
-				if candidate := byID[hit.TrackID]; candidate != nil {
-					candidate.Scores.SemanticNegativeMatch, candidate.Available.SemanticNegativeMatch = hit.Score, true
-				}
-			}
-		}
-	}
+	// Exploration is part of the bounded candidate union. Semantic scoring is a
+	// later orchestrator stage and therefore applies to these candidates too.
 	r.addExploration(byID, exploration, intent.Controls.Discovery, request.Seed)
 
 	candidates := make([]core.Candidate, 0, len(byID))

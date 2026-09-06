@@ -3,6 +3,7 @@ package llama
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +46,7 @@ func TestClientParseSuccess(t *testing.T) {
 		Messages           []chatMessage  `json:"messages"`
 		Grammar            string         `json:"grammar"`
 		ChatTemplateKwargs map[string]any `json:"chat_template_kwargs"`
+		NPredict           int            `json:"n_predict"`
 	}
 	srv := chatServer(t, func(body []byte) (int, string) {
 		_ = json.Unmarshal(body, &got)
@@ -65,6 +67,9 @@ func TestClientParseSuccess(t *testing.T) {
 	if thinking, ok := got.ChatTemplateKwargs["enable_thinking"].(bool); !ok || thinking {
 		t.Fatalf("enable_thinking = %#v, want false", got.ChatTemplateKwargs["enable_thinking"])
 	}
+	if got.NPredict < 900 {
+		t.Fatalf("intent output budget = %d, want enough room for the v6 contract", got.NPredict)
+	}
 	if got.Messages[0].Role != "system" || !strings.Contains(got.Messages[0].Content, "translate") {
 		t.Fatalf("first message = %+v", got.Messages[0])
 	}
@@ -75,6 +80,27 @@ func TestClientParseSuccess(t *testing.T) {
 	// few-shot pairs sit between system and the real prompt
 	if len(got.Messages) != 1+2*len(schema.FewShot)+1 {
 		t.Fatalf("message count = %d", len(got.Messages))
+	}
+}
+
+func TestClientRetriesAndReportsTruncatedCompletion(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	srv := chatServer(t, func(body []byte) (int, string) {
+		requests++
+		var request chatRequest
+		_ = json.Unmarshal(body, &request)
+		if requests == 2 && request.NPredict < 1400 {
+			t.Fatalf("recovery budget = %d", request.NPredict)
+		}
+		response := map[string]any{"choices": []map[string]any{{"message": map[string]string{"role": "assistant", "content": `{"references":[]`}, "finish_reason": "length"}}}
+		raw, _ := json.Marshal(response)
+		return 200, string(raw)
+	})
+	_, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "electronic music"})
+	var truncated *TruncatedCompletionError
+	if !errors.As(err, &truncated) || requests != 2 || truncated.Attempts != 2 {
+		t.Fatalf("truncation recovery: requests=%d err=%v", requests, err)
 	}
 }
 

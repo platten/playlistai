@@ -58,6 +58,43 @@ func TestCatalogOnlySeedMayBeArtistOrTrack(t *testing.T) {
 	}
 }
 
+func TestElectronicMusicIsAnEssentialCategoryNotAnArtist(t *testing.T) {
+	t.Parallel()
+	intent := parse(t, "electronic music")
+	if len(intent.References) != 0 || len(intent.Seeds.Queries) != 0 {
+		t.Fatalf("category became an artist seed: references=%+v seeds=%+v", intent.References, intent.Seeds)
+	}
+	if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Kind != "style" || intent.EssentialCriteria[0].Value != "electronic" {
+		t.Fatalf("essential category = %+v", intent.EssentialCriteria)
+	}
+	if !hasPreference(intent.Preferences.Styles, "electronic", core.InfluencePositive) {
+		t.Fatalf("electronic preference missing: %+v", intent.Preferences.Styles)
+	}
+}
+
+func TestAmbiguousCategoryNameCanBeExplicitArtistWithContext(t *testing.T) {
+	t.Parallel()
+	intent := parse(t, "music by Electronic")
+	if len(intent.References) != 1 || intent.References[0].Query != "Electronic" || len(intent.EssentialCriteria) != 0 {
+		t.Fatalf("contextual artist request was lost: %+v", intent)
+	}
+	if relaxing := parse(t, "relaxing music"); len(relaxing.References) != 0 {
+		t.Fatalf("mood request became an artist: %+v", relaxing.References)
+	}
+}
+
+func TestCategoryInfluenceAndJourneyStaySemantic(t *testing.T) {
+	t.Parallel()
+	hybrid := parse(t, "electronic music with some rock influence")
+	if len(hybrid.EssentialCriteria) != 1 || hybrid.EssentialCriteria[0].Value != "electronic" || !hasPreference(hybrid.Preferences.Styles, "rock", core.InfluencePositive) {
+		t.Fatalf("hybrid intent = %+v", hybrid)
+	}
+	journey := parse(t, "a journey from electronic to rock")
+	if len(journey.References) != 0 || journey.Mode != core.ModeJourney || len(journey.EssentialCriteria) != 2 {
+		t.Fatalf("category journey became entity references: %+v", journey)
+	}
+}
+
 func TestNuancedSemanticNegationAndStrictVocalEvidence(t *testing.T) {
 	t.Parallel()
 	intent := parse(t, "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone")
@@ -76,6 +113,23 @@ func TestNuancedSemanticNegationAndStrictVocalEvidence(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("strict no-vocals requirement not preserved for sidecar enforcement: %+v", vocal.HardConstraints)
+	}
+}
+
+func TestSemanticExclusionIsNotAlsoInventedAsArtistExclusion(t *testing.T) {
+	t.Parallel()
+	intent := parse(t, "ambient electronic with microdetail, no abstract drone")
+	for _, reference := range intent.References {
+		if reference.Influence == core.InfluenceNegative && strings.EqualFold(reference.Query, "abstract drone") {
+			t.Fatalf("semantic category exclusion was also parsed as an artist: %+v", intent.References)
+		}
+	}
+	found := false
+	for _, constraint := range intent.HardConstraints {
+		found = found || constraint.Kind == "exclude_style" && strings.EqualFold(constraint.Value, "abstract drone")
+	}
+	if !found {
+		t.Fatalf("semantic exclusion was lost: %+v", intent.HardConstraints)
 	}
 }
 
