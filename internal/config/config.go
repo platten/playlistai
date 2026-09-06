@@ -25,16 +25,11 @@ type Config struct {
 	Recommendation RecommendationConfig `toml:"recommendation"`
 }
 
-// SemanticConfig points to an optional offline-built sidecar and an already
-// local Sentence Transformers model. Blank SidecarPath disables the pilot.
+// SemanticConfig points to an optional offline-built sidecar. The sidecar
+// contains the query vocabulary needed by the Go runtime; Python and model
+// runtimes are build-time concerns only and are never launched by the app.
 type SemanticConfig struct {
-	SidecarPath   string `toml:"sidecar_path"`
-	Python        string `toml:"python"`
-	QueryScript   string `toml:"query_script"`
-	ModelPath     string `toml:"model_path"`
-	ModelName     string `toml:"model_name"`
-	ModelRevision string `toml:"model_revision"`
-	EmbeddingDim  int    `toml:"embedding_dim"`
+	SidecarPath string `toml:"sidecar_path"`
 }
 
 // CatalogConfig points at the converted Deej-AI dataset.
@@ -169,8 +164,7 @@ func Default() Config {
 			CachePath: filepath.Join(data, "musicbrainz-cache.sqlite"),
 			MinScore:  85,
 		},
-		Preview:  PreviewConfig{Provider: PreviewDeezer},
-		Semantic: SemanticConfig{Python: "python3"},
+		Preview: PreviewConfig{Provider: PreviewDeezer},
 		Recommendation: RecommendationConfig{
 			Strategy:        RecommendationMultichannel,
 			SeedAudioBudget: 32, SeedCooccurrenceBudget: 32,
@@ -228,11 +222,6 @@ func (c Config) Validate() error {
 	}
 	if c.Enrich.UserAgent == "" {
 		return errors.New("config: enrich.user_agent is required by the MusicBrainz API")
-	}
-	if c.Semantic.SidecarPath != "" && c.Semantic.ModelPath != "" {
-		if c.Semantic.Python == "" || c.Semantic.QueryScript == "" || c.Semantic.ModelName == "" || c.Semantic.ModelRevision == "" || c.Semantic.EmbeddingDim <= 0 {
-			return errors.New("config: semantic model requires python, query_script, model_name, model_revision, and positive embedding_dim")
-		}
 	}
 	if err := c.Recommendation.Validate(); err != nil {
 		return err

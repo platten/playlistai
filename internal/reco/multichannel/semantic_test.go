@@ -33,7 +33,7 @@ func TestSeedlessSemanticRequestReturnsGroundedCatalogTracks(t *testing.T) {
 	cat := semanticCatalog()
 	sem := semanticData()
 	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
-	if !strings.Contains(engine.AlgorithmVersion(), "pilot/v1@abc123") {
+	if !strings.Contains(engine.AlgorithmVersion(), "semantic:s2:pilot/v1@abc123:precomputed-query-v1") {
 		t.Fatalf("semantic version missing from generation identity: %q", engine.AlgorithmVersion())
 	}
 	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Mode: core.ModeSimilar, Seed: "8",
@@ -141,7 +141,7 @@ func semanticData() *semanticFixture {
 		return core.TrackFeatures{SchemaVersion: 1, CatalogVersion: "fake:v1", TrackID: id, VocalEvidence: core.FeatureValue{Value: vocal, Missingness: core.FeatureKnown, Confidence: .9}}
 	}
 	return &semanticFixture{
-		info:     core.FeatureStoreInfo{SchemaVersion: 1, CatalogVersion: "fake:v1", FeatureVersion: "pilot/v1", ModelRevision: "abc123", SupportedFacets: []string{"vocal_evidence", "styles"}},
+		info:     core.FeatureStoreInfo{SchemaVersion: 2, CatalogVersion: "fake:v1", FeatureVersion: "pilot/v1", ModelRevision: "abc123", QueryEncoder: "precomputed-query-v1", SupportedFacets: []string{"vocal_evidence", "styles"}},
 		features: map[string]core.TrackFeatures{"sleepy": known("sleepy", "vocal"), "instrumental": known("instrumental", "instrumental"), "unknown": {SchemaVersion: 1, TrackID: "unknown", VocalEvidence: core.FeatureValue{Missingness: core.FeatureUnknown}}},
 		positive: []core.SemanticHit{{TrackID: "sleepy", Score: .95}, {TrackID: "instrumental", Score: .85}, {TrackID: "unknown", Score: .75}},
 		negative: []core.SemanticHit{{TrackID: "sleepy", Score: .99}, {TrackID: "unknown", Score: .2}, {TrackID: "instrumental", Score: .05}},

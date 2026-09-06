@@ -429,21 +429,17 @@ func (c *Container) LoadCatalog() error {
 		mc.SemanticNegativePenalty = rc.SemanticNegativePenalty
 		var semanticSearch ports.SemanticSearcher
 		if semanticCfg := c.cfg.Semantic; semanticCfg.SidecarPath != "" {
-			var encoder ports.TextEmbedder
-			if semanticCfg.ModelPath != "" {
-				encoder = semantic.CommandEncoder{
-					Python: semanticCfg.Python, Script: semanticCfg.QueryScript, ModelPath: semanticCfg.ModelPath,
-					Name: semanticCfg.ModelName, Revision: semanticCfg.ModelRevision, Dimension: semanticCfg.EmbeddingDim,
-				}
-			}
-			store, openErr := semantic.Open(semanticCfg.SidecarPath, cat.CatalogVersion(), cat, encoder)
+			store, openErr := semantic.Open(semanticCfg.SidecarPath, cat.CatalogVersion(), cat)
 			if openErr != nil {
 				c.log.Warn("semantic sidecar unavailable; continuing without semantic matching", "err", openErr)
 			} else {
-				c.Features, semanticSearch = store, store
+				c.Features = store
+				if store.SearchReady() {
+					semanticSearch = store
+				}
 				c.RegisterCloser(store.Close)
 				info := store.Info()
-				c.log.Info("semantic sidecar loaded", "tracks", info.TrackCount, "feature_version", info.FeatureVersion, "model", info.TextModel)
+				c.log.Info("semantic sidecar loaded", "tracks", info.TrackCount, "feature_version", info.FeatureVersion, "model", info.TextModel, "query_encoder", info.QueryEncoder)
 			}
 		}
 		if semanticSearch != nil {

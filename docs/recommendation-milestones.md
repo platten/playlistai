@@ -190,20 +190,24 @@ scope.
 
 ## Milestone 8 — Grounded Semantic Matching
 
-Added optional semantic sidecar schema v1 and the `multichannel/v3` pilot. The
-sidecar carries canonical artist/recording identities, grounded descriptive
-facets, separate original/release-edition dates, provenance, confidence,
+Added the optional semantic sidecar and the `multichannel/v3` pilot. The
+schema-v2 sidecar carries canonical artist/recording identities, grounded
+descriptive facets, separate original/release-edition dates, provenance, confidence,
 missingness, source/model versions, and preview-segment coverage. Catalog,
 schema, text-model revision, dimension, and returned track IDs are checked at
-load/search time. Without a valid sidecar and already-local query model, the
-base application and all seeded retrieval remain available.
+load/search time. Without a valid sidecar, the base application and all seeded
+retrieval remain available.
 
-An offline builder embeds supplied descriptions with a compatible Sentence
-Transformers document encoder. Runtime query embeddings use that exact local
-model revision; bounded exact cosine search contributes an independent semantic
-channel. Positive and negative text evidence have separate transparent ranking
-terms. Seedless semantic intent is supported when the index returns real
-catalog tracks. Seeded requests retain explicit fallback behavior.
+An offline builder embeds supplied descriptions and a bounded query vocabulary
+with compatible Sentence Transformers document/query encoders. The sidecar
+stores normalized phrase, adjacent-pair, and term query vectors. Runtime Go
+code selects an exact phrase or composes known vectors, then bounded exact
+cosine search contributes an independent semantic channel. No Python or model
+runtime is required by the desktop application. Positive and negative text
+evidence have separate transparent ranking terms. Seedless semantic intent is
+supported when the index returns real catalog tracks. Seeded requests retain
+explicit fallback behavior. Existing schema-v1 sidecars remain feature-only;
+regenerating them enables schema-v2 retrieval.
 
 Semantic hard eligibility is limited to declared style/tag and vocal facets.
 Unknown evidence fails a strict constraint; it is never converted to a weak
@@ -213,12 +217,11 @@ audio/text inference is intentionally not claimed. Pilot coverage and footprint
 are generated from the exact input using `--report`; no bulk MusicBrainz calls
 occur during playlist generation.
 
-Next dependencies: curate and license a representative evidence set, evaluate
-prompt/facet precision before increasing the 5,000-track pilot, replace the
-per-query Python process with a packaged local embedding runtime, and consider
-ANN only after full-catalog coverage warrants it. A CLAP-style audio pilot also
-requires licensed local audio, deterministic segment selection, and coverage
-auditing.
+Next dependencies: curate and license a representative evidence set, measure
+phrase-composition coverage and prompt/facet precision before increasing the
+5,000-track pilot, and consider ANN only after full-catalog coverage warrants
+it. A CLAP-style audio pilot also requires licensed local audio, deterministic
+segment selection, and coverage auditing.
 
 ## Milestone 9 — Evaluation and System Tuning
 

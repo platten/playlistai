@@ -20,12 +20,14 @@ The regression suite uses a three-track synthetic sidecar to exercise the
 pipeline, not as evidence about production relevance. Generate and retain a
 real pilot report from its reviewed input before evaluating relevance.
 
-`semantic.sqlite` is optional. Schema v1 stores canonical artist/recording IDs,
+`semantic.sqlite` is optional. Schema v2 stores canonical artist/recording IDs,
 tags, descriptions, supported facets, distinct original-edition and
-release-edition dates, confidence, missingness, provenance, and preview segment
-coverage. Missing evidence stays `unknown`. The app rejects a sidecar whose
-catalog version, schema, model name, revision, or vector dimension does not
-match. It also verifies every retrieved ID against the loaded catalog.
+release-edition dates, confidence, missingness, provenance, preview segment
+coverage, and a precomputed query vocabulary. Missing evidence stays `unknown`.
+The app rejects a sidecar whose catalog version, schema, declared row counts,
+or query encoder is incompatible. It also verifies every retrieved ID against
+the loaded catalog. Schema-v1 sidecars remain readable for grounded feature
+eligibility, but semantic retrieval stays disabled until they are regenerated.
 
 ## Build a bounded pilot
 
@@ -51,25 +53,42 @@ returned release date stays a release-edition date. Only an explicit release-
 group first-release date enters the separate original-edition field.
 
 The builder is offline-only and emits accepted/rejected rows, per-facet counts,
-catalog coverage, and actual index bytes. Configure `[semantic]` with
-`sidecar_path`, `python`, `query_script`, `model_path`, `model_name`,
-`model_revision`, and `embedding_dim = 384`. Keep the model and generated
-sidecar out of Git.
+query-term count, catalog coverage, and actual index bytes. Python and Sentence
+Transformers are data-preparation dependencies only; neither is bundled or
+started by the desktop app. Configure only the generated file:
 
-At 384 float32 dimensions, vectors cost about 7.3 MiB per 5,000 tracks before
-SQLite/feature JSON overhead; a full 956,917-track dense matrix alone would be
-about 1.37 GiB. Exact scan is intentional for the pilot.
+```toml
+[semantic]
+sidecar_path = "/absolute/path/to/semantic.sqlite"
+```
+
+Keep the build model and generated sidecar out of Git. Obsolete runtime keys
+from older config files are ignored so existing installations continue to
+load.
+
+At 384 float32 dimensions, document vectors cost about 7.3 MiB per 5,000
+tracks before query vectors and SQLite/feature JSON overhead; a full
+956,917-track dense document matrix alone would be about 1.37 GiB. The coverage
+report records the complete index size. Exact scan is intentional for the
+pilot.
 
 ## Runtime behavior
 
-Grounded descriptions use Sentence Transformers document embeddings; prompts
-use the same revision's query embeddings and cosine similarity. Positive and
-negative semantic matches are separate, non-probabilistic ranking evidence.
-Seedless requests work when positive semantic intent produces indexed catalog
-hits. Seeded requests fall back to existing audio/co-occurrence retrieval with
-a `semantic_fallback` notice. Recognized strict style/vocal constraints are
-enforced only when the sidecar declares the facet; unknown evidence is
-ineligible. Other attributes remain unsupported.
+The offline builder uses compatible Sentence Transformers document and query
+encoders. It stores query vectors for normalized full descriptions, adjacent
+word pairs, and individual words. At runtime, pure Go Unicode tokenization uses
+an exact full-phrase vector when present, otherwise composes the known pair and
+word vectors and normalizes the result. An out-of-vocabulary request returns an
+explicit unavailable result; it is never assigned invented evidence. No
+Python interpreter, model file, or embedding subprocess is needed at runtime.
+
+Cosine similarity supplies separate positive and negative,
+non-probabilistic ranking evidence. Seedless requests work when positive
+semantic intent produces indexed catalog hits. Seeded requests fall back to
+existing audio/co-occurrence retrieval with a `semantic_fallback` notice.
+Recognized strict style/vocal constraints are enforced only when the sidecar
+declares the facet; unknown evidence is ineligible. Other attributes remain
+unsupported.
 
 MusicBrainz enrichment must be cached and performed offline from generation.
 Its API requires an identifying User-Agent and at most one request per second;

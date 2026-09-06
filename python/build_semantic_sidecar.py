@@ -12,10 +12,13 @@ import argparse
 import json
 import sqlite3
 import struct
+import unicodedata
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+QUERY_ENCODER = "precomputed-query-v1"
 FACETS = ("tags", "descriptions", "styles", "moods", "instrumentation", "vocal_evidence", "release_dates")
+STOP_WORDS = {"a", "an", "and", "but", "for", "in", "of", "or", "the", "to", "with"}
 
 
 def arguments() -> argparse.Namespace:
@@ -53,7 +56,31 @@ def values(record: dict, key: str) -> list[dict]:
     return [known(value) for value in record.get(key, []) if value]
 
 
-def build_feature(record: dict, catalog_version: str) -> tuple[dict, str]:
+def query_keys(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", text).lower()
+    tokens: list[str] = []
+    current: list[str] = []
+    for character in normalized:
+        if character.isalpha() or character.isnumeric():
+            current.append(character)
+        elif current:
+            token = "".join(current)
+            if token not in STOP_WORDS:
+                tokens.append(token)
+            current = []
+    if current:
+        token = "".join(current)
+        if token not in STOP_WORDS:
+            tokens.append(token)
+    keys: list[str] = []
+    if len(tokens) > 1:
+        keys.append(" ".join(tokens))
+        keys.extend(" ".join(tokens[index:index + 2]) for index in range(len(tokens) - 1))
+    keys.extend(tokens)
+    return list(dict.fromkeys(keys))
+
+
+def build_feature(record: dict, catalog_version: str) -> tuple[dict, str, list[str]]:
     feature = {
         "schemaVersion": SCHEMA_VERSION,
         "catalogVersion": catalog_version,
@@ -83,7 +110,7 @@ def build_feature(record: dict, catalog_version: str) -> tuple[dict, str]:
         text_parts.append(vocal["value"])
     if not text_parts:
         raise ValueError(f"track {record['track_id']} has no grounded descriptive text")
-    return feature, ". ".join(text_parts)
+    return feature, ". ".join(text_parts), text_parts
 
 
 def cached_musicbrainz(path: Path | None, minimum: int) -> dict[str, dict]:
@@ -129,7 +156,7 @@ def main() -> None:
     catalog_ids = {row[0] for row in catalog.execute("SELECT id FROM tracks")}
     catalog_meta = dict(catalog.execute("SELECT key, value FROM meta"))
     catalog_version = ":".join(catalog_meta.get(k, "") for k in ("format_version", "track_count", "created"))
-    records: list[tuple[dict, str]] = []
+    records: list[tuple[dict, str, list[str]]] = []
     rejected: list[dict] = []
     enrichment = cached_musicbrainz(args.musicbrainz_cache, args.min_musicbrainz_score)
     with args.input.open(encoding="utf-8") as source:
@@ -149,12 +176,21 @@ def main() -> None:
             except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                 rejected.append({"line": line_number, "reason": str(error)})
     records.sort(key=lambda item: item[0]["trackId"])
+    if not records:
+        raise ValueError("no grounded records were accepted")
     model = SentenceTransformer(str(args.model), local_files_only=True)
     embeddings = model.encode_document(
-        [text for _, text in records], normalize_embeddings=True,
+        [text for _, text, _ in records], normalize_embeddings=True,
         convert_to_numpy=True, show_progress_bar=True,
     )
     dimension = int(embeddings.shape[1])
+    query_terms = sorted({key for _, _, phrases in records for phrase in phrases for key in query_keys(phrase)})
+    if not query_terms:
+        raise ValueError("grounded records produced no query vocabulary")
+    query_embeddings = model.encode_query(
+        query_terms, normalize_embeddings=True,
+        convert_to_numpy=True, show_progress_bar=True,
+    )
 
     if args.output.exists():
         args.output.unlink()
@@ -166,21 +202,27 @@ def main() -> None:
             CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
             CREATE TABLE features (track_id TEXT PRIMARY KEY, feature_json TEXT NOT NULL);
             CREATE TABLE semantic_vectors (track_id TEXT PRIMARY KEY, embedding BLOB NOT NULL);
+            CREATE TABLE query_vectors (term TEXT PRIMARY KEY, embedding BLOB NOT NULL);
         """)
         meta = {
             "schema_version": str(SCHEMA_VERSION), "catalog_version": catalog_version,
             "feature_version": args.feature_version, "text_model": args.model_name,
             "model_revision": args.model_revision, "embedding_dim": str(dimension),
             "track_count": str(len(records)), "supported_facets": json.dumps(list(FACETS)),
+            "query_encoder": QUERY_ENCODER, "query_term_count": str(len(query_terms)),
         }
         db.executemany("INSERT INTO meta VALUES (?, ?)", sorted(meta.items()))
         db.executemany("INSERT INTO features VALUES (?, ?)", [
             (feature["trackId"], json.dumps(feature, separators=(",", ":"), ensure_ascii=False))
-            for feature, _ in records
+            for feature, _, _ in records
         ])
         db.executemany("INSERT INTO semantic_vectors VALUES (?, ?)", [
             (feature["trackId"], sqlite3.Binary(struct.pack(f"<{dimension}f", *embedding)))
-            for (feature, _), embedding in zip(records, embeddings, strict=True)
+            for (feature, _, _), embedding in zip(records, embeddings, strict=True)
+        ])
+        db.executemany("INSERT INTO query_vectors VALUES (?, ?)", [
+            (term, sqlite3.Binary(struct.pack(f"<{dimension}f", *embedding)))
+            for term, embedding in zip(query_terms, query_embeddings, strict=True)
         ])
         db.commit()
         db.execute("VACUUM")
@@ -189,7 +231,7 @@ def main() -> None:
         catalog.close()
 
     coverage = {facet: 0 for facet in FACETS}
-    for feature, _ in records:
+    for feature, _, _ in records:
         for facet in FACETS:
             if facet == "vocal_evidence":
                 present = feature["vocalEvidence"]["missingness"] == "known"
@@ -202,6 +244,7 @@ def main() -> None:
         "schemaVersion": SCHEMA_VERSION, "catalogVersion": catalog_version,
         "featureVersion": args.feature_version, "model": args.model_name,
         "modelRevision": args.model_revision, "embeddingDimension": dimension,
+        "queryEncoder": QUERY_ENCODER, "queryTerms": len(query_terms),
         "catalogTracks": len(catalog_ids), "pilotTracks": len(records),
         "coverage": coverage, "rejected": rejected,
         "indexBytes": args.output.stat().st_size,

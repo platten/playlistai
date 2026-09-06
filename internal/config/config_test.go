@@ -64,20 +64,28 @@ semantic_budget = 23
 	}
 }
 
-func TestValidateSemanticModelRequiresPinnedCompatibilityFields(t *testing.T) {
+func TestSemanticSidecarRequiresNoRuntimeModelOrPython(t *testing.T) {
 	t.Parallel()
 	cfg := Default()
 	cfg.Semantic.SidecarPath = "/features/semantic.sqlite"
-	cfg.Semantic.ModelPath = "/models/minilm"
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected incomplete semantic model config to fail")
-	}
-	cfg.Semantic.QueryScript = "/app/python/embed_semantic_query.py"
-	cfg.Semantic.ModelName = "sentence-transformers/all-MiniLM-L6-v2"
-	cfg.Semantic.ModelRevision = "abc123"
-	cfg.Semantic.EmbeddingDim = 384
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("pinned semantic config: %v", err)
+		t.Fatalf("sidecar-only semantic config: %v", err)
+	}
+}
+
+func TestLoadIgnoresLegacySemanticRuntimeKeys(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "config.toml")
+	body := "[semantic]\nsidecar_path = \"/features/semantic.sqlite\"\npython = \"python3\"\nquery_script = \"old.py\"\nmodel_path = \"/models/minilm\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Semantic.SidecarPath != "/features/semantic.sqlite" {
+		t.Fatalf("sidecar path = %q", cfg.Semantic.SidecarPath)
 	}
 }
 

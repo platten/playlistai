@@ -1,8 +1,8 @@
 package core
 
-// CurrentFeatureSchemaVersion versions the semantic sidecar contract. Sidecars
-// with another version are rejected instead of being interpreted loosely.
-const CurrentFeatureSchemaVersion = 1
+// CurrentFeatureSchemaVersion versions the semantic sidecar contract. Readers
+// explicitly decide which older versions remain compatible.
+const CurrentFeatureSchemaVersion = 2
 
 type FeatureMissingness string
 
@@ -66,6 +66,8 @@ type FeatureStoreInfo struct {
 	TextModel       string   `json:"textModel"`
 	ModelRevision   string   `json:"modelRevision"`
 	EmbeddingDim    int      `json:"embeddingDim"`
+	QueryEncoder    string   `json:"queryEncoder"`
+	QueryTermCount  int      `json:"queryTermCount"`
 	TrackCount      int      `json:"trackCount"`
 	SupportedFacets []string `json:"supportedFacets"`
 }

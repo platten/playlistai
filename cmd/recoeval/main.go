@@ -28,7 +28,7 @@ func run() error {
 	var k int
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
 	flag.StringVar(&catalogDir, "catalog", "", "catalog directory override")
-	flag.StringVar(&configPath, "config", "", "optional app TOML for semantic sidecar/model")
+	flag.StringVar(&configPath, "config", "", "optional app TOML for a semantic sidecar")
 	flag.StringVar(&outputPath, "output", "evaluation-report.json", "JSON report path")
 	flag.StringVar(&markdownPath, "markdown", "evaluation-report.md", "Markdown report path")
 	flag.IntVar(&k, "k", 20, "Recall/NDCG cutoff")
@@ -64,15 +64,14 @@ func run() error {
 	var featureStore ports.FeatureStore
 	var searcher ports.SemanticSearcher
 	if cfg.Semantic.SidecarPath != "" {
-		var encoder ports.TextEmbedder
-		if cfg.Semantic.ModelPath != "" {
-			encoder = semantic.CommandEncoder{Python: cfg.Semantic.Python, Script: cfg.Semantic.QueryScript, ModelPath: cfg.Semantic.ModelPath, Name: cfg.Semantic.ModelName, Revision: cfg.Semantic.ModelRevision, Dimension: cfg.Semantic.EmbeddingDim}
-		}
-		store, openErr := semantic.Open(cfg.Semantic.SidecarPath, cat.CatalogVersion(), cat, encoder)
+		store, openErr := semantic.Open(cfg.Semantic.SidecarPath, cat.CatalogVersion(), cat)
 		if openErr != nil {
 			return openErr
 		}
-		featureStore, searcher = store, store
+		featureStore = store
+		if store.SearchReady() {
+			searcher = store
+		}
 		defer func() { _ = store.Close() }()
 	}
 	dataset, err := evaluation.LoadDataset(datasetPath)

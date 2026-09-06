@@ -26,6 +26,21 @@ step() { # step <label> <cmd...>
 # ---------------------------------------------------------------- Go
 step "go vet" go vet ./...
 
+# The Wails bridge is the platform GUI boundary and uses the host toolkit.
+# Everything beneath it is the core application and must compile as pure Go so
+# the packaged app cannot acquire an interpreter or C-library dependency there.
+pure_go_core() {
+  local packages=()
+  while IFS= read -r package; do
+    case "$package" in
+      */internal/bridge) ;;
+      *) packages+=("$package") ;;
+    esac
+  done < <(go list ./internal/...)
+  CGO_ENABLED=0 go test -run '^$' "${packages[@]}"
+}
+step "pure-Go core compile" pure_go_core
+
 if [ "$RACE" = 1 ]; then
   step "go test -race" go test -race -count=1 ./...
 else

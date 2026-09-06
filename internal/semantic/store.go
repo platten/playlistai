@@ -14,7 +14,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
+	"golang.org/x/text/unicode/norm"
 	_ "modernc.org/sqlite"
 
 	"github.com/platten/playlistai/internal/core"
@@ -23,20 +25,22 @@ import (
 
 const DBFile = "semantic.sqlite"
 
+const QueryEncoderPrecomputed = "precomputed-query-v1"
+
 type Store struct {
-	db      *sql.DB
-	catalog ports.Catalog
-	encoder ports.TextEmbedder
-	info    core.FeatureStoreInfo
+	db         *sql.DB
+	catalog    ports.Catalog
+	info       core.FeatureStoreInfo
+	queryReady bool
 }
 
-func Open(path, catalogVersion string, catalog ports.Catalog, encoder ports.TextEmbedder) (*Store, error) {
+func Open(path, catalogVersion string, catalog ports.Catalog) (*Store, error) {
 	dsn := "file:" + filepath.ToSlash(path) + "?mode=ro&immutable=1"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{db: db, catalog: catalog, encoder: encoder}
+	store := &Store{db: db, catalog: catalog}
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("semantic sidecar: %w", err)
@@ -45,26 +49,24 @@ func Open(path, catalogVersion string, catalog ports.Catalog, encoder ports.Text
 		_ = db.Close()
 		return nil, err
 	}
-	if store.info.SchemaVersion != core.CurrentFeatureSchemaVersion {
+	if store.info.SchemaVersion < 1 || store.info.SchemaVersion > core.CurrentFeatureSchemaVersion {
 		_ = db.Close()
-		return nil, fmt.Errorf("semantic sidecar: schema %d is incompatible with %d", store.info.SchemaVersion, core.CurrentFeatureSchemaVersion)
+		return nil, fmt.Errorf("semantic sidecar: schema %d is incompatible with supported versions 1..%d", store.info.SchemaVersion, core.CurrentFeatureSchemaVersion)
 	}
 	if catalogVersion != "" && store.info.CatalogVersion != catalogVersion {
 		_ = db.Close()
 		return nil, fmt.Errorf("semantic sidecar: catalog version %q does not match %q", store.info.CatalogVersion, catalogVersion)
-	}
-	if encoder != nil {
-		name, revision, dim := encoder.Model()
-		if name != store.info.TextModel || revision != store.info.ModelRevision || dim != store.info.EmbeddingDim {
-			_ = db.Close()
-			return nil, fmt.Errorf("semantic sidecar: encoder %s@%s/%d does not match index %s@%s/%d", name, revision, dim, store.info.TextModel, store.info.ModelRevision, store.info.EmbeddingDim)
-		}
 	}
 	return store, nil
 }
 
 func (s *Store) Close() error                { return s.db.Close() }
 func (s *Store) Info() core.FeatureStoreInfo { return s.info }
+
+// SearchReady reports whether the sidecar embeds a query vocabulary that the
+// Go runtime can use without Python or another model runtime. Schema-v1
+// sidecars remain readable as feature stores but cannot perform retrieval.
+func (s *Store) SearchReady() bool { return s.queryReady }
 
 func (s *Store) loadInfo() error {
 	rows, err := s.db.Query("SELECT key, value FROM meta")
@@ -119,6 +121,23 @@ func (s *Store) loadInfo() error {
 	if featureCount != s.info.TrackCount || vectorCount != s.info.TrackCount {
 		return fmt.Errorf("semantic sidecar: declared %d tracks but found %d feature rows and %d vectors", s.info.TrackCount, featureCount, vectorCount)
 	}
+	if s.info.SchemaVersion >= 2 {
+		s.info.QueryEncoder = values["query_encoder"]
+		if s.info.QueryEncoder != QueryEncoderPrecomputed {
+			return fmt.Errorf("semantic sidecar: unsupported query encoder %q", s.info.QueryEncoder)
+		}
+		if s.info.QueryTermCount, parseErr = parseInt("query_term_count"); parseErr != nil || s.info.QueryTermCount <= 0 {
+			return errors.New("semantic sidecar: invalid query_term_count")
+		}
+		var queryCount int
+		if err := s.db.QueryRow("SELECT count(*) FROM query_vectors").Scan(&queryCount); err != nil {
+			return fmt.Errorf("semantic sidecar query vocabulary: %w", err)
+		}
+		if queryCount != s.info.QueryTermCount {
+			return fmt.Errorf("semantic sidecar: declared %d query terms but found %d", s.info.QueryTermCount, queryCount)
+		}
+		s.queryReady = true
+	}
 	return rows.Err()
 }
 
@@ -135,7 +154,7 @@ func (s *Store) Features(ctx context.Context, trackID string) (core.TrackFeature
 	if err := json.Unmarshal([]byte(raw), &feature); err != nil {
 		return core.TrackFeatures{}, false, fmt.Errorf("semantic sidecar: decode features for %s: %w", trackID, err)
 	}
-	if feature.SchemaVersion != core.CurrentFeatureSchemaVersion || feature.TrackID != trackID || feature.CatalogVersion != s.info.CatalogVersion {
+	if feature.SchemaVersion != s.info.SchemaVersion || feature.TrackID != trackID || feature.CatalogVersion != s.info.CatalogVersion {
 		return core.TrackFeatures{}, false, fmt.Errorf("semantic sidecar: incompatible feature row %s", trackID)
 	}
 	if err := validateFeature(feature); err != nil {
@@ -181,20 +200,16 @@ func validateFeature(feature core.TrackFeatures) error {
 }
 
 func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.SemanticHit, error) {
-	if s.encoder == nil {
-		return nil, fmt.Errorf("semantic search: %w: compatible local text encoder is not configured", core.ErrUnavailable)
-	}
 	if strings.TrimSpace(text) == "" || limit <= 0 {
 		return []core.SemanticHit{}, nil
 	}
-	query, err := s.encoder.Embed(ctx, text)
+	if !s.queryReady {
+		return nil, fmt.Errorf("semantic search: %w: sidecar has no embedded Go query vocabulary", core.ErrUnavailable)
+	}
+	query, err := s.queryVector(ctx, text)
 	if err != nil {
 		return nil, err
 	}
-	if len(query) != s.info.EmbeddingDim {
-		return nil, fmt.Errorf("semantic search: query dimension %d, want %d", len(query), s.info.EmbeddingDim)
-	}
-	normalize(query)
 	rows, err := s.db.QueryContext(ctx, "SELECT track_id, embedding FROM semantic_vectors ORDER BY track_id")
 	if err != nil {
 		return nil, err
@@ -233,6 +248,115 @@ func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.Sema
 		}
 	}
 	return hits, rows.Err()
+}
+
+func (s *Store) queryVector(ctx context.Context, text string) ([]float32, error) {
+	keys := queryKeys(text)
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("semantic search: %w: query has no searchable terms", core.ErrUnavailable)
+	}
+	// A full-phrase entry is an actual encode_query result and is preferable to
+	// composing its component terms. The remaining entries provide bounded
+	// vocabulary fallback for phrases not seen by the offline builder.
+	if len(keys) > 1 {
+		if vector, ok, err := s.lookupQueryVector(ctx, keys[0]); err != nil {
+			return nil, err
+		} else if ok {
+			return vector, nil
+		}
+		keys = keys[1:]
+	}
+	query := make([]float32, s.info.EmbeddingDim)
+	matched := 0
+	for _, key := range keys {
+		vector, ok, err := s.lookupQueryVector(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		matched++
+		for i, value := range vector {
+			query[i] += value
+		}
+	}
+	if matched == 0 {
+		return nil, fmt.Errorf("semantic search: %w: query is outside the sidecar vocabulary", core.ErrUnavailable)
+	}
+	normalize(query)
+	return query, nil
+}
+
+func (s *Store) lookupQueryVector(ctx context.Context, key string) ([]float32, bool, error) {
+	var blob []byte
+	err := s.db.QueryRowContext(ctx, "SELECT embedding FROM query_vectors WHERE term = ?", key).Scan(&blob)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	vector, err := decodeVector(blob, s.info.EmbeddingDim)
+	if err != nil {
+		return nil, false, fmt.Errorf("semantic sidecar query term %q: %w", key, err)
+	}
+	return vector, true, nil
+}
+
+func queryKeys(text string) []string {
+	tokens := semanticTokens(text)
+	if len(tokens) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	add := func(out []string, value string) []string {
+		if _, ok := seen[value]; ok {
+			return out
+		}
+		seen[value] = struct{}{}
+		return append(out, value)
+	}
+	var result []string
+	if len(tokens) > 1 {
+		result = add(result, strings.Join(tokens, " "))
+		for i := 0; i+1 < len(tokens); i++ {
+			result = add(result, tokens[i]+" "+tokens[i+1])
+		}
+	}
+	for _, token := range tokens {
+		result = add(result, token)
+	}
+	return result
+}
+
+func semanticTokens(text string) []string {
+	text = strings.ToLower(norm.NFKC.String(text))
+	var tokens []string
+	var token strings.Builder
+	flush := func() {
+		if token.Len() == 0 {
+			return
+		}
+		value := token.String()
+		token.Reset()
+		if _, skip := semanticStopWords[value]; !skip {
+			tokens = append(tokens, value)
+		}
+	}
+	for _, r := range text {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			token.WriteRune(r)
+		} else {
+			flush()
+		}
+	}
+	flush()
+	return tokens
+}
+
+var semanticStopWords = map[string]struct{}{
+	"a": {}, "an": {}, "and": {}, "but": {}, "for": {}, "in": {}, "of": {}, "or": {}, "the": {}, "to": {}, "with": {},
 }
 
 func decodeVector(blob []byte, dim int) ([]float32, error) {

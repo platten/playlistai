@@ -65,7 +65,7 @@ func (o *Orchestrator) AlgorithmVersion() string {
 		return AlgorithmVersion
 	}
 	info := o.semantic.Info()
-	return AlgorithmVersion + "+semantic:" + info.FeatureVersion + "@" + info.ModelRevision
+	return fmt.Sprintf("%s+semantic:s%d:%s@%s:%s", AlgorithmVersion, info.SchemaVersion, info.FeatureVersion, info.ModelRevision, info.QueryEncoder)
 }
 
 func (o *Orchestrator) Build(ctx context.Context, intent core.MusicIntent) (core.Playlist, error) {
