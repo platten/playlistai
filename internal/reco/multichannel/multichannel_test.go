@@ -44,7 +44,7 @@ func TestRetrieverContributesIndependentChannelsAndProvenance(t *testing.T) {
 		Affinity: core.EmbeddingAffinity{Audio: []float32{0, 1}, Cooccurrence: []float32{1, 0}},
 	}}}
 	candidates, err := retriever.Retrieve(context.Background(), ports.RetrievalRequest{
-		Intent: testIntent(4), Profile: profile, Seed: 42,
+		Intent: testIntent(4), Profile: profile, RecentSelections: refs(cat, "last"), Seed: 42,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -58,6 +58,14 @@ func TestRetrieverContributesIndependentChannelsAndProvenance(t *testing.T) {
 	}
 	if _, found := findCandidate(candidates, "seed"); found {
 		t.Fatal("reference track should be excluded from its retrieval results")
+	}
+	if _, found := findCandidate(candidates, "last"); found {
+		t.Fatal("recent continuation track should not be retrieved again")
+	}
+	if !candidatesHaveChannel(candidates, ChannelSeedAudio) ||
+		!candidatesHaveChannel(candidates, ChannelContinuationAudio) ||
+		!candidatesHaveChannel(candidates, ChannelTasteCluster) {
+		t.Fatalf("continuation did not retain original seed and taste channels: %+v", candidates)
 	}
 	other, ok := findCandidate(candidates, "other")
 	if !ok || !hasChannel(other, ChannelSeedAudio) || !hasChannel(other, ChannelSeedCooccurrence) {
@@ -146,7 +154,7 @@ func TestGenerationIsReproducibleWithBoundedExploration(t *testing.T) {
 	t.Parallel()
 	cat := testCatalog()
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
-	intent := testIntent(5)
+	intent := testIntent(4)
 	intent.Controls.Discovery = .9
 	first, err := engine.Build(context.Background(), intent)
 	if err != nil {
@@ -159,7 +167,7 @@ func TestGenerationIsReproducibleWithBoundedExploration(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("fixed-seed generations differ:\nfirst=%+v\nsecond=%+v", first, second)
 	}
-	if first.Seed != "42" || len(first.Tracks) != 5 {
+	if first.Seed != "42" || len(first.Tracks) != 4 {
 		t.Fatalf("unexpected generation: %+v", first)
 	}
 	if first.Intent.Seed != intent.Seed || !reflect.DeepEqual(first.Intent.Controls, intent.Normalized().Controls) ||
@@ -184,4 +192,13 @@ func findCandidate(candidates []core.Candidate, id string) (core.Candidate, bool
 		}
 	}
 	return core.Candidate{}, false
+}
+
+func candidatesHaveChannel(candidates []core.Candidate, channel string) bool {
+	for _, candidate := range candidates {
+		if hasChannel(candidate, channel) {
+			return true
+		}
+	}
+	return false
 }

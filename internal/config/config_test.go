@@ -42,6 +42,7 @@ min_score = 70
 
 [recommendation]
 seed_audio_budget = 17
+mmr_minimum_lambda = 0.7
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -53,7 +54,7 @@ seed_audio_budget = 17
 	if cfg.DataDir != "/tmp/pai" || cfg.Preview.Provider != PreviewOff || cfg.AI.NCtx != 8192 || cfg.Enrich.MinScore != 70 {
 		t.Fatalf("overlay not applied: %+v", cfg)
 	}
-	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.Strategy != RecommendationMultichannel {
+	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.MMRMinimumLambda != .7 || cfg.Recommendation.Strategy != RecommendationMultichannel {
 		t.Fatalf("recommendation overlay not applied: %+v", cfg.Recommendation)
 	}
 	// Untouched keys keep defaults.

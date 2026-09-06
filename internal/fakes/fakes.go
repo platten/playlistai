@@ -31,12 +31,14 @@ type Catalog struct {
 
 // CatalogTrack is one row to seed a fake Catalog with.
 type CatalogTrack struct {
-	ID         string
-	Display    string // "Artist - Title"
-	PreviewURL string
-	Audio      []float32
-	Track      []float32
-	Aliases    []string
+	ID            string
+	Display       string // "Artist - Title"
+	PreviewURL    string
+	Audio         []float32
+	Track         []float32
+	Aliases       []string
+	Album         string
+	AlbumReliable bool
 }
 
 func (c *Catalog) CatalogVersion() string { return "fake:v1" }
@@ -127,8 +129,8 @@ func NewCatalog(dim int, rows ...CatalogTrack) *Catalog {
 		c.ids = append(c.ids, r.ID)
 		c.rowOf[r.ID] = i
 		c.meta[r.ID] = core.TrackMeta{
-			Ref:        core.ParseDisplay(r.ID, r.Display),
-			PreviewURL: r.PreviewURL,
+			Ref: core.ParseDisplay(r.ID, r.Display), PreviewURL: r.PreviewURL,
+			Album: r.Album, AlbumReliable: r.AlbumReliable,
 		}
 		c.vecs[r.ID] = ports.Vectors{Audio: r.Audio, Track: r.Track}
 		c.raw = append(c.raw, [2][]int8{quantizeI8(r.Audio), quantizeI8(r.Track)})

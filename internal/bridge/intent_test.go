@@ -113,7 +113,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed.IsZero() {
 		t.Fatalf("request seed %s != playlist seed %s", res.Request.Seed, res.Playlist.Seed)
 	}
-	if kind := res.Playlist.Tracks[0].Kind; kind != "ranked" && kind != "exploration" {
+	if kind := res.Playlist.Tracks[0].Kind; kind != "selected" {
 		t.Fatalf("reference seed should guide but not be emitted; first kind = %q", res.Playlist.Tracks[0].Kind)
 	}
 	if res.Playlist.Tracks[0].ID == res.Request.Intent.References[0].TrackID {
@@ -122,7 +122,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if len(res.Playlist.Tracks[0].Sources) == 0 || len(res.Playlist.Tracks[0].Evidence) == 0 {
 		t.Fatalf("structured recommendation evidence was not bridged: %+v", res.Playlist.Tracks[0])
 	}
-	if res.Playlist.Reproducibility.AlgorithmVersion != "multichannel/v1" {
+	if res.Playlist.Reproducibility.AlgorithmVersion != "multichannel/v2" {
 		t.Fatalf("algorithm version = %q", res.Playlist.Reproducibility.AlgorithmVersion)
 	}
 	// The generated name is a short label (<= 6 words), not the raw prompt.
@@ -136,6 +136,35 @@ func TestGenerateFromPrompt(t *testing.T) {
 	// A prompt with no findable seed is an error, not a panic.
 	if _, err := api.GenerateFromPrompt(context.Background(), "zqxjkw nothing here"); err == nil {
 		t.Fatal("expected an error for an unresolvable prompt")
+	}
+}
+
+func TestContinuingRadioPreservesIntentAndExcludesRecentSelection(t *testing.T) {
+	t.Parallel()
+	api := New(newLoadedContainer(t), nil)
+	generated, err := api.GenerateFromPrompt(context.Background(), "like Justice, 10 tracks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recent := generated.Playlist.Tracks[0]
+	continued, err := api.BuildPlaylist(context.Background(), BuildPlaylistRequest{
+		Version: core.CurrentIntentVersion, Intent: generated.Request.Intent,
+		RecentSelections: []core.TrackRef{{ID: recent.ID, Artist: recent.Artist, Title: recent.Title}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(continued.Intent.References, generated.Request.Intent.References) {
+		t.Fatal("continuation replaced the original request anchor")
+	}
+	recentKey := core.ProvisionalRecordingKey(core.TrackRef{ID: recent.ID, Artist: recent.Artist, Title: recent.Title})
+	for _, track := range continued.Tracks {
+		if core.ProvisionalRecordingKey(core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title}) == recentKey {
+			t.Fatalf("recent recording repeated in continuation: %+v", track)
+		}
+	}
+	if continued.Reproducibility.ContextFingerprint == generated.Playlist.Reproducibility.ContextFingerprint {
+		t.Fatal("continuation context was omitted from reproducibility metadata")
 	}
 }
 

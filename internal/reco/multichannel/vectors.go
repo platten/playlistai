@@ -165,6 +165,22 @@ func affinitySimilarity(affinity core.EmbeddingAffinity, candidate ports.Vectors
 	return score / weights, true
 }
 
+func weightedVectorSimilarity(left, right ports.Vectors, audioWeight, trackWeight float64) (float64, bool) {
+	var score, weights float64
+	if audioWeight > 0 && len(left.Audio) == len(right.Audio) && vectorAvailable(left.Audio) && vectorAvailable(right.Audio) {
+		score += audioWeight * cosine(left.Audio, right.Audio)
+		weights += audioWeight
+	}
+	if trackWeight > 0 && len(left.Track) == len(right.Track) && vectorAvailable(left.Track) && vectorAvailable(right.Track) {
+		score += trackWeight * cosine(left.Track, right.Track)
+		weights += trackWeight
+	}
+	if weights == 0 {
+		return 0, false
+	}
+	return score / weights, true
+}
+
 func vectorAvailable(values []float32) bool {
 	for _, value := range values {
 		if value != 0 {

@@ -10,10 +10,13 @@ import (
 )
 
 const (
-	ChannelSeedAudio        = "seed_audio"
-	ChannelSeedCooccurrence = "seed_cooccurrence"
-	ChannelTasteCluster     = "taste_cluster"
-	ChannelExploration      = "exploration"
+	ChannelSeedAudio                = "seed_audio"
+	ChannelSeedCooccurrence         = "seed_cooccurrence"
+	ChannelTasteCluster             = "taste_cluster"
+	ChannelExploration              = "exploration"
+	ChannelContinuationAudio        = "continuation_audio"
+	ChannelContinuationCooccurrence = "continuation_cooccurrence"
+	maxContinuationAnchors          = 3
 )
 
 type Retriever struct {
@@ -50,9 +53,14 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			exclude[required.TrackID] = struct{}{}
 		}
 	}
+	for _, recent := range request.RecentSelections {
+		exclude[recent.ID] = struct{}{}
+	}
+	recent := tailTracks(request.RecentSelections, maxContinuationAnchors)
 	totalQueries := 2 * countRepresentatives(references)
 	clusterLimit := minInt(r.cfg.MaxTasteClusters, len(request.Profile.Clusters))
 	totalQueries += clusterLimit
+	totalQueries += 2 * len(recent)
 	extraPerQuery := 0
 	if totalQueries > 0 {
 		extraPerQuery = maxInt(1, r.cfg.ExplorationPool/totalQueries)
@@ -80,6 +88,24 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			normalizedWeights(intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight),
 			cluster.Weight, r.cfg.TasteClusterBudget, extraPerQuery); err != nil {
 			return nil, err
+		}
+	}
+	if len(recent) > 0 {
+		budget := maxInt(1, r.cfg.ContinuationBudget/len(recent))
+		for index, track := range recent {
+			vectors, ok := r.cat.Vectors(track.ID)
+			if !ok {
+				continue
+			}
+			queryID := track.ID + ":" + itoa(index)
+			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelContinuationAudio, queryID,
+				normalizeVector(vectors.Audio), nil, [2]float32{1, 0}, 1, budget, extraPerQuery); err != nil {
+				return nil, err
+			}
+			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelContinuationCooccurrence, queryID,
+				nil, normalizeVector(vectors.Track), [2]float32{0, 1}, 1, budget, extraPerQuery); err != nil {
+				return nil, err
+			}
 		}
 	}
 	r.addExploration(byID, exploration, intent.Controls.Discovery, request.Seed)
@@ -168,7 +194,7 @@ func (r *Retriever) addSource(byID map[string]*core.Candidate, match ports.Match
 }
 
 func (r *Retriever) addExploration(byID map[string]*core.Candidate, options []explorationOption, discovery float64, seed int64) {
-	budget := int(float64(r.cfg.ExplorationBudget)*clamp(discovery, 0, 1) + .5)
+	budget := int(float64(r.cfg.ExplorationBudget)*clamp(discovery, 0, 1)*r.cfg.ExplorationChance + .5)
 	if budget <= 0 || len(options) == 0 {
 		return
 	}
@@ -256,6 +282,22 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func tailTracks(tracks []core.TrackRef, count int) []core.TrackRef {
+	if len(tracks) <= count {
+		return append([]core.TrackRef(nil), tracks...)
+	}
+	return append([]core.TrackRef(nil), tracks[len(tracks)-count:]...)
+}
+
+func hasChannel(candidate core.Candidate, channel string) bool {
+	for _, source := range candidate.Sources {
+		if source.Channel == channel {
+			return true
+		}
+	}
+	return false
 }
 
 var _ ports.CandidateRetriever = (*Retriever)(nil)

@@ -86,21 +86,32 @@ type PreviewConfig struct {
 // RecommendationConfig controls the bounded exact-retrieval strategy. The
 // legacy deejai strategy remains selectable as an evaluation baseline.
 type RecommendationConfig struct {
-	Strategy               string  `toml:"strategy"`
-	SeedAudioBudget        int     `toml:"seed_audio_budget"`
-	SeedCooccurrenceBudget int     `toml:"seed_cooccurrence_budget"`
-	TasteClusterBudget     int     `toml:"taste_cluster_budget"`
-	MaxTasteClusters       int     `toml:"max_taste_clusters"`
-	ExplorationPool        int     `toml:"exploration_pool"`
-	ExplorationBudget      int     `toml:"exploration_budget"`
-	ExplorationMinScore    float64 `toml:"exploration_min_score"`
-	MaxCandidates          int     `toml:"max_candidates"`
-	RetrievalWeight        float64 `toml:"retrieval_weight"`
-	ListenerWeight         float64 `toml:"listener_weight"`
-	NegativePenalty        float64 `toml:"negative_penalty"`
-	ExposurePenalty        float64 `toml:"exposure_penalty"`
-	NoveltyWeight          float64 `toml:"novelty_weight"`
-	ExplorationChance      float64 `toml:"exploration_chance"`
+	Strategy                  string  `toml:"strategy"`
+	SeedAudioBudget           int     `toml:"seed_audio_budget"`
+	SeedCooccurrenceBudget    int     `toml:"seed_cooccurrence_budget"`
+	TasteClusterBudget        int     `toml:"taste_cluster_budget"`
+	MaxTasteClusters          int     `toml:"max_taste_clusters"`
+	ExplorationPool           int     `toml:"exploration_pool"`
+	ExplorationBudget         int     `toml:"exploration_budget"`
+	ExplorationMinScore       float64 `toml:"exploration_min_score"`
+	MaxCandidates             int     `toml:"max_candidates"`
+	RetrievalWeight           float64 `toml:"retrieval_weight"`
+	ListenerWeight            float64 `toml:"listener_weight"`
+	NegativePenalty           float64 `toml:"negative_penalty"`
+	ExposurePenalty           float64 `toml:"exposure_penalty"`
+	NoveltyWeight             float64 `toml:"novelty_weight"`
+	ExplorationChance         float64 `toml:"exploration_chance"`
+	ContinuationBudget        int     `toml:"continuation_budget"`
+	MMRMinimumLambda          float64 `toml:"mmr_minimum_lambda"`
+	SelectionMinimumRelevance float64 `toml:"selection_minimum_relevance"`
+	SelectionRelevanceWindow  float64 `toml:"selection_relevance_window"`
+	EmbeddingRedundancyWeight float64 `toml:"embedding_redundancy_weight"`
+	ArtistConcentrationWeight float64 `toml:"artist_concentration_weight"`
+	AlbumConcentrationWeight  float64 `toml:"album_concentration_weight"`
+	SoftArtistSpacingMax      int     `toml:"soft_artist_spacing_max"`
+	TransitionRelevanceWeight float64 `toml:"transition_relevance_weight"`
+	LocalImprovementPasses    int     `toml:"local_improvement_passes"`
+	LocalImprovementWindow    int     `toml:"local_improvement_window"`
 }
 
 const (
@@ -149,7 +160,12 @@ func Default() Config {
 			ExplorationPool: 160, ExplorationBudget: 24, ExplorationMinScore: .10,
 			MaxCandidates: 512, RetrievalWeight: .15, ListenerWeight: .30,
 			NegativePenalty: .65, ExposurePenalty: .30, NoveltyWeight: .20,
-			ExplorationChance: .35,
+			ExplorationChance:  .35,
+			ContinuationBudget: 16, MMRMinimumLambda: .55,
+			SelectionMinimumRelevance: .05, SelectionRelevanceWindow: .80,
+			EmbeddingRedundancyWeight: .50, ArtistConcentrationWeight: .35,
+			AlbumConcentrationWeight: .15, SoftArtistSpacingMax: 3,
+			TransitionRelevanceWeight: .15, LocalImprovementPasses: 3, LocalImprovementWindow: 4,
 		},
 	}
 	return cfg
@@ -208,7 +224,8 @@ func (c RecommendationConfig) Validate() error {
 		"seed_audio_budget": c.SeedAudioBudget, "seed_cooccurrence_budget": c.SeedCooccurrenceBudget,
 		"taste_cluster_budget": c.TasteClusterBudget, "max_taste_clusters": c.MaxTasteClusters,
 		"exploration_pool": c.ExplorationPool, "exploration_budget": c.ExplorationBudget,
-		"max_candidates": c.MaxCandidates,
+		"max_candidates":      c.MaxCandidates,
+		"continuation_budget": c.ContinuationBudget, "local_improvement_window": c.LocalImprovementWindow,
 	}
 	for name, value := range budgets {
 		if value <= 0 {
@@ -221,7 +238,11 @@ func (c RecommendationConfig) Validate() error {
 	weights := map[string]float64{
 		"retrieval_weight": c.RetrievalWeight, "listener_weight": c.ListenerWeight,
 		"negative_penalty": c.NegativePenalty, "exposure_penalty": c.ExposurePenalty,
-		"novelty_weight": c.NoveltyWeight,
+		"novelty_weight":              c.NoveltyWeight,
+		"embedding_redundancy_weight": c.EmbeddingRedundancyWeight,
+		"artist_concentration_weight": c.ArtistConcentrationWeight,
+		"album_concentration_weight":  c.AlbumConcentrationWeight,
+		"transition_relevance_weight": c.TransitionRelevanceWeight,
 	}
 	for name, value := range weights {
 		if value < 0 {
@@ -230,6 +251,18 @@ func (c RecommendationConfig) Validate() error {
 	}
 	if c.ExplorationChance < 0 || c.ExplorationChance > 1 {
 		return errors.New("config: recommendation.exploration_chance must be between 0 and 1")
+	}
+	if c.MMRMinimumLambda <= 0 || c.MMRMinimumLambda > 1 {
+		return errors.New("config: recommendation.mmr_minimum_lambda must be above 0 and at most 1")
+	}
+	if c.SelectionMinimumRelevance < -2 || c.SelectionMinimumRelevance > 2 {
+		return errors.New("config: recommendation.selection_minimum_relevance must be between -2 and 2")
+	}
+	if c.SelectionRelevanceWindow <= 0 {
+		return errors.New("config: recommendation.selection_relevance_window must be positive")
+	}
+	if c.SoftArtistSpacingMax < 0 || c.LocalImprovementPasses < 0 {
+		return errors.New("config: recommendation spacing and local-improvement values must not be negative")
 	}
 	return nil
 }

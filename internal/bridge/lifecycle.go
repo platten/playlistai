@@ -40,13 +40,14 @@ type GenerationStatus struct {
 }
 
 type Reproducibility struct {
-	ID                string       `json:"id"`
-	CatalogVersion    string       `json:"catalogVersion"`
-	AlgorithmVersion  string       `json:"algorithmVersion"`
-	IntentFingerprint string       `json:"intentFingerprint"`
-	ProfileVersion    string       `json:"profileVersion"`
-	ProfileSnapshot   string       `json:"profileSnapshot"`
-	RNGSeed           core.RNGSeed `json:"rngSeed"`
+	ID                 string       `json:"id"`
+	CatalogVersion     string       `json:"catalogVersion"`
+	AlgorithmVersion   string       `json:"algorithmVersion"`
+	IntentFingerprint  string       `json:"intentFingerprint"`
+	ProfileVersion     string       `json:"profileVersion"`
+	ProfileSnapshot    string       `json:"profileSnapshot"`
+	ContextFingerprint string       `json:"contextFingerprint"`
+	RNGSeed            core.RNGSeed `json:"rngSeed"`
 }
 
 type parsedIntentEntry struct {
@@ -167,15 +168,20 @@ func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVe
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func generationIdentity(intent core.MusicIntent, catalogVersion, algorithmVersion, profileVersion, profileSnapshot string) (Reproducibility, error) {
+func generationIdentity(intent core.MusicIntent, catalogVersion, algorithmVersion, profileVersion, profileSnapshot string, recentSelections ...[]core.TrackRef) (Reproducibility, error) {
 	intent = intent.Normalized()
+	recent := []core.TrackRef{}
+	if len(recentSelections) > 0 {
+		recent = append(recent, recentSelections[0]...)
+	}
 	raw, err := json.Marshal(struct {
 		CatalogVersion   string           `json:"catalogVersion"`
 		AlgorithmVersion string           `json:"algorithmVersion"`
 		Intent           core.MusicIntent `json:"intent"`
 		ProfileVersion   string           `json:"profileVersion"`
 		ProfileSnapshot  string           `json:"profileSnapshot"`
-	}{catalogVersion, algorithmVersion, intent, profileVersion, profileSnapshot})
+		RecentSelections []core.TrackRef  `json:"recentSelections"`
+	}{catalogVersion, algorithmVersion, intent, profileVersion, profileSnapshot, recent})
 	if err != nil {
 		return Reproducibility{}, fmt.Errorf("generation identity: %w", err)
 	}
@@ -183,12 +189,17 @@ func generationIdentity(intent core.MusicIntent, catalogVersion, algorithmVersio
 	if err != nil {
 		return Reproducibility{}, fmt.Errorf("intent fingerprint: %w", err)
 	}
-	allSum, intentSum := sha256.Sum256(raw), sha256.Sum256(intentRaw)
+	contextRaw, err := json.Marshal(recent)
+	if err != nil {
+		return Reproducibility{}, fmt.Errorf("generation context fingerprint: %w", err)
+	}
+	allSum, intentSum, contextSum := sha256.Sum256(raw), sha256.Sum256(intentRaw), sha256.Sum256(contextRaw)
 	return Reproducibility{
 		ID: hex.EncodeToString(allSum[:]), CatalogVersion: catalogVersion,
-		AlgorithmVersion:  algorithmVersion,
-		IntentFingerprint: hex.EncodeToString(intentSum[:]),
-		ProfileVersion:    profileVersion, ProfileSnapshot: profileSnapshot, RNGSeed: intent.Seed,
+		AlgorithmVersion:   algorithmVersion,
+		IntentFingerprint:  hex.EncodeToString(intentSum[:]),
+		ContextFingerprint: hex.EncodeToString(contextSum[:]),
+		ProfileVersion:     profileVersion, ProfileSnapshot: profileSnapshot, RNGSeed: intent.Seed,
 	}, nil
 }
 

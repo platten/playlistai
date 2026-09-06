@@ -25,12 +25,13 @@ type ControlOverrides struct {
 // BuildPlaylistRequest carries the complete resolved interpretation plus
 // explicit UI overrides. Legacy fields remain for old history records.
 type BuildPlaylistRequest struct {
-	Version         int              `json:"version"`
-	Intent          core.MusicIntent `json:"intent"`
-	Overrides       ControlOverrides `json:"overrides"`
-	Reproducibility Reproducibility  `json:"reproducibility"`
-	SessionID       string           `json:"sessionId"`
-	RequestID       string           `json:"requestId"`
+	Version          int              `json:"version"`
+	Intent           core.MusicIntent `json:"intent"`
+	Overrides        ControlOverrides `json:"overrides"`
+	Reproducibility  Reproducibility  `json:"reproducibility"`
+	SessionID        string           `json:"sessionId"`
+	RequestID        string           `json:"requestId"`
+	RecentSelections []core.TrackRef  `json:"recentSelections,omitempty"`
 
 	ReferenceIDs      []string     `json:"referenceIds,omitempty"`
 	RequiredIDs       []string     `json:"requiredIds,omitempty"`
@@ -105,9 +106,14 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	profileTiming := StageTiming{Stage: "profile", Milliseconds: time.Since(profileStarted).Milliseconds()}
+	recentSelections := resolveRecentSelections(a.app.Catalog, req.RecentSelections)
 	started := time.Now()
 	var playlist core.Playlist
-	if personalized, ok := a.app.Reco.(ports.PersonalizedRecommendationEngine); ok {
+	if contextual, ok := a.app.Reco.(ports.ContextualRecommendationEngine); ok {
+		playlist, err = contextual.BuildRecommendation(ctx, ports.RecommendationRequest{
+			Intent: intent, Profile: profile, RecentSelections: recentSelections,
+		})
+	} else if personalized, ok := a.app.Reco.(ports.PersonalizedRecommendationEngine); ok {
 		playlist, err = personalized.BuildWithProfile(ctx, intent, profile)
 	} else {
 		playlist, err = a.app.Reco.Build(ctx, intent)
@@ -163,7 +169,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if a.app.Resolver != nil {
 		catalogVersion = a.app.Resolver.CatalogVersion()
 	}
-	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersion(), profile.AlgorithmVersion, profile.SnapshotID)
+	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersion(), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
@@ -171,6 +177,31 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
 		"profile_ms", profileTiming.Milliseconds, "recommend_ms", out.Status.Timings[1].Milliseconds)
 	return out, nil
+}
+
+func resolveRecentSelections(catalog ports.Catalog, tracks []core.TrackRef) []core.TrackRef {
+	result := make([]core.TrackRef, 0, len(tracks))
+	seen := map[string]struct{}{}
+	for _, track := range tracks {
+		if catalog != nil {
+			if meta, ok := catalog.Meta(track.ID); ok {
+				track = meta.Ref
+			}
+		}
+		key := core.ProvisionalRecordingKey(track)
+		if key == "\x00" {
+			key = "id\x00" + track.ID
+		}
+		if track.ID == "" {
+			continue
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		result = append(result, track)
+	}
+	return result
 }
 
 func (r BuildPlaylistRequest) normalized() BuildPlaylistRequest {

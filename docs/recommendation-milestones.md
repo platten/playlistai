@@ -148,3 +148,42 @@ Next dependencies: offline relevance/diversity evaluation fixtures, calibrated
 score fusion, canonical recording IDs, exposure policy controls, and catalog
 features or a local model for the preserved semantic preferences. ANN and
 semantic ranking remain intentionally out of scope.
+
+## Milestone 7 — Diversity Selection and Playlist Sequencing
+
+The `multichannel/v2` pipeline separates candidate selection and playlist
+sequencing from retrieval and ranking. Eligibility still owns hard exclusions,
+recent-track exclusion, and provisional recording deduplication; none are
+converted into score penalties. Required tracks reserve output slots, while
+ordered journey waypoints provide embedding-trajectory anchors without becoming
+required output implicitly.
+
+Selection uses maximal marginal relevance (MMR). Its relevance floor is
+`max(selection_minimum_relevance, best_score - selection_relevance_window)`.
+For candidates above that floor, relevance is scaled from the floor to the best
+score and `lambda = 1 - (1 - mmr_minimum_lambda) * artist_diversity`. The MMR
+score is `lambda * relevance - (1 - lambda) * diversity_penalty`; the penalty is
+a configured weighted mean of maximum positive embedding cosine, artist share,
+and album share. Audio and co-occurrence cosines use their intent weights.
+Album terms are available only when catalog metadata explicitly marks the album
+reliable; missing or unverified albums remain unknown.
+
+Ordering greedily combines transition cosine, selected relevance, and
+piecewise waypoint-embedding fit, then applies a configured number and window
+of improving pair swaps. Required journey anchors remain fixed and ordered.
+Soft artist spacing may relax with a structured notice; hard adjacency rules
+never relax and can produce a partial result. The trajectory port reports its
+embedding evidence, while acoustic energy remains preserved but unsupported.
+Continuing-radio requests retain the original intent anchors, add bounded
+recent-track retrieval, exclude recent recordings, retain taste-cluster input,
+and include continuation context in reproducibility metadata.
+
+Controlled fixtures cover relevance preservation, artist and album behavior,
+waypoint placement, counts, duplicate protection, hard/soft spacing,
+continuation, determinism, and transition quality versus `deejai/v4`.
+
+Next dependencies: reliable album metadata in the shipped recommendation
+catalog, canonical artist/recording/release IDs, offline tuning of MMR and
+transition weights, and actual acoustic features before energy matching. Exact
+search remains the correctness baseline; ANN and semantic ranking remain out of
+scope.

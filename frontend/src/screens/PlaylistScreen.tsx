@@ -24,6 +24,7 @@ const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   required: "seed",
   nearest: "nearest",
   ranked: "nearest",
+  selected: "nearest",
   exploration: "noise-jump",
   interp: "interp",
   fallback: "fallback",

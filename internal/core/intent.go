@@ -413,8 +413,8 @@ func intentCapabilities() []CapabilityStatus {
 		{Name: "total_track_count", Status: "supported", Detail: "total output length including required tracks"},
 		{Name: "semantic_preferences", Status: "unsupported", Detail: "preserved but catalog has no semantic attributes"},
 		{Name: "discovery", Status: "supported", Detail: "seeded bounded exploration among sufficiently relevant exact-search candidates"},
-		{Name: "artist_diversity", Status: "limited", Detail: "only explicit back-to-back artist prevention is enforceable"},
-		{Name: "transition_smoothness", Status: "limited", Detail: "controls walk lookback and journey interpolation"},
+		{Name: "artist_diversity", Status: "supported", Detail: "controls transparent MMR concentration penalties and soft artist spacing"},
+		{Name: "transition_smoothness", Status: "supported", Detail: "controls greedy embedding transitions with bounded local improvement"},
 		{Name: "energy_trajectory", Status: "unsupported", Detail: "preserved but catalog has no energy feature"},
 	}
 }

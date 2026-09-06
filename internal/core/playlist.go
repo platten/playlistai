@@ -45,6 +45,11 @@ type CandidateScores struct {
 	RecentExposure       float64 `json:"recentExposure"`
 	Novelty              float64 `json:"novelty"`
 	Total                float64 `json:"total"`
+	SelectionRelevance   float64 `json:"selectionRelevance"`
+	EmbeddingRedundancy  float64 `json:"embeddingRedundancy"`
+	ArtistConcentration  float64 `json:"artistConcentration"`
+	AlbumConcentration   float64 `json:"albumConcentration"`
+	MMR                  float64 `json:"mmr"`
 }
 
 type CandidateFeatures struct {
@@ -55,6 +60,11 @@ type CandidateFeatures struct {
 	NegativeMatch        bool `json:"negativeMatch"`
 	RecentExposure       bool `json:"recentExposure"`
 	Novelty              bool `json:"novelty"`
+	SelectionRelevance   bool `json:"selectionRelevance"`
+	EmbeddingRedundancy  bool `json:"embeddingRedundancy"`
+	ArtistConcentration  bool `json:"artistConcentration"`
+	AlbumConcentration   bool `json:"albumConcentration"`
+	MMR                  bool `json:"mmr"`
 }
 
 // PlaylistNotice explains why a valid playlist is shorter than requested.

@@ -2,7 +2,7 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v1"
+const AlgorithmVersion = "multichannel/v2"
 
 type Config struct {
 	SeedAudioBudget        int
@@ -21,8 +21,19 @@ type Config struct {
 	ExposurePenalty       float64
 	NoveltyWeight         float64
 	ExplorationChance     float64
-	ExplorationPickPool   int
 	JourneyPositionWeight float64
+	ContinuationBudget    int
+
+	MMRMinimumLambda          float64
+	SelectionMinimumRelevance float64
+	SelectionRelevanceWindow  float64
+	EmbeddingRedundancyWeight float64
+	ArtistConcentrationWeight float64
+	AlbumConcentrationWeight  float64
+	SoftArtistSpacingMax      int
+	TransitionRelevanceWeight float64
+	LocalImprovementPasses    int
+	LocalImprovementWindow    int
 }
 
 func DefaultConfig() Config {
@@ -33,7 +44,12 @@ func DefaultConfig() Config {
 		MaxCandidates: 512, ReciprocalRankConstant: 60,
 		RetrievalWeight: .15, ListenerWeight: .30, NegativePenalty: .65,
 		ExposurePenalty: .30, NoveltyWeight: .20,
-		ExplorationChance: .35, ExplorationPickPool: 12, JourneyPositionWeight: .35,
+		ExplorationChance: .35, JourneyPositionWeight: .35,
+		ContinuationBudget: 16,
+		MMRMinimumLambda:   .55, SelectionMinimumRelevance: .05, SelectionRelevanceWindow: .80,
+		EmbeddingRedundancyWeight: .50, ArtistConcentrationWeight: .35, AlbumConcentrationWeight: .15,
+		SoftArtistSpacingMax: 3, TransitionRelevanceWeight: .15,
+		LocalImprovementPasses: 3, LocalImprovementWindow: 4,
 	}
 }
 
@@ -63,9 +79,6 @@ func (c Config) normalized() Config {
 	if c.ReciprocalRankConstant <= 0 {
 		c.ReciprocalRankConstant = d.ReciprocalRankConstant
 	}
-	if c.ExplorationPickPool <= 0 {
-		c.ExplorationPickPool = d.ExplorationPickPool
-	}
 	if c.ExplorationMinScore < -1 || c.ExplorationMinScore > 1 {
 		c.ExplorationMinScore = d.ExplorationMinScore
 	}
@@ -89,6 +102,39 @@ func (c Config) normalized() Config {
 	}
 	if c.JourneyPositionWeight < 0 {
 		c.JourneyPositionWeight = d.JourneyPositionWeight
+	}
+	if c.ContinuationBudget <= 0 {
+		c.ContinuationBudget = d.ContinuationBudget
+	}
+	if c.MMRMinimumLambda <= 0 || c.MMRMinimumLambda > 1 {
+		c.MMRMinimumLambda = d.MMRMinimumLambda
+	}
+	if c.SelectionMinimumRelevance < -2 || c.SelectionMinimumRelevance > 2 {
+		c.SelectionMinimumRelevance = d.SelectionMinimumRelevance
+	}
+	if c.SelectionRelevanceWindow <= 0 {
+		c.SelectionRelevanceWindow = d.SelectionRelevanceWindow
+	}
+	if c.EmbeddingRedundancyWeight < 0 {
+		c.EmbeddingRedundancyWeight = d.EmbeddingRedundancyWeight
+	}
+	if c.ArtistConcentrationWeight < 0 {
+		c.ArtistConcentrationWeight = d.ArtistConcentrationWeight
+	}
+	if c.AlbumConcentrationWeight < 0 {
+		c.AlbumConcentrationWeight = d.AlbumConcentrationWeight
+	}
+	if c.SoftArtistSpacingMax < 0 {
+		c.SoftArtistSpacingMax = d.SoftArtistSpacingMax
+	}
+	if c.TransitionRelevanceWeight < 0 {
+		c.TransitionRelevanceWeight = d.TransitionRelevanceWeight
+	}
+	if c.LocalImprovementPasses < 0 {
+		c.LocalImprovementPasses = d.LocalImprovementPasses
+	}
+	if c.LocalImprovementWindow <= 0 {
+		c.LocalImprovementWindow = d.LocalImprovementWindow
 	}
 	return c
 }

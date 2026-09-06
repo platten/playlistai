@@ -410,6 +410,17 @@ func (c *Container) LoadCatalog() error {
 		mc.ExposurePenalty = rc.ExposurePenalty
 		mc.NoveltyWeight = rc.NoveltyWeight
 		mc.ExplorationChance = rc.ExplorationChance
+		mc.ContinuationBudget = rc.ContinuationBudget
+		mc.MMRMinimumLambda = rc.MMRMinimumLambda
+		mc.SelectionMinimumRelevance = rc.SelectionMinimumRelevance
+		mc.SelectionRelevanceWindow = rc.SelectionRelevanceWindow
+		mc.EmbeddingRedundancyWeight = rc.EmbeddingRedundancyWeight
+		mc.ArtistConcentrationWeight = rc.ArtistConcentrationWeight
+		mc.AlbumConcentrationWeight = rc.AlbumConcentrationWeight
+		mc.SoftArtistSpacingMax = rc.SoftArtistSpacingMax
+		mc.TransitionRelevanceWeight = rc.TransitionRelevanceWeight
+		mc.LocalImprovementPasses = rc.LocalImprovementPasses
+		mc.LocalImprovementWindow = rc.LocalImprovementWindow
 		c.Reco = multichannel.New(cat, c.Sim, cat, mc)
 	}
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())

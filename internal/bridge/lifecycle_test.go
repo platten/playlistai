@@ -198,6 +198,13 @@ func TestRankingInputChangesReproducibilityIdentity(t *testing.T) {
 	if first.ID == otherProfile.ID {
 		t.Fatal("profile snapshot did not invalidate generation identity")
 	}
+	continued, err := generationIdentity(base, "catalog-a", "test-reco/v1", "taste-profile/v2", "profile-a", []core.TrackRef{{ID: "recent"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if continued.ID == first.ID || continued.ContextFingerprint == first.ContextFingerprint {
+		t.Fatal("continuation context did not invalidate generation identity")
+	}
 }
 
 func TestPartialGenerationHasStructuredReasons(t *testing.T) {
@@ -226,7 +233,11 @@ func TestPartialGenerationHasStructuredReasons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Status.State != "partial" || len(result.Status.PartialReasons) == 0 || result.Status.PartialReasons[0].Code != "eligible_tracks_exhausted" {
+	foundExhausted := false
+	for _, reason := range result.Status.PartialReasons {
+		foundExhausted = foundExhausted || reason.Code == "eligible_tracks_exhausted"
+	}
+	if result.Status.State != "partial" || len(result.Status.PartialReasons) == 0 || !foundExhausted {
 		t.Fatalf("partial status = %+v", result.Status)
 	}
 }

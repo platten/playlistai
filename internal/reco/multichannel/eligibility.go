@@ -12,14 +12,12 @@ type eligibility struct {
 	excludedRecordings map[string]struct{}
 	excludedArtists    map[string]struct{}
 	referenceArtists   map[string]struct{}
-	noBackToBack       bool
 }
 
 func newEligibility(intent core.MusicIntent, references, required []core.TrackRef) *eligibility {
 	e := &eligibility{
 		excludedIDs: make(map[string]struct{}), excludedRecordings: make(map[string]struct{}),
 		excludedArtists: make(map[string]struct{}), referenceArtists: make(map[string]struct{}),
-		noBackToBack: intent.Constraints.NoRepeatArtistBackToBack,
 	}
 	for _, reference := range references {
 		e.excludedIDs[reference.ID] = struct{}{}
@@ -36,6 +34,13 @@ func newEligibility(intent core.MusicIntent, references, required []core.TrackRe
 		}
 	}
 	return e
+}
+
+func (e *eligibility) excludeRecent(tracks []core.TrackRef) {
+	for _, track := range tracks {
+		e.excludedIDs[track.ID] = struct{}{}
+		e.excludedRecordings[core.ProvisionalRecordingKey(track)] = struct{}{}
+	}
 }
 
 func (e *eligibility) validateRequired(required []core.TrackRef, excludeReferenceArtists bool) error {
@@ -85,8 +90,4 @@ func (e *eligibility) hardExcluded(track core.TrackRef, excludeReferenceArtists 
 		return excluded
 	}
 	return false
-}
-
-func (e *eligibility) canFollow(track core.TrackRef, previousArtist string) bool {
-	return !e.noBackToBack || previousArtist == "" || core.NormalizeIdentityPart(track.Artist) != previousArtist
 }
