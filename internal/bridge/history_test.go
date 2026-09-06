@@ -1,10 +1,12 @@
 package bridge
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/history"
 )
 
 func TestDeriveTitle(t *testing.T) {
@@ -46,6 +48,32 @@ func TestDeriveTitle(t *testing.T) {
 				t.Fatalf("deriveTitle = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadSavedPlaylistMigratesV2Request(t *testing.T) {
+	t.Parallel()
+	c := newLoadedContainer(t)
+	api := New(c, nil)
+	record, err := c.History.Save(context.Background(), history.Record{
+		Name: "Legacy", Prompt: "legacy prompt", Mode: "journey", TrackCount: 8,
+		RequestJSON: []byte(`{"version":2,"referenceIds":["seed0001"],"requiredIds":["seed0003"],"mode":"journey","count":8,"creativity":0.7,"noise":0.2,"lookback":4,"noRepeatArtist":true}`),
+		IntentJSON:  []byte(`{"version":2,"seeds":{"trackIds":["seed0001"]},"required":{"trackIds":["seed0003"]},"count":8,"mode":"journey"}`),
+		TracksJSON:  []byte(`[]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := api.LoadSavedPlaylist(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := loaded.Request.Intent
+	if loaded.Request.Version != core.CurrentIntentVersion || len(intent.References) != 1 || len(intent.RequiredTracks) != 1 {
+		t.Fatalf("saved request not migrated: %+v", loaded.Request)
+	}
+	if intent.Controls.TotalTrackCount != 8 || intent.Controls.AudioWeight != 0.7 || intent.Controls.Discovery != 0.2 {
+		t.Fatalf("saved controls not retained: %+v", intent.Controls)
 	}
 }
 

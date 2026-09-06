@@ -5,6 +5,7 @@
 export { API } from "../../bindings/github.com/platten/playlistai/internal/bridge";
 export type {
   BuildPlaylistRequest,
+  ControlOverrides,
   CatalogInfo,
   EnrichedTrackDTO,
   ExportSaveResult,
@@ -18,6 +19,7 @@ export type {
   PlaylistTrack,
   PreviewResult,
   SavedPlaylistSummary,
+  SavedPlaylist,
   SimilarResult,
   Status,
   TrackHit,

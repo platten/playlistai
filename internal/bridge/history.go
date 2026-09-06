@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"unicode"
 
@@ -19,6 +20,14 @@ type SavedPlaylistSummary struct {
 	Mode       string `json:"mode"`
 	TrackCount int    `json:"trackCount"`
 	CreatedAt  int64  `json:"createdAt"` // unix seconds
+}
+
+// SavedPlaylist is a loadable, migrated history record. Request contains the
+// complete resolved intent so replay does not require parsing the prompt again.
+type SavedPlaylist struct {
+	Summary SavedPlaylistSummary `json:"summary"`
+	Request BuildPlaylistRequest `json:"request"`
+	Tracks  []PlaylistTrack      `json:"tracks"`
 }
 
 // ListSavedPlaylists returns previously generated playlists, newest first. It
@@ -55,6 +64,47 @@ func (a *API) DeleteSavedPlaylist(id string) error {
 	return a.app.History.Delete(a.context(), id)
 }
 
+// LoadSavedPlaylist reads and migrates v1/v2 JSON blobs into the v3 contract.
+func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
+	if a.app.History == nil {
+		return SavedPlaylist{}, fmt.Errorf("saved playlist %q not found", id)
+	}
+	record, ok, err := a.app.History.Get(a.context(), id)
+	if err != nil {
+		return SavedPlaylist{}, err
+	}
+	if !ok {
+		return SavedPlaylist{}, fmt.Errorf("saved playlist %q not found", id)
+	}
+	var request BuildPlaylistRequest
+	if err := json.Unmarshal(record.RequestJSON, &request); err != nil {
+		return SavedPlaylist{}, fmt.Errorf("decode saved request: %w", err)
+	}
+	if request.Intent.Version == 0 && request.Version == 0 &&
+		len(request.ReferenceIDs) == 0 && len(request.RequiredIDs) == 0 && len(request.SeedIDs) == 0 &&
+		len(record.IntentJSON) > 0 {
+		var intent core.MusicIntent
+		if err := json.Unmarshal(record.IntentJSON, &intent); err != nil {
+			return SavedPlaylist{}, fmt.Errorf("decode saved intent: %w", err)
+		}
+		request.Intent = intent.Normalized()
+		request.Version = core.CurrentIntentVersion
+	}
+	request = request.normalized()
+	var tracks []PlaylistTrack
+	if err := json.Unmarshal(record.TracksJSON, &tracks); err != nil {
+		return SavedPlaylist{}, fmt.Errorf("decode saved tracks: %w", err)
+	}
+	return SavedPlaylist{
+		Summary: SavedPlaylistSummary{
+			ID: record.ID, Name: record.Name, Prompt: record.Prompt, Notes: record.Notes,
+			Mode: record.Mode, TrackCount: record.TrackCount, CreatedAt: record.CreatedAt.Unix(),
+		},
+		Request: request,
+		Tracks:  orEmptyTracks(tracks),
+	}, nil
+}
+
 // playlistName produces a short (<= 6 words) label for a generated playlist:
 // the local model's title when one is available, otherwise one derived from the
 // parsed intent.
@@ -73,6 +123,8 @@ func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPl
 		return
 	}
 
+	m = m.Normalized()
+	req = req.normalized()
 	intentJSON, _ := json.Marshal(m)
 	reqJSON, _ := json.Marshal(req)
 	tracksJSON, _ := json.Marshal(pl.Tracks)
@@ -89,6 +141,13 @@ func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPl
 	}); err != nil {
 		a.log.Warn("could not save generated playlist to history", "err", err)
 	}
+}
+
+func orEmptyTracks(tracks []PlaylistTrack) []PlaylistTrack {
+	if tracks == nil {
+		return []PlaylistTrack{}
+	}
+	return tracks
 }
 
 // deriveTitle builds a short playlist name from the parsed intent, used when the

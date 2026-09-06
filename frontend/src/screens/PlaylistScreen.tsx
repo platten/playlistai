@@ -35,12 +35,19 @@ export function PlaylistScreen({
   onBack: () => void;
   onReview: (trackIds: string[], heading: string) => void;
 }) {
-  const [creativity, setCreativity] = useState(request.creativity);
-  const [noise, setNoise] = useState(request.noise);
-  const [lookback, setLookback] = useState(request.lookback || 3);
-  const [count, setCount] = useState(request.count || 25);
-  const [excludeSeedArtists, setExcludeSeedArtists] = useState(request.excludeSeedArtist);
-  const [runSeed, setRunSeed] = useState<number>(request.seed || 1);
+  const initial = request.intent?.controls;
+  const [audioWeight, setAudioWeight] = useState(initial?.audioWeight ?? request.creativity ?? 0.5);
+  const [cooccurrenceWeight, setCooccurrenceWeight] = useState(initial?.cooccurrenceWeight ?? 0.5);
+  const [discovery, setDiscovery] = useState(initial?.discovery ?? request.noise ?? 0.1);
+  const [artistDiversity, setArtistDiversity] = useState(initial?.artistDiversity ?? 0.7);
+  const [transitionSmoothness, setTransitionSmoothness] = useState(
+    initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9,
+  );
+  const [count, setCount] = useState(initial?.totalTrackCount ?? request.count ?? 25);
+  const [excludeSeedArtists, setExcludeSeedArtists] = useState(
+    request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist,
+  );
+  const [runSeed, setRunSeed] = useState<number>(request.intent?.seed ?? request.seed ?? 1);
 
   const [result, setResult] = useState<PlaylistResult | null>(null);
   const [busy, setBusy] = useState(true);
@@ -53,16 +60,19 @@ export function PlaylistScreen({
   // request identity resets local state when the caller hands us a new one.
   const requestKey = useMemo(
     () =>
-      `${(request.referenceIds ?? []).join(",")}|${(request.requiredIds ?? []).join(",")}|${(request.seedIds ?? []).join(",")}|${request.mode}`,
-    [request.referenceIds, request.requiredIds, request.seedIds, request.mode],
+      `${JSON.stringify(request.intent?.references ?? [])}|${JSON.stringify(request.intent?.requiredTracks ?? [])}|${(request.seedIds ?? []).join(",")}|${request.mode}`,
+    [request.intent, request.seedIds, request.mode],
   );
   useEffect(() => {
-    setCreativity(request.creativity);
-    setNoise(request.noise);
-    setLookback(request.lookback || 3);
-    setCount(request.count || 25);
-    setExcludeSeedArtists(request.excludeSeedArtist);
-    setRunSeed(request.seed || 1);
+    const controls = request.intent?.controls;
+    setAudioWeight(controls?.audioWeight ?? request.creativity ?? 0.5);
+    setCooccurrenceWeight(controls?.cooccurrenceWeight ?? 0.5);
+    setDiscovery(controls?.discovery ?? request.noise ?? 0.1);
+    setArtistDiversity(controls?.artistDiversity ?? 0.7);
+    setTransitionSmoothness(controls?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9);
+    setCount(controls?.totalTrackCount ?? request.count ?? 25);
+    setExcludeSeedArtists(request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist);
+    setRunSeed(request.intent?.seed ?? request.seed ?? 1);
     setExpanded(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey]);
@@ -72,17 +82,21 @@ export function PlaylistScreen({
     setError(null);
     API.BuildPlaylist({
       ...request,
-      creativity,
-      noise,
-      lookback,
-      count,
-      seed: runSeed,
-      excludeSeedArtist: excludeSeedArtists,
+      overrides: {
+        totalTrackCount: count,
+        audioWeight,
+        cooccurrenceWeight,
+        discovery,
+        artistDiversity,
+        transitionSmoothness,
+        excludeSeedArtists,
+        seed: runSeed,
+      },
     })
       .then((r) => setResult(r ?? null))
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [request, creativity, noise, lookback, count, runSeed, excludeSeedArtists]);
+  }, [request, audioWeight, cooccurrenceWeight, discovery, artistDiversity, transitionSmoothness, count, runSeed, excludeSeedArtists]);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
@@ -91,8 +105,9 @@ export function PlaylistScreen({
   }, [build]);
 
   const tracks = result?.tracks ?? [];
-  const isJourney = (result?.mode ?? request.mode) === "journey";
+  const isJourney = (result?.mode ?? request.intent?.mode ?? request.mode) === "journey";
   const requiredCount =
+    (request.intent?.requiredTracks ?? []).length ||
     (request.requiredIds ?? []).length ||
     (request.version < 2 ? (request.seedIds ?? []).length : 0);
 
@@ -140,28 +155,44 @@ export function PlaylistScreen({
 
       <div className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-card border border-line bg-surface px-4 py-4">
         <Slider
-          label="Creativity"
-          value={creativity}
-          onValueChange={setCreativity}
+          label="Audio similarity"
+          value={audioWeight}
+          onValueChange={setAudioWeight}
           format={(v) => v.toFixed(2)}
-          leftHint="playlists"
-          rightHint="sound"
+          leftHint="less"
+          rightHint="more"
         />
         <Slider
-          label="Noise"
-          value={noise}
-          onValueChange={setNoise}
+          label="Playlist-context similarity"
+          value={cooccurrenceWeight}
+          onValueChange={setCooccurrenceWeight}
+          format={(v) => v.toFixed(2)}
+          leftHint="less"
+          rightHint="more"
+        />
+        <Slider
+          label="Discovery"
+          value={discovery}
+          onValueChange={setDiscovery}
           format={(v) => v.toFixed(2)}
           leftHint="faithful"
-          rightHint="wandering"
+          rightHint="exploratory"
         />
-        <Stepper
-          label="Lookback"
-          value={lookback}
-          onChange={setLookback}
-          min={1}
-          max={10}
-          hint="picks averaged"
+        <Slider
+          label="Transition smoothness"
+          value={transitionSmoothness}
+          onValueChange={setTransitionSmoothness}
+          format={(v) => v.toFixed(2)}
+          leftHint="quick turns"
+          rightHint="smooth"
+        />
+        <Slider
+          label="Artist diversity"
+          value={artistDiversity}
+          onValueChange={setArtistDiversity}
+          format={(v) => v.toFixed(2)}
+          leftHint="preserved only"
+          rightHint="limited support"
         />
         <Stepper
           label="Total tracks"

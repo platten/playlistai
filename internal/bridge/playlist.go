@@ -6,42 +6,54 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
-// BuildPlaylistRequest is the parameter block for BuildPlaylist. It carries only
-// knobs — no natural language — so the frontend can re-run it on every slider
-// change without re-parsing an intent.
-type BuildPlaylistRequest struct {
-	Version      int      `json:"version"`
-	ReferenceIDs []string `json:"referenceIds"`
-	RequiredIDs  []string `json:"requiredIds"`
-	// SeedIDs is the v1 shape retained for saved/generated request compatibility.
-	// A v1 request migrates these IDs to both reference and required tracks.
-	SeedIDs           []string `json:"seedIds"`
-	Mode              string   `json:"mode"` // "", "similar", "journey" ("" auto-picks by seed count)
-	Creativity        float64  `json:"creativity"`
-	Noise             float64  `json:"noise"`
-	Lookback          int      `json:"lookback"`
-	Count             int      `json:"count"`
-	Seed              int64    `json:"seed"` // 0 → engine picks one and echoes it back
-	NoRepeatArtist    bool     `json:"noRepeatArtist"`
-	ArtistsExclude    []string `json:"artistsExclude"`
-	ExcludeSeedArtist bool     `json:"excludeSeedArtist"`
+// ControlOverrides contains only controls explicitly changed after parsing.
+// Nil means "keep the resolved intent value".
+type ControlOverrides struct {
+	TotalTrackCount      *int     `json:"totalTrackCount,omitempty"`
+	AudioWeight          *float64 `json:"audioWeight,omitempty"`
+	CooccurrenceWeight   *float64 `json:"cooccurrenceWeight,omitempty"`
+	Discovery            *float64 `json:"discovery,omitempty"`
+	ArtistDiversity      *float64 `json:"artistDiversity,omitempty"`
+	TransitionSmoothness *float64 `json:"transitionSmoothness,omitempty"`
+	ExcludeSeedArtists   *bool    `json:"excludeSeedArtists,omitempty"`
+	Seed                 *int64   `json:"seed,omitempty"`
 }
 
-// PlaylistTrack is one row of a generated playlist, with its provenance.
+// BuildPlaylistRequest v3 carries the complete resolved interpretation plus
+// explicit UI overrides. The legacy fields remain for loading v1/v2 history.
+type BuildPlaylistRequest struct {
+	Version   int              `json:"version"`
+	Intent    core.MusicIntent `json:"intent"`
+	Overrides ControlOverrides `json:"overrides"`
+
+	ReferenceIDs      []string `json:"referenceIds,omitempty"`
+	RequiredIDs       []string `json:"requiredIds,omitempty"`
+	SeedIDs           []string `json:"seedIds,omitempty"`
+	Mode              string   `json:"mode,omitempty"`
+	Creativity        float64  `json:"creativity,omitempty"`
+	Noise             float64  `json:"noise,omitempty"`
+	Lookback          int      `json:"lookback,omitempty"`
+	Count             int      `json:"count,omitempty"`
+	Seed              int64    `json:"seed,omitempty"`
+	NoRepeatArtist    bool     `json:"noRepeatArtist,omitempty"`
+	ArtistsExclude    []string `json:"artistsExclude,omitempty"`
+	ExcludeSeedArtist bool     `json:"excludeSeedArtist,omitempty"`
+}
+
 type PlaylistTrack struct {
 	ID     string `json:"id"`
 	Artist string `json:"artist"`
 	Title  string `json:"title"`
-	Kind   string `json:"kind"`   // required | nearest | interp
-	Detail string `json:"detail"` // human-readable rationale
+	Kind   string `json:"kind"`
+	Detail string `json:"detail"`
 }
 
-// PlaylistResult is the outcome of BuildPlaylist.
 type PlaylistResult struct {
 	Tracks  []PlaylistTrack  `json:"tracks"`
 	Mode    string           `json:"mode"`
-	Seed    int64            `json:"seed"` // the RNG seed actually used (for "regenerate")
+	Seed    int64            `json:"seed"`
 	Notices []PlaylistNotice `json:"notices"`
+	Intent  core.MusicIntent `json:"intent"`
 }
 
 type PlaylistNotice struct {
@@ -51,69 +63,117 @@ type PlaylistNotice struct {
 	Actual    int    `json:"actual"`
 }
 
-// BuildPlaylist runs the recommendation walk from an explicit knob set.
 func (a *API) BuildPlaylist(req BuildPlaylistRequest) (PlaylistResult, error) {
 	return a.runBuild(req)
 }
 
-// runBuild is the shared path for BuildPlaylist and GenerateFromPrompt.
 func (a *API) runBuild(req BuildPlaylistRequest) (PlaylistResult, error) {
 	if a.app.Reco == nil {
 		return PlaylistResult{}, errors.New("recommendation engine not ready — load the catalog first")
 	}
-
-	req = req.normalized()
-	intent := core.MusicIntent{
-		Version:    core.CurrentIntentVersion,
-		Seeds:      core.IntentSeeds{TrackIDs: req.ReferenceIDs},
-		Required:   core.IntentSeeds{TrackIDs: req.RequiredIDs},
-		Mode:       core.Mode(req.Mode),
-		Count:      req.Count,
-		Creativity: req.Creativity,
-		Noise:      req.Noise,
-		Lookback:   req.Lookback,
-		Seed:       req.Seed,
-		Constraints: core.IntentConstraints{
-			NoRepeatArtistBackToBack: req.NoRepeatArtist,
-			ArtistsExclude:           req.ArtistsExclude,
-			ExcludeSeedArtists:       req.ExcludeSeedArtist,
-		},
+	intent := req.resolvedIntent()
+	intent = applyOverrides(intent, req.Overrides)
+	if err := intent.Validate(); err != nil {
+		return PlaylistResult{}, err
 	}
+	intent = intent.Normalized()
 
-	pl, err := a.app.Reco.Build(a.context(), intent)
+	playlist, err := a.app.Reco.Build(a.context(), intent)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
-
 	out := PlaylistResult{
-		Mode:    string(pl.Mode),
-		Seed:    pl.Seed,
-		Tracks:  make([]PlaylistTrack, 0, len(pl.Tracks)),
-		Notices: make([]PlaylistNotice, 0, len(pl.Notices)),
+		Mode: string(playlist.Mode), Seed: playlist.Seed, Intent: playlist.Intent,
+		Tracks:  make([]PlaylistTrack, 0, len(playlist.Tracks)),
+		Notices: make([]PlaylistNotice, 0, len(playlist.Notices)),
 	}
-	for _, notice := range pl.Notices {
+	for _, notice := range playlist.Notices {
 		out.Notices = append(out.Notices, PlaylistNotice{
 			Code: notice.Code, Detail: notice.Detail, Requested: notice.Requested, Actual: notice.Actual,
 		})
 	}
-	for i, ref := range pl.Tracks {
-		pt := PlaylistTrack{ID: ref.ID, Artist: ref.Artist, Title: ref.Title}
-		if i < len(pl.Rationale) {
-			pt.Kind = pl.Rationale[i].Kind
-			pt.Detail = pl.Rationale[i].Detail
+	for index, ref := range playlist.Tracks {
+		track := PlaylistTrack{ID: ref.ID, Artist: ref.Artist, Title: ref.Title}
+		if index < len(playlist.Rationale) {
+			track.Kind = playlist.Rationale[index].Kind
+			track.Detail = playlist.Rationale[index].Detail
 		}
-		out.Tracks = append(out.Tracks, pt)
+		out.Tracks = append(out.Tracks, track)
 	}
 	return out, nil
 }
 
 func (r BuildPlaylistRequest) normalized() BuildPlaylistRequest {
-	if r.Version < core.CurrentIntentVersion {
-		if len(r.ReferenceIDs) == 0 && len(r.RequiredIDs) == 0 {
-			r.ReferenceIDs = append([]string(nil), r.SeedIDs...)
-			r.RequiredIDs = append([]string(nil), r.SeedIDs...)
-		}
-		r.Version = core.CurrentIntentVersion
-	}
+	r.Intent = r.resolvedIntent().Normalized()
+	r.Version = core.CurrentIntentVersion
 	return r
+}
+
+func (r BuildPlaylistRequest) resolvedIntent() core.MusicIntent {
+	if r.Version >= core.CurrentIntentVersion && r.Intent.Version != 0 {
+		return r.Intent
+	}
+	references := r.ReferenceIDs
+	required := r.RequiredIDs
+	version := r.Version
+	if len(references) == 0 && len(required) == 0 {
+		references = append([]string(nil), r.SeedIDs...)
+		required = append([]string(nil), r.SeedIDs...)
+		version = 1
+	}
+	return core.MusicIntent{
+		Version:  version,
+		Seeds:    core.IntentSeeds{TrackIDs: references},
+		Required: core.IntentSeeds{TrackIDs: required},
+		Mode:     core.Mode(r.Mode), Count: r.Count, Creativity: r.Creativity,
+		Noise: r.Noise, Lookback: r.Lookback, Seed: r.Seed,
+		Constraints: core.IntentConstraints{
+			NoRepeatArtistBackToBack: r.NoRepeatArtist,
+			ArtistsExclude:           r.ArtistsExclude,
+			ExcludeSeedArtists:       r.ExcludeSeedArtist,
+		},
+	}.Normalized()
+}
+
+func applyOverrides(intent core.MusicIntent, overrides ControlOverrides) core.MusicIntent {
+	if overrides.TotalTrackCount != nil {
+		intent.Controls.TotalTrackCount = *overrides.TotalTrackCount
+	}
+	if overrides.AudioWeight != nil {
+		intent.Controls.AudioWeight = *overrides.AudioWeight
+	}
+	if overrides.CooccurrenceWeight != nil {
+		intent.Controls.CooccurrenceWeight = *overrides.CooccurrenceWeight
+	}
+	if overrides.Discovery != nil {
+		intent.Controls.Discovery = *overrides.Discovery
+	}
+	if overrides.ArtistDiversity != nil {
+		intent.Controls.ArtistDiversity = *overrides.ArtistDiversity
+	}
+	if overrides.TransitionSmoothness != nil {
+		intent.Controls.TransitionSmoothness = *overrides.TransitionSmoothness
+	}
+	if overrides.Seed != nil {
+		intent.Seed = *overrides.Seed
+	}
+	if overrides.ExcludeSeedArtists != nil {
+		setHardConstraint(&intent, "exclude_reference_artists", *overrides.ExcludeSeedArtists)
+	}
+	return intent
+}
+
+func setHardConstraint(intent *core.MusicIntent, kind string, enabled bool) {
+	filtered := make([]core.HardConstraint, 0, len(intent.HardConstraints))
+	for _, constraint := range intent.HardConstraints {
+		if constraint.Kind != kind {
+			filtered = append(filtered, constraint)
+		}
+	}
+	intent.HardConstraints = filtered
+	if enabled {
+		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
+			Kind: kind, Value: "true", Supported: true,
+		})
+	}
 }

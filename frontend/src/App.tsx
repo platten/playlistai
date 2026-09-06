@@ -36,7 +36,7 @@ function seedToRequest(seed: Seed): BuildPlaylistRequest {
     noRepeatArtist: true,
     artistsExclude: [],
     excludeSeedArtist: false,
-  };
+  } as unknown as BuildPlaylistRequest;
 }
 
 export default function App() {

@@ -34,6 +34,37 @@ func TestParseValid(t *testing.T) {
 	}
 }
 
+func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
+	t.Parallel()
+	m, err := Parse([]byte(FewShot[2].JSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != core.CurrentIntentVersion || len(m.Preferences.TextureDescriptions) != 3 {
+		t.Fatalf("semantic contract not preserved: %+v", m)
+	}
+	if len(m.Unsupported) == 0 || m.Unsupported[0].Text != "no abstract drone" {
+		t.Fatalf("unsupported requirement missing: %+v", m.Unsupported)
+	}
+	if len(m.Preferences.Moods) != 2 || m.Preferences.Moods[1].Influence != core.InfluenceNegative {
+		t.Fatalf("mood negation lost: %+v", m.Preferences.Moods)
+	}
+	if len(m.Preferences.TextureDescriptions[0].Evidence) == 0 {
+		t.Fatal("texture evidence missing")
+	}
+}
+
+func TestSemanticValidationRejectsNegativeRequiredTrack(t *testing.T) {
+	t.Parallel()
+	wire := Wire{
+		RequiredTracks: []WireReference{{Kind: "track", Value: "A - B", Influence: "negative", Explicit: true, Span: "not A - B"}},
+		Mode:           "similar", TotalCount: 10, AudioWeight: 0.5, CooccurrenceWeight: 0.5,
+	}
+	if err := wire.ToCore().Validate(); err == nil {
+		t.Fatal("negative required track passed semantic validation")
+	}
+}
+
 func TestParseFencedAndProseWrapped(t *testing.T) {
 	t.Parallel()
 	for _, raw := range []string{
@@ -102,7 +133,7 @@ func TestFewShotExamplesAreValid(t *testing.T) {
 
 func TestGBNFMentionsEveryKey(t *testing.T) {
 	t.Parallel()
-	for _, key := range []string{"seeds", "required_tracks", "mode", "count", "creativity", "noise", "lookback", "exclude_artists", "no_repeat_artist", "exclude_seed_artists", "notes"} {
+	for _, key := range []string{"references", "required_tracks", "styles", "moods", "instrumentation", "vocal_preference", "textures", "hard_constraints", "unsupported_requirements", "mode", "journey_waypoints", "energy_trajectory", "total_count", "audio_weight", "cooccurrence_weight", "discovery", "artist_diversity", "transition_smoothness", "notes"} {
 		if !contains(GBNF, `\"`+key+`\":`) {
 			t.Fatalf("GBNF is missing key %q", key)
 		}

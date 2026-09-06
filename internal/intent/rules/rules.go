@@ -23,7 +23,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Ready: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -33,33 +33,86 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lower := strings.ToLower(prompt)
 
 	intent := core.MusicIntent{
-		Version:     core.CurrentIntentVersion,
-		Count:       core.DefaultCount,
-		Creativity:  core.DefaultCreativity,
-		Noise:       0.10,
-		Lookback:    core.DefaultLookback,
-		Constraints: core.IntentConstraints{NoRepeatArtistBackToBack: true},
+		Version: core.CurrentIntentVersion,
+		Controls: core.IntentControls{
+			TotalTrackCount:      core.DefaultCount,
+			AudioWeight:          core.DefaultCreativity,
+			CooccurrenceWeight:   1 - core.DefaultCreativity,
+			Discovery:            0.10,
+			ArtistDiversity:      0.7,
+			TransitionSmoothness: float64(core.DefaultLookback-1) / 9,
+		},
 	}
 
 	seeds, mode := extractSeeds(prompt, lower, in.NowPlaying)
-	intent.Seeds.Queries = seeds
+	for _, seed := range seeds {
+		ref := typedReference(prompt, seed, core.ReferenceArtist, core.InfluencePositive)
+		intent.References = append(intent.References, ref)
+		if mode == core.ModeJourney {
+			intent.Journey.Waypoints = append(intent.Journey.Waypoints, ref)
+		}
+	}
 	intent.Mode = mode
 
 	if n, ok := extractCount(lower); ok {
-		intent.Count = n
+		intent.Controls.TotalTrackCount = n
 	}
-	intent.Creativity = extractCreativity(lower)
-	intent.Noise = extractNoise(lower)
-	intent.Lookback = extractLookback(lower)
-	intent.Constraints.ArtistsExclude = extractArtistExcludes(prompt)
-	if reAllowRepeat.MatchString(lower) {
-		intent.Constraints.NoRepeatArtistBackToBack = false
+	intent.Controls.AudioWeight = extractCreativity(lower)
+	intent.Controls.CooccurrenceWeight = 1 - intent.Controls.AudioWeight
+	intent.Controls.Discovery = extractNoise(lower)
+	lookback := extractLookback(lower)
+	intent.Controls.TransitionSmoothness = float64(lookback-1) / 9
+
+	for _, artist := range extractArtistExcludes(prompt) {
+		evidence := sourceEvidence(prompt, artist, true)
+		intent.References = append(intent.References, core.IntentReference{
+			Kind: core.ReferenceArtist, Query: artist, Influence: core.InfluenceNegative, Evidence: evidence,
+		})
+		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
+			Kind: "exclude_artist", Value: artist, Supported: true, Evidence: evidence,
+		})
 	}
+	if !reAllowRepeat.MatchString(lower) {
+		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
+			Kind: "no_back_to_back_artist", Value: "true", Supported: true,
+		})
+	} else {
+		intent.Controls.ArtistDiversity = 0.3
+	}
+	intent.RequiredTracks = extractRequiredTracks(prompt)
+	intent.Preferences = extractSemanticPreferences(prompt)
+	intent.Unsupported, intent.HardConstraints = extractUnsupportedRequirements(prompt, intent.Unsupported, intent.HardConstraints)
+	intent.Journey.EnergyTrajectory = extractEnergyTrajectory(lower)
 
 	out := intent.Normalized()
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
 	out.NotesForUser = summarize(out)
 	return out, nil
+}
+
+func extractEnergyTrajectory(lower string) []core.EnergyPoint {
+	switch {
+	case strings.Contains(lower, "build energy"), strings.Contains(lower, "rising energy"), strings.Contains(lower, "gets more energetic"):
+		return []core.EnergyPoint{{Position: 0, Energy: 0.2}, {Position: 1, Energy: 0.8}}
+	case strings.Contains(lower, "wind down"), strings.Contains(lower, "falling energy"), strings.Contains(lower, "gets calmer"):
+		return []core.EnergyPoint{{Position: 0, Energy: 0.8}, {Position: 1, Energy: 0.2}}
+	default:
+		return nil
+	}
+}
+
+func typedReference(prompt, value string, kind core.ReferenceKind, influence core.Influence) core.IntentReference {
+	return core.IntentReference{
+		Kind: kind, Query: value, Influence: influence, Evidence: sourceEvidence(prompt, value, true),
+	}
+}
+
+func sourceEvidence(prompt, span string, explicit bool) []core.SourceEvidence {
+	start := strings.Index(strings.ToLower(prompt), strings.ToLower(span))
+	if start < 0 {
+		return []core.SourceEvidence{{Text: span, Start: -1, End: -1, Explicit: explicit}}
+	}
+	return []core.SourceEvidence{{Text: prompt[start : start+len(span)], Start: start, End: start + len(span), Explicit: explicit}}
 }
 
 // --- seeds ---------------------------------------------------------------
@@ -275,6 +328,93 @@ func extractArtistExcludes(orig string) []string {
 		}
 	}
 	return dedupeSeeds(out)
+}
+
+var reRequiredTrack = regexp.MustCompile(`(?i)\b(?:must include|include|make sure to include)\s+["“]?([^,;"”]+\s+-\s+[^,;"”]+)`)
+
+func extractRequiredTracks(prompt string) []core.IntentReference {
+	var out []core.IntentReference
+	for _, match := range reRequiredTrack.FindAllStringSubmatch(prompt, -1) {
+		value := strings.TrimSpace(match[1])
+		if value == "" {
+			continue
+		}
+		out = append(out, typedReference(prompt, value, core.ReferenceTrack, core.InfluencePositive))
+	}
+	return out
+}
+
+func extractSemanticPreferences(prompt string) core.SemanticPreferences {
+	lower := strings.ToLower(prompt)
+	var out core.SemanticPreferences
+	add := func(dst *[]core.IntentPreference, value string, influence core.Influence) {
+		*dst = append(*dst, core.IntentPreference{
+			Value: value, Influence: influence, Explicit: true,
+			Evidence: sourceEvidence(prompt, value, true),
+		})
+	}
+
+	for _, value := range []string{"ambient electronic", "abstract drone", "electronic", "ambient", "jazz", "techno", "folk"} {
+		if strings.Contains(lower, value) {
+			influence := core.InfluencePositive
+			if strings.Contains(lower, "no "+value) || strings.Contains(lower, "not "+value) {
+				influence = core.InfluenceNegative
+			}
+			add(&out.Styles, value, influence)
+		}
+	}
+	for _, value := range []string{"relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful"} {
+		if strings.Contains(lower, value) {
+			influence := core.InfluencePositive
+			if strings.Contains(lower, "not "+value) || strings.Contains(lower, "no "+value) {
+				influence = core.InfluenceNegative
+			}
+			add(&out.Moods, value, influence)
+		}
+	}
+	for _, value := range []string{"instrumental", "acoustic", "synthesizer", "guitar", "piano"} {
+		if strings.Contains(lower, value) {
+			add(&out.Instrumentation, value, core.InfluencePositive)
+		}
+	}
+	for _, value := range []string{"microdetail", "a deep groove", "deep groove", "occasional sparkle", "sparkle", "relaxing but not sleepy"} {
+		if strings.Contains(lower, value) {
+			add(&out.TextureDescriptions, value, core.InfluencePositive)
+		}
+	}
+	if strings.Contains(lower, "instrumental") || strings.Contains(lower, "no vocals") {
+		value := "instrumental"
+		if strings.Contains(lower, "no vocals") {
+			value = "no vocals"
+		}
+		preference := core.IntentPreference{Value: value, Influence: core.InfluencePositive, Explicit: true, Evidence: sourceEvidence(prompt, value, true)}
+		out.VocalPreference = &preference
+	} else if strings.Contains(lower, "vocals") || strings.Contains(lower, "vocal") {
+		preference := core.IntentPreference{Value: "vocals", Influence: core.InfluencePositive, Explicit: true, Evidence: sourceEvidence(prompt, "vocal", true)}
+		out.VocalPreference = &preference
+	}
+	return out
+}
+
+var reUnsupportedStyle = regexp.MustCompile(`(?i)\b(?:no|without|must not include)\s+(abstract drone|drone|ambient|techno|jazz)\b`)
+
+func extractUnsupportedRequirements(
+	prompt string,
+	unsupported []core.UnsupportedRequirement,
+	constraints []core.HardConstraint,
+) ([]core.UnsupportedRequirement, []core.HardConstraint) {
+	for _, match := range reUnsupportedStyle.FindAllStringSubmatchIndex(prompt, -1) {
+		span := prompt[match[0]:match[1]]
+		value := prompt[match[2]:match[3]]
+		evidence := []core.SourceEvidence{{Text: span, Start: match[0], End: match[1], Explicit: true}}
+		constraints = append(constraints, core.HardConstraint{
+			Kind: "exclude_style", Value: value, Supported: false, Evidence: evidence,
+		})
+		unsupported = append(unsupported, core.UnsupportedRequirement{
+			Text: span, Reason: "the current catalog has no style labels", Evidence: evidence,
+		})
+	}
+	return unsupported, constraints
 }
 
 // --- summary -------------------------------------------------------

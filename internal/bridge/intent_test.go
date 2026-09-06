@@ -3,11 +3,13 @@ package bridge
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/core"
 )
 
 func newLoadedContainer(t *testing.T) *app.Container {
@@ -25,6 +27,40 @@ func newLoadedContainer(t *testing.T) *app.Container {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	return c
+}
+
+func TestParseBuildRebuildPreservesIntent(t *testing.T) {
+	t.Parallel()
+	api := New(newLoadedContainer(t), nil)
+	generated, err := api.GenerateFromPrompt("like Justice with microdetail, relaxing but not sleepy, no abstract drone, 10 tracks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := generated.Request.Intent
+	count, audio := 7, 0.9
+	rebuilt, err := api.BuildPlaylist(BuildPlaylistRequest{
+		Version: core.CurrentIntentVersion,
+		Intent:  original,
+		Overrides: ControlOverrides{
+			TotalTrackCount: &count,
+			AudioWeight:     &audio,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rebuilt.Intent
+	if got.Controls.TotalTrackCount != count || got.Controls.AudioWeight != audio {
+		t.Fatalf("overrides not applied: %+v", got.Controls)
+	}
+	if got.Controls.Discovery != original.Controls.Discovery || got.Controls.CooccurrenceWeight != original.Controls.CooccurrenceWeight {
+		t.Fatalf("unrelated controls changed: before=%+v after=%+v", original.Controls, got.Controls)
+	}
+	if !reflect.DeepEqual(got.References, original.References) ||
+		!reflect.DeepEqual(got.Preferences, original.Preferences) ||
+		!reflect.DeepEqual(got.Unsupported, original.Unsupported) {
+		t.Fatalf("interpretation lost during rebuild:\nbefore=%+v\nafter=%+v", original, got)
+	}
 }
 
 func TestParseIntent(t *testing.T) {
@@ -64,8 +100,11 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if len(res.Playlist.Tracks) != 10 {
 		t.Fatalf("playlist length = %d, want 10", len(res.Playlist.Tracks))
 	}
-	if len(res.Request.ReferenceIDs) != 1 || len(res.Request.RequiredIDs) != 0 {
-		t.Fatalf("resolved references/required = %#v/%#v", res.Request.ReferenceIDs, res.Request.RequiredIDs)
+	if len(res.Request.Intent.References) != 1 || len(res.Request.Intent.RequiredTracks) != 0 {
+		t.Fatalf("resolved references/required = %#v/%#v", res.Request.Intent.References, res.Request.Intent.RequiredTracks)
+	}
+	if res.Request.Intent.References[0].TrackID == "" {
+		t.Fatal("reference was not resolved to a catalog track")
 	}
 	// The seed the walk used must be pinned into the returned request.
 	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed == 0 {
@@ -99,10 +138,10 @@ func TestGenerateFromPromptNeedsCatalog(t *testing.T) {
 func TestLegacyBuildRequestMigratesSeedsToRequired(t *testing.T) {
 	t.Parallel()
 	req := (BuildPlaylistRequest{SeedIDs: []string{"legacy"}}).normalized()
-	if req.Version != 2 || len(req.ReferenceIDs) != 1 || len(req.RequiredIDs) != 1 {
+	if req.Version != core.CurrentIntentVersion || len(req.Intent.References) != 1 || len(req.Intent.RequiredTracks) != 1 {
 		t.Fatalf("legacy request not migrated: %+v", req)
 	}
-	if req.ReferenceIDs[0] != "legacy" || req.RequiredIDs[0] != "legacy" {
+	if req.Intent.References[0].TrackID != "legacy" || req.Intent.RequiredTracks[0].TrackID != "legacy" {
 		t.Fatalf("legacy seed identity changed: %+v", req)
 	}
 }

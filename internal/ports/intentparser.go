@@ -18,9 +18,11 @@ type IntentInput struct {
 
 // ParserInfo describes the active backend for the UI badge.
 type ParserInfo struct {
-	Name    string
-	Backend string // "llama" | "rules"
-	Ready   bool   // false until a model is downloaded & loaded (llama backend)
+	Name            string
+	Backend         string // "llama" | "rules"
+	Ready           bool   // false until a model is downloaded & loaded (llama backend)
+	ContractVersion int
+	Evidence        bool // parser emits source-grounded interpretation evidence
 }
 
 // IntentParser translates natural language into a MusicIntent. It is local-only

@@ -84,6 +84,45 @@ func TestMusicIntentLegacySeedsBecomeRequired(t *testing.T) {
 	}
 }
 
+func TestIntentV2MigrationPreservesControlsAndConstraints(t *testing.T) {
+	t.Parallel()
+	m := (MusicIntent{
+		Version:  2,
+		Seeds:    IntentSeeds{TrackIDs: []string{"reference"}},
+		Required: IntentSeeds{TrackIDs: []string{"required"}},
+		Count:    17, Creativity: 0.8, Noise: 0.3, Lookback: 7,
+		Constraints: IntentConstraints{ArtistsExclude: []string{"Blocked"}, NoRepeatArtistBackToBack: true},
+	}).Normalized()
+	if m.Version != CurrentIntentVersion || m.Controls.TotalTrackCount != 17 || m.Controls.AudioWeight != 0.8 || m.Controls.Discovery != 0.3 {
+		t.Fatalf("controls not migrated: %+v", m)
+	}
+	if len(m.References) != 1 || len(m.RequiredTracks) != 1 || len(m.HardConstraints) != 2 {
+		t.Fatalf("meaning not migrated: %+v", m)
+	}
+}
+
+func TestIntentSemanticValidation(t *testing.T) {
+	t.Parallel()
+	invalid := MusicIntent{
+		Version: CurrentIntentVersion,
+		RequiredTracks: []IntentReference{{
+			Kind: ReferenceArtist, Query: "not a track", Influence: InfluenceNegative,
+		}},
+		Controls: IntentControls{TotalTrackCount: 10, AudioWeight: 0.5, CooccurrenceWeight: 0.5},
+	}
+	if err := invalid.Validate(); err == nil {
+		t.Fatal("negative artist requirement passed semantic validation")
+	}
+	falseClaim := MusicIntent{
+		Version:         CurrentIntentVersion,
+		HardConstraints: []HardConstraint{{Kind: "exclude_style", Value: "drone", Supported: true}},
+		Controls:        IntentControls{TotalTrackCount: 10, AudioWeight: 0.5, CooccurrenceWeight: 0.5},
+	}
+	if err := falseClaim.Validate(); err == nil {
+		t.Fatal("unsupported hard constraint claimed enforcement")
+	}
+}
+
 func TestParseDisplay(t *testing.T) {
 	t.Parallel()
 

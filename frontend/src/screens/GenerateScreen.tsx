@@ -9,7 +9,7 @@ import {
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 
 const PLACEHOLDER =
-  "upbeat instrumental tracks like Justice, leaning 90s, about 25 songs — keep it a little unpredictable";
+  "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
 
 // Prompts for the "Surprise me" button. Each names a well-known seed artist so
 // it resolves against the catalog, and varies mode/knobs/mood for variety.
@@ -52,6 +52,7 @@ export function GenerateScreen({
   const [saved, setSaved] = useState<SavedPlaylistSummary[]>([]);
   const [source, setSource] = useState<"fresh" | "saved">("fresh");
   const [savedId, setSavedId] = useState<string>("");
+  const [savedRequest, setSavedRequest] = useState<BuildPlaylistRequest | null>(null);
 
   const refreshSaved = useCallback(() => {
     API.ListSavedPlaylists()
@@ -73,6 +74,9 @@ export function GenerateScreen({
     setSavedId(id);
     const hit = saved.find((s) => s.id === id);
     if (hit) setPrompt(hit.prompt);
+    API.LoadSavedPlaylist(id)
+      .then((playlist) => setSavedRequest(playlist?.request ?? null))
+      .catch(() => setSavedRequest(null));
   };
 
   useEffect(() => {
@@ -110,13 +114,21 @@ export function GenerateScreen({
     [onGenerated],
   );
 
-  const generate = useCallback(() => runGenerate(prompt), [runGenerate, prompt]);
+  const generate = useCallback(() => {
+    if (source === "saved" && savedRequest) {
+      const hit = saved.find((item) => item.id === savedId);
+      onGenerated(savedRequest, hit?.name || prompt);
+      return;
+    }
+    runGenerate(prompt);
+  }, [onGenerated, prompt, runGenerate, saved, savedId, savedRequest, source]);
 
   const surprise = useCallback(() => {
     const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
     setPrompt(pick);
     setSource("fresh");
     setSavedId("");
+    setSavedRequest(null);
     runGenerate(pick);
   }, [runGenerate]);
 
@@ -159,6 +171,7 @@ export function GenerateScreen({
               onChange={() => {
                 setSource("fresh");
                 setSavedId("");
+                setSavedRequest(null);
               }}
             />
             a fresh idea
@@ -284,6 +297,21 @@ export function GenerateScreen({
             {(preview.artistsExclude ?? []).map((a) => (
               <Chip key={a}>excl. {a}</Chip>
             ))}
+            {(preview.intent?.preferences?.textureDescriptions ?? []).map((preference) => (
+              <Chip key={`texture-${preference.value}`}>preference: {preference.value}</Chip>
+            ))}
+            {(preview.intent?.unsupportedRequirements ?? []).map((requirement) => (
+              <Chip key={`unsupported-${requirement.text}`}>
+                <Icon.Warn size={12} className="text-faint" /> preserved, not enforced: {requirement.text}
+              </Chip>
+            ))}
+            {(preview.intent?.capabilities ?? [])
+              .filter((capability) => capability.status !== "supported")
+              .map((capability) => (
+                <Chip key={`capability-${capability.name}`}>
+                  {capability.name.replace(/_/g, " ")}: {capability.status}
+                </Chip>
+              ))}
           </div>
           {preview.notes && <p className="mt-2.5 text-[12.5px] text-muted italic">“{preview.notes}”</p>}
         </div>

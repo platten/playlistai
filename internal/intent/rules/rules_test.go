@@ -123,6 +123,54 @@ func TestConstraints(t *testing.T) {
 	}
 }
 
+func TestTypedReferencesNegationAndRequiredTrack(t *testing.T) {
+	t.Parallel()
+	m := parse(t, "tracks like Justice and Daft Punk, but not Skrillex; must include Air - La femme d'argent")
+	var positive, negative int
+	for _, ref := range m.References {
+		switch ref.Influence {
+		case core.InfluencePositive:
+			positive++
+		case core.InfluenceNegative:
+			negative++
+		}
+	}
+	if positive != 2 || negative != 1 {
+		t.Fatalf("typed references = %+v", m.References)
+	}
+	if len(m.RequiredTracks) != 1 || m.RequiredTracks[0].Query != "Air - La femme d'argent" {
+		t.Fatalf("required tracks = %+v", m.RequiredTracks)
+	}
+	if len(m.RequiredTracks[0].Evidence) == 0 || !m.RequiredTracks[0].Evidence[0].Explicit {
+		t.Fatalf("required evidence missing: %+v", m.RequiredTracks[0])
+	}
+}
+
+func TestPreservesUnsupportedTexturePrompt(t *testing.T) {
+	t.Parallel()
+	prompt := "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone"
+	m := parse(t, prompt)
+	for _, phrase := range []string{"microdetail", "a deep groove", "occasional sparkle", "relaxing but not sleepy"} {
+		found := false
+		for _, preference := range m.Preferences.TextureDescriptions {
+			if preference.Value == phrase {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("texture %q not preserved: %+v", phrase, m.Preferences.TextureDescriptions)
+		}
+	}
+	if len(m.Unsupported) != 1 || m.Unsupported[0].Text != "no abstract drone" {
+		t.Fatalf("unsupported strict requirement = %+v", m.Unsupported)
+	}
+	for _, constraint := range m.HardConstraints {
+		if constraint.Kind == "exclude_style" && constraint.Supported {
+			t.Fatal("unsupported style exclusion was presented as enforced")
+		}
+	}
+}
+
 func TestNotesAndInfo(t *testing.T) {
 	t.Parallel()
 	p := &Parser{}

@@ -89,23 +89,22 @@ defaults; the engine never trusts a raw parse.
 
 ```go
 type MusicIntent struct {
-    Version      int
-    Seeds        IntentSeeds       // references that guide the walk; not implicitly output
-    Required     IntentSeeds       // tracks that must appear; journey waypoints when >=2
-    Count        int               // 1..100 total output tracks, including Required
-    Mode         Mode              // "similar" (1 seed) | "journey" (>=2 seeds)
-    Creativity   float64           // 0..1 blend of the two embedding spaces
-    Noise        float64           // 0..1 "drunk" — Gaussian added to the query vector
-    Lookback     int               // 1..10 running-average window
-    Constraints  IntentConstraints // artist excludes; no-repeat-artist; exclude-seed-artists
-    NotesForUser string            // shown in UI, never used for selection
+    Version         int
+    References      []IntentReference        // typed, positive/negative; not implicitly output
+    RequiredTracks  []IntentReference        // positive track references that must appear
+    Preferences     SemanticPreferences      // preserved style/mood/instrument/vocal/texture intent
+    HardConstraints []HardConstraint         // each declares whether execution is supported
+    Controls        IntentControls           // total, weights, discovery, diversity, smoothness
+    Journey         JourneyPlan              // ordered waypoints and optional energy trajectory
+    Unsupported     []UnsupportedRequirement // strict requests the current catalog cannot enforce
+    Capabilities    []CapabilityStatus       // supported / limited / unsupported behavior
 }
 ```
 
-The dataset carries no year / genre / BPM / duration / explicit metadata, so
-those are *not* constraints. `Creativity`, `Noise`, `Lookback`, and `Count` are
-live UI sliders: changing one re-runs `Build` with the same resolved seeds and no
-re-parse.
+The dataset carries no year / genre / BPM / duration / vocal / energy metadata.
+Those meanings are preserved with source evidence, but are not presented as
+enforced. Live controls re-run `Build` with the complete resolved intent plus
+explicit overrides; they never reconstruct intent from a knob-only DTO.
 
 ---
 

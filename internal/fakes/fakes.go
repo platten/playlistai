@@ -159,7 +159,7 @@ func (p *IntentParser) Info() ports.ParserInfo {
 	if p.Meta.Name != "" {
 		return p.Meta
 	}
-	return ports.ParserInfo{Name: "fake", Backend: "rules", Ready: true}
+	return ports.ParserInfo{Name: "fake", Backend: "rules", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 var _ ports.IntentParser = (*IntentParser)(nil)
