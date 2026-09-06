@@ -43,6 +43,9 @@ type Model struct {
 	LicenseURL  string `json:"license_url"`
 	RAMGB       int    `json:"ram_gb"`
 	Recommended bool   `json:"recommended"`
+	// BestForVRAMGB identifies the preferred intent model at nominal NVIDIA
+	// VRAM tiers. Eligibility is still checked against actual free bytes.
+	BestForVRAMGB []int `json:"best_for_vram_gb,omitempty"`
 }
 
 type manifest struct {
@@ -54,6 +57,7 @@ type manifest struct {
 // enumerate it; a GPU that llama.cpp cannot use must not influence the list.
 type Hardware struct {
 	GPUAvailable       bool
+	TotalVRAMBytes     int64
 	AvailableVRAMBytes int64
 	ReserveBytes       int64
 }
@@ -63,6 +67,33 @@ func (m Model) Filename() string { return m.ID + ".gguf" }
 
 // Verified reports whether the entry carries integrity metadata.
 func (m Model) Verified() bool { return m.SHA256 != "" || m.Size > 0 }
+
+// BestForVRAM reports whether m is the preferred intent model for tierGB.
+func (m Model) BestForVRAM(tierGB int) bool {
+	for _, tier := range m.BestForVRAMGB {
+		if tier == tierGB {
+			return true
+		}
+	}
+	return false
+}
+
+// VRAMTierGB maps llama.cpp's binary byte count to a nominal GPU tier. The
+// half-GiB rounding allowance accounts for small firmware/display reservations
+// in device totals such as 8123 MiB on an advertised 8 GB GPU. Tiers are capped
+// at 32 because that is the largest currently tested consumer profile.
+func VRAMTierGB(totalBytes int64) int {
+	if totalBytes <= 0 {
+		return 0
+	}
+	roundedGB := int((totalBytes + (1 << 29)) >> 30)
+	for _, tier := range []int{32, 24, 16, 12, 8, 4} {
+		if roundedGB >= tier {
+			return tier
+		}
+	}
+	return roundedGB
+}
 
 var (
 	cached     []Model
@@ -111,6 +142,15 @@ func Recommendations(models []Model, hw Hardware) []Model {
 				out = append(out, m)
 			}
 		}
+		total := hw.TotalVRAMBytes
+		if total <= 0 {
+			total = hw.AvailableVRAMBytes
+		}
+		if preferred := preferredModelIndex(out, VRAMTierGB(total)); preferred > 0 {
+			model := out[preferred]
+			copy(out[1:preferred+1], out[:preferred])
+			out[0] = model
+		}
 		return out
 	}
 
@@ -134,6 +174,20 @@ func Recommendations(models []Model, hw Hardware) []Model {
 		out[i] = bySize[i].model
 	}
 	return out
+}
+
+func preferredModelIndex(models []Model, tierGB int) int {
+	for _, candidateTier := range []int{32, 24, 16, 12, 8, 4} {
+		if candidateTier > tierGB {
+			continue
+		}
+		for i, model := range models {
+			if model.BestForVRAM(candidateTier) {
+				return i
+			}
+		}
+	}
+	return -1
 }
 
 // Download fetches a catalog model into destDir/<id>.gguf, resuming a partial

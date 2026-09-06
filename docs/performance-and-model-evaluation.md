@@ -125,31 +125,63 @@ about 0.22 tokens/s and timed out; the verified CPU build measured Qwen3.5
 
 ### Hardware coverage through RTX 5090
 
-The capacity-policy suite covers CPU mode, 4, 8, and 16 GiB GPUs, the observed
-RTX 5060 laptop, NVIDIA's advertised 24 GB
-[RTX 5090 Laptop GPU](https://www.nvidia.com/en-us/geforce/laptops/50-series/),
-and advertised 32 GB
-[desktop RTX 5090](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/).
-Because llama.cpp reports MiB, the reference profiles use 24 and 32 GiB binary
-capacity. The suite also tests every model at exactly
-`weight bytes + reserve` and one byte below that boundary. With nominal
-capacity available and the 1 GiB reserve applied, the expected catalog is:
+The capacity suite uses NVIDIA's published configurations: the
+[RTX 5070 Laptop GPU has 8 GB](https://www.nvidia.com/en-us/geforce/laptops/50-series/),
+the [desktop RTX 5070 has 12 GB](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5070-family/),
+and the [desktop RTX 3090 has 24 GB](https://www.nvidia.com/en-us/geforce/graphics-cards/30-series/rtx-3090-3090ti/).
+It also retains the 24 GB RTX 5090 Laptop and 32 GB desktop RTX 5090 profiles.
+There is no NVIDIA RTX 3090 Laptop GPU, so the suite does not fabricate one.
+Because llama.cpp reports MiB, tests use the corresponding binary capacities
+and allow small reporting differences when assigning a nominal tier.
+
+The current operational tier picks follow the documented catalog priority
+among models that leave the 1 GiB reserve:
+
+| Nominal VRAM | Reference hardware | Preferred intent model |
+|---:|---|---|
+| 8 GB | RTX 5070 Laptop | Qwen3.5 9B Q4_K_M |
+| 12 GB | RTX 5070 desktop | Qwen3.5 9B Q4_K_M |
+| 16 GB | Generic 16 GB GPU | Qwen3.5 9B Q4_K_M |
+| 24 GB | RTX 3090 desktop / RTX 5090 Laptop | Qwen3.5 35B A3B Q4_K_M |
+| 32 GB | RTX 5090 desktop | Qwen3.5 35B A3B Q4_K_M |
+
+These are fit-aware product recommendations, not comparative model-quality
+claims: the exact five curated artifacts have not yet run the intent suite.
+At generation setup, current free bytes remain authoritative. If the nominal
+tier pick does not fit, the wizard falls back to the highest-priority eligible
+model. The suite also tests every model at exactly `weight bytes + reserve` and
+one byte below that boundary. With nominal capacity free, expected coverage is:
 
 | Simulated available memory | Recommended models fitting |
 |---|---:|
 | CPU fallback | 2 smallest |
 | 4 GiB | 1 |
 | Observed RTX 5060, 7033 MiB free | 2 |
-| 8 GiB | 3 |
+| RTX 5070 Laptop, 8 GiB | 3 |
+| RTX 5070 desktop, 12 GiB | 3 |
 | 16 GiB | 4 |
+| RTX 3090 desktop, 24 GiB | all 5 |
 | RTX 5090 Laptop, 24 GiB | all 5 |
 | RTX 5090 desktop, 32 GiB | all 5 |
 
 The policy benchmark was executed on the documented Intel host with 100,000
-iterations per profile and three samples. The RTX 5090 Laptop case took
-406.5–419.4 ns/op and the desktop case 456.2–471.5 ns/op; each used 2,048
-bytes and two allocations per operation. These are CPU measurements of the
-wizard's filtering policy, not simulated GPU-inference performance.
+iterations per profile and three samples:
+
+| Capacity profile | Policy time | Models fitting |
+|---|---:|---:|
+| CPU fallback | 687.9–707.0 ns/op | 2 |
+| 4 GiB | 375.6–381.8 ns/op | 1 |
+| Observed RTX 5060 Laptop | 370.0–387.9 ns/op | 2 |
+| RTX 5070 Laptop, 8 GiB | 380.0–386.3 ns/op | 3 |
+| RTX 5070 desktop, 12 GiB | 364.5–378.5 ns/op | 3 |
+| 16 GiB | 394.1–405.6 ns/op | 4 |
+| RTX 3090 desktop, 24 GiB | 386.0–397.8 ns/op | 5 |
+| RTX 5090 Laptop, 24 GiB | 412.8–444.2 ns/op | 5 |
+| RTX 5090 desktop, 32 GiB | 418.7–454.7 ns/op | 5 |
+
+GPU cases used 2,432 bytes and two allocations per operation; CPU used 3,344
+bytes and nine allocations. These are executed CPU measurements of the
+wizard's filtering policy, not simulated GPU inference.
 
 Intent benchmark report schema v2 now records OS/architecture, logical CPU
 count, execution mode, context, thread and GPU-layer settings, plus every
@@ -196,8 +228,9 @@ repository if paths, prompts, or session context are sensitive.
 ## Remaining limitations
 
 The intent set is small and the measured inference timings represent one
-CPU/runtime build. The RTX 5090 entries above validate capacity policy and
-benchmark/reporting support; they are not inference measurements from that GPU.
+CPU/runtime build. The RTX 5070, RTX 3090, and RTX 5090 entries above validate
+capacity policy and benchmark/reporting support; they are not inference
+measurements from those GPUs.
 The repository still lacks sufficient real, temporally held-out listening
 judgments for recommendation-quality tuning. No LLM shortlist reranker was
 implemented: a compatible grounded semantic sidecar was not configured and no

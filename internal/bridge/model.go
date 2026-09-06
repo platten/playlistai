@@ -26,6 +26,9 @@ type ModelInfo struct {
 	LicenseURL  string `json:"licenseUrl"`
 	RAMGB       int    `json:"ramGb"`
 	Recommended bool   `json:"recommended"`
+	// BestForVRAMGB lists nominal NVIDIA VRAM tiers for which this is the
+	// preferred intent model. Settings presents these as guidance badges.
+	BestForVRAMGB []int `json:"bestForVramGb"`
 	// Verified reports whether size + sha256 are pinned in the manifest, so
 	// Download checks the file against them rather than trusting the host.
 	Verified bool `json:"verified"`
@@ -44,6 +47,7 @@ type ModelHardwareInfo struct {
 	VRAMFreeBytes int64  `json:"vramFreeBytes"`
 	FitBytes      int64  `json:"fitBytes"`
 	ReserveBytes  int64  `json:"reserveBytes"`
+	VRAMTierGB    int    `json:"vramTierGb"`
 }
 
 // ModelRecommendations is the hardware-filtered first-run model list.
@@ -105,7 +109,8 @@ func (a *API) GetModelCatalog() []ModelInfo {
 // GetModelRecommendations probes the available llama.cpp GPU and returns only
 // recommended GGUFs whose weights fit on that device with context/KV headroom.
 // Without a usable llama.cpp GPU it returns the two smallest recommended CPU
-// choices. Catalog priority is preserved in both modes.
+// choices. CPU mode preserves catalog priority; GPU mode promotes the explicit
+// preferred model for the detected nominal VRAM tier among eligible entries.
 func (a *API) GetModelRecommendations() ModelRecommendations {
 	reserve := a.app.ModelVRAMReserve()
 	probeCtx, cancel := context.WithTimeout(a.context(), 6*time.Second)
@@ -121,7 +126,7 @@ func (a *API) GetModelRecommendations() ModelRecommendations {
 			}
 		}
 	}
-	hw := modelmgr.Hardware{GPUAvailable: gpu, AvailableVRAMBytes: fitBytes, ReserveBytes: reserve}
+	hw := modelmgr.Hardware{GPUAvailable: gpu, TotalVRAMBytes: device.TotalBytes, AvailableVRAMBytes: fitBytes, ReserveBytes: reserve}
 	mode := "cpu"
 	if gpu {
 		mode = "gpu"
@@ -132,6 +137,7 @@ func (a *API) GetModelRecommendations() ModelRecommendations {
 			Mode: mode, GPUAvailable: gpu, GPUName: device.Name,
 			VRAMBytes: device.TotalBytes, VRAMFreeBytes: device.FreeBytes,
 			FitBytes: fitBytes, ReserveBytes: reserve,
+			VRAMTierGB: modelmgr.VRAMTierGB(device.TotalBytes),
 		},
 	}
 }
@@ -144,7 +150,8 @@ func (a *API) modelInfos(src []modelmgr.Model) []ModelInfo {
 			ID: m.ID, Label: m.Label, Params: m.Params, Quant: m.Quant,
 			SizeApprox: m.SizeApprox, LicenseName: m.LicenseName, LicenseURL: m.LicenseURL,
 			RAMGB: m.RAMGB, Recommended: m.Recommended, Verified: m.Verified(),
-			Installed: modelmgr.IsInstalled(m, dir),
+			BestForVRAMGB: append([]int(nil), m.BestForVRAMGB...),
+			Installed:     modelmgr.IsInstalled(m, dir),
 		})
 	}
 	return out

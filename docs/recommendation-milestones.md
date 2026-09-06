@@ -306,9 +306,13 @@ but non-recommended. These five artifacts are not yet covered by the existing
 intent benchmark, so their ordering is not presented as a measured quality
 result.
 
-Hardware validation now covers every model's exact fit boundary and reference
-profiles from CPU/4 GiB through 24/32 GiB RTX 5090-class hardware. A separate
-policy benchmark reports model counts and allocation cost without pretending
-to measure GPU inference. Intent evaluation report v2 records the actual
-llama.cpp device inventory and run settings, and `-device` can pin a multi-GPU
-benchmark to one accelerator.
+Hardware validation now covers every model's exact fit boundary and named
+profiles for RTX 5070 Laptop (8 GiB), RTX 5070 desktop (12 GiB), RTX 3090
+desktop (24 GiB), and RTX 5090 Laptop/desktop (24/32 GiB). NVIDIA has no RTX
+3090 Laptop product, so the matrix does not invent one. The preferred tier
+models are Qwen3.5 9B at 8/12/16 GiB and Qwen3.5 35B A3B at 24/32 GiB, subject
+to the hard current-free-VRAM fit check. Settings exposes the tier labels for
+all curated models. A separate policy benchmark reports model counts and
+allocation cost without pretending to measure GPU inference. Intent evaluation
+report v2 records the actual llama.cpp device inventory and run settings, and
+`-device` can pin a multi-GPU benchmark to one accelerator.

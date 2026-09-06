@@ -58,3 +58,29 @@ func TestGetInstalledModels(t *testing.T) {
 		t.Fatal("nothing should be active")
 	}
 }
+
+func TestGetModelCatalogIncludesVRAMTierPicks(t *testing.T) {
+	t.Parallel()
+	api := New(newTestContainer(t), nil)
+	catalog := api.GetModelCatalog()
+	want := map[int]string{
+		8:  "qwen3.5-9b-q4km",
+		12: "qwen3.5-9b-q4km",
+		16: "qwen3.5-9b-q4km",
+		24: "qwen3.5-35b-a3b-q4km",
+		32: "qwen3.5-35b-a3b-q4km",
+	}
+	for tier, id := range want {
+		var got []string
+		for _, model := range catalog {
+			for _, modelTier := range model.BestForVRAMGB {
+				if modelTier == tier {
+					got = append(got, model.ID)
+				}
+			}
+		}
+		if len(got) != 1 || got[0] != id {
+			t.Fatalf("Settings catalog pick for %d GiB = %v, want %q", tier, got, id)
+		}
+	}
+}

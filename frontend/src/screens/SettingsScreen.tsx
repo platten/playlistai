@@ -16,6 +16,10 @@ function fmtGB(bytes: number): string {
   return (bytes / 1e9).toFixed(1) + " GB";
 }
 
+function vramTierLabel(tiers: number[]): string {
+  return `recommended for ${tiers.join("/")} GB GPU`;
+}
+
 const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "deezer", label: "Deezer" },
   { id: "spotify", label: "Spotify" },
@@ -207,6 +211,11 @@ export function SettingsScreen() {
           </p>
         )}
 
+        <p className="text-[11.5px] text-faint">
+          GPU tier badges identify the preferred intent model when its complete weights fit.
+          Setup still checks currently free VRAM and keeps 1 GB for context and runtime buffers.
+        </p>
+
         <div className="rounded-card border border-line bg-surface">
           {catalog.length === 0 ? (
             <EmptyState title="No models listed" />
@@ -222,6 +231,14 @@ export function SettingsScreen() {
                     {m.recommended && (
                       <span className="rounded-pill bg-accent-quiet px-1.5 py-px text-[10.5px] text-accent">
                         recommended
+                      </span>
+                    )}
+                    {(m.bestForVramGb?.length ?? 0) > 0 && (
+                      <span
+                        className="rounded-pill border border-accent/25 bg-accent-quiet px-1.5 py-px text-[10.5px] text-accent"
+                        title="Preferred for intent parsing at these nominal VRAM tiers; actual free-memory fit is checked separately."
+                      >
+                        {vramTierLabel(m.bestForVramGb ?? [])}
                       </span>
                     )}
                     {m.verified && (

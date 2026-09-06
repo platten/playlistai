@@ -13,12 +13,14 @@ func BenchmarkRecommendationsByHardware(b *testing.B) {
 		hw   Hardware
 	}{
 		{name: "cpu"},
-		{name: "gpu-4gib", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}},
-		{name: "rtx-5060-laptop-observed", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}},
-		{name: "gpu-8gib", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}},
-		{name: "gpu-16gib", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}},
-		{name: "rtx-5090-laptop-24gib", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}},
-		{name: "rtx-5090-desktop-32gib", hw: Hardware{GPUAvailable: true, AvailableVRAMBytes: 32 << 30, ReserveBytes: reserve}},
+		{name: "gpu-4gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 4 << 30, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}},
+		{name: "rtx-5060-laptop-observed", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 8123 << 20, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}},
+		{name: "rtx-5070-laptop-8gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 8 << 30, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}},
+		{name: "rtx-5070-desktop-12gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 12 << 30, AvailableVRAMBytes: 12 << 30, ReserveBytes: reserve}},
+		{name: "gpu-16gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 16 << 30, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}},
+		{name: "rtx-3090-desktop-24gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 24 << 30, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}},
+		{name: "rtx-5090-laptop-24gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 24 << 30, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}},
+		{name: "rtx-5090-desktop-32gib", hw: Hardware{GPUAvailable: true, TotalVRAMBytes: 32 << 30, AvailableVRAMBytes: 32 << 30, ReserveBytes: reserve}},
 	}
 	models := Catalog()
 	for _, profile := range profiles {

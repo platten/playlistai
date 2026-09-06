@@ -244,6 +244,7 @@
   .model-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; padding: 0; list-style: none; counter-reset: models; }
   .model-list li { counter-increment: models; border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; color: var(--muted); font-size: .84rem; }
   .model-list li::before { content: counter(models) ". "; color: var(--accent-2); font-family: var(--mono); }
+  .model-panel .table-wrap { margin: 16px 0; }
 
   /* privacy */
   .privacy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -565,7 +566,7 @@
       </p>
       <div class="model-panel reveal">
         <h3>Hardware-aware model setup</h3>
-        <p>The wizard keeps this priority order, then filters it using free memory reported by the installed llama.cpp backend. A full GGUF must fit on one GPU with 1&nbsp;GiB still available for context, KV cache, and compute.</p>
+        <p>The wizard keeps this priority order, then filters it using free memory reported by the installed llama.cpp backend. A full GGUF must fit on one GPU with 1&nbsp;GiB still available for context, KV cache, and compute. Settings lists every model and marks the preferred VRAM tiers.</p>
         <ol class="model-list">
           <li>Qwen3.5 35B A3B</li>
           <li>Qwen3.5 9B</li>
@@ -573,7 +574,19 @@
           <li>Gemma 3 12B</li>
           <li>Qwen3.5 4B</li>
         </ol>
-        <p>Measured example: the test RTX&nbsp;5060 Laptop GPU reports 8123&nbsp;MiB total and 7033&nbsp;MiB free through llama.cpp, so Qwen3.5&nbsp;9B and 4B fit with the reserve. Capacity tests extend through 24 and 32&nbsp;GiB reference profiles for RTX&nbsp;5090-class hardware; all five curated weights fit those profiles. Real choices always use currently free memory. If no usable GPU backend is reported, the two smallest recommended models are offered for CPU use.</p>
+        <div class="table-wrap">
+          <table class="bench-table">
+            <thead><tr><th>GPU memory</th><th>Reference cards</th><th>Preferred intent model</th></tr></thead>
+            <tbody>
+              <tr><td>8 GB</td><td>RTX 5070 Laptop</td><td class="now">Qwen3.5 9B</td></tr>
+              <tr><td>12 GB</td><td>RTX 5070 desktop</td><td class="now">Qwen3.5 9B</td></tr>
+              <tr><td>16 GB</td><td>16 GB NVIDIA GPU</td><td class="now">Qwen3.5 9B</td></tr>
+              <tr><td>24 GB</td><td>RTX 3090 desktop / RTX 5090 Laptop</td><td class="now">Qwen3.5 35B A3B</td></tr>
+              <tr><td>32 GB</td><td>RTX 5090 desktop</td><td class="now">Qwen3.5 35B A3B</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>Measured example: the test RTX&nbsp;5060 Laptop GPU reports 8123&nbsp;MiB total and 7033&nbsp;MiB free through llama.cpp, so Qwen3.5&nbsp;9B and 4B fit with the reserve. The executed selection-policy benchmark covers RTX&nbsp;5070 Laptop/desktop, RTX&nbsp;3090 desktop, and RTX&nbsp;5090 Laptop/desktop profiles in roughly 0.36–0.45&nbsp;µs per GPU case on the test CPU. These are fit-policy measurements, not GPU inference results, and the exact curated models still need comparative intent evaluation. NVIDIA has no RTX&nbsp;3090 Laptop product. Real choices always use currently free memory; CPU mode offers the two smallest recommendations.</p>
       </div>
     </div>
   </section>

@@ -87,8 +87,11 @@ Available devices:
   Vulkan1: AMD Radeon Graphics (8192 MiB, 7100 MiB free)
   CUDA1: NVIDIA GeForce RTX 5090 Laptop GPU (24576 MiB, 23800 MiB free)
   CUDA2: NVIDIA GeForce RTX 5090 (32768 MiB, 31900 MiB free)
+  CUDA3: NVIDIA GeForce RTX 5070 Laptop GPU (8192 MiB, 7600 MiB free)
+  CUDA4: NVIDIA GeForce RTX 5070 (12288 MiB, 11600 MiB free)
+  CUDA5: NVIDIA GeForce RTX 3090 (24576 MiB, 23000 MiB free)
 `)
-	if len(got) != 4 {
+	if len(got) != 7 {
 		t.Fatalf("devices = %+v", got)
 	}
 	if got[0].ID != "CUDA0" || got[0].Name != "NVIDIA GeForce RTX 5060 Laptop GPU" || got[0].TotalBytes != 4096<<20 || got[0].FreeBytes != 3832<<20 {
@@ -102,6 +105,15 @@ Available devices:
 	}
 	if got[3].Name != "NVIDIA GeForce RTX 5090" || got[3].TotalBytes != 32768<<20 || got[3].FreeBytes != 31900<<20 {
 		t.Fatalf("RTX 5090 desktop device = %+v", got[3])
+	}
+	if got[4].Name != "NVIDIA GeForce RTX 5070 Laptop GPU" || got[4].TotalBytes != 8192<<20 {
+		t.Fatalf("RTX 5070 Laptop device = %+v", got[4])
+	}
+	if got[5].Name != "NVIDIA GeForce RTX 5070" || got[5].TotalBytes != 12288<<20 {
+		t.Fatalf("RTX 5070 desktop device = %+v", got[5])
+	}
+	if got[6].Name != "NVIDIA GeForce RTX 3090" || got[6].TotalBytes != 24576<<20 {
+		t.Fatalf("RTX 3090 device = %+v", got[6])
 	}
 	if got := ParseDeviceList("Available devices:\n  (none)\n"); len(got) != 0 {
 		t.Fatalf("no-device output = %+v", got)

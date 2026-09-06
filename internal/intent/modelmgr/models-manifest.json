@@ -13,7 +13,8 @@
       "license_name": "Apache 2.0",
       "license_url": "https://huggingface.co/Qwen/Qwen3.5-35B-A3B/blob/main/LICENSE",
       "ram_gb": 24,
-      "recommended": true
+      "recommended": true,
+      "best_for_vram_gb": [24, 32]
     },
     {
       "id": "qwen3.5-9b-q4km",
@@ -27,7 +28,8 @@
       "license_name": "Apache 2.0",
       "license_url": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE",
       "ram_gb": 8,
-      "recommended": true
+      "recommended": true,
+      "best_for_vram_gb": [8, 12, 16]
     },
     {
       "id": "mistral-small-3.1-24b-instruct-q4km",
@@ -69,7 +71,8 @@
       "license_name": "Apache 2.0",
       "license_url": "https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE",
       "ram_gb": 4,
-      "recommended": true
+      "recommended": true,
+      "best_for_vram_gb": [4]
     },
     {
       "id": "llama-3.2-3b-instruct-q4km",

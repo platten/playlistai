@@ -70,6 +70,21 @@ func TestCatalog(t *testing.T) {
 	if llamaModel, ok := Get("llama-3.2-3b-instruct-q4km"); !ok || llamaModel.Recommended {
 		t.Fatalf("legacy Llama model must remain available but non-recommended: %+v, %v", llamaModel, ok)
 	}
+	wantTierModel := map[int]string{
+		4: "qwen3.5-4b-q4km", 8: "qwen3.5-9b-q4km", 12: "qwen3.5-9b-q4km",
+		16: "qwen3.5-9b-q4km", 24: "qwen3.5-35b-a3b-q4km", 32: "qwen3.5-35b-a3b-q4km",
+	}
+	for tier, want := range wantTierModel {
+		var got []string
+		for _, model := range cat {
+			if model.BestForVRAM(tier) {
+				got = append(got, model.ID)
+			}
+		}
+		if len(got) != 1 || got[0] != want {
+			t.Fatalf("best model for %d GiB = %v, want %q", tier, got, want)
+		}
+	}
 }
 
 func TestRecommendationsFitGPUWithHeadroom(t *testing.T) {
@@ -138,19 +153,46 @@ func TestCatalogRecommendationsForCommonHardware(t *testing.T) {
 		wantModel []string
 	}{
 		{name: "CPU", wantModel: []string{"qwen3.5-9b-q4km", "qwen3.5-4b-q4km"}},
-		{name: "4 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-4b-q4km"}},
-		{name: "test RTX 5060 observed free VRAM", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "qwen3.5-4b-q4km"}},
-		{name: "8 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
-		{name: "16 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "mistral-small-3.1-24b-instruct-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
-		// NVIDIA advertises 24 GB for the RTX 5090 Laptop GPU and 32 GB for
-		// the desktop RTX 5090. llama.cpp reports capacity in MiB, so these
-		// profiles use the corresponding 24/32 GiB binary-memory values.
-		{name: "RTX 5090 Laptop 24 GiB", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}, wantModel: all},
-		{name: "RTX 5090 desktop 32 GiB", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 32 << 30, ReserveBytes: reserve}, wantModel: all},
+		{name: "4 GiB GPU", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 4 << 30, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-4b-q4km"}},
+		{name: "test RTX 5060 observed free VRAM", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 8123 << 20, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "qwen3.5-4b-q4km"}},
+		{name: "RTX 5070 Laptop 8 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 8 << 30, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		{name: "RTX 5070 desktop 12 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 12 << 30, AvailableVRAMBytes: 12 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		{name: "16 GiB GPU", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 16 << 30, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "mistral-small-3.1-24b-instruct-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		// NVIDIA advertises 24 GB for both the desktop RTX 3090 and RTX 5090
+		// Laptop GPU, and 32 GB for the desktop RTX 5090. llama.cpp reports
+		// capacity in MiB, so these use matching binary-memory values.
+		{name: "RTX 3090 desktop 24 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 24 << 30, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}, wantModel: all},
+		{name: "busy RTX 3090 falls back to 16 GiB pick", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 24 << 30, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "mistral-small-3.1-24b-instruct-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		{name: "RTX 5090 Laptop 24 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 24 << 30, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}, wantModel: all},
+		{name: "RTX 5090 desktop 32 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 32 << 30, AvailableVRAMBytes: 32 << 30, ReserveBytes: reserve}, wantModel: all},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			assertIDs(tc.name, Recommendations(Catalog(), tc.hardware), tc.wantModel...)
+		})
+	}
+}
+
+func TestVRAMTierGBRoundsLlamaDeviceTotals(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		bytes int64
+		want  int
+	}{
+		{name: "none", want: 0},
+		{name: "RTX 5070 Laptop", bytes: 8123 << 20, want: 8},
+		{name: "RTX 5070 desktop", bytes: 12282 << 20, want: 12},
+		{name: "16 GiB", bytes: 16320 << 20, want: 16},
+		{name: "RTX 3090", bytes: 24576 << 20, want: 24},
+		{name: "RTX 5090", bytes: 32768 << 20, want: 32},
+		{name: "larger future device capped", bytes: 48 << 30, want: 32},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := VRAMTierGB(tc.bytes); got != tc.want {
+				t.Fatalf("VRAMTierGB(%d) = %d, want %d", tc.bytes, got, tc.want)
+			}
 		})
 	}
 }

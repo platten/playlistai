@@ -70,11 +70,17 @@ are not recommended. Custom GGUF files remain supported. The curated ordering
 is product policy; the exact five new artifacts have not yet completed the
 application-specific intent benchmark.
 
-Automated capacity tests cover 24 and 32 GiB reference profiles representing
-the RTX 5090 Laptop and desktop GPUs. All five curated weights fit those
-profiles with the reserve; actual choices still use free memory reported by
-llama.cpp. The intent benchmark can pin `-device CUDA0` and records the
-accelerator and execution settings in its report.
+The resulting tier picks are Qwen3.5 9B for 8, 12, and 16 GB GPUs, and
+Qwen3.5 35B A3B for 24 and 32 GB GPUs. They preserve that product priority and
+leave at least the configured reserve; they are not yet comparative
+intent-quality results. Settings shows these tier badges on the full catalog.
+
+Automated capacity profiles include RTX 5070 Laptop (8 GB), RTX 5070 desktop
+(12 GB), RTX 3090 desktop (24 GB), and RTX 5090 Laptop/desktop (24/32 GB).
+NVIDIA did not publish an RTX 3090 Laptop GPU, so no fictional profile is
+included. Actual choices still use free memory reported by llama.cpp. The
+intent benchmark can pin `-device CUDA0` and records the accelerator and
+execution settings in its report.
 
 ## Measured performance
 
