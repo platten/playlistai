@@ -283,7 +283,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
     return (
       <StepShell
         title="Install llama.cpp"
-        description="The local engine that turns a typed prompt into a structured request. A GPU build is installed when one is available (CUDA / ROCm / Vulkan / Metal) plus a CPU fallback. Everything goes in the app's config directory. Skip it and the Generate screen stays hidden until you set this up in Settings — Catalog search still builds playlists from a seed track."
+        description="The optional local engine that turns a typed prompt into a structured request and can infer a catalog starting point. A GPU build is installed when available, plus a CPU fallback. Skip it to keep using Generate in catalog-only mode, where each request must name a seed artist or track."
       >
         <div className="flex flex-col gap-3">
           <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={() => void installRuntime()}>
@@ -332,7 +332,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
   return (
     <StepShell
       title="Language model"
-      description="It turns a typed prompt into a structured request — it never picks tracks. Runs locally, no account. Needed for the Generate screen; skip it and set one up later in Settings."
+      description="It turns a typed prompt into a structured request and can infer a catalog starting point. It runs locally with no account. Generate remains available without it in catalog-only mode, which requires a seed artist or track."
     >
       <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[12.5px] text-text">
         <Icon.Check size={14} className="flex-none text-good" />
@@ -433,7 +433,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
       {!usingLocal && !busy && (
         <p className="text-[12px] text-faint">
-          Pick a model to enable the Generate screen, or skip and do it later in Settings.
+          Pick a model for seed-optional intent parsing, or continue with catalog-only generation.
         </p>
       )}
 

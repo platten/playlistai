@@ -168,7 +168,9 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
                   ErrorState, Slider, Stepper, TrackRow, Button, icons,
                   (catalog download+unpack lives in the first-run wizard's
                   a blocking popup before the app renders, if one is present)
-  src/screens/    GenerateScreen (prompt → parsed-intent chips → playlist),
+  src/screens/    GenerateScreen (always available; catalog-only rules mode
+                  requires a seed artist/track, local-model mode may infer one;
+                  prompt → parsed-intent chips → playlist),
                   CatalogSearch (search / "similar to X" / first-launch download),
                   PlaylistScreen (live creativity/noise/lookback/count + Regenerate),
                   SettingsScreen (AI-model panel: catalog download / use-a-file /

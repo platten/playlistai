@@ -52,6 +52,9 @@ func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
 	if len(m.Preferences.TextureDescriptions[0].Evidence) == 0 {
 		t.Fatal("texture evidence missing")
 	}
+	if len(m.References) != 1 || m.References[0].Query != "Four Tet" || len(m.References[0].Evidence) != 1 || m.References[0].Evidence[0].Explicit {
+		t.Fatalf("seedless prompt did not retain its inferred starting point: %+v", m.References)
+	}
 }
 
 func TestSemanticValidationRejectsNegativeRequiredTrack(t *testing.T) {

@@ -66,9 +66,9 @@ type Status struct {
 	// LlamaRuntimeReady reports whether a llama.cpp runtime (app-staged or a
 	// detected one) is available on the machine.
 	LlamaRuntimeReady bool `json:"llamaRuntimeReady"`
-	// GenerateReady gates the Generate screen: prompt-driven generation needs
-	// both a llama.cpp runtime and a model on disk. The rules parser alone is
-	// not enough.
+	// GenerateReady reports whether prompt generation can run. A ready rules
+	// parser is sufficient; the UI keeps Generate visible even before this is
+	// true so it can direct the user to catalog setup.
 	GenerateReady bool `json:"generateReady"`
 }
 
@@ -86,8 +86,9 @@ func (a *API) GetStatus() Status {
 	rt, _ := a.app.LlamaRuntime()
 	llmReady := cfg.LLMReady()
 
+	coreReady := a.app.Ready()
 	return Status{
-		CoreReady:         a.app.Ready(),
+		CoreReady:         coreReady,
 		LLMReady:          llmReady,
 		CatalogLoaded:     a.app.Catalog != nil,
 		ParserBackend:     parser,
@@ -95,6 +96,6 @@ func (a *API) GetStatus() Status {
 		PreviewMode:       a.app.PreviewProviderName(),
 		Version:           Version,
 		LlamaRuntimeReady: rt.Available,
-		GenerateReady:     rt.Available && llmReady,
+		GenerateReady:     coreReady && parserReady,
 	}
 }

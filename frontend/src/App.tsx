@@ -46,14 +46,11 @@ function seedToRequest(seed: Seed, sessionId: string): BuildPlaylistRequest {
 export default function App() {
   const sessionId = useRef(newSessionID()).current;
   const { choice, cycle } = useTheme();
-  const [screen, setScreen] = useState<Screen>("catalog");
+  const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
-  // Prompt-driven generation needs a llama.cpp runtime AND a model. Until both
-  // are present, the Generate screen is hidden entirely (catalog search still
-  // builds playlists from a seed track).
-  const [generateReady, setGenerateReady] = useState(false);
+  const [parserBackend, setParserBackend] = useState("rules");
 
   useEffect(() => {
     API.GetOnboarded()
@@ -61,28 +58,14 @@ export default function App() {
       .catch(() => setOnboarded(true)); // fail open — never trap the user behind a broken check
   }, []);
 
-  // Re-check on every screen change so setting up a model in Settings makes
-  // Generate appear without a restart.
+  // Re-check on every screen change so Generate immediately reflects model
+  // changes made in Settings. Generate itself is always available.
   useEffect(() => {
     if (onboarded !== true) return;
     API.GetStatus()
-      .then((s) => setGenerateReady(Boolean(s?.generateReady)))
-      .catch(() => setGenerateReady(false));
+      .then((s) => setParserBackend(s?.parserBackend || "rules"))
+      .catch(() => setParserBackend("rules"));
   }, [onboarded, screen]);
-
-  useEffect(() => {
-    if (!generateReady && screen === "generate") setScreen("catalog");
-  }, [generateReady, screen]);
-
-  // Land on Generate the first time we learn it's available (fresh launch of a
-  // fully set-up app), without hijacking navigation after that.
-  const landedRef = useRef(false);
-  useEffect(() => {
-    if (generateReady && !landedRef.current) {
-      landedRef.current = true;
-      setScreen("generate");
-    }
-  }, [generateReady]);
 
   const openPlaylist = (request: BuildPlaylistRequest, heading: string, initialResult?: PlaylistResult) => {
     setPlaylist({ request, heading, initialResult });
@@ -110,11 +93,9 @@ export default function App() {
           <AppIcon size={20} className="shrink-0 rounded-[5px]" />
           <span className="shrink-0 font-semibold tracking-[0.01em]">Playlist AI</span>
           <nav className="ml-3 flex shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1">
-            {generateReady && (
-              <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
-                Generate
-              </NavButton>
-            )}
+            <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
+              Generate
+            </NavButton>
             <NavButton active={screen === "catalog"} onClick={() => setScreen("catalog")}>
               Catalog
             </NavButton>
@@ -153,9 +134,10 @@ export default function App() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-hidden">
-          {screen === "generate" && generateReady && (
+          {screen === "generate" && (
             <GenerateScreen
               sessionId={sessionId}
+              parserBackend={parserBackend}
               onGenerated={openPlaylist}
               onNeedCatalog={() => setScreen("catalog")}
             />
@@ -172,7 +154,7 @@ export default function App() {
                 heading={playlist.heading}
                 initialResult={playlist.initialResult}
                 sessionId={playlist.request.sessionId || sessionId}
-                onBack={() => setScreen(generateReady ? "generate" : "catalog")}
+                onBack={() => setScreen("generate")}
                 onReview={openReview}
               />
             ) : (

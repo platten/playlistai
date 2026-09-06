@@ -185,15 +185,8 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	if err := intentresolution.BlockingError(issues); err != nil {
 		return GenerateResult{}, err
 	}
-	resolvedReferences := len(m.Seeds.TrackIDs)
-	if resolvedReferences == 0 && len(m.Required.TrackIDs) == 0 {
-		if len(m.Seeds.Queries) == 0 {
-			return GenerateResult{}, errors.New(
-				"name an artist as the starting point, e.g. \"something like Bonobo, 20 tracks\"")
-		}
-		return GenerateResult{}, fmt.Errorf(
-			"no catalog match for %s — the catalog is ~957k tracks and plenty of artists aren't in it; "+
-				"try a different, better-known artist as the starting point", quoteList(m.Seeds.Queries))
+	if err := validatePromptStart(entry.outcome.Backend, m); err != nil {
+		return GenerateResult{}, err
 	}
 
 	req := BuildPlaylistRequest{
@@ -227,6 +220,19 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		"parse_ms", timings[0].Milliseconds, "resolve_ms", timings[1].Milliseconds)
 
 	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name, Status: status}, nil
+}
+
+func validatePromptStart(backend string, intent core.MusicIntent) error {
+	if backend == "llama" || len(intent.Seeds.TrackIDs) > 0 || len(intent.Required.TrackIDs) > 0 {
+		return nil
+	}
+	if len(intent.Seeds.Queries) == 0 {
+		return errors.New(
+			"catalog-only mode requires a seed artist or track, e.g. \"something like Bonobo, 20 tracks\"")
+	}
+	return fmt.Errorf(
+		"no catalog match for %s — the catalog is ~957k tracks and plenty of artists aren't in it; "+
+			"catalog-only mode requires a different seed artist or track", quoteList(intent.Seeds.Queries))
 }
 
 func applySelections(references []core.IntentReference, selections []ResolutionSelection) []core.IntentReference {

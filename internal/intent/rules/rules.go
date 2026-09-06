@@ -23,7 +23,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v2", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v3", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -46,7 +46,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 
 	seeds, mode := extractSeeds(prompt, lower, in.NowPlaying, in.RecentTracks)
 	for _, seed := range seeds {
-		ref := typedReference(prompt, seed, core.ReferenceArtist, core.InfluencePositive)
+		ref := typedReference(prompt, seed, catalogReferenceKind(seed), core.InfluencePositive)
 		intent.References = append(intent.References, ref)
 		if mode == core.ModeJourney {
 			intent.Journey.Waypoints = append(intent.Journey.Waypoints, ref)
@@ -88,6 +88,15 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
 	out.NotesForUser = summarize(out)
 	return out, nil
+}
+
+func catalogReferenceKind(seed string) core.ReferenceKind {
+	for _, separator := range []string{" - ", " – ", " — "} {
+		if strings.Contains(seed, separator) {
+			return core.ReferenceTrack
+		}
+	}
+	return core.ReferenceArtist
 }
 
 func extractEnergyTrajectory(lower string) []core.EnergyPoint {

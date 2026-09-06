@@ -46,6 +46,18 @@ func TestSeeds(t *testing.T) {
 	}
 }
 
+func TestCatalogOnlySeedMayBeArtistOrTrack(t *testing.T) {
+	t.Parallel()
+	artist := parse(t, "like Massive Attack")
+	if len(artist.References) != 1 || artist.References[0].Kind != core.ReferenceArtist {
+		t.Fatalf("artist seed = %+v", artist.References)
+	}
+	track := parse(t, "like Massive Attack - Teardrop")
+	if len(track.References) != 1 || track.References[0].Kind != core.ReferenceTrack {
+		t.Fatalf("track seed = %+v", track.References)
+	}
+}
+
 func TestNuancedSemanticNegationAndStrictVocalEvidence(t *testing.T) {
 	t.Parallel()
 	intent := parse(t, "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone")

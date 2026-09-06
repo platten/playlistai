@@ -72,7 +72,7 @@ func run() error {
 	switch backend {
 	case "rules":
 		parser = rules.New()
-		identity = evaluation.IntentModelIdentity{ID: "rules/v2", Runtime: "built-in Go"}
+		identity = evaluation.IntentModelIdentity{ID: "rules/v3", Runtime: "built-in Go"}
 	case "llama":
 		if modelPath == "" || runtimePath == "" {
 			return fmt.Errorf("-model and -runtime are required for the llama backend")

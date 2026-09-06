@@ -140,6 +140,39 @@ func TestGenerateFromPrompt(t *testing.T) {
 	}
 }
 
+func TestPromptStartRequirementDependsOnParserBackend(t *testing.T) {
+	t.Parallel()
+	seedless := core.MusicIntent{}.Normalized()
+	if err := validatePromptStart("rules", seedless); err == nil || !strings.Contains(err.Error(), "seed artist or track") {
+		t.Fatalf("catalog-only seed requirement = %v", err)
+	}
+	if err := validatePromptStart("llama", seedless); err != nil {
+		t.Fatalf("local model should be allowed to supply or omit an anchor: %v", err)
+	}
+	resolved := seedless
+	resolved.References = []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "track-id", Influence: core.InfluencePositive}}
+	resolved = resolved.Normalized()
+	if err := validatePromptStart("rules", resolved); err != nil {
+		t.Fatalf("catalog track seed rejected: %v", err)
+	}
+}
+
+func TestCatalogOnlyGenerationAcceptsTrackSeed(t *testing.T) {
+	t.Parallel()
+	api := New(newLoadedContainer(t), nil)
+
+	generated, err := api.GenerateFromPrompt(context.Background(), "like Justice - Genesis, 5 tracks")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(generated.Request.Intent.References) != 1 || generated.Request.Intent.References[0].Kind != core.ReferenceTrack {
+		t.Fatalf("resolved track seed = %+v", generated.Request.Intent.References)
+	}
+	if len(generated.Playlist.Tracks) != 5 {
+		t.Fatalf("playlist length = %d, want 5", len(generated.Playlist.Tracks))
+	}
+}
+
 func TestContinuingRadioPreservesIntentAndExcludesRecentSelection(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)

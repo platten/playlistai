@@ -51,6 +51,19 @@ func TestGetStatusOnBareContainer(t *testing.T) {
 	}
 }
 
+func TestGetStatusEnablesGenerateWithRulesAndCatalog(t *testing.T) {
+	t.Parallel()
+	api := New(newLoadedContainer(t), nil)
+
+	st := api.GetStatus()
+	if !st.CoreReady || !st.GenerateReady {
+		t.Fatalf("rules + catalog status = %+v, want generation ready", st)
+	}
+	if st.ParserBackend != "rules" || st.LLMReady {
+		t.Fatalf("status should remain catalog-only: %+v", st)
+	}
+}
+
 func TestServiceLifecycleNoWailsApp(t *testing.T) {
 	t.Parallel()
 	api := New(newTestContainer(t), nil)

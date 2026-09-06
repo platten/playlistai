@@ -18,8 +18,10 @@ import {
   useProgress,
 } from "../components";
 
-const PLACEHOLDER =
+const INTENT_PLACEHOLDER =
   "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
+const CATALOG_PLACEHOLDER =
+  'Catalog-only mode requires a seed artist or track, e.g. "like Bonobo, 20 tracks, keep it mellow"';
 
 const resolutionIssueKey = (kind: string, query: string) => `${kind}\u0000${query}`;
 
@@ -47,10 +49,12 @@ const SURPRISES = [
 /** The prompt entry point: type it, see the parsed intent, generate. */
 export function GenerateScreen({
   sessionId,
+  parserBackend,
   onGenerated,
   onNeedCatalog,
 }: {
   sessionId: string;
+  parserBackend: string;
   onGenerated: (
     request: BuildPlaylistRequest,
     heading: string,
@@ -135,8 +139,8 @@ export function GenerateScreen({
     window.clearTimeout(debounce.current);
     const sequence = ++parseSequence.current;
     void activeParse.current?.cancel("superseded intent preview");
+    setPreview(null);
     if (prompt.trim() === "") {
-      setPreview(null);
       return;
     }
     debounce.current = window.setTimeout(() => {
@@ -161,12 +165,17 @@ export function GenerateScreen({
     setResolutionChoices({});
   }, [preview]);
 
-  // A reference or a required track can start the walk. Once the debounced
-  // parse finds neither, block Generate rather than failing server-side.
+  // Catalog-only parsing can only retrieve by a catalog reference. A local
+  // model may infer that starting point, or use grounded seedless retrieval.
+  // If a model parse falls back to rules, the preview backend restores the
+  // catalog-only requirement.
+  const activeBackend = preview?.backend || parserBackend;
+  const catalogOnly = activeBackend !== "llama";
   const needsSeed =
-    preview !== null &&
-    (preview.seeds ?? []).length === 0 &&
-    (preview.requiredTracks ?? []).length === 0;
+    source === "fresh" &&
+    catalogOnly &&
+    (preview === null ||
+      ((preview.seeds ?? []).length === 0 && (preview.requiredTracks ?? []).length === 0));
   const ambiguousIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "ambiguous");
   const unresolvedIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "unresolved");
   const ambiguityNeedsChoice = ambiguousIssues.some(
@@ -217,6 +226,7 @@ export function GenerateScreen({
       );
       return;
     }
+    if (needsSeed) return;
     const selections = ambiguousIssues.flatMap((issue) => {
       const trackId = resolutionChoices[resolutionIssueKey(issue.kind, issue.query)];
       return trackId
@@ -236,6 +246,7 @@ export function GenerateScreen({
     savedResult,
     sessionId,
     source,
+    needsSeed,
   ]);
 
   const surprise = useCallback(() => {
@@ -282,8 +293,9 @@ export function GenerateScreen({
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
         <p className="text-[14px] text-muted">
-          Name an artist as the starting point — plain language for the rest. The
-          parser turns it into an intent; it never picks the songs.
+          {catalogOnly
+            ? "Catalog-only mode requires a seed artist or track from the catalog. Use plain language for everything else."
+            : "Describe what you want to hear. The local model can infer a catalog starting point, so naming an artist or track is optional."}
         </p>
       </div>
 
@@ -351,15 +363,17 @@ export function GenerateScreen({
             }
           }}
           rows={3}
-          placeholder={PLACEHOLDER}
+          placeholder={catalogOnly ? CATALOG_PLACEHOLDER : INTENT_PLACEHOLDER}
           className="w-full resize-none bg-transparent px-4 py-3.5 text-[15.5px] leading-relaxed text-text outline-none placeholder:text-faint"
         />
         <div className="flex items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
           <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
-            Name a seed artist · Enter to generate · Shift+Enter for a new line
+            {catalogOnly
+              ? "Seed artist or track required in catalog-only mode · Enter to generate"
+              : "Artist or track optional in local-model mode · Enter to generate"}
           </span>
           <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
-            {preview?.backend === "llama" ? "local model" : "rules"}
+            {catalogOnly ? "catalog only" : "local model"}
           </span>
           <Button
             variant="ghost"
@@ -397,7 +411,7 @@ export function GenerateScreen({
           <div className="flex flex-wrap gap-2">
             {needsSeed && (
               <Chip>
-                <Icon.Warn size={12} className="text-faint" /> name a seed artist to generate
+                <Icon.Warn size={12} className="text-faint" /> name a seed artist or track from the catalog
               </Chip>
             )}
             {(preview.seeds ?? []).map((s) => (
