@@ -202,3 +202,42 @@ func candidatesHaveChannel(candidates []core.Candidate, channel string) bool {
 	}
 	return false
 }
+
+// Zero disables a ranking component. config.Validate accepts it, so normalized
+// must not quietly restore the default and re-enable semantic scoring.
+func TestNormalizedKeepsZeroRankingWeights(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.SemanticWeight = 0
+	cfg.SemanticNegativePenalty = 0
+	cfg.RetrievalWeight = 0
+	cfg.ListenerWeight = 0
+	cfg.NoveltyWeight = 0
+	got := cfg.normalized()
+	for _, field := range []struct {
+		name  string
+		value float64
+	}{
+		{"SemanticWeight", got.SemanticWeight},
+		{"SemanticNegativePenalty", got.SemanticNegativePenalty},
+		{"RetrievalWeight", got.RetrievalWeight},
+		{"ListenerWeight", got.ListenerWeight},
+		{"NoveltyWeight", got.NoveltyWeight},
+	} {
+		if field.value != 0 {
+			t.Errorf("%s = %v, want 0 to stay disabled", field.name, field.value)
+		}
+	}
+}
+
+// A negative value is not a setting; it falls back to the shipped default.
+func TestNormalizedRestoresDefaultsForNegativeWeights(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.SemanticWeight = -1
+	cfg.SemanticNegativePenalty = -1
+	got, want := cfg.normalized(), DefaultConfig()
+	if got.SemanticWeight != want.SemanticWeight || got.SemanticNegativePenalty != want.SemanticNegativePenalty {
+		t.Fatalf("negative weights did not fall back to defaults: %+v", got)
+	}
+}
