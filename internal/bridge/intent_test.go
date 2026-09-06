@@ -145,3 +145,18 @@ func TestLegacyBuildRequestMigratesSeedsToRequired(t *testing.T) {
 		t.Fatalf("legacy seed identity changed: %+v", req)
 	}
 }
+
+func TestVersionThreeRequestKeepsEmbeddedIntent(t *testing.T) {
+	t.Parallel()
+	req := (BuildPlaylistRequest{
+		Version: 3,
+		Intent: core.MusicIntent{
+			Version:    3,
+			References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Björk", Influence: core.InfluencePositive}},
+			Controls:   core.IntentControls{TotalTrackCount: 9, AudioWeight: .6, CooccurrenceWeight: .4},
+		},
+	}).normalized()
+	if req.Version != core.CurrentIntentVersion || len(req.Intent.References) != 1 || req.Intent.References[0].Query != "Björk" {
+		t.Fatalf("v3 embedded intent was not preserved: %+v", req)
+	}
+}

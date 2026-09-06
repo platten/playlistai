@@ -7,23 +7,25 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	intentresolution "github.com/platten/playlistai/internal/resolution"
 )
 
 // IntentPreview is the parsed intent shown as chips on the Generate screen.
 type IntentPreview struct {
-	Intent             core.MusicIntent `json:"intent"`
-	Seeds              []string         `json:"seeds"`
-	RequiredTracks     []string         `json:"requiredTracks"`
-	Mode               string           `json:"mode"`
-	Count              int              `json:"count"`
-	Creativity         float64          `json:"creativity"`
-	Noise              float64          `json:"noise"`
-	Lookback           int              `json:"lookback"`
-	ArtistsExclude     []string         `json:"artistsExclude"`
-	NoRepeatArtist     bool             `json:"noRepeatArtist"`
-	ExcludeSeedArtists bool             `json:"excludeSeedArtists"`
-	Notes              string           `json:"notes"`
-	Backend            string           `json:"backend"` // "rules" | "llama" | "none"
+	Intent             core.MusicIntent         `json:"intent"`
+	Seeds              []string                 `json:"seeds"`
+	RequiredTracks     []string                 `json:"requiredTracks"`
+	Mode               string                   `json:"mode"`
+	Count              int                      `json:"count"`
+	Creativity         float64                  `json:"creativity"`
+	Noise              float64                  `json:"noise"`
+	Lookback           int                      `json:"lookback"`
+	ArtistsExclude     []string                 `json:"artistsExclude"`
+	NoRepeatArtist     bool                     `json:"noRepeatArtist"`
+	ExcludeSeedArtists bool                     `json:"excludeSeedArtists"`
+	Notes              string                   `json:"notes"`
+	Backend            string                   `json:"backend"` // "rules" | "llama" | "none"
+	ResolutionIssues   []intentresolution.Issue `json:"resolutionIssues"`
 }
 
 // ParseIntent turns a prompt into a preview without generating anything. It
@@ -36,10 +38,14 @@ func (a *API) ParseIntent(prompt string) IntentPreview {
 	// No progress bar for the live, keystroke-debounced preview.
 	m, backend := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, nil)
 	m = m.Normalized()
+	var issues []intentresolution.Issue
+	if a.app.Resolver != nil {
+		m, issues = intentresolution.Apply(a.app.Resolver, m)
+	}
 	return IntentPreview{
 		Intent:             m,
-		Seeds:              orEmpty(m.Seeds.Queries),
-		RequiredTracks:     orEmpty(m.Required.Queries),
+		Seeds:              referenceQueries(m.References),
+		RequiredTracks:     referenceQueries(m.RequiredTracks),
 		Mode:               string(m.Mode),
 		Count:              m.Count,
 		Creativity:         m.Creativity,
@@ -50,6 +56,7 @@ func (a *API) ParseIntent(prompt string) IntentPreview {
 		ExcludeSeedArtists: m.Constraints.ExcludeSeedArtists,
 		Notes:              m.NotesForUser,
 		Backend:            backend,
+		ResolutionIssues:   issues,
 	}
 }
 
@@ -68,7 +75,23 @@ type GenerateResult struct {
 // GenerateFromPrompt parses a prompt, resolves its seed phrases against the
 // catalog, and runs the walk.
 func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
-	if a.app.IntentParser() == nil || a.app.Reco == nil || a.app.Catalog == nil {
+	return a.generateFromPrompt(prompt, nil)
+}
+
+type ResolutionSelection struct {
+	Kind    core.ReferenceKind `json:"kind"`
+	Query   string             `json:"query"`
+	TrackID string             `json:"trackId"`
+}
+
+// GenerateFromPromptResolved applies choices made only for references that the
+// preview identified as ambiguous, then runs the same shared resolution path.
+func (a *API) GenerateFromPromptResolved(prompt string, selections []ResolutionSelection) (GenerateResult, error) {
+	return a.generateFromPrompt(prompt, selections)
+}
+
+func (a *API) generateFromPrompt(prompt string, selections []ResolutionSelection) (GenerateResult, error) {
+	if a.app.IntentParser() == nil || a.app.Reco == nil || a.app.Catalog == nil || a.app.Resolver == nil {
 		return GenerateResult{}, errors.New("not ready — download the catalog first")
 	}
 
@@ -77,24 +100,15 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 	prog.Report("intent", 0, -1, "understanding your request")
 	m, _ := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, prog)
 	m = m.Normalized()
-
-	var err error
-	m.References, _, err = a.resolveIntentReferences(m.References, false)
-	if err != nil {
+	m.References = applySelections(m.References, selections)
+	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
+	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
+	m, issues := intentresolution.Apply(a.app.Resolver, m)
+	if err := intentresolution.BlockingError(issues); err != nil {
 		return GenerateResult{}, err
 	}
-	m.Journey.Waypoints, _, err = a.resolveIntentReferences(m.Journey.Waypoints, false)
-	if err != nil {
-		return GenerateResult{}, err
-	}
-	var requiredResolved int
-	m.RequiredTracks, requiredResolved, err = a.resolveIntentReferences(m.RequiredTracks, true)
-	if err != nil {
-		return GenerateResult{}, err
-	}
-	m = m.Normalized()
 	resolvedReferences := len(m.Seeds.TrackIDs)
-	if resolvedReferences == 0 && requiredResolved == 0 {
+	if resolvedReferences == 0 && len(m.Required.TrackIDs) == 0 {
 		if len(m.Seeds.Queries) == 0 {
 			return GenerateResult{}, errors.New(
 				"name an artist as the starting point, e.g. \"something like Bonobo, 20 tracks\"")
@@ -123,37 +137,27 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name}, nil
 }
 
-func (a *API) resolveIntentReferences(
-	references []core.IntentReference,
-	required bool,
-) ([]core.IntentReference, int, error) {
-	out := make([]core.IntentReference, 0, len(references))
-	resolved := 0
-	for _, ref := range references {
-		if ref.Influence == core.InfluenceNegative && !required {
-			out = append(out, ref)
-			continue
-		}
-		if ref.TrackID != "" {
-			if _, ok := a.app.Catalog.Meta(ref.TrackID); ok {
-				resolved++
-				out = append(out, ref)
-				continue
+func applySelections(references []core.IntentReference, selections []ResolutionSelection) []core.IntentReference {
+	out := append([]core.IntentReference(nil), references...)
+	for i := range out {
+		for _, selection := range selections {
+			if selection.Kind == out[i].Kind && strings.EqualFold(strings.TrimSpace(selection.Query), strings.TrimSpace(out[i].Query)) {
+				out[i].TrackID = selection.TrackID
+				out[i].Resolution = nil
 			}
 		}
-		hits := a.app.Catalog.Resolve(ref.Query, 1)
-		if len(hits) == 0 {
-			if required {
-				return nil, resolved, fmt.Errorf("required track %q did not resolve in the catalog", ref.Query)
-			}
-			out = append(out, ref) // preserve meaning and evidence even when unresolved
-			continue
-		}
-		ref.TrackID = hits[0].ID
-		resolved++
-		out = append(out, ref)
 	}
-	return out, resolved, nil
+	return out
+}
+
+func referenceQueries(references []core.IntentReference) []string {
+	out := make([]string, 0, len(references))
+	for _, reference := range references {
+		if reference.Query != "" {
+			out = append(out, reference.Query)
+		}
+	}
+	return orEmpty(out)
 }
 
 func orEmpty(s []string) []string {

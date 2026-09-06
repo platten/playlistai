@@ -118,8 +118,8 @@ func TestResolve(t *testing.T) {
 		// fallback: filler words dropped when a strict match finds nothing
 		{"songs like justice", []string{"seed0001", "seed0002", "seed0007"}, true},
 		{"a justice playlist", []string{"seed0001", "seed0002", "seed0007"}, true},
-		// fallback: trailing tokens dropped, leading name kept
-		{"justice zzzznotarealthing", []string{"seed0001", "seed0002", "seed0007"}, true},
+		// arbitrary trailing words are not discarded into a different match
+		{"justice zzzznotarealthing", nil, true},
 		// fallback still can't invent a match
 		{"songs like zzzznotarealthing", nil, true},
 	}
@@ -181,6 +181,16 @@ func TestSearchColumnParity(t *testing.T) {
 	}
 	if n != 256 {
 		t.Fatalf("checked %d rows, want 256", n)
+	}
+}
+
+func TestUnicodeSearchPreservesScriptsAndLatinCompatibility(t *testing.T) {
+	t.Parallel()
+	if got := normalizeUnicodeSearch("坂本 龍一"); got != "坂本 龍一" {
+		t.Fatalf("Unicode normalization = %q", got)
+	}
+	if got := normalizeUnicodeSearch("Björk"); got != normalizeSearch("Björk") {
+		t.Fatalf("Latin compatibility differs: Unicode=%q Latin=%q", got, normalizeSearch("Björk"))
 	}
 }
 

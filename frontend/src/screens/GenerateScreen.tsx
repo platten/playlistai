@@ -4,12 +4,15 @@ import {
   type BuildPlaylistRequest,
   type CatalogInfo,
   type IntentPreview,
+  type ResolutionSelection,
   type SavedPlaylistSummary,
 } from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 
 const PLACEHOLDER =
   "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
+
+const resolutionIssueKey = (kind: string, query: string) => `${kind}\u0000${query}`;
 
 // Prompts for the "Surprise me" button. Each names a well-known seed artist so
 // it resolves against the catalog, and varies mode/knobs/mood for variety.
@@ -45,6 +48,7 @@ export function GenerateScreen({
   const [preview, setPreview] = useState<IntentPreview | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [resolutionChoices, setResolutionChoices] = useState<Record<string, string>>({});
   const debounce = useRef<number | undefined>(undefined);
   const intentProgress = useProgress("intent");
 
@@ -93,18 +97,33 @@ export function GenerateScreen({
     return () => window.clearTimeout(debounce.current);
   }, [prompt]);
 
-  // The engine walks outward from a seed track, so the request has to name an
-  // artist. Once the debounced parse comes back with no seeds, block Generate
-  // and say so rather than letting it fail server-side.
-  const needsSeed = preview !== null && (preview.seeds ?? []).length === 0;
+  useEffect(() => {
+    setResolutionChoices({});
+  }, [preview]);
+
+  // A reference or a required track can start the walk. Once the debounced
+  // parse finds neither, block Generate rather than failing server-side.
+  const needsSeed =
+    preview !== null &&
+    (preview.seeds ?? []).length === 0 &&
+    (preview.requiredTracks ?? []).length === 0;
+  const ambiguousIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "ambiguous");
+  const unresolvedIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.status === "unresolved");
+  const ambiguityNeedsChoice = ambiguousIssues.some(
+    (issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)],
+  );
 
   const runGenerate = useCallback(
-    (text: string) => {
+    (text: string, selections: ResolutionSelection[] = []) => {
       const q = text.trim();
       if (q === "") return;
       setGenerating(true);
       setError(null);
-      API.GenerateFromPrompt(q)
+      const request =
+        selections.length > 0
+          ? API.GenerateFromPromptResolved(q, selections)
+          : API.GenerateFromPrompt(q);
+      request
         .then((res) => {
           if (res) onGenerated(res.request, res.name || q);
         })
@@ -120,8 +139,14 @@ export function GenerateScreen({
       onGenerated(savedRequest, hit?.name || prompt);
       return;
     }
-    runGenerate(prompt);
-  }, [onGenerated, prompt, runGenerate, saved, savedId, savedRequest, source]);
+    const selections = ambiguousIssues.flatMap((issue) => {
+      const trackId = resolutionChoices[resolutionIssueKey(issue.kind, issue.query)];
+      return trackId
+        ? [{ kind: issue.kind, query: issue.query, trackId } as ResolutionSelection]
+        : [];
+    });
+    runGenerate(prompt, selections);
+  }, [ambiguousIssues, onGenerated, prompt, resolutionChoices, runGenerate, saved, savedId, savedRequest, source]);
 
   const surprise = useCallback(() => {
     const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
@@ -243,7 +268,7 @@ export function GenerateScreen({
             variant="primary"
             size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
-            disabled={generating || prompt.trim() === "" || needsSeed}
+            disabled={generating || prompt.trim() === "" || needsSeed || ambiguityNeedsChoice}
             onClick={generate}
           >
             {generating ? "Generating…" : "Generate playlist"}
@@ -312,7 +337,42 @@ export function GenerateScreen({
                   {capability.name.replace(/_/g, " ")}: {capability.status}
                 </Chip>
               ))}
+            {unresolvedIssues.map((issue) => (
+              <Chip key={`unresolved-${issue.kind}-${issue.query}`}>
+                <Icon.Warn size={12} className="text-faint" /> no catalog match: {issue.query}
+              </Chip>
+            ))}
           </div>
+          {ambiguousIssues.map((issue) => (
+            <label
+              key={`ambiguous-${issue.kind}-${issue.query}`}
+              className="mt-2 flex items-center gap-2 text-[12.5px] text-muted"
+            >
+              <span>Choose the intended {issue.kind} for “{issue.query}”</span>
+              <select
+                value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""}
+                onChange={(event) =>
+                  setResolutionChoices((current) => ({
+                    ...current,
+                    [resolutionIssueKey(issue.kind, issue.query)]: event.target.value,
+                  }))
+                }
+                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-text outline-none focus:border-line-strong"
+              >
+                <option value="">Select a match…</option>
+                {(issue.alternatives ?? []).map((alternative) => (
+                  <option
+                    key={alternative.entityId}
+                    value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}
+                  >
+                    {alternative.artist}
+                    {alternative.title ? ` — ${alternative.title}` : ""} (
+                    {Math.round(alternative.confidence * 100)}%)
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
           {preview.notes && <p className="mt-2.5 text-[12.5px] text-muted italic">“{preview.notes}”</p>}
         </div>
       )}

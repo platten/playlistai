@@ -18,6 +18,7 @@ export type {
   PlaylistResult,
   PlaylistTrack,
   PreviewResult,
+  ResolutionSelection,
   SavedPlaylistSummary,
   SavedPlaylist,
   SimilarResult,

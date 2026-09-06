@@ -44,3 +44,25 @@ Next dependencies: catalog features or a local semantic scorer for preferences
 and energy, canonical recording/artist identities, and a diversity-aware
 selection objective, including general negative-reference scoring. These capabilities must update their declared status when
 implemented.
+
+## Milestone 3 — Reliable Resolution
+
+The version 4 intent contract persists typed catalog resolution: selected
+entities, confidence and match evidence, ranked alternatives, catalog version,
+and weighted representative tracks. Artist and track namespaces resolve
+separately. Exact accent-folded or Unicode-preserving matches and explicit
+artist aliases precede prefix/token fallback; arbitrary trailing words are no
+longer discarded. Ambiguous top matches remain unresolved until the user picks
+an alternative, while high-confidence matches continue automatically.
+
+Artist references use up to four deterministic medoids selected from a bounded
+128-track embedding sample. Cluster membership supplies representative weights
+to the similarity walk. Results and medoids are cached per catalog version;
+clustering cost is bounded independently of an artist's full track count.
+Existing catalogs retain Latin search behavior and use a slower metadata scan
+for non-Latin queries; newly generated catalogs add Unicode search columns,
+indexes, and optional artist aliases.
+
+Next dependencies: stable canonical artist and recording IDs, source alias data
+for production catalogs, and background/indexed migration of older catalog
+files. Popularity and genre ranking remain unavailable and are not inferred.

@@ -9,7 +9,7 @@ Two files make up a catalog directory:
                   L2-normalized, then quantized: int8 = round(clamp(v,-1,1)*127).
                   Dequantize with v/127; the Go loader re-normalizes.
 
-  catalog.sqlite  table `tracks(row, id, artist, title, preview, search)` plus a
+  catalog.sqlite  table `tracks(row, id, artist, title, preview, search, ...)` plus a
                   `meta` key/value table. `row` matches vectors.i8 row order.
                   `search` is the normalized "artist title" string used for the
                   token-substring search (see normalize_search); the Go side
@@ -61,6 +61,25 @@ def normalize_search(text: str) -> str:
     return _WS_RE.sub(" ", spaced).strip()
 
 
+def normalize_unicode_search(text: str) -> str:
+    """Fold search text while preserving letters and numbers in every script."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    chars: list[str] = []
+    pending_space = False
+    for char in decomposed:
+        if unicodedata.category(char) == "Mn":
+            continue
+        char = char.lower()
+        if char.isalpha() or char.isnumeric():
+            if pending_space and chars:
+                chars.append(" ")
+            chars.append(char)
+            pending_space = False
+        else:
+            pending_space = True
+    return "".join(chars)
+
+
 def split_display(display: str) -> tuple[str, str]:
     """Split "Artist - Title" on the first " - " (Deej-AI's own convention)."""
     idx = display.find(" - ")
@@ -77,6 +96,7 @@ class Track:
     preview: str
     audio: Sequence[float]  # length DIM
     track: Sequence[float]  # length DIM
+    aliases: Sequence[str] = ()  # artist aliases, if supplied by the source
 
 
 def _l2_normalize(vec: Sequence[float]) -> list[float]:
@@ -122,7 +142,17 @@ def write_catalog(out_dir: Path, tracks: Iterable[Track], *, source: str) -> dic
                 artist  TEXT NOT NULL,
                 title   TEXT NOT NULL,
                 preview TEXT NOT NULL DEFAULT '',
-                search  TEXT NOT NULL
+                search  TEXT NOT NULL,
+                artist_search TEXT NOT NULL,
+                title_search TEXT NOT NULL,
+                unicode_search TEXT NOT NULL
+            );
+            CREATE TABLE artist_aliases (
+                artist TEXT NOT NULL,
+                alias TEXT NOT NULL,
+                alias_search TEXT NOT NULL,
+                alias_unicode TEXT NOT NULL,
+                PRIMARY KEY (artist, alias)
             );
             """
         )
@@ -147,12 +177,39 @@ def write_catalog(out_dir: Path, tracks: Iterable[Track], *, source: str) -> dic
                         t.title,
                         t.preview,
                         normalize_search(f"{t.artist} {t.title}"),
+                        normalize_search(t.artist),
+                        normalize_search(t.title),
+                        normalize_unicode_search(f"{t.artist} {t.title}"),
                     )
                 )
             db.executemany(
-                "INSERT INTO tracks (row, id, artist, title, preview, search) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO tracks (row, id, artist, title, preview, search, "
+                "artist_search, title_search, unicode_search) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
+            )
+            aliases = {
+                (t.artist, alias.strip())
+                for t in materialized
+                for alias in t.aliases
+                if alias.strip()
+            }
+            db.executemany(
+                "INSERT INTO artist_aliases "
+                "(artist, alias, alias_search, alias_unicode) VALUES (?, ?, ?, ?)",
+                [
+                    (artist, alias, normalize_search(alias), normalize_unicode_search(alias))
+                    for artist, alias in sorted(aliases)
+                ],
+            )
+            db.executescript(
+                """
+                CREATE INDEX tracks_artist_search_idx ON tracks(artist_search);
+                CREATE INDEX tracks_title_search_idx ON tracks(title_search);
+                CREATE INDEX tracks_unicode_search_idx ON tracks(unicode_search);
+                CREATE INDEX artist_alias_search_idx ON artist_aliases(alias_search);
+                CREATE INDEX artist_alias_unicode_idx ON artist_aliases(alias_unicode);
+                """
             )
 
         created = int(time.time())
@@ -166,6 +223,7 @@ def write_catalog(out_dir: Path, tracks: Iterable[Track], *, source: str) -> dic
                 ("track_count", str(count)),
                 ("source", source),
                 ("created", str(created)),
+                ("search_schema_version", "2"),
             ],
         )
         db.commit()

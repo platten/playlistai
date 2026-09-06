@@ -111,13 +111,14 @@ func TestSeedResolutionAndErrNoSeeds(t *testing.T) {
 
 	// by query
 	intent := baseIntent()
-	intent.Seeds.Queries = []string{"song 5"}
+	intent.Seeds = core.IntentSeeds{}
+	intent.References = []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Song 5", Influence: core.InfluencePositive}}
 	pl, err := eng.Build(context.Background(), intent)
 	if err != nil {
 		t.Fatalf("Build by query: %v", err)
 	}
-	if pl.Tracks[0].ID != "trk5" {
-		t.Fatalf("query seed resolved to %q, want trk5", pl.Tracks[0].ID)
+	if len(pl.Intent.References) != 1 || pl.Intent.References[0].TrackID != "trk5" {
+		t.Fatalf("query seed resolution = %+v, want trk5", pl.Intent.References)
 	}
 
 	// nothing resolvable
@@ -126,6 +127,23 @@ func TestSeedResolutionAndErrNoSeeds(t *testing.T) {
 	empty.Seeds.Queries = []string{"zzz nonexistent"}
 	if _, err := eng.Build(context.Background(), empty); !errors.Is(err, core.ErrNoSeeds) {
 		t.Fatalf("want ErrNoSeeds, got %v", err)
+	}
+}
+
+func TestDirectBuildRejectsAmbiguousTrackReference(t *testing.T) {
+	t.Parallel()
+	cat := fakes.NewCatalog(2,
+		fakes.CatalogTrack{ID: "one", Display: "Artist One - Home", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+		fakes.CatalogTrack{ID: "two", Display: "Artist Two - Home", Audio: []float32{0, 1}, Track: []float32{0, 1}},
+	)
+	eng := deejai.New(cat, fakes.NewSimilarityEngine(cat))
+	_, err := eng.Build(context.Background(), core.MusicIntent{
+		Version:    core.CurrentIntentVersion,
+		References: []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Home", Influence: core.InfluencePositive}},
+		Controls:   core.IntentControls{TotalTrackCount: 3, AudioWeight: .5, CooccurrenceWeight: .5},
+	})
+	if !errors.Is(err, core.ErrAmbiguousReference) {
+		t.Fatalf("Build error = %v, want ErrAmbiguousReference", err)
 	}
 }
 

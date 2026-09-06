@@ -10,17 +10,25 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/resolution"
 )
 
 const searchK = 4096
 
 type Engine struct {
-	cat ports.Catalog
-	sim ports.SimilarityEngine
+	cat      ports.Catalog
+	sim      ports.SimilarityEngine
+	resolver ports.ReferenceResolver
 }
 
-func New(cat ports.Catalog, sim ports.SimilarityEngine) *Engine {
-	return &Engine{cat: cat, sim: sim}
+func New(cat ports.Catalog, sim ports.SimilarityEngine, resolvers ...ports.ReferenceResolver) *Engine {
+	var resolver ports.ReferenceResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	} else if candidate, ok := cat.(ports.ReferenceResolver); ok {
+		resolver = candidate
+	}
+	return &Engine{cat: cat, sim: sim, resolver: resolver}
 }
 
 type step struct {
@@ -31,10 +39,19 @@ type step struct {
 
 func (e *Engine) Build(_ context.Context, intent core.MusicIntent) (core.Playlist, error) {
 	intent = intent.Normalized()
-	if missing := e.firstUnresolved(intent.Required); missing != "" {
-		return core.Playlist{}, fmt.Errorf("%w: required track %q did not resolve", core.ErrRequiredTrackConflict, missing)
+	if e.resolver != nil {
+		var issues []resolution.Issue
+		intent, issues = resolution.Apply(e.resolver, intent)
+		if err := resolution.BlockingError(issues); err != nil {
+			return core.Playlist{}, err
+		}
 	}
 	references := e.resolve(intent.Seeds)
+	if intent.Mode == core.ModeJourney {
+		if anchors := e.journeyReferences(intent); len(anchors) >= 2 {
+			references = anchors
+		}
+	}
 	required := e.resolve(intent.Required)
 	if len(references) == 0 && len(required) == 0 {
 		return core.Playlist{}, core.ErrNoSeeds
@@ -93,20 +110,6 @@ func requestedSeedCount(s core.IntentSeeds) int {
 	return len(s.TrackIDs) + len(s.Queries)
 }
 
-func (e *Engine) firstUnresolved(seeds core.IntentSeeds) string {
-	for _, id := range seeds.TrackIDs {
-		if _, ok := e.cat.Meta(id); !ok {
-			return id
-		}
-	}
-	for _, query := range seeds.Queries {
-		if len(e.cat.Resolve(query, 1)) == 0 {
-			return query
-		}
-	}
-	return ""
-}
-
 func (e *Engine) resolve(seeds core.IntentSeeds) []core.TrackRef {
 	seenIDs := map[string]struct{}{}
 	seenRecordings := map[string]struct{}{}
@@ -131,12 +134,35 @@ func (e *Engine) resolve(seeds core.IntentSeeds) []core.TrackRef {
 			add(meta.Ref)
 		}
 	}
-	for _, query := range seeds.Queries {
-		if hits := e.cat.Resolve(query, 1); len(hits) > 0 {
-			add(hits[0])
+	if e.resolver == nil {
+		for _, query := range seeds.Queries {
+			if hits := e.cat.Resolve(query, 1); len(hits) > 0 {
+				add(hits[0])
+			}
 		}
 	}
 	return out
+}
+
+func (e *Engine) journeyReferences(intent core.MusicIntent) []core.TrackRef {
+	references := intent.Journey.Waypoints
+	if len(references) < 2 {
+		references = intent.References
+	}
+	var seeds core.IntentSeeds
+	for _, reference := range references {
+		if reference.Influence != core.InfluencePositive {
+			continue
+		}
+		if reference.Resolution != nil && reference.Resolution.Selected != nil && len(reference.Resolution.Selected.Representatives) > 0 {
+			seeds.TrackIDs = append(seeds.TrackIDs, reference.Resolution.Selected.Representatives[0].TrackID)
+		} else if reference.TrackID != "" {
+			seeds.TrackIDs = append(seeds.TrackIDs, reference.TrackID)
+		} else {
+			seeds.Queries = append(seeds.Queries, reference.Query)
+		}
+	}
+	return e.resolve(seeds)
 }
 
 func (e *Engine) similar(
@@ -147,6 +173,7 @@ func (e *Engine) similar(
 	f *filter,
 ) []step {
 	steps := make([]step, 0, intent.Count)
+	referenceWeights := resolvedReferenceWeights(intent)
 	history := append([]core.TrackRef(nil), references...)
 	if len(history) == 0 {
 		history = append(history, required...)
@@ -161,7 +188,7 @@ func (e *Engine) similar(
 
 	for len(steps) < intent.Count {
 		window := history[maxInt(0, len(history)-intent.Lookback):]
-		audioSum, trackSum := e.vectorSums(window)
+		audioSum, trackSum := e.vectorSums(window, referenceWeights)
 		applyNoise(audioSum, trackSum, intent.Noise, rng)
 
 		prevArtist := ""
@@ -292,16 +319,33 @@ func (e *Engine) pickExpanded(
 	}
 }
 
-func (e *Engine) vectorSums(refs []core.TrackRef) ([]float32, []float32) {
+func (e *Engine) vectorSums(refs []core.TrackRef, weights map[string]float32) ([]float32, []float32) {
 	audioSum := make([]float32, e.cat.Dim())
 	trackSum := make([]float32, e.cat.Dim())
 	for _, ref := range refs {
 		if vectors, ok := e.cat.Vectors(ref.ID); ok {
-			addNormalized(audioSum, vectors.Audio)
-			addNormalized(trackSum, vectors.Track)
+			weight := weights[ref.ID]
+			if weight == 0 {
+				weight = 1
+			}
+			addNormalizedWeighted(audioSum, vectors.Audio, weight)
+			addNormalizedWeighted(trackSum, vectors.Track, weight)
 		}
 	}
 	return audioSum, trackSum
+}
+
+func resolvedReferenceWeights(intent core.MusicIntent) map[string]float32 {
+	out := make(map[string]float32)
+	for _, reference := range append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...) {
+		if reference.Influence != core.InfluencePositive || reference.Resolution == nil || reference.Resolution.Selected == nil {
+			continue
+		}
+		for _, representative := range reference.Resolution.Selected.Representatives {
+			out[representative.TrackID] += float32(representative.Weight)
+		}
+	}
+	return out
 }
 
 func distribute(total, buckets int) []int {
@@ -335,13 +379,13 @@ func containsID(refs []core.TrackRef, id string) bool {
 	return false
 }
 
-func addNormalized(dst, src []float32) {
+func addNormalizedWeighted(dst, src []float32, weight float32) {
 	n := l2norm(src)
 	if n == 0 {
 		return
 	}
 	for i := range dst {
-		dst[i] += src[i] / n
+		dst[i] += weight * src[i] / n
 	}
 }
 

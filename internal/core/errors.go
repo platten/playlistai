@@ -11,6 +11,9 @@ var (
 	ErrNotImplemented = errors.New("playlistai: not implemented")
 	// ErrNoSeeds means an intent produced no resolvable seed tracks.
 	ErrNoSeeds = errors.New("playlistai: no seeds resolved")
+	// ErrAmbiguousReference means multiple catalog entities are equally plausible
+	// and choosing one would materially change recommendation.
+	ErrAmbiguousReference = errors.New("playlistai: ambiguous reference")
 	// ErrRequiredTrackConflict means a required output track violates a hard exclusion.
 	ErrRequiredTrackConflict = errors.New("playlistai: required track conflicts with exclusions")
 	// ErrCountBelowRequired means Count cannot contain all required tracks.

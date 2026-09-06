@@ -106,6 +106,12 @@ Those meanings are preserved with source evidence, but are not presented as
 enforced. Live controls re-run `Build` with the complete resolved intent plus
 explicit overrides; they never reconstruct intent from a knob-only DTO.
 
+Version 4 also stores catalog resolution on each typed reference: the selected
+artist or track, match confidence/evidence, ranked alternatives, catalog
+version, and weighted real-track representatives. Prompt generation and direct
+recommendation share one resolver port. Ambiguity remains explicit until the
+user chooses an alternative.
+
 ---
 
 ## 5. Package layout

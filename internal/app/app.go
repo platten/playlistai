@@ -33,10 +33,11 @@ type Container struct {
 	cfg config.Config
 	log *slog.Logger
 
-	Catalog ports.Catalog
-	Sim     ports.SimilarityEngine
-	Reco    ports.RecommendationEngine
-	Enrich  ports.Enricher
+	Catalog  ports.Catalog
+	Resolver ports.ReferenceResolver
+	Sim      ports.SimilarityEngine
+	Reco     ports.RecommendationEngine
+	Enrich   ports.Enricher
 
 	// History persists generated playlists for the Generate screen's
 	// "start from a past playlist" option. nil if the DB could not be opened.
@@ -325,9 +326,10 @@ func (c *Container) LoadCatalog() error {
 		return err
 	}
 	c.Catalog = cat
+	c.Resolver = cat
 	c.RegisterCloser(cat.Close)
 	c.Sim = brute.New(cat)
-	c.Reco = deejai.New(cat, c.Sim)
+	c.Reco = deejai.New(cat, c.Sim, cat)
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
 	return nil
 }

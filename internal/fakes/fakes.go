@@ -34,6 +34,82 @@ type CatalogTrack struct {
 	PreviewURL string
 	Audio      []float32
 	Track      []float32
+	Aliases    []string
+}
+
+func (c *Catalog) CatalogVersion() string { return "fake:v1" }
+
+func (c *Catalog) ResolveReference(reference core.IntentReference) core.ReferenceResolution {
+	if reference.TrackID != "" {
+		meta, ok := c.Meta(reference.TrackID)
+		if !ok {
+			return core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: c.CatalogVersion(), Alternatives: []core.ResolutionCandidate{}}
+		}
+		candidate := fakeCandidate(reference.Kind, meta.Ref, c.artistIDs(meta.Ref.Artist), 1, "id", reference.TrackID)
+		return core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: c.CatalogVersion(), Selected: &candidate, Alternatives: []core.ResolutionCandidate{}}
+	}
+	query := normalizeFake(reference.Query)
+	var candidates []core.ResolutionCandidate
+	seen := map[string]struct{}{}
+	for _, id := range c.ids {
+		ref := c.meta[id].Ref
+		var matched bool
+		if reference.Kind == core.ReferenceArtist {
+			matched = normalizeFake(ref.Artist) == query
+		} else {
+			matched = normalizeFake(ref.Display()) == query || normalizeFake(ref.Title) == query
+		}
+		if !matched {
+			continue
+		}
+		key := id
+		if reference.Kind == core.ReferenceArtist {
+			key = normalizeFake(ref.Artist)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		candidates = append(candidates, fakeCandidate(reference.Kind, ref, c.artistIDs(ref.Artist), 1, "exact", reference.Query))
+	}
+	result := core.ReferenceResolution{CatalogVersion: c.CatalogVersion(), Alternatives: candidates}
+	if len(candidates) == 0 {
+		result.Status = core.ResolutionUnresolved
+		return result
+	}
+	if len(candidates) > 1 {
+		result.Status = core.ResolutionAmbiguous
+		return result
+	}
+	result.Status, result.Selected, result.Alternatives = core.ResolutionResolved, &candidates[0], []core.ResolutionCandidate{}
+	return result
+}
+
+func (c *Catalog) artistIDs(artist string) []string {
+	var out []string
+	for _, id := range c.ids {
+		if normalizeFake(c.meta[id].Ref.Artist) == normalizeFake(artist) {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func fakeCandidate(kind core.ReferenceKind, ref core.TrackRef, artistIDs []string, confidence float64, match, query string) core.ResolutionCandidate {
+	ids := []string{ref.ID}
+	entityID := ref.ID
+	if kind == core.ReferenceArtist {
+		ids, entityID = artistIDs, "artist:"+normalizeFake(ref.Artist)
+	}
+	representatives := make([]core.WeightedTrack, len(ids))
+	for i, id := range ids {
+		representatives[i] = core.WeightedTrack{TrackID: id, Weight: 1 / float64(len(ids))}
+	}
+	return core.ResolutionCandidate{Kind: kind, EntityID: entityID, Artist: ref.Artist, Title: map[bool]string{true: "", false: ref.Title}[kind == core.ReferenceArtist], Confidence: confidence, Evidence: []core.ResolutionEvidence{{Match: match, NormalizedQuery: normalizeFake(query), MatchedText: ref.Display()}}, Representatives: representatives}
+}
+
+func normalizeFake(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }
 
 // NewCatalog builds a Catalog from rows. All Audio/Track slices must have length
@@ -128,6 +204,7 @@ func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 }
 
 var _ ports.Catalog = (*Catalog)(nil)
+var _ ports.ReferenceResolver = (*Catalog)(nil)
 
 // ---------------------------------------------------------------------------
 // IntentParser

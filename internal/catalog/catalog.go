@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 
@@ -32,8 +33,14 @@ type Catalog struct {
 	ids   []string       // row -> track id
 	rowOf map[string]int // track id -> row
 
-	metaStmt   *sql.Stmt
-	resolveMax int
+	metaStmt            *sql.Stmt
+	resolveMax          int
+	version             string
+	hasAliases          bool
+	hasUnicodeSearch    bool
+	resolutionMu        sync.RWMutex
+	resolutionCache     map[string]core.ReferenceResolution
+	representativeCache map[string][]core.WeightedTrack
 }
 
 // Open loads the catalog in dir. The directory must contain vectors.i8 and
@@ -58,12 +65,14 @@ func Open(dir string) (*Catalog, error) {
 	}
 
 	c := &Catalog{
-		vec:        vec,
-		db:         db,
-		dim:        vec.dim,
-		count:      vec.count,
-		rowOf:      make(map[string]int, vec.count),
-		resolveMax: 200,
+		vec:                 vec,
+		db:                  db,
+		dim:                 vec.dim,
+		count:               vec.count,
+		rowOf:               make(map[string]int, vec.count),
+		resolveMax:          200,
+		resolutionCache:     make(map[string]core.ReferenceResolution),
+		representativeCache: make(map[string][]core.WeightedTrack),
 	}
 
 	if err := c.loadIndex(); err != nil {
@@ -77,8 +86,36 @@ func Open(dir string) (*Catalog, error) {
 		return nil, err
 	}
 	c.metaStmt = stmt
+	c.loadResolutionMetadata()
 
 	return c, nil
+}
+
+func (c *Catalog) loadResolutionMetadata() {
+	var format, created, count string
+	_ = c.db.QueryRow("SELECT value FROM meta WHERE key = 'format_version'").Scan(&format)
+	_ = c.db.QueryRow("SELECT value FROM meta WHERE key = 'created'").Scan(&created)
+	_ = c.db.QueryRow("SELECT value FROM meta WHERE key = 'track_count'").Scan(&count)
+	c.version = strings.Join([]string{format, count, created}, ":")
+	if c.version == "::" {
+		c.version = fmt.Sprintf("legacy:%d", c.count)
+	}
+	var n int
+	_ = c.db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='artist_aliases'").Scan(&n)
+	c.hasAliases = n > 0
+	rows, err := c.db.Query("PRAGMA table_info(tracks)")
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull, pk int
+			var defaultValue any
+			if rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk) == nil && name == "unicode_search" {
+				c.hasUnicodeSearch = true
+			}
+		}
+	}
 }
 
 func (c *Catalog) loadIndex() error {
@@ -195,11 +232,9 @@ var fillerTokens = map[string]struct{}{
 // (the same normalization as deej-ai.online-app's /search) and returns up to
 // max matches in row order.
 //
-// If a strict match on every token finds nothing, it retries with filler
-// words removed ("songs like Radiohead" -> "Radiohead"), then by dropping
-// trailing tokens one at a time — so a seed phrase with a real artist name in
-// it still resolves even when the LLM or the rules parser tacked on extra
-// words. A non-empty strict result is never overridden by the fallback.
+// If a strict match on every token finds nothing, it retries with known filler
+// words removed ("songs like Radiohead" -> "Radiohead"). It never drops
+// arbitrary trailing words.
 func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 	tokens := tokenize(query)
 	if len(tokens) == 0 {
@@ -217,14 +252,8 @@ func (c *Catalog) Resolve(query string, max int) []core.TrackRef {
 		if out := c.resolveTokens(lean, max); len(out) > 0 {
 			return out
 		}
-		tokens = lean
 	}
 
-	for n := len(tokens) - 1; n >= 1; n-- {
-		if out := c.resolveTokens(tokens[:n], max); len(out) > 0 {
-			return out
-		}
-	}
 	return nil
 }
 
@@ -238,21 +267,10 @@ func dropFiller(tokens []string) []string {
 	return out
 }
 
-// rankWindow is how many row-ordered matches resolveTokens pulls before
-// re-ranking, so that a small max (seed resolution passes max=1) can still
-// prefer a track whose *artist* matches over an incidental title hit —
-// "justice" should seed from Justice, not "…King's Justice" by Ramin Djawadi.
-const rankWindow = 60
-
 func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
-	limit := max
-	if limit < rankWindow {
-		limit = rankWindow
-	}
-
 	var sb strings.Builder
 	sb.WriteString("SELECT id, artist, title FROM tracks WHERE ")
-	args := make([]any, 0, len(tokens)+1)
+	args := make([]any, 0, len(tokens))
 	for i, tok := range tokens {
 		if i > 0 {
 			sb.WriteString(" AND ")
@@ -260,8 +278,7 @@ func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
 		sb.WriteString("search LIKE ?")
 		args = append(args, "%"+tok+"%")
 	}
-	sb.WriteString(" ORDER BY row LIMIT ?")
-	args = append(args, limit)
+	sb.WriteString(" ORDER BY row")
 
 	rows, err := c.db.Query(sb.String(), args...)
 	if err != nil {
@@ -281,26 +298,30 @@ func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
 		return out
 	}
 
-	// Stable 3-tier re-rank (row order kept within each tier), then trim to
+	// Stable 4-tier re-rank (row order kept within each tier), then trim to
 	// the caller's max:
-	//   1. artist is exactly the query    ("justice" -> Justice, not Justice Toch)
-	//   2. artist contains every token    (an incidental-title hit loses to this)
-	//   3. everything else                (title-only matches)
+	//   1. full display or title is exact
+	//   2. artist is exactly the query
+	//   3. artist contains every token
+	//   4. everything else
 	joined := strings.Join(tokens, " ")
 	tier := func(r core.TrackRef) int {
 		a := normalizeSearch(r.Artist)
-		if a == joined {
+		if normalizeSearch(r.Display()) == joined || normalizeSearch(r.Title) == joined {
 			return 0
+		}
+		if a == joined {
+			return 1
 		}
 		for _, t := range tokens {
 			if !strings.Contains(a, t) {
-				return 2
+				return 3
 			}
 		}
-		return 1
+		return 2
 	}
 	ranked := make([]core.TrackRef, 0, len(out))
-	for want := 0; want <= 2; want++ {
+	for want := 0; want <= 3; want++ {
 		for _, r := range out {
 			if tier(r) == want {
 				ranked = append(ranked, r)

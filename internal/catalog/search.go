@@ -14,7 +14,8 @@ import (
 //	NFKD → drop Unicode category Mn → lowercase → each run of non-[a-z0-9]
 //	becomes a single space → trim.
 //
-// Non-Latin scripts are stripped rather than transliterated.
+// Non-Latin scripts are omitted from this compatibility form. Resolution also
+// uses normalizeUnicodeSearch, which preserves those scripts.
 func normalizeSearch(s string) string {
 	d := norm.NFKD.String(s)
 
@@ -38,6 +39,33 @@ func normalizeSearch(s string) string {
 			continue
 		}
 		pendingSpace = true
+	}
+	return b.String()
+}
+
+// normalizeUnicodeSearch preserves letters and numbers from every script while
+// retaining the same accent folding and word-boundary behavior as the legacy
+// Latin normalizer.
+func normalizeUnicodeSearch(s string) string {
+	d := norm.NFKD.String(s)
+	var b strings.Builder
+	pendingSpace := false
+	wrote := false
+	for _, r := range d {
+		if unicode.Is(unicode.Mn, r) {
+			continue
+		}
+		r = unicode.ToLower(r)
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if pendingSpace && wrote {
+				b.WriteByte(' ')
+			}
+			b.WriteRune(r)
+			wrote = true
+			pendingSpace = false
+		} else {
+			pendingSpace = true
+		}
 	}
 	return b.String()
 }

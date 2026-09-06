@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 3
+	CurrentIntentVersion = 4
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -44,12 +44,54 @@ type SourceEvidence struct {
 	Explicit bool   `json:"explicit"`
 }
 
+type ResolutionStatus string
+
+const (
+	ResolutionResolved   ResolutionStatus = "resolved"
+	ResolutionAmbiguous  ResolutionStatus = "ambiguous"
+	ResolutionUnresolved ResolutionStatus = "unresolved"
+)
+
+// ResolutionEvidence explains why a catalog entity was proposed. Match is one
+// of id, exact, alias, prefix, or tokens; NormalizedQuery records the form used
+// without replacing the user's original query.
+type ResolutionEvidence struct {
+	Match           string `json:"match"`
+	NormalizedQuery string `json:"normalizedQuery"`
+	MatchedText     string `json:"matchedText"`
+}
+
+// WeightedTrack is a real catalog track used to represent an artist in vector
+// retrieval. Weights sum to one for each resolved artist.
+type WeightedTrack struct {
+	TrackID string  `json:"trackId"`
+	Weight  float64 `json:"weight"`
+}
+
+type ResolutionCandidate struct {
+	Kind            ReferenceKind        `json:"kind"`
+	EntityID        string               `json:"entityId"`
+	Artist          string               `json:"artist"`
+	Title           string               `json:"title"`
+	Confidence      float64              `json:"confidence"`
+	Evidence        []ResolutionEvidence `json:"evidence"`
+	Representatives []WeightedTrack      `json:"representatives"`
+}
+
+type ReferenceResolution struct {
+	Status         ResolutionStatus      `json:"status"`
+	CatalogVersion string                `json:"catalogVersion"`
+	Selected       *ResolutionCandidate  `json:"selected,omitempty"`
+	Alternatives   []ResolutionCandidate `json:"alternatives"`
+}
+
 type IntentReference struct {
-	Kind      ReferenceKind    `json:"kind"`
-	Query     string           `json:"query"`
-	TrackID   string           `json:"trackId"`
-	Influence Influence        `json:"influence"`
-	Evidence  []SourceEvidence `json:"evidence"`
+	Kind       ReferenceKind        `json:"kind"`
+	Query      string               `json:"query"`
+	TrackID    string               `json:"trackId"`
+	Influence  Influence            `json:"influence"`
+	Evidence   []SourceEvidence     `json:"evidence"`
+	Resolution *ReferenceResolution `json:"resolution,omitempty"`
 }
 
 type IntentPreference struct {
@@ -150,7 +192,9 @@ func (m MusicIntent) Normalized() MusicIntent {
 	out := m
 	legacyOnly := len(out.References) == 0 && len(out.RequiredTracks) == 0 &&
 		(!seedSetEmpty(out.Seeds) || !seedSetEmpty(out.Required))
-	if out.Version < CurrentIntentVersion || legacyOnly {
+	// Only v1/v2 need semantic migration. V3 already has the typed intent
+	// fields; v4 adds optional catalog resolution metadata.
+	if out.Version < 3 || legacyOnly {
 		out = migrateLegacy(out)
 	}
 	out.Version = CurrentIntentVersion
@@ -199,6 +243,11 @@ func (m MusicIntent) Validate() error {
 			}
 			if strings.TrimSpace(ref.Query) == "" && strings.TrimSpace(ref.TrackID) == "" {
 				return fmt.Errorf("intent: reference has no query or track id")
+			}
+			if ref.Resolution != nil {
+				if err := validateResolution(ref.Kind, *ref.Resolution); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -309,6 +358,11 @@ func (m *MusicIntent) backfillEngineAdapter() {
 		} else {
 			m.Seeds.Queries = appendUnique(m.Seeds.Queries, ref.Query)
 		}
+		if ref.Resolution != nil && ref.Resolution.Selected != nil {
+			for _, representative := range ref.Resolution.Selected.Representatives {
+				m.Seeds.TrackIDs = appendUnique(m.Seeds.TrackIDs, representative.TrackID)
+			}
+		}
 	}
 	m.Required = IntentSeeds{}
 	for _, ref := range m.RequiredTracks {
@@ -345,6 +399,7 @@ func (m *MusicIntent) backfillEngineAdapter() {
 func intentCapabilities() []CapabilityStatus {
 	return []CapabilityStatus{
 		{Name: "positive_references", Status: "supported", Detail: "catalog embedding similarity"},
+		{Name: "reference_resolution", Status: "supported", Detail: "typed exact, alias, and ranked catalog matching with explicit ambiguity"},
 		{Name: "negative_references", Status: "limited", Detail: "only explicit hard artist exclusions are enforceable"},
 		{Name: "required_tracks", Status: "supported", Detail: "resolved catalog tracks"},
 		{Name: "hard_artist_exclusions", Status: "supported", Detail: "exact normalized artist identity"},
@@ -364,6 +419,7 @@ func cleanReferences(in []IntentReference, required bool) []IntentReference {
 	for _, ref := range in {
 		ref.Query = strings.TrimSpace(ref.Query)
 		ref.TrackID = strings.TrimSpace(ref.TrackID)
+		ref.Resolution = cleanResolution(ref.Resolution)
 		if ref.Kind == "" {
 			if ref.TrackID != "" || required {
 				ref.Kind = ReferenceTrack
@@ -385,6 +441,56 @@ func cleanReferences(in []IntentReference, required bool) []IntentReference {
 		out = append(out, ref)
 	}
 	return out
+}
+
+func cleanResolution(in *ReferenceResolution) *ReferenceResolution {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.CatalogVersion = strings.TrimSpace(out.CatalogVersion)
+	out.Alternatives = append([]ResolutionCandidate(nil), out.Alternatives...)
+	if out.Selected != nil {
+		selected := *out.Selected
+		selected.Representatives = append([]WeightedTrack(nil), selected.Representatives...)
+		out.Selected = &selected
+	}
+	return &out
+}
+
+func validateResolution(kind ReferenceKind, resolution ReferenceResolution) error {
+	if resolution.Status != ResolutionResolved && resolution.Status != ResolutionAmbiguous && resolution.Status != ResolutionUnresolved {
+		return fmt.Errorf("intent: invalid resolution status %q", resolution.Status)
+	}
+	if resolution.Status == ResolutionResolved && resolution.Selected == nil {
+		return fmt.Errorf("intent: resolved reference has no selected entity")
+	}
+	if resolution.Selected != nil && resolution.Selected.Kind != kind {
+		return fmt.Errorf("intent: resolution kind %q does not match reference kind %q", resolution.Selected.Kind, kind)
+	}
+	for _, candidate := range append(append([]ResolutionCandidate(nil), resolution.Alternatives...), dereferenceCandidate(resolution.Selected)...) {
+		if candidate.Kind != kind || candidate.Confidence < 0 || candidate.Confidence > 1 {
+			return fmt.Errorf("intent: invalid resolution candidate")
+		}
+		var total float64
+		for _, representative := range candidate.Representatives {
+			if strings.TrimSpace(representative.TrackID) == "" || representative.Weight <= 0 || representative.Weight > 1 {
+				return fmt.Errorf("intent: invalid weighted representative")
+			}
+			total += representative.Weight
+		}
+		if len(candidate.Representatives) > 0 && math.Abs(total-1) > 0.001 {
+			return fmt.Errorf("intent: representative weights must sum to one")
+		}
+	}
+	return nil
+}
+
+func dereferenceCandidate(candidate *ResolutionCandidate) []ResolutionCandidate {
+	if candidate == nil {
+		return nil
+	}
+	return []ResolutionCandidate{*candidate}
 }
 
 func cleanPreferences(p SemanticPreferences) SemanticPreferences {

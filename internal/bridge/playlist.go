@@ -110,7 +110,9 @@ func (r BuildPlaylistRequest) normalized() BuildPlaylistRequest {
 }
 
 func (r BuildPlaylistRequest) resolvedIntent() core.MusicIntent {
-	if r.Version >= core.CurrentIntentVersion && r.Intent.Version != 0 {
+	// V3 introduced the complete typed intent. Later versions only add fields,
+	// so any v3+ request must use its embedded intent rather than legacy knobs.
+	if r.Version >= 3 && r.Intent.Version != 0 {
 		return r.Intent
 	}
 	references := r.ReferenceIDs

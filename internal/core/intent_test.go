@@ -101,6 +101,23 @@ func TestIntentV2MigrationPreservesControlsAndConstraints(t *testing.T) {
 	}
 }
 
+func TestIntentV3AddsResolutionContractWithoutReinterpreting(t *testing.T) {
+	t.Parallel()
+	in := MusicIntent{
+		Version:         3,
+		References:      []IntentReference{{Kind: ReferenceArtist, Query: "Björk", Influence: InfluencePositive}},
+		Controls:        IntentControls{TotalTrackCount: 12, AudioWeight: .8, CooccurrenceWeight: .2},
+		HardConstraints: []HardConstraint{{Kind: "exclude_artist", Value: "Other", Supported: true}},
+	}
+	got := in.Normalized()
+	if got.Version != CurrentIntentVersion || len(got.References) != 1 || got.References[0].Query != "Björk" {
+		t.Fatalf("v3 reference changed during v4 load: %+v", got)
+	}
+	if got.Controls.TotalTrackCount != 12 || len(got.HardConstraints) != 1 {
+		t.Fatalf("v3 controls or constraints changed: %+v", got)
+	}
+}
+
 func TestIntentSemanticValidation(t *testing.T) {
 	t.Parallel()
 	invalid := MusicIntent{

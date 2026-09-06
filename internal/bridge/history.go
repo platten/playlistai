@@ -64,7 +64,7 @@ func (a *API) DeleteSavedPlaylist(id string) error {
 	return a.app.History.Delete(a.context(), id)
 }
 
-// LoadSavedPlaylist reads and migrates v1/v2 JSON blobs into the v3 contract.
+// LoadSavedPlaylist reads and migrates v1-v3 JSON blobs into the current contract.
 func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	if a.app.History == nil {
 		return SavedPlaylist{}, fmt.Errorf("saved playlist %q not found", id)
