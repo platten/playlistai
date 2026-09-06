@@ -149,6 +149,10 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 	}
 	if verify {
 		if sum := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(sum, sha256hex) {
+			// Close before unlinking: Windows refuses to remove a file that is
+			// still open, which would leave the rejected part behind. The
+			// deferred Close above is then a harmless no-op.
+			out.Close()
 			_ = os.Remove(part)
 			return got, fmt.Errorf("sha256 %s, expected %s", sum, sha256hex)
 		}
