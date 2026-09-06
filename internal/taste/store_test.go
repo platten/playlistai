@@ -2,6 +2,7 @@ package taste
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -93,5 +94,131 @@ func TestFeedbackValidationRejectsImplicitPreviewJudgments(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("preview telemetry must not become preference feedback")
+	}
+}
+
+func exposureEvent(trackID, requestID, sessionID string, at time.Time) core.FeedbackEvent {
+	return core.FeedbackEvent{
+		OccurredAt: at, Type: core.FeedbackExposure, Scope: core.FeedbackScopeRequest,
+		TrackID: trackID, RequestID: requestID, SessionID: sessionID,
+	}
+}
+
+// Exposure volume scales with every generation, so a read must not grow with
+// the number of playlists the user has ever made.
+func TestListFeedbackBoundsExposuresByAgeAndCount(t *testing.T) {
+	t.Parallel()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return now }
+
+	ctx := context.Background()
+	stale := exposureEvent("old", "r-old", "s1", now.Add(-ExposureRetention-time.Hour))
+	if _, err := store.RecordFeedback(ctx, stale); err != nil {
+		t.Fatal(err)
+	}
+	fresh := make([]core.FeedbackEvent, 0, MaxExposureEvents+50)
+	for i := range MaxExposureEvents + 50 {
+		fresh = append(fresh, exposureEvent(
+			fmt.Sprintf("t%05d", i), "r-new", "s1", now.Add(-time.Duration(i)*time.Minute)))
+	}
+	if err := store.RecordFeedbackBatch(ctx, fresh); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListFeedback(ctx, ports.FeedbackQuery{SessionID: "s1", IncludeExposures: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != MaxExposureEvents {
+		t.Fatalf("exposures returned = %d, want the %d newest", len(events), MaxExposureEvents)
+	}
+	for _, event := range events {
+		if event.TrackID == "old" {
+			t.Fatal("returned an exposure older than ExposureRetention")
+		}
+		if event.OccurredAt.Before(now.Add(-ExposureRetention)) {
+			t.Fatalf("returned an out-of-window exposure at %s", event.OccurredAt)
+		}
+	}
+}
+
+// A scoped profile must not absorb evidence that merely recorded no request or
+// session of its own.
+func TestListFeedbackScopeDoesNotMatchBlankColumns(t *testing.T) {
+	t.Parallel()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+	// Generation records exposures with whatever session the caller had, which
+	// may be blank. Those rows must not leak into a different request.
+	unrelated := exposureEvent("unrelated", "r-other", "", now)
+	mine := core.FeedbackEvent{
+		OccurredAt: now, Type: core.FeedbackRemoved, Scope: core.FeedbackScopeRequest,
+		TrackID: "mine", RequestID: "r1", SessionID: "",
+	}
+	durable := core.FeedbackEvent{
+		OccurredAt: now, Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable,
+		TrackID: "durable", RequestID: "", SessionID: "",
+	}
+	for _, event := range []core.FeedbackEvent{unrelated, mine, durable} {
+		if _, err := store.RecordFeedback(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	events, err := store.ListFeedback(ctx, ports.FeedbackQuery{RequestID: "r1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, event := range events {
+		got[event.TrackID] = true
+	}
+	if got["unrelated"] {
+		t.Fatal("a request-scoped query matched an event with no request or session")
+	}
+	if !got["mine"] || !got["durable"] {
+		t.Fatalf("scoped query lost its own or durable evidence: %v", got)
+	}
+}
+
+func TestPruneExposuresKeepsExplicitFeedback(t *testing.T) {
+	t.Parallel()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	if _, err := store.RecordFeedback(ctx, exposureEvent("exposed", "r", "s", old)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RecordFeedback(ctx, core.FeedbackEvent{
+		OccurredAt: old, Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable, TrackID: "loved",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PruneExposures(ctx, old.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListFeedback(ctx, ports.FeedbackQuery{IncludeExposures: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].TrackID != "loved" {
+		t.Fatalf("prune must drop only exposures, got %+v", events)
 	}
 }

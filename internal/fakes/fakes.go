@@ -287,8 +287,11 @@ func (s *FeedbackStore) ListFeedback(_ context.Context, query ports.FeedbackQuer
 	defer s.mu.Unlock()
 	out := make([]core.FeedbackEvent, 0, len(s.events))
 	for _, event := range s.events {
+		// An empty RequestID/SessionID means "no context" and must not match
+		// rows that simply recorded no request or session of their own.
 		if query.RequestID == "" && query.SessionID == "" || event.Scope == core.FeedbackScopeDurable ||
-			event.RequestID == query.RequestID || event.SessionID == query.SessionID ||
+			query.RequestID != "" && event.RequestID == query.RequestID ||
+			query.SessionID != "" && event.SessionID == query.SessionID ||
 			query.IncludeExposures && event.Type == core.FeedbackExposure {
 			out = append(out, event)
 		}

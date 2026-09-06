@@ -22,6 +22,13 @@ const (
 	exposureHalfLife        = 7 * 24 * time.Hour
 	maxTasteClusters        = 4
 	clusterDistanceFloor    = 0.30
+
+	// RecentExposures is serialized into every saved snapshot and drives one
+	// catalog lookup per entry during ranking, so it is bounded twice: entries
+	// whose decayed weight can no longer move a score are dropped, and the map
+	// is capped at the strongest remaining entries.
+	minRecentExposure  = 0.01
+	maxRecentExposures = 2048
 )
 
 type ProfileOptions struct {
@@ -138,6 +145,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	for trackID, exposure := range profile.RecentExposures {
 		profile.RecentExposures[trackID] = 1 - math.Exp(-exposure)
 	}
+	profile.RecentExposures = boundExposures(profile.RecentExposures)
 
 	profile.Positive = centroid(positive, catalog.Dim())
 	profile.Negative = centroid(negative, catalog.Dim())
@@ -147,6 +155,36 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	profile.ColdStart = len(contributing) == 0
 	profile.SnapshotID = snapshotID(profile, append(contributing, exposures...))
 	return profile, nil
+}
+
+// boundExposures drops exposure evidence too weak to change a ranking and caps
+// what remains at the strongest entries, breaking ties by track ID so the same
+// event set always yields the same snapshot.
+func boundExposures(exposures map[string]float64) map[string]float64 {
+	bounded := make(map[string]float64, len(exposures))
+	for trackID, exposure := range exposures {
+		if exposure >= minRecentExposure {
+			bounded[trackID] = exposure
+		}
+	}
+	if len(bounded) <= maxRecentExposures {
+		return bounded
+	}
+	ids := make([]string, 0, len(bounded))
+	for trackID := range bounded {
+		ids = append(ids, trackID)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		if bounded[ids[i]] != bounded[ids[j]] {
+			return bounded[ids[i]] > bounded[ids[j]]
+		}
+		return ids[i] < ids[j]
+	})
+	capped := make(map[string]float64, maxRecentExposures)
+	for _, trackID := range ids[:maxRecentExposures] {
+		capped[trackID] = bounded[trackID]
+	}
+	return capped
 }
 
 func matchesRequest(event core.FeedbackEvent, options ProfileOptions) bool {
