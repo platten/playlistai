@@ -85,6 +85,30 @@ func TestExposureCountsRespectRequestContext(t *testing.T) {
 	}
 }
 
+func TestGenerationExposureProfileIsGlobalDecayedAndReproducible(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	events := []core.FeedbackEvent{
+		feedback(core.FeedbackExposure, core.FeedbackScopeRequest, "a", "request-1", now.Add(-exposureHalfLife)),
+		feedback(core.FeedbackExposure, core.FeedbackScopeRequest, "b", "request-2", now),
+	}
+	options := ProfileOptions{RequestID: "new-request", SessionID: "session", IncludeAllExposures: true}
+	first, err := BuildProfile(context.Background(), profileCatalog(), events, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := BuildProfile(context.Background(), profileCatalog(), []core.FeedbackEvent{events[1], events[0]}, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ExposureCount != 2 || first.RecentExposures["b"] <= first.RecentExposures["a"] {
+		t.Fatalf("global exposure recency was not preserved: %+v", first)
+	}
+	if first.SnapshotID != second.SnapshotID {
+		t.Fatalf("exposure snapshot is not reproducible: %s != %s", first.SnapshotID, second.SnapshotID)
+	}
+}
+
 func TestProfileDecayFavorsRecentEvidence(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)

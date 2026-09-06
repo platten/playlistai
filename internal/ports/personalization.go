@@ -7,8 +7,9 @@ import (
 )
 
 type FeedbackQuery struct {
-	RequestID string
-	SessionID string
+	RequestID        string
+	SessionID        string
+	IncludeExposures bool
 }
 
 // FeedbackStore persists append-only interaction evidence locally.

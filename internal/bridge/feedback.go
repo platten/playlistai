@@ -148,16 +148,22 @@ func (a *API) ClearTasteData(ctx context.Context) error {
 }
 
 func (a *API) tasteProfile(ctx context.Context, sessionID, requestID string) (core.TasteProfile, error) {
+	return a.buildTasteProfile(ctx, sessionID, requestID, false)
+}
+
+func (a *API) buildTasteProfile(ctx context.Context, sessionID, requestID string, includeAllExposures bool) (core.TasteProfile, error) {
 	var events []core.FeedbackEvent
 	if a.app.Feedback != nil {
 		var err error
-		events, err = a.app.Feedback.ListFeedback(ctx, ports.FeedbackQuery{RequestID: requestID, SessionID: sessionID})
+		events, err = a.app.Feedback.ListFeedback(ctx, ports.FeedbackQuery{
+			RequestID: requestID, SessionID: sessionID, IncludeExposures: includeAllExposures,
+		})
 		if err != nil {
 			return core.TasteProfile{}, err
 		}
 	}
 	profile, err := taste.BuildProfile(ctx, a.app.Catalog, events, taste.ProfileOptions{
-		RequestID: requestID, SessionID: sessionID,
+		RequestID: requestID, SessionID: sessionID, IncludeAllExposures: includeAllExposures,
 	})
 	if err != nil {
 		return core.TasteProfile{}, err
@@ -174,7 +180,7 @@ func (a *API) tasteProfile(ctx context.Context, sessionID, requestID string) (co
 // available if optional local profile storage becomes unreadable. Explicit
 // feedback APIs still surface storage errors to the user.
 func (a *API) generationTasteProfile(ctx context.Context, sessionID, requestID string) (core.TasteProfile, error) {
-	profile, err := a.tasteProfile(ctx, sessionID, requestID)
+	profile, err := a.buildTasteProfile(ctx, sessionID, requestID, true)
 	if err == nil {
 		return profile, nil
 	}
@@ -214,7 +220,7 @@ func (a *API) recordExposures(ctx context.Context, request BuildPlaylistRequest,
 
 func (a *API) feedbackVersions() core.FeedbackVersions {
 	return core.FeedbackVersions{
-		Catalog: a.catalogVersion(), Recommendation: recommendationAlgorithmVersion,
+		Catalog: a.catalogVersion(), Recommendation: a.recommendationVersion(),
 		IntentSchema: schema.Version, Profile: taste.ProfileAlgorithmVersion,
 	}
 }
@@ -224,6 +230,13 @@ func (a *API) catalogVersion() string {
 		return "unknown"
 	}
 	return a.app.Resolver.CatalogVersion()
+}
+
+func (a *API) recommendationVersion() string {
+	if versioned, ok := a.app.Reco.(ports.VersionedRecommendationEngine); ok {
+		return versioned.AlgorithmVersion()
+	}
+	return defaultRecommendationAlgorithmVersion
 }
 
 func profileSummary(profile core.TasteProfile) TasteProfileSummary {

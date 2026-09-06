@@ -11,6 +11,8 @@ import (
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/reco/deejai"
+	"github.com/platten/playlistai/internal/reco/multichannel"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -221,8 +223,31 @@ func TestLoadCatalogFromFixture(t *testing.T) {
 	if c.Reco == nil {
 		t.Fatal("recommendation engine not wired to the loaded catalog")
 	}
+	active, ok := c.Reco.(ports.VersionedRecommendationEngine)
+	if !ok || active.AlgorithmVersion() != multichannel.AlgorithmVersion {
+		t.Fatalf("active recommendation version = %T/%v", c.Reco, ok)
+	}
+	baseline, ok := c.BaselineReco.(ports.VersionedRecommendationEngine)
+	if !ok || baseline.AlgorithmVersion() != deejai.AlgorithmVersion {
+		t.Fatalf("baseline recommendation version = %T/%v", c.BaselineReco, ok)
+	}
 	if !c.Ready() {
 		t.Fatal("Ready() should be true once catalog + sim + reco are wired")
+	}
+}
+
+func TestDeejAIBaselineCanBeSelected(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	cfg.Catalog.Dir = filepath.Join("..", "catalog", "testdata")
+	cfg.Recommendation.Strategy = config.RecommendationDeejAI
+	c, err := New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	if c.Reco != c.BaselineReco {
+		t.Fatal("deejai strategy did not select the retained baseline engine")
 	}
 }
 

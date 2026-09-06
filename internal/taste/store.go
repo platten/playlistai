@@ -153,8 +153,8 @@ func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]
 	rows, err := s.db.QueryContext(ctx, `SELECT id, version, occurred_at, type, scope, track_id,
 		request_id, session_id, context_json, versions_json
 		FROM feedback_events
-		WHERE (? = '' AND ? = '') OR scope = 'durable' OR request_id = ? OR session_id = ?
-		ORDER BY occurred_at, id`, query.RequestID, query.SessionID, query.RequestID, query.SessionID)
+		WHERE (? = '' AND ? = '') OR scope = 'durable' OR request_id = ? OR session_id = ? OR (? AND type = 'exposure')
+		ORDER BY occurred_at, id`, query.RequestID, query.SessionID, query.RequestID, query.SessionID, query.IncludeExposures)
 	if err != nil {
 		return nil, fmt.Errorf("taste: list feedback: %w", err)
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
 	"github.com/platten/playlistai/internal/reco/deejai"
+	"github.com/platten/playlistai/internal/reco/multichannel"
 	"github.com/platten/playlistai/internal/similarity/brute"
 	"github.com/platten/playlistai/internal/taste"
 )
@@ -35,11 +36,12 @@ type Container struct {
 	cfg config.Config
 	log *slog.Logger
 
-	Catalog  ports.Catalog
-	Resolver ports.ReferenceResolver
-	Sim      ports.SimilarityEngine
-	Reco     ports.RecommendationEngine
-	Enrich   ports.Enricher
+	Catalog      ports.Catalog
+	Resolver     ports.ReferenceResolver
+	Sim          ports.SimilarityEngine
+	Reco         ports.RecommendationEngine
+	BaselineReco ports.RecommendationEngine
+	Enrich       ports.Enricher
 
 	// History persists generated playlists for the Generate screen's
 	// "start from a past playlist" option. nil if the DB could not be opened.
@@ -388,7 +390,28 @@ func (c *Container) LoadCatalog() error {
 	c.Resolver = cat
 	c.RegisterCloser(cat.Close)
 	c.Sim = brute.New(cat)
-	c.Reco = deejai.New(cat, c.Sim, cat)
+	c.BaselineReco = deejai.New(cat, c.Sim, cat)
+	if c.cfg.Recommendation.Strategy == config.RecommendationDeejAI {
+		c.Reco = c.BaselineReco
+	} else {
+		rc := c.cfg.Recommendation
+		mc := multichannel.DefaultConfig()
+		mc.SeedAudioBudget = rc.SeedAudioBudget
+		mc.SeedCooccurrenceBudget = rc.SeedCooccurrenceBudget
+		mc.TasteClusterBudget = rc.TasteClusterBudget
+		mc.MaxTasteClusters = rc.MaxTasteClusters
+		mc.ExplorationPool = rc.ExplorationPool
+		mc.ExplorationBudget = rc.ExplorationBudget
+		mc.ExplorationMinScore = rc.ExplorationMinScore
+		mc.MaxCandidates = rc.MaxCandidates
+		mc.RetrievalWeight = rc.RetrievalWeight
+		mc.ListenerWeight = rc.ListenerWeight
+		mc.NegativePenalty = rc.NegativePenalty
+		mc.ExposurePenalty = rc.ExposurePenalty
+		mc.NoveltyWeight = rc.NoveltyWeight
+		mc.ExplorationChance = rc.ExplorationChance
+		c.Reco = multichannel.New(cat, c.Sim, cat, mc)
+	}
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
 	return nil
 }

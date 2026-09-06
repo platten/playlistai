@@ -39,6 +39,9 @@ n_ctx = 8192
 
 [enrich]
 min_score = 70
+
+[recommendation]
+seed_audio_budget = 17
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -50,9 +53,26 @@ min_score = 70
 	if cfg.DataDir != "/tmp/pai" || cfg.Preview.Provider != PreviewOff || cfg.AI.NCtx != 8192 || cfg.Enrich.MinScore != 70 {
 		t.Fatalf("overlay not applied: %+v", cfg)
 	}
+	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.Strategy != RecommendationMultichannel {
+		t.Fatalf("recommendation overlay not applied: %+v", cfg.Recommendation)
+	}
 	// Untouched keys keep defaults.
 	if cfg.Enrich.UserAgent == "" {
 		t.Fatal("default user agent lost")
+	}
+}
+
+func TestValidateRejectsBadRecommendationConfig(t *testing.T) {
+	t.Parallel()
+	cfg := Default()
+	cfg.Recommendation.ExplorationChance = 1.1
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected invalid exploration chance to fail")
+	}
+	cfg = Default()
+	cfg.Recommendation.Strategy = "unknown"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected unknown recommendation strategy to fail")
 	}
 }
 

@@ -164,11 +164,11 @@ func TestRankingInputChangesReproducibilityIdentity(t *testing.T) {
 		Controls:   core.IntentControls{TotalTrackCount: 10, AudioWeight: .5, CooccurrenceWeight: .5},
 		Seed:       "18446744073709551615",
 	}.Normalized()
-	first, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-a")
+	first, err := generationIdentity(base, "catalog-a", "test-reco/v1", "taste-profile/v2", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-a")
+	repeated, err := generationIdentity(base, "catalog-a", "test-reco/v1", "taste-profile/v2", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,21 +177,21 @@ func TestRankingInputChangesReproducibilityIdentity(t *testing.T) {
 	}
 	changed := base
 	changed.Controls.AudioWeight = .8
-	second, err := generationIdentity(changed, "catalog-a", "taste-profile/v1", "profile-a")
+	second, err := generationIdentity(changed, "catalog-a", "test-reco/v1", "taste-profile/v2", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.ID == second.ID || first.IntentFingerprint == second.IntentFingerprint {
 		t.Fatalf("ranking input reused identity: first=%+v second=%+v", first, second)
 	}
-	otherCatalog, err := generationIdentity(base, "catalog-b", "taste-profile/v1", "profile-a")
+	otherCatalog, err := generationIdentity(base, "catalog-b", "test-reco/v1", "taste-profile/v2", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.ID == otherCatalog.ID {
 		t.Fatal("catalog version did not invalidate generation identity")
 	}
-	otherProfile, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-b")
+	otherProfile, err := generationIdentity(base, "catalog-a", "test-reco/v1", "taste-profile/v2", "profile-b")
 	if err != nil {
 		t.Fatal(err)
 	}

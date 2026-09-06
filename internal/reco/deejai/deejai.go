@@ -16,6 +16,8 @@ import (
 
 const searchK = 4096
 
+const AlgorithmVersion = "deejai/v4"
+
 type Engine struct {
 	cat      ports.Catalog
 	sim      ports.SimilarityEngine
@@ -31,6 +33,8 @@ func New(cat ports.Catalog, sim ports.SimilarityEngine, resolvers ...ports.Refer
 	}
 	return &Engine{cat: cat, sim: sim, resolver: resolver}
 }
+
+func (*Engine) AlgorithmVersion() string { return AlgorithmVersion }
 
 type step struct {
 	ref    core.TrackRef
@@ -147,7 +151,7 @@ func (e *Engine) resolve(seeds core.IntentSeeds) []core.TrackRef {
 		if _, duplicate := seenIDs[ref.ID]; duplicate {
 			return
 		}
-		key := provisionalRecordingKey(ref)
+		key := core.ProvisionalRecordingKey(ref)
 		if _, duplicate := seenRecordings[key]; duplicate {
 			return
 		}
@@ -223,9 +227,9 @@ func (e *Engine) similar(
 
 		prevArtist := ""
 		if len(steps) > 0 {
-			prevArtist = normalizeIdentityPart(steps[len(steps)-1].ref.Artist)
+			prevArtist = core.NormalizeIdentityPart(steps[len(steps)-1].ref.Artist)
 		} else if len(history) > 0 {
-			prevArtist = normalizeIdentityPart(history[len(history)-1].Artist)
+			prevArtist = core.NormalizeIdentityPart(history[len(history)-1].Artist)
 		}
 		chosen, rank, searched, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
 		if err != nil {
@@ -303,9 +307,9 @@ func (e *Engine) journey(
 			trackSum := interpolate(st, et, t)
 			applyNoise(audioSum, trackSum, intent.Noise, rng)
 
-			prevArtist := normalizeIdentityPart(start.Artist)
+			prevArtist := core.NormalizeIdentityPart(start.Artist)
 			if len(steps) > 0 {
-				prevArtist = normalizeIdentityPart(steps[len(steps)-1].ref.Artist)
+				prevArtist = core.NormalizeIdentityPart(steps[len(steps)-1].ref.Artist)
 			}
 			chosen, rank, _, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
 			if err != nil {
@@ -484,3 +488,4 @@ func minInt(a, b int) int {
 }
 
 var _ ports.RecommendationEngine = (*Engine)(nil)
+var _ ports.VersionedRecommendationEngine = (*Engine)(nil)

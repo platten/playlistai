@@ -3,9 +3,58 @@ package core
 // StepReason records why a track landed in a playlist, for the UI's
 // per-pick explanation.
 type StepReason struct {
-	TrackID string `json:"trackId"`
-	Kind    string `json:"kind"` // "required" | "nearest" | "interp"
-	Detail  string `json:"detail"`
+	TrackID  string              `json:"trackId"`
+	Kind     string              `json:"kind"` // "required" | "ranked" | "exploration" | legacy kinds
+	Detail   string              `json:"detail"`
+	Sources  []RetrievalEvidence `json:"sources"`
+	Evidence []ComponentEvidence `json:"evidence"`
+}
+
+type RetrievalEvidence struct {
+	Channel     string  `json:"channel"`
+	QueryID     string  `json:"queryId"`
+	Rank        int     `json:"rank"`
+	Score       float64 `json:"score"` // channel-native score; never a probability
+	QueryWeight float64 `json:"queryWeight"`
+}
+
+type ComponentEvidence struct {
+	Component string  `json:"component"`
+	Score     float64 `json:"score"`
+	Weight    float64 `json:"weight"`
+	Available bool    `json:"available"`
+	Detail    string  `json:"detail"`
+}
+
+// Candidate is the union record passed from retrieval through ranking. Every
+// score has an availability bit so missing profile features are not confused
+// with a measured zero.
+type Candidate struct {
+	Track     TrackRef            `json:"track"`
+	Sources   []RetrievalEvidence `json:"sources"`
+	Scores    CandidateScores     `json:"scores"`
+	Available CandidateFeatures   `json:"available"`
+}
+
+type CandidateScores struct {
+	RetrievalFusion      float64 `json:"retrievalFusion"` // max-normalized weighted RRF, not a probability
+	AudioSeedAffinity    float64 `json:"audioSeedAffinity"`
+	CooccurrenceAffinity float64 `json:"cooccurrenceAffinity"`
+	ListenerAffinity     float64 `json:"listenerAffinity"`
+	NegativeMatch        float64 `json:"negativeMatch"`
+	RecentExposure       float64 `json:"recentExposure"`
+	Novelty              float64 `json:"novelty"`
+	Total                float64 `json:"total"`
+}
+
+type CandidateFeatures struct {
+	RetrievalFusion      bool `json:"retrievalFusion"`
+	AudioSeedAffinity    bool `json:"audioSeedAffinity"`
+	CooccurrenceAffinity bool `json:"cooccurrenceAffinity"`
+	ListenerAffinity     bool `json:"listenerAffinity"`
+	NegativeMatch        bool `json:"negativeMatch"`
+	RecentExposure       bool `json:"recentExposure"`
+	Novelty              bool `json:"novelty"`
 }
 
 // PlaylistNotice explains why a valid playlist is shorter than requested.

@@ -2,7 +2,6 @@ package deejai
 
 import (
 	"context"
-	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -28,35 +27,27 @@ func newFilter(intent core.MusicIntent, references, required []core.TrackRef) *f
 		excludeArtist: make(map[string]struct{}),
 		seedArtist:    make(map[string]struct{}),
 		noBackToBack:  intent.Constraints.NoRepeatArtistBackToBack,
-		recordingKey:  provisionalRecordingKey,
+		recordingKey:  core.ProvisionalRecordingKey,
 	}
 	for _, ref := range append(append([]core.TrackRef(nil), references...), required...) {
 		f.exclude[ref.ID] = struct{}{}
 		f.usedRecording[f.recordingKey(ref)] = struct{}{}
 	}
 	for _, artist := range intent.Constraints.ArtistsExclude {
-		if key := normalizeIdentityPart(artist); key != "" {
+		if key := core.NormalizeIdentityPart(artist); key != "" {
 			f.excludeArtist[key] = struct{}{}
 		}
 	}
 	if intent.Constraints.ExcludeSeedArtists {
 		for _, ref := range references {
-			f.seedArtist[normalizeIdentityPart(ref.Artist)] = struct{}{}
+			f.seedArtist[core.NormalizeIdentityPart(ref.Artist)] = struct{}{}
 		}
 	}
 	return f
 }
 
-func provisionalRecordingKey(ref core.TrackRef) string {
-	return normalizeIdentityPart(ref.Artist) + "\x00" + normalizeIdentityPart(ref.Title)
-}
-
-func normalizeIdentityPart(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(s)), " "))
-}
-
 func (f *filter) hardExcluded(ref core.TrackRef) bool {
-	artist := normalizeIdentityPart(ref.Artist)
+	artist := core.NormalizeIdentityPart(ref.Artist)
 	_, artistExcluded := f.excludeArtist[artist]
 	_, seedArtistExcluded := f.seedArtist[artist]
 	return artistExcluded || seedArtistExcluded
@@ -88,7 +79,7 @@ func (f *filter) pick(ctx context.Context, cat ports.Catalog, matches []ports.Ma
 		if f.hardExcluded(ref) {
 			continue
 		}
-		if f.noBackToBack && normalizeIdentityPart(ref.Artist) == prevArtist {
+		if f.noBackToBack && core.NormalizeIdentityPart(ref.Artist) == prevArtist {
 			continue
 		}
 		return ref, rank, true, nil

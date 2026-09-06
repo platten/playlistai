@@ -24,6 +24,16 @@ func (t TrackRef) Display() string {
 	return t.Artist + " - " + t.Title
 }
 
+// ProvisionalRecordingKey is the catalog-independent recording identity used
+// until canonical recording IDs are available.
+func ProvisionalRecordingKey(t TrackRef) string {
+	return NormalizeIdentityPart(t.Artist) + "\x00" + NormalizeIdentityPart(t.Title)
+}
+
+func NormalizeIdentityPart(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
+}
+
 // SpotifyURI is the spotify:track:<id> form.
 func (t TrackRef) SpotifyURI() string {
 	if t.ID == "" {

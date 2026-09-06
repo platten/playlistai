@@ -404,15 +404,15 @@ func (m *MusicIntent) backfillEngineAdapter() {
 
 func intentCapabilities() []CapabilityStatus {
 	return []CapabilityStatus{
-		{Name: "positive_references", Status: "supported", Detail: "catalog embedding similarity"},
+		{Name: "positive_references", Status: "supported", Detail: "independent audio and co-occurrence retrieval for each resolved reference"},
 		{Name: "reference_resolution", Status: "supported", Detail: "typed exact, alias, and ranked catalog matching with explicit ambiguity"},
-		{Name: "negative_references", Status: "limited", Detail: "only explicit hard artist exclusions are enforceable"},
+		{Name: "negative_references", Status: "supported", Detail: "resolved references contribute transparent embedding-space ranking penalties"},
 		{Name: "required_tracks", Status: "supported", Detail: "resolved catalog tracks"},
 		{Name: "hard_artist_exclusions", Status: "supported", Detail: "exact normalized artist identity"},
 		{Name: "audio_cooccurrence_weights", Status: "supported", Detail: "independent weights are normalized for blended similarity"},
 		{Name: "total_track_count", Status: "supported", Detail: "total output length including required tracks"},
 		{Name: "semantic_preferences", Status: "unsupported", Detail: "preserved but catalog has no semantic attributes"},
-		{Name: "discovery", Status: "supported", Detail: "seeded vector-search variation"},
+		{Name: "discovery", Status: "supported", Detail: "seeded bounded exploration among sufficiently relevant exact-search candidates"},
 		{Name: "artist_diversity", Status: "limited", Detail: "only explicit back-to-back artist prevention is enforceable"},
 		{Name: "transition_smoothness", Status: "limited", Detail: "controls walk lookback and journey interpolation"},
 		{Name: "energy_trajectory", Status: "unsupported", Detail: "preserved but catalog has no energy feature"},

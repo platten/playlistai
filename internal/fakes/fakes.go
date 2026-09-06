@@ -286,7 +286,8 @@ func (s *FeedbackStore) ListFeedback(_ context.Context, query ports.FeedbackQuer
 	out := make([]core.FeedbackEvent, 0, len(s.events))
 	for _, event := range s.events {
 		if query.RequestID == "" && query.SessionID == "" || event.Scope == core.FeedbackScopeDurable ||
-			event.RequestID == query.RequestID || event.SessionID == query.SessionID {
+			event.RequestID == query.RequestID || event.SessionID == query.SessionID ||
+			query.IncludeExposures && event.Type == core.FeedbackExposure {
 			out = append(out, event)
 		}
 	}

@@ -92,7 +92,7 @@ func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
 		Controls:   core.IntentControls{TotalTrackCount: 1, AudioWeight: .5, CooccurrenceWeight: .5},
 		Seed:       maxSeed,
 	}.Normalized()
-	reproducibility, err := generationIdentity(intent, c.Resolver.CatalogVersion(), "taste-profile/v1", "snapshot")
+	reproducibility, err := generationIdentity(intent, c.Resolver.CatalogVersion(), "test-reco/v1", "taste-profile/v2", "snapshot")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestGenerateFromPromptSavesToHistory(t *testing.T) {
 		t.Fatalf("saved generation is not replayable without rebuilding: %+v", loaded)
 	}
 	if loaded.Request.SessionID != "history-session" || loaded.Request.RequestID == "" ||
-		loaded.Result.Reproducibility.ProfileVersion != "taste-profile/v1" || loaded.Result.Reproducibility.ProfileSnapshot == "" {
+		loaded.Result.Reproducibility.ProfileVersion != "taste-profile/v2" || loaded.Result.Reproducibility.ProfileSnapshot == "" {
 		t.Fatalf("saved generation lost request or profile context: %+v", loaded)
 	}
 

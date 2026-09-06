@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	recommendationAlgorithmVersion = "deejai/v4"
-	maxParsedIntentCacheEntries    = 64
+	defaultRecommendationAlgorithmVersion = "deejai/v4"
+	maxParsedIntentCacheEntries           = 64
 )
 
 type StageTiming struct {
@@ -167,7 +167,7 @@ func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVe
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func generationIdentity(intent core.MusicIntent, catalogVersion, profileVersion, profileSnapshot string) (Reproducibility, error) {
+func generationIdentity(intent core.MusicIntent, catalogVersion, algorithmVersion, profileVersion, profileSnapshot string) (Reproducibility, error) {
 	intent = intent.Normalized()
 	raw, err := json.Marshal(struct {
 		CatalogVersion   string           `json:"catalogVersion"`
@@ -175,7 +175,7 @@ func generationIdentity(intent core.MusicIntent, catalogVersion, profileVersion,
 		Intent           core.MusicIntent `json:"intent"`
 		ProfileVersion   string           `json:"profileVersion"`
 		ProfileSnapshot  string           `json:"profileSnapshot"`
-	}{catalogVersion, recommendationAlgorithmVersion, intent, profileVersion, profileSnapshot})
+	}{catalogVersion, algorithmVersion, intent, profileVersion, profileSnapshot})
 	if err != nil {
 		return Reproducibility{}, fmt.Errorf("generation identity: %w", err)
 	}
@@ -186,7 +186,7 @@ func generationIdentity(intent core.MusicIntent, catalogVersion, profileVersion,
 	allSum, intentSum := sha256.Sum256(raw), sha256.Sum256(intentRaw)
 	return Reproducibility{
 		ID: hex.EncodeToString(allSum[:]), CatalogVersion: catalogVersion,
-		AlgorithmVersion:  recommendationAlgorithmVersion,
+		AlgorithmVersion:  algorithmVersion,
 		IntentFingerprint: hex.EncodeToString(intentSum[:]),
 		ProfileVersion:    profileVersion, ProfileSnapshot: profileSnapshot, RNGSeed: intent.Seed,
 	}, nil

@@ -113,8 +113,17 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed.IsZero() {
 		t.Fatalf("request seed %s != playlist seed %s", res.Request.Seed, res.Playlist.Seed)
 	}
-	if res.Playlist.Tracks[0].Kind != "nearest" {
+	if kind := res.Playlist.Tracks[0].Kind; kind != "ranked" && kind != "exploration" {
 		t.Fatalf("reference seed should guide but not be emitted; first kind = %q", res.Playlist.Tracks[0].Kind)
+	}
+	if res.Playlist.Tracks[0].ID == res.Request.Intent.References[0].TrackID {
+		t.Fatal("reference seed should guide but not be emitted")
+	}
+	if len(res.Playlist.Tracks[0].Sources) == 0 || len(res.Playlist.Tracks[0].Evidence) == 0 {
+		t.Fatalf("structured recommendation evidence was not bridged: %+v", res.Playlist.Tracks[0])
+	}
+	if res.Playlist.Reproducibility.AlgorithmVersion != "multichannel/v1" {
+		t.Fatalf("algorithm version = %q", res.Playlist.Reproducibility.AlgorithmVersion)
 	}
 	// The generated name is a short label (<= 6 words), not the raw prompt.
 	if res.Name == "" {

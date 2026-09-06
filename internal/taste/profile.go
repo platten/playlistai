@@ -16,16 +16,18 @@ import (
 )
 
 const (
-	ProfileContractVersion  = 1
-	ProfileAlgorithmVersion = "taste-profile/v1"
+	ProfileContractVersion  = 2
+	ProfileAlgorithmVersion = "taste-profile/v2"
 	profileHalfLife         = 30 * 24 * time.Hour
+	exposureHalfLife        = 7 * 24 * time.Hour
 	maxTasteClusters        = 4
 	clusterDistanceFloor    = 0.30
 )
 
 type ProfileOptions struct {
-	RequestID string
-	SessionID string
+	RequestID           string
+	SessionID           string
+	IncludeAllExposures bool
 }
 
 type evidencePoint struct {
@@ -48,7 +50,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	profile := core.TasteProfile{
 		Version: ProfileContractVersion, AlgorithmVersion: ProfileAlgorithmVersion,
 		CatalogVersion: catalogVersion, RequestID: options.RequestID, SessionID: options.SessionID,
-		ColdStart: true, Clusters: []core.TasteCluster{},
+		ColdStart: true, Clusters: []core.TasteCluster{}, RecentExposures: map[string]float64{},
 	}
 	if catalog == nil {
 		profile.SnapshotID = snapshotID(profile, nil)
@@ -62,7 +64,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 		}
 		return ordered[i].OccurredAt.Before(ordered[j].OccurredAt)
 	})
-	var contributing []core.FeedbackEvent
+	var contributing, exposures []core.FeedbackEvent
 	for index, event := range ordered {
 		if index&255 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -72,8 +74,12 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 		if event.Type == core.FeedbackExposure {
 			// A context-free profile reports all exposures. A contextual
 			// profile reports only exposures from that request or session.
-			if (options.RequestID == "" && options.SessionID == "") || matchesRequest(event, options) {
+			if options.IncludeAllExposures || (options.RequestID == "" && options.SessionID == "") || matchesRequest(event, options) {
 				profile.ExposureCount++
+				exposures = append(exposures, event)
+				if event.OccurredAt.After(profile.AsOf) {
+					profile.AsOf = event.OccurredAt.UTC()
+				}
 			}
 			continue
 		}
@@ -122,6 +128,16 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 			negative = append(negative, point)
 		}
 	}
+	for _, event := range exposures {
+		age := profile.AsOf.Sub(event.OccurredAt)
+		if age < 0 {
+			age = 0
+		}
+		profile.RecentExposures[event.TrackID] += math.Exp2(-float64(age) / float64(exposureHalfLife))
+	}
+	for trackID, exposure := range profile.RecentExposures {
+		profile.RecentExposures[trackID] = 1 - math.Exp(-exposure)
+	}
 
 	profile.Positive = centroid(positive, catalog.Dim())
 	profile.Negative = centroid(negative, catalog.Dim())
@@ -129,7 +145,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	profile.RequestNegative = centroid(requestNegative, catalog.Dim())
 	profile.Clusters = buildClusters(positive, catalog.Dim())
 	profile.ColdStart = len(contributing) == 0
-	profile.SnapshotID = snapshotID(profile, contributing)
+	profile.SnapshotID = snapshotID(profile, append(contributing, exposures...))
 	return profile, nil
 }
 
@@ -267,11 +283,8 @@ func aggregatePoints(points []evidencePoint) []evidencePoint {
 
 func snapshotID(profile core.TasteProfile, events []core.FeedbackEvent) string {
 	requestID, sessionID := "", ""
-	for _, event := range events {
-		if event.Scope == core.FeedbackScopeRequest {
-			requestID, sessionID = profile.RequestID, profile.SessionID
-			break
-		}
+	if profile.RequestEvidence > 0 {
+		requestID, sessionID = profile.RequestID, profile.SessionID
 	}
 	payload := struct {
 		Version   int                  `json:"version"`

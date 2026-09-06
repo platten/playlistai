@@ -17,10 +17,11 @@ type Config struct {
 	// caches. Defaults to <user config dir>/playlist-ai.
 	DataDir string `toml:"data_dir"`
 
-	Catalog CatalogConfig `toml:"catalog"`
-	AI      AIConfig      `toml:"ai"`
-	Enrich  EnrichConfig  `toml:"enrich"`
-	Preview PreviewConfig `toml:"preview"`
+	Catalog        CatalogConfig        `toml:"catalog"`
+	AI             AIConfig             `toml:"ai"`
+	Enrich         EnrichConfig         `toml:"enrich"`
+	Preview        PreviewConfig        `toml:"preview"`
+	Recommendation RecommendationConfig `toml:"recommendation"`
 }
 
 // CatalogConfig points at the converted Deej-AI dataset.
@@ -82,6 +83,31 @@ type PreviewConfig struct {
 	Provider string `toml:"provider"`
 }
 
+// RecommendationConfig controls the bounded exact-retrieval strategy. The
+// legacy deejai strategy remains selectable as an evaluation baseline.
+type RecommendationConfig struct {
+	Strategy               string  `toml:"strategy"`
+	SeedAudioBudget        int     `toml:"seed_audio_budget"`
+	SeedCooccurrenceBudget int     `toml:"seed_cooccurrence_budget"`
+	TasteClusterBudget     int     `toml:"taste_cluster_budget"`
+	MaxTasteClusters       int     `toml:"max_taste_clusters"`
+	ExplorationPool        int     `toml:"exploration_pool"`
+	ExplorationBudget      int     `toml:"exploration_budget"`
+	ExplorationMinScore    float64 `toml:"exploration_min_score"`
+	MaxCandidates          int     `toml:"max_candidates"`
+	RetrievalWeight        float64 `toml:"retrieval_weight"`
+	ListenerWeight         float64 `toml:"listener_weight"`
+	NegativePenalty        float64 `toml:"negative_penalty"`
+	ExposurePenalty        float64 `toml:"exposure_penalty"`
+	NoveltyWeight          float64 `toml:"novelty_weight"`
+	ExplorationChance      float64 `toml:"exploration_chance"`
+}
+
+const (
+	RecommendationMultichannel = "multichannel"
+	RecommendationDeejAI       = "deejai"
+)
+
 // Preview provider identifiers.
 const (
 	PreviewDeezer  = "deezer"
@@ -116,6 +142,15 @@ func Default() Config {
 			MinScore:  85,
 		},
 		Preview: PreviewConfig{Provider: PreviewDeezer},
+		Recommendation: RecommendationConfig{
+			Strategy:        RecommendationMultichannel,
+			SeedAudioBudget: 32, SeedCooccurrenceBudget: 32,
+			TasteClusterBudget: 24, MaxTasteClusters: 4,
+			ExplorationPool: 160, ExplorationBudget: 24, ExplorationMinScore: .10,
+			MaxCandidates: 512, RetrievalWeight: .15, ListenerWeight: .30,
+			NegativePenalty: .65, ExposurePenalty: .30, NoveltyWeight: .20,
+			ExplorationChance: .35,
+		},
 	}
 	return cfg
 }
@@ -158,6 +193,43 @@ func (c Config) Validate() error {
 	}
 	if c.Enrich.UserAgent == "" {
 		return errors.New("config: enrich.user_agent is required by the MusicBrainz API")
+	}
+	if err := c.Recommendation.Validate(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c RecommendationConfig) Validate() error {
+	if c.Strategy != RecommendationMultichannel && c.Strategy != RecommendationDeejAI {
+		return fmt.Errorf("config: unknown recommendation.strategy %q", c.Strategy)
+	}
+	budgets := map[string]int{
+		"seed_audio_budget": c.SeedAudioBudget, "seed_cooccurrence_budget": c.SeedCooccurrenceBudget,
+		"taste_cluster_budget": c.TasteClusterBudget, "max_taste_clusters": c.MaxTasteClusters,
+		"exploration_pool": c.ExplorationPool, "exploration_budget": c.ExplorationBudget,
+		"max_candidates": c.MaxCandidates,
+	}
+	for name, value := range budgets {
+		if value <= 0 {
+			return fmt.Errorf("config: recommendation.%s must be positive", name)
+		}
+	}
+	if c.ExplorationMinScore < -1 || c.ExplorationMinScore > 1 {
+		return errors.New("config: recommendation.exploration_min_score must be between -1 and 1")
+	}
+	weights := map[string]float64{
+		"retrieval_weight": c.RetrievalWeight, "listener_weight": c.ListenerWeight,
+		"negative_penalty": c.NegativePenalty, "exposure_penalty": c.ExposurePenalty,
+		"novelty_weight": c.NoveltyWeight,
+	}
+	for name, value := range weights {
+		if value < 0 {
+			return fmt.Errorf("config: recommendation.%s must not be negative", name)
+		}
+	}
+	if c.ExplorationChance < 0 || c.ExplorationChance > 1 {
+		return errors.New("config: recommendation.exploration_chance must be between 0 and 1")
 	}
 	return nil
 }

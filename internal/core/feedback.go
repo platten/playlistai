@@ -100,21 +100,22 @@ type TasteCluster struct {
 // TasteProfile is a deterministic projection of the contributing feedback
 // events for one catalog and optional request context.
 type TasteProfile struct {
-	Version          int               `json:"version"`
-	AlgorithmVersion string            `json:"algorithmVersion"`
-	SnapshotID       string            `json:"snapshotId"`
-	CatalogVersion   string            `json:"catalogVersion"`
-	AsOf             time.Time         `json:"asOf"`
-	RequestID        string            `json:"requestId"`
-	SessionID        string            `json:"sessionId"`
-	ColdStart        bool              `json:"coldStart"`
-	Positive         EmbeddingAffinity `json:"positive"`
-	Negative         EmbeddingAffinity `json:"negative"`
-	RequestPositive  EmbeddingAffinity `json:"requestPositive"`
-	RequestNegative  EmbeddingAffinity `json:"requestNegative"`
-	Clusters         []TasteCluster    `json:"clusters"`
-	PositiveEvidence int               `json:"positiveEvidence"`
-	NegativeEvidence int               `json:"negativeEvidence"`
-	RequestEvidence  int               `json:"requestEvidence"`
-	ExposureCount    int               `json:"exposureCount"`
+	Version          int                `json:"version"`
+	AlgorithmVersion string             `json:"algorithmVersion"`
+	SnapshotID       string             `json:"snapshotId"`
+	CatalogVersion   string             `json:"catalogVersion"`
+	AsOf             time.Time          `json:"asOf"`
+	RequestID        string             `json:"requestId"`
+	SessionID        string             `json:"sessionId"`
+	ColdStart        bool               `json:"coldStart"`
+	Positive         EmbeddingAffinity  `json:"positive"`
+	Negative         EmbeddingAffinity  `json:"negative"`
+	RequestPositive  EmbeddingAffinity  `json:"requestPositive"`
+	RequestNegative  EmbeddingAffinity  `json:"requestNegative"`
+	Clusters         []TasteCluster     `json:"clusters"`
+	PositiveEvidence int                `json:"positiveEvidence"`
+	NegativeEvidence int                `json:"negativeEvidence"`
+	RequestEvidence  int                `json:"requestEvidence"`
+	ExposureCount    int                `json:"exposureCount"`
+	RecentExposures  map[string]float64 `json:"recentExposures"`
 }

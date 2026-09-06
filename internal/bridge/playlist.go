@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 // ControlOverrides contains only controls explicitly changed after parsing.
@@ -46,11 +47,13 @@ type BuildPlaylistRequest struct {
 }
 
 type PlaylistTrack struct {
-	ID     string `json:"id"`
-	Artist string `json:"artist"`
-	Title  string `json:"title"`
-	Kind   string `json:"kind"`
-	Detail string `json:"detail"`
+	ID       string                   `json:"id"`
+	Artist   string                   `json:"artist"`
+	Title    string                   `json:"title"`
+	Kind     string                   `json:"kind"`
+	Detail   string                   `json:"detail"`
+	Sources  []core.RetrievalEvidence `json:"sources"`
+	Evidence []core.ComponentEvidence `json:"evidence"`
 }
 
 type PlaylistResult struct {
@@ -103,7 +106,12 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	}
 	profileTiming := StageTiming{Stage: "profile", Milliseconds: time.Since(profileStarted).Milliseconds()}
 	started := time.Now()
-	playlist, err := a.app.Reco.Build(ctx, intent)
+	var playlist core.Playlist
+	if personalized, ok := a.app.Reco.(ports.PersonalizedRecommendationEngine); ok {
+		playlist, err = personalized.BuildWithProfile(ctx, intent, profile)
+	} else {
+		playlist, err = a.app.Reco.Build(ctx, intent)
+	}
 	if err != nil {
 		return PlaylistResult{}, err
 	}
@@ -121,10 +129,15 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		})
 	}
 	for index, ref := range playlist.Tracks {
-		track := PlaylistTrack{ID: ref.ID, Artist: ref.Artist, Title: ref.Title}
+		track := PlaylistTrack{
+			ID: ref.ID, Artist: ref.Artist, Title: ref.Title,
+			Sources: []core.RetrievalEvidence{}, Evidence: []core.ComponentEvidence{},
+		}
 		if index < len(playlist.Rationale) {
 			track.Kind = playlist.Rationale[index].Kind
 			track.Detail = playlist.Rationale[index].Detail
+			track.Sources = append(track.Sources, playlist.Rationale[index].Sources...)
+			track.Evidence = append(track.Evidence, playlist.Rationale[index].Evidence...)
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
@@ -150,7 +163,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if a.app.Resolver != nil {
 		catalogVersion = a.app.Resolver.CatalogVersion()
 	}
-	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, profile.AlgorithmVersion, profile.SnapshotID)
+	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersion(), profile.AlgorithmVersion, profile.SnapshotID)
 	if err != nil {
 		return PlaylistResult{}, err
 	}

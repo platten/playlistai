@@ -118,3 +118,33 @@ fresh request/session context without changing the saved result.
 Next dependencies: integrate affinity and cluster coverage into candidate
 ranking, define objective weights and evaluation fixtures, add profile-state
 undo/conflict controls, and add component-level tests for feedback interactions.
+
+## Milestone 6 — Multi-channel Retrieval and Personalized Ranking
+
+Added the versioned `multichannel/v1` strategy with explicit retrieval,
+eligibility, ranking, and sequencing boundaries. Exact searches run separately
+for every resolved representative in audio and co-occurrence space and for each
+relevant positive taste cluster. A bounded exploration channel samples only
+candidates above a configured relevance floor. Candidate unioning retains
+query/channel provenance and uses weighted reciprocal-rank fusion (RRF) because
+native channel scores are not calibrated probabilities. Hard exclusions and
+provisional artist/title recording deduplication run before ranking.
+
+Ranking exposes audio-reference, co-occurrence-reference, listener-affinity,
+negative-match, recent-exposure, and listener-novelty components. Novelty is
+defined as distance from positive profile affinity; absent profile or embedding
+features remain explicitly unavailable. Current-request evidence takes priority
+over durable taste. New generations use a global, seven-day-decayed exposure
+map in reproducible `taste-profile/v2` snapshots. Existing feedback and history
+remain loadable; saved results retain their recorded algorithm/profile versions.
+
+Channel budgets, candidate bounds, exploration floor/chance, and ranking
+weights are configurable under `[recommendation]`. Set `strategy = "deejai"`
+to retain the versioned `deejai/v4` walk as an evaluation baseline. Fixed RNG
+seeds make retrieval exploration and sequencing reproducible, and every selected
+track carries its actual retrieval sources and score-component evidence.
+
+Next dependencies: offline relevance/diversity evaluation fixtures, calibrated
+score fusion, canonical recording IDs, exposure policy controls, and catalog
+features or a local model for the preserved semantic preferences. ANN and
+semantic ranking remain intentionally out of scope.
