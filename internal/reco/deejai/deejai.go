@@ -1,8 +1,4 @@
-// Package deejai is a Go port of teticio/deej-ai.online-app's playlist walk
-// (backend/deejai.py): make_playlist for a single seed, join_the_dots between
-// two or more, additive Gaussian "noise" on the running query, and the
-// id / display-string / back-to-back-artist dedup. It implements
-// ports.RecommendationEngine over a ports.Catalog + ports.SimilarityEngine.
+// Package deejai implements deterministic walks over the Deej-AI embedding catalog.
 package deejai
 
 import (
@@ -10,26 +6,19 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"strings"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// searchK is how many ranked candidates to pull from the similarity engine per
-// step. It only needs to exceed the number of tracks the dedup rules can reject
-// before a valid one appears — a few thousand is comfortably enough at any
-// catalog size, and covers the whole (small) test catalog.
 const searchK = 4096
 
-// Engine implements ports.RecommendationEngine.
 type Engine struct {
 	cat ports.Catalog
 	sim ports.SimilarityEngine
 }
 
-// New builds an engine over a catalog and its similarity index.
 func New(cat ports.Catalog, sim ports.SimilarityEngine) *Engine {
 	return &Engine{cat: cat, sim: sim}
 }
@@ -40,192 +29,311 @@ type step struct {
 	detail string
 }
 
-// Build implements ports.RecommendationEngine. It is deterministic given
-// (intent, catalog, intent.Seed); when intent.Seed is 0 a time-based seed is
-// chosen and echoed back on the Playlist.
 func (e *Engine) Build(_ context.Context, intent core.MusicIntent) (core.Playlist, error) {
 	intent = intent.Normalized()
-
-	seeds := e.resolveSeeds(intent)
-	if len(seeds) == 0 {
+	if missing := e.firstUnresolved(intent.Required); missing != "" {
+		return core.Playlist{}, fmt.Errorf("%w: required track %q did not resolve", core.ErrRequiredTrackConflict, missing)
+	}
+	references := e.resolve(intent.Seeds)
+	required := e.resolve(intent.Required)
+	if len(references) == 0 && len(required) == 0 {
 		return core.Playlist{}, core.ErrNoSeeds
+	}
+	if requestedSeedCount(intent.Required) > 0 && len(required) == 0 {
+		return core.Playlist{}, fmt.Errorf("%w: none of the required tracks resolved", core.ErrRequiredTrackConflict)
+	}
+	if intent.Count < len(required) {
+		return core.Playlist{}, fmt.Errorf("%w: requested %d tracks but %d are required",
+			core.ErrCountBelowRequired, intent.Count, len(required))
+	}
+
+	f := newFilter(intent, references, required)
+	for _, ref := range required {
+		if f.hardExcluded(ref) {
+			return core.Playlist{}, fmt.Errorf("%w: %q is required and excluded",
+				core.ErrRequiredTrackConflict, ref.Display())
+		}
 	}
 
 	seed := intent.Seed
 	if seed == 0 {
 		seed = time.Now().UnixNano()
 	}
-	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // not cryptographic; reproducibility is the point
-
+	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // deterministic recommendation noise
 	weights := [2]float32{float32(intent.Creativity), float32(1 - intent.Creativity)}
 
 	var steps []step
-	if intent.Mode == core.ModeJourney && len(seeds) >= 2 {
-		steps = e.journey(seeds, weights, intent, rng)
+	if intent.Mode == core.ModeJourney {
+		steps = e.journey(references, required, weights, intent, rng, f)
 	} else {
-		steps = e.similar(seeds, weights, intent, rng)
+		steps = e.similar(references, required, weights, intent, rng, f)
 	}
 
 	pl := core.Playlist{Mode: intent.Mode, Seed: seed, Intent: intent}
 	for _, s := range steps {
 		pl.Tracks = append(pl.Tracks, s.ref)
-		pl.Rationale = append(pl.Rationale, core.StepReason{TrackID: s.ref.ID, Kind: s.kind, Detail: s.detail})
+		pl.Rationale = append(pl.Rationale, core.StepReason{
+			TrackID: s.ref.ID,
+			Kind:    s.kind,
+			Detail:  s.detail,
+		})
+	}
+	if len(pl.Tracks) < intent.Count {
+		pl.Notices = append(pl.Notices, core.PlaylistNotice{
+			Code:      "eligible_tracks_exhausted",
+			Detail:    "eligible catalog tracks were exhausted without relaxing exclusions or duplicate protection",
+			Requested: intent.Count,
+			Actual:    len(pl.Tracks),
+		})
 	}
 	return pl, nil
 }
 
-// --- seed resolution -------------------------------------------------------
+func requestedSeedCount(s core.IntentSeeds) int {
+	return len(s.TrackIDs) + len(s.Queries)
+}
 
-func (e *Engine) resolveSeeds(intent core.MusicIntent) []core.TrackRef {
-	seen := map[string]struct{}{}
+func (e *Engine) firstUnresolved(seeds core.IntentSeeds) string {
+	for _, id := range seeds.TrackIDs {
+		if _, ok := e.cat.Meta(id); !ok {
+			return id
+		}
+	}
+	for _, query := range seeds.Queries {
+		if len(e.cat.Resolve(query, 1)) == 0 {
+			return query
+		}
+	}
+	return ""
+}
+
+func (e *Engine) resolve(seeds core.IntentSeeds) []core.TrackRef {
+	seenIDs := map[string]struct{}{}
+	seenRecordings := map[string]struct{}{}
 	var out []core.TrackRef
 	add := func(ref core.TrackRef) {
 		if ref.ID == "" {
 			return
 		}
-		if _, dup := seen[ref.ID]; dup {
+		if _, duplicate := seenIDs[ref.ID]; duplicate {
 			return
 		}
-		seen[ref.ID] = struct{}{}
+		key := provisionalRecordingKey(ref)
+		if _, duplicate := seenRecordings[key]; duplicate {
+			return
+		}
+		seenIDs[ref.ID] = struct{}{}
+		seenRecordings[key] = struct{}{}
 		out = append(out, ref)
 	}
-	for _, id := range intent.Seeds.TrackIDs {
-		if m, ok := e.cat.Meta(id); ok {
-			add(m.Ref)
+	for _, id := range seeds.TrackIDs {
+		if meta, ok := e.cat.Meta(id); ok {
+			add(meta.Ref)
 		}
 	}
-	for _, q := range intent.Seeds.Queries {
-		if hits := e.cat.Resolve(q, 1); len(hits) > 0 {
+	for _, query := range seeds.Queries {
+		if hits := e.cat.Resolve(query, 1); len(hits) > 0 {
 			add(hits[0])
 		}
 	}
 	return out
 }
 
-// --- make_playlist -------------------------------------------------------
-
-func (e *Engine) similar(seeds []core.TrackRef, weights [2]float32, intent core.MusicIntent, rng *rand.Rand) []step {
-	d := e.cat.Dim()
-	f := newFilter(intent, seeds)
-
+func (e *Engine) similar(
+	references, required []core.TrackRef,
+	weights [2]float32,
+	intent core.MusicIntent,
+	rng *rand.Rand,
+	f *filter,
+) []step {
 	steps := make([]step, 0, intent.Count)
-	for _, s := range seeds {
-		steps = append(steps, step{ref: s, kind: "seed"})
-		f.markUsed(s)
+	history := append([]core.TrackRef(nil), references...)
+	if len(history) == 0 {
+		history = append(history, required...)
+	}
+	for _, ref := range required {
+		steps = append(steps, step{ref: ref, kind: "required", detail: "required track"})
+		f.markUsed(ref)
+		if !containsID(history, ref.ID) {
+			history = append(history, ref)
+		}
 	}
 
 	for len(steps) < intent.Count {
-		window := steps[maxInt(0, len(steps)-intent.Lookback):]
-
-		audioSum := make([]float32, d)
-		trackSum := make([]float32, d)
-		for _, w := range window {
-			v, ok := e.cat.Vectors(w.ref.ID)
-			if !ok {
-				continue
-			}
-			addNormalized(audioSum, v.Audio)
-			addNormalized(trackSum, v.Track)
-		}
+		window := history[maxInt(0, len(history)-intent.Lookback):]
+		audioSum, trackSum := e.vectorSums(window)
 		applyNoise(audioSum, trackSum, intent.Noise, rng)
 
+		prevArtist := ""
+		if len(steps) > 0 {
+			prevArtist = normalizeIdentityPart(steps[len(steps)-1].ref.Artist)
+		} else if len(history) > 0 {
+			prevArtist = normalizeIdentityPart(history[len(history)-1].Artist)
+		}
+		chosen, rank, searched, ok := e.pickExpanded(audioSum, trackSum, weights, f, prevArtist)
+		if !ok {
+			break
+		}
+		detail := fmt.Sprintf("rank %d of %d", rank+1, searched)
+		if rank > 0 {
+			detail = fmt.Sprintf("rank %d — %d closer tracks excluded or duplicated", rank+1, rank)
+		}
+		if intent.Noise > 0 {
+			detail += fmt.Sprintf(", noise %.2f", intent.Noise)
+		}
+		steps = append(steps, step{ref: chosen, kind: "nearest", detail: detail})
+		f.markUsed(chosen)
+		history = append(history, chosen)
+	}
+	return steps
+}
+
+func (e *Engine) journey(
+	references, required []core.TrackRef,
+	weights [2]float32,
+	intent core.MusicIntent,
+	rng *rand.Rand,
+	f *filter,
+) []step {
+	anchors := references
+	emitWaypoints := false
+	if len(required) >= 2 {
+		anchors = required
+		emitWaypoints = true
+	}
+	if len(anchors) < 2 {
+		return e.similar(references, required, weights, intent, rng, f)
+	}
+
+	steps := make([]step, 0, intent.Count)
+	if !emitWaypoints {
+		for _, ref := range required {
+			steps = append(steps, step{ref: ref, kind: "required", detail: "required track"})
+			f.markUsed(ref)
+		}
+	}
+	intermediateSlots := intent.Count - len(steps)
+	if emitWaypoints {
+		intermediateSlots = intent.Count - len(required)
+	}
+	perSegment := distribute(intermediateSlots, len(anchors)-1)
+
+	for segment := 0; segment < len(anchors)-1; segment++ {
+		start, end := anchors[segment], anchors[segment+1]
+		if emitWaypoints {
+			steps = append(steps, step{ref: start, kind: "required", detail: "required journey waypoint"})
+			f.markUsed(start)
+		}
+		startVectors, startOK := e.cat.Vectors(start.ID)
+		endVectors, endOK := e.cat.Vectors(end.ID)
+		if !startOK || !endOK {
+			continue
+		}
+		sa, st := l2normalized(startVectors.Audio), l2normalized(startVectors.Track)
+		ea, et := l2normalized(endVectors.Audio), l2normalized(endVectors.Track)
+		slots := perSegment[segment]
+
+		for i := 0; i < slots; i++ {
+			t := float32(i+1) / float32(slots+1)
+			audioSum := interpolate(sa, ea, t)
+			trackSum := interpolate(st, et, t)
+			applyNoise(audioSum, trackSum, intent.Noise, rng)
+
+			prevArtist := normalizeIdentityPart(start.Artist)
+			if len(steps) > 0 {
+				prevArtist = normalizeIdentityPart(steps[len(steps)-1].ref.Artist)
+			}
+			chosen, rank, _, ok := e.pickExpanded(audioSum, trackSum, weights, f, prevArtist)
+			if !ok {
+				break
+			}
+			steps = append(steps, step{
+				ref:    chosen,
+				kind:   "interp",
+				detail: fmt.Sprintf("segment %d, t=%.2f, rank %d", segment+1, t, rank+1),
+			})
+			f.markUsed(chosen)
+		}
+	}
+	if emitWaypoints {
+		last := required[len(required)-1]
+		steps = append(steps, step{ref: last, kind: "required", detail: "required journey waypoint"})
+		f.markUsed(last)
+	}
+	return steps
+}
+
+func (e *Engine) pickExpanded(
+	audioSum, trackSum []float32,
+	weights [2]float32,
+	f *filter,
+	prevArtist string,
+) (core.TrackRef, int, int, bool) {
+	limit := e.sim.Len()
+	if limit <= 0 {
+		return core.TrackRef{}, 0, 0, false
+	}
+	k := minInt(searchK, limit)
+	for {
 		matches := e.sim.Search(ports.SimilarityQuery{
 			AudioSum: audioSum,
 			TrackSum: trackSum,
 			Weights:  weights,
-			K:        searchK,
+			K:        k,
 			Exclude:  f.excludeIDs(),
 		})
-		if len(matches) == 0 {
-			break
+		if chosen, rank, ok := f.pick(e.cat, matches, prevArtist); ok {
+			return chosen, rank, len(matches), true
 		}
-
-		prevArtist := artistPrefix(steps[len(steps)-1].ref.Display())
-		chosen, rank, ok := f.pick(e.cat, matches, prevArtist)
-		kind, detail := "nearest", fmt.Sprintf("rank %d of %d", rank+1, len(matches))
-		if !ok {
-			chosen = e.refOf(matches[len(matches)-1].ID)
-			kind, detail = "fallback", "no candidate passed the dedup rules"
-		} else if rank > 0 {
-			detail = fmt.Sprintf("rank %d — %d closer skipped by dedup", rank+1, rank)
+		if k == limit || len(matches) < k {
+			return core.TrackRef{}, 0, len(matches), false
 		}
-		if intent.Noise > 0 && kind == "nearest" {
-			detail += fmt.Sprintf(", noise %.2f", intent.Noise)
-		}
-
-		steps = append(steps, step{ref: chosen, kind: kind, detail: detail})
-		f.markUsed(chosen)
+		k = minInt(k*2, limit)
 	}
-	return steps
 }
 
-// --- join_the_dots -----------------------------------------------------
-
-func (e *Engine) journey(seeds []core.TrackRef, weights [2]float32, intent core.MusicIntent, rng *rand.Rand) []step {
-	d := e.cat.Dim()
-	size := intent.Count // intermediates per segment (upstream `size`)
-	f := newFilter(intent, seeds)
-	for _, s := range seeds { // journey dedups display strings against the waypoints only
-		f.reserveDisplay(s)
-	}
-
-	var steps []step
-	for si := 0; si < len(seeds)-1; si++ {
-		start, end := seeds[si], seeds[si+1]
-		startV, _ := e.cat.Vectors(start.ID)
-		endV, _ := e.cat.Vectors(end.ID)
-		sa, st := l2normalized(startV.Audio), l2normalized(startV.Track)
-		ea, et := l2normalized(endV.Audio), l2normalized(endV.Track)
-
-		steps = append(steps, step{ref: start, kind: "seed", detail: "waypoint"})
-		f.markUsedID(start)
-
-		for i := 0; i < size; i++ {
-			g := float32(i+1) / float32(size+1)
-			fh := float32(size-i) / float32(size+1)
-
-			audioSum := make([]float32, d)
-			trackSum := make([]float32, d)
-			for k := 0; k < d; k++ {
-				audioSum[k] = fh*sa[k] + g*ea[k]
-				trackSum[k] = fh*st[k] + g*et[k]
-			}
-			applyNoise(audioSum, trackSum, intent.Noise, rng)
-
-			matches := e.sim.Search(ports.SimilarityQuery{
-				AudioSum: audioSum,
-				TrackSum: trackSum,
-				Weights:  weights,
-				K:        searchK,
-				Exclude:  f.excludeIDs(),
-			})
-			if len(matches) == 0 {
-				break
-			}
-			prevArtist := artistPrefix(steps[len(steps)-1].ref.Display())
-			chosen, rank, ok := f.pick(e.cat, matches, prevArtist)
-			kind, detail := "interp", fmt.Sprintf("segment %d, t=%.2f", si+1, g)
-			if !ok {
-				chosen = e.refOf(matches[len(matches)-1].ID)
-				kind = "fallback"
-			}
-			_ = rank
-			steps = append(steps, step{ref: chosen, kind: kind, detail: detail})
-			f.markUsedID(chosen)
+func (e *Engine) vectorSums(refs []core.TrackRef) ([]float32, []float32) {
+	audioSum := make([]float32, e.cat.Dim())
+	trackSum := make([]float32, e.cat.Dim())
+	for _, ref := range refs {
+		if vectors, ok := e.cat.Vectors(ref.ID); ok {
+			addNormalized(audioSum, vectors.Audio)
+			addNormalized(trackSum, vectors.Track)
 		}
 	}
-	steps = append(steps, step{ref: seeds[len(seeds)-1], kind: "seed", detail: "waypoint"})
-	return steps
+	return audioSum, trackSum
 }
 
-func (e *Engine) refOf(id string) core.TrackRef {
-	if m, ok := e.cat.Meta(id); ok {
-		return m.Ref
+func distribute(total, buckets int) []int {
+	out := make([]int, buckets)
+	if buckets <= 0 || total <= 0 {
+		return out
 	}
-	return core.TrackRef{ID: id}
+	for i := range out {
+		out[i] = total / buckets
+		if i < total%buckets {
+			out[i]++
+		}
+	}
+	return out
 }
 
-// --- vector helpers ----------------------------------------------------
+func interpolate(a, b []float32, t float32) []float32 {
+	out := make([]float32, len(a))
+	for i := range out {
+		out[i] = (1-t)*a[i] + t*b[i]
+	}
+	return out
+}
+
+func containsID(refs []core.TrackRef, id string) bool {
+	for _, ref := range refs {
+		if ref.ID == id {
+			return true
+		}
+	}
+	return false
+}
 
 func addNormalized(dst, src []float32) {
 	n := l2norm(src)
@@ -250,40 +358,34 @@ func l2normalized(v []float32) []float32 {
 }
 
 func l2norm(v []float32) float32 {
-	var s float64
+	var sum float64
 	for _, x := range v {
-		s += float64(x) * float64(x)
+		sum += float64(x) * float64(x)
 	}
-	return float32(math.Sqrt(s))
+	return float32(math.Sqrt(sum))
 }
 
-// applyNoise adds zero-mean Gaussian noise with std = noise*||v|| to each
-// sub-vector, matching most_similar's np.random.normal(0, noise*norm, 100).
-// A no-op when noise == 0, so seed choice never affects a noise-free run.
 func applyNoise(audioSum, trackSum []float32, noise float64, rng *rand.Rand) {
 	if noise <= 0 {
 		return
 	}
-	for _, v := range [][]float32{audioSum, trackSum} {
-		std := noise * float64(l2norm(v))
-		for i := range v {
-			v[i] += float32(rng.NormFloat64() * std)
+	for _, vector := range [][]float32{audioSum, trackSum} {
+		std := noise * float64(l2norm(vector))
+		for i := range vector {
+			vector[i] += float32(rng.NormFloat64() * std)
 		}
 	}
 }
 
-func artistPrefix(display string) string {
-	if i := strings.Index(display, " - "); i >= 0 {
-		return display[:i]
-	}
-	if len(display) == 0 {
-		return ""
-	}
-	return display[:len(display)-1] // mirror Python str.find(' - ') == -1 → s[:-1]
-}
-
 func maxInt(a, b int) int {
 	if a > b {
+		return a
+	}
+	return b
+}
+
+func minInt(a, b int) int {
+	if a < b {
 		return a
 	}
 	return b

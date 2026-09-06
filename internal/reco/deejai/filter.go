@@ -7,81 +7,82 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// filter carries the dedup + constraint state for one walk. It mirrors upstream:
-//
-//   - exclude: everything a Search must not return (playlist ids + all seed ids)
-//   - usedDisplay: "Artist - Title" strings already used (in similar mode the
-//     picks are added too; in journey mode only the waypoints are, per upstream)
-//   - excludeArtist / seedArtist: our own MusicIntent constraints
-//   - noBackToBack: reject a candidate whose artist == the previous pick's
+// recordingKeyFunc is deliberately replaceable: artist/title is the best key
+// in today's catalog, while a future catalog can supply canonical recording IDs.
+type recordingKeyFunc func(core.TrackRef) string
+
 type filter struct {
 	exclude       map[string]struct{}
-	usedDisplay   map[string]struct{}
+	usedRecording map[string]struct{}
 	excludeArtist map[string]struct{}
 	seedArtist    map[string]struct{}
 	noBackToBack  bool
+	recordingKey  recordingKeyFunc
 }
 
-func newFilter(intent core.MusicIntent, seeds []core.TrackRef) *filter {
+func newFilter(intent core.MusicIntent, references, required []core.TrackRef) *filter {
 	f := &filter{
-		exclude:       make(map[string]struct{}, len(seeds)+intent.Count),
-		usedDisplay:   make(map[string]struct{}, len(seeds)+intent.Count),
+		exclude:       make(map[string]struct{}, len(references)+len(required)+intent.Count),
+		usedRecording: make(map[string]struct{}, len(references)+len(required)+intent.Count),
 		excludeArtist: make(map[string]struct{}),
 		seedArtist:    make(map[string]struct{}),
 		noBackToBack:  intent.Constraints.NoRepeatArtistBackToBack,
+		recordingKey:  provisionalRecordingKey,
 	}
-	for _, s := range seeds {
-		f.exclude[s.ID] = struct{}{}
+	for _, ref := range append(append([]core.TrackRef(nil), references...), required...) {
+		f.exclude[ref.ID] = struct{}{}
+		f.usedRecording[f.recordingKey(ref)] = struct{}{}
 	}
-	for _, a := range intent.Constraints.ArtistsExclude {
-		if a = strings.ToLower(strings.TrimSpace(a)); a != "" {
-			f.excludeArtist[a] = struct{}{}
+	for _, artist := range intent.Constraints.ArtistsExclude {
+		if key := normalizeIdentityPart(artist); key != "" {
+			f.excludeArtist[key] = struct{}{}
 		}
 	}
 	if intent.Constraints.ExcludeSeedArtists {
-		for _, s := range seeds {
-			f.seedArtist[strings.ToLower(s.Artist)] = struct{}{}
+		for _, ref := range references {
+			f.seedArtist[normalizeIdentityPart(ref.Artist)] = struct{}{}
 		}
 	}
 	return f
 }
 
-// markUsed records a pick in similar mode: excluded by id, and its display
-// string reserved.
-func (f *filter) markUsed(ref core.TrackRef) {
-	f.exclude[ref.ID] = struct{}{}
-	f.usedDisplay[ref.Display()] = struct{}{}
+func provisionalRecordingKey(ref core.TrackRef) string {
+	return normalizeIdentityPart(ref.Artist) + "\x00" + normalizeIdentityPart(ref.Title)
 }
 
-// markUsedID records a pick by id only (journey mode; picks don't reserve their
-// display string there, matching upstream).
-func (f *filter) markUsedID(ref core.TrackRef) { f.exclude[ref.ID] = struct{}{} }
+func normalizeIdentityPart(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(s)), " "))
+}
 
-// reserveDisplay reserves a waypoint's display string (journey mode).
-func (f *filter) reserveDisplay(ref core.TrackRef) { f.usedDisplay[ref.Display()] = struct{}{} }
+func (f *filter) hardExcluded(ref core.TrackRef) bool {
+	artist := normalizeIdentityPart(ref.Artist)
+	_, artistExcluded := f.excludeArtist[artist]
+	_, seedArtistExcluded := f.seedArtist[artist]
+	return artistExcluded || seedArtistExcluded
+}
+
+func (f *filter) markUsed(ref core.TrackRef) {
+	f.exclude[ref.ID] = struct{}{}
+	f.usedRecording[f.recordingKey(ref)] = struct{}{}
+}
 
 func (f *filter) excludeIDs() map[string]struct{} { return f.exclude }
 
-// pick returns the first match that survives every dedup rule, its rank in the
-// match list, and ok=false if none do.
+// pick returns the first match that survives every hard exclusion and dedup rule.
 func (f *filter) pick(cat ports.Catalog, matches []ports.Match, prevArtist string) (core.TrackRef, int, bool) {
-	for rank, m := range matches {
-		meta, ok := cat.Meta(m.ID)
+	for rank, match := range matches {
+		meta, ok := cat.Meta(match.ID)
 		if !ok {
 			continue
 		}
 		ref := meta.Ref
-		if _, dup := f.usedDisplay[ref.Display()]; dup {
+		if _, duplicate := f.usedRecording[f.recordingKey(ref)]; duplicate {
 			continue
 		}
-		lart := strings.ToLower(ref.Artist)
-		if _, ex := f.excludeArtist[lart]; ex {
+		if f.hardExcluded(ref) {
 			continue
 		}
-		if _, sa := f.seedArtist[lart]; sa {
-			continue
-		}
-		if f.noBackToBack && artistPrefix(ref.Display()) == prevArtist {
+		if f.noBackToBack && normalizeIdentityPart(ref.Artist) == prevArtist {
 			continue
 		}
 		return ref, rank, true

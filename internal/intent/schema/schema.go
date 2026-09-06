@@ -14,15 +14,17 @@ import (
 
 // Wire is the exact object the model produces (fixed key order, see GBNF).
 type Wire struct {
-	Seeds          []string `json:"seeds"`
-	Mode           string   `json:"mode"` // "similar" | "journey"
-	Count          int      `json:"count"`
-	Creativity     float64  `json:"creativity"`
-	Noise          float64  `json:"noise"`
-	Lookback       int      `json:"lookback"`
-	ExcludeArtists []string `json:"exclude_artists"`
-	NoRepeatArtist bool     `json:"no_repeat_artist"`
-	Notes          string   `json:"notes"`
+	Seeds              []string `json:"seeds"`
+	RequiredTracks     []string `json:"required_tracks"`
+	Mode               string   `json:"mode"` // "similar" | "journey"
+	Count              int      `json:"count"`
+	Creativity         float64  `json:"creativity"`
+	Noise              float64  `json:"noise"`
+	Lookback           int      `json:"lookback"`
+	ExcludeArtists     []string `json:"exclude_artists"`
+	NoRepeatArtist     bool     `json:"no_repeat_artist"`
+	ExcludeSeedArtists bool     `json:"exclude_seed_artists"`
+	Notes              string   `json:"notes"`
 }
 
 // GBNF is the llama.cpp grammar for Wire. Keys are emitted in a fixed order so
@@ -32,7 +34,7 @@ type Wire struct {
 // Every rule body is on a single physical line: the pinned llama-server's GBNF
 // parser rejects rules whose body wraps across lines ("failed to parse
 // grammar"). Do not reflow this for readability.
-const GBNF = `root ::= "{" ws "\"seeds\":" ws strlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"count\":" ws int ws "," ws "\"creativity\":" ws num ws "," ws "\"noise\":" ws num ws "," ws "\"lookback\":" ws int ws "," ws "\"exclude_artists\":" ws strlist ws "," ws "\"no_repeat_artist\":" ws ("true" | "false") ws "," ws "\"notes\":" ws str ws "}" ws
+const GBNF = `root ::= "{" ws "\"seeds\":" ws strlist ws "," ws "\"required_tracks\":" ws strlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"count\":" ws int ws "," ws "\"creativity\":" ws num ws "," ws "\"noise\":" ws num ws "," ws "\"lookback\":" ws int ws "," ws "\"exclude_artists\":" ws strlist ws "," ws "\"no_repeat_artist\":" ws ("true" | "false") ws "," ws "\"exclude_seed_artists\":" ws ("true" | "false") ws "," ws "\"notes\":" ws str ws "}" ws
 strlist ::= "[" ws ( str (ws "," ws str)* )? ws "]"
 str ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
 int ::= "-"? ("0" | [1-9] [0-9]*)
@@ -57,8 +59,9 @@ func Parse(raw []byte) (core.MusicIntent, error) {
 // ToCore maps the wire object onto core.MusicIntent and normalizes it.
 func (w Wire) ToCore() core.MusicIntent {
 	m := core.MusicIntent{
-		Version:    1,
+		Version:    core.CurrentIntentVersion,
 		Seeds:      core.IntentSeeds{Queries: cleanStrings(w.Seeds)},
+		Required:   core.IntentSeeds{Queries: cleanStrings(w.RequiredTracks)},
 		Mode:       core.Mode(w.Mode),
 		Count:      w.Count,
 		Creativity: w.Creativity,
@@ -67,6 +70,7 @@ func (w Wire) ToCore() core.MusicIntent {
 		Constraints: core.IntentConstraints{
 			NoRepeatArtistBackToBack: w.NoRepeatArtist,
 			ArtistsExclude:           cleanStrings(w.ExcludeArtists),
+			ExcludeSeedArtists:       w.ExcludeSeedArtists,
 		},
 		NotesForUser: w.Notes,
 	}

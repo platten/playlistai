@@ -261,6 +261,11 @@ export function GenerateScreen({
                 <Icon.ListPlus size={12} /> {s}
               </Chip>
             ))}
+            {(preview.requiredTracks ?? []).map((s) => (
+              <Chip key={`required-${s}`} accent>
+                <Icon.ListPlus size={12} /> required: {s}
+              </Chip>
+            ))}
             {preview.mode === "journey" && <Chip>journey</Chip>}
             <Chip>
               <span className="text-faint">count</span> {preview.count}
@@ -275,6 +280,7 @@ export function GenerateScreen({
               <span className="text-faint">lookback</span> {preview.lookback}
             </Chip>
             {preview.noRepeatArtist && <Chip>no back-to-back artist</Chip>}
+            {preview.excludeSeedArtists && <Chip>exclude reference artists</Chip>}
             {(preview.artistsExclude ?? []).map((a) => (
               <Chip key={a}>excl. {a}</Chip>
             ))}

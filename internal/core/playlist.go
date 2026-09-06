@@ -4,18 +4,28 @@ package core
 // per-pick explanation.
 type StepReason struct {
 	TrackID string `json:"trackId"`
-	Kind    string `json:"kind"` // "nearest" | "noise-jump" | "interp" | "dedup-skip" | "fallback"
+	Kind    string `json:"kind"` // "required" | "nearest" | "interp"
 	Detail  string `json:"detail"`
+}
+
+// PlaylistNotice explains why a valid playlist is shorter than requested.
+// Codes are stable for bridge/UI consumers; Detail is for people.
+type PlaylistNotice struct {
+	Code      string `json:"code"`
+	Detail    string `json:"detail"`
+	Requested int    `json:"requested"`
+	Actual    int    `json:"actual"`
 }
 
 // Playlist is the output of RecommendationEngine.Build. It is deterministic
 // given (intent, catalog, Seed).
 type Playlist struct {
-	Tracks    []TrackRef   `json:"tracks"`
-	Mode      Mode         `json:"mode"`
-	Seed      int64        `json:"seed"` // RNG seed used; replay-able
-	Rationale []StepReason `json:"rationale"`
-	Intent    MusicIntent  `json:"intent"`
+	Tracks    []TrackRef       `json:"tracks"`
+	Mode      Mode             `json:"mode"`
+	Seed      int64            `json:"seed"` // RNG seed used; replay-able
+	Rationale []StepReason     `json:"rationale"`
+	Intent    MusicIntent      `json:"intent"`
+	Notices   []PlaylistNotice `json:"notices"`
 }
 
 // IDs returns the track ids in order.

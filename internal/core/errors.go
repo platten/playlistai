@@ -11,6 +11,10 @@ var (
 	ErrNotImplemented = errors.New("playlistai: not implemented")
 	// ErrNoSeeds means an intent produced no resolvable seed tracks.
 	ErrNoSeeds = errors.New("playlistai: no seeds resolved")
+	// ErrRequiredTrackConflict means a required output track violates a hard exclusion.
+	ErrRequiredTrackConflict = errors.New("playlistai: required track conflicts with exclusions")
+	// ErrCountBelowRequired means Count cannot contain all required tracks.
+	ErrCountBelowRequired = errors.New("playlistai: count is smaller than required track count")
 	// ErrCatalogEmpty means the catalog has not been downloaded/loaded.
 	ErrCatalogEmpty = errors.New("playlistai: catalog is empty")
 	// ErrUnavailable marks an optional backend that is not configured

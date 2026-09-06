@@ -43,7 +43,7 @@ FIRST LAUNCH (one-time, user-initiated, with progress bars):
   user prompt ──► IntentParser ──MusicIntent──► RecommendationEngine ──► Playlist
   (llama / rules)                                 │  resolve seeds (Catalog)
   UI sliders: creativity / noise /                │  blended-cosine kNN (SimilarityEngine)
-  lookback / count  ─── override, re-run ────────►│  + Gaussian noise + dedup (artist/id)
+  lookback / total count ─ override, re-run ─────►│  + Gaussian noise + recording/id dedup
 
   optional, online, user-initiated (progress-tracked):
   ───────────────────────────────────────────────────
@@ -90,8 +90,9 @@ defaults; the engine never trusts a raw parse.
 ```go
 type MusicIntent struct {
     Version      int
-    Seeds        IntentSeeds       // Queries (catalog search strings) or resolved TrackIDs
-    Count        int               // 1..100
+    Seeds        IntentSeeds       // references that guide the walk; not implicitly output
+    Required     IntentSeeds       // tracks that must appear; journey waypoints when >=2
+    Count        int               // 1..100 total output tracks, including Required
     Mode         Mode              // "similar" (1 seed) | "journey" (>=2 seeds)
     Creativity   float64           // 0..1 blend of the two embedding spaces
     Noise        float64           // 0..1 "drunk" — Gaussian added to the query vector
@@ -139,7 +140,8 @@ internal/
               Matches deej-ai.online-app most_similar.
   reco/       deejai/ — Go port of backend/deejai.py: make_playlist (single seed) +
               join_the_dots (>=2 seeds), seeded Gaussian noise, id/display/artist
-              dedup; deterministic given (intent, catalog, intent.Seed)
+              normalized artist/title recording dedup; deterministic given
+              (intent, catalog, intent.Seed); hard-filter exhaustion returns a partial result
   intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
                         (always available; the fallback)
               schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
@@ -198,11 +200,13 @@ handoff is tokenless.
   step.
 - Each port is exercised through its fake; the real implementations add
   contract/parity tests.
-- The load-bearing test is a golden-parity check: `python/parity_playlist.py`
+- The upstream baseline is captured by golden parity fixtures: `python/parity_playlist.py`
   (a stdlib-only reimplementation of upstream `backend/deejai.py`, `noise=0`)
   emits `internal/reco/deejai/testdata/golden/*.json` from the synthetic
   catalog; the Go engine must reproduce each sequence within edit distance 1
-  (exact on the first 3 picks). It currently matches all 7 fixtures exactly.
+  (exact on the first 3 picks). Similar-mode fixtures remain active. Journey
+  fixtures are retained but skipped because upstream treats count as
+  intermediates per segment rather than the total output length.
 
 ---
 

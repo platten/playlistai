@@ -72,14 +72,15 @@ func TestFakeRecommendationEngineResolvesSeeds(t *testing.T) {
 	r := &RecommendationEngine{Catalog: sampleCatalog()}
 
 	pl, err := r.Build(context.Background(), core.MusicIntent{
-		Seeds: core.IntentSeeds{Queries: []string{"justice"}},
-		Count: 5,
+		Version: core.CurrentIntentVersion,
+		Seeds:   core.IntentSeeds{Queries: []string{"justice"}},
+		Count:   5,
 	})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
-	if len(pl.Tracks) != 2 {
-		t.Fatalf("want 2 justice tracks, got %d", len(pl.Tracks))
+	if len(pl.Tracks) != 1 {
+		t.Fatalf("want the non-reference justice track, got %d", len(pl.Tracks))
 	}
 
 	if _, err := r.Build(context.Background(), core.MusicIntent{}); err != core.ErrNoSeeds {

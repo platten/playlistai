@@ -12,9 +12,9 @@
 // │  "upbeat like  ───► │ IntentParser  │ ──── JSON ────► │ RecommendationEngine │   │
 // │   Justice, 20"      │ llama / rules │  (GBNF-          │  deejai walk:         │  │
 // │                     └───────────────┘   constrained)  │   Σ last N vecs →      │ │
-// │   UI sliders: creativity / noise / lookback / count ──►│   blended cosine kNN → │ │
+// │   UI sliders: creativity / noise / lookback / total ───►│   blended cosine kNN → │ │
 // │   (override intent, re-run without re-parsing)         │   + Gaussian noise →   │ │
-// │                        ┌───────────────┐  vectors      │   dedup (artist/id)    │ │
+// │                        ┌───────────────┐  vectors      │   recording/id dedup  │ │
 // │                        │  Catalog      │◄──────────────┤                        │ │
 // │                        │  int8 vecs +  │  Resolve()    │  SimilarityEngine      │ │
 // │                        │  SQLite meta  │  token match   │  brute force, 2×100   │ │

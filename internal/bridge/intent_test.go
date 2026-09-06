@@ -64,15 +64,15 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if len(res.Playlist.Tracks) != 10 {
 		t.Fatalf("playlist length = %d, want 10", len(res.Playlist.Tracks))
 	}
-	if len(res.Request.SeedIDs) != 1 {
-		t.Fatalf("resolved seedIDs = %#v", res.Request.SeedIDs)
+	if len(res.Request.ReferenceIDs) != 1 || len(res.Request.RequiredIDs) != 0 {
+		t.Fatalf("resolved references/required = %#v/%#v", res.Request.ReferenceIDs, res.Request.RequiredIDs)
 	}
 	// The seed the walk used must be pinned into the returned request.
 	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed == 0 {
 		t.Fatalf("request seed %d != playlist seed %d", res.Request.Seed, res.Playlist.Seed)
 	}
-	if res.Playlist.Tracks[0].Kind != "seed" {
-		t.Fatalf("first track kind = %q", res.Playlist.Tracks[0].Kind)
+	if res.Playlist.Tracks[0].Kind != "nearest" {
+		t.Fatalf("reference seed should guide but not be emitted; first kind = %q", res.Playlist.Tracks[0].Kind)
 	}
 	// The generated name is a short label (<= 6 words), not the raw prompt.
 	if res.Name == "" {
@@ -93,5 +93,16 @@ func TestGenerateFromPromptNeedsCatalog(t *testing.T) {
 	api := New(newTestContainer(t), nil) // no catalog
 	if _, err := api.GenerateFromPrompt("like Justice"); err == nil {
 		t.Fatal("expected an error when the catalog is not loaded")
+	}
+}
+
+func TestLegacyBuildRequestMigratesSeedsToRequired(t *testing.T) {
+	t.Parallel()
+	req := (BuildPlaylistRequest{SeedIDs: []string{"legacy"}}).normalized()
+	if req.Version != 2 || len(req.ReferenceIDs) != 1 || len(req.RequiredIDs) != 1 {
+		t.Fatalf("legacy request not migrated: %+v", req)
+	}
+	if req.ReferenceIDs[0] != "legacy" || req.RequiredIDs[0] != "legacy" {
+		t.Fatalf("legacy seed identity changed: %+v", req)
 	}
 }

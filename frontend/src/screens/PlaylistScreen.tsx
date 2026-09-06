@@ -15,6 +15,7 @@ import {
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
+  required: "seed",
   nearest: "nearest",
   interp: "interp",
   fallback: "fallback",
@@ -38,6 +39,7 @@ export function PlaylistScreen({
   const [noise, setNoise] = useState(request.noise);
   const [lookback, setLookback] = useState(request.lookback || 3);
   const [count, setCount] = useState(request.count || 25);
+  const [excludeSeedArtists, setExcludeSeedArtists] = useState(request.excludeSeedArtist);
   const [runSeed, setRunSeed] = useState<number>(request.seed || 1);
 
   const [result, setResult] = useState<PlaylistResult | null>(null);
@@ -50,14 +52,16 @@ export function PlaylistScreen({
 
   // request identity resets local state when the caller hands us a new one.
   const requestKey = useMemo(
-    () => `${(request.seedIds ?? []).join(",")}|${request.mode}`,
-    [request.seedIds, request.mode],
+    () =>
+      `${(request.referenceIds ?? []).join(",")}|${(request.requiredIds ?? []).join(",")}|${(request.seedIds ?? []).join(",")}|${request.mode}`,
+    [request.referenceIds, request.requiredIds, request.seedIds, request.mode],
   );
   useEffect(() => {
     setCreativity(request.creativity);
     setNoise(request.noise);
     setLookback(request.lookback || 3);
     setCount(request.count || 25);
+    setExcludeSeedArtists(request.excludeSeedArtist);
     setRunSeed(request.seed || 1);
     setExpanded(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,11 +77,12 @@ export function PlaylistScreen({
       lookback,
       count,
       seed: runSeed,
+      excludeSeedArtist: excludeSeedArtists,
     })
       .then((r) => setResult(r ?? null))
       .catch((e) => setError(String(e)))
       .finally(() => setBusy(false));
-  }, [request, creativity, noise, lookback, count, runSeed]);
+  }, [request, creativity, noise, lookback, count, runSeed, excludeSeedArtists]);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
@@ -87,6 +92,9 @@ export function PlaylistScreen({
 
   const tracks = result?.tracks ?? [];
   const isJourney = (result?.mode ?? request.mode) === "journey";
+  const requiredCount =
+    (request.requiredIds ?? []).length ||
+    (request.version < 2 ? (request.seedIds ?? []).length : 0);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[880px] flex-col px-6 py-6">
@@ -156,13 +164,31 @@ export function PlaylistScreen({
           hint="picks averaged"
         />
         <Stepper
-          label={isJourney ? "Per segment" : "Count"}
+          label="Total tracks"
           value={count}
           onChange={setCount}
-          min={2}
+          min={Math.max(1, requiredCount)}
           max={100}
         />
+        <label className="col-span-2 flex items-center gap-2 text-[12.5px] text-muted">
+          <input
+            type="checkbox"
+            checked={excludeSeedArtists}
+            onChange={(e) => setExcludeSeedArtists(e.target.checked)}
+            className="size-3.5 accent-[var(--pai-accent)]"
+          />
+          Exclude other tracks by reference artists
+        </label>
       </div>
+
+      {(result?.notices ?? []).map((notice) => (
+        <div
+          key={notice.code}
+          className="mt-3 rounded-control border border-line bg-surface px-3 py-2 text-[12px] text-muted"
+        >
+          {notice.detail} ({notice.actual} of {notice.requested} tracks)
+        </div>
+      ))}
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
         {error ? (

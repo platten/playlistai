@@ -14,7 +14,7 @@ func TestMusicIntentNormalized(t *testing.T) {
 			name: "empty gets defaults",
 			in:   MusicIntent{},
 			check: func(t *testing.T, m MusicIntent) {
-				if m.Version != 1 || m.Count != DefaultCount || m.Lookback != DefaultLookback {
+				if m.Version != CurrentIntentVersion || m.Count != DefaultCount || m.Lookback != DefaultLookback {
 					t.Fatalf("defaults not applied: %+v", m)
 				}
 				if m.Mode != ModeSimilar {
@@ -68,6 +68,19 @@ func TestMusicIntentNormalized(t *testing.T) {
 			t.Parallel()
 			tc.check(t, tc.in.Normalized())
 		})
+	}
+}
+
+func TestMusicIntentLegacySeedsBecomeRequired(t *testing.T) {
+	t.Parallel()
+	m := (MusicIntent{Version: 1, Seeds: IntentSeeds{TrackIDs: []string{"old"}}}).Normalized()
+	if m.Version != CurrentIntentVersion || len(m.Required.TrackIDs) != 1 || m.Required.TrackIDs[0] != "old" {
+		t.Fatalf("legacy intent not migrated: %+v", m)
+	}
+
+	v2 := (MusicIntent{Version: CurrentIntentVersion, Seeds: IntentSeeds{TrackIDs: []string{"reference"}}}).Normalized()
+	if len(v2.Required.TrackIDs) != 0 {
+		t.Fatalf("v2 reference was made required: %+v", v2)
 	}
 }
 

@@ -23,7 +23,10 @@ interface ReviewState {
 
 function seedToRequest(seed: Seed): BuildPlaylistRequest {
   return {
-    seedIds: [seed.id],
+    version: 2,
+    referenceIds: [seed.id],
+    requiredIds: [],
+    seedIds: [],
     mode: "similar",
     creativity: 0.5,
     noise: 0.1,

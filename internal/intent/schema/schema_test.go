@@ -9,7 +9,7 @@ import (
 
 func TestParseValid(t *testing.T) {
 	t.Parallel()
-	raw := []byte(`{"seeds":["Justice","Daft Punk"],"mode":"journey","count":30,"creativity":0.7,"noise":0.4,"lookback":2,"exclude_artists":["Skrillex"],"no_repeat_artist":true,"notes":"note"}`)
+	raw := []byte(`{"seeds":["Justice","Daft Punk"],"required_tracks":["Air - La femme d'argent"],"mode":"journey","count":30,"creativity":0.7,"noise":0.4,"lookback":2,"exclude_artists":["Skrillex"],"no_repeat_artist":true,"exclude_seed_artists":true,"notes":"note"}`)
 	m, err := Parse(raw)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -25,6 +25,9 @@ func TestParseValid(t *testing.T) {
 	}
 	if len(m.Constraints.ArtistsExclude) != 1 || !m.Constraints.NoRepeatArtistBackToBack {
 		t.Fatalf("constraints = %+v", m.Constraints)
+	}
+	if len(m.Required.Queries) != 1 || !m.Constraints.ExcludeSeedArtists {
+		t.Fatalf("required/seed exclusion = %+v / %+v", m.Required, m.Constraints)
 	}
 	if m.NotesForUser != "note" {
 		t.Fatalf("notes = %q", m.NotesForUser)
@@ -99,7 +102,7 @@ func TestFewShotExamplesAreValid(t *testing.T) {
 
 func TestGBNFMentionsEveryKey(t *testing.T) {
 	t.Parallel()
-	for _, key := range []string{"seeds", "mode", "count", "creativity", "noise", "lookback", "exclude_artists", "no_repeat_artist", "notes"} {
+	for _, key := range []string{"seeds", "required_tracks", "mode", "count", "creativity", "noise", "lookback", "exclude_artists", "no_repeat_artist", "exclude_seed_artists", "notes"} {
 		if !contains(GBNF, `\"`+key+`\":`) {
 			t.Fatalf("GBNF is missing key %q", key)
 		}

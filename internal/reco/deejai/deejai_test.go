@@ -83,7 +83,7 @@ func TestSimilarBasics(t *testing.T) {
 	if len(pl.Tracks) != 12 {
 		t.Fatalf("count = %d, want 12", len(pl.Tracks))
 	}
-	if pl.Tracks[0].ID != "trk3" || pl.Rationale[0].Kind != "seed" {
+	if pl.Tracks[0].ID != "trk3" || pl.Rationale[0].Kind != "required" {
 		t.Fatalf("first pick should be the seed, got %+v / %s", pl.Tracks[0], pl.Rationale[0].Kind)
 	}
 
@@ -122,6 +122,7 @@ func TestSeedResolutionAndErrNoSeeds(t *testing.T) {
 
 	// nothing resolvable
 	empty := baseIntent()
+	empty.Version = core.CurrentIntentVersion
 	empty.Seeds.Queries = []string{"zzz nonexistent"}
 	if _, err := eng.Build(context.Background(), empty); !errors.Is(err, core.ErrNoSeeds) {
 		t.Fatalf("want ErrNoSeeds, got %v", err)
@@ -165,20 +166,19 @@ func TestJourneyWaypointsAndLength(t *testing.T) {
 
 	intent := baseIntent()
 	intent.Mode = core.ModeJourney
-	intent.Count = 6 // intermediates per segment
+	intent.Count = 6 // total, including required waypoints
 	intent.Seeds.TrackIDs = []string{"trk2", "trk40", "trk90"}
 
 	pl, err := eng.Build(context.Background(), intent)
 	if err != nil {
 		t.Fatalf("Build journey: %v", err)
 	}
-	// 3 waypoints + 2 segments * 6 = 15
-	if len(pl.Tracks) != 15 {
-		t.Fatalf("journey length = %d, want 15", len(pl.Tracks))
+	if len(pl.Tracks) != 6 {
+		t.Fatalf("journey length = %d, want 6", len(pl.Tracks))
 	}
-	if pl.Tracks[0].ID != "trk2" || pl.Tracks[7].ID != "trk40" || pl.Tracks[14].ID != "trk90" {
+	if pl.Tracks[0].ID != "trk2" || pl.Tracks[3].ID != "trk40" || pl.Tracks[5].ID != "trk90" {
 		t.Fatalf("waypoints out of place: %s %s %s",
-			pl.Tracks[0].ID, pl.Tracks[7].ID, pl.Tracks[14].ID)
+			pl.Tracks[0].ID, pl.Tracks[3].ID, pl.Tracks[5].ID)
 	}
 	seen := map[string]int{}
 	for _, r := range pl.Tracks {
@@ -204,6 +204,149 @@ func TestArtistsExclude(t *testing.T) {
 		if strings.EqualFold(r.Artist, "Artist C") {
 			t.Fatalf("excluded artist present: %+v", r)
 		}
+	}
+}
+
+func TestExcludeSeedArtists(t *testing.T) {
+	t.Parallel()
+	eng, _ := fakeEngine(t, 60, 5, 4)
+	intent := baseIntent()
+	intent.Version = core.CurrentIntentVersion
+	intent.Seeds.TrackIDs = []string{"trk0"} // reference Artist A is not required
+	intent.Constraints.ExcludeSeedArtists = true
+
+	pl, err := eng.Build(context.Background(), intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range pl.Tracks {
+		if strings.EqualFold(ref.Artist, "Artist A") {
+			t.Fatalf("seed artist present: %+v", ref)
+		}
+	}
+}
+
+func TestFilteredSearchExpandsPastInitialWindow(t *testing.T) {
+	t.Parallel()
+	rows := make([]fakes.CatalogTrack, 0, searchWindowForTest+2)
+	rows = append(rows, fakes.CatalogTrack{
+		ID: "seed", Display: "Guide - Start", Audio: []float32{1, 0}, Track: []float32{1, 0},
+	})
+	for i := 0; i < searchWindowForTest; i++ {
+		rows = append(rows, fakes.CatalogTrack{
+			ID: "blocked-" + itoa(i), Display: "Blocked - Song " + itoa(i),
+			Audio: []float32{1, 0}, Track: []float32{1, 0},
+		})
+	}
+	rows = append(rows, fakes.CatalogTrack{
+		ID: "eligible", Display: "Allowed - Last", Audio: []float32{0, 1}, Track: []float32{0, 1},
+	})
+	cat := fakes.NewCatalog(2, rows...)
+	eng := deejai.New(cat, fakes.NewSimilarityEngine(cat))
+	pl, err := eng.Build(context.Background(), core.MusicIntent{
+		Version: core.CurrentIntentVersion,
+		Seeds:   core.IntentSeeds{TrackIDs: []string{"seed"}},
+		Count:   1, Lookback: 1, Creativity: 0.5,
+		Constraints: core.IntentConstraints{ArtistsExclude: []string{"Blocked"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pl.Tracks) != 1 || pl.Tracks[0].ID != "eligible" {
+		t.Fatalf("search did not expand to eligible track: %+v", pl.Tracks)
+	}
+}
+
+const searchWindowForTest = 4096
+
+func TestExhaustedFiltersReturnPartialWithoutFallback(t *testing.T) {
+	t.Parallel()
+	eng, _ := fakeEngine(t, 12, 2, 9)
+	intent := baseIntent()
+	intent.Version = core.CurrentIntentVersion
+	intent.Count = 8
+	intent.Seeds.TrackIDs = []string{"trk0"}
+	intent.Constraints.ArtistsExclude = []string{"Artist A", "Artist B"}
+
+	pl, err := eng.Build(context.Background(), intent)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(pl.Tracks) != 0 {
+		t.Fatalf("hard exclusions were bypassed: %+v", pl.Tracks)
+	}
+	if len(pl.Notices) != 1 || pl.Notices[0].Code != "eligible_tracks_exhausted" {
+		t.Fatalf("missing structured exhaustion notice: %+v", pl.Notices)
+	}
+}
+
+func TestDuplicateRecordingAcrossDifferentIDs(t *testing.T) {
+	t.Parallel()
+	rows := []fakes.CatalogTrack{
+		{ID: "seed", Display: "Guide - Start", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+		{ID: "take-a", Display: "The Artist - Same Song", Audio: []float32{0.99, 0.01}, Track: []float32{0.99, 0.01}},
+		{ID: "take-b", Display: "  the artist  - SAME SONG ", Audio: []float32{0.98, 0.02}, Track: []float32{0.98, 0.02}},
+		{ID: "other", Display: "Other - Different", Audio: []float32{0.8, 0.2}, Track: []float32{0.8, 0.2}},
+		{ID: "end", Display: "Guide Two - End", Audio: []float32{0, 1}, Track: []float32{0, 1}},
+	}
+	cat := fakes.NewCatalog(2, rows...)
+	eng := deejai.New(cat, fakes.NewSimilarityEngine(cat))
+	intents := []core.MusicIntent{
+		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed"}}, Count: 3, Lookback: 1, Creativity: 0.5, Seed: 1},
+		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed", "end"}}, Mode: core.ModeJourney, Count: 3, Lookback: 1, Creativity: 0.5, Seed: 1},
+	}
+	for _, intent := range intents {
+		pl, err := eng.Build(context.Background(), intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seenTake := false
+		for _, ref := range pl.Tracks {
+			if ref.ID != "take-a" && ref.ID != "take-b" {
+				continue
+			}
+			if seenTake {
+				t.Fatalf("%s emitted duplicate recording under another ID: %+v", intent.Mode, pl.Tracks)
+			}
+			seenTake = true
+		}
+	}
+}
+
+func TestRequiredTrackConflictsAndShortCount(t *testing.T) {
+	t.Parallel()
+	eng, _ := fakeEngine(t, 20, 4, 12)
+
+	conflict := core.MusicIntent{
+		Version:     core.CurrentIntentVersion,
+		Seeds:       core.IntentSeeds{TrackIDs: []string{"trk0"}},
+		Required:    core.IntentSeeds{TrackIDs: []string{"trk0"}},
+		Count:       5,
+		Constraints: core.IntentConstraints{ExcludeSeedArtists: true},
+	}
+	if _, err := eng.Build(context.Background(), conflict); !errors.Is(err, core.ErrRequiredTrackConflict) {
+		t.Fatalf("seed inclusion conflict = %v, want ErrRequiredTrackConflict", err)
+	}
+	artistConflict := core.MusicIntent{
+		Version:  core.CurrentIntentVersion,
+		Required: core.IntentSeeds{TrackIDs: []string{"trk1"}},
+		Count:    5,
+		Constraints: core.IntentConstraints{
+			ArtistsExclude: []string{"artist b"},
+		},
+	}
+	if _, err := eng.Build(context.Background(), artistConflict); !errors.Is(err, core.ErrRequiredTrackConflict) {
+		t.Fatalf("artist inclusion conflict = %v, want ErrRequiredTrackConflict", err)
+	}
+
+	short := core.MusicIntent{
+		Version:  core.CurrentIntentVersion,
+		Required: core.IntentSeeds{TrackIDs: []string{"trk0", "trk1", "trk2"}},
+		Mode:     core.ModeJourney,
+		Count:    2,
+	}
+	if _, err := eng.Build(context.Background(), short); !errors.Is(err, core.ErrCountBelowRequired) {
+		t.Fatalf("short count error = %v, want ErrCountBelowRequired", err)
 	}
 }
 

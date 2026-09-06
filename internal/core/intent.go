@@ -13,10 +13,11 @@ const (
 // Intent field bounds and defaults. Count's ceiling matches the upstream
 // Settings.js cap; Lookback's matches the "Keep on" knob.
 const (
-	DefaultCount      = 20
-	DefaultCreativity = 0.5
-	DefaultNoise      = 0.0
-	DefaultLookback   = 3
+	CurrentIntentVersion = 2
+	DefaultCount         = 20
+	DefaultCreativity    = 0.5
+	DefaultNoise         = 0.0
+	DefaultLookback      = 3
 
 	MinCount    = 1
 	MaxCount    = 100
@@ -46,8 +47,13 @@ type IntentConstraints struct {
 // UI controls: changing any of them re-runs RecommendationEngine.Build with the
 // same resolved seeds and no re-parse.
 type MusicIntent struct {
-	Version     int               `json:"version"`
-	Seeds       IntentSeeds       `json:"seeds"`
+	Version int `json:"version"`
+	// Seeds are references that guide the walk but are not implicitly emitted.
+	Seeds IntentSeeds `json:"seeds"`
+	// Required tracks must appear in the output. In journey mode two or more
+	// required tracks are ordered waypoints. Version 1 intents had only Seeds;
+	// Normalized migrates those seeds to Required to preserve saved requests.
+	Required    IntentSeeds       `json:"required"`
 	Count       int               `json:"count"`
 	Mode        Mode              `json:"mode"`
 	Creativity  float64           `json:"creativity"` // 0..1 blend of the two embedding spaces
@@ -65,8 +71,11 @@ type MusicIntent struct {
 // defaults applied. The engine never trusts a raw parser result.
 func (m MusicIntent) Normalized() MusicIntent {
 	out := m
-	if out.Version == 0 {
-		out.Version = 1
+	if out.Version < CurrentIntentVersion {
+		if len(out.Required.Queries) == 0 && len(out.Required.TrackIDs) == 0 {
+			out.Required = out.Seeds
+		}
+		out.Version = CurrentIntentVersion
 	}
 
 	out.Count = clampInt(orDefaultInt(out.Count, DefaultCount), MinCount, MaxCount)
@@ -75,7 +84,11 @@ func (m MusicIntent) Normalized() MusicIntent {
 	out.Noise = clampFloat(out.Noise, 0, 1)
 
 	if out.Mode != ModeSimilar && out.Mode != ModeJourney {
-		if len(out.Seeds.Queries)+len(out.Seeds.TrackIDs) >= 2 {
+		anchors := seedCount(out.Seeds)
+		if required := seedCount(out.Required); required > anchors {
+			anchors = required
+		}
+		if anchors >= 2 {
 			out.Mode = ModeJourney
 		} else {
 			out.Mode = ModeSimilar
@@ -84,9 +97,13 @@ func (m MusicIntent) Normalized() MusicIntent {
 
 	out.Seeds.Queries = nonEmpty(out.Seeds.Queries)
 	out.Seeds.TrackIDs = nonEmpty(out.Seeds.TrackIDs)
+	out.Required.Queries = nonEmpty(out.Required.Queries)
+	out.Required.TrackIDs = nonEmpty(out.Required.TrackIDs)
 	out.Constraints.ArtistsExclude = nonEmpty(out.Constraints.ArtistsExclude)
 	return out
 }
+
+func seedCount(s IntentSeeds) int { return len(s.Queries) + len(s.TrackIDs) }
 
 func orDefaultInt(v, def int) int {
 	if v == 0 {

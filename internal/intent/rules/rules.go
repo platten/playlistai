@@ -33,7 +33,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lower := strings.ToLower(prompt)
 
 	intent := core.MusicIntent{
-		Version:     1,
+		Version:     core.CurrentIntentVersion,
 		Count:       core.DefaultCount,
 		Creativity:  core.DefaultCreativity,
 		Noise:       0.10,

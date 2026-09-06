@@ -5,21 +5,24 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
 
 // IntentPreview is the parsed intent shown as chips on the Generate screen.
 type IntentPreview struct {
-	Seeds          []string `json:"seeds"`
-	Mode           string   `json:"mode"`
-	Count          int      `json:"count"`
-	Creativity     float64  `json:"creativity"`
-	Noise          float64  `json:"noise"`
-	Lookback       int      `json:"lookback"`
-	ArtistsExclude []string `json:"artistsExclude"`
-	NoRepeatArtist bool     `json:"noRepeatArtist"`
-	Notes          string   `json:"notes"`
-	Backend        string   `json:"backend"` // "rules" | "llama" | "none"
+	Seeds              []string `json:"seeds"`
+	RequiredTracks     []string `json:"requiredTracks"`
+	Mode               string   `json:"mode"`
+	Count              int      `json:"count"`
+	Creativity         float64  `json:"creativity"`
+	Noise              float64  `json:"noise"`
+	Lookback           int      `json:"lookback"`
+	ArtistsExclude     []string `json:"artistsExclude"`
+	NoRepeatArtist     bool     `json:"noRepeatArtist"`
+	ExcludeSeedArtists bool     `json:"excludeSeedArtists"`
+	Notes              string   `json:"notes"`
+	Backend            string   `json:"backend"` // "rules" | "llama" | "none"
 }
 
 // ParseIntent turns a prompt into a preview without generating anything. It
@@ -27,22 +30,24 @@ type IntentPreview struct {
 // errors (see app.Container.ParseIntent).
 func (a *API) ParseIntent(prompt string) IntentPreview {
 	if a.app.IntentParser() == nil {
-		return IntentPreview{Backend: "none", Seeds: []string{}, ArtistsExclude: []string{}}
+		return IntentPreview{Backend: "none", Seeds: []string{}, RequiredTracks: []string{}, ArtistsExclude: []string{}}
 	}
 	// No progress bar for the live, keystroke-debounced preview.
 	m, backend := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, nil)
 	m = m.Normalized()
 	return IntentPreview{
-		Seeds:          orEmpty(m.Seeds.Queries),
-		Mode:           string(m.Mode),
-		Count:          m.Count,
-		Creativity:     m.Creativity,
-		Noise:          m.Noise,
-		Lookback:       m.Lookback,
-		ArtistsExclude: orEmpty(m.Constraints.ArtistsExclude),
-		NoRepeatArtist: m.Constraints.NoRepeatArtistBackToBack,
-		Notes:          m.NotesForUser,
-		Backend:        backend,
+		Seeds:              orEmpty(m.Seeds.Queries),
+		RequiredTracks:     orEmpty(m.Required.Queries),
+		Mode:               string(m.Mode),
+		Count:              m.Count,
+		Creativity:         m.Creativity,
+		Noise:              m.Noise,
+		Lookback:           m.Lookback,
+		ArtistsExclude:     orEmpty(m.Constraints.ArtistsExclude),
+		NoRepeatArtist:     m.Constraints.NoRepeatArtistBackToBack,
+		ExcludeSeedArtists: m.Constraints.ExcludeSeedArtists,
+		Notes:              m.NotesForUser,
+		Backend:            backend,
 	}
 }
 
@@ -71,9 +76,10 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 	m, _ := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, prog)
 	m = m.Normalized()
 
-	var seedIDs []string
+	var referenceIDs []string
+	var requiredIDs []string
 	seen := map[string]struct{}{}
-	addID := func(id string) {
+	addID := func(dst *[]string, id string) {
 		if id == "" {
 			return
 		}
@@ -81,17 +87,28 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 			return
 		}
 		seen[id] = struct{}{}
-		seedIDs = append(seedIDs, id)
+		*dst = append(*dst, id)
 	}
 	for _, id := range m.Seeds.TrackIDs {
-		addID(id)
+		addID(&referenceIDs, id)
 	}
 	for _, q := range m.Seeds.Queries {
 		if hits := a.app.Catalog.Resolve(q, 1); len(hits) > 0 {
-			addID(hits[0].ID)
+			addID(&referenceIDs, hits[0].ID)
 		}
 	}
-	if len(seedIDs) == 0 {
+	seen = map[string]struct{}{}
+	for _, id := range m.Required.TrackIDs {
+		addID(&requiredIDs, id)
+	}
+	for _, q := range m.Required.Queries {
+		hits := a.app.Catalog.Resolve(q, 1)
+		if len(hits) == 0 {
+			return GenerateResult{}, fmt.Errorf("required track %q did not resolve in the catalog", q)
+		}
+		addID(&requiredIDs, hits[0].ID)
+	}
+	if len(referenceIDs) == 0 && len(requiredIDs) == 0 {
 		if len(m.Seeds.Queries) == 0 {
 			return GenerateResult{}, errors.New(
 				"name an artist as the starting point, e.g. \"something like Bonobo, 20 tracks\"")
@@ -102,15 +119,18 @@ func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
 	}
 
 	req := BuildPlaylistRequest{
-		SeedIDs:        seedIDs,
-		Mode:           string(m.Mode),
-		Creativity:     m.Creativity,
-		Noise:          m.Noise,
-		Lookback:       m.Lookback,
-		Count:          m.Count,
-		Seed:           0,
-		NoRepeatArtist: m.Constraints.NoRepeatArtistBackToBack,
-		ArtistsExclude: m.Constraints.ArtistsExclude,
+		Version:           core.CurrentIntentVersion,
+		ReferenceIDs:      referenceIDs,
+		RequiredIDs:       requiredIDs,
+		Mode:              string(m.Mode),
+		Creativity:        m.Creativity,
+		Noise:             m.Noise,
+		Lookback:          m.Lookback,
+		Count:             m.Count,
+		Seed:              0,
+		NoRepeatArtist:    m.Constraints.NoRepeatArtistBackToBack,
+		ArtistsExclude:    m.Constraints.ArtistsExclude,
+		ExcludeSeedArtist: m.Constraints.ExcludeSeedArtists,
 	}
 
 	pl, err := a.runBuild(req)

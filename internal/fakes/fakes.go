@@ -228,9 +228,9 @@ var _ ports.SimilarityEngine = (*SimilarityEngine)(nil)
 // RecommendationEngine
 // ---------------------------------------------------------------------------
 
-// RecommendationEngine returns Playlist (or Err). If neither is set it resolves
-// the intent's first query against Catalog and returns up to intent.Count of
-// those tracks.
+// RecommendationEngine returns Playlist (or Err). If neither is set it emits
+// required tracks, then uses simple catalog matches after the reference itself
+// as deterministic stand-ins for a real embedding walk.
 type RecommendationEngine struct {
 	Playlist core.Playlist
 	Err      error
@@ -245,25 +245,48 @@ func (r *RecommendationEngine) Build(_ context.Context, intent core.MusicIntent)
 		return r.Playlist, nil
 	}
 	intent = intent.Normalized()
-	if r.Catalog == nil || (len(intent.Seeds.Queries) == 0 && len(intent.Seeds.TrackIDs) == 0) {
+	if r.Catalog == nil || (seedSetEmpty(intent.Seeds) && seedSetEmpty(intent.Required)) {
 		return core.Playlist{}, core.ErrNoSeeds
 	}
 	var refs []core.TrackRef
-	for _, id := range intent.Seeds.TrackIDs {
+	seen := map[string]struct{}{}
+	add := func(ref core.TrackRef) {
+		if ref.ID == "" || len(refs) >= intent.Count {
+			return
+		}
+		if _, duplicate := seen[ref.ID]; duplicate {
+			return
+		}
+		seen[ref.ID] = struct{}{}
+		refs = append(refs, ref)
+	}
+	for _, id := range intent.Required.TrackIDs {
 		if m, ok := r.Catalog.Meta(id); ok {
-			refs = append(refs, m.Ref)
+			add(m.Ref)
 		}
 	}
+	for _, q := range intent.Required.Queries {
+		if hits := r.Catalog.Resolve(q, 1); len(hits) > 0 {
+			add(hits[0])
+		}
+	}
+	for _, id := range intent.Seeds.TrackIDs {
+		seen[id] = struct{}{}
+	}
 	for _, q := range intent.Seeds.Queries {
-		refs = append(refs, r.Catalog.Resolve(q, intent.Count)...)
-	}
-	if len(refs) == 0 {
-		return core.Playlist{}, core.ErrNoSeeds
-	}
-	if len(refs) > intent.Count {
-		refs = refs[:intent.Count]
+		hits := r.Catalog.Resolve(q, intent.Count+1)
+		if len(hits) > 0 {
+			seen[hits[0].ID] = struct{}{} // reference guides but is not output
+		}
+		for _, hit := range hits[1:] {
+			add(hit)
+		}
 	}
 	return core.Playlist{Tracks: refs, Mode: intent.Mode, Intent: intent}, nil
+}
+
+func seedSetEmpty(seeds core.IntentSeeds) bool {
+	return len(seeds.Queries) == 0 && len(seeds.TrackIDs) == 0
 }
 
 var _ ports.RecommendationEngine = (*RecommendationEngine)(nil)
