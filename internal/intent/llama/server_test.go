@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -24,7 +25,13 @@ func runTests(m *testing.M) int {
 	defer os.RemoveAll(dir)
 
 	if _, err := os.Stat("internal/fakeserver/main.go"); err == nil {
-		bin := filepath.Join(dir, "fakeserver")
+		// Windows will not exec a file without an executable extension, so the
+		// suffix is part of the name rather than something the OS infers.
+		name := "fakeserver"
+		if runtime.GOOS == "windows" {
+			name += ".exe"
+		}
+		bin := filepath.Join(dir, name)
 		build := exec.Command("go", "build", "-o", bin, "./internal/fakeserver")
 		build.Stderr = os.Stderr
 		if err := build.Run(); err != nil {
