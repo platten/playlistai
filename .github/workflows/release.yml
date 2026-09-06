@@ -86,10 +86,18 @@ jobs:
           done
           shred -u "$key" 2>/dev/null || rm -f "$key"
 
-      - name: Portable archive (raw binary)
+      - name: Portable archive + arch-tag the packages
         run: |
+          set -euo pipefail
           cd bin
           tar -czf "playlist-ai-linux-${{ matrix.arch }}.tar.gz" -- playlist-ai
+          # nfpm names the deb/rpm/pkg after -name only (no arch), so the two
+          # matrix legs would collide when the publish job merges them.
+          arch='${{ matrix.arch }}'
+          [ -f playlist-ai.deb ]         && mv playlist-ai.deb         "playlist-ai-${arch}.deb"
+          [ -f playlist-ai.rpm ]         && mv playlist-ai.rpm         "playlist-ai-${arch}.rpm"
+          [ -f playlist-ai.pkg.tar.zst ] && mv playlist-ai.pkg.tar.zst "playlist-ai-${arch}.pkg.tar.zst"
+          ls -la
 
       - uses: actions/upload-artifact@v6
         with:
