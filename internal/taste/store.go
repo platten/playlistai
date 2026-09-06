@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -17,6 +18,24 @@ import (
 )
 
 const FileName = "taste.sqlite"
+
+// Exposure retention. Generation writes one exposure row per recommended
+// track, so exposures are the only event type whose volume scales with usage.
+// They decay on exposureHalfLife, so anything older than ExposureRetention
+// contributes under 2^-5 of a fresh hit and is not worth reading or storing.
+// MaxExposureEvents additionally bounds a single long session, where rows can
+// accumulate faster than the time horizon retires them; the newest events are
+// kept because the projection is recency-weighted.
+//
+// Explicit feedback (likes, dislikes, acceptance) is user-authored, arrives one
+// event per interaction, and is never pruned or windowed here.
+const (
+	ExposureRetention = 5 * exposureHalfLife
+	// Matches the maxRecentExposures map bound the events feed: reading further
+	// back cannot add entries beyond that cap, only marginally re-weight ones
+	// already saturated by 1 - exp(-weight).
+	MaxExposureEvents = maxRecentExposures
+)
 
 // Store is the local SQLite implementation of both feedback and profile ports.
 type Store struct {
@@ -45,6 +64,9 @@ func Open(dataDir string) (*Store, error) {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_feedback_time ON feedback_events(occurred_at, id)`,
 		`CREATE INDEX IF NOT EXISTS idx_feedback_request ON feedback_events(request_id, session_id)`,
+		// Serves both the windowed newest-first exposure read and the retention
+		// sweep, so neither scans explicit feedback.
+		`CREATE INDEX IF NOT EXISTS idx_feedback_type_time ON feedback_events(type, occurred_at, id)`,
 		`CREATE TABLE IF NOT EXISTS taste_profiles (
 			snapshot_id TEXT NOT NULL,
 			saved_at INTEGER NOT NULL,
@@ -62,7 +84,25 @@ func Open(dataDir string) (*Store, error) {
 			return nil, fmt.Errorf("taste: initialize store: %w", err)
 		}
 	}
-	return &Store{db: db, now: time.Now}, nil
+	s := &Store{db: db, now: time.Now}
+	// One retention sweep per launch keeps the file from growing without bound.
+	// Deliberately best-effort: stale rows cost space, not correctness, and
+	// ListFeedback windows them out either way, so a failure must not stop the
+	// app from starting.
+	_ = s.PruneExposures(context.Background(), s.now().Add(-ExposureRetention))
+	return s, nil
+}
+
+// PruneExposures deletes exposure rows older than before. Explicit feedback is
+// never removed — only generation-emitted exposure telemetry.
+func (s *Store) PruneExposures(ctx context.Context, before time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM feedback_events WHERE type = ? AND occurred_at < ?`,
+		core.FeedbackExposure, before.UnixNano())
+	if err != nil {
+		return fmt.Errorf("taste: prune exposures: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() error {
@@ -149,12 +189,57 @@ func (s *Store) prepare(event core.FeedbackEvent) core.FeedbackEvent {
 	return event
 }
 
+const selectFeedbackColumns = `SELECT id, version, occurred_at, type, scope, track_id,
+		request_id, session_id, context_json, versions_json FROM feedback_events`
+
+// scopeClause matches events belonging to this profile's context. An empty
+// RequestID/SessionID means "no context", so the corresponding column is not
+// compared — otherwise it would match every row that recorded no request or no
+// session, pulling unrelated evidence into a scoped profile.
+const scopeClause = `(
+			(? = '' AND ? = '')
+			OR scope = 'durable'
+			OR (? <> '' AND request_id = ?)
+			OR (? <> '' AND session_id = ?)
+		)`
+
+// ListFeedback returns explicit feedback in full, plus exposures bounded by
+// ExposureRetention and MaxExposureEvents. Exposure volume scales with every
+// generation, so an unbounded read would make each generation cost more than
+// the last; the projection is recency-weighted, so the newest rows are the
+// ones that matter.
+//
+// Ties on occurred_at break by rowid, which is insertion order in this
+// append-only table. Breaking them by id instead returns a different
+// permutation on every read, because ids are random hex. Timestamps tie
+// whenever a batch is written faster than the platform clock advances — routine
+// on Windows, and possible anywhere.
 func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]core.FeedbackEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, version, occurred_at, type, scope, track_id,
-		request_id, session_id, context_json, versions_json
-		FROM feedback_events
-		WHERE (? = '' AND ? = '') OR scope = 'durable' OR request_id = ? OR session_id = ? OR (? AND type = 'exposure')
-		ORDER BY occurred_at, id`, query.RequestID, query.SessionID, query.RequestID, query.SessionID, query.IncludeExposures)
+	events, err := s.queryFeedback(ctx,
+		selectFeedbackColumns+` WHERE type <> ? AND `+scopeClause+` ORDER BY occurred_at, rowid`,
+		core.FeedbackExposure,
+		query.RequestID, query.SessionID,
+		query.RequestID, query.RequestID,
+		query.SessionID, query.SessionID)
+	if err != nil {
+		return nil, err
+	}
+	exposures, err := s.queryFeedback(ctx,
+		selectFeedbackColumns+` WHERE type = ? AND occurred_at >= ? AND (? OR `+scopeClause+`)
+		ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+		core.FeedbackExposure, s.now().Add(-ExposureRetention).UnixNano(), query.IncludeExposures,
+		query.RequestID, query.SessionID,
+		query.RequestID, query.RequestID,
+		query.SessionID, query.SessionID,
+		MaxExposureEvents)
+	if err != nil {
+		return nil, err
+	}
+	return append(events, exposures...), nil
+}
+
+func (s *Store) queryFeedback(ctx context.Context, statement string, args ...any) ([]core.FeedbackEvent, error) {
+	rows, err := s.db.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("taste: list feedback: %w", err)
 	}
@@ -208,7 +293,7 @@ func (s *Store) LatestProfile(ctx context.Context, catalogVersion, requestID, se
 	err := s.db.QueryRowContext(ctx, `SELECT profile_json FROM taste_profiles
 		WHERE catalog_version = ? AND request_id = ? AND session_id = ?
 		ORDER BY saved_at DESC LIMIT 1`, catalogVersion, requestID, sessionID).Scan(&raw)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return core.TasteProfile{}, false, nil
 	}
 	if err != nil {

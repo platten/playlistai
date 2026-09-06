@@ -282,6 +282,34 @@ intent data, consented temporal listening judgments, representative multi-host
 profiles, and grounded descriptor coverage. ANN or an LLM reranker should be
 reconsidered only when those measurements show a concrete need and benefit.
 
+## Post-milestone Storage and Selection Bounds
+
+Generation writes one exposure row per recommended track, so exposure volume
+grows with every playlist while explicit feedback grows only with user
+interaction. Profile construction previously read the entire exposure history,
+which made each generation cost more than the last: measured on this host, a
+generation-time profile rebuild took 9.5 ms after 10 generations and 203.3 ms
+after 1,000, with the saved snapshot growing in step.
+
+Exposure reads are now windowed to five exposure half-lives and capped at the
+same bound as the recent-exposure map they populate, a retention sweep runs at
+open, and the map drops entries whose decayed weight can no longer move a
+score. The same measurement is now flat at 28–30 ms from 100 through 1,000
+generations. Explicit likes, dislikes, acceptance, and removals are
+user-authored and are never windowed or pruned. Scoped profile reads no longer
+match rows that merely recorded no request or session of their own.
+
+Diversity selection folds each newly chosen track into running redundancy,
+artist, and album terms instead of rescanning the whole context for every
+candidate on every round, making selection linear rather than quadratic in
+playlist length: 25.5 ms to 1.07 ms at 20 tracks and 320.9 ms to 4.9 ms at 80,
+over a 512-candidate pool. An oracle test pins the incremental result to the
+direct implementation's exact picks and score components.
+
+Zero is again an accepted value for `semantic_weight` and
+`semantic_negative_penalty`; both previously validated as zero and were then
+silently restored to their defaults, so the components could not be disabled.
+
 ## Post-milestone Runtime and Onboarding Updates
 
 The desktop recommendation runtime is now fully compiled Go. Semantic sidecar

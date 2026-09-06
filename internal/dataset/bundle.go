@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -142,7 +143,7 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 			return err
 		}
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

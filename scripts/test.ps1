@@ -5,6 +5,7 @@ param([switch]$NoRace)
 
 . (Join-Path $PSScriptRoot "_common.ps1")
 Assert-Command "go" "run scripts/setup.ps1"
+Assert-GoVersion
 
 $failed = [Collections.Generic.List[string]]::new()
 function Invoke-TestStep([string]$Label, [scriptblock]$Action) {
@@ -31,6 +32,27 @@ Invoke-TestStep "PowerShell syntax" {
     if ($parseErrors.Count -gt 0) { throw ($parseErrors -join [Environment]::NewLine) }
 }
 
+if ((Test-Command "node") -and (Test-Command "pnpm")) {
+    if (Test-Command "wails3") {
+        Invoke-TestStep "wails3 generate bindings" { & wails3 generate bindings -clean=true -ts -i }
+    } else {
+        Write-Skip "wails3 not installed - typecheck will use bindings already on disk"
+    }
+    Push-Location (Join-Path $RepoRoot "frontend")
+    try {
+        Invoke-TestStep "pnpm install" { & pnpm install --frozen-lockfile }
+        Invoke-TestStep "frontend typecheck" { & pnpm run typecheck }
+        Invoke-TestStep "frontend build" { & pnpm run build }
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Skip "node/pnpm not found - frontend checks were not run"
+}
+
+# The frontend runs first because main.go embeds frontend/dist (go:embed), so
+# every Go step that builds the root package needs that directory to exist. On a
+# fresh clone it does not.
 Invoke-TestStep "go vet" { & go vet ./... }
 
 Invoke-TestStep "pure-Go core compile" {
@@ -55,24 +77,6 @@ if (Test-Command "golangci-lint") {
     Invoke-TestStep "golangci-lint" { & golangci-lint run ./... }
 } else {
     Write-Skip "golangci-lint not installed - run scripts/setup.ps1"
-}
-
-if ((Test-Command "node") -and (Test-Command "pnpm")) {
-    if (Test-Command "wails3") {
-        Invoke-TestStep "wails3 generate bindings" { & wails3 generate bindings -clean=true -ts -i }
-    } else {
-        Write-Skip "wails3 not installed - typecheck will use bindings already on disk"
-    }
-    Push-Location (Join-Path $RepoRoot "frontend")
-    try {
-        Invoke-TestStep "pnpm install" { & pnpm install --frozen-lockfile }
-        Invoke-TestStep "frontend typecheck" { & pnpm run typecheck }
-        Invoke-TestStep "frontend build" { & pnpm run build }
-    } finally {
-        Pop-Location
-    }
-} else {
-    Write-Skip "node/pnpm not found - frontend checks were not run"
 }
 
 Write-Host ""

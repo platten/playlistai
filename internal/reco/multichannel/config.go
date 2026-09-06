@@ -117,10 +117,13 @@ func (c Config) normalized() Config {
 	if c.SemanticMinimumScore < -1 || c.SemanticMinimumScore > 1 {
 		c.SemanticMinimumScore = d.SemanticMinimumScore
 	}
-	if c.SemanticWeight <= 0 {
+	// Zero is a meaningful setting for every ranking weight — it turns that
+	// component off — so only a negative value falls back to the default, as it
+	// does for the other weights above. config.Validate accepts zero here.
+	if c.SemanticWeight < 0 {
 		c.SemanticWeight = d.SemanticWeight
 	}
-	if c.SemanticNegativePenalty <= 0 {
+	if c.SemanticNegativePenalty < 0 {
 		c.SemanticNegativePenalty = d.SemanticNegativePenalty
 	}
 	if c.MMRMinimumLambda <= 0 || c.MMRMinimumLambda > 1 {
