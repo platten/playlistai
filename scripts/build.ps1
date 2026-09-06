@@ -10,6 +10,7 @@ param(
 if ($env:OS -ne "Windows_NT") { throw "build.ps1 is for Windows; use build.sh on Linux or macOS" }
 
 Assert-Command "go" "run scripts/setup.ps1"
+Assert-GoVersion
 Assert-Command "node" "run scripts/setup.ps1"
 Assert-Command "pnpm" "run scripts/setup.ps1"
 Assert-Command "wails3" "run scripts/setup.ps1"

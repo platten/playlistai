@@ -5,6 +5,7 @@ param([switch]$NoRace)
 
 . (Join-Path $PSScriptRoot "_common.ps1")
 Assert-Command "go" "run scripts/setup.ps1"
+Assert-GoVersion
 
 $failed = [Collections.Generic.List[string]]::new()
 function Invoke-TestStep([string]$Label, [scriptblock]$Action) {
