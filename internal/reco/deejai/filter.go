@@ -1,6 +1,7 @@
 package deejai
 
 import (
+	"context"
 	"strings"
 
 	"github.com/platten/playlistai/internal/core"
@@ -69,8 +70,13 @@ func (f *filter) markUsed(ref core.TrackRef) {
 func (f *filter) excludeIDs() map[string]struct{} { return f.exclude }
 
 // pick returns the first match that survives every hard exclusion and dedup rule.
-func (f *filter) pick(cat ports.Catalog, matches []ports.Match, prevArtist string) (core.TrackRef, int, bool) {
+func (f *filter) pick(ctx context.Context, cat ports.Catalog, matches []ports.Match, prevArtist string) (core.TrackRef, int, bool, error) {
 	for rank, match := range matches {
+		if rank&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				return core.TrackRef{}, 0, false, err
+			}
+		}
 		meta, ok := cat.Meta(match.ID)
 		if !ok {
 			continue
@@ -85,7 +91,10 @@ func (f *filter) pick(cat ports.Catalog, matches []ports.Match, prevArtist strin
 		if f.noBackToBack && normalizeIdentityPart(ref.Artist) == prevArtist {
 			continue
 		}
-		return ref, rank, true
+		return ref, rank, true, nil
 	}
-	return core.TrackRef{}, 0, false
+	if err := ctx.Err(); err != nil {
+		return core.TrackRef{}, 0, false, err
+	}
+	return core.TrackRef{}, 0, false, nil
 }

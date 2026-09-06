@@ -22,7 +22,7 @@ type PlaylistNotice struct {
 type Playlist struct {
 	Tracks    []TrackRef       `json:"tracks"`
 	Mode      Mode             `json:"mode"`
-	Seed      int64            `json:"seed"` // RNG seed used; replay-able
+	Seed      RNGSeed          `json:"seed"` // lossless full-width RNG seed
 	Rationale []StepReason     `json:"rationale"`
 	Intent    MusicIntent      `json:"intent"`
 	Notices   []PlaylistNotice `json:"notices"`

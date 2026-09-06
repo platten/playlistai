@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"os"
@@ -270,9 +271,28 @@ func (c *Container) IntentParser() ports.IntentParser {
 // receives streaming progress under op "intent". Returns the intent and the
 // backend that produced it ("llama" | "rules").
 func (c *Container) ParseIntent(ctx context.Context, in ports.IntentInput, prog ports.Progress) (core.MusicIntent, string) {
+	outcome, err := c.ParseIntentDetailed(ctx, in, prog)
+	if err != nil {
+		return core.MusicIntent{}, outcome.Backend
+	}
+	return outcome.Intent, outcome.Backend
+}
+
+type ParseOutcome struct {
+	Intent           core.MusicIntent
+	Backend          string
+	RequestedBackend string
+	FallbackUsed     bool
+	FallbackReason   string
+}
+
+// ParseIntentDetailed preserves fallback and cancellation information for the
+// generation lifecycle. Caller cancellation never triggers a fallback parse.
+func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInput, prog ports.Progress) (ParseOutcome, error) {
 	c.mu.Lock()
 	active, rp := c.parser, c.rulesParser
 	c.mu.Unlock()
+	requested := active.Info().Backend
 
 	var m core.MusicIntent
 	var err error
@@ -282,18 +302,47 @@ func (c *Container) ParseIntent(ctx context.Context, in ports.IntentInput, prog 
 		m, err = active.Parse(ctx, in)
 	}
 	if err == nil {
-		return m, active.Info().Backend
+		return ParseOutcome{Intent: m, Backend: active.Info().Backend, RequestedBackend: requested}, nil
+	}
+	if ctx.Err() != nil {
+		return ParseOutcome{Backend: requested, RequestedBackend: requested}, ctx.Err()
 	}
 	if active.Info().Backend == "rules" {
-		return m, "rules" // rules parser never errors; return whatever it gave
+		return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested}, err
 	}
-	c.log.Warn("intent parse failed; falling back to rules parser", "err", err)
+	c.log.Warn("intent parser fallback", "from", requested, "to", "rules")
 
 	if rp == nil {
 		rp = rules.New()
 	}
-	m, _ = rp.Parse(ctx, in)
-	return m, "rules"
+	m, fallbackErr := rp.Parse(ctx, in)
+	if fallbackErr != nil {
+		return ParseOutcome{Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: "parser_error"}, fallbackErr
+	}
+	return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: "parser_error"}, nil
+}
+
+// ParserIdentity identifies every input that can change parsing without
+// retaining or logging the user's prompt.
+func (c *Container) ParserIdentity() string {
+	c.mu.Lock()
+	parser, modelID, modelPath := c.parser, c.modelID, c.modelPath
+	c.mu.Unlock()
+	if parser == nil {
+		return "none"
+	}
+	info := parser.Info()
+	modelVersion := modelID
+	if modelPath != "" {
+		var size int64
+		var modified int64
+		if stat, err := os.Stat(modelPath); err == nil {
+			size, modified = stat.Size(), stat.ModTime().UnixNano()
+		}
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|%d", modelID, modelPath, size, modified)))
+		modelVersion = fmt.Sprintf("%x", sum[:])
+	}
+	return fmt.Sprintf("%s|%s|%s|%d", info.Backend, info.Version, modelVersion, info.ContractVersion)
 }
 
 // SuggestTitle asks the active model for a short playlist name for prompt,

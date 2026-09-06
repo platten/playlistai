@@ -3,10 +3,11 @@ package deejai
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"math"
-	"math/rand"
-	"time"
+	mathrand "math/rand"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -37,7 +38,10 @@ type step struct {
 	detail string
 }
 
-func (e *Engine) Build(_ context.Context, intent core.MusicIntent) (core.Playlist, error) {
+func (e *Engine) Build(ctx context.Context, intent core.MusicIntent) (core.Playlist, error) {
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	intent = intent.Normalized()
 	if e.resolver != nil {
 		var issues []resolution.Issue
@@ -73,17 +77,25 @@ func (e *Engine) Build(_ context.Context, intent core.MusicIntent) (core.Playlis
 	}
 
 	seed := intent.Seed
-	if seed == 0 {
-		seed = time.Now().UnixNano()
+	if seed.IsZero() {
+		seed = randomSeed()
 	}
-	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // deterministic recommendation noise
+	seedValue, err := seed.Int64()
+	if err != nil {
+		return core.Playlist{}, fmt.Errorf("seed: %w", err)
+	}
+	intent.Seed = seed
+	rng := mathrand.New(mathrand.NewSource(seedValue)) //nolint:gosec // deterministic recommendation noise
 	weights := [2]float32{float32(intent.Creativity), float32(1 - intent.Creativity)}
 
 	var steps []step
 	if intent.Mode == core.ModeJourney {
-		steps = e.journey(references, required, weights, intent, rng, f)
+		steps, err = e.journey(ctx, references, required, weights, intent, rng, f)
 	} else {
-		steps = e.similar(references, required, weights, intent, rng, f)
+		steps, err = e.similar(ctx, references, required, weights, intent, rng, f)
+	}
+	if err != nil {
+		return core.Playlist{}, err
 	}
 
 	pl := core.Playlist{Mode: intent.Mode, Seed: seed, Intent: intent}
@@ -104,6 +116,20 @@ func (e *Engine) Build(_ context.Context, intent core.MusicIntent) (core.Playlis
 		})
 	}
 	return pl, nil
+}
+
+func randomSeed() core.RNGSeed {
+	var raw [8]byte
+	if _, err := cryptorand.Read(raw[:]); err != nil {
+		// crypto/rand failure is extraordinarily rare. A fixed non-zero value is
+		// still preferable to silently losing seed width or producing invalid JSON.
+		return core.NewRNGSeed(1)
+	}
+	value := binary.LittleEndian.Uint64(raw[:])
+	if value == 0 {
+		value = 1
+	}
+	return core.NewRNGSeed(value)
 }
 
 func requestedSeedCount(s core.IntentSeeds) int {
@@ -166,12 +192,13 @@ func (e *Engine) journeyReferences(intent core.MusicIntent) []core.TrackRef {
 }
 
 func (e *Engine) similar(
+	ctx context.Context,
 	references, required []core.TrackRef,
 	weights [2]float32,
 	intent core.MusicIntent,
-	rng *rand.Rand,
+	rng *mathrand.Rand,
 	f *filter,
-) []step {
+) ([]step, error) {
 	steps := make([]step, 0, intent.Count)
 	referenceWeights := resolvedReferenceWeights(intent)
 	history := append([]core.TrackRef(nil), references...)
@@ -187,6 +214,9 @@ func (e *Engine) similar(
 	}
 
 	for len(steps) < intent.Count {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		window := history[maxInt(0, len(history)-intent.Lookback):]
 		audioSum, trackSum := e.vectorSums(window, referenceWeights)
 		applyNoise(audioSum, trackSum, intent.Noise, rng)
@@ -197,7 +227,10 @@ func (e *Engine) similar(
 		} else if len(history) > 0 {
 			prevArtist = normalizeIdentityPart(history[len(history)-1].Artist)
 		}
-		chosen, rank, searched, ok := e.pickExpanded(audioSum, trackSum, weights, f, prevArtist)
+		chosen, rank, searched, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
+		if err != nil {
+			return nil, err
+		}
 		if !ok {
 			break
 		}
@@ -212,16 +245,17 @@ func (e *Engine) similar(
 		f.markUsed(chosen)
 		history = append(history, chosen)
 	}
-	return steps
+	return steps, nil
 }
 
 func (e *Engine) journey(
+	ctx context.Context,
 	references, required []core.TrackRef,
 	weights [2]float32,
 	intent core.MusicIntent,
-	rng *rand.Rand,
+	rng *mathrand.Rand,
 	f *filter,
-) []step {
+) ([]step, error) {
 	anchors := references
 	emitWaypoints := false
 	if len(required) >= 2 {
@@ -229,7 +263,7 @@ func (e *Engine) journey(
 		emitWaypoints = true
 	}
 	if len(anchors) < 2 {
-		return e.similar(references, required, weights, intent, rng, f)
+		return e.similar(ctx, references, required, weights, intent, rng, f)
 	}
 
 	steps := make([]step, 0, intent.Count)
@@ -246,6 +280,9 @@ func (e *Engine) journey(
 	perSegment := distribute(intermediateSlots, len(anchors)-1)
 
 	for segment := 0; segment < len(anchors)-1; segment++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		start, end := anchors[segment], anchors[segment+1]
 		if emitWaypoints {
 			steps = append(steps, step{ref: start, kind: "required", detail: "required journey waypoint"})
@@ -270,7 +307,10 @@ func (e *Engine) journey(
 			if len(steps) > 0 {
 				prevArtist = normalizeIdentityPart(steps[len(steps)-1].ref.Artist)
 			}
-			chosen, rank, _, ok := e.pickExpanded(audioSum, trackSum, weights, f, prevArtist)
+			chosen, rank, _, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
+			if err != nil {
+				return nil, err
+			}
 			if !ok {
 				break
 			}
@@ -287,33 +327,41 @@ func (e *Engine) journey(
 		steps = append(steps, step{ref: last, kind: "required", detail: "required journey waypoint"})
 		f.markUsed(last)
 	}
-	return steps
+	return steps, nil
 }
 
 func (e *Engine) pickExpanded(
+	ctx context.Context,
 	audioSum, trackSum []float32,
 	weights [2]float32,
 	f *filter,
 	prevArtist string,
-) (core.TrackRef, int, int, bool) {
+) (core.TrackRef, int, int, bool, error) {
 	limit := e.sim.Len()
 	if limit <= 0 {
-		return core.TrackRef{}, 0, 0, false
+		return core.TrackRef{}, 0, 0, false, nil
 	}
 	k := minInt(searchK, limit)
 	for {
-		matches := e.sim.Search(ports.SimilarityQuery{
+		matches, err := e.sim.Search(ctx, ports.SimilarityQuery{
 			AudioSum: audioSum,
 			TrackSum: trackSum,
 			Weights:  weights,
 			K:        k,
 			Exclude:  f.excludeIDs(),
 		})
-		if chosen, rank, ok := f.pick(e.cat, matches, prevArtist); ok {
-			return chosen, rank, len(matches), true
+		if err != nil {
+			return core.TrackRef{}, 0, 0, false, err
+		}
+		chosen, rank, ok, err := f.pick(ctx, e.cat, matches, prevArtist)
+		if err != nil {
+			return core.TrackRef{}, 0, 0, false, err
+		}
+		if ok {
+			return chosen, rank, len(matches), true, nil
 		}
 		if k == limit || len(matches) < k {
-			return core.TrackRef{}, 0, len(matches), false
+			return core.TrackRef{}, 0, len(matches), false, nil
 		}
 		k = minInt(k*2, limit)
 	}
@@ -409,7 +457,7 @@ func l2norm(v []float32) float32 {
 	return float32(math.Sqrt(sum))
 }
 
-func applyNoise(audioSum, trackSum []float32, noise float64, rng *rand.Rand) {
+func applyNoise(audioSum, trackSum []float32, noise float64, rng *mathrand.Rand) {
 	if noise <= 0 {
 		return
 	}

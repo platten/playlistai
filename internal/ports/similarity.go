@@ -1,5 +1,7 @@
 package ports
 
+import "context"
+
 // Match is a scored catalog track.
 type Match struct {
 	ID    string
@@ -24,7 +26,7 @@ type SimilarityQuery struct {
 // query. The production implementation is brute force over the whole catalog,
 // matching upstream deej-ai.online-app (no ANN index).
 type SimilarityEngine interface {
-	Search(q SimilarityQuery) []Match
+	Search(ctx context.Context, q SimilarityQuery) ([]Match, error)
 	// Len is the number of indexed tracks.
 	Len() int
 }

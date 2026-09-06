@@ -20,6 +20,7 @@ type IntentInput struct {
 type ParserInfo struct {
 	Name            string
 	Backend         string // "llama" | "rules"
+	Version         string // parser implementation/version, excluding the selected model
 	Ready           bool   // false until a model is downloaded & loaded (llama backend)
 	ContractVersion int
 	Evidence        bool // parser emits source-grounded interpretation evidence

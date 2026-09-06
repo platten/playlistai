@@ -71,7 +71,7 @@ func TestGoldenParity(t *testing.T) {
 				Mode:        core.Mode(gc.Params.Mode),
 				Creativity:  gc.Params.Creativity,
 				Lookback:    gc.Params.Lookback,
-				Seed:        1, // irrelevant: fixtures are noise-free
+				Seed:        "1", // irrelevant: fixtures are noise-free
 				Constraints: core.IntentConstraints{NoRepeatArtistBackToBack: true},
 			}
 

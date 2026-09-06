@@ -32,13 +32,13 @@ func newLoadedContainer(t *testing.T) *app.Container {
 func TestParseBuildRebuildPreservesIntent(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)
-	generated, err := api.GenerateFromPrompt("like Justice with microdetail, relaxing but not sleepy, no abstract drone, 10 tracks")
+	generated, err := api.GenerateFromPrompt(context.Background(), "like Justice with microdetail, relaxing but not sleepy, no abstract drone, 10 tracks")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := generated.Request.Intent
 	count, audio := 7, 0.9
-	rebuilt, err := api.BuildPlaylist(BuildPlaylistRequest{
+	rebuilt, err := api.BuildPlaylist(context.Background(), BuildPlaylistRequest{
 		Version: core.CurrentIntentVersion,
 		Intent:  original,
 		Overrides: ControlOverrides{
@@ -67,7 +67,10 @@ func TestParseIntent(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)
 
-	p := api.ParseIntent("upbeat instrumental tracks like Justice, 20 songs, adventurous")
+	p, err := api.ParseIntent(context.Background(), "upbeat instrumental tracks like Justice, 20 songs, adventurous")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if p.Backend != "rules" {
 		t.Fatalf("backend = %q", p.Backend)
 	}
@@ -93,7 +96,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)
 
-	res, err := api.GenerateFromPrompt("like Justice, 10 tracks")
+	res, err := api.GenerateFromPrompt(context.Background(), "like Justice, 10 tracks")
 	if err != nil {
 		t.Fatalf("GenerateFromPrompt: %v", err)
 	}
@@ -107,8 +110,8 @@ func TestGenerateFromPrompt(t *testing.T) {
 		t.Fatal("reference was not resolved to a catalog track")
 	}
 	// The seed the walk used must be pinned into the returned request.
-	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed == 0 {
-		t.Fatalf("request seed %d != playlist seed %d", res.Request.Seed, res.Playlist.Seed)
+	if res.Request.Seed != res.Playlist.Seed || res.Request.Seed.IsZero() {
+		t.Fatalf("request seed %s != playlist seed %s", res.Request.Seed, res.Playlist.Seed)
 	}
 	if res.Playlist.Tracks[0].Kind != "nearest" {
 		t.Fatalf("reference seed should guide but not be emitted; first kind = %q", res.Playlist.Tracks[0].Kind)
@@ -122,7 +125,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	}
 
 	// A prompt with no findable seed is an error, not a panic.
-	if _, err := api.GenerateFromPrompt("zqxjkw nothing here"); err == nil {
+	if _, err := api.GenerateFromPrompt(context.Background(), "zqxjkw nothing here"); err == nil {
 		t.Fatal("expected an error for an unresolvable prompt")
 	}
 }
@@ -130,7 +133,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 func TestGenerateFromPromptNeedsCatalog(t *testing.T) {
 	t.Parallel()
 	api := New(newTestContainer(t), nil) // no catalog
-	if _, err := api.GenerateFromPrompt("like Justice"); err == nil {
+	if _, err := api.GenerateFromPrompt(context.Background(), "like Justice"); err == nil {
 		t.Fatal("expected an error when the catalog is not loaded")
 	}
 }

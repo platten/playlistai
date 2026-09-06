@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestLoadSavedPlaylistMigratesV2Request(t *testing.T) {
 	api := New(c, nil)
 	record, err := c.History.Save(context.Background(), history.Record{
 		Name: "Legacy", Prompt: "legacy prompt", Mode: "journey", TrackCount: 8,
-		RequestJSON: []byte(`{"version":2,"referenceIds":["seed0001"],"requiredIds":["seed0003"],"mode":"journey","count":8,"creativity":0.7,"noise":0.2,"lookback":4,"noRepeatArtist":true}`),
+		RequestJSON: []byte(`{"version":2,"referenceIds":["seed0001"],"requiredIds":["seed0003"],"mode":"journey","count":8,"creativity":0.7,"noise":0.2,"lookback":4,"seed":9223372036854775807,"noRepeatArtist":true}`),
 		IntentJSON:  []byte(`{"version":2,"seeds":{"trackIds":["seed0001"]},"required":{"trackIds":["seed0003"]},"count":8,"mode":"journey"}`),
 		TracksJSON:  []byte(`[]`),
 	})
@@ -74,6 +75,56 @@ func TestLoadSavedPlaylistMigratesV2Request(t *testing.T) {
 	}
 	if intent.Controls.TotalTrackCount != 8 || intent.Controls.AudioWeight != 0.7 || intent.Controls.Discovery != 0.2 {
 		t.Fatalf("saved controls not retained: %+v", intent.Controls)
+	}
+	if loaded.Request.Seed != "9223372036854775807" || loaded.Result.Seed != "9223372036854775807" {
+		t.Fatalf("legacy seed lost in history replay: request=%q result=%q", loaded.Request.Seed, loaded.Result.Seed)
+	}
+}
+
+func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
+	t.Parallel()
+	c := newLoadedContainer(t)
+	api := New(c, nil)
+	const maxSeed core.RNGSeed = "18446744073709551615"
+	intent := core.MusicIntent{
+		Version:    core.CurrentIntentVersion,
+		References: []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "seed0001", Influence: core.InfluencePositive}},
+		Controls:   core.IntentControls{TotalTrackCount: 1, AudioWeight: .5, CooccurrenceWeight: .5},
+		Seed:       maxSeed,
+	}.Normalized()
+	reproducibility, err := generationIdentity(intent, c.Resolver.CatalogVersion())
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := BuildPlaylistRequest{
+		Version: core.CurrentIntentVersion, Intent: intent, Seed: maxSeed,
+		Reproducibility: reproducibility,
+	}
+	result := PlaylistResult{
+		Seed: maxSeed, Intent: intent, Reproducibility: reproducibility,
+		Status: GenerationStatus{State: "complete", PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
+	}
+	requestJSON, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := c.History.Save(context.Background(), history.Record{
+		Name: "Full seed", RequestJSON: requestJSON, ResultJSON: resultJSON,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := api.LoadSavedPlaylist(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Request.Seed != maxSeed || loaded.Request.Intent.Seed != maxSeed ||
+		loaded.Result.Seed != maxSeed || loaded.Result.Reproducibility.RNGSeed != maxSeed {
+		t.Fatalf("full-width seed changed during history replay: %+v", loaded)
 	}
 }
 
@@ -117,7 +168,7 @@ func TestGenerateFromPromptSavesToHistory(t *testing.T) {
 		t.Fatalf("fresh history should be empty, got %d", len(before))
 	}
 
-	if _, err := api.GenerateFromPrompt("like Justice, 10 tracks"); err != nil {
+	if _, err := api.GenerateFromPrompt(context.Background(), "like Justice, 10 tracks"); err != nil {
 		t.Fatalf("GenerateFromPrompt: %v", err)
 	}
 
@@ -141,9 +192,17 @@ func TestGenerateFromPromptSavesToHistory(t *testing.T) {
 	if rec.CreatedAt == 0 {
 		t.Fatal("saved playlist must have a createdAt")
 	}
+	loaded, err := api.LoadSavedPlaylist(rec.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Result.Seed.IsZero() || loaded.Result.Seed != loaded.Request.Seed ||
+		loaded.Result.Reproducibility.ID == "" || loaded.Result.Reproducibility.ID != loaded.Request.Reproducibility.ID {
+		t.Fatalf("saved generation is not replayable without rebuilding: %+v", loaded)
+	}
 
 	// A failed generation must not leave a row behind.
-	if _, err := api.GenerateFromPrompt("zqxjkw nothing here"); err == nil {
+	if _, err := api.GenerateFromPrompt(context.Background(), "zqxjkw nothing here"); err == nil {
 		t.Fatal("expected an error for an unresolvable prompt")
 	}
 	still, _ := api.ListSavedPlaylists()

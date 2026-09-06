@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 4
+	CurrentIntentVersion = 5
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -184,7 +184,7 @@ type MusicIntent struct {
 	Noise        float64           `json:"noise,omitempty"`
 	Lookback     int               `json:"lookback,omitempty"`
 	Constraints  IntentConstraints `json:"constraints,omitempty"`
-	Seed         int64             `json:"seed"`
+	Seed         RNGSeed           `json:"seed"`
 	NotesForUser string            `json:"notesForUser"`
 }
 
@@ -192,8 +192,8 @@ func (m MusicIntent) Normalized() MusicIntent {
 	out := m
 	legacyOnly := len(out.References) == 0 && len(out.RequiredTracks) == 0 &&
 		(!seedSetEmpty(out.Seeds) || !seedSetEmpty(out.Required))
-	// Only v1/v2 need semantic migration. V3 already has the typed intent
-	// fields; v4 adds optional catalog resolution metadata.
+	// Only v1/v2 need semantic migration. V3 already has the typed intent;
+	// v4 adds resolution metadata and v5 makes RNG seeds lossless strings.
 	if out.Version < 3 || legacyOnly {
 		out = migrateLegacy(out)
 	}
@@ -215,6 +215,9 @@ func (m MusicIntent) Normalized() MusicIntent {
 	out.Controls.Discovery = clampFloat(out.Controls.Discovery, 0, 1)
 	out.Controls.ArtistDiversity = clampFloat(out.Controls.ArtistDiversity, 0, 1)
 	out.Controls.TransitionSmoothness = clampFloat(out.Controls.TransitionSmoothness, 0, 1)
+	if seed, err := out.Seed.Canonical(); err == nil {
+		out.Seed = seed
+	}
 
 	if out.Mode != ModeSimilar && out.Mode != ModeJourney {
 		if len(out.Journey.Waypoints) >= 2 || positiveReferenceCount(out.References) >= 2 {
@@ -230,6 +233,9 @@ func (m MusicIntent) Normalized() MusicIntent {
 
 // Validate checks semantic invariants that JSON decoding and GBNF cannot.
 func (m MusicIntent) Validate() error {
+	if _, err := m.Seed.Canonical(); err != nil {
+		return fmt.Errorf("intent: %w", err)
+	}
 	if m.Mode != "" && m.Mode != ModeSimilar && m.Mode != ModeJourney {
 		return fmt.Errorf("intent: invalid mode %q", m.Mode)
 	}

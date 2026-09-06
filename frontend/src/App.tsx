@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTheme } from "./design/theme";
 import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
-import { API, type BuildPlaylistRequest } from "./lib/api";
+import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
 import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
@@ -14,6 +14,7 @@ type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings";
 interface PlaylistState {
   request: BuildPlaylistRequest;
   heading: string;
+  initialResult?: PlaylistResult;
 }
 
 interface ReviewState {
@@ -32,7 +33,7 @@ function seedToRequest(seed: Seed): BuildPlaylistRequest {
     noise: 0.1,
     lookback: 3,
     count: 25,
-    seed: 0,
+    seed: "0",
     noRepeatArtist: true,
     artistsExclude: [],
     excludeSeedArtist: false,
@@ -79,8 +80,8 @@ export default function App() {
     }
   }, [generateReady]);
 
-  const openPlaylist = (request: BuildPlaylistRequest, heading: string) => {
-    setPlaylist({ request, heading });
+  const openPlaylist = (request: BuildPlaylistRequest, heading: string, initialResult?: PlaylistResult) => {
+    setPlaylist({ request, heading, initialResult });
     setScreen("playlist");
   };
 
@@ -161,6 +162,7 @@ export default function App() {
               <PlaylistScreen
                 request={playlist.request}
                 heading={playlist.heading}
+                initialResult={playlist.initialResult}
                 onBack={() => setScreen(generateReady ? "generate" : "catalog")}
                 onReview={openReview}
               />

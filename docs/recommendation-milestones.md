@@ -66,3 +66,28 @@ indexes, and optional artist aliases.
 Next dependencies: stable canonical artist and recording IDs, source alias data
 for production catalogs, and background/indexed migration of older catalog
 files. Popularity and genre ranking remain unavailable and are not inferred.
+
+## Milestone 4 — Generation Lifecycle
+
+The version 5 intent contract represents every 64-bit RNG seed as a decimal
+string across Go, JSON, generated TypeScript, and history; numeric v1-v4 seeds
+still load with their original bit pattern. Each result records a reproducible
+generation identity derived from the catalog and recommendation algorithm
+versions, normalized resolved intent, explicit no-profile snapshot/version, and
+seed. History now stores the complete result and migrates existing databases,
+so new saved playlists and the result returned by `GenerateFromPrompt` open
+without an immediate duplicate build.
+
+Completed parses are reused only when prompt, parser/model identity, schema
+version, and session context match. Frontend sequence guards and cancellable
+Wails calls supersede stale previews and builds; the bridge independently
+rejects superseded results. Cancellation reaches the recommendation walk and
+periodically interrupts brute-force similarity and filter scans. Responses now
+include complete/partial state, structured partial reasons, parser fallback
+status, and per-stage timings; logs contain stage and result metadata but omit
+prompt and taste text. Ranking and control weights are otherwise unchanged.
+
+Next dependencies: real profile snapshot/version inputs if personalization is
+introduced, persistent parse caching if startup latency warrants it, and a
+frontend test harness for direct component-level ordering tests. The current
+in-memory parse cache is process-local, and timing is intentionally coarse.

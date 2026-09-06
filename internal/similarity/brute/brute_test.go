@@ -1,6 +1,8 @@
 package brute_test
 
 import (
+	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"sort"
@@ -105,6 +107,15 @@ func ids(ms []ports.Match) []string {
 	return out
 }
 
+func mustSearch(t *testing.T, eng *brute.Engine, q ports.SimilarityQuery) []ports.Match {
+	t.Helper()
+	matches, err := eng.Search(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return matches
+}
+
 func TestSearchMatchesReference(t *testing.T) {
 	t.Parallel()
 	cat := buildCatalog(t, 200, 1)
@@ -118,7 +129,7 @@ func TestSearchMatchesReference(t *testing.T) {
 			Weights:  [2]float32{rng.Float32(), rng.Float32()},
 			K:        10,
 		}
-		got := ids(eng.Search(q))
+		got := ids(mustSearch(t, eng, q))
 		want := ids(referenceSearch(cat, q))
 		if len(got) != len(want) {
 			t.Fatalf("trial %d: len %d != %d", trial, len(got), len(want))
@@ -148,13 +159,13 @@ func TestSelfIsNearestThenExcluded(t *testing.T) {
 		K:        5,
 	}
 
-	self := eng.Search(q)
+	self := mustSearch(t, eng, q)
 	if self[0].ID != seed {
 		t.Fatalf("seed should be its own nearest, got %s", self[0].ID)
 	}
 
 	q.Exclude = map[string]struct{}{seed: {}}
-	excluded := eng.Search(q)
+	excluded := mustSearch(t, eng, q)
 	for _, m := range excluded {
 		if m.ID == seed {
 			t.Fatal("excluded id still present")
@@ -191,11 +202,11 @@ func TestWeightsSelectSpace(t *testing.T) {
 	cat := fakes.NewCatalog(dim, rows...)
 	eng := brute.New(cat)
 
-	byAudio := eng.Search(ports.SimilarityQuery{AudioSum: audioQ, TrackSum: trackQ, Weights: [2]float32{1, 0}, K: 1})
+	byAudio := mustSearch(t, eng, ports.SimilarityQuery{AudioSum: audioQ, TrackSum: trackQ, Weights: [2]float32{1, 0}, K: 1})
 	if byAudio[0].ID != "audioStar" {
 		t.Fatalf("creativity=1 should pick the audio match, got %s", byAudio[0].ID)
 	}
-	byTrack := eng.Search(ports.SimilarityQuery{AudioSum: audioQ, TrackSum: trackQ, Weights: [2]float32{0, 1}, K: 1})
+	byTrack := mustSearch(t, eng, ports.SimilarityQuery{AudioSum: audioQ, TrackSum: trackQ, Weights: [2]float32{0, 1}, K: 1})
 	if byTrack[0].ID != "trackStar" {
 		t.Fatalf("creativity=0 should pick the co-occurrence match, got %s", byTrack[0].ID)
 	}
@@ -214,8 +225,8 @@ func TestKCapAndDeterminism(t *testing.T) {
 		Weights:  [2]float32{0.6, 0.4},
 		K:        7,
 	}
-	a := eng.Search(q)
-	b := eng.Search(q)
+	a := mustSearch(t, eng, q)
+	b := mustSearch(t, eng, q)
 	if len(a) != 7 {
 		t.Fatalf("K not honored: %d", len(a))
 	}
@@ -234,15 +245,39 @@ func TestKCapAndDeterminism(t *testing.T) {
 
 func TestEmptyAndZeroQuery(t *testing.T) {
 	t.Parallel()
-	if got := brute.New(fakes.NewCatalog(dim)).Search(ports.SimilarityQuery{K: 5}); got != nil {
+	if got := mustSearch(t, brute.New(fakes.NewCatalog(dim)), ports.SimilarityQuery{K: 5}); got != nil {
 		t.Fatalf("empty catalog should return nil, got %v", got)
 	}
 
 	cat := buildCatalog(t, 10, 8)
 	eng := brute.New(cat)
 	// No usable query vectors → every score 0 → first K rows in row order.
-	got := eng.Search(ports.SimilarityQuery{K: 3})
+	got := mustSearch(t, eng, ports.SimilarityQuery{K: 3})
 	if len(got) != 3 || got[0].Row != 0 || got[1].Row != 1 || got[2].Row != 2 {
 		t.Fatalf("zero query should yield rows 0,1,2; got %+v", got)
 	}
+}
+
+func TestSearchHonorsCancellation(t *testing.T) {
+	t.Parallel()
+	eng := brute.New(buildCatalog(t, 5000, 12))
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = &cancelAfterChecks{Context: ctx, cancel: cancel, remaining: 3}
+	if _, err := eng.Search(ctx, ports.SimilarityQuery{K: 10}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search error = %v, want context.Canceled", err)
+	}
+}
+
+type cancelAfterChecks struct {
+	context.Context
+	cancel    context.CancelFunc
+	remaining int
+}
+
+func (c *cancelAfterChecks) Err() error {
+	c.remaining--
+	if c.remaining == 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
 }

@@ -11,6 +11,7 @@ package brute
 
 import (
 	"container/heap"
+	"context"
 	"math"
 
 	"github.com/platten/playlistai/internal/ports"
@@ -47,9 +48,9 @@ func (e *Engine) Len() int { return e.n }
 
 // Search implements ports.SimilarityEngine. Results are score-descending with
 // ties broken by ascending row, so the ordering is deterministic.
-func (e *Engine) Search(q ports.SimilarityQuery) []ports.Match {
+func (e *Engine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.Match, error) {
 	if e.n == 0 {
-		return nil
+		return nil, nil
 	}
 	k := q.K
 	if k <= 0 {
@@ -72,6 +73,11 @@ func (e *Engine) Search(q ports.SimilarityQuery) []ports.Match {
 
 	h := make(worstFirst, 0, k)
 	for row := 0; row < e.n; row++ {
+		if row&1023 == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 		if _, skip := excludeRows[row]; skip {
 			continue
 		}
@@ -95,12 +101,15 @@ func (e *Engine) Search(q ports.SimilarityQuery) []ports.Match {
 			heap.Fix(&h, 0)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 
 	out := make([]ports.Match, len(h))
 	for i := len(out) - 1; i >= 0; i-- {
 		out[i] = heap.Pop(&h).(ports.Match)
 	}
-	return out
+	return out, nil
 }
 
 // betterThan reports whether (score,row) should displace the current worst m.

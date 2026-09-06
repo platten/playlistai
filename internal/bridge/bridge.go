@@ -18,9 +18,11 @@ var Version = "dev"
 // API is registered with application.NewService; every exported method becomes
 // callable from TypeScript via the generated bindings.
 type API struct {
-	app *app.Container
-	log *slog.Logger
-	ctx context.Context
+	app         *app.Container
+	log         *slog.Logger
+	ctx         context.Context
+	intentCache intentCache
+	operations  operationSet
 }
 
 // New creates the service.

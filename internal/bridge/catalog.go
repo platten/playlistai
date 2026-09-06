@@ -1,6 +1,10 @@
 package bridge
 
-import "github.com/platten/playlistai/internal/ports"
+import (
+	"context"
+
+	"github.com/platten/playlistai/internal/ports"
+)
 
 // Catalog-facing bridge methods. All are safe to call before the catalog is
 // loaded; they return zero values or a clear error.
@@ -83,7 +87,7 @@ type SimilarResult struct {
 // between the two embedding spaces by creativity (0 = playlist co-occurrence,
 // 1 = pure audio). The seed itself is excluded. Empty when the catalog or
 // similarity engine is not ready.
-func (a *API) SimilarTracks(id string, k int, creativity float64) SimilarResult {
+func (a *API) SimilarTracks(ctx context.Context, id string, k int, creativity float64) SimilarResult {
 	res := SimilarResult{Hits: []TrackHit{}}
 	if a.app.Catalog == nil || a.app.Sim == nil {
 		return res
@@ -104,13 +108,16 @@ func (a *API) SimilarTracks(id string, k int, creativity float64) SimilarResult 
 		return res
 	}
 
-	matches := a.app.Sim.Search(ports.SimilarityQuery{
+	matches, err := a.app.Sim.Search(ctx, ports.SimilarityQuery{
 		AudioSum: v.Audio,
 		TrackSum: v.Track,
 		Weights:  [2]float32{float32(creativity), float32(1 - creativity)},
 		K:        k + 1,
 		Exclude:  map[string]struct{}{id: {}},
 	})
+	if err != nil {
+		return res
+	}
 	for _, m := range matches {
 		mm, ok := a.app.Catalog.Meta(m.ID)
 		if !ok {

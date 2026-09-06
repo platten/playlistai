@@ -65,7 +65,7 @@ func baseIntent() core.MusicIntent {
 		Count:       12,
 		Lookback:    3,
 		Creativity:  0.5,
-		Seed:        1,
+		Seed:        "1",
 		Constraints: core.IntentConstraints{NoRepeatArtistBackToBack: true},
 	}
 }
@@ -147,6 +147,18 @@ func TestDirectBuildRejectsAmbiguousTrackReference(t *testing.T) {
 	}
 }
 
+func TestBuildHonorsCancellation(t *testing.T) {
+	t.Parallel()
+	eng, _ := fakeEngine(t, 100, 5, 7)
+	intent := baseIntent()
+	intent.Seeds.TrackIDs = []string{"trk1"}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := eng.Build(ctx, intent); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Build error = %v, want context.Canceled", err)
+	}
+}
+
 func TestDeterminismAndNoise(t *testing.T) {
 	t.Parallel()
 	eng, _ := fakeEngine(t, 80, 6, 11)
@@ -168,7 +180,7 @@ func TestDeterminismAndNoise(t *testing.T) {
 		t.Fatal("noise>0 with a fixed Seed is not deterministic")
 	}
 	// different Seed → different walk (overwhelmingly likely)
-	intent.Seed = 999
+	intent.Seed = "999"
 	c3, _ := eng.Build(context.Background(), intent)
 	if sameIDs(c1, c3) {
 		t.Fatal("noise>0 ignored the Seed")
@@ -310,8 +322,8 @@ func TestDuplicateRecordingAcrossDifferentIDs(t *testing.T) {
 	cat := fakes.NewCatalog(2, rows...)
 	eng := deejai.New(cat, fakes.NewSimilarityEngine(cat))
 	intents := []core.MusicIntent{
-		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed"}}, Count: 3, Lookback: 1, Creativity: 0.5, Seed: 1},
-		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed", "end"}}, Mode: core.ModeJourney, Count: 3, Lookback: 1, Creativity: 0.5, Seed: 1},
+		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed"}}, Count: 3, Lookback: 1, Creativity: 0.5, Seed: "1"},
+		{Version: core.CurrentIntentVersion, Seeds: core.IntentSeeds{TrackIDs: []string{"seed", "end"}}, Mode: core.ModeJourney, Count: 3, Lookback: 1, Creativity: 0.5, Seed: "1"},
 	}
 	for _, intent := range intents {
 		pl, err := eng.Build(context.Background(), intent)

@@ -2,6 +2,8 @@ package history
 
 import (
 	"context"
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -32,6 +34,7 @@ func TestSaveListGetDelete(t *testing.T) {
 		IntentJSON:  []byte(`{"mode":"journey"}`),
 		RequestJSON: []byte(`{"count":30}`),
 		TracksJSON:  []byte(`[{"id":"x"}]`),
+		ResultJSON:  []byte(`{"seed":"18446744073709551615"}`),
 	})
 	if err != nil {
 		t.Fatalf("Save b: %v", err)
@@ -46,6 +49,9 @@ func TestSaveListGetDelete(t *testing.T) {
 	}
 	if string(list[0].IntentJSON) != `{"mode":"journey"}` || string(list[0].TracksJSON) != `[{"id":"x"}]` {
 		t.Fatalf("blobs not round-tripped: %+v", list[0])
+	}
+	if string(list[0].ResultJSON) != `{"seed":"18446744073709551615"}` || string(list[1].ResultJSON) != "{}" {
+		t.Fatalf("result blobs not round-tripped: %+v", list)
 	}
 	if string(list[1].IntentJSON) != "{}" || string(list[1].TracksJSON) != "[]" {
 		t.Fatalf("empty blobs should default: %+v", list[1])
@@ -95,5 +101,41 @@ func TestReopenPersists(t *testing.T) {
 	list, err := s2.List(context.Background(), 10)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("reopened store lost data: len=%d err=%v", len(list), err)
+	}
+}
+
+func TestOpenMigratesHistoryWithoutGenerationResult(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE playlists (
+		id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, name TEXT NOT NULL,
+		prompt TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT '',
+		track_count INTEGER NOT NULL DEFAULT 0, intent_json TEXT NOT NULL DEFAULT '{}',
+		request_json TEXT NOT NULL DEFAULT '{}', tracks_json TEXT NOT NULL DEFAULT '[]'
+	)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO playlists (id, created_at, name, prompt) VALUES ('old', 1, 'Old', 'old prompt')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	rows, err := store.List(context.Background(), 10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("migrated rows = %+v, %v", rows, err)
+	}
+	if string(rows[0].ResultJSON) != "{}" {
+		t.Fatalf("migrated result = %s, want {}", rows[0].ResultJSON)
 	}
 }

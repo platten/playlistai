@@ -4,6 +4,7 @@ import {
   type BuildPlaylistRequest,
   type CatalogInfo,
   type IntentPreview,
+  type PlaylistResult,
   type ResolutionSelection,
   type SavedPlaylistSummary,
 } from "../lib/api";
@@ -40,7 +41,11 @@ export function GenerateScreen({
   onGenerated,
   onNeedCatalog,
 }: {
-  onGenerated: (request: BuildPlaylistRequest, heading: string) => void;
+  onGenerated: (
+    request: BuildPlaylistRequest,
+    heading: string,
+    initialResult?: PlaylistResult,
+  ) => void;
   onNeedCatalog: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
@@ -57,6 +62,13 @@ export function GenerateScreen({
   const [source, setSource] = useState<"fresh" | "saved">("fresh");
   const [savedId, setSavedId] = useState<string>("");
   const [savedRequest, setSavedRequest] = useState<BuildPlaylistRequest | null>(null);
+  const [savedResult, setSavedResult] = useState<PlaylistResult | null>(null);
+  const activeSaved = useRef<ReturnType<typeof API.LoadSavedPlaylist> | null>(null);
+  const activeParse = useRef<ReturnType<typeof API.ParseIntent> | null>(null);
+  const activeGeneration = useRef<ReturnType<typeof API.GenerateFromPrompt> | null>(null);
+  const savedSequence = useRef(0);
+  const parseSequence = useRef(0);
+  const generationSequence = useRef(0);
 
   const refreshSaved = useCallback(() => {
     API.ListSavedPlaylists()
@@ -78,23 +90,47 @@ export function GenerateScreen({
     setSavedId(id);
     const hit = saved.find((s) => s.id === id);
     if (hit) setPrompt(hit.prompt);
-    API.LoadSavedPlaylist(id)
-      .then((playlist) => setSavedRequest(playlist?.request ?? null))
-      .catch(() => setSavedRequest(null));
+    const sequence = ++savedSequence.current;
+    void activeSaved.current?.cancel("superseded saved playlist load");
+    const call = API.LoadSavedPlaylist(id);
+    activeSaved.current = call;
+    call
+      .then((playlist) => {
+        if (sequence !== savedSequence.current) return;
+        setSavedRequest(playlist?.request ?? null);
+        setSavedResult(playlist?.result ?? null);
+      })
+      .catch(() => {
+        if (sequence !== savedSequence.current) return;
+        setSavedRequest(null);
+        setSavedResult(null);
+      });
   };
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
+    const sequence = ++parseSequence.current;
+    void activeParse.current?.cancel("superseded intent preview");
     if (prompt.trim() === "") {
       setPreview(null);
       return;
     }
     debounce.current = window.setTimeout(() => {
-      API.ParseIntent(prompt)
-        .then((p) => setPreview(p ?? null))
-        .catch(() => setPreview(null));
+      const call = API.ParseIntent(prompt);
+      activeParse.current = call;
+      call
+        .then((p) => {
+          if (sequence === parseSequence.current) setPreview(p ?? null);
+        })
+        .catch(() => {
+          if (sequence === parseSequence.current) setPreview(null);
+        });
     }, 200);
-    return () => window.clearTimeout(debounce.current);
+    return () => {
+      parseSequence.current += 1;
+      window.clearTimeout(debounce.current);
+      void activeParse.current?.cancel("intent preview cleanup");
+    };
   }, [prompt]);
 
   useEffect(() => {
@@ -119,16 +155,26 @@ export function GenerateScreen({
       if (q === "") return;
       setGenerating(true);
       setError(null);
+      const sequence = ++generationSequence.current;
+      void activeParse.current?.cancel("generation started");
+      void activeGeneration.current?.cancel("superseded playlist generation");
       const request =
         selections.length > 0
           ? API.GenerateFromPromptResolved(q, selections)
           : API.GenerateFromPrompt(q);
+      activeGeneration.current = request;
       request
         .then((res) => {
-          if (res) onGenerated(res.request, res.name || q);
+          if (sequence === generationSequence.current && res) {
+            onGenerated(res.request, res.name || q, res.playlist);
+          }
         })
-        .catch((e) => setError(String(e)))
-        .finally(() => setGenerating(false));
+        .catch((e) => {
+          if (sequence === generationSequence.current) setError(String(e));
+        })
+        .finally(() => {
+          if (sequence === generationSequence.current) setGenerating(false);
+        });
     },
     [onGenerated],
   );
@@ -136,7 +182,11 @@ export function GenerateScreen({
   const generate = useCallback(() => {
     if (source === "saved" && savedRequest) {
       const hit = saved.find((item) => item.id === savedId);
-      onGenerated(savedRequest, hit?.name || prompt);
+      generationSequence.current += 1;
+      void activeParse.current?.cancel("saved playlist selected");
+      void activeGeneration.current?.cancel("saved playlist selected");
+      setGenerating(false);
+      onGenerated(savedRequest, hit?.name || prompt, savedResult ?? undefined);
       return;
     }
     const selections = ambiguousIssues.flatMap((issue) => {
@@ -146,7 +196,18 @@ export function GenerateScreen({
         : [];
     });
     runGenerate(prompt, selections);
-  }, [ambiguousIssues, onGenerated, prompt, resolutionChoices, runGenerate, saved, savedId, savedRequest, source]);
+  }, [
+    ambiguousIssues,
+    onGenerated,
+    prompt,
+    resolutionChoices,
+    runGenerate,
+    saved,
+    savedId,
+    savedRequest,
+    savedResult,
+    source,
+  ]);
 
   const surprise = useCallback(() => {
     const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
@@ -154,8 +215,21 @@ export function GenerateScreen({
     setSource("fresh");
     setSavedId("");
     setSavedRequest(null);
+    setSavedResult(null);
     runGenerate(pick);
   }, [runGenerate]);
+
+  useEffect(
+    () => () => {
+      savedSequence.current += 1;
+      parseSequence.current += 1;
+      generationSequence.current += 1;
+      void activeSaved.current?.cancel("generate screen unmounted");
+      void activeParse.current?.cancel("generate screen unmounted");
+      void activeGeneration.current?.cancel("generate screen unmounted");
+    },
+    [],
+  );
 
   if (info && !info.loaded) {
     return (
@@ -194,9 +268,12 @@ export function GenerateScreen({
               className="accent-accent"
               checked={source === "fresh"}
               onChange={() => {
+                savedSequence.current += 1;
+                void activeSaved.current?.cancel("saved playlist load abandoned");
                 setSource("fresh");
                 setSavedId("");
                 setSavedRequest(null);
+                setSavedResult(null);
               }}
             />
             a fresh idea

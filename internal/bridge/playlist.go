@@ -1,7 +1,9 @@
 package bridge
 
 import (
+	"context"
 	"errors"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 )
@@ -9,35 +11,36 @@ import (
 // ControlOverrides contains only controls explicitly changed after parsing.
 // Nil means "keep the resolved intent value".
 type ControlOverrides struct {
-	TotalTrackCount      *int     `json:"totalTrackCount,omitempty"`
-	AudioWeight          *float64 `json:"audioWeight,omitempty"`
-	CooccurrenceWeight   *float64 `json:"cooccurrenceWeight,omitempty"`
-	Discovery            *float64 `json:"discovery,omitempty"`
-	ArtistDiversity      *float64 `json:"artistDiversity,omitempty"`
-	TransitionSmoothness *float64 `json:"transitionSmoothness,omitempty"`
-	ExcludeSeedArtists   *bool    `json:"excludeSeedArtists,omitempty"`
-	Seed                 *int64   `json:"seed,omitempty"`
+	TotalTrackCount      *int          `json:"totalTrackCount,omitempty"`
+	AudioWeight          *float64      `json:"audioWeight,omitempty"`
+	CooccurrenceWeight   *float64      `json:"cooccurrenceWeight,omitempty"`
+	Discovery            *float64      `json:"discovery,omitempty"`
+	ArtistDiversity      *float64      `json:"artistDiversity,omitempty"`
+	TransitionSmoothness *float64      `json:"transitionSmoothness,omitempty"`
+	ExcludeSeedArtists   *bool         `json:"excludeSeedArtists,omitempty"`
+	Seed                 *core.RNGSeed `json:"seed,omitempty"`
 }
 
-// BuildPlaylistRequest v3 carries the complete resolved interpretation plus
-// explicit UI overrides. The legacy fields remain for loading v1/v2 history.
+// BuildPlaylistRequest carries the complete resolved interpretation plus
+// explicit UI overrides. Legacy fields remain for old history records.
 type BuildPlaylistRequest struct {
-	Version   int              `json:"version"`
-	Intent    core.MusicIntent `json:"intent"`
-	Overrides ControlOverrides `json:"overrides"`
+	Version         int              `json:"version"`
+	Intent          core.MusicIntent `json:"intent"`
+	Overrides       ControlOverrides `json:"overrides"`
+	Reproducibility Reproducibility  `json:"reproducibility"`
 
-	ReferenceIDs      []string `json:"referenceIds,omitempty"`
-	RequiredIDs       []string `json:"requiredIds,omitempty"`
-	SeedIDs           []string `json:"seedIds,omitempty"`
-	Mode              string   `json:"mode,omitempty"`
-	Creativity        float64  `json:"creativity,omitempty"`
-	Noise             float64  `json:"noise,omitempty"`
-	Lookback          int      `json:"lookback,omitempty"`
-	Count             int      `json:"count,omitempty"`
-	Seed              int64    `json:"seed,omitempty"`
-	NoRepeatArtist    bool     `json:"noRepeatArtist,omitempty"`
-	ArtistsExclude    []string `json:"artistsExclude,omitempty"`
-	ExcludeSeedArtist bool     `json:"excludeSeedArtist,omitempty"`
+	ReferenceIDs      []string     `json:"referenceIds,omitempty"`
+	RequiredIDs       []string     `json:"requiredIds,omitempty"`
+	SeedIDs           []string     `json:"seedIds,omitempty"`
+	Mode              string       `json:"mode,omitempty"`
+	Creativity        float64      `json:"creativity,omitempty"`
+	Noise             float64      `json:"noise,omitempty"`
+	Lookback          int          `json:"lookback,omitempty"`
+	Count             int          `json:"count,omitempty"`
+	Seed              core.RNGSeed `json:"seed,omitempty"`
+	NoRepeatArtist    bool         `json:"noRepeatArtist,omitempty"`
+	ArtistsExclude    []string     `json:"artistsExclude,omitempty"`
+	ExcludeSeedArtist bool         `json:"excludeSeedArtist,omitempty"`
 }
 
 type PlaylistTrack struct {
@@ -49,11 +52,13 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
-	Tracks  []PlaylistTrack  `json:"tracks"`
-	Mode    string           `json:"mode"`
-	Seed    int64            `json:"seed"`
-	Notices []PlaylistNotice `json:"notices"`
-	Intent  core.MusicIntent `json:"intent"`
+	Tracks          []PlaylistTrack  `json:"tracks"`
+	Mode            string           `json:"mode"`
+	Seed            core.RNGSeed     `json:"seed"`
+	Notices         []PlaylistNotice `json:"notices"`
+	Intent          core.MusicIntent `json:"intent"`
+	Status          GenerationStatus `json:"status"`
+	Reproducibility Reproducibility  `json:"reproducibility"`
 }
 
 type PlaylistNotice struct {
@@ -63,11 +68,22 @@ type PlaylistNotice struct {
 	Actual    int    `json:"actual"`
 }
 
-func (a *API) BuildPlaylist(req BuildPlaylistRequest) (PlaylistResult, error) {
-	return a.runBuild(req)
+func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
+	ctx, current, finish := a.operations.begin(ctx, "playlist-build")
+	defer finish()
+	result, err := a.runBuild(ctx, req)
+	if err == nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return PlaylistResult{}, contextErr
+		}
+		if !current() {
+			return PlaylistResult{}, context.Canceled
+		}
+	}
+	return result, err
 }
 
-func (a *API) runBuild(req BuildPlaylistRequest) (PlaylistResult, error) {
+func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
 	if a.app.Reco == nil {
 		return PlaylistResult{}, errors.New("recommendation engine not ready — load the catalog first")
 	}
@@ -78,8 +94,12 @@ func (a *API) runBuild(req BuildPlaylistRequest) (PlaylistResult, error) {
 	}
 	intent = intent.Normalized()
 
-	playlist, err := a.app.Reco.Build(a.context(), intent)
+	started := time.Now()
+	playlist, err := a.app.Reco.Build(ctx, intent)
 	if err != nil {
+		return PlaylistResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return PlaylistResult{}, err
 	}
 	out := PlaylistResult{
@@ -100,6 +120,31 @@ func (a *API) runBuild(req BuildPlaylistRequest) (PlaylistResult, error) {
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
+	out.Status = GenerationStatus{
+		State: "complete", PartialReasons: []PlaylistNotice{},
+		Timings: []StageTiming{{Stage: "recommend", Milliseconds: time.Since(started).Milliseconds()}},
+	}
+	if len(out.Tracks) < out.Intent.Count {
+		out.Status.State = "partial"
+		out.Status.PartialReasons = append(out.Status.PartialReasons, out.Notices...)
+		if len(out.Status.PartialReasons) == 0 {
+			reason := PlaylistNotice{
+				Code: "partial_result", Detail: "generation ended before the requested total was reached",
+				Requested: out.Intent.Count, Actual: len(out.Tracks),
+			}
+			out.Notices = append(out.Notices, reason)
+			out.Status.PartialReasons = append(out.Status.PartialReasons, reason)
+		}
+	}
+	catalogVersion := "unknown"
+	if a.app.Resolver != nil {
+		catalogVersion = a.app.Resolver.CatalogVersion()
+	}
+	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion)
+	if err != nil {
+		return PlaylistResult{}, err
+	}
+	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks), "recommend_ms", out.Status.Timings[0].Milliseconds)
 	return out, nil
 }
 

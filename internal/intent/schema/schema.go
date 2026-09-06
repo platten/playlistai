@@ -10,6 +10,10 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
+// Version keys parsed-intent reuse. It follows the core contract because every
+// schema change that affects interpretation increments that contract version.
+const Version = core.CurrentIntentVersion
+
 type WireReference struct {
 	Kind      string `json:"kind"`
 	Value     string `json:"value"`

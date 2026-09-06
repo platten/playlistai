@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/fakes"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 func testConfig(t *testing.T) config.Config {
@@ -31,6 +33,55 @@ func TestParserDefaultsToRules(t *testing.T) {
 
 	if got := c.IntentParser().Info().Backend; got != "rules" {
 		t.Fatalf("parser backend = %q, want rules", got)
+	}
+}
+
+func TestParseIntentDetailedReportsFallback(t *testing.T) {
+	t.Parallel()
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	c.mu.Lock()
+	c.parser = &fakes.IntentParser{
+		Err: errors.New("model failed"),
+		Meta: ports.ParserInfo{
+			Name: "test-model", Backend: "llama", Version: "test/v1", Ready: true,
+		},
+	}
+	c.mu.Unlock()
+
+	outcome, err := c.ParseIntentDetailed(context.Background(), ports.IntentInput{Prompt: "like Justice"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !outcome.FallbackUsed || outcome.RequestedBackend != "llama" || outcome.Backend != "rules" || outcome.FallbackReason != "parser_error" {
+		t.Fatalf("fallback outcome = %+v", outcome)
+	}
+}
+
+func TestParseIntentDetailedDoesNotFallbackAfterCancellation(t *testing.T) {
+	t.Parallel()
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	c.mu.Lock()
+	c.parser = &fakes.IntentParser{
+		Err: errors.New("model failed"),
+		Meta: ports.ParserInfo{
+			Name: "test-model", Backend: "llama", Version: "test/v1", Ready: true,
+		},
+	}
+	c.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	outcome, err := c.ParseIntentDetailed(ctx, ports.IntentInput{Prompt: "like Justice"}, nil)
+	if !errors.Is(err, context.Canceled) || outcome.FallbackUsed {
+		t.Fatalf("canceled parse = %+v, %v", outcome, err)
 	}
 }
 

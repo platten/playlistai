@@ -27,11 +27,13 @@ const KIND_TO_PROVENANCE: Record<string, Provenance> = {
 export function PlaylistScreen({
   request,
   heading,
+  initialResult,
   onBack,
   onReview,
 }: {
   request: BuildPlaylistRequest;
   heading: string;
+  initialResult?: PlaylistResult;
   onBack: () => void;
   onReview: (trackIds: string[], heading: string) => void;
 }) {
@@ -47,15 +49,23 @@ export function PlaylistScreen({
   const [excludeSeedArtists, setExcludeSeedArtists] = useState(
     request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist,
   );
-  const [runSeed, setRunSeed] = useState<number>(request.intent?.seed ?? request.seed ?? 1);
+  const [runSeed, setRunSeed] = useState<string>(request.intent?.seed ?? request.seed ?? "1");
 
-  const [result, setResult] = useState<PlaylistResult | null>(null);
-  const [busy, setBusy] = useState(true);
+  const initialResultMatches =
+    initialResult !== undefined &&
+    initialResult.reproducibility?.id !== "" &&
+    initialResult.reproducibility?.id === request.reproducibility?.id;
+  const [result, setResult] = useState<PlaylistResult | null>(
+    initialResultMatches ? initialResult : null,
+  );
+  const [busy, setBusy] = useState(!initialResultMatches);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const player = usePreviewPlayer();
 
   const debounce = useRef<number | undefined>(undefined);
+  const activeBuild = useRef<ReturnType<typeof API.BuildPlaylist> | null>(null);
+  const buildSequence = useRef(0);
 
   // request identity resets local state when the caller hands us a new one.
   const requestKey = useMemo(
@@ -72,15 +82,38 @@ export function PlaylistScreen({
     setTransitionSmoothness(controls?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9);
     setCount(controls?.totalTrackCount ?? request.count ?? 25);
     setExcludeSeedArtists(request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist);
-    setRunSeed(request.intent?.seed ?? request.seed ?? 1);
+    setRunSeed(request.intent?.seed ?? request.seed ?? "1");
+    setResult(initialResultMatches ? initialResult : null);
+    setBusy(!initialResultMatches);
     setExpanded(new Set());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestKey]);
+  }, [initialResult, initialResultMatches, request.reproducibility?.id, requestKey]);
+
+  const initialInputsUnchanged =
+    initialResultMatches &&
+    audioWeight === (initial?.audioWeight ?? request.creativity ?? 0.5) &&
+    cooccurrenceWeight === (initial?.cooccurrenceWeight ?? 0.5) &&
+    discovery === (initial?.discovery ?? request.noise ?? 0.1) &&
+    artistDiversity === (initial?.artistDiversity ?? 0.7) &&
+    transitionSmoothness ===
+      (initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9) &&
+    count === (initial?.totalTrackCount ?? request.count ?? 25) &&
+    excludeSeedArtists ===
+      (request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist) &&
+    runSeed === (request.intent?.seed ?? request.seed ?? "1");
 
   const build = useCallback(() => {
+    void activeBuild.current?.cancel("superseded playlist build");
+    const sequence = ++buildSequence.current;
+    if (initialInputsUnchanged && initialResult) {
+      setResult(initialResult);
+      setBusy(false);
+      setError(null);
+      return;
+    }
     setBusy(true);
     setError(null);
-    API.BuildPlaylist({
+    const call = API.BuildPlaylist({
       ...request,
       overrides: {
         totalTrackCount: count,
@@ -92,16 +125,40 @@ export function PlaylistScreen({
         excludeSeedArtists,
         seed: runSeed,
       },
-    })
-      .then((r) => setResult(r ?? null))
-      .catch((e) => setError(String(e)))
-      .finally(() => setBusy(false));
-  }, [request, audioWeight, cooccurrenceWeight, discovery, artistDiversity, transitionSmoothness, count, runSeed, excludeSeedArtists]);
+    });
+    activeBuild.current = call;
+    call
+      .then((r) => {
+        if (sequence === buildSequence.current) setResult(r ?? null);
+      })
+      .catch((e) => {
+        if (sequence === buildSequence.current) setError(String(e));
+      })
+      .finally(() => {
+        if (sequence === buildSequence.current) setBusy(false);
+      });
+  }, [
+    request,
+    audioWeight,
+    cooccurrenceWeight,
+    discovery,
+    artistDiversity,
+    transitionSmoothness,
+    count,
+    runSeed,
+    excludeSeedArtists,
+    initialInputsUnchanged,
+    initialResult,
+  ]);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
     debounce.current = window.setTimeout(build, 160);
-    return () => window.clearTimeout(debounce.current);
+    return () => {
+      buildSequence.current += 1;
+      window.clearTimeout(debounce.current);
+      void activeBuild.current?.cancel("playlist build cleanup");
+    };
   }, [build]);
 
   const tracks = result?.tracks ?? [];
@@ -134,7 +191,7 @@ export function PlaylistScreen({
           variant="ghost"
           size="sm"
           iconLeft={<Icon.Refresh size={14} />}
-          onClick={() => setRunSeed(Date.now())}
+          onClick={() => setRunSeed(randomSeed())}
         >
           Regenerate
         </Button>
@@ -253,4 +310,11 @@ export function PlaylistScreen({
       </div>
     </div>
   );
+}
+
+function randomSeed(): string {
+  const words = new Uint32Array(2);
+  crypto.getRandomValues(words);
+  const value = (BigInt(words[0]) << 32n) | BigInt(words[1]);
+  return (value === 0n ? 1n : value).toString(10);
 }

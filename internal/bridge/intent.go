@@ -1,9 +1,11 @@
 package bridge
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -26,23 +28,32 @@ type IntentPreview struct {
 	Notes              string                   `json:"notes"`
 	Backend            string                   `json:"backend"` // "rules" | "llama" | "none"
 	ResolutionIssues   []intentresolution.Issue `json:"resolutionIssues"`
+	Parser             ParserStatus             `json:"parser"`
+	Cached             bool                     `json:"cached"`
+	Timing             StageTiming              `json:"timing"`
 }
 
 // ParseIntent turns a prompt into a preview without generating anything. It
 // uses the active parser, falling back to the rules parser if the model
 // errors (see app.Container.ParseIntent).
-func (a *API) ParseIntent(prompt string) IntentPreview {
+func (a *API) ParseIntent(ctx context.Context, prompt string) (IntentPreview, error) {
+	ctx, current, finish := a.operations.begin(ctx, "intent-preview")
+	defer finish()
 	if a.app.IntentParser() == nil {
-		return IntentPreview{Backend: "none", Seeds: []string{}, RequiredTracks: []string{}, ArtistsExclude: []string{}}
+		return IntentPreview{Backend: "none", Seeds: []string{}, RequiredTracks: []string{}, ArtistsExclude: []string{}}, nil
 	}
 	// No progress bar for the live, keystroke-debounced preview.
-	m, backend := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, nil)
-	m = m.Normalized()
+	started := time.Now()
+	entry, reused, err := a.parseIntentCached(ctx, ports.IntentInput{Prompt: prompt}, nil)
+	if err != nil {
+		return IntentPreview{}, err
+	}
+	m, backend := entry.intent, entry.outcome.Backend
 	var issues []intentresolution.Issue
 	if a.app.Resolver != nil {
 		m, issues = intentresolution.Apply(a.app.Resolver, m)
 	}
-	return IntentPreview{
+	preview := IntentPreview{
 		Intent:             m,
 		Seeds:              referenceQueries(m.References),
 		RequiredTracks:     referenceQueries(m.RequiredTracks),
@@ -57,7 +68,17 @@ func (a *API) ParseIntent(prompt string) IntentPreview {
 		Notes:              m.NotesForUser,
 		Backend:            backend,
 		ResolutionIssues:   issues,
+		Parser:             parserStatus(entry.outcome),
+		Cached:             reused,
+		Timing:             StageTiming{Stage: "parse", Milliseconds: time.Since(started).Milliseconds()},
 	}
+	if err := ctx.Err(); err != nil {
+		return IntentPreview{}, err
+	}
+	if !current() {
+		return IntentPreview{}, context.Canceled
+	}
+	return preview, nil
 }
 
 // GenerateResult is the outcome of GenerateFromPrompt: the playlist plus the
@@ -69,13 +90,14 @@ type GenerateResult struct {
 	Notes    string               `json:"notes"`
 	// Name is a short (<= 6 words) label for the playlist — the model's title
 	// when a local model is active, otherwise derived from the parsed intent.
-	Name string `json:"name"`
+	Name   string           `json:"name"`
+	Status GenerationStatus `json:"status"`
 }
 
 // GenerateFromPrompt parses a prompt, resolves its seed phrases against the
 // catalog, and runs the walk.
-func (a *API) GenerateFromPrompt(prompt string) (GenerateResult, error) {
-	return a.generateFromPrompt(prompt, nil)
+func (a *API) GenerateFromPrompt(ctx context.Context, prompt string) (GenerateResult, error) {
+	return a.generateFromPromptOperation(ctx, prompt, nil)
 }
 
 type ResolutionSelection struct {
@@ -86,11 +108,27 @@ type ResolutionSelection struct {
 
 // GenerateFromPromptResolved applies choices made only for references that the
 // preview identified as ambiguous, then runs the same shared resolution path.
-func (a *API) GenerateFromPromptResolved(prompt string, selections []ResolutionSelection) (GenerateResult, error) {
-	return a.generateFromPrompt(prompt, selections)
+func (a *API) GenerateFromPromptResolved(ctx context.Context, prompt string, selections []ResolutionSelection) (GenerateResult, error) {
+	return a.generateFromPromptOperation(ctx, prompt, selections)
 }
 
-func (a *API) generateFromPrompt(prompt string, selections []ResolutionSelection) (GenerateResult, error) {
+func (a *API) generateFromPromptOperation(ctx context.Context, prompt string, selections []ResolutionSelection) (GenerateResult, error) {
+	a.operations.cancel("intent-preview")
+	ctx, current, finish := a.operations.begin(ctx, "prompt-generation")
+	defer finish()
+	result, err := a.generateFromPrompt(ctx, prompt, selections)
+	if err == nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return GenerateResult{}, contextErr
+		}
+		if !current() {
+			return GenerateResult{}, context.Canceled
+		}
+	}
+	return result, err
+}
+
+func (a *API) generateFromPrompt(ctx context.Context, prompt string, selections []ResolutionSelection) (GenerateResult, error) {
 	if a.app.IntentParser() == nil || a.app.Reco == nil || a.app.Catalog == nil || a.app.Resolver == nil {
 		return GenerateResult{}, errors.New("not ready — download the catalog first")
 	}
@@ -98,12 +136,22 @@ func (a *API) generateFromPrompt(prompt string, selections []ResolutionSelection
 	// Stream intent-parse progress to the Generate screen ("intent" op).
 	prog := NewWailsProgress()
 	prog.Report("intent", 0, -1, "understanding your request")
-	m, _ := a.app.ParseIntent(a.context(), ports.IntentInput{Prompt: prompt}, prog)
-	m = m.Normalized()
+	parseStarted := time.Now()
+	entry, parsedIntentReused, err := a.parseIntentCached(ctx, ports.IntentInput{Prompt: prompt}, prog)
+	if err != nil {
+		return GenerateResult{}, err
+	}
+	m := entry.intent
+	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
 	m.References = applySelections(m.References, selections)
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
 	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
+	resolveStarted := time.Now()
 	m, issues := intentresolution.Apply(a.app.Resolver, m)
+	timings = append(timings, StageTiming{Stage: "resolve", Milliseconds: time.Since(resolveStarted).Milliseconds()})
+	if err := ctx.Err(); err != nil {
+		return GenerateResult{}, err
+	}
 	if err := intentresolution.BlockingError(issues); err != nil {
 		return GenerateResult{}, err
 	}
@@ -123,18 +171,32 @@ func (a *API) generateFromPrompt(prompt string, selections []ResolutionSelection
 		Intent:  m,
 	}
 
-	pl, err := a.runBuild(req)
+	pl, err := a.runBuild(ctx, req)
 	if err != nil {
 		return GenerateResult{}, err
 	}
 	m.Seed = pl.Seed
 	req.Intent = m     // pin the generated seed while retaining the complete interpretation
 	req.Seed = pl.Seed // legacy readers still find the replay seed
+	req.Reproducibility = pl.Reproducibility
 
-	name := a.playlistName(prompt, m)
-	a.saveGenerated(name, prompt, m, req, pl)
+	titleStarted := time.Now()
+	name := a.playlistName(ctx, prompt, m)
+	if err := ctx.Err(); err != nil {
+		return GenerateResult{}, err
+	}
+	timings = append(timings, pl.Status.Timings...)
+	timings = append(timings, StageTiming{Stage: "title", Milliseconds: time.Since(titleStarted).Milliseconds()})
+	pl.Status.ParsedIntentReused = parsedIntentReused
+	pl.Status.Parser = parserStatus(entry.outcome)
+	pl.Status.Timings = timings
+	status := pl.Status
+	a.saveGenerated(ctx, name, prompt, m, req, pl)
+	a.log.Info("prompt generation completed", "state", status.State, "parser", status.Parser.Backend,
+		"fallback", status.Parser.FallbackUsed, "intent_reused", status.ParsedIntentReused,
+		"parse_ms", timings[0].Milliseconds, "resolve_ms", timings[1].Milliseconds)
 
-	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name}, nil
+	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name, Status: status}, nil
 }
 
 func applySelections(references []core.IntentReference, selections []ResolutionSelection) []core.IntentReference {

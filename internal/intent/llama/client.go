@@ -162,7 +162,10 @@ func readSSE(body io.Reader, onDelta func(int)) (string, error) {
 // readWhole handles a non-streaming JSON response (test servers, proxies that
 // buffer). onDelta, if set, fires once with the final length.
 func readWhole(body io.Reader, onDelta func(int)) (string, error) {
-	raw, _ := io.ReadAll(io.LimitReader(body, 1<<20))
+	raw, err := io.ReadAll(io.LimitReader(body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("llama: response read: %w", err)
+	}
 	var cr chatResponse
 	if err := json.Unmarshal(raw, &cr); err != nil {
 		return "", fmt.Errorf("llama: bad response: %w", err)

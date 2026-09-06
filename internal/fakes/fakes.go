@@ -236,7 +236,7 @@ func (p *IntentParser) Info() ports.ParserInfo {
 	if p.Meta.Name != "" {
 		return p.Meta
 	}
-	return ports.ParserInfo{Name: "fake", Backend: "rules", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "fake", Backend: "rules", Version: "fake/v1", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 var _ ports.IntentParser = (*IntentParser)(nil)
@@ -267,9 +267,12 @@ func NewSimilarityEngine(c *Catalog) *SimilarityEngine {
 
 func (s *SimilarityEngine) Len() int { return len(s.ids) }
 
-func (s *SimilarityEngine) Search(q ports.SimilarityQuery) []ports.Match {
+func (s *SimilarityEngine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.Match, error) {
 	matches := make([]ports.Match, 0, len(s.ids))
 	for i, id := range s.ids {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if _, skip := q.Exclude[id]; skip {
 			continue
 		}
@@ -280,7 +283,7 @@ func (s *SimilarityEngine) Search(q ports.SimilarityQuery) []ports.Match {
 	if q.K > 0 && len(matches) > q.K {
 		matches = matches[:q.K]
 	}
-	return matches
+	return matches, nil
 }
 
 func cosine(a, b []float32) float32 {
@@ -314,7 +317,10 @@ type RecommendationEngine struct {
 	Catalog  *Catalog
 }
 
-func (r *RecommendationEngine) Build(_ context.Context, intent core.MusicIntent) (core.Playlist, error) {
+func (r *RecommendationEngine) Build(ctx context.Context, intent core.MusicIntent) (core.Playlist, error) {
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	if r.Err != nil {
 		return core.Playlist{}, r.Err
 	}

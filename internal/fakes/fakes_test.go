@@ -49,13 +49,16 @@ func TestFakeSimilarityEngineRanksByBlend(t *testing.T) {
 	s := NewSimilarityEngine(c)
 
 	// Query aligned with track "a"; exclude "a" so "b" should win over "c".
-	got := s.Search(ports.SimilarityQuery{
+	got, err := s.Search(context.Background(), ports.SimilarityQuery{
 		AudioSum: []float32{1, 0},
 		TrackSum: []float32{1, 0},
 		Weights:  [2]float32{0.5, 0.5},
 		K:        2,
 		Exclude:  map[string]struct{}{"a": {}},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(got) != 2 {
 		t.Fatalf("want 2 matches, got %d", len(got))
 	}

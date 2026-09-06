@@ -1,7 +1,8 @@
 // Package history persists generated playlists to a small SQLite database so the
 // Generate screen can offer past prompts as a starting point. It stores the
 // user's prompt, a short human title, and opaque JSON blobs (intent, request,
-// tracks) that the bridge layer owns the shape of.
+// tracks, and complete generation result) that the bridge layer owns the shape
+// of.
 package history
 
 import (
@@ -38,6 +39,7 @@ type Record struct {
 	IntentJSON  []byte
 	RequestJSON []byte
 	TracksJSON  []byte
+	ResultJSON  []byte
 }
 
 // Open opens (creating if needed) the history database under dataDir.
@@ -57,8 +59,13 @@ func Open(dataDir string) (*Store, error) {
 		track_count  INTEGER NOT NULL DEFAULT 0,
 		intent_json  TEXT NOT NULL DEFAULT '{}',
 		request_json TEXT NOT NULL DEFAULT '{}',
-		tracks_json  TEXT NOT NULL DEFAULT '[]'
+		tracks_json  TEXT NOT NULL DEFAULT '[]',
+		result_json  TEXT NOT NULL DEFAULT '{}'
 	)`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := ensureResultColumn(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -88,10 +95,10 @@ func (s *Store) Save(ctx context.Context, rec Record) (Record, error) {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO playlists
-		   (id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		   (id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json, result_json)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID, rec.CreatedAt.Unix(), rec.Name, rec.Prompt, rec.Notes, rec.Mode, rec.TrackCount,
-		blobOr(rec.IntentJSON, "{}"), blobOr(rec.RequestJSON, "{}"), blobOr(rec.TracksJSON, "[]"),
+		blobOr(rec.IntentJSON, "{}"), blobOr(rec.RequestJSON, "{}"), blobOr(rec.TracksJSON, "[]"), blobOr(rec.ResultJSON, "{}"),
 	)
 	if err != nil {
 		return Record{}, fmt.Errorf("history: save: %w", err)
@@ -105,7 +112,7 @@ func (s *Store) List(ctx context.Context, limit int) ([]Record, error) {
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json
+		`SELECT id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json, result_json
 		   FROM playlists ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("history: list: %w", err)
@@ -126,7 +133,7 @@ func (s *Store) List(ctx context.Context, limit int) ([]Record, error) {
 // Get returns the record with id, or ok=false if there is none.
 func (s *Store) Get(ctx context.Context, id string) (Record, bool, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json
+		`SELECT id, created_at, name, prompt, notes, mode, track_count, intent_json, request_json, tracks_json, result_json
 		   FROM playlists WHERE id = ?`, id)
 	rec, err := scan(row)
 	switch {
@@ -155,16 +162,42 @@ func scan(r scanner) (Record, error) {
 		intentJSON  string
 		requestJSON string
 		tracksJSON  string
+		resultJSON  string
 	)
 	if err := r.Scan(&rec.ID, &createdUnix, &rec.Name, &rec.Prompt, &rec.Notes,
-		&rec.Mode, &rec.TrackCount, &intentJSON, &requestJSON, &tracksJSON); err != nil {
+		&rec.Mode, &rec.TrackCount, &intentJSON, &requestJSON, &tracksJSON, &resultJSON); err != nil {
 		return Record{}, err
 	}
 	rec.CreatedAt = time.Unix(createdUnix, 0)
 	rec.IntentJSON = []byte(intentJSON)
 	rec.RequestJSON = []byte(requestJSON)
 	rec.TracksJSON = []byte(tracksJSON)
+	rec.ResultJSON = []byte(resultJSON)
 	return rec, nil
+}
+
+func ensureResultColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(playlists)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == "result_json" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE playlists ADD COLUMN result_json TEXT NOT NULL DEFAULT '{}'`)
+	return err
 }
 
 func blobOr(b []byte, fallback string) string {

@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,6 +29,7 @@ type SavedPlaylist struct {
 	Summary SavedPlaylistSummary `json:"summary"`
 	Request BuildPlaylistRequest `json:"request"`
 	Tracks  []PlaylistTrack      `json:"tracks"`
+	Result  PlaylistResult       `json:"result"`
 }
 
 // ListSavedPlaylists returns previously generated playlists, newest first. It
@@ -64,7 +66,7 @@ func (a *API) DeleteSavedPlaylist(id string) error {
 	return a.app.History.Delete(a.context(), id)
 }
 
-// LoadSavedPlaylist reads and migrates v1-v3 JSON blobs into the current contract.
+// LoadSavedPlaylist reads and migrates v1-v4 JSON blobs into the current contract.
 func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	if a.app.History == nil {
 		return SavedPlaylist{}, fmt.Errorf("saved playlist %q not found", id)
@@ -95,22 +97,42 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	if err := json.Unmarshal(record.TracksJSON, &tracks); err != nil {
 		return SavedPlaylist{}, fmt.Errorf("decode saved tracks: %w", err)
 	}
+	result := PlaylistResult{
+		Tracks: orEmptyTracks(tracks), Mode: string(request.Intent.Mode), Seed: request.Intent.Seed,
+		Intent: request.Intent, Reproducibility: request.Reproducibility,
+		Status: GenerationStatus{State: "complete", PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
+	}
+	if len(result.Tracks) < request.Intent.Count {
+		result.Status.State = "partial"
+		reason := PlaylistNotice{
+			Code: "legacy_partial_result", Detail: "the saved result contains fewer tracks than requested",
+			Requested: request.Intent.Count, Actual: len(result.Tracks),
+		}
+		result.Notices = append(result.Notices, reason)
+		result.Status.PartialReasons = append(result.Status.PartialReasons, reason)
+	}
+	if len(record.ResultJSON) > 0 && string(record.ResultJSON) != "{}" {
+		if err := json.Unmarshal(record.ResultJSON, &result); err != nil {
+			return SavedPlaylist{}, fmt.Errorf("decode saved result: %w", err)
+		}
+	}
 	return SavedPlaylist{
 		Summary: SavedPlaylistSummary{
 			ID: record.ID, Name: record.Name, Prompt: record.Prompt, Notes: record.Notes,
 			Mode: record.Mode, TrackCount: record.TrackCount, CreatedAt: record.CreatedAt.Unix(),
 		},
 		Request: request,
-		Tracks:  orEmptyTracks(tracks),
+		Tracks:  orEmptyTracks(result.Tracks),
+		Result:  result,
 	}, nil
 }
 
 // playlistName produces a short (<= 6 words) label for a generated playlist:
 // the local model's title when one is available, otherwise one derived from the
 // parsed intent.
-func (a *API) playlistName(prompt string, m core.MusicIntent) string {
+func (a *API) playlistName(ctx context.Context, prompt string, m core.MusicIntent) string {
 	name := deriveTitle(m, prompt)
-	if llm := sanitizeTitle(a.app.SuggestTitle(a.context(), prompt, 0)); llm != "" {
+	if llm := sanitizeTitle(a.app.SuggestTitle(ctx, prompt, 0)); llm != "" {
 		name = llm
 	}
 	return clampWords(name, 6)
@@ -118,7 +140,7 @@ func (a *API) playlistName(prompt string, m core.MusicIntent) string {
 
 // saveGenerated persists a just-generated playlist. Best-effort: a failure is
 // logged, never surfaced to the caller.
-func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPlaylistRequest, pl PlaylistResult) {
+func (a *API) saveGenerated(ctx context.Context, name, prompt string, m core.MusicIntent, req BuildPlaylistRequest, pl PlaylistResult) {
 	if a.app.History == nil {
 		return
 	}
@@ -128,8 +150,9 @@ func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPl
 	intentJSON, _ := json.Marshal(m)
 	reqJSON, _ := json.Marshal(req)
 	tracksJSON, _ := json.Marshal(pl.Tracks)
+	resultJSON, _ := json.Marshal(pl)
 
-	if _, err := a.app.History.Save(a.context(), history.Record{
+	if _, err := a.app.History.Save(ctx, history.Record{
 		Name:        name,
 		Prompt:      strings.TrimSpace(prompt),
 		Notes:       m.NotesForUser,
@@ -138,6 +161,7 @@ func (a *API) saveGenerated(name, prompt string, m core.MusicIntent, req BuildPl
 		IntentJSON:  intentJSON,
 		RequestJSON: reqJSON,
 		TracksJSON:  tracksJSON,
+		ResultJSON:  resultJSON,
 	}); err != nil {
 		a.log.Warn("could not save generated playlist to history", "err", err)
 	}
