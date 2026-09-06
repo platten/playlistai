@@ -222,3 +222,48 @@ func TestPruneExposuresKeepsExplicitFeedback(t *testing.T) {
 		t.Fatalf("prune must drop only exposures, got %+v", events)
 	}
 }
+
+// A batch written faster than the platform clock advances gives every event the
+// same occurred_at. Reads must still come back in insertion order: this is an
+// append-only log, and ids are random, so an id tiebreak returns a different
+// permutation every time. Ties are routine on Windows and possible anywhere.
+func TestListFeedbackKeepsInsertionOrderWhenTimestampsTie(t *testing.T) {
+	t.Parallel()
+	store, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	fixed := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+	store.now = func() time.Time { return fixed }
+	ctx := context.Background()
+
+	const count = 8
+	batch := make([]core.FeedbackEvent, 0, count)
+	for i := range count {
+		batch = append(batch, core.FeedbackEvent{
+			Type: core.FeedbackAccepted, Scope: core.FeedbackScopeRequest,
+			TrackID: fmt.Sprintf("track%d", i), RequestID: "request",
+			Context: core.FeedbackContext{Surface: "export", Position: i},
+		})
+	}
+	if err := store.RecordFeedbackBatch(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
+
+	events, err := store.ListFeedback(ctx, ports.FeedbackQuery{RequestID: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != count {
+		t.Fatalf("got %d events, want %d", len(events), count)
+	}
+	for index, event := range events {
+		if !event.OccurredAt.Equal(fixed) {
+			t.Fatalf("event %d did not tie on occurred_at: %s", index, event.OccurredAt)
+		}
+		if event.Context.Position != index || event.TrackID != fmt.Sprintf("track%d", index) {
+			t.Fatalf("event %d out of insertion order: %+v", index, event)
+		}
+	}
+}

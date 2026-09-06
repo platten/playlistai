@@ -208,9 +208,15 @@ const scopeClause = `(
 // generation, so an unbounded read would make each generation cost more than
 // the last; the projection is recency-weighted, so the newest rows are the
 // ones that matter.
+//
+// Ties on occurred_at break by rowid, which is insertion order in this
+// append-only table. Breaking them by id instead returns a different
+// permutation on every read, because ids are random hex. Timestamps tie
+// whenever a batch is written faster than the platform clock advances — routine
+// on Windows, and possible anywhere.
 func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]core.FeedbackEvent, error) {
 	events, err := s.queryFeedback(ctx,
-		selectFeedbackColumns+` WHERE type <> ? AND `+scopeClause+` ORDER BY occurred_at, id`,
+		selectFeedbackColumns+` WHERE type <> ? AND `+scopeClause+` ORDER BY occurred_at, rowid`,
 		core.FeedbackExposure,
 		query.RequestID, query.SessionID,
 		query.RequestID, query.RequestID,
@@ -220,7 +226,7 @@ func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]
 	}
 	exposures, err := s.queryFeedback(ctx,
 		selectFeedbackColumns+` WHERE type = ? AND occurred_at >= ? AND (? OR `+scopeClause+`)
-		ORDER BY occurred_at DESC, id DESC LIMIT ?`,
+		ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
 		core.FeedbackExposure, s.now().Add(-ExposureRetention).UnixNano(), query.IncludeExposures,
 		query.RequestID, query.SessionID,
 		query.RequestID, query.RequestID,
