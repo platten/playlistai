@@ -219,3 +219,29 @@ per-query Python process with a packaged local embedding runtime, and consider
 ANN only after full-catalog coverage warrants it. A CLAP-style audio pilot also
 requires licensed local audio, deterministic segment selection, and coverage
 auditing.
+
+## Milestone 9 — Evaluation and System Tuning
+
+Added the versioned `recoeval/v1` offline harness and `cmd/recoeval`. It scores
+labeled intent/negation and resolver cases, candidate Recall@K, output NDCG@K,
+hard violations, recording duplicates, artist concentration/diversity, catalog
+coverage, recent-exposure repetition, adjacent-vector transition quality, and
+parse/retrieval/ranking/sequencing/total latency. Reports retain per-case
+generation inputs, intent/context fingerprints, optional semantic model
+identity, and normal-approximation uncertainty intervals.
+
+Recommendation cases use a chronological 60/20/20 train/development/test
+split. Profiles exclude future events; parameters are chosen on development by
+lexicographically minimizing hard violations and maximizing NDCG, frozen, then
+evaluated once on held-out cases. Ablations cover audio-only,
+co-occurrence-only, `deejai/v4` blended walk, multi-channel retrieval,
+personalization, optional semantic matching, and diversity/sequencing. A
+deterministically randomized blind A/B export keeps its identity key separate.
+
+No real relevance judgments or listening outcomes are checked into the
+repository, so Milestone 9 makes no musical-quality claim and does not retune
+defaults. The synthetic fixture validates execution and leakage guards only.
+Next dependencies are consented pseudonymous interaction exports, independent
+listening judgments covering all documented cohorts, a compatible semantic
+sidecar for its ablation, and enough development/test cases for stable
+uncertainty estimates and evidence-backed defaults.

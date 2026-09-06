@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "name": "repository-structural-smoke",
+  "evidence": "synthetic",
+  "catalogVersion": "",
+  "createdAt": "2026-09-06T00:00:00Z",
+  "intentCases": [
+    {
+      "id": "negation",
+      "prompt": "ambient electronic, relaxing but not sleepy, no abstract drone",
+      "expected": {
+        "negativePreferences": ["sleepy", "abstract drone"]
+      },
+      "tags": ["negation"]
+    }
+  ],
+  "resolutionCases": [
+    {
+      "id": "unicode-artist",
+      "reference": {
+        "kind": "artist",
+        "query": "Björk",
+        "trackId": "",
+        "influence": "positive",
+        "evidence": []
+      },
+      "expectedStatus": "resolved",
+      "acceptableEntityIds": ["artist:bjork"],
+      "tags": ["unicode"]
+    },
+    {
+      "id": "ambiguous-collision",
+      "reference": {
+        "kind": "track",
+        "query": "Onyx",
+        "trackId": "",
+        "influence": "positive",
+        "evidence": []
+      },
+      "expectedStatus": "ambiguous",
+      "acceptableEntityIds": [],
+      "tags": ["ambiguous_reference"]
+    },
+    {
+      "id": "non-latin-unmatched",
+      "reference": {
+        "kind": "artist",
+        "query": "坂本龍一",
+        "trackId": "",
+        "influence": "positive",
+        "evidence": []
+      },
+      "expectedStatus": "unresolved",
+      "acceptableEntityIds": [],
+      "tags": ["non_latin", "unmatched"]
+    }
+  ],
+  "recommendationCases": [
+    {
+      "id": "cold-start",
+      "listenerId": "listener-a",
+      "occurredAt": "2026-01-01T00:00:00Z",
+      "prompt": "",
+      "intent": {
+        "version": 5,
+        "references": [{"kind":"track","query":"","trackId":"seed0004","influence":"positive","evidence":[]}],
+        "controls": {"totalTrackCount":8,"audioWeight":0.5,"cooccurrenceWeight":0.5,"discovery":0.3,"artistDiversity":0.5,"transitionSmoothness":0.5},
+        "mode": "similar",
+        "seed": "18446744073709551615"
+      },
+      "relevance": {},
+      "recentExposures": [],
+      "tags": ["cold_start", "niche"]
+    },
+    {
+      "id": "multiple-taste",
+      "listenerId": "listener-b",
+      "occurredAt": "2026-02-01T00:00:00Z",
+      "prompt": "",
+      "intent": {
+        "version": 5,
+        "references": [{"kind":"track","query":"","trackId":"seed0001","influence":"positive","evidence":[]},{"kind":"track","query":"","trackId":"seed0005","influence":"positive","evidence":[]}],
+        "controls": {"totalTrackCount":8,"audioWeight":0.5,"cooccurrenceWeight":0.5,"discovery":0.3,"artistDiversity":0.5,"transitionSmoothness":0.5},
+        "mode": "journey",
+        "seed": "2"
+      },
+      "relevance": {},
+      "recentExposures": [],
+      "tags": ["multiple_taste", "non_latin"]
+    },
+    {
+      "id": "niche",
+      "listenerId": "listener-c",
+      "occurredAt": "2026-03-01T00:00:00Z",
+      "prompt": "",
+      "intent": {
+        "version": 5,
+        "references": [{"kind":"track","query":"","trackId":"seed0003","influence":"positive","evidence":[]}],
+        "controls": {"totalTrackCount":8,"audioWeight":0.7,"cooccurrenceWeight":0.3,"discovery":0.8,"artistDiversity":0.7,"transitionSmoothness":0.2},
+        "mode": "similar",
+        "seed": "3"
+      },
+      "relevance": {},
+      "recentExposures": [],
+      "tags": ["niche"]
+    },
+    {
+      "id": "unicode",
+      "listenerId": "listener-d",
+      "occurredAt": "2026-04-01T00:00:00Z",
+      "prompt": "",
+      "intent": {
+        "version": 5,
+        "references": [{"kind":"track","query":"","trackId":"seed0006","influence":"positive","evidence":[]}],
+        "controls": {"totalTrackCount":8,"audioWeight":0.5,"cooccurrenceWeight":0.5,"discovery":0.4,"artistDiversity":0.5,"transitionSmoothness":0.5},
+        "mode": "similar",
+        "seed": "4"
+      },
+      "relevance": {},
+      "recentExposures": [],
+      "tags": ["non_latin"]
+    },
+    {
+      "id": "ambiguous",
+      "listenerId": "listener-e",
+      "occurredAt": "2026-05-01T00:00:00Z",
+      "prompt": "",
+      "intent": {
+        "version": 5,
+        "references": [{"kind":"track","query":"","trackId":"seed0007","influence":"positive","evidence":[]}],
+        "controls": {"totalTrackCount":8,"audioWeight":0.5,"cooccurrenceWeight":0.5,"discovery":0.3,"artistDiversity":0.5,"transitionSmoothness":0.5},
+        "mode": "similar",
+        "seed": "5"
+      },
+      "relevance": {},
+      "recentExposures": ["seed0001"],
+      "tags": ["ambiguous_reference"]
+    }
+  ],
+  "interactions": [],
+  "tuningGrid": []
+}
