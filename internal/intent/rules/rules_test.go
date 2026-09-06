@@ -46,6 +46,36 @@ func TestSeeds(t *testing.T) {
 	}
 }
 
+func TestNuancedSemanticNegationAndStrictVocalEvidence(t *testing.T) {
+	t.Parallel()
+	intent := parse(t, "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone")
+	if !hasPreference(intent.Preferences.Moods, "relaxing", core.InfluencePositive) || !hasPreference(intent.Preferences.Moods, "sleepy", core.InfluenceNegative) || !hasPreference(intent.Preferences.Styles, "abstract drone", core.InfluenceNegative) {
+		t.Fatalf("nuanced semantic intent was not preserved: %+v", intent.Preferences)
+	}
+	vocal := parse(t, "instrumental, no vocals")
+	if vocal.Preferences.VocalPreference == nil || vocal.Preferences.VocalPreference.Value != "no vocals" {
+		t.Fatalf("vocal preference = %+v", vocal.Preferences.VocalPreference)
+	}
+	found := false
+	for _, constraint := range vocal.HardConstraints {
+		if constraint.Kind == "exclude_vocals" && !constraint.Supported {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("strict no-vocals requirement not preserved for sidecar enforcement: %+v", vocal.HardConstraints)
+	}
+}
+
+func hasPreference(values []core.IntentPreference, value string, influence core.Influence) bool {
+	for _, preference := range values {
+		if preference.Value == value && preference.Influence == influence {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSeedFromNowPlaying(t *testing.T) {
 	t.Parallel()
 	m, _ := (&Parser{}).Parse(context.Background(), ports.IntentInput{

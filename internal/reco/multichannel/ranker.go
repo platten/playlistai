@@ -111,11 +111,15 @@ func (r *TransparentRanker) total(candidate core.Candidate, intent core.MusicInt
 	add(candidate.Scores.CooccurrenceAffinity, intent.Controls.CooccurrenceWeight, candidate.Available.CooccurrenceAffinity)
 	add(candidate.Scores.ListenerAffinity, r.cfg.ListenerWeight, candidate.Available.ListenerAffinity)
 	add(candidate.Scores.RetrievalFusion, r.cfg.RetrievalWeight, candidate.Available.RetrievalFusion)
+	add(candidate.Scores.SemanticMatch, r.cfg.SemanticWeight, candidate.Available.SemanticMatch)
 	if weights > 0 {
 		relevance /= weights
 	}
 	if candidate.Available.NegativeMatch {
 		relevance -= r.cfg.NegativePenalty * clamp(candidate.Scores.NegativeMatch, 0, 1)
+	}
+	if candidate.Available.SemanticNegativeMatch {
+		relevance -= r.cfg.SemanticNegativePenalty * clamp(candidate.Scores.SemanticNegativeMatch, 0, 1)
 	}
 	if candidate.Available.RecentExposure {
 		relevance -= r.cfg.ExposurePenalty * candidate.Scores.RecentExposure

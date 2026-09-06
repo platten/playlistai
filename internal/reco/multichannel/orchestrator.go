@@ -20,6 +20,17 @@ type Orchestrator struct {
 	ranker    ports.Ranker
 	selector  ports.CandidateSelector
 	sequencer ports.PlaylistSequencer
+	features  ports.FeatureStore
+	semantic  ports.SemanticSearcher
+}
+
+func NewWithSemantic(cat ports.Catalog, sim ports.SimilarityEngine, resolver ports.ReferenceResolver, features ports.FeatureStore, semantic ports.SemanticSearcher, cfg Config) *Orchestrator {
+	cfg = cfg.normalized()
+	return &Orchestrator{
+		cat: cat, resolver: resolver, features: features, semantic: semantic,
+		retriever: NewSemanticRetriever(cat, sim, semantic, cfg), ranker: NewRanker(cat, cfg),
+		selector: NewSelector(cat, cfg), sequencer: NewSequencer(cat, cfg),
+	}
 }
 
 func New(cat ports.Catalog, sim ports.SimilarityEngine, resolver ports.ReferenceResolver, cfg Config) *Orchestrator {
@@ -49,7 +60,13 @@ func NewPipeline(cat ports.Catalog, resolver ports.ReferenceResolver, retriever 
 	}
 }
 
-func (*Orchestrator) AlgorithmVersion() string { return AlgorithmVersion }
+func (o *Orchestrator) AlgorithmVersion() string {
+	if o.semantic == nil {
+		return AlgorithmVersion
+	}
+	info := o.semantic.Info()
+	return AlgorithmVersion + "+semantic:" + info.FeatureVersion + "@" + info.ModelRevision
+}
 
 func (o *Orchestrator) Build(ctx context.Context, intent core.MusicIntent) (core.Playlist, error) {
 	return o.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent})
@@ -83,7 +100,12 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		required = orderRequiredByWaypoints(required, waypoints)
 	}
 	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
-	if len(references) == 0 && len(required) == 0 {
+	positiveSemantic, _ := semanticQueryText(intent)
+	semanticSeeded := positiveSemantic != "" && o.semantic != nil
+	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
+		if positiveSemantic != "" {
+			return core.Playlist{}, fmt.Errorf("%w: semantic sidecar or compatible local encoder unavailable", core.ErrNoSeeds)
+		}
 		return core.Playlist{}, core.ErrNoSeeds
 	}
 	if len(intent.RequiredTracks) > 0 && len(required) == 0 {
@@ -114,14 +136,34 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if err != nil {
 		return core.Playlist{}, err
 	}
+	semanticMatched := hasSemanticCandidates(candidates)
+	if len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
+		return core.Playlist{}, fmt.Errorf("%w: semantic index produced no grounded candidates", core.ErrNoSeeds)
+	}
 	candidates, err = eligible.filter(ctx, candidates, intent.Constraints.ExcludeSeedArtists)
 	if err != nil {
 		return core.Playlist{}, err
+	}
+	semanticNotices := []core.PlaylistNotice{}
+	if o.features != nil {
+		var enforced int
+		candidates, enforced, err = filterSemanticConstraints(ctx, o.features, candidates, intent.HardConstraints)
+		if err != nil {
+			return core.Playlist{}, err
+		}
+		if enforced > 0 {
+			markSemanticConstraintsEnforced(&intent, o.features.Info())
+			semanticNotices = append(semanticNotices, core.PlaylistNotice{Code: "semantic_constraints_enforced", Detail: fmt.Sprintf("%d grounded semantic hard constraint(s) were enforced; unknown evidence was ineligible", enforced), Requested: intent.Count, Actual: len(candidates)})
+		}
+		if err := validateRequiredSemanticConstraints(ctx, o.features, required, intent.HardConstraints); err != nil {
+			return core.Playlist{}, err
+		}
 	}
 	candidates, err = o.ranker.Rank(ctx, candidates, ports.RankRequest{Intent: intent, Profile: request.Profile})
 	if err != nil {
 		return core.Playlist{}, err
 	}
+	setSemanticCapability(&intent, semanticMatched, len(semanticNotices) > 0)
 
 	selection, err := o.selector.Select(ctx, candidates, ports.SelectionRequest{
 		Intent: intent, Required: required, Waypoints: waypoints,
@@ -148,7 +190,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	playlist := core.Playlist{
 		Tracks: sequence.Tracks, Rationale: sequence.Rationale, Mode: intent.Mode, Seed: seed, Intent: intent,
-		Notices: append(append([]core.PlaylistNotice{}, selection.Notices...), sequence.Notices...),
+		Notices: append(append(append([]core.PlaylistNotice{}, semanticNotices...), selection.Notices...), sequence.Notices...),
+	}
+	if positiveSemantic != "" && !semanticMatched {
+		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "semantic_fallback", Detail: "semantic intent was preserved but no compatible grounded semantic matches were available; seeded embedding retrieval remained active", Requested: intent.Count, Actual: len(playlist.Tracks)})
 	}
 	if len(playlist.Tracks) < intent.Count {
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{

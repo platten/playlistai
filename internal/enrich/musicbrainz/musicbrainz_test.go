@@ -80,14 +80,9 @@ func TestEnrichMatchAndMiss(t *testing.T) {
 	srv := newMBServer(t, map[string]mbRecording{
 		"genesis": {
 			ID: "r1", Score: 100, Title: "Genesis",
-			ISRCs: []string{"FRV840700010", "FRV840700011"},
-			ArtistCredit: []struct {
-				Name string `json:"name"`
-			}{{Name: "Justice"}},
-			Releases: []struct {
-				Title string `json:"title"`
-				Date  string `json:"date"`
-			}{{Title: "Cross", Date: "2007-06-11"}},
+			ISRCs:        []string{"FRV840700010", "FRV840700011"},
+			ArtistCredit: []mbArtistCredit{{Name: "Justice"}},
+			Releases:     []mbRelease{{ID: "release-1", Title: "Cross", Date: "2007-06-11"}},
 		},
 	})
 	c := newClient(t, srv.URL, time.Millisecond)
@@ -109,6 +104,9 @@ func TestEnrichMatchAndMiss(t *testing.T) {
 	}
 	if m.Album != "Cross" || m.Year != 2007 || len(m.AllArtists) != 1 {
 		t.Fatalf("metadata: %+v", m)
+	}
+	if m.RecordingID != "r1" || m.ReleaseID != "release-1" || m.ReleaseEditionDate != "2007-06-11" || m.OriginalReleaseDate != "" {
+		t.Fatalf("canonical identity or date semantics: %+v", m)
 	}
 	if m.Ref.ID != "a" {
 		t.Fatalf("ref lost: %+v", m.Ref)

@@ -43,6 +43,7 @@ min_score = 70
 [recommendation]
 seed_audio_budget = 17
 mmr_minimum_lambda = 0.7
+semantic_budget = 23
 `
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
@@ -54,12 +55,29 @@ mmr_minimum_lambda = 0.7
 	if cfg.DataDir != "/tmp/pai" || cfg.Preview.Provider != PreviewOff || cfg.AI.NCtx != 8192 || cfg.Enrich.MinScore != 70 {
 		t.Fatalf("overlay not applied: %+v", cfg)
 	}
-	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.MMRMinimumLambda != .7 || cfg.Recommendation.Strategy != RecommendationMultichannel {
+	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.MMRMinimumLambda != .7 || cfg.Recommendation.SemanticBudget != 23 || cfg.Recommendation.Strategy != RecommendationMultichannel {
 		t.Fatalf("recommendation overlay not applied: %+v", cfg.Recommendation)
 	}
 	// Untouched keys keep defaults.
 	if cfg.Enrich.UserAgent == "" {
 		t.Fatal("default user agent lost")
+	}
+}
+
+func TestValidateSemanticModelRequiresPinnedCompatibilityFields(t *testing.T) {
+	t.Parallel()
+	cfg := Default()
+	cfg.Semantic.SidecarPath = "/features/semantic.sqlite"
+	cfg.Semantic.ModelPath = "/models/minilm"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected incomplete semantic model config to fail")
+	}
+	cfg.Semantic.QueryScript = "/app/python/embed_semantic_query.py"
+	cfg.Semantic.ModelName = "sentence-transformers/all-MiniLM-L6-v2"
+	cfg.Semantic.ModelRevision = "abc123"
+	cfg.Semantic.EmbeddingDim = 384
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("pinned semantic config: %v", err)
 	}
 }
 

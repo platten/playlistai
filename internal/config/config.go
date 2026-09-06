@@ -21,7 +21,20 @@ type Config struct {
 	AI             AIConfig             `toml:"ai"`
 	Enrich         EnrichConfig         `toml:"enrich"`
 	Preview        PreviewConfig        `toml:"preview"`
+	Semantic       SemanticConfig       `toml:"semantic"`
 	Recommendation RecommendationConfig `toml:"recommendation"`
+}
+
+// SemanticConfig points to an optional offline-built sidecar and an already
+// local Sentence Transformers model. Blank SidecarPath disables the pilot.
+type SemanticConfig struct {
+	SidecarPath   string `toml:"sidecar_path"`
+	Python        string `toml:"python"`
+	QueryScript   string `toml:"query_script"`
+	ModelPath     string `toml:"model_path"`
+	ModelName     string `toml:"model_name"`
+	ModelRevision string `toml:"model_revision"`
+	EmbeddingDim  int    `toml:"embedding_dim"`
 }
 
 // CatalogConfig points at the converted Deej-AI dataset.
@@ -112,6 +125,10 @@ type RecommendationConfig struct {
 	TransitionRelevanceWeight float64 `toml:"transition_relevance_weight"`
 	LocalImprovementPasses    int     `toml:"local_improvement_passes"`
 	LocalImprovementWindow    int     `toml:"local_improvement_window"`
+	SemanticBudget            int     `toml:"semantic_budget"`
+	SemanticMinimumScore      float64 `toml:"semantic_minimum_score"`
+	SemanticWeight            float64 `toml:"semantic_weight"`
+	SemanticNegativePenalty   float64 `toml:"semantic_negative_penalty"`
 }
 
 const (
@@ -152,7 +169,8 @@ func Default() Config {
 			CachePath: filepath.Join(data, "musicbrainz-cache.sqlite"),
 			MinScore:  85,
 		},
-		Preview: PreviewConfig{Provider: PreviewDeezer},
+		Preview:  PreviewConfig{Provider: PreviewDeezer},
+		Semantic: SemanticConfig{Python: "python3"},
 		Recommendation: RecommendationConfig{
 			Strategy:        RecommendationMultichannel,
 			SeedAudioBudget: 32, SeedCooccurrenceBudget: 32,
@@ -166,6 +184,7 @@ func Default() Config {
 			EmbeddingRedundancyWeight: .50, ArtistConcentrationWeight: .35,
 			AlbumConcentrationWeight: .15, SoftArtistSpacingMax: 3,
 			TransitionRelevanceWeight: .15, LocalImprovementPasses: 3, LocalImprovementWindow: 4,
+			SemanticBudget: 96, SemanticMinimumScore: .15, SemanticWeight: .35, SemanticNegativePenalty: .55,
 		},
 	}
 	return cfg
@@ -210,6 +229,11 @@ func (c Config) Validate() error {
 	if c.Enrich.UserAgent == "" {
 		return errors.New("config: enrich.user_agent is required by the MusicBrainz API")
 	}
+	if c.Semantic.SidecarPath != "" && c.Semantic.ModelPath != "" {
+		if c.Semantic.Python == "" || c.Semantic.QueryScript == "" || c.Semantic.ModelName == "" || c.Semantic.ModelRevision == "" || c.Semantic.EmbeddingDim <= 0 {
+			return errors.New("config: semantic model requires python, query_script, model_name, model_revision, and positive embedding_dim")
+		}
+	}
 	if err := c.Recommendation.Validate(); err != nil {
 		return err
 	}
@@ -226,6 +250,7 @@ func (c RecommendationConfig) Validate() error {
 		"exploration_pool": c.ExplorationPool, "exploration_budget": c.ExplorationBudget,
 		"max_candidates":      c.MaxCandidates,
 		"continuation_budget": c.ContinuationBudget, "local_improvement_window": c.LocalImprovementWindow,
+		"semantic_budget": c.SemanticBudget,
 	}
 	for name, value := range budgets {
 		if value <= 0 {
@@ -235,6 +260,9 @@ func (c RecommendationConfig) Validate() error {
 	if c.ExplorationMinScore < -1 || c.ExplorationMinScore > 1 {
 		return errors.New("config: recommendation.exploration_min_score must be between -1 and 1")
 	}
+	if c.SemanticMinimumScore < -1 || c.SemanticMinimumScore > 1 {
+		return errors.New("config: recommendation.semantic_minimum_score must be between -1 and 1")
+	}
 	weights := map[string]float64{
 		"retrieval_weight": c.RetrievalWeight, "listener_weight": c.ListenerWeight,
 		"negative_penalty": c.NegativePenalty, "exposure_penalty": c.ExposurePenalty,
@@ -243,6 +271,7 @@ func (c RecommendationConfig) Validate() error {
 		"artist_concentration_weight": c.ArtistConcentrationWeight,
 		"album_concentration_weight":  c.AlbumConcentrationWeight,
 		"transition_relevance_weight": c.TransitionRelevanceWeight,
+		"semantic_weight":             c.SemanticWeight, "semantic_negative_penalty": c.SemanticNegativePenalty,
 	}
 	for name, value := range weights {
 		if value < 0 {

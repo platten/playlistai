@@ -2,7 +2,8 @@
 
 Build-time tooling. Not shipped with the app; needs only the Python standard
 library (`convert_pickles.py` and `fetch_pickles.py` additionally need the
-packages in `requirements.txt`: `numpy` and `gdown`).
+packages in `requirements.txt`: `numpy` and `gdown`). Semantic-pilot tools use
+the separate, optional `semantic-requirements.txt` environment.
 
 | script | purpose |
 |---|---|
@@ -11,6 +12,8 @@ packages in `requirements.txt`: `numpy` and `gdown`).
 | `convert_pickles.py` | Convert `spotifytovec.p` / `tracktovec.p` / `spotify_tracks.p` / `spotify_urls.p` into `vectors.i8` + `catalog.sqlite` + `catalog-manifest.json`. |
 | `make_test_catalog.py` | Write a small deterministic synthetic catalog in the same format. |
 | `parity_playlist.py` | Stdlib-only reimplementation of upstream `backend/deejai.py` (`make_playlist` / `most_similar` / `join_the_dots`, `noise=0`) run over `internal/catalog/testdata` → golden playlist fixtures under `internal/reco/deejai/testdata/golden/` for the Go parity test. |
+| `build_semantic_sidecar.py` | Validate grounded JSONL against a real catalog, embed descriptions with an already-local model, and write the bounded semantic sidecar plus coverage report. |
+| `embed_semantic_query.py` | Encode one query using that same already-local model; network downloads are disabled. |
 
 ## Regenerating the test fixtures
 

@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sort"
 
@@ -16,17 +17,23 @@ const (
 	ChannelExploration              = "exploration"
 	ChannelContinuationAudio        = "continuation_audio"
 	ChannelContinuationCooccurrence = "continuation_cooccurrence"
+	ChannelSemantic                 = "semantic_text"
 	maxContinuationAnchors          = 3
 )
 
 type Retriever struct {
-	cat ports.Catalog
-	sim ports.SimilarityEngine
-	cfg Config
+	cat      ports.Catalog
+	sim      ports.SimilarityEngine
+	cfg      Config
+	semantic ports.SemanticSearcher
 }
 
 func NewRetriever(cat ports.Catalog, sim ports.SimilarityEngine, cfg Config) *Retriever {
 	return &Retriever{cat: cat, sim: sim, cfg: cfg.normalized()}
+}
+
+func NewSemanticRetriever(cat ports.Catalog, sim ports.SimilarityEngine, semantic ports.SemanticSearcher, cfg Config) *Retriever {
+	return &Retriever{cat: cat, sim: sim, semantic: semantic, cfg: cfg.normalized()}
 }
 
 type explorationOption struct {
@@ -68,6 +75,26 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 
 	byID := make(map[string]*core.Candidate)
 	var exploration []explorationOption
+	positiveSemantic, negativeSemantic := semanticQueryText(intent)
+	if positiveSemantic != "" && r.semantic != nil {
+		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget)
+		if err != nil {
+			if len(references) == 0 {
+				return nil, fmt.Errorf("semantic seed retrieval: %w", err)
+			}
+		} else {
+			for index, hit := range hits {
+				if hit.Score < r.cfg.SemanticMinimumScore {
+					continue
+				}
+				match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
+				r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
+				if candidate := byID[hit.TrackID]; candidate != nil {
+					candidate.Scores.SemanticMatch, candidate.Available.SemanticMatch = hit.Score, true
+				}
+			}
+		}
+	}
 	for _, reference := range references {
 		for repIndex, representative := range reference.reps {
 			queryID := reference.id + ":" + representative.id + ":" + itoa(repIndex)
@@ -105,6 +132,16 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelContinuationCooccurrence, queryID,
 				nil, normalizeVector(vectors.Track), [2]float32{0, 1}, 1, budget, extraPerQuery); err != nil {
 				return nil, err
+			}
+		}
+	}
+	if negativeSemantic != "" && r.semantic != nil && len(byID) > 0 {
+		hits, err := r.semantic.Search(ctx, negativeSemantic, r.cfg.SemanticBudget)
+		if err == nil {
+			for _, hit := range hits {
+				if candidate := byID[hit.TrackID]; candidate != nil {
+					candidate.Scores.SemanticNegativeMatch, candidate.Available.SemanticNegativeMatch = hit.Score, true
+				}
 			}
 		}
 	}

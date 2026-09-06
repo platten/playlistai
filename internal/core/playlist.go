@@ -37,34 +37,38 @@ type Candidate struct {
 }
 
 type CandidateScores struct {
-	RetrievalFusion      float64 `json:"retrievalFusion"` // max-normalized weighted RRF, not a probability
-	AudioSeedAffinity    float64 `json:"audioSeedAffinity"`
-	CooccurrenceAffinity float64 `json:"cooccurrenceAffinity"`
-	ListenerAffinity     float64 `json:"listenerAffinity"`
-	NegativeMatch        float64 `json:"negativeMatch"`
-	RecentExposure       float64 `json:"recentExposure"`
-	Novelty              float64 `json:"novelty"`
-	Total                float64 `json:"total"`
-	SelectionRelevance   float64 `json:"selectionRelevance"`
-	EmbeddingRedundancy  float64 `json:"embeddingRedundancy"`
-	ArtistConcentration  float64 `json:"artistConcentration"`
-	AlbumConcentration   float64 `json:"albumConcentration"`
-	MMR                  float64 `json:"mmr"`
+	RetrievalFusion       float64 `json:"retrievalFusion"` // max-normalized weighted RRF, not a probability
+	AudioSeedAffinity     float64 `json:"audioSeedAffinity"`
+	CooccurrenceAffinity  float64 `json:"cooccurrenceAffinity"`
+	ListenerAffinity      float64 `json:"listenerAffinity"`
+	NegativeMatch         float64 `json:"negativeMatch"`
+	RecentExposure        float64 `json:"recentExposure"`
+	Novelty               float64 `json:"novelty"`
+	Total                 float64 `json:"total"`
+	SelectionRelevance    float64 `json:"selectionRelevance"`
+	EmbeddingRedundancy   float64 `json:"embeddingRedundancy"`
+	ArtistConcentration   float64 `json:"artistConcentration"`
+	AlbumConcentration    float64 `json:"albumConcentration"`
+	MMR                   float64 `json:"mmr"`
+	SemanticMatch         float64 `json:"semanticMatch"`
+	SemanticNegativeMatch float64 `json:"semanticNegativeMatch"`
 }
 
 type CandidateFeatures struct {
-	RetrievalFusion      bool `json:"retrievalFusion"`
-	AudioSeedAffinity    bool `json:"audioSeedAffinity"`
-	CooccurrenceAffinity bool `json:"cooccurrenceAffinity"`
-	ListenerAffinity     bool `json:"listenerAffinity"`
-	NegativeMatch        bool `json:"negativeMatch"`
-	RecentExposure       bool `json:"recentExposure"`
-	Novelty              bool `json:"novelty"`
-	SelectionRelevance   bool `json:"selectionRelevance"`
-	EmbeddingRedundancy  bool `json:"embeddingRedundancy"`
-	ArtistConcentration  bool `json:"artistConcentration"`
-	AlbumConcentration   bool `json:"albumConcentration"`
-	MMR                  bool `json:"mmr"`
+	RetrievalFusion       bool `json:"retrievalFusion"`
+	AudioSeedAffinity     bool `json:"audioSeedAffinity"`
+	CooccurrenceAffinity  bool `json:"cooccurrenceAffinity"`
+	ListenerAffinity      bool `json:"listenerAffinity"`
+	NegativeMatch         bool `json:"negativeMatch"`
+	RecentExposure        bool `json:"recentExposure"`
+	Novelty               bool `json:"novelty"`
+	SelectionRelevance    bool `json:"selectionRelevance"`
+	EmbeddingRedundancy   bool `json:"embeddingRedundancy"`
+	ArtistConcentration   bool `json:"artistConcentration"`
+	AlbumConcentration    bool `json:"albumConcentration"`
+	MMR                   bool `json:"mmr"`
+	SemanticMatch         bool `json:"semanticMatch"`
+	SemanticNegativeMatch bool `json:"semanticNegativeMatch"`
 }
 
 // PlaylistNotice explains why a valid playlist is shorter than requested.

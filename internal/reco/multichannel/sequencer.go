@@ -344,6 +344,8 @@ func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Conf
 		{Component: "recent_exposure", Score: candidate.Scores.RecentExposure, Weight: -cfg.ExposurePenalty, Available: candidate.Available.RecentExposure},
 		{Component: "listener_novelty", Score: candidate.Scores.Novelty, Weight: cfg.NoveltyWeight * intent.Controls.Discovery, Available: candidate.Available.Novelty},
 		{Component: "reciprocal_rank_fusion", Score: candidate.Scores.RetrievalFusion, Weight: cfg.RetrievalWeight, Available: candidate.Available.RetrievalFusion},
+		{Component: "semantic_text_match", Score: candidate.Scores.SemanticMatch, Weight: cfg.SemanticWeight, Available: candidate.Available.SemanticMatch, Detail: "grounded sidecar descriptions"},
+		{Component: "semantic_negative_match", Score: candidate.Scores.SemanticNegativeMatch, Weight: -cfg.SemanticNegativePenalty, Available: candidate.Available.SemanticNegativeMatch, Detail: "negative semantic preference"},
 	}
 }
 

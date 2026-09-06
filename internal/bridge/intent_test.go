@@ -10,6 +10,7 @@ import (
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/reco/multichannel"
 )
 
 func newLoadedContainer(t *testing.T) *app.Container {
@@ -122,7 +123,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if len(res.Playlist.Tracks[0].Sources) == 0 || len(res.Playlist.Tracks[0].Evidence) == 0 {
 		t.Fatalf("structured recommendation evidence was not bridged: %+v", res.Playlist.Tracks[0])
 	}
-	if res.Playlist.Reproducibility.AlgorithmVersion != "multichannel/v2" {
+	if res.Playlist.Reproducibility.AlgorithmVersion != multichannel.AlgorithmVersion {
 		t.Fatalf("algorithm version = %q", res.Playlist.Reproducibility.AlgorithmVersion)
 	}
 	// The generated name is a short label (<= 6 words), not the raw prompt.

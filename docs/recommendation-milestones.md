@@ -187,3 +187,35 @@ catalog, canonical artist/recording/release IDs, offline tuning of MMR and
 transition weights, and actual acoustic features before energy matching. Exact
 search remains the correctness baseline; ANN and semantic ranking remain out of
 scope.
+
+## Milestone 8 — Grounded Semantic Matching
+
+Added optional semantic sidecar schema v1 and the `multichannel/v3` pilot. The
+sidecar carries canonical artist/recording identities, grounded descriptive
+facets, separate original/release-edition dates, provenance, confidence,
+missingness, source/model versions, and preview-segment coverage. Catalog,
+schema, text-model revision, dimension, and returned track IDs are checked at
+load/search time. Without a valid sidecar and already-local query model, the
+base application and all seeded retrieval remain available.
+
+An offline builder embeds supplied descriptions with a compatible Sentence
+Transformers document encoder. Runtime query embeddings use that exact local
+model revision; bounded exact cosine search contributes an independent semantic
+channel. Positive and negative text evidence have separate transparent ranking
+terms. Seedless semantic intent is supported when the index returns real
+catalog tracks. Seeded requests retain explicit fallback behavior.
+
+Semantic hard eligibility is limited to declared style/tag and vocal facets.
+Unknown evidence fails a strict constraint; it is never converted to a weak
+match. Other attributes remain preserved and unsupported. The checked catalog
+has 956,917 remote preview URLs but no stable local audio corpus, so aligned
+audio/text inference is intentionally not claimed. Pilot coverage and footprint
+are generated from the exact input using `--report`; no bulk MusicBrainz calls
+occur during playlist generation.
+
+Next dependencies: curate and license a representative evidence set, evaluate
+prompt/facet precision before increasing the 5,000-track pilot, replace the
+per-query Python process with a packaged local embedding runtime, and consider
+ANN only after full-catalog coverage warrants it. A CLAP-style audio pilot also
+requires licensed local audio, deterministic segment selection, and coverage
+auditing.

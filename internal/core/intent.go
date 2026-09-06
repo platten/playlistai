@@ -112,10 +112,11 @@ type SemanticPreferences struct {
 // HardConstraint is explicit policy, not a wish. Supported=false is preserved
 // and surfaced but never presented as enforced by the recommendation engine.
 type HardConstraint struct {
-	Kind      string           `json:"kind"`
-	Value     string           `json:"value"`
-	Supported bool             `json:"supported"`
-	Evidence  []SourceEvidence `json:"evidence"`
+	Kind            string           `json:"kind"`
+	Value           string           `json:"value"`
+	Supported       bool             `json:"supported"`
+	RuntimeEnforced bool             `json:"runtimeEnforced"`
+	Evidence        []SourceEvidence `json:"evidence"`
 }
 
 type UnsupportedRequirement struct {
@@ -538,6 +539,7 @@ func cleanHardConstraints(in []HardConstraint) []HardConstraint {
 		constraint.Value = strings.TrimSpace(constraint.Value)
 		if constraint.Kind != "" && constraint.Value != "" {
 			constraint.Supported = HardConstraintSupported(constraint.Kind)
+			constraint.RuntimeEnforced = constraint.Supported
 			out = append(out, constraint)
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/reco/multichannel"
+	"github.com/platten/playlistai/internal/semantic"
 	"github.com/platten/playlistai/internal/similarity/brute"
 	"github.com/platten/playlistai/internal/taste"
 )
@@ -48,6 +49,7 @@ type Container struct {
 	History  *history.Store
 	Feedback ports.FeedbackStore
 	Profiles ports.ProfileStore
+	Features ports.FeatureStore
 
 	// exporters are the wired ports.Exporter implementations, looked up by
 	// Name() via Exporter(). Order is display order.
@@ -421,7 +423,34 @@ func (c *Container) LoadCatalog() error {
 		mc.TransitionRelevanceWeight = rc.TransitionRelevanceWeight
 		mc.LocalImprovementPasses = rc.LocalImprovementPasses
 		mc.LocalImprovementWindow = rc.LocalImprovementWindow
-		c.Reco = multichannel.New(cat, c.Sim, cat, mc)
+		mc.SemanticBudget = rc.SemanticBudget
+		mc.SemanticMinimumScore = rc.SemanticMinimumScore
+		mc.SemanticWeight = rc.SemanticWeight
+		mc.SemanticNegativePenalty = rc.SemanticNegativePenalty
+		var semanticSearch ports.SemanticSearcher
+		if semanticCfg := c.cfg.Semantic; semanticCfg.SidecarPath != "" {
+			var encoder ports.TextEmbedder
+			if semanticCfg.ModelPath != "" {
+				encoder = semantic.CommandEncoder{
+					Python: semanticCfg.Python, Script: semanticCfg.QueryScript, ModelPath: semanticCfg.ModelPath,
+					Name: semanticCfg.ModelName, Revision: semanticCfg.ModelRevision, Dimension: semanticCfg.EmbeddingDim,
+				}
+			}
+			store, openErr := semantic.Open(semanticCfg.SidecarPath, cat.CatalogVersion(), cat, encoder)
+			if openErr != nil {
+				c.log.Warn("semantic sidecar unavailable; continuing without semantic matching", "err", openErr)
+			} else {
+				c.Features, semanticSearch = store, store
+				c.RegisterCloser(store.Close)
+				info := store.Info()
+				c.log.Info("semantic sidecar loaded", "tracks", info.TrackCount, "feature_version", info.FeatureVersion, "model", info.TextModel)
+			}
+		}
+		if semanticSearch != nil {
+			c.Reco = multichannel.NewWithSemantic(cat, c.Sim, cat, c.Features, semanticSearch, mc)
+		} else {
+			c.Reco = multichannel.New(cat, c.Sim, cat, mc)
+		}
 	}
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
 	return nil

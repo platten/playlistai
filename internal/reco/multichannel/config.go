@@ -2,7 +2,7 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v2"
+const AlgorithmVersion = "multichannel/v3"
 
 type Config struct {
 	SeedAudioBudget        int
@@ -15,14 +15,18 @@ type Config struct {
 	MaxCandidates          int
 	ReciprocalRankConstant float64
 
-	RetrievalWeight       float64
-	ListenerWeight        float64
-	NegativePenalty       float64
-	ExposurePenalty       float64
-	NoveltyWeight         float64
-	ExplorationChance     float64
-	JourneyPositionWeight float64
-	ContinuationBudget    int
+	RetrievalWeight         float64
+	ListenerWeight          float64
+	NegativePenalty         float64
+	ExposurePenalty         float64
+	NoveltyWeight           float64
+	ExplorationChance       float64
+	JourneyPositionWeight   float64
+	ContinuationBudget      int
+	SemanticBudget          int
+	SemanticMinimumScore    float64
+	SemanticWeight          float64
+	SemanticNegativePenalty float64
 
 	MMRMinimumLambda          float64
 	SelectionMinimumRelevance float64
@@ -46,7 +50,8 @@ func DefaultConfig() Config {
 		ExposurePenalty: .30, NoveltyWeight: .20,
 		ExplorationChance: .35, JourneyPositionWeight: .35,
 		ContinuationBudget: 16,
-		MMRMinimumLambda:   .55, SelectionMinimumRelevance: .05, SelectionRelevanceWindow: .80,
+		SemanticBudget:     96, SemanticMinimumScore: .15, SemanticWeight: .35, SemanticNegativePenalty: .55,
+		MMRMinimumLambda: .55, SelectionMinimumRelevance: .05, SelectionRelevanceWindow: .80,
 		EmbeddingRedundancyWeight: .50, ArtistConcentrationWeight: .35, AlbumConcentrationWeight: .15,
 		SoftArtistSpacingMax: 3, TransitionRelevanceWeight: .15,
 		LocalImprovementPasses: 3, LocalImprovementWindow: 4,
@@ -105,6 +110,18 @@ func (c Config) normalized() Config {
 	}
 	if c.ContinuationBudget <= 0 {
 		c.ContinuationBudget = d.ContinuationBudget
+	}
+	if c.SemanticBudget <= 0 {
+		c.SemanticBudget = d.SemanticBudget
+	}
+	if c.SemanticMinimumScore < -1 || c.SemanticMinimumScore > 1 {
+		c.SemanticMinimumScore = d.SemanticMinimumScore
+	}
+	if c.SemanticWeight <= 0 {
+		c.SemanticWeight = d.SemanticWeight
+	}
+	if c.SemanticNegativePenalty <= 0 {
+		c.SemanticNegativePenalty = d.SemanticNegativePenalty
 	}
 	if c.MMRMinimumLambda <= 0 || c.MMRMinimumLambda > 1 {
 		c.MMRMinimumLambda = d.MMRMinimumLambda

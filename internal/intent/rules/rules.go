@@ -410,6 +410,12 @@ func extractUnsupportedRequirements(
 	unsupported []core.UnsupportedRequirement,
 	constraints []core.HardConstraint,
 ) ([]core.UnsupportedRequirement, []core.HardConstraint) {
+	if index := strings.Index(strings.ToLower(prompt), "no vocals"); index >= 0 {
+		span := prompt[index : index+len("no vocals")]
+		evidence := []core.SourceEvidence{{Text: span, Start: index, End: index + len(span), Explicit: true}}
+		constraints = append(constraints, core.HardConstraint{Kind: "exclude_vocals", Value: "vocals", Supported: false, Evidence: evidence})
+		unsupported = append(unsupported, core.UnsupportedRequirement{Text: span, Reason: "requires a compatible semantic sidecar with vocal evidence", Evidence: evidence})
+	}
 	for _, match := range reUnsupportedStyle.FindAllStringSubmatchIndex(prompt, -1) {
 		span := prompt[match[0]:match[1]]
 		value := prompt[match[2]:match[3]]

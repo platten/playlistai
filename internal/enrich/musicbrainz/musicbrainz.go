@@ -167,17 +167,29 @@ func (c *Client) rateLimit(ctx context.Context) error {
 }
 
 type mbRecording struct {
-	ID           string   `json:"id"`
-	Score        int      `json:"score"`
-	Title        string   `json:"title"`
-	ISRCs        []string `json:"isrcs"`
-	ArtistCredit []struct {
-		Name string `json:"name"`
-	} `json:"artist-credit"`
-	Releases []struct {
-		Title string `json:"title"`
-		Date  string `json:"date"`
-	} `json:"releases"`
+	ID           string           `json:"id"`
+	Score        int              `json:"score"`
+	Title        string           `json:"title"`
+	ISRCs        []string         `json:"isrcs"`
+	ArtistCredit []mbArtistCredit `json:"artist-credit"`
+	Releases     []mbRelease      `json:"releases"`
+}
+
+type mbArtistCredit struct {
+	Name   string `json:"name"`
+	Artist struct {
+		ID string `json:"id"`
+	} `json:"artist"`
+}
+
+type mbRelease struct {
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	Date         string `json:"date"`
+	ReleaseGroup struct {
+		ID               string `json:"id"`
+		FirstReleaseDate string `json:"first-release-date"`
+	} `json:"release-group"`
 }
 
 // query performs one search. Any failure yields an unmatched result — the batch
@@ -218,10 +230,11 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 
 	top := body.Recordings[0]
 	et := core.EnrichedTrack{
-		Ref:        ref,
-		MatchScore: top.Score,
-		Matched:    top.Score >= c.minScore,
-		AllISRCs:   top.ISRCs,
+		Ref:         ref,
+		MatchScore:  top.Score,
+		Matched:     top.Score >= c.minScore,
+		AllISRCs:    top.ISRCs,
+		RecordingID: top.ID,
 	}
 	if len(top.ISRCs) > 0 {
 		et.ISRC = top.ISRCs[0]
@@ -230,10 +243,16 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		if ac.Name != "" {
 			et.AllArtists = append(et.AllArtists, ac.Name)
 		}
+		if ac.Artist.ID != "" {
+			et.ArtistIDs = append(et.ArtistIDs, ac.Artist.ID)
+		}
 	}
 	if len(top.Releases) > 0 {
 		et.Album = top.Releases[0].Title
 		et.Year = yearOf(top.Releases[0].Date)
+		et.ReleaseID = top.Releases[0].ID
+		et.ReleaseEditionDate = top.Releases[0].Date
+		et.OriginalReleaseDate = top.Releases[0].ReleaseGroup.FirstReleaseDate
 	}
 	return et
 }
