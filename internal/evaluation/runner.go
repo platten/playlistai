@@ -137,7 +137,7 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) (Report, error) {
 func (r Runner) evaluateIntent(ctx context.Context, cases []IntentCase) ExtractionResult {
 	result := ExtractionResult{Cases: len(cases)}
 	for _, item := range cases {
-		intent, err := r.Parser.Parse(ctx, ports.IntentInput{Prompt: item.Prompt})
+		intent, err := r.Parser.Parse(ctx, intentInput(item))
 		if err != nil {
 			result.LabeledFields += intentLabelCount(item.Expected)
 			continue
@@ -171,6 +171,11 @@ func intentLabelCount(labels IntentLabels) int {
 		labels.PositivePreferences != nil,
 		labels.NegativePreferences != nil,
 		labels.HardConstraints != nil,
+		labels.TypedReferences != nil,
+		labels.RequiredTracks != nil,
+		labels.JourneyWaypoints != nil,
+		labels.Unsupported != nil,
+		labels.EvidenceSpans != nil,
 	} {
 		if labeled {
 			count++
@@ -215,7 +220,73 @@ func intentChecks(intent core.MusicIntent, want IntentLabels) []bool {
 	if want.HardConstraints != nil {
 		checks = append(checks, equalLabels(constraints, want.HardConstraints))
 	}
+	if want.TypedReferences != nil {
+		checks = append(checks, equalLabels(referenceLabels(intent.References), want.TypedReferences))
+	}
+	if want.RequiredTracks != nil {
+		checks = append(checks, equalLabels(referenceLabels(intent.RequiredTracks), want.RequiredTracks))
+	}
+	if want.JourneyWaypoints != nil {
+		checks = append(checks, equalLabels(referenceLabels(intent.Journey.Waypoints), want.JourneyWaypoints))
+	}
+	if want.Unsupported != nil {
+		unsupported := make([]string, 0, len(intent.Unsupported))
+		for _, item := range intent.Unsupported {
+			unsupported = append(unsupported, item.Text)
+		}
+		checks = append(checks, equalLabels(unsupported, want.Unsupported))
+	}
+	if want.EvidenceSpans != nil {
+		checks = append(checks, equalLabels(evidenceSpans(intent), want.EvidenceSpans))
+	}
 	return checks
+}
+
+func intentInput(item IntentCase) ports.IntentInput {
+	return ports.IntentInput{Prompt: item.Prompt, NowPlaying: item.NowPlaying, RecentTracks: item.RecentTracks, Locale: item.Locale}
+}
+
+func referenceLabels(references []core.IntentReference) []string {
+	out := make([]string, 0, len(references))
+	for _, reference := range references {
+		out = append(out, string(reference.Kind)+":"+string(reference.Influence)+":"+reference.Query)
+	}
+	return out
+}
+
+func evidenceSpans(intent core.MusicIntent) []string {
+	spans := map[string]struct{}{}
+	add := func(evidence []core.SourceEvidence) {
+		for _, item := range evidence {
+			if value := normalizeLabel(item.Text); value != "" {
+				spans[value] = struct{}{}
+			}
+		}
+	}
+	for _, group := range [][]core.IntentReference{intent.References, intent.RequiredTracks, intent.Journey.Waypoints} {
+		for _, item := range group {
+			add(item.Evidence)
+		}
+	}
+	for _, group := range [][]core.IntentPreference{intent.Preferences.Styles, intent.Preferences.Moods, intent.Preferences.Instrumentation, intent.Preferences.TextureDescriptions} {
+		for _, item := range group {
+			add(item.Evidence)
+		}
+	}
+	if intent.Preferences.VocalPreference != nil {
+		add(intent.Preferences.VocalPreference.Evidence)
+	}
+	for _, item := range intent.HardConstraints {
+		add(item.Evidence)
+	}
+	for _, item := range intent.Unsupported {
+		add(item.Evidence)
+	}
+	out := make([]string, 0, len(spans))
+	for span := range spans {
+		out = append(out, span)
+	}
+	return out
 }
 
 func preferenceLabels(p core.SemanticPreferences) ([]string, []string) {

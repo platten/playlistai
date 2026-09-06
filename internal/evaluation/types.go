@@ -33,10 +33,13 @@ type Dataset struct {
 }
 
 type IntentCase struct {
-	ID       string       `json:"id"`
-	Prompt   string       `json:"prompt"`
-	Expected IntentLabels `json:"expected"`
-	Tags     []string     `json:"tags"`
+	ID           string          `json:"id"`
+	Prompt       string          `json:"prompt"`
+	NowPlaying   *core.TrackRef  `json:"nowPlaying,omitempty"`
+	RecentTracks []core.TrackRef `json:"recentTracks,omitempty"`
+	Locale       string          `json:"locale,omitempty"`
+	Expected     IntentLabels    `json:"expected"`
+	Tags         []string        `json:"tags"`
 }
 
 type IntentLabels struct {
@@ -47,6 +50,11 @@ type IntentLabels struct {
 	PositivePreferences []string  `json:"positivePreferences"`
 	NegativePreferences []string  `json:"negativePreferences"`
 	HardConstraints     []string  `json:"hardConstraints"`
+	TypedReferences     []string  `json:"typedReferences"`
+	RequiredTracks      []string  `json:"requiredTracks"`
+	JourneyWaypoints    []string  `json:"journeyWaypoints"`
+	Unsupported         []string  `json:"unsupported"`
+	EvidenceSpans       []string  `json:"evidenceSpans"`
 }
 
 type ResolutionCase struct {

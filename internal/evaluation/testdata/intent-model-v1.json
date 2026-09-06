@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "name": "intent-model-v1",
+  "evidence": "human_judged",
+  "catalogVersion": "",
+  "createdAt": "2026-09-06T00:00:00Z",
+  "intentCases": [
+    {
+      "id": "multi-reference-negation",
+      "prompt": "Make 18 tracks like Björk and Boards of Canada, but not Coldplay.",
+      "expected": {
+        "totalTrackCount": 18,
+        "positiveReferences": ["Björk", "Boards of Canada"],
+        "negativeReferences": ["Coldplay"],
+        "typedReferences": ["artist:positive:Björk", "artist:positive:Boards of Canada", "artist:negative:Coldplay"]
+      },
+      "tags": ["references", "negation", "multiple_taste"]
+    },
+    {
+      "id": "required-versus-reference",
+      "prompt": "Build 10 tracks inspired by Portishead, and make sure Teardrop by Massive Attack is included.",
+      "expected": {
+        "totalTrackCount": 10,
+        "typedReferences": ["artist:positive:Portishead"],
+        "requiredTracks": ["track:positive:Teardrop by Massive Attack"]
+      },
+      "tags": ["required", "references"]
+    },
+    {
+      "id": "semantic-nuance",
+      "prompt": "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone",
+      "expected": {
+        "positivePreferences": ["ambient electronic", "relaxing", "microdetail", "a deep groove", "occasional sparkle"],
+        "negativePreferences": ["sleepy", "abstract drone"],
+        "hardConstraints": ["exclude_style:abstract drone"],
+        "unsupported": ["no abstract drone"]
+      },
+      "tags": ["negation", "semantic_nuance", "unsupported"]
+    },
+    {
+      "id": "strict-unsupported-vocals",
+      "prompt": "12 instrumental tracks like Tycho; absolutely no vocals.",
+      "expected": {
+        "totalTrackCount": 12,
+        "typedReferences": ["artist:positive:Tycho"],
+        "unsupported": ["absolutely no vocals"]
+      },
+      "tags": ["hard_constraint", "unsupported", "vocal"]
+    },
+    {
+      "id": "journey-waypoints",
+      "prompt": "A 9-track journey from Nick Drake to Aphex Twin via Radiohead.",
+      "expected": {
+        "mode": "journey",
+        "totalTrackCount": 9,
+        "journeyWaypoints": ["artist:positive:Nick Drake", "artist:positive:Radiohead", "artist:positive:Aphex Twin"]
+      },
+      "tags": ["journey", "references"]
+    },
+    {
+      "id": "seed-artist-exclusion",
+      "prompt": "Use Radiohead as a reference, exclude Radiohead from the output, and never put the same artist back to back.",
+      "expected": {
+        "typedReferences": ["artist:positive:Radiohead"],
+        "hardConstraints": ["exclude_reference_artists:true", "no_back_to_back_artist:true"]
+      },
+      "tags": ["hard_constraint", "references"]
+    },
+    {
+      "id": "context-now-playing",
+      "prompt": "More like this, but more adventurous.",
+      "nowPlaying": {"id":"seed0006","artist":"Björk","title":"Jóga"},
+      "expected": {
+        "positivePreferences": ["adventurous"]
+      },
+      "tags": ["context", "feedback"]
+    },
+    {
+      "id": "context-negative",
+      "prompt": "Less like this for this request; keep the recent direction.",
+      "nowPlaying": {"id":"seed0001","artist":"Justice","title":"Genesis"},
+      "recentTracks": [{"id":"seed0004","artist":"Boards of Canada","title":"Roygbiv"}],
+      "expected": {
+        "negativeReferences": ["Justice — Genesis"]
+      },
+      "tags": ["context", "feedback", "negation"]
+    },
+    {
+      "id": "non-latin-reference",
+      "prompt": "坂本龍一みたいな音楽、でもボーカルなし",
+      "locale": "ja-JP",
+      "expected": {
+        "positiveReferences": ["坂本龍一"]
+      },
+      "tags": ["non_latin", "references"]
+    },
+    {
+      "id": "artist-title-collision",
+      "prompt": "Songs like the track Genesis by Justice, not the band Genesis.",
+      "expected": {
+        "typedReferences": ["track:positive:Genesis by Justice", "artist:negative:Genesis"]
+      },
+      "tags": ["ambiguous_reference", "negation", "references"]
+    },
+    {
+      "id": "evidence-spans",
+      "prompt": "Warm, glittering synth music, not aggressive.",
+      "expected": {
+        "positivePreferences": ["warm", "glittering synth"],
+        "negativePreferences": ["aggressive"],
+        "evidenceSpans": ["Warm", "glittering synth", "not aggressive"]
+      },
+      "tags": ["evidence", "negation", "semantic_nuance"]
+    },
+    {
+      "id": "no-invented-reference",
+      "prompt": "Give me 25 tracks with high discovery and no artist references.",
+      "expected": {
+        "totalTrackCount": 25,
+        "typedReferences": []
+      },
+      "tags": ["no_invention", "controls"]
+    }
+  ],
+  "resolutionCases": [],
+  "recommendationCases": [],
+  "interactions": [],
+  "tuningGrid": []
+}

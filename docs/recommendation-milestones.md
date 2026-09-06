@@ -245,3 +245,36 @@ Next dependencies are consented pseudonymous interaction exports, independent
 listening judgments covering all documented cohorts, a compatible semantic
 sidecar for its ablation, and enough development/test cases for stable
 uncertainty estimates and evidence-backed defaults.
+
+## Milestone 10 — Retrieval Performance and Local Models
+
+Profile-guided work retained exact retrieval and parallelized large catalog
+scans with deterministic shard-local top-K heaps, exact merging, and per-shard
+cancellation. On the 956,917-track production catalog, exact K=64 search fell
+from 83.5–88.9 ms to 10.0–12.0 ms and full 20-track generation from
+433.5–441.5 ms to 115.7–116.8 ms. Serial/parallel scores and order match, so
+the optimization changes latency rather than recommendation quality. The exact
+engine adds only 7.66 MB of derived norms; ANN was therefore not implemented.
+
+Added `cmd/intenteval` and a versioned, human-labeled intent suite covering
+references, negation, required tracks, semantic nuance, hard/unsupported
+requirements, contextual feedback, non-Latin text, ambiguity, and evidence.
+Reports pin the parser/schema, model size and SHA-256, runtime build, per-case
+results, latency, and peak RSS. Current llama.cpp compatibility now disables
+thinking output for structured parses and handles SSE completion without
+waiting for connection close.
+
+Across three runs per case, Qwen3.5 0.8B, Qwen2.5 3B, and Llama 3.2 3B all
+failed the documented correctness gate; the strongest reached only 57.1%
+field accuracy and exceeded the 15-second P95 target. No model was promoted,
+the curated manifest remains unchanged, existing installed models remain
+compatible, and rules parsing remains the no-model fallback. No LLM reranker
+was attempted without a configured grounded sidecar and real held-out
+listening judgments.
+
+Implemented capabilities are exact parallel retrieval, reproducible production
+benchmarks, artifact-aware local parser evaluation, and current-runtime chat
+compatibility. Future experiments depend on broader independently labeled
+intent data, consented temporal listening judgments, representative multi-host
+profiles, and grounded descriptor coverage. ANN or an LLM reranker should be
+reconsidered only when those measurements show a concrete need and benefit.

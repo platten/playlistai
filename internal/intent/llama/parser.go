@@ -199,4 +199,13 @@ func (p *Parser) setReady(v bool) {
 	p.mu.Unlock()
 }
 
+// RuntimeMemoryBytes returns the managed llama process's resident set when the
+// host platform exposes it. It is intended for local evaluation, not ranking.
+func (p *Parser) RuntimeMemoryBytes() int64 {
+	if p.srv == nil {
+		return 0
+	}
+	return p.srv.ResidentBytes()
+}
+
 var _ ports.IntentParser = (*Parser)(nil)

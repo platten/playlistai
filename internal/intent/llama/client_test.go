@@ -42,8 +42,9 @@ func completion(content string) string {
 func TestClientParseSuccess(t *testing.T) {
 	t.Parallel()
 	var got struct {
-		Messages []chatMessage `json:"messages"`
-		Grammar  string        `json:"grammar"`
+		Messages           []chatMessage  `json:"messages"`
+		Grammar            string         `json:"grammar"`
+		ChatTemplateKwargs map[string]any `json:"chat_template_kwargs"`
 	}
 	srv := chatServer(t, func(body []byte) (int, string) {
 		_ = json.Unmarshal(body, &got)
@@ -60,6 +61,9 @@ func TestClientParseSuccess(t *testing.T) {
 
 	if got.Grammar != schema.GBNF {
 		t.Fatal("request did not carry the GBNF grammar")
+	}
+	if thinking, ok := got.ChatTemplateKwargs["enable_thinking"].(bool); !ok || thinking {
+		t.Fatalf("enable_thinking = %#v, want false", got.ChatTemplateKwargs["enable_thinking"])
 	}
 	if got.Messages[0].Role != "system" || !strings.Contains(got.Messages[0].Content, "translate") {
 		t.Fatalf("first message = %+v", got.Messages[0])
@@ -118,6 +122,26 @@ func TestClientParseStreamingWithProgress(t *testing.T) {
 	if deltas[len(deltas)-1] != len(full) {
 		t.Fatalf("final delta %d, want %d", deltas[len(deltas)-1], len(full))
 	}
+}
+
+func TestReadSSEReturnsAtDoneWithoutWaitingForConnectionClose(t *testing.T) {
+	t.Parallel()
+	reader, writer := io.Pipe()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		content, err := readSSE(reader, nil)
+		if err != nil || content != "ok" {
+			t.Errorf("readSSE content=%q err=%v", content, err)
+		}
+	}()
+	_, _ = io.WriteString(writer, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("readSSE waited for the connection to close after [DONE]")
+	}
+	_ = writer.Close()
 }
 
 func chunkString(s string, n int) []string {

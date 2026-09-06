@@ -42,12 +42,13 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Messages    []chatMessage `json:"messages"`
-	Grammar     string        `json:"grammar"`
-	Temperature float64       `json:"temperature"`
-	NPredict    int           `json:"n_predict"`
-	CachePrompt bool          `json:"cache_prompt"`
-	Stream      bool          `json:"stream"`
+	Messages           []chatMessage  `json:"messages"`
+	Grammar            string         `json:"grammar,omitempty"`
+	ChatTemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
+	Temperature        float64        `json:"temperature"`
+	NPredict           int            `json:"n_predict"`
+	CachePrompt        bool           `json:"cache_prompt"`
+	Stream             bool           `json:"stream"`
 }
 
 type chatResponse struct {
@@ -80,12 +81,13 @@ func (c *Client) ParseWithProgress(ctx context.Context, in ports.IntentInput, on
 
 func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
 	body := chatRequest{
-		Messages:    buildMessages(in),
-		Grammar:     schema.GBNF,
-		Temperature: 0.2,
-		NPredict:    400,
-		CachePrompt: true,
-		Stream:      true,
+		Messages:           buildMessages(in),
+		Grammar:            schema.GBNF,
+		ChatTemplateKwargs: map[string]any{"enable_thinking": false},
+		Temperature:        0.2,
+		NPredict:           400,
+		CachePrompt:        true,
+		Stream:             true,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -137,8 +139,11 @@ func readSSE(body io.Reader, onDelta func(int)) (string, error) {
 			continue
 		}
 		data = strings.TrimSpace(data)
-		if data == "" || data == "[DONE]" {
+		if data == "" {
 			continue
+		}
+		if data == "[DONE]" {
+			return out.String(), nil
 		}
 		var chunk streamChunk
 		if json.Unmarshal([]byte(data), &chunk) != nil {
@@ -192,10 +197,11 @@ func (c *Client) Complete(ctx context.Context, system, user string, maxTokens in
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},
 		},
-		Temperature: 0.4,
-		NPredict:    maxTokens,
-		CachePrompt: false,
-		Stream:      false,
+		ChatTemplateKwargs: map[string]any{"enable_thinking": false},
+		Temperature:        0.4,
+		NPredict:           maxTokens,
+		CachePrompt:        false,
+		Stream:             false,
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {

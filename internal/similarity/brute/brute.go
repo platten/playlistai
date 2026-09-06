@@ -13,6 +13,8 @@ import (
 	"container/heap"
 	"context"
 	"math"
+	"runtime"
+	"sync"
 
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -24,14 +26,25 @@ type Engine struct {
 	cat ports.Catalog
 	n   int
 	d   int
+	// workers is zero for automatic parallelism and positive for a fixed
+	// worker count. A fixed count is used only by reproducible benchmarks.
+	workers int
 	// invNorm[row*2+0] = 1/L2(dequant(audio row)); +1 = track row.
 	invNorm []float32
 }
 
+const parallelRowsPerWorker = 64 * 1024
+
 // New builds an engine over cat, precomputing per-row inverse norms in one pass.
 func New(cat ports.Catalog) *Engine {
+	return NewWithWorkers(cat, 0)
+}
+
+// NewWithWorkers constructs the exact engine with fixed query parallelism.
+// workers <= 0 selects bounded GOMAXPROCS-based parallelism.
+func NewWithWorkers(cat ports.Catalog, workers int) *Engine {
 	n, d := cat.Len(), cat.Dim()
-	e := &Engine{cat: cat, n: n, d: d, invNorm: make([]float32, n*2)}
+	e := &Engine{cat: cat, n: n, d: d, workers: workers, invNorm: make([]float32, n*2)}
 	for row := 0; row < n; row++ {
 		a, t, ok := cat.RawRow(row)
 		if !ok {
@@ -71,8 +84,44 @@ func (e *Engine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.M
 		}
 	}
 
+	workers := e.workers
+	if workers <= 0 {
+		workers = min(runtime.GOMAXPROCS(0), max(1, e.n/parallelRowsPerWorker))
+	}
+	workers = min(workers, e.n)
+	if workers == 1 {
+		return e.searchRange(ctx, q, excludeRows, useAudio, useTrack, w0, w1, 0, e.n, k)
+	}
+	partials := make([][]ports.Match, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		start, end := worker*e.n/workers, (worker+1)*e.n/workers
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			partials[index], errs[index] = e.searchRange(ctx, q, excludeRows, useAudio, useTrack, w0, w1, start, end, k)
+		}(worker)
+	}
+	wg.Wait()
 	h := make(worstFirst, 0, k)
-	for row := 0; row < e.n; row++ {
+	for worker, matches := range partials {
+		if errs[worker] != nil {
+			return nil, errs[worker]
+		}
+		for _, match := range matches {
+			pushTop(&h, match, k)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return sortedMatches(&h), nil
+}
+
+func (e *Engine) searchRange(ctx context.Context, q ports.SimilarityQuery, excludeRows map[int]struct{}, useAudio, useTrack bool, w0, w1 float32, start, end, k int) ([]ports.Match, error) {
+	h := make(worstFirst, 0, k)
+	for row := start; row < end; row++ {
 		if row&1023 == 0 {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -85,7 +134,6 @@ func (e *Engine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.M
 		if !ok {
 			continue
 		}
-
 		var score float32
 		if useAudio {
 			score += w0 * dotF32I8(q.AudioSum, a) * dequantScale * e.invNorm[row*2]
@@ -93,23 +141,26 @@ func (e *Engine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.M
 		if useTrack {
 			score += w1 * dotF32I8(q.TrackSum, t) * dequantScale * e.invNorm[row*2+1]
 		}
-
-		if len(h) < k {
-			heap.Push(&h, ports.Match{ID: e.cat.ID(row), Row: row, Score: score})
-		} else if betterThan(score, row, h[0]) {
-			h[0] = ports.Match{ID: e.cat.ID(row), Row: row, Score: score}
-			heap.Fix(&h, 0)
-		}
+		pushTop(&h, ports.Match{ID: e.cat.ID(row), Row: row, Score: score}, k)
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
+	return sortedMatches(&h), nil
+}
 
-	out := make([]ports.Match, len(h))
+func pushTop(h *worstFirst, match ports.Match, k int) {
+	if len(*h) < k {
+		heap.Push(h, match)
+	} else if betterThan(match.Score, match.Row, (*h)[0]) {
+		(*h)[0] = match
+		heap.Fix(h, 0)
+	}
+}
+
+func sortedMatches(h *worstFirst) []ports.Match {
+	out := make([]ports.Match, len(*h))
 	for i := len(out) - 1; i >= 0; i-- {
-		out[i] = heap.Pop(&h).(ports.Match)
+		out[i] = heap.Pop(h).(ports.Match)
 	}
-	return out, nil
+	return out
 }
 
 // betterThan reports whether (score,row) should displace the current worst m.

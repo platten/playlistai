@@ -142,6 +142,44 @@ func TestSearchMatchesReference(t *testing.T) {
 	}
 }
 
+func TestParallelSearchMatchesSerial(t *testing.T) {
+	t.Parallel()
+	cat := buildCatalog(t, 5000, 23)
+	serial := brute.NewWithWorkers(cat, 1)
+	parallel := brute.NewWithWorkers(cat, 4)
+	rng := rand.New(rand.NewSource(42))
+
+	for trial := 0; trial < 12; trial++ {
+		q := ports.SimilarityQuery{
+			AudioSum: randUnit(rng),
+			TrackSum: randUnit(rng),
+			Weights:  [2]float32{rng.Float32(), rng.Float32()},
+			K:        50,
+			Exclude:  map[string]struct{}{idFor(trial * 17): {}},
+		}
+		got := mustSearch(t, parallel, q)
+		want := mustSearch(t, serial, q)
+		if len(got) != len(want) {
+			t.Fatalf("trial %d: len %d != %d", trial, len(got), len(want))
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("trial %d rank %d: parallel=%+v serial=%+v", trial, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+func TestParallelSearchHonorsCancellation(t *testing.T) {
+	t.Parallel()
+	eng := brute.NewWithWorkers(buildCatalog(t, 5000, 27), 4)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := eng.Search(ctx, ports.SimilarityQuery{K: 10}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Search error = %v, want context.Canceled", err)
+	}
+}
+
 func TestSelfIsNearestThenExcluded(t *testing.T) {
 	t.Parallel()
 	cat := buildCatalog(t, 120, 7)

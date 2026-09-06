@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -144,6 +147,34 @@ func (s *Server) Alive() bool {
 	default:
 		return true
 	}
+}
+
+// ResidentBytes reports the managed runtime's current resident set on Linux.
+// Other platforms return zero because there is no portable process-RSS API.
+func (s *Server) ResidentBytes() int64 {
+	if runtime.GOOS != "linux" {
+		return 0
+	}
+	s.mu.Lock()
+	cmd := s.cmd
+	s.mu.Unlock()
+	if cmd == nil || cmd.Process == nil {
+		return 0
+	}
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(cmd.Process.Pid) + "/status")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 3 && fields[0] == "VmRSS:" && fields[2] == "kB" {
+			value, err := strconv.ParseInt(fields[1], 10, 64)
+			if err == nil {
+				return value * 1024
+			}
+		}
+	}
+	return 0
 }
 
 // BaseURL is the loopback URL of the server.
