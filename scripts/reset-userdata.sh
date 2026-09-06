@@ -38,6 +38,15 @@ done
 targets=()
 add() { [ -n "$1" ] && targets+=("$1"); }
 
+dangerous_target() {
+  local target="${1%/}"
+  [ -n "$target" ] || return 0
+  case "$target" in
+    /|"$HOME"|"$REPO_ROOT"|"${XDG_CONFIG_HOME:-$HOME/.config}"|"$HOME/Library/Application Support") return 0 ;;
+  esac
+  return 1
+}
+
 case "$(os_family)" in
   linux)   add "${XDG_CONFIG_HOME:-$HOME/.config}/playlist-ai" ;;
   darwin)  add "$HOME/Library/Application Support/playlist-ai" ;;
@@ -47,7 +56,6 @@ esac
 
 add "$HOME/.playlist-ai"                 # config.go fallback #2
 add "$REPO_ROOT/playlist-ai-data"        # config.go last resort, if run from the repo
-add "$PWD/playlist-ai-data"
 
 # llama.cpp official-installer scratch dir (the app usually cleans this itself)
 case "$(os_family)" in
@@ -66,6 +74,10 @@ existing=()
 seen=""
 for t in "${targets[@]}"; do
   [ -e "$t" ] || continue
+  if dangerous_target "$t"; then
+    warn "refusing unsafe reset target: $t"
+    continue
+  fi
   case "$seen" in *"|$t|"*) continue ;; esac
   seen="$seen|$t|"
   existing+=("$t")

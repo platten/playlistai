@@ -6,7 +6,7 @@
 #   toolchains   Go (>= 1.27), Node (>= 22), pnpm (>= 9)
 #   Go tools     wails3, golangci-lint     (go install, pinned to CI versions)
 #   Linux libs   C toolchain + pkg-config + libgtk-4-dev + libwebkitgtk-6.0-dev
-#                (the Wails Linux build is CGO)
+#   macOS tools  Xcode Command Line Tools (the Wails macOS build uses them)
 #   optional     NSIS / makensis           (only to cross-build the Windows installer)
 #
 # System packages are installed with the platform package manager (apt / dnf /
@@ -94,10 +94,6 @@ linux_build_pkgs() {
 }
 
 # --------------------------------------------------------------------- Go
-version_ge() { # version_ge <have> <min>  — dotted numeric compare
-  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -1)" = "$2" ]
-}
-
 install_go() {
   [ "$NO_SYSTEM" = 1 ] && { NOTES+=("install Go >= $GO_VERSION_MIN from https://go.dev/dl/"); return 1; }
   local ver arch url dest="$HOME/.local"
@@ -231,6 +227,24 @@ setup_linux_build_libs() {
   fi
 }
 
+# --------------------------------------------------------------- macOS build tools
+setup_macos_build_tools() {
+  [ "$OS" = darwin ] || return 0
+  if xcode-select -p >/dev/null 2>&1; then
+    ok "Xcode Command Line Tools"
+    return
+  fi
+  if [ "$NO_SYSTEM" = 1 ]; then
+    MISSING+=("Xcode Command Line Tools")
+    NOTES+=("run 'xcode-select --install' before building on macOS")
+    return
+  fi
+  info "requesting the Xcode Command Line Tools installer"
+  xcode-select --install >/dev/null 2>&1 || true
+  MISSING+=("Xcode Command Line Tools (installation requested)")
+  NOTES+=("finish the macOS installer, then re-run scripts/setup.sh")
+}
+
 # --------------------------------------------------------------------- NSIS
 setup_nsis() {
   [ "$WITH_NSIS" = 1 ] || return 0
@@ -264,6 +278,7 @@ setup_pnpm
 go_tool wails3        "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS3_VERSION}"                  "Wails v3 CLI"
 go_tool golangci-lint "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@${GOLANGCI_LINT_VERSION}" "Go linter"
 setup_linux_build_libs
+setup_macos_build_tools
 setup_nsis
 
 # --------------------------------------------------------------------- summary

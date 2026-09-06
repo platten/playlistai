@@ -192,6 +192,24 @@ claim an RTX 5090 inference result until that command is run on one.
 
 ## Reproduction
 
+The cross-platform wrappers are the shortest route to the intent suite:
+
+```sh
+# Linux / macOS
+./scripts/benchmark-intent.sh --backend rules
+./scripts/benchmark-intent.sh --model /path/to/model.gguf \
+  --runtime /path/to/llama-server --device CUDA0 --gpu-layers 0
+```
+
+```powershell
+# Windows
+.\scripts\benchmark-intent.ps1 -Backend rules
+.\scripts\benchmark-intent.ps1 -Model C:\Models\model.gguf `
+  -RuntimePath C:\llama.cpp\llama-server.exe -Device CUDA0 -GPULayers 0
+```
+
+The underlying commands remain available for custom automation:
+
 ```sh
 PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test \
   ./internal/similarity/brute -run '^$' \

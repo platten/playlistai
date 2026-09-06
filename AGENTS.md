@@ -9,12 +9,12 @@ The React/TypeScript UI is in `frontend/src/`: use `screens/` for page-level flo
 ## Build, Test, and Development Commands
 
 - `go test ./...` runs the fast, dependency-light Go suite.
-- `./scripts/test.sh` runs the complete CI-equivalent gate: `go vet`, race-enabled Go tests, `golangci-lint`, Wails binding generation, frontend typechecking, and a production frontend build. Use `--no-race` only when the race detector is unavailable.
+- `./scripts/test.sh` (Linux/macOS) or `.\scripts\test.ps1` (Windows) runs the complete CI-equivalent gate: `go vet`, race-enabled Go tests, `golangci-lint`, Wails binding generation, frontend typechecking, and a production frontend build. Use `--no-race` / `-NoRace` only when the race detector is unavailable.
 - `wails3 dev` launches the desktop app with frontend hot reload.
 - `wails3 build` creates `bin/playlist-ai`; `wails3 package` builds host-specific installers.
 - `cd frontend && pnpm run typecheck` validates TypeScript independently.
 
-Run `./scripts/setup.sh` to install the documented Go, Node, pnpm, Wails, lint, and Linux GUI prerequisites.
+Run `./scripts/setup.sh` on Linux/macOS or `.\scripts\setup.ps1` on Windows to install the documented Go, Node, pnpm, Wails, lint, and platform GUI prerequisites.
 
 ## Coding Style & Naming Conventions
 

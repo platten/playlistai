@@ -131,7 +131,7 @@ There are no large blobs or Git LFS requirements in the repository.
 # Fast Go suite
 go test ./...
 
-# Complete CI-equivalent gate
+# Complete CI-equivalent gate (Linux/macOS)
 ./scripts/test.sh
 
 # Desktop development
@@ -142,8 +142,12 @@ wails3 build
 wails3 package
 ```
 
-Linux development requires GTK4 and WebKitGTK 6.0. Run `./scripts/setup.sh` to
-install the documented Go, Node, pnpm, Wails, lint, and GUI prerequisites.
+Linux development requires GTK4 and WebKitGTK 6.0; macOS requires Xcode Command
+Line Tools. Run `./scripts/setup.sh` on either platform. Windows contributors
+can run `.\scripts\setup.ps1`, `.\scripts\test.ps1`, and
+`.\scripts\build.ps1`; setup prefers winget and falls back to Scoop. See the
+[cross-platform script guide](scripts/README.md), including local intent/LLM
+benchmark wrappers for all three operating systems.
 
 Detailed references:
 

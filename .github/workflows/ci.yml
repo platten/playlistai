@@ -126,6 +126,11 @@ jobs:
           & "$dir\makensis.exe" /VERSION
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
+      - name: Validate Windows contributor scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\test.ps1 -NoRace
+
       - name: Build
         if: runner.os != 'Windows'
         run: wails3 build
@@ -135,11 +140,13 @@ jobs:
       # arches are cross-compiled here on the x86 runner.
       - name: Build + package (NSIS installer, amd64)
         if: runner.os == 'Windows'
-        run: wails3 task windows:package ARCH=amd64
+        shell: pwsh
+        run: .\scripts\build.ps1 -Architecture amd64
 
       - name: Build + package (NSIS installer, arm64)
         if: runner.os == 'Windows'
-        run: wails3 task windows:package ARCH=arm64
+        shell: pwsh
+        run: .\scripts\build.ps1 -Architecture arm64
 
       - uses: actions/upload-artifact@v6
         with:

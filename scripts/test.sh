@@ -23,6 +23,17 @@ step() { # step <label> <cmd...>
   if "${@:2}"; then ok "$1"; else err "$1"; FAILED+=("$1"); fi
 }
 
+# --------------------------------------------------------------- Scripts
+script_syntax() {
+  bash -n scripts/*.sh
+}
+step "Bash script syntax" script_syntax
+if has shellcheck; then
+  step "shellcheck" shellcheck scripts/*.sh
+else
+  warn "shellcheck not installed — skipping optional shell script lint"
+fi
+
 # ---------------------------------------------------------------- Go
 step "go vet" go vet ./...
 

@@ -237,9 +237,11 @@ needs no configuration — the Soundiiz handoff is tokenless.
   tests run against committed synthetic fixtures in
   `internal/catalog/testdata/` (regenerate with `python/make_test_catalog.py`);
   `dataset` tests run against an in-process `httptest` server.
-- `scripts/test.sh` additionally compiles every non-Wails `internal/` package
-  with `CGO_ENABLED=0`. This guards the core desktop application as pure Go;
-  the Wails bridge remains the explicit host-GUI boundary.
+- `scripts/test.sh` (Linux/macOS) and `scripts/test.ps1` (Windows) additionally
+  compile every non-Wails `internal/` package with `CGO_ENABLED=0`. This guards
+  the core desktop application as pure Go; the Wails bridge remains the
+  explicit host-GUI boundary. Both run the same Go/frontend gate and validate
+  their platform's script syntax.
 - `catalog/search.go`'s `normalizeSearch` is asserted row-for-row against the
   `search` column Python wrote into the fixture, keeping the two normalizers in
   step.

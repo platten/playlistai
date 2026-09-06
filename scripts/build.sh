@@ -90,7 +90,7 @@ fi
 echo
 info "artifacts in ./bin:"
 shopt -s nullglob
-artifacts=(bin/*.AppImage bin/*.deb bin/*.rpm bin/*.pkg.tar.zst bin/*-installer.exe
+artifacts=(bin/*.AppImage bin/*.deb bin/*.rpm bin/*.pkg.tar.zst bin/*.app bin/*-installer.exe
            bin/*.dmg bin/*.msi bin/*.msix bin/playlist-ai-*.zip bin/playlist-ai-*.tar.gz)
 shopt -u nullglob
 if [ ${#artifacts[@]} -gt 0 ]; then

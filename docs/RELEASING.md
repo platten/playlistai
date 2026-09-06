@@ -159,5 +159,9 @@ Bump `ManifestVersion` in the three template files if the winget schema moves on
   `darwin:create:dmg` / `windows:package` tasks directly, with `codesign` /
   `xcrun notarytool` run directly (not through `wails3 tool sign`) on macOS,
   and `wails3 tool sign` on Windows.
+- Contributor wrappers mirror those native tasks: `scripts/build.sh` packages
+  on Linux/macOS, while `scripts/build.ps1 -Architecture amd64|arm64|all`
+  packages NSIS installers on Windows. They do not sign, notarize, tag, or
+  publish releases.
 - The catalog and the llama.cpp runtime are both set up by the app on first
   launch, so every package format (AppImage included) behaves the same.

@@ -14,7 +14,7 @@ if command -v go >/dev/null 2>&1; then
   export PATH="$PATH:$_gobin"
 fi
 
-# Toolchain versions — keep in sync with .github/workflows/ci.yml.
+# Toolchain versions - keep in sync with .github/workflows/ci.yml.
 # (Consumed by setup.sh / build.sh; not every script uses every one.)
 # shellcheck disable=SC2034
 {
@@ -60,3 +60,18 @@ has()  { command -v "$1" >/dev/null 2>&1; }
 
 # need <cmd> <hint shown if missing>
 need() { has "$1" || die "$1 not found — $2"; }
+
+# Portable dotted-version comparison. macOS ships BSD sort, which does not
+# support GNU sort's -V flag, so setup scripts must not depend on it.
+version_ge() { # version_ge <have> <minimum>
+  local have="${1%%[-+]*}" minimum="${2%%[-+]*}" part_h part_m i
+  local -a have_parts minimum_parts
+  IFS=. read -r -a have_parts <<< "$have"
+  IFS=. read -r -a minimum_parts <<< "$minimum"
+  for i in 0 1 2 3; do
+    part_h="${have_parts[$i]:-0}"; part_m="${minimum_parts[$i]:-0}"
+    [ "$part_h" -gt "$part_m" ] && return 0
+    [ "$part_h" -lt "$part_m" ] && return 1
+  done
+  return 0
+}

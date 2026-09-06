@@ -88,3 +88,6 @@ evaluation with `cmd/intenteval`, including reproducible CPU/GPU settings and
 RTX 5070 Laptop/desktop, RTX 3090 desktop, and RTX 5090 Laptop/desktop capacity
 profiles spanning 8–32 GiB, see
 [Retrieval and Local Intent Model Evaluation](performance-and-model-evaluation.md).
+Use `scripts/benchmark-intent.sh` on Linux/macOS or
+`scripts/benchmark-intent.ps1` on Windows to produce the same versioned JSON
+and Markdown reports without hand-translating command-line arguments.
