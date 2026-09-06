@@ -123,6 +123,41 @@ and Qwen3.5 4B on that machine. The earlier CPU-only benchmark path generated
 about 0.22 tokens/s and timed out; the verified CPU build measured Qwen3.5
 0.8B at about 622 prompt and 74 generation tokens/s.
 
+### Hardware coverage through RTX 5090
+
+The capacity-policy suite covers CPU mode, 4, 8, and 16 GiB GPUs, the observed
+RTX 5060 laptop, NVIDIA's advertised 24 GB
+[RTX 5090 Laptop GPU](https://www.nvidia.com/en-us/geforce/laptops/50-series/),
+and advertised 32 GB
+[desktop RTX 5090](https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5090/).
+Because llama.cpp reports MiB, the reference profiles use 24 and 32 GiB binary
+capacity. The suite also tests every model at exactly
+`weight bytes + reserve` and one byte below that boundary. With nominal
+capacity available and the 1 GiB reserve applied, the expected catalog is:
+
+| Simulated available memory | Recommended models fitting |
+|---|---:|
+| CPU fallback | 2 smallest |
+| 4 GiB | 1 |
+| Observed RTX 5060, 7033 MiB free | 2 |
+| 8 GiB | 3 |
+| 16 GiB | 4 |
+| RTX 5090 Laptop, 24 GiB | all 5 |
+| RTX 5090 desktop, 32 GiB | all 5 |
+
+The policy benchmark was executed on the documented Intel host with 100,000
+iterations per profile and three samples. The RTX 5090 Laptop case took
+406.5–419.4 ns/op and the desktop case 456.2–471.5 ns/op; each used 2,048
+bytes and two allocations per operation. These are CPU measurements of the
+wizard's filtering policy, not simulated GPU-inference performance.
+
+Intent benchmark report schema v2 now records OS/architecture, logical CPU
+count, execution mode, context, thread and GPU-layer settings, plus every
+accelerator ID/name and its lossless total/free byte counts. `-device CUDA0`
+pins a multi-GPU benchmark to the requested llama.cpp device. This makes a
+real RTX 5090 result distinguishable and reproducible; the repository does not
+claim an RTX 5090 inference result until that command is run on one.
+
 ## Reproduction
 
 ```sh
@@ -134,6 +169,10 @@ PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test \
   ./internal/reco/multichannel -run '^$' \
   -bench '^BenchmarkCatalogGeneration$' -benchtime=3x -benchmem -count=3
 
+go test ./internal/intent/modelmgr -run '^$' \
+  -bench '^BenchmarkRecommendationsByHardware$' \
+  -benchtime=100000x -benchmem -count=3
+
 go run ./cmd/intenteval \
   -dataset internal/evaluation/testdata/intent-model-v1.json \
   -backend rules -repeat 3 \
@@ -142,7 +181,8 @@ go run ./cmd/intenteval \
 go run ./cmd/intenteval \
   -dataset internal/evaluation/testdata/intent-model-v1.json \
   -backend llama -model /path/to/model.gguf -model-id artifact-name \
-  -runtime /path/to/llama-server -threads 8 -gpu-layers 0 -repeat 3 \
+  -runtime /path/to/llama-server -threads 8 -gpu-layers 0 \
+  -device CUDA0 -repeat 3 \
   -output /tmp/model-intent.json -markdown /tmp/model-intent.md
 
 # Inspect the same capacity the first-run wizard uses.
@@ -155,7 +195,9 @@ repository if paths, prompts, or session context are sensitive.
 
 ## Remaining limitations
 
-The intent set is small and the local timings represent one CPU/runtime build.
+The intent set is small and the measured inference timings represent one
+CPU/runtime build. The RTX 5090 entries above validate capacity policy and
+benchmark/reporting support; they are not inference measurements from that GPU.
 The repository still lacks sufficient real, temporally held-out listening
 judgments for recommendation-quality tuning. No LLM shortlist reranker was
 implemented: a compatible grounded semantic sidecar was not configured and no

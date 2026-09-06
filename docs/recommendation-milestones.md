@@ -305,3 +305,10 @@ the two smallest recommended models. Llama 3.2 3B and Qwen2.5 3B stay available
 but non-recommended. These five artifacts are not yet covered by the existing
 intent benchmark, so their ordering is not presented as a measured quality
 result.
+
+Hardware validation now covers every model's exact fit boundary and reference
+profiles from CPU/4 GiB through 24/32 GiB RTX 5090-class hardware. A separate
+policy benchmark reports model counts and allocation cost without pretending
+to measure GPU inference. Intent evaluation report v2 records the actual
+llama.cpp device inventory and run settings, and `-device` can pin a multi-GPU
+benchmark to one accelerator.

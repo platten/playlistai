@@ -13,14 +13,41 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const IntentModelReportVersion = 1
+const IntentModelReportVersion = 2
+
+// IntentBenchmarkDevice records an accelerator reported by the exact
+// llama.cpp runtime used for a benchmark. Byte counts are kept as integers so
+// 24 GiB laptop and 32 GiB desktop RTX 5090 devices round-trip losslessly.
+type IntentBenchmarkDevice struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TotalBytes int64  `json:"totalBytes"`
+	FreeBytes  int64  `json:"freeBytes"`
+}
+
+// IntentBenchmarkEnvironment captures the execution settings necessary to
+// compare model runs across CPU and GPU hosts. Accelerator memory is a
+// preflight snapshot, not a peak-VRAM measurement.
+type IntentBenchmarkEnvironment struct {
+	GOOS           string                  `json:"goos"`
+	GOARCH         string                  `json:"goarch"`
+	LogicalCPUs    int                     `json:"logicalCpus"`
+	ExecutionMode  string                  `json:"executionMode"` // cpu | gpu | auto
+	SelectedDevice string                  `json:"selectedDevice,omitempty"`
+	ContextSize    int                     `json:"contextSize"`
+	Threads        int                     `json:"threads"`
+	GPULayers      int                     `json:"gpuLayers"`
+	Devices        []IntentBenchmarkDevice `json:"devices,omitempty"`
+	ProbeError     string                  `json:"probeError,omitempty"`
+}
 
 type IntentModelIdentity struct {
-	ID            string `json:"id"`
-	Path          string `json:"path"`
-	ArtifactBytes int64  `json:"artifactBytes"`
-	SHA256        string `json:"sha256"`
-	Runtime       string `json:"runtime"`
+	ID            string                     `json:"id"`
+	Path          string                     `json:"path"`
+	ArtifactBytes int64                      `json:"artifactBytes"`
+	SHA256        string                     `json:"sha256"`
+	Runtime       string                     `json:"runtime"`
+	Environment   IntentBenchmarkEnvironment `json:"environment"`
 }
 
 type IntentModelRun struct {
@@ -145,7 +172,27 @@ func WriteIntentModelReportJSON(path string, report IntentModelReport) error {
 
 func WriteIntentModelReportMarkdown(path string, report IntentModelReport) error {
 	a := report.Aggregate
-	text := fmt.Sprintf("# Intent Model Evaluation: %s\n\nModel: `%s`  \nArtifact: `%d` bytes, SHA-256 `%s`  \nRuntime: `%s`  \nParser/schema: `%s` / `v%d`\n\n| Runs | Schema-valid | Exact cases | Field accuracy | Median | P95 | Peak RSS |\n|---:|---:|---:|---:|---:|---:|---:|\n| %d | %.3f | %.3f | %.3f | %d ms | %d ms | %d bytes |\n\n", report.DatasetName, report.Model.ID, report.Model.ArtifactBytes, report.Model.SHA256, report.Model.Runtime, report.ParserVersion, report.ContractVersion, a.Runs, a.SchemaValidity, a.ExactCaseAccuracy, a.FieldAccuracy, a.MedianLatencyMillis, a.P95LatencyMillis, a.PeakResidentBytes)
+	env := report.Model.Environment
+	text := fmt.Sprintf("# Intent Model Evaluation: %s\n\nModel: `%s`  \nArtifact: `%d` bytes, SHA-256 `%s`  \nRuntime: `%s`  \nHost: `%s/%s`, %d logical CPUs  \nExecution: `%s`", report.DatasetName, report.Model.ID, report.Model.ArtifactBytes, report.Model.SHA256, report.Model.Runtime, env.GOOS, env.GOARCH, env.LogicalCPUs, env.ExecutionMode)
+	if env.ContextSize > 0 {
+		device := env.SelectedDevice
+		if device == "" {
+			device = "runtime default"
+		}
+		text += fmt.Sprintf(", device `%s`, context %d, threads %d, GPU layers %d", device, env.ContextSize, env.Threads, env.GPULayers)
+	}
+	text += fmt.Sprintf("  \nParser/schema: `%s` / `v%d`\n\n", report.ParserVersion, report.ContractVersion)
+	if len(env.Devices) > 0 {
+		text += "Detected llama.cpp devices:\n\n"
+		for _, device := range env.Devices {
+			text += fmt.Sprintf("- `%s`: %s (%d bytes total, %d bytes free)\n", device.ID, device.Name, device.TotalBytes, device.FreeBytes)
+		}
+		text += "\n"
+	}
+	if env.ProbeError != "" {
+		text += fmt.Sprintf("Device probe warning: `%s`\n\n", strings.NewReplacer("`", "'", "\n", " ").Replace(env.ProbeError))
+	}
+	text += fmt.Sprintf("| Runs | Schema-valid | Exact cases | Field accuracy | Median | P95 | Peak RSS |\n|---:|---:|---:|---:|---:|---:|---:|\n| %d | %.3f | %.3f | %.3f | %d ms | %d ms | %d bytes |\n\n", a.Runs, a.SchemaValidity, a.ExactCaseAccuracy, a.FieldAccuracy, a.MedianLatencyMillis, a.P95LatencyMillis, a.PeakResidentBytes)
 	text += "| Case | Attempt | Schema | Correct fields | Exact | Latency | Error |\n|---|---:|---:|---:|---:|---:|---|\n"
 	for _, run := range report.Cases {
 		errText := strings.NewReplacer("|", "\\|", "\n", " ").Replace(run.Error)

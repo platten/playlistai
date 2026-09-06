@@ -85,8 +85,10 @@ func TestParseDeviceList(t *testing.T) {
 Available devices:
   CUDA0: NVIDIA GeForce RTX 5060 Laptop GPU (4096 MiB, 3832 MiB free)
   Vulkan1: AMD Radeon Graphics (8192 MiB, 7100 MiB free)
+  CUDA1: NVIDIA GeForce RTX 5090 Laptop GPU (24576 MiB, 23800 MiB free)
+  CUDA2: NVIDIA GeForce RTX 5090 (32768 MiB, 31900 MiB free)
 `)
-	if len(got) != 2 {
+	if len(got) != 4 {
 		t.Fatalf("devices = %+v", got)
 	}
 	if got[0].ID != "CUDA0" || got[0].Name != "NVIDIA GeForce RTX 5060 Laptop GPU" || got[0].TotalBytes != 4096<<20 || got[0].FreeBytes != 3832<<20 {
@@ -94,6 +96,12 @@ Available devices:
 	}
 	if got[1].ID != "Vulkan1" || got[1].TotalBytes != 8192<<20 {
 		t.Fatalf("Vulkan device = %+v", got[1])
+	}
+	if got[2].Name != "NVIDIA GeForce RTX 5090 Laptop GPU" || got[2].TotalBytes != 24576<<20 || got[2].FreeBytes != 23800<<20 {
+		t.Fatalf("RTX 5090 Laptop device = %+v", got[2])
+	}
+	if got[3].Name != "NVIDIA GeForce RTX 5090" || got[3].TotalBytes != 32768<<20 || got[3].FreeBytes != 31900<<20 {
+		t.Fatalf("RTX 5090 desktop device = %+v", got[3])
 	}
 	if got := ParseDeviceList("Available devices:\n  (none)\n"); len(got) != 0 {
 		t.Fatalf("no-device output = %+v", got)

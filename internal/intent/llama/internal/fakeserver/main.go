@@ -22,6 +22,7 @@ func main() {
 	_ = flag.Int("ctx-size", 4096, "")
 	_ = flag.Int("threads", 0, "")
 	_ = flag.Int("n-gpu-layers", 0, "")
+	_ = flag.String("device", "", "")
 	flag.Parse()
 
 	if *model == "" {

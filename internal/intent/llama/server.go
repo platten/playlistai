@@ -23,6 +23,7 @@ type Server struct {
 	nCtx    int
 	threads int
 	ngl     int
+	device  string
 	log     *slog.Logger
 
 	mu   sync.Mutex
@@ -39,6 +40,7 @@ type ServerOptions struct {
 	NCtx       int      // context size (0 → 4096)
 	NThreads   int      // 0 → let the runtime decide
 	GPULayers  int      // >0 that many; 0 offload all; <0 force CPU
+	Device     string   // optional llama.cpp device ID, such as CUDA0
 	Logger     *slog.Logger
 }
 
@@ -53,7 +55,7 @@ func newServer(o ServerOptions) *Server {
 	}
 	return &Server{
 		bin: o.BinaryPath, subcmd: o.Subcmd, model: o.ModelPath,
-		nCtx: nctx, threads: o.NThreads, ngl: o.GPULayers, log: log,
+		nCtx: nctx, threads: o.NThreads, ngl: o.GPULayers, device: o.Device, log: log,
 	}
 }
 
@@ -79,6 +81,9 @@ func (s *Server) Start(ctx context.Context) error {
 	)
 	if s.threads > 0 {
 		args = append(args, "--threads", strconv.Itoa(s.threads))
+	}
+	if s.device != "" && s.ngl >= 0 {
+		args = append(args, "--device", s.device)
 	}
 	// GPU offload. 0 (the default) passes nothing — a GPU build of llama.cpp
 	// already offloads every layer by default, and a CPU build has nowhere to

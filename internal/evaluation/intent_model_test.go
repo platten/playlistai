@@ -2,8 +2,11 @@ package evaluation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
@@ -83,6 +86,55 @@ func TestPercentileMillisUsesNearestRank(t *testing.T) {
 	}
 	if got := percentileMillis(values, .95); got != 50 {
 		t.Fatalf("p95 = %d, want 50", got)
+	}
+}
+
+func TestIntentModelReportPreservesRTX5090Environment(t *testing.T) {
+	t.Parallel()
+	report := IntentModelReport{
+		Version: IntentModelReportVersion, DatasetName: "hardware-test",
+		Model: IntentModelIdentity{
+			ID: "test-model",
+			Environment: IntentBenchmarkEnvironment{
+				GOOS: "linux", GOARCH: "amd64", LogicalCPUs: 32,
+				ExecutionMode: "gpu", SelectedDevice: "CUDA0",
+				ContextSize: 4096, Threads: 16, GPULayers: 0,
+				Devices: []IntentBenchmarkDevice{{
+					ID: "CUDA0", Name: "NVIDIA GeForce RTX 5090",
+					TotalBytes: 32768 << 20, FreeBytes: 31900 << 20,
+				}},
+			},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "report.md")
+	if err := WriteIntentModelReportMarkdown(path, report); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, want := range []string{"NVIDIA GeForce RTX 5090", "34359738368 bytes total", "device `CUDA0`", "context 4096"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("report missing %q:\n%s", want, text)
+		}
+	}
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	if err := WriteIntentModelReportJSON(jsonPath, report); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded IntentModelReport
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	got := decoded.Model.Environment.Devices[0]
+	if got.TotalBytes != 32768<<20 || got.FreeBytes != 31900<<20 {
+		t.Fatalf("RTX 5090 memory did not round-trip: %+v", got)
 	}
 }
 

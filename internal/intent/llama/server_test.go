@@ -72,6 +72,29 @@ func TestServerLifecycle(t *testing.T) {
 	}
 }
 
+func TestServerAcceptsExplicitBenchmarkDevice(t *testing.T) {
+	if fakeServerBin == "" {
+		t.Skip("fakeserver not built")
+	}
+	t.Parallel()
+
+	srv := newServer(ServerOptions{
+		BinaryPath: fakeServerBin,
+		ModelPath:  dummyModel(t),
+		GPULayers:  0,
+		Device:     "CUDA0",
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start with explicit device: %v", err)
+	}
+	t.Cleanup(func() { _ = srv.Stop() })
+	if !srv.Alive() {
+		t.Fatal("server with explicit device should be alive")
+	}
+}
+
 func TestServerStartFailsOnMissingBinary(t *testing.T) {
 	t.Parallel()
 	srv := newServer(ServerOptions{BinaryPath: filepath.Join(t.TempDir(), "nope"), ModelPath: dummyModel(t)})
@@ -89,6 +112,7 @@ func TestParserEndToEndWithFakeServer(t *testing.T) {
 	p, err := New(context.Background(), Options{
 		BinaryPath:   fakeServerBin,
 		ModelPath:    dummyModel(t),
+		Device:       "CUDA0",
 		StartTimeout: 15 * time.Second,
 	})
 	if err != nil {

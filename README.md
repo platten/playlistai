@@ -70,6 +70,12 @@ are not recommended. Custom GGUF files remain supported. The curated ordering
 is product policy; the exact five new artifacts have not yet completed the
 application-specific intent benchmark.
 
+Automated capacity tests cover 24 and 32 GiB reference profiles representing
+the RTX 5090 Laptop and desktop GPUs. All five curated weights fit those
+profiles with the reserve; actual choices still use free memory reported by
+llama.cpp. The intent benchmark can pin `-device CUDA0` and records the
+accelerator and execution settings in its report.
+
 ## Measured performance
 
 The production-catalog benchmark used 956,917 tracks on Linux/x86-64, an Intel

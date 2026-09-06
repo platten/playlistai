@@ -84,5 +84,6 @@ semantic feature/model revision when configured. Reproduction requires the
 exact dataset and sidecar artifacts matching those identities.
 
 For production-catalog retrieval benchmarks and artifact-aware local parser
-evaluation with `cmd/intenteval`, see
+evaluation with `cmd/intenteval`, including reproducible CPU/GPU settings and
+24/32 GiB reference profiles for RTX 5090-class hardware, see
 [Retrieval and Local Intent Model Evaluation](performance-and-model-evaluation.md).

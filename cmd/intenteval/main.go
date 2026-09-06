@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -30,7 +31,7 @@ func main() {
 }
 
 func run() error {
-	var datasetPath, modelPath, modelID, runtimePath, outputPath, markdownPath, caseID, backend string
+	var datasetPath, modelPath, modelID, runtimePath, outputPath, markdownPath, caseID, backend, device string
 	var repeat, nctx, threads, gpuLayers int
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
 	flag.StringVar(&backend, "backend", "llama", "parser backend: llama or rules")
@@ -44,6 +45,7 @@ func run() error {
 	flag.IntVar(&nctx, "n-ctx", 4096, "llama context size")
 	flag.IntVar(&threads, "threads", 0, "llama CPU threads; zero lets the runtime decide")
 	flag.IntVar(&gpuLayers, "gpu-layers", -1, "GPU layers; negative forces CPU for comparable runs")
+	flag.StringVar(&device, "device", "", "optional llama.cpp device ID to benchmark, for example CUDA0")
 	flag.Parse()
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
@@ -72,13 +74,21 @@ func run() error {
 	switch backend {
 	case "rules":
 		parser = rules.New()
-		identity = evaluation.IntentModelIdentity{ID: "rules/v3", Runtime: "built-in Go"}
+		identity = evaluation.IntentModelIdentity{
+			ID: "rules/v3", Runtime: "built-in Go",
+			Environment: evaluation.IntentBenchmarkEnvironment{
+				GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, LogicalCPUs: runtime.NumCPU(), ExecutionMode: "cpu",
+			},
+		}
 	case "llama":
 		if modelPath == "" || runtimePath == "" {
 			return fmt.Errorf("-model and -runtime are required for the llama backend")
 		}
 		if modelID == "" {
 			modelID = strings.TrimSuffix(filepath.Base(modelPath), filepath.Ext(modelPath))
+		}
+		if gpuLayers < 0 && device != "" {
+			return fmt.Errorf("-device cannot be combined with negative -gpu-layers")
 		}
 		if err := modelmgr.ValidateGGUF(modelPath); err != nil {
 			return err
@@ -91,12 +101,16 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		localParser, err := llama.New(ctx, llama.Options{BinaryPath: runtimePath, ModelPath: modelPath, NCtx: nctx, NThreads: threads, GPULayers: gpuLayers, StartTimeout: 5 * time.Minute})
+		environment, err := benchmarkEnvironment(ctx, runtimePath, device, nctx, threads, gpuLayers)
+		if err != nil {
+			return err
+		}
+		localParser, err := llama.New(ctx, llama.Options{BinaryPath: runtimePath, ModelPath: modelPath, NCtx: nctx, NThreads: threads, GPULayers: gpuLayers, Device: device, StartTimeout: 5 * time.Minute})
 		if err != nil {
 			return err
 		}
 		parser = localParser
-		identity = evaluation.IntentModelIdentity{ID: modelID, Path: modelPath, ArtifactBytes: stat.Size(), SHA256: hash, Runtime: runtimeVersion(runtimePath)}
+		identity = evaluation.IntentModelIdentity{ID: modelID, Path: modelPath, ArtifactBytes: stat.Size(), SHA256: hash, Runtime: runtimeVersion(runtimePath), Environment: environment}
 		closeParser = func() { _ = localParser.Close() }
 	default:
 		return fmt.Errorf("unknown backend %q", backend)
@@ -126,6 +140,52 @@ func run() error {
 	}
 	fmt.Println()
 	return nil
+}
+
+func benchmarkEnvironment(ctx context.Context, runtimePath, selectedDevice string, nctx, threads, gpuLayers int) (evaluation.IntentBenchmarkEnvironment, error) {
+	environment := evaluation.IntentBenchmarkEnvironment{
+		GOOS: runtime.GOOS, GOARCH: runtime.GOARCH, LogicalCPUs: runtime.NumCPU(),
+		ExecutionMode: "cpu", SelectedDevice: selectedDevice,
+		ContextSize: nctx, Threads: threads, GPULayers: gpuLayers,
+	}
+	if gpuLayers < 0 {
+		return environment, nil
+	}
+	environment.ExecutionMode = "auto"
+	status := llama.DetectRuntime(runtimePath)
+	if !status.Available {
+		environment.ProbeError = "runtime unavailable during device probe"
+		return environment, nil
+	}
+	devices, err := llama.ProbeDevices(ctx, llama.Runtime{Path: status.Path, Kind: status.Kind})
+	if err != nil {
+		environment.ProbeError = err.Error()
+		return environment, nil
+	}
+	for _, device := range devices {
+		environment.Devices = append(environment.Devices, evaluation.IntentBenchmarkDevice{
+			ID: device.ID, Name: device.Name, TotalBytes: device.TotalBytes, FreeBytes: device.FreeBytes,
+		})
+	}
+	if len(devices) == 0 {
+		if selectedDevice != "" {
+			return evaluation.IntentBenchmarkEnvironment{}, fmt.Errorf("llama.cpp reported no accelerator matching -device %q", selectedDevice)
+		}
+		return environment, nil
+	}
+	environment.ExecutionMode = "gpu"
+	if selectedDevice == "" && len(devices) == 1 {
+		environment.SelectedDevice = devices[0].ID
+	}
+	if selectedDevice != "" {
+		for _, device := range devices {
+			if device.ID == selectedDevice {
+				return environment, nil
+			}
+		}
+		return evaluation.IntentBenchmarkEnvironment{}, fmt.Errorf("llama.cpp did not report requested device %q", selectedDevice)
+	}
+	return environment, nil
 }
 
 func fileSHA256(path string) (string, error) {

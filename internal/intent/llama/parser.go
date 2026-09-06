@@ -32,6 +32,9 @@ type Options struct {
 	// the GPU; 0 → leave it to the build (a GPU build already offloads
 	// everything); <0 → force CPU. The runtime labeled "cpu" always forces CPU.
 	GPULayers int
+	// Device optionally pins offload to one llama.cpp device ID (for example,
+	// "CUDA0"). It is primarily useful for reproducible hardware benchmarks.
+	Device string
 	// StartTimeout for the server to become healthy (default 90s).
 	StartTimeout time.Duration
 	Logger       *slog.Logger
@@ -86,7 +89,7 @@ func New(ctx context.Context, o Options) (*Parser, error) {
 		}
 		srv := newServer(ServerOptions{
 			BinaryPath: rt.Path, Subcmd: rt.subcmd(), ModelPath: o.ModelPath,
-			NCtx: o.NCtx, NThreads: o.NThreads, GPULayers: ngl, Logger: log,
+			NCtx: o.NCtx, NThreads: o.NThreads, GPULayers: ngl, Device: o.Device, Logger: log,
 		})
 		sctx, cancel := context.WithTimeout(ctx, timeout)
 		err := srv.Start(sctx)

@@ -124,15 +124,64 @@ func TestCatalogRecommendationsForCommonHardware(t *testing.T) {
 		}
 	}
 
+	all := []string{
+		"qwen3.5-35b-a3b-q4km",
+		"qwen3.5-9b-q4km",
+		"mistral-small-3.1-24b-instruct-q4km",
+		"gemma-3-12b-it-qat-q4km",
+		"qwen3.5-4b-q4km",
+	}
 	reserve := int64(1 << 30)
-	assertIDs("CPU", Recommendations(Catalog(), Hardware{}),
-		"qwen3.5-9b-q4km", "qwen3.5-4b-q4km")
-	assertIDs("4 GiB GPU", Recommendations(Catalog(), Hardware{
-		GPUAvailable: true, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve,
-	}), "qwen3.5-4b-q4km")
-	assertIDs("test RTX 5060", Recommendations(Catalog(), Hardware{
-		GPUAvailable: true, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve,
-	}), "qwen3.5-9b-q4km", "qwen3.5-4b-q4km")
+	tests := []struct {
+		name      string
+		hardware  Hardware
+		wantModel []string
+	}{
+		{name: "CPU", wantModel: []string{"qwen3.5-9b-q4km", "qwen3.5-4b-q4km"}},
+		{name: "4 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-4b-q4km"}},
+		{name: "test RTX 5060 observed free VRAM", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "qwen3.5-4b-q4km"}},
+		{name: "8 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		{name: "16 GiB GPU", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 16 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km", "mistral-small-3.1-24b-instruct-q4km", "gemma-3-12b-it-qat-q4km", "qwen3.5-4b-q4km"}},
+		// NVIDIA advertises 24 GB for the RTX 5090 Laptop GPU and 32 GB for
+		// the desktop RTX 5090. llama.cpp reports capacity in MiB, so these
+		// profiles use the corresponding 24/32 GiB binary-memory values.
+		{name: "RTX 5090 Laptop 24 GiB", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 24 << 30, ReserveBytes: reserve}, wantModel: all},
+		{name: "RTX 5090 desktop 32 GiB", hardware: Hardware{GPUAvailable: true, AvailableVRAMBytes: 32 << 30, ReserveBytes: reserve}, wantModel: all},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			assertIDs(tc.name, Recommendations(Catalog(), tc.hardware), tc.wantModel...)
+		})
+	}
+}
+
+func TestRecommendationsHonorEveryModelFitBoundary(t *testing.T) {
+	t.Parallel()
+	const reserve = int64(1 << 30)
+	for _, model := range Catalog() {
+		if !model.Recommended {
+			continue
+		}
+		t.Run(model.ID, func(t *testing.T) {
+			fits := func(available int64) bool {
+				for _, got := range Recommendations(Catalog(), Hardware{
+					GPUAvailable: true, AvailableVRAMBytes: available, ReserveBytes: reserve,
+				}) {
+					if got.ID == model.ID {
+						return true
+					}
+				}
+				return false
+			}
+			threshold := model.SizeApprox + reserve
+			if !fits(threshold) {
+				t.Fatalf("model should fit at exact weight + reserve threshold %d", threshold)
+			}
+			if fits(threshold - 1) {
+				t.Fatalf("model should not fit one byte below threshold %d", threshold)
+			}
+		})
+	}
 }
 
 func TestValidateGGUF(t *testing.T) {
