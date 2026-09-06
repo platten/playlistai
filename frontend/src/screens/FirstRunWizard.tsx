@@ -4,6 +4,7 @@ import {
   type CatalogInfo,
   type InstalledModel,
   type LlamaRuntimeInfo,
+  type ModelHardwareInfo,
   type ModelInfo,
   type ModelStatus,
 } from "../lib/api";
@@ -187,6 +188,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
   const [onDisk, setOnDisk] = useState<InstalledModel[]>([]);
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
+  const [hardware, setHardware] = useState<ModelHardwareInfo | null>(null);
   const [installing, setInstalling] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,16 +196,19 @@ function ModelStep({ onNext }: { onNext: () => void }) {
   const installProgress = useProgress("llama-install");
 
   const refresh = useCallback(async () => {
-    const [s, r, d, c] = await Promise.all([
+    const [s, r, d, recommendations] = await Promise.all([
       API.GetModelStatus().catch(() => null),
       API.GetLlamaRuntime().catch(() => null),
       API.GetInstalledModels().catch(() => null),
-      API.GetModelCatalog().catch(() => null),
+      API.GetModelRecommendations().catch(() => null),
     ]);
     setStatus(s ?? null);
     setRuntime(r ?? null);
     setOnDisk(d ?? []);
-    if (c) setCatalog(c);
+    if (recommendations) {
+      setCatalog(recommendations.models ?? []);
+      setHardware(recommendations.hardware);
+    }
     return { status: s, runtime: r };
   }, []);
 
@@ -349,6 +354,31 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         </button>
       </div>
 
+      {hardware && (
+        <div className="flex items-start gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-[12px] text-muted">
+          {hardware.gpuAvailable ? (
+            <>
+              <Icon.Check size={14} className="mt-0.5 flex-none text-good" />
+              <span>
+                {hardware.gpuName || "llama.cpp GPU"} · {fmtGB(hardware.vramBytes)} VRAM.
+                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. Models below fit
+                in the {fmtGB(hardware.fitBytes)} available after replacing any active
+                model, with {fmtGB(hardware.reserveBytes)} left for context, KV cache,
+                and compute buffers.
+              </span>
+            </>
+          ) : (
+            <>
+              <Icon.Warn size={14} className="mt-0.5 flex-none text-faint" />
+              <span>
+                This llama.cpp runtime reports no usable GPU. Showing the two smallest
+                recommended models for CPU inference.
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
       {strayModels.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="text-[11px] tracking-[0.08em] text-faint uppercase">Already on disk</div>
@@ -379,7 +409,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
       )}
 
       <div className="flex flex-col gap-2">
-        {catalog.slice(0, 2).map((m) => (
+        {catalog.map((m) => (
           <div
             key={m.id}
             className="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3"
@@ -416,6 +446,12 @@ function ModelStep({ onNext }: { onNext: () => void }) {
             </Button>
           </div>
         ))}
+        {hardware?.gpuAvailable && catalog.length === 0 && (
+          <div className="rounded-card border border-line bg-surface px-3.5 py-3 text-[12px] text-muted">
+            None of the recommended model weights fit with the required VRAM headroom.
+            You can continue in catalog-only mode or choose a custom GGUF in Settings.
+          </div>
+        )}
       </div>
 
       {busy &&

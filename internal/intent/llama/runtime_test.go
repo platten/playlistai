@@ -79,6 +79,27 @@ func TestStagedRuntimes(t *testing.T) {
 	}
 }
 
+func TestParseDeviceList(t *testing.T) {
+	t.Parallel()
+	got := ParseDeviceList(`load_backend: loaded CUDA backend
+Available devices:
+  CUDA0: NVIDIA GeForce RTX 5060 Laptop GPU (4096 MiB, 3832 MiB free)
+  Vulkan1: AMD Radeon Graphics (8192 MiB, 7100 MiB free)
+`)
+	if len(got) != 2 {
+		t.Fatalf("devices = %+v", got)
+	}
+	if got[0].ID != "CUDA0" || got[0].Name != "NVIDIA GeForce RTX 5060 Laptop GPU" || got[0].TotalBytes != 4096<<20 || got[0].FreeBytes != 3832<<20 {
+		t.Fatalf("CUDA device = %+v", got[0])
+	}
+	if got[1].ID != "Vulkan1" || got[1].TotalBytes != 8192<<20 {
+		t.Fatalf("Vulkan device = %+v", got[1])
+	}
+	if got := ParseDeviceList("Available devices:\n  (none)\n"); len(got) != 0 {
+		t.Fatalf("no-device output = %+v", got)
+	}
+}
+
 func TestNewFallsBackToNextRuntime(t *testing.T) {
 	if fakeServerBin == "" {
 		t.Skip("fakeserver not built")

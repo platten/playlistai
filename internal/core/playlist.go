@@ -80,8 +80,9 @@ type PlaylistNotice struct {
 	Actual    int    `json:"actual"`
 }
 
-// Playlist is the output of RecommendationEngine.Build. It is deterministic
-// given (intent, catalog, Seed).
+// Playlist is the output of RecommendationEngine.Build. Reproduction also
+// requires the catalog, algorithm, profile snapshot, and generation context
+// recorded by the bridge alongside this value.
 type Playlist struct {
 	Tracks    []TrackRef       `json:"tracks"`
 	Mode      Mode             `json:"mode"`

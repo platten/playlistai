@@ -9,8 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // errRuntimeMissing is returned by New when no llama runtime can be found.
@@ -49,6 +52,54 @@ type Runtime struct {
 	Path  string
 	Kind  RuntimeKind
 	Label string
+}
+
+// Device is one accelerator that a particular llama.cpp runtime can use.
+// Memory values come from llama.cpp's --list-devices output.
+type Device struct {
+	ID         string
+	Name       string
+	TotalBytes int64
+	FreeBytes  int64
+}
+
+var deviceLine = regexp.MustCompile(`(?m)^\s*([^:\s]+):\s+(.+?)\s+\(([0-9]+)\s+MiB,\s+([0-9]+)\s+MiB free\)\s*$`)
+
+// ProbeDevices asks the runtime itself which accelerator backends it can use.
+// This deliberately does not rely on nvidia-smi or OS GPU inventory: a GPU is
+// useful here only when this exact llama.cpp build can offload to it.
+func ProbeDevices(ctx context.Context, r Runtime) ([]Device, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	args := append(r.subcmd(), "--list-devices")
+	out, err := exec.CommandContext(probeCtx, r.Path, args...).CombinedOutput() //nolint:gosec // validated local runtime
+	devices := ParseDeviceList(string(out))
+	if len(devices) > 0 {
+		return devices, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("llama: list devices: %w", err)
+	}
+	return nil, nil
+}
+
+// ParseDeviceList parses llama.cpp's stable human-readable device rows, such
+// as "CUDA0: NVIDIA GeForce RTX 5060 (4096 MiB, 3900 MiB free)".
+func ParseDeviceList(output string) []Device {
+	matches := deviceLine.FindAllStringSubmatch(output, -1)
+	out := make([]Device, 0, len(matches))
+	for _, match := range matches {
+		totalMiB, errTotal := strconv.ParseInt(match[3], 10, 64)
+		freeMiB, errFree := strconv.ParseInt(match[4], 10, 64)
+		if errTotal != nil || errFree != nil || totalMiB <= 0 {
+			continue
+		}
+		out = append(out, Device{
+			ID: match[1], Name: strings.TrimSpace(match[2]),
+			TotalBytes: totalMiB << 20, FreeBytes: freeMiB << 20,
+		})
+	}
+	return out
 }
 
 func (r Runtime) subcmd() []string {

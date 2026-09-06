@@ -1,6 +1,76 @@
 {
-  "note": "Curated GGUF models for the local intent parser. size/sha256 are pinned against the exact resolve/main URL below (verified 2026-09-04 via the HF LFS content hash, cross-checked by downloading and hashing each file); Download refuses a file that doesn't match.",
+  "note": "Curated GGUF models for the local intent parser. Models are listed in recommendation priority order. Exact resolve/main artifacts, sizes, and Hugging Face LFS SHA-256 values were verified 2026-09-06; Download refuses a file that does not match.",
   "models": [
+    {
+      "id": "qwen3.5-35b-a3b-q4km",
+      "label": "Qwen3.5 35B A3B (Q4_K_M)",
+      "params": "35B MoE / 3B active",
+      "quant": "Q4_K_M",
+      "size_approx": 22016023168,
+      "size": 22016023168,
+      "sha256": "3b46d1066bc91cc2d613e3bc22ce691dd77e6f0d33c9060690d24ce6de494375",
+      "url": "https://huggingface.co/unsloth/Qwen3.5-35B-A3B-GGUF/resolve/main/Qwen3.5-35B-A3B-Q4_K_M.gguf",
+      "license_name": "Apache 2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen3.5-35B-A3B/blob/main/LICENSE",
+      "ram_gb": 24,
+      "recommended": true
+    },
+    {
+      "id": "qwen3.5-9b-q4km",
+      "label": "Qwen3.5 9B (Q4_K_M)",
+      "params": "9B",
+      "quant": "Q4_K_M",
+      "size_approx": 5680522464,
+      "size": 5680522464,
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+      "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf",
+      "license_name": "Apache 2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE",
+      "ram_gb": 8,
+      "recommended": true
+    },
+    {
+      "id": "mistral-small-3.1-24b-instruct-q4km",
+      "label": "Mistral Small 3.1 24B Instruct (Q4_K_M)",
+      "params": "24B",
+      "quant": "Q4_K_M",
+      "size_approx": 14344069408,
+      "size": 14344069408,
+      "sha256": "af466262de92e55d542877e2baea5e8226d2cc67aa70d10e8b4e2b6508f054b1",
+      "url": "https://huggingface.co/Mungert/Mistral-Small-3.1-24B-Instruct-2503-GGUF/resolve/main/Mistral-Small-3.1-24B-Instruct-2503-q4_k_m.gguf",
+      "license_name": "Apache 2.0",
+      "license_url": "https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/blob/main/LICENSE",
+      "ram_gb": 16,
+      "recommended": true
+    },
+    {
+      "id": "gemma-3-12b-it-qat-q4km",
+      "label": "Gemma 3 12B Instruct QAT (Q4_K_M)",
+      "params": "12B",
+      "quant": "Q4_K_M",
+      "size_approx": 7300778656,
+      "size": 7300778656,
+      "sha256": "d58ae910267127a028fb47202a79f1a60781df8ef5e375d90afb2a06097fa7c5",
+      "url": "https://huggingface.co/bartowski/google_gemma-3-12b-it-qat-GGUF/resolve/main/google_gemma-3-12b-it-qat-Q4_K_M.gguf",
+      "license_name": "Gemma Terms of Use",
+      "license_url": "https://ai.google.dev/gemma/terms",
+      "ram_gb": 10,
+      "recommended": true
+    },
+    {
+      "id": "qwen3.5-4b-q4km",
+      "label": "Qwen3.5 4B (Q4_K_M)",
+      "params": "4B",
+      "quant": "Q4_K_M",
+      "size_approx": 2740937888,
+      "size": 2740937888,
+      "sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+      "url": "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+      "license_name": "Apache 2.0",
+      "license_url": "https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE",
+      "ram_gb": 4,
+      "recommended": true
+    },
     {
       "id": "llama-3.2-3b-instruct-q4km",
       "label": "Llama 3.2 3B Instruct (Q4_K_M)",
@@ -13,7 +83,7 @@
       "license_name": "Llama 3.2 Community License",
       "license_url": "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct/blob/main/LICENSE.txt",
       "ram_gb": 4,
-      "recommended": true
+      "recommended": false
     },
     {
       "id": "qwen2.5-3b-instruct-q4km",

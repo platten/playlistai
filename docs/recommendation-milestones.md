@@ -253,9 +253,10 @@ uncertainty estimates and evidence-backed defaults.
 
 Profile-guided work retained exact retrieval and parallelized large catalog
 scans with deterministic shard-local top-K heaps, exact merging, and per-shard
-cancellation. On the 956,917-track production catalog, exact K=64 search fell
-from 83.5–88.9 ms to 10.0–12.0 ms and full 20-track generation from
-433.5–441.5 ms to 115.7–116.8 ms. Serial/parallel scores and order match, so
+cancellation. A 2026-09-06 rerun on the 956,917-track production catalog
+measured exact K=64 search at 81.5–84.0 ms serial versus 9.81–10.05 ms parallel,
+and full 20-track generation at 438.0–440.2 ms versus 111.3–125.3 ms.
+Serial/parallel scores and order match, so
 the optimization changes latency rather than recommendation quality. The exact
 engine adds only 7.66 MB of derived norms; ANN was therefore not implemented.
 
@@ -269,10 +270,9 @@ waiting for connection close.
 
 Across three runs per case, Qwen3.5 0.8B, Qwen2.5 3B, and Llama 3.2 3B all
 failed the documented correctness gate; the strongest reached only 57.1%
-field accuracy and exceeded the 15-second P95 target. No model was promoted,
-the curated manifest remains unchanged, existing installed models remain
-compatible, and rules parsing remains the no-model fallback. No LLM reranker
-was attempted without a configured grounded sidecar and real held-out
+field accuracy and exceeded the 15-second P95 target. No measured model was
+promoted at that point, and rules parsing remains the no-model fallback. No LLM
+reranker was attempted without a configured grounded sidecar and real held-out
 listening judgments.
 
 Implemented capabilities are exact parallel retrieval, reproducible production
@@ -281,3 +281,27 @@ compatibility. Future experiments depend on broader independently labeled
 intent data, consented temporal listening judgments, representative multi-host
 profiles, and grounded descriptor coverage. ANN or an LLM reranker should be
 reconsidered only when those measurements show a concrete need and benefit.
+
+## Post-milestone Runtime and Onboarding Updates
+
+The desktop recommendation runtime is now fully compiled Go. Semantic sidecar
+schema v2 stores the bounded query vocabulary needed by its Unicode-aware Go
+query composer; Python and Sentence Transformers remain offline dataset-builder
+dependencies only. The complete test gate includes a `CGO_ENABLED=0` compile of
+all packages below the Wails bridge to prevent an interpreter or native library
+dependency from entering the core application.
+
+Generate now remains visible in both parser modes. Catalog-only/rules mode
+clearly requires a seed artist or track. A ready local LLM may infer a grounded,
+non-required starting reference when none is explicit; if model parsing fails
+and generation falls back to rules, the catalog seed requirement is restored.
+
+The curated model catalog now contains pinned Q4_K_M artifacts for Qwen3.5 35B
+A3B, Qwen3.5 9B, Mistral Small 3.1 24B, Gemma 3 12B, and Qwen3.5 4B in product
+priority order. The first-run wizard asks its selected llama.cpp binary to
+enumerate devices and free VRAM, retains 1 GiB for context/KV/compute, and shows
+only models whose complete weights fit. With no usable llama.cpp GPU, it shows
+the two smallest recommended models. Llama 3.2 3B and Qwen2.5 3B stay available
+but non-recommended. These five artifacts are not yet covered by the existing
+intent benchmark, so their ordering is not presented as a measured quality
+result.

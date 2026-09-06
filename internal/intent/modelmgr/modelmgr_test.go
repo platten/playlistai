@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,6 +52,87 @@ func TestCatalog(t *testing.T) {
 	if _, ok := Get("nope"); ok {
 		t.Fatal("Get(nope) should miss")
 	}
+	wantPriority := []string{
+		"qwen3.5-35b-a3b-q4km",
+		"qwen3.5-9b-q4km",
+		"mistral-small-3.1-24b-instruct-q4km",
+		"gemma-3-12b-it-qat-q4km",
+		"qwen3.5-4b-q4km",
+	}
+	for i, id := range wantPriority {
+		if i >= len(cat) {
+			t.Fatalf("catalog ended before recommended priority[%d] = %q", i, id)
+		}
+		if cat[i].ID != id || !cat[i].Recommended {
+			t.Fatalf("recommended priority[%d] = %+v, want %q", i, cat[i], id)
+		}
+	}
+	if llamaModel, ok := Get("llama-3.2-3b-instruct-q4km"); !ok || llamaModel.Recommended {
+		t.Fatalf("legacy Llama model must remain available but non-recommended: %+v, %v", llamaModel, ok)
+	}
+}
+
+func TestRecommendationsFitGPUWithHeadroom(t *testing.T) {
+	t.Parallel()
+	models := []Model{
+		{ID: "priority-large", SizeApprox: 8 << 30, Recommended: true},
+		{ID: "priority-medium", SizeApprox: 4 << 30, Recommended: true},
+		{ID: "priority-small", SizeApprox: 2 << 30, Recommended: true},
+		{ID: "legacy", SizeApprox: 1 << 30, Recommended: false},
+	}
+
+	got := Recommendations(models, Hardware{
+		GPUAvailable:       true,
+		AvailableVRAMBytes: 6 << 30,
+		ReserveBytes:       1 << 30,
+	})
+	if len(got) != 2 || got[0].ID != "priority-medium" || got[1].ID != "priority-small" {
+		t.Fatalf("GPU recommendations = %+v", got)
+	}
+}
+
+func TestRecommendationsCPUUsesTwoSmallestInPriorityOrder(t *testing.T) {
+	t.Parallel()
+	models := []Model{
+		{ID: "large", SizeApprox: 8 << 30, Recommended: true},
+		{ID: "small-second", SizeApprox: 3 << 30, Recommended: true},
+		{ID: "medium", SizeApprox: 5 << 30, Recommended: true},
+		{ID: "small-first", SizeApprox: 2 << 30, Recommended: true},
+		{ID: "legacy-tiny", SizeApprox: 1 << 30, Recommended: false},
+	}
+
+	got := Recommendations(models, Hardware{})
+	if len(got) != 2 || got[0].ID != "small-second" || got[1].ID != "small-first" {
+		t.Fatalf("CPU recommendations = %+v", got)
+	}
+}
+
+func TestCatalogRecommendationsForCommonHardware(t *testing.T) {
+	t.Parallel()
+	ids := func(models []Model) []string {
+		out := make([]string, len(models))
+		for i := range models {
+			out[i] = models[i].ID
+		}
+		return out
+	}
+	assertIDs := func(name string, got []Model, want ...string) {
+		t.Helper()
+		gotIDs := ids(got)
+		if strings.Join(gotIDs, ",") != strings.Join(want, ",") {
+			t.Fatalf("%s recommendations = %v, want %v", name, gotIDs, want)
+		}
+	}
+
+	reserve := int64(1 << 30)
+	assertIDs("CPU", Recommendations(Catalog(), Hardware{}),
+		"qwen3.5-9b-q4km", "qwen3.5-4b-q4km")
+	assertIDs("4 GiB GPU", Recommendations(Catalog(), Hardware{
+		GPUAvailable: true, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve,
+	}), "qwen3.5-4b-q4km")
+	assertIDs("test RTX 5060", Recommendations(Catalog(), Hardware{
+		GPUAvailable: true, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve,
+	}), "qwen3.5-9b-q4km", "qwen3.5-4b-q4km")
 }
 
 func TestValidateGGUF(t *testing.T) {

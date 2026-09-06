@@ -4,19 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Playlist AI — a plain-language prompt in, a playlist out</title>
-<meta name="description" content="A local-first desktop app that turns a natural-language prompt into a playlist by walking a ~957k-track music-embedding catalog on your machine, then hands it to Spotify, Qobuz or anywhere via Soundiiz. The model only parses your words — it never picks the songs." />
+<meta name="description" content="A local-first desktop app that turns musical intent into a reproducible playlist using exact multi-channel retrieval, personal taste, diversity selection, and transition-aware sequencing. The optional local model parses language — deterministic Go picks the songs." />
 <meta name="theme-color" content="#0d0d12" />
 <link rel="icon" type="image/svg+xml" href="favicon.svg" />
 <link rel="canonical" href="https://platten.github.io/playlistai/" />
 
 <meta property="og:type" content="website" />
 <meta property="og:title" content="Playlist AI" />
-<meta property="og:description" content="A plain-language prompt in, a playlist out. Local-first · the model never picks the songs · GPL-3.0." />
+<meta property="og:description" content="Local musical intent, transparent recommendations, reproducible playlists. The model never picks the songs." />
 <meta property="og:image" content="https://platten.github.io/playlistai/og.png" />
 <meta property="og:url" content="https://platten.github.io/playlistai/" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Playlist AI" />
-<meta name="twitter:description" content="A plain-language prompt in, a playlist out. Local-first, the model never picks the songs." />
+<meta name="twitter:description" content="Local musical intent, transparent recommendations, reproducible playlists. The model never picks the songs." />
 <meta name="twitter:image" content="https://platten.github.io/playlistai/og.png" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -181,7 +181,7 @@
   .prov { font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; padding: 3px 7px; border-radius: 6px;
     border: 1px solid var(--line-strong); color: var(--faint); white-space: nowrap; }
   .prov.seed { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-quiet); }
-  .prov.noise { color: #d7a54a; border-color: rgba(215,165,74,.35); background: rgba(215,165,74,.10); }
+  .prov.taste { color: #57c98a; border-color: rgba(87,201,138,.35); background: rgba(87,201,138,.10); }
 
   .mock .footbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
   .mock .footbar .hint { font-size: 11.5px; color: var(--faint); flex: 1; min-width: 0;
@@ -203,7 +203,7 @@
   .principle .ic { width: 30px; height: 30px; color: var(--accent-2); }
 
   /* how it works */
-  .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
   .step { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--card); position: relative; }
   .step .n { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
   .step h3 { margin: 8px 0 6px; font-size: 1rem; }
@@ -223,6 +223,27 @@
   .feature h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
   .feature h3 svg { width: 18px; height: 18px; color: var(--accent-2); flex: none; }
   .feature p { margin: 0; color: var(--muted); font-size: .93rem; }
+
+  /* measured performance */
+  .bench-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+  .metric { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--card); }
+  .metric .value { display: block; margin-bottom: 4px; color: var(--accent-2); font-family: var(--mono); font-size: 1.45rem; line-height: 1.2; }
+  .metric .label { color: var(--muted); font-size: .9rem; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
+  .bench-table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: .9rem; }
+  .bench-table th, .bench-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line); }
+  .bench-table tr:last-child td { border-bottom: 0; }
+  .bench-table th { color: var(--faint); font-size: .75rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+  .bench-table td { color: var(--muted); }
+  .bench-table td:first-child { color: var(--text); }
+  .bench-table .now { color: var(--ok); font-family: var(--mono); }
+  .bench-note { margin: 16px 0 0; color: var(--faint); font-size: .84rem; max-width: 78ch; }
+  .model-panel { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; background: var(--card); }
+  .model-panel h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .model-panel p { margin: 0; color: var(--muted); font-size: .92rem; }
+  .model-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; padding: 0; list-style: none; counter-reset: models; }
+  .model-list li { counter-increment: models; border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; color: var(--muted); font-size: .84rem; }
+  .model-list li::before { content: counter(models) ". "; color: var(--accent-2); font-family: var(--mono); }
 
   /* privacy */
   .privacy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
@@ -271,7 +292,7 @@
   @media (max-width: 900px) {
     .hero-grid { grid-template-columns: 1fr; }
     .hero .mock { order: 2; }
-    .principles, .flow, .features { grid-template-columns: 1fr 1fr; }
+    .principles, .flow, .features, .bench-grid { grid-template-columns: 1fr 1fr; }
     .privacy-grid, .platforms { grid-template-columns: 1fr; }
     .nav .links { display: none; }
     .menu-toggle { display: inline-flex; }
@@ -282,7 +303,7 @@
     .nav.open .links a { padding: 10px; }
   }
   @media (max-width: 560px) {
-    .principles, .flow, .features { grid-template-columns: 1fr; }
+    .principles, .flow, .features, .bench-grid { grid-template-columns: 1fr; }
     .hero .cta { flex-direction: column; align-items: stretch; }
     .hero .cta .btn { justify-content: center; }
   }
@@ -298,6 +319,7 @@
     <nav class="links" aria-label="Primary">
       <a href="#how">How it works</a>
       <a href="#features">Features</a>
+      <a href="#performance">Performance</a>
       <a href="#privacy">Privacy</a>
       <a href="#build">Build from source</a>
       <a href="https://github.com/platten/playlistai">GitHub</a>
@@ -322,10 +344,10 @@
         <span class="eyebrow">Local-first · Desktop · GPL-3.0</span>
         <h1>A plain-language prompt in,<br /><span class="grad">a playlist out.</span></h1>
         <p class="lead">
-          Type <em>“upbeat instrumental stuff like Justice, 20 tracks.”</em>
-          A model on your machine turns that into an intent; a vector walk over a
-          locally-stored ~957k-track music-embedding catalog picks the songs.
-          Then hand it to Spotify, Qobuz or anywhere via Soundiiz.
+          Describe a sound, a mood, exclusions, required tracks, or a journey.
+          Playlist AI resolves that intent, retrieves from a local ~957k-track
+          catalog, and builds a diverse, smoothly ordered playlist you can explain
+          and replay. Then hand it to Spotify, Qobuz or anywhere via Soundiiz.
         </p>
         <div class="cta">
           <a class="btn btn-primary" href="https://github.com/platten/playlistai/releases">
@@ -338,8 +360,8 @@
           </a>
         </div>
         <p class="subnote">
-          macOS · Windows · Linux. First launch downloads the catalog (~210&nbsp;MB) and
-          installs <code>llama.cpp</code> — behind progress bars, no account.
+          macOS · Windows · Linux. No account. The catalog is one ~210&nbsp;MB download;
+          a local language model is optional.
         </p>
       </div>
 
@@ -347,24 +369,24 @@
       <div class="mock reveal" role="img" aria-label="A mock of the app: a prompt box, the parsed intent shown as chips, and a generated playlist with per-track provenance.">
         <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:6px">Playlist AI</span></div>
         <div class="body">
-          <div class="prompt">upbeat instrumental tracks like Justice, leaning 90s, about 20 songs — keep it a little unpredictable<span class="cur"></span></div>
+          <div class="prompt">ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone<span class="cur"></span></div>
           <div class="chips" aria-label="Parsed intent">
-            <span class="chip accent">seed · Justice</span>
-            <span class="chip"><span class="lbl">count</span> <b>20</b></span>
-            <span class="chip"><span class="lbl">creativity</span> <b>0.62</b></span>
-            <span class="chip"><span class="lbl">noise</span> <b>0.20</b></span>
-            <span class="chip"><span class="lbl">mode</span> <b>similar</b></span>
+            <span class="chip accent">reference · inferred locally</span>
+            <span class="chip"><span class="lbl">mood</span> <b>relaxing</b></span>
+            <span class="chip"><span class="lbl">texture</span> <b>microdetail · sparkle</b></span>
+            <span class="chip"><span class="lbl">exclude</span> <b>sleepy · abstract drone</b></span>
+            <span class="chip"><span class="lbl">count</span> <b>20 total</b></span>
           </div>
           <div class="rows">
-            <div class="row"><span class="idx">01</span><span class="t">Genesis <span class="a">· Justice</span></span><span class="prov seed">seed</span></div>
-            <div class="row"><span class="idx">02</span><span class="t">Rerun <span class="a">· SebastiAn</span></span><span class="prov">nearest</span></div>
-            <div class="row"><span class="idx">03</span><span class="t">Tetra <span class="a">· Kavinsky</span></span><span class="prov noise">noise-jump</span></div>
-            <div class="row"><span class="idx">04</span><span class="t">Roygbiv <span class="a">· Boards of Canada</span></span><span class="prov">nearest</span></div>
-            <div class="row"><span class="idx">05</span><span class="t">Star Guitar <span class="a">· The Chemical Brothers</span></span><span class="prov">nearest</span></div>
+            <div class="row"><span class="idx">01</span><span class="t">Two Thousand and Seventeen <span class="a">· Four Tet</span></span><span class="prov seed">reference</span></div>
+            <div class="row"><span class="idx">02</span><span class="t">Olson <span class="a">· Boards of Canada</span></span><span class="prov">audio + co-occur</span></div>
+            <div class="row"><span class="idx">03</span><span class="t">Archangel <span class="a">· Burial</span></span><span class="prov taste">taste cluster</span></div>
+            <div class="row"><span class="idx">04</span><span class="t">Cirrus <span class="a">· Bonobo</span></span><span class="prov">transition</span></div>
+            <div class="row"><span class="idx">05</span><span class="t">La femme d’argent <span class="a">· Air</span></span><span class="prov">diversity pick</span></div>
           </div>
         </div>
         <div class="footbar">
-          <span class="hint">Enter to generate · sliders re-run instantly, no re-parse</span>
+          <span class="hint">Same intent + catalog + profile + seed = same playlist</span>
           <span class="fake-btn">Generate playlist</span>
         </div>
       </div>
@@ -383,17 +405,17 @@
         <div class="principle reveal">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
           <h3>Local-first core</h3>
-          <p>Prompt → intent → playlist runs entirely offline. A local <code>llama.cpp</code> model, or a built-in rules parser if you skip the model, plus a vector walk over a catalog on your disk.</p>
+          <p>Prompt → intent → playlist runs locally. The desktop core is compiled Go; an optional <code>llama.cpp</code> model parses language, and the built-in rules mode works without it.</p>
         </div>
         <div class="principle reveal">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9L9.5 8 12 3Z"/></svg>
           <h3>The model never picks songs</h3>
-          <p>Its whole job is text → a small structured intent. It never sees the catalog and never ranks tracks. Selection is deterministic Go — same prompt and seed, same playlist.</p>
+          <p>Its whole job is text → structured musical intent. It never sees the catalog or ranks tracks. Every pick comes from transparent retrieval, eligibility, ranking, and sequencing code.</p>
         </div>
         <div class="principle reveal">
           <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          <h3>Then it leaves</h3>
-          <p>When you're happy, resolve ISRCs via MusicBrainz and hand off to Soundiiz — a tokenless browser handoff — or export a CSV you import yourself.</p>
+          <h3>Your feedback stays yours</h3>
+          <p>Likes, dislikes, request-only feedback, exposures, taste clusters, and history live in local SQLite. Generated or briefly previewed tracks are never silently treated as feedback.</p>
         </div>
       </div>
     </div>
@@ -404,33 +426,39 @@
     <div class="wrap">
       <div class="section-head reveal">
         <span class="kicker">How it works</span>
-        <h2>Four steps, and only the last one is online.</h2>
+        <h2>From musical meaning to an ordered playlist.</h2>
+        <p>Each boundary has one job, so hard rules cannot be blurred into preferences and every selected track can carry real scoring evidence.</p>
       </div>
       <div class="flow">
         <div class="step reveal">
           <span class="n">01</span>
-          <h3>Prompt</h3>
-          <p>Name a seed artist and describe the rest in plain language. A live preview shows the parse as you type.</p>
+          <h3>Interpret</h3>
+          <p>Preserve references, required tracks, mood, texture, exclusions, count, journey, and source evidence in a versioned intent.</p>
         </div>
         <div class="step reveal">
           <span class="n">02</span>
-          <h3>Intent</h3>
-          <p>The parser emits <code>MusicIntent</code>: seeds, count, mode, and the creativity / noise / lookback knobs — nothing else.</p>
+          <h3>Resolve</h3>
+          <p>Match artists and tracks separately, Unicode intact. Exact matches win; material ambiguity is shown instead of guessed away.</p>
         </div>
         <div class="step reveal">
           <span class="n">03</span>
-          <h3>Vector walk</h3>
-          <p>Resolve seeds against the catalog, then step outward by blended-cosine nearest-neighbour, with a dash of Gaussian noise and artist de-duping.</p>
+          <h3>Retrieve &amp; rank</h3>
+          <p>Search each reference in both embedding spaces, add taste clusters and bounded exploration, then score transparent components.</p>
         </div>
         <div class="step reveal">
           <span class="n">04</span>
+          <h3>Select &amp; order</h3>
+          <p>Apply hard exclusions and recording dedup, select diverse relevant tracks with MMR, then optimize transitions and waypoints.</p>
+        </div>
+        <div class="step reveal">
+          <span class="n">05</span>
           <h3>Export</h3>
-          <p>Optionally enrich with MusicBrainz, then Soundiiz handoff or CSV. This is the only step that needs the network.</p>
+          <p>Preview, enrich with MusicBrainz, or use Soundiiz. CSV stays local; every network action is optional and explicit.</p>
         </div>
       </div>
       <div class="invariant reveal">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4Z"/><path d="m9 12 2 2 4-4"/></svg>
-        <span><b>Invariant:</b> prompt → playlist is 100% local. The LLM only does text → intent; every track choice is made by deterministic code you can read.</span>
+        <span><b>Invariant:</b> the LLM only does text → intent. Hard exclusions run before ranking, exposures are not likes, and the same catalog, algorithm, intent, profile snapshot, and seed reproduce the same result.</span>
       </div>
     </div>
   </section>
@@ -440,8 +468,8 @@
     <div class="wrap">
       <div class="section-head reveal">
         <span class="kicker">Details</span>
-        <h2>Everything you'd want in the box.</h2>
-        <p>Built on the Deej-AI embedding technique, wrapped in a native desktop app.</p>
+        <h2>More control, without pretending to know more.</h2>
+        <p>The pipeline uses only available evidence, reports missing capabilities, and keeps the original Deej-AI walk as a versioned evaluation baseline.</p>
       </div>
       <div class="features">
         <div class="feature reveal">
@@ -449,37 +477,103 @@
           <p>Derived from the Deej-AI dataset. A ~210&nbsp;MB compressed archive the app downloads once and decompresses into your data dir. Not in the repo, not in the installer.</p>
         </div>
         <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg>Two spaces, one slider</h3>
-          <p>Every track has a playlist-co-occurrence embedding and an audio-content embedding. <b>Creativity</b> blends them; <b>Noise</b> makes the walk wander.</p>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg>Multi-channel retrieval</h3>
+          <p>Each reference independently searches audio and playlist-co-occurrence space. Taste clusters and bounded exploration contribute separate candidates with provenance.</p>
         </div>
         <div class="feature reveal">
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 10 6l4 8 2-4 4 8"/></svg>Similar &amp; journey modes</h3>
-          <p>One seed walks outward from that sound. Two or more seeds interpolate a path between them — a gradual crossfade across the catalog.</p>
+          <p>One or many references can anchor a playlist. Required tracks stay distinct, waypoint order is preserved, and the requested count always means total output tracks.</p>
         </div>
         <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 3"/></svg>Instant, reproducible</h3>
-          <p>Move a slider and the walk re-runs immediately — no re-parse. A pinned seed makes any playlist replayable, and “Regenerate” rolls a fresh one.</p>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 3"/></svg>Responsive &amp; reproducible</h3>
+          <p>Initial results are reused, stale work is cancelled, and sliders retain the full intent. Catalog, algorithm, profile snapshot, context, and a lossless seed identify each build.</p>
         </div>
         <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/></svg>Local LLM, optional</h3>
-          <p>On first run the wizard installs <code>llama.cpp</code> — a GPU build (CUDA / ROCm / Vulkan / Metal) plus a CPU fallback. Pick a curated GGUF or bring your own. No model? The rules parser still works.</p>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/></svg>Hardware-aware local models</h3>
+          <p>The wizard asks llama.cpp for usable GPUs and free VRAM, reserves 1&nbsp;GiB for context/KV, and lists only complete weights that fit. CPU mode shows the two smallest choices.</p>
+        </div>
+        <div class="feature reveal">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/><path d="M5 5v14"/></svg>Explicit local feedback</h3>
+          <p>Like, dislike, more-like, less-like, acceptance, and removal are explicit events. Recency-weighted positive and negative clusters preserve multiple tastes.</p>
+        </div>
+        <div class="feature reveal">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>Hard rules stay hard</h3>
+          <p>Artist/track exclusions and recording duplicates are eligibility rules, never soft penalties. Exhaustion returns a visible partial-result reason instead of an ineligible fallback.</p>
+        </div>
+        <div class="feature reveal">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7"/><ellipse cx="12" cy="7" rx="8" ry="3"/></svg>Grounded semantics, optional</h3>
+          <p>A versioned sidecar can add reviewed descriptions and facets. Missing evidence stays unknown; unsupported phrases remain in the intent instead of becoming fabricated metadata.</p>
+        </div>
+        <div class="feature reveal">
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9L9.5 8 12 3Z"/></svg>History &amp; continuing radio</h3>
+          <p>History stores the complete result for exact replay. Continuing radio retains the original anchor while incorporating recent selections and relevant taste clusters.</p>
         </div>
         <div class="feature reveal">
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/><path d="M5 5v14"/></svg>Soundiiz &amp; CSV export</h3>
-          <p>A tokenless Soundiiz browser handoff writes straight to your streaming service, or download a Soundiiz-compatible CSV. ISRCs resolved via MusicBrainz first.</p>
+          <p>Resolve ISRCs through cached, rate-limited MusicBrainz enrichment, use a tokenless Soundiiz browser handoff, or download a compatible CSV.</p>
         </div>
         <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>30-second previews</h3>
-          <p>Deezer's public preview API, with a bundled Spotify-CDN fallback, and a mini player — no API key. Or turn playback off entirely.</p>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>Optional 30-second previews</h3>
+          <p>Use Deezer's public preview lookup, the URL already stored in the catalog, or turn playback off. Preview behavior never becomes implicit taste feedback.</p>
         </div>
         <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7"/><ellipse cx="12" cy="7" rx="8" ry="3"/></svg>Local playlist history</h3>
-          <p>Every generation is saved to a local SQLite file with a short auto-title, and any past prompt can seed a new one.</p>
+          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 9 9l4 5 3-4 4 8"/></svg>Evaluation built in</h3>
+          <p>A repeatable harness measures intent, resolution, retrieval, ranking, hard violations, diversity, transitions, reproducibility, and stage latency without calling synthetic data musical proof.</p>
         </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9L9.5 8 12 3Z"/></svg>Surprise me</h3>
-          <p>One click generates from a random curated prompt — a fast way to explore the catalog without typing.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PERFORMANCE -->
+  <section id="performance">
+    <div class="wrap">
+      <div class="section-head reveal">
+        <span class="kicker">Measured, not guessed</span>
+        <h2>Exact retrieval in about 10 milliseconds.</h2>
+        <p>Executed against the 956,917-track production catalog on Linux/x86-64, an Intel Core Ultra 9 285H, 16&nbsp;GB RAM, and Go&nbsp;1.27.</p>
+      </div>
+      <div class="bench-grid">
+        <div class="metric reveal">
+          <span class="value">9.81–10.05 ms</span>
+          <span class="label">Exact K=64 retrieval, down from 81.5–84.0&nbsp;ms</span>
         </div>
+        <div class="metric reveal">
+          <span class="value">111.3–125.3 ms</span>
+          <span class="label">Complete 20-track generation, down from 438.0–440.2&nbsp;ms</span>
+        </div>
+        <div class="metric reveal">
+          <span class="value">Recall@K 1.0</span>
+          <span class="label">Parallel and serial exact scans return identical scores and order</span>
+        </div>
+      </div>
+      <div class="table-wrap reveal">
+        <table class="bench-table">
+          <thead>
+            <tr><th>Intent parser</th><th>Schema valid</th><th>Field accuracy</th><th>Median / P95</th><th>Peak RSS</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Rules v2</td><td class="now">100%</td><td>46.4%</td><td>&lt;1 / &lt;1 ms</td><td>n/a</td></tr>
+            <tr><td>Qwen3.5 0.8B Q4_0</td><td class="now">100%</td><td>25.0%</td><td>2.45 / 6.24 s</td><td>1.13 GiB</td></tr>
+            <tr><td>Qwen2.5 3B Q4_K_M</td><td>91.7%</td><td>45.2%</td><td>9.77 / 15.10 s</td><td>3.35 GiB</td></tr>
+            <tr><td>Llama 3.2 3B Q4_K_M</td><td>91.7%</td><td>57.1%</td><td>10.26 / 19.71 s</td><td>3.76 GiB</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="bench-note reveal">
+        Retrieval was rerun on the current tree on 2026-09-06 with three samples of three iterations each. The 12-case intent set also ran each tested model three times; none met the documented correctness and latency gate. The five newly curated model artifacts have not yet run that application-specific benchmark, so their requested priority is not presented as measured quality. The repository has no real listening judgments yet; synthetic fixtures validate execution and leakage guards, not musical recommendation quality.
+        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md">Methods, reproduction commands, and limitations</a>.
+      </p>
+      <div class="model-panel reveal">
+        <h3>Hardware-aware model setup</h3>
+        <p>The wizard keeps this priority order, then filters it using free memory reported by the installed llama.cpp backend. A full GGUF must fit on one GPU with 1&nbsp;GiB still available for context, KV cache, and compute.</p>
+        <ol class="model-list">
+          <li>Qwen3.5 35B A3B</li>
+          <li>Qwen3.5 9B</li>
+          <li>Mistral Small 3.1 24B</li>
+          <li>Gemma 3 12B</li>
+          <li>Qwen3.5 4B</li>
+        </ol>
+        <p>Measured example: the test RTX&nbsp;5060 Laptop GPU reports 8123&nbsp;MiB total and 7033&nbsp;MiB free through llama.cpp, so Qwen3.5&nbsp;9B and 4B fit with the reserve. If no usable GPU backend is reported, those same two smallest recommended models are offered for CPU use. Legacy Llama&nbsp;3.2&nbsp;3B remains available in Settings, but is not recommended.</p>
       </div>
     </div>
   </section>
@@ -497,16 +591,16 @@
           <h3>Stays on your machine</h3>
           <ul>
             <li>Your prompts and parsed intents</li>
-            <li>The model, and all inference</li>
-            <li>The recommendation catalog and the walk</li>
-            <li>Playlist history (a local SQLite file)</li>
-            <li>Preferences and the MusicBrainz cache</li>
+            <li>The optional model, and all intent inference</li>
+            <li>Retrieval, ranking, selection, and sequencing</li>
+            <li>Playlist history, explicit feedback, and taste profiles</li>
+            <li>Preferences, exposures, and the MusicBrainz cache</li>
           </ul>
         </div>
         <div class="pcard reveal">
           <h3>Leaves only when you act</h3>
           <ul>
-            <li>First launch: downloads the catalog archive and the <code>llama.cpp</code> installer</li>
+            <li>Setup: downloads the catalog; llama.cpp and a model only if you choose them</li>
             <li>Enrichment: track + artist names to MusicBrainz for ISRCs</li>
             <li>Soundiiz handoff: playlist title and track/artist names</li>
             <li>Previews: a track lookup to Deezer's public API</li>
@@ -524,7 +618,8 @@
         <h2 style="margin-top:12px">Download for your platform</h2>
         <p style="color:var(--muted);margin-top:12px;max-width:60ch">
           Grab an installer from the GitHub Releases page. Portable archives of the raw
-          binary are attached too.
+          binary are attached too. Generate stays available without a model: catalog-only
+          mode simply asks you to name a seed artist or track.
         </p>
         <div class="platforms">
           <div class="platform">
@@ -558,7 +653,7 @@
       <div class="section-head reveal">
         <span class="kicker">For developers</span>
         <h2>Build it from source.</h2>
-        <p>No Git LFS, no large blobs. The Go core tests need only Go; the desktop app needs the Wails v3 CLI.</p>
+        <p>No Git LFS, no large blobs, and no Python runtime. The compiled Go core tests need only Go; the desktop shell needs the Wails v3 CLI.</p>
       </div>
       <div class="code reveal">
         <button class="copy" id="copyBtn" type="button">Copy</button>
@@ -573,10 +668,10 @@ wails3 build       <span class="c"># bin/playlist-ai</span>
 wails3 package     <span class="c"># per-OS installers</span></pre>
       </div>
       <p style="color:var(--faint);font-size:13px;margin-top:16px">
-        Architecture, the catalog pipeline, and the release process are documented in
+        Architecture, catalog, and evaluation details are documented in
         <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md</a>,
         <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/CATALOG.md">CATALOG.md</a>, and
-        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/RELEASING.md">RELEASING.md</a>.
+        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/evaluation.md">EVALUATION.md</a>.
       </p>
     </div>
   </section>
@@ -606,6 +701,8 @@ wails3 package     <span class="c"># per-OS installers</span></pre>
         <a href="https://github.com/platten/playlistai/blob/main/README.md">README</a>
         <a href="https://github.com/platten/playlistai/blob/main/docs/ARCHITECTURE.md">Architecture</a>
         <a href="https://github.com/platten/playlistai/blob/main/docs/CATALOG.md">Catalog</a>
+        <a href="https://github.com/platten/playlistai/blob/main/docs/evaluation.md">Evaluation</a>
+        <a href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md">Benchmarks</a>
         <a href="https://github.com/platten/playlistai/blob/main/docs/RELEASING.md">Releasing</a>
       </div>
       <div class="fcol">

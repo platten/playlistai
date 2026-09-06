@@ -4,8 +4,9 @@
 
 Milestone 10 measured the 956,917-track production catalog on Linux/x86-64,
 an Intel Core Ultra 9 285H (16 logical CPUs), 16 GB RAM, Go 1.27, and the
-versioned intent contract `v5`. These are local measurements, not universal
-desktop guarantees.
+versioned intent contract `v5`. The retrieval results below were rerun on the
+current tree on 2026-09-06 with three samples of three iterations each. These
+are local measurements, not universal desktop guarantees.
 
 A default local model must achieve 100% schema validity, at least 90% labeled
 field accuracy, and exact results for negation, required/reference separation,
@@ -25,18 +26,18 @@ every shard. Small catalogs remain serial.
 
 | Measurement | Serial exact | Parallel exact |
 |---|---:|---:|
-| Search, K=64 | 83.5–88.9 ms | 10.0–12.0 ms |
-| 20-track full generation | 433.5–441.5 ms | 115.7–116.8 ms |
-| Search allocations | 8.8 KB/op | 138–141 KB/op |
+| Search, K=64 | 81.5–84.0 ms | 9.81–10.05 ms |
+| 20-track full generation | 438.0–440.2 ms | 111.3–125.3 ms |
+| Search allocations | 8.8 KB/op | 137.9–141.0 KB/op |
 
-Engine construction takes 98–112 ms and allocates 7,659,584 bytes: two
+Engine construction takes 86.8–88.7 ms and allocates 7,659,584 bytes: two
 `float32` inverse norms per track. It builds no persistent index. Parallel and
 serial output scores and ordering match exactly in randomized regression tests,
 so relative Recall@K is 1.0 and ranking quality is unchanged by this
 optimization. This is a correctness statement, not musical-quality evidence.
 
 An ANN backend was not added. After optimization, exact retrieval is about 10
-ms per query and full generation about 116 ms; ANN would add index build cost,
+ms per query and full generation about 111–125 ms; ANN would add index build cost,
 memory, versioning, approximate-recall risk, and separate indexes for the two
 incompatible vector spaces without addressing the current bottleneck. Revisit
 ANN only if representative desktop profiles again show retrieval dominating
@@ -60,13 +61,46 @@ parsing.
 | Qwen2.5 3B Q4_K_M | 91.7% | 25.0% | 45.2% | 9.77 / 15.10 s | 3.35 GiB |
 | Llama 3.2 3B Q4_K_M | 91.7% | 33.3% | 57.1% | 10.26 / 19.71 s | 3.76 GiB |
 
-No downloadable model meets the gate. Llama 3.2 3B is the most accurate, but
-still frequently loses required-track separation, context, exclusions, or
-evidence. Qwen3.5 0.8B is the smallest and fastest, but loses most labeled
-meaning. The operational default therefore remains the deterministic rules
-fallback when no user-selected model is active. Existing installed models stay
-usable and the curated manifest is unchanged; the evaluation does not justify
-promoting a new artifact.
+No measured model meets the gate. Llama 3.2 3B was the most accurate in this
+small run, but still frequently lost required-track separation, context,
+exclusions, or evidence. Qwen3.5 0.8B was the smallest and fastest, but lost
+most labeled meaning. The operational default therefore remains the
+deterministic rules fallback when no user-selected model is active.
+
+The curated download catalog now includes, in product recommendation order,
+Qwen3.5 35B A3B, Qwen3.5 9B, Mistral Small 3.1 24B, Gemma 3 12B, and Qwen3.5
+4B as pinned Q4_K_M artifacts. This ordering is a curated policy, not a result
+of the small intent benchmark above; those exact artifacts have not yet been
+run through the application-specific evaluation set. Llama 3.2 3B and Qwen2.5
+3B remain available for compatibility but are not recommended.
+
+| Curated recommendation | Pinned Q4_K_M bytes | Intent benchmark |
+|---|---:|---|
+| Qwen3.5 35B A3B | 22,016,023,168 | Not yet run |
+| Qwen3.5 9B | 5,680,522,464 | Not yet run |
+| Mistral Small 3.1 24B | 14,344,069,408 | Not yet run |
+| Gemma 3 12B | 7,300,778,656 | Not yet run |
+| Qwen3.5 4B | 2,740,937,888 | Not yet run |
+
+The manifest pins each exact Hugging Face LFS size and SHA-256. Resolve URLs
+were checked successfully without downloading the files. Runtime/model-family
+compatibility was checked against the [llama.cpp supported-model and backend
+documentation](https://github.com/ggml-org/llama.cpp), the official
+[Qwen3.5 35B A3B](https://huggingface.co/Qwen/Qwen3.5-35B-A3B),
+[Qwen3.5 9B](https://huggingface.co/Qwen/Qwen3.5-9B), and
+[Qwen3.5 4B](https://huggingface.co/Qwen/Qwen3.5-4B) model cards,
+[Mistral Small 3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503),
+and the official [Gemma 3 QAT GGUF](https://huggingface.co/google/gemma-3-12b-it-qat-q4_0-gguf).
+
+The first-run wizard filters recommendations using accelerator memory reported
+by its selected llama.cpp binary. A GPU model is offered only when its complete
+GGUF fits in one enumerated device's free memory (plus the reclaimable active
+model when switching) with 1 GiB held back for context, KV cache, and compute
+buffers. If llama.cpp reports no usable GPU, the wizard offers the two smallest
+recommendations. Settings continues to expose
+the full catalog and custom GGUF selection. Artifact size is a conservative
+weight-fit proxy, not a promise that every context size or backend allocation
+will succeed.
 
 Compatibility was checked against official model documentation for
 [Qwen2.5 3B Instruct](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct),
@@ -82,10 +116,12 @@ The downloaded Qwen3.5 artifact hash was
 `57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf`;
 the two installed 3B artifacts matched their already-pinned manifest hashes.
 
-The previously installed CUDA-capable runtime could not initialize against the
-host driver and its CPU fallback generated only about 0.22 tokens/s. Those
-timeouts were discarded. The verified CPU build measured Qwen3.5 at about 622
-prompt and 74 generation tokens/s.
+Host verification on the RTX 5060 laptop reported 8151 MiB total / 7899 MiB
+free through `nvidia-smi`, and its llama.cpp CUDA backend reported 8123 MiB
+total / 7033 MiB free. With the 1 GiB reserve, the wizard offers Qwen3.5 9B
+and Qwen3.5 4B on that machine. The earlier CPU-only benchmark path generated
+about 0.22 tokens/s and timed out; the verified CPU build measured Qwen3.5
+0.8B at about 622 prompt and 74 generation tokens/s.
 
 ## Reproduction
 
@@ -108,6 +144,10 @@ go run ./cmd/intenteval \
   -backend llama -model /path/to/model.gguf -model-id artifact-name \
   -runtime /path/to/llama-server -threads 8 -gpu-layers 0 -repeat 3 \
   -output /tmp/model-intent.json -markdown /tmp/model-intent.md
+
+# Inspect the same capacity the first-run wizard uses.
+nvidia-smi --query-gpu=name,memory.total,memory.free --format=csv
+llama serve --list-devices
 ```
 
 Reports contain artifact hashes and local paths; keep them outside the

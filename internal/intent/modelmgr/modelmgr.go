@@ -13,7 +13,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 
 	_ "embed"
 
@@ -47,23 +49,35 @@ type manifest struct {
 	Models []Model `json:"models"`
 }
 
+// Hardware describes the device capacity relevant to model recommendations.
+// A GPU is considered available only when the selected llama.cpp runtime can
+// enumerate it; a GPU that llama.cpp cannot use must not influence the list.
+type Hardware struct {
+	GPUAvailable       bool
+	AvailableVRAMBytes int64
+	ReserveBytes       int64
+}
+
 // Filename is the on-disk name a catalog model downloads to.
 func (m Model) Filename() string { return m.ID + ".gguf" }
 
 // Verified reports whether the entry carries integrity metadata.
 func (m Model) Verified() bool { return m.SHA256 != "" || m.Size > 0 }
 
-var cached []Model
+var (
+	cached     []Model
+	cachedOnce sync.Once
+)
 
 // Catalog returns the embedded model list.
 func Catalog() []Model {
-	if cached == nil {
+	cachedOnce.Do(func() {
 		var mf manifest
 		if err := json.Unmarshal(manifestJSON, &mf); err != nil {
 			panic("modelmgr: bad embedded manifest: " + err.Error())
 		}
 		cached = mf.Models
-	}
+	})
 	return cached
 }
 
@@ -75,6 +89,51 @@ func Get(id string) (Model, bool) {
 		}
 	}
 	return Model{}, false
+}
+
+// Recommendations returns curated recommended models that fit the detected
+// execution mode. On GPU, the complete GGUF must fit in one device while
+// retaining ReserveBytes for context/KV and compute buffers. On CPU (or when
+// llama.cpp cannot enumerate a GPU), it returns the two smallest recommended
+// models, preserving catalog priority order in the result.
+func Recommendations(models []Model, hw Hardware) []Model {
+	recommended := make([]Model, 0, len(models))
+	for _, m := range models {
+		if m.Recommended {
+			recommended = append(recommended, m)
+		}
+	}
+	if hw.GPUAvailable && hw.AvailableVRAMBytes > hw.ReserveBytes {
+		capacity := hw.AvailableVRAMBytes - hw.ReserveBytes
+		out := make([]Model, 0, len(recommended))
+		for _, m := range recommended {
+			if m.SizeApprox > 0 && m.SizeApprox <= capacity {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+
+	type indexedModel struct {
+		model Model
+		index int
+	}
+	bySize := make([]indexedModel, len(recommended))
+	for i, m := range recommended {
+		bySize[i] = indexedModel{model: m, index: i}
+	}
+	sort.SliceStable(bySize, func(i, j int) bool {
+		return bySize[i].model.SizeApprox < bySize[j].model.SizeApprox
+	})
+	if len(bySize) > 2 {
+		bySize = bySize[:2]
+	}
+	sort.Slice(bySize, func(i, j int) bool { return bySize[i].index < bySize[j].index })
+	out := make([]Model, len(bySize))
+	for i := range bySize {
+		out[i] = bySize[i].model
+	}
+	return out
 }
 
 // Download fetches a catalog model into destDir/<id>.gguf, resuming a partial

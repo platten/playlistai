@@ -23,6 +23,11 @@ const runtimeStartTimeout = 90 * time.Second
 // GPU/CPU build, tens to a few hundred MB each).
 const llamaInstallTimeout = 20 * time.Minute
 
+// modelVRAMReserve is retained after model weights to leave room for the
+// prompt context, KV cache, and runtime compute buffers. It matches
+// llama.cpp's default --fit margin.
+const modelVRAMReserve int64 = 1 << 30
+
 // llamaStageDir is where InstallLlamaRuntime stages the GPU + CPU builds.
 func (c *Container) llamaStageDir() string {
 	return filepath.Join(c.cfg.DataDir, "llama")
@@ -60,6 +65,35 @@ func (c *Container) LlamaRuntime() (st llama.RuntimeStatus, builds []string) {
 	}
 	return llama.RuntimeStatus{Available: true, Path: rts[0].Path, Kind: rts[0].Kind, Source: src}, builds
 }
+
+// LlamaHardware probes GPU support through the exact llama.cpp runtime the app
+// would use. It returns the single device with the most VRAM because wizard
+// recommendations require the complete model to fit on one GPU.
+func (c *Container) LlamaHardware(ctx context.Context) (device llama.Device, available bool) {
+	for _, rt := range c.LlamaRuntimes() {
+		if rt.Label == "cpu" {
+			continue
+		}
+		devices, err := llama.ProbeDevices(ctx, rt)
+		if err != nil {
+			c.log.Debug("llama device probe failed", "runtime", rt.Path, "err", err)
+			continue
+		}
+		for _, candidate := range devices {
+			if !available || candidate.TotalBytes > device.TotalBytes {
+				device, available = candidate, true
+			}
+		}
+		if available {
+			return device, true
+		}
+	}
+	return llama.Device{}, false
+}
+
+// ModelVRAMReserve returns the capacity intentionally excluded from model
+// weight fit calculations for context/KV and compute buffers.
+func (c *Container) ModelVRAMReserve() int64 { return modelVRAMReserve }
 
 // InstallLlamaRuntime runs ggml-org's official installer, staging a
 // GPU-capable build (CUDA / ROCm / Vulkan / Metal) and — on Linux/Windows — a

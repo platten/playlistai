@@ -1,9 +1,11 @@
 package bridge
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 )
@@ -31,6 +33,23 @@ type ModelInfo struct {
 	// valid on disk — the UI shows "Use" instead of "Download", and
 	// DownloadModel(id) is a no-op fetch that just switches to it.
 	Installed bool `json:"installed"`
+}
+
+// ModelHardwareInfo explains how the first-run model list was selected.
+type ModelHardwareInfo struct {
+	Mode          string `json:"mode"` // "gpu" | "cpu"
+	GPUAvailable  bool   `json:"gpuAvailable"`
+	GPUName       string `json:"gpuName"`
+	VRAMBytes     int64  `json:"vramBytes"`
+	VRAMFreeBytes int64  `json:"vramFreeBytes"`
+	FitBytes      int64  `json:"fitBytes"`
+	ReserveBytes  int64  `json:"reserveBytes"`
+}
+
+// ModelRecommendations is the hardware-filtered first-run model list.
+type ModelRecommendations struct {
+	Models   []ModelInfo       `json:"models"`
+	Hardware ModelHardwareInfo `json:"hardware"`
 }
 
 // ModelStatus is the active-parser snapshot for the Settings screen.
@@ -80,7 +99,44 @@ func (a *API) ReinstallLlamaRuntime() error {
 
 // GetModelCatalog returns the built-in list of downloadable models.
 func (a *API) GetModelCatalog() []ModelInfo {
-	src := modelmgr.Catalog()
+	return a.modelInfos(modelmgr.Catalog())
+}
+
+// GetModelRecommendations probes the available llama.cpp GPU and returns only
+// recommended GGUFs whose weights fit on that device with context/KV headroom.
+// Without a usable llama.cpp GPU it returns the two smallest recommended CPU
+// choices. Catalog priority is preserved in both modes.
+func (a *API) GetModelRecommendations() ModelRecommendations {
+	reserve := a.app.ModelVRAMReserve()
+	probeCtx, cancel := context.WithTimeout(a.context(), 6*time.Second)
+	defer cancel()
+	device, gpu := a.app.LlamaHardware(probeCtx)
+	fitBytes := device.FreeBytes
+	// An active managed model is reclaimable when the user switches models.
+	// Add its file size back without ever exceeding the device's total VRAM.
+	if gpu {
+		if activePath, _ := a.app.CurrentModel(); activePath != "" {
+			if stat, err := os.Stat(activePath); err == nil {
+				fitBytes = min(device.TotalBytes, fitBytes+stat.Size())
+			}
+		}
+	}
+	hw := modelmgr.Hardware{GPUAvailable: gpu, AvailableVRAMBytes: fitBytes, ReserveBytes: reserve}
+	mode := "cpu"
+	if gpu {
+		mode = "gpu"
+	}
+	return ModelRecommendations{
+		Models: a.modelInfos(modelmgr.Recommendations(modelmgr.Catalog(), hw)),
+		Hardware: ModelHardwareInfo{
+			Mode: mode, GPUAvailable: gpu, GPUName: device.Name,
+			VRAMBytes: device.TotalBytes, VRAMFreeBytes: device.FreeBytes,
+			FitBytes: fitBytes, ReserveBytes: reserve,
+		},
+	}
+}
+
+func (a *API) modelInfos(src []modelmgr.Model) []ModelInfo {
 	dir := a.modelsDir()
 	out := make([]ModelInfo, 0, len(src))
 	for _, m := range src {

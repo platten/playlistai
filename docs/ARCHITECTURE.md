@@ -1,11 +1,14 @@
 # Playlist AI — Architecture
 
-A cross-platform desktop app that turns a natural-language prompt into a playlist
-by walking a pre-computed music-embedding space, then hands that playlist to a
-streaming service via Soundiiz. Go + [Wails v3] backend (GTK4 / WebKitGTK 6.0 on
-Linux), React + TypeScript frontend, pnpm + Taskfile build.
+A cross-platform desktop app that turns a natural-language prompt into a
+playlist using typed intent, exact multi-channel retrieval, transparent
+ranking, diversity selection, and transition-aware sequencing. It can then
+hand the result to a streaming service via Soundiiz. Go + [Wails v3] backend
+(GTK4 / WebKitGTK 6.0 on Linux), React + TypeScript frontend, pnpm + Taskfile
+build.
 
-> **Status:** early implementation. This document tracks the design as built.
+> **Status:** recommendation milestones 1–10 are implemented. This document
+> tracks the design as built; measured limitations remain called out explicitly.
 > An earlier revision described a local-audio-analysis app (ONNX encoder, library
 > scanning); that approach was dropped — see [§8](#8-relationship-to-deej-ai).
 
@@ -14,8 +17,9 @@ Linux), React + TypeScript frontend, pnpm + Taskfile build.
 ## 1. Principles
 
 - **Local-first core.** `prompt → MusicIntent → playlist` runs entirely on the
-  user's machine: a local llama.cpp model parses the prompt, and a vector walk
-  over a locally-stored catalog selects tracks. The only network calls are
+  user's machine: an optional local llama.cpp model or built-in rules parser
+  interprets the prompt, and compiled Go resolves, retrieves, ranks, selects,
+  and sequences catalog tracks. The only network calls are
   optional and user-initiated (first-launch asset downloads, MusicBrainz
   enrichment, Soundiiz export, preview playback).
 - **The LLM is a translator, not a recommender.** Its entire job is
@@ -34,26 +38,42 @@ Linux), React + TypeScript frontend, pnpm + Taskfile build.
 
 ## 2. Data flow
 
+```mermaid
+flowchart LR
+    UI[Prompt + session context] --> Parser[Intent parser<br/>llama.cpp or rules]
+    Parser --> Intent[Versioned MusicIntent<br/>evidence + capabilities]
+    Intent --> Resolver[Typed reference resolver]
+    Resolver --> Retrieve[Independent retrieval channels]
+    Profile[Local feedback<br/>taste-profile snapshot] --> Retrieve
+    Features[Optional grounded<br/>semantic sidecar] --> Retrieve
+    Retrieve --> Eligible[Hard eligibility<br/>exclusions + recording dedup]
+    Eligible --> Rank[Transparent personalized ranking]
+    Rank --> Select[MMR diversity selection]
+    Select --> Sequence[Waypoint + transition sequencing]
+    Sequence --> Result[Playlist + evidence<br/>status + reproducibility]
+    Controls[Explicit slider overrides] --> Intent
+    Result --> History[(Local history)]
+    Result -- exposure or explicit action --> Feedback[(Local feedback/events)]
 ```
-FIRST LAUNCH (one-time, user-initiated, with progress bars):
-  • llama GGUF  ───► OS data dir      • catalog (int8 vecs + SQLite) ───► data dir
 
-  local, offline: the recommendation core
-  ────────────────────────────────────────
-  user prompt ──► IntentParser ──MusicIntent──► RecommendationEngine ──► Playlist
-  (llama / rules)                                 │  resolve seeds (Catalog)
-  UI sliders: creativity / noise /                │  blended-cosine kNN (SimilarityEngine)
-  lookback / total count ─ override, re-run ─────►│  + Gaussian noise + recording/id dedup
+Retrieval queries each positive reference independently in audio and playlist-
+co-occurrence space, plus relevant taste clusters, bounded exploration, and an
+optional grounded semantic channel. Candidate provenance survives unioning.
+Hard exclusions and provisional recording deduplication happen before ranking;
+MMR then balances relevance with embedding, artist, and reliable-album
+redundancy. Sequencing preserves required tracks and waypoint order.
 
-  optional, online, user-initiated (progress-tracked):
-  ───────────────────────────────────────────────────
-  Playlist ──► Enricher (MusicBrainz: ISRC, album, year) ──► Exporter (Soundiiz handoff | CSV) ──► Qobuz
-           └─► PreviewProvider (Deezer public API → Spotify CDN fallback) → 30s playback
-
-INVARIANT: prompt → playlist is 100% local. The LLM only does text → MusicIntent.
+```mermaid
+flowchart LR
+    Result[Local playlist] --> Preview[Optional Deezer preview]
+    Result --> Enrich[Optional MusicBrainz enrichment]
+    Enrich --> Soundiiz[Optional Soundiiz handoff]
+    Result --> CSV[Local CSV export]
 ```
 
-The canonical copy of this diagram lives in `internal/app/doc.go`.
+The equivalent package-level diagram lives in `internal/app/doc.go`. Python is
+limited to offline catalog/sidecar helpers and is never required by the desktop
+runtime.
 
 ---
 
@@ -64,14 +84,21 @@ Primary (`internal/ports`):
 | Port | Responsibility |
 |---|---|
 | `IntentParser` | `natural language → core.MusicIntent`. Local only (llama.cpp or `rules`). No catalog access. |
-| `SimilarityEngine` | Rank catalog tracks by blended cosine similarity to a query. Brute force, matching upstream. |
-| `RecommendationEngine` | The only component that turns a `MusicIntent` into an ordered `core.Playlist`. Deterministic given `(intent, catalog, seed)`. |
+| `SimilarityEngine` | Exact, parallel top-K cosine search in each embedding space, with deterministic merge and cancellation. |
+| `RecommendationEngine` | Orchestrates resolution, retrieval, eligibility, ranking, selection, and sequencing. Deterministic for the recorded generation inputs. |
+| `CandidateRetriever` | Unions independently queried channels while retaining query/rank/score provenance. |
+| `Ranker` | Combines available retrieval, listener, negative, exposure, novelty, and optional semantic evidence. |
+| `CandidateSelector` | Applies relevance-floored MMR diversity after hard eligibility. |
+| `PlaylistSequencer` | Preserves required/waypoint order and optimizes supported embedding transitions. |
 
 Supporting:
 
 | Port | Responsibility |
 |---|---|
-| `Catalog` | Read-only shipped dataset: metadata, the two embedding spaces, `Resolve` (token search). |
+| `Catalog` | Read-only dataset: real track metadata plus audio and playlist-co-occurrence embeddings. |
+| `ReferenceResolver` | Typed artist/track matching, evidence, ambiguity, aliases, and weighted artist representatives. |
+| `FeedbackStore` / `ProfileStore` | Versioned explicit events and reproducible recency-weighted local taste snapshots. |
+| `FeatureStore` | Optional grounded semantic facets, provenance, missingness, and compatible query vectors. |
 | `Enricher` | `[]TrackRef → []EnrichedTrack` (ISRC + metadata) via MusicBrainz. Never fails the batch for one miss. |
 | `Exporter` | Send a playlist out — `soundiiz-handoff` (tokenless POST to `soundiiz.com/go/import-playlist`, open the returned `shareUrl`) or `csv` (always available, no network). |
 | `PreviewProvider` | Resolve a ~30s preview URL, no API key. `deezer` then `spotifycdn`. |
@@ -106,7 +133,7 @@ Those meanings are preserved with source evidence, but are not presented as
 enforced. Live controls re-run `Build` with the complete resolved intent plus
 explicit overrides; they never reconstruct intent from a knob-only DTO.
 
-Version 4 also stores catalog resolution on each typed reference: the selected
+The current version 5 contract also stores catalog resolution on each typed reference: the selected
 artist or track, match confidence/evidence, ranked alternatives, catalog
 version, and weighted real-track representatives. Prompt generation and direct
 recommendation share one resolver port. Ambiguity remains explicit until the
@@ -132,8 +159,8 @@ internal/
   app/        composition root: Container, New, Close; doc.go pipeline diagram
   bridge/     Wails v3 Service (API) + WailsProgress event emitter (thin; no logic)
   catalog/    Open(dir): mmap vectors.i8 + read-only catalog.sqlite (modernc, pure Go);
-              ports.Catalog — Len/Dim/ID/RowOf/Meta/Vectors + Resolve (token-substring
-              over a normalized search column; search.go mirrors python normalize_search)
+              ports.Catalog + shared typed resolver; exact Unicode/accent-aware
+              artist/track matching, aliases, ambiguity, and representative medoids
   dataset/    Download (HTTP Range resume, optional sha256/size, atomic rename) +
               LoadManifest + Fetch; Download is reused by modelmgr.
               bundle.go: DownloadArchive (fetch a hosted catalog.tar.zst),
@@ -143,10 +170,10 @@ internal/
               reads int8 rows via RawRow (no float32 copy), precomputed per-row
               inverse norms, bounded top-K heap, deterministic tie-break by row.
               Matches deej-ai.online-app most_similar.
-  reco/       deejai/ — Go port of backend/deejai.py: make_playlist (single seed) +
-              join_the_dots (>=2 seeds), seeded Gaussian noise, id/display/artist
-              normalized artist/title recording dedup; deterministic given
-              (intent, catalog, intent.Seed); hard-filter exhaustion returns a partial result
+  reco/       deejai/ — versioned compatibility/evaluation baseline
+              multichannel/ — exact per-reference/channel retrieval, hard
+              eligibility, transparent personalized ranking, relevance-floored
+              MMR selection, waypoint/transition sequencing, semantic pilot
   intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
                         (always available; the fallback)
               schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
@@ -155,7 +182,8 @@ internal/
                         /v1/chat/completions client; runtime.go: DetectRuntime
                         (PATH / ~/.local/bin / ~/.llama-app / next-to-app) +
                         InstallOfficial (ggml-org's installer, GPU-aware)
-              modelmgr/ — embedded GGUF catalog (models-manifest.json),
+              modelmgr/ — embedded, priority-ordered GGUF catalog
+                          (models-manifest.json), hardware fit policy,
                           resumable download (skips if present), GGUF magic check
   enrich/     [M7] musicbrainz/
   export/     [M7] soundiizcsv/ soundiizhandoff/
@@ -172,7 +200,8 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
                   requires a seed artist/track, local-model mode may infer one;
                   prompt → parsed-intent chips → playlist),
                   CatalogSearch (search / "similar to X" / first-launch download),
-                  PlaylistScreen (live creativity/noise/lookback/count + Regenerate),
+                  PlaylistScreen (resolved intent + explicit count/discovery/
+                  diversity/transition overrides, feedback, evidence, Regenerate),
                   SettingsScreen (AI-model panel: catalog download / use-a-file /
                   back-to-rules), Gallery; [M7+] ReviewExport, FirstRun
   src/lib/api.ts  re-export of the generated bindings
@@ -226,20 +255,21 @@ needs no configuration — the Soundiiz handoff is tokenless.
 
 ## 8. Relationship to Deej-AI
 
-The recommendation technique comes from [teticio/Deej-AI] and its web backend
+The original recommendation baseline comes from [teticio/Deej-AI] and its web backend
 [teticio/deej-ai.online-app], both **GPL-3.0**:
 
-- `internal/reco/deejai` is a Go port of `backend/deejai.py` — a blended-cosine
+- `internal/reco/deejai` remains a versioned Go baseline of `backend/deejai.py` — a blended-cosine
   similarity walk over two 100-dimensional embedding spaces (`spotifytovec.p`,
   audio-content; `tracktovec.p`, Spotify-playlist co-occurrence), blended by a
   `creativity` weight, with additive Gaussian "noise" and artist/id dedup.
+- The current `multichannel/v3` strategy uses the same two embedding spaces but
+  replaces Gaussian exploration with bounded exploration, independently queries
+  every reference and taste cluster, and separates hard eligibility, ranking,
+  diversity selection, and sequencing.
 - The catalog is those pre-computed vectors, converted to L2-normalized int8 +
-  SQLite (`python/convert_pickles.py`) and downloaded on first launch from
-  `catalog.manifest_url`. **This project does not build, host, or embed that
-  catalog itself** — `catalog.manifest_url` defaults to empty, so a fresh
-  install has nothing to recommend over until an operator self-hosts one; see
-  [`docs/CATALOG.md`](CATALOG.md) for the (untested-against-real-data, but
-  fully wired) conversion + hosting steps.
+  SQLite (`python/convert_pickles.py`). A pinned ~210 MB archive for 956,917
+  tracks is hosted off-repository, downloaded on first launch, verified, and
+  unpacked locally. See [`docs/CATALOG.md`](CATALOG.md).
 
 Consequently **Playlist AI is licensed GPL-3.0**. See `LICENSE` and `NOTICE`;
 an operator who hosts and distributes the converted catalog takes on the
@@ -248,7 +278,13 @@ implies.
 
 ---
 
-## 9. Milestones
+## 9. Foundational milestones
+
+This historical list covers the initial desktop foundation. Recommendation
+correctness, intent, resolution, lifecycle, personalization, multi-channel
+ranking, sequencing, semantics, evaluation, performance, and subsequent
+runtime/onboarding hardening are recorded in
+[`docs/recommendation-milestones.md`](recommendation-milestones.md).
 
 1. **Skeleton** — layout, core types, ports + fakes, `Container`, config, Wails
    shell, `Progress` contract, CI (lint / test / cross-compile). *(done)*
@@ -282,7 +318,11 @@ implies.
 6c. **Model manager** — `internal/intent/modelmgr` (embedded GGUF catalog +
     resumable download, size + SHA-256 pinned and verified — see M9);
     `config.Prefs` persistence; `Container.SetModel / DownloadModel /
-    ClearModel`; Settings AI-model panel with live download progress. *(done)*
+    ClearModel`; the first-run wizard asks its selected llama.cpp runtime to
+    enumerate accelerators and free VRAM. GPU recommendations must fit as a
+    complete GGUF with 1 GiB reserved for context/KV/compute; CPU mode shows the two
+    smallest recommendations. Settings retains every curated and legacy model.
+    *(done)*
 7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz
    file import) and `internal/export/soundiizhandoff` (tokenless
@@ -339,10 +379,7 @@ implies.
    local model works (`ParseWithProgress`, op `"intent"`), and it falls back
    to the rules parser if the model errors or times out. See
    [`docs/RELEASING.md`](RELEASING.md) and [`docs/CATALOG.md`](CATALOG.md).
-   *(current)*
-
-Remaining known gap: no custom app icon (still the Wails default) — cosmetic,
-not a release blocker.
+   *(done; followed by recommendation milestones 1–10)*
 
 [Wails v3]: https://v3.wails.io
 [teticio/Deej-AI]: https://github.com/teticio/Deej-AI

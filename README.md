@@ -1,69 +1,151 @@
 # Playlist AI
 
-Turn a plain-language prompt — *"upbeat instrumental stuff like Justice, 20
-tracks"* — into a playlist, then push it to Qobuz (or anywhere) via Soundiiz.
+Turn a prompt such as *“ambient electronic with microdetail, a deep groove,
+occasional sparkle, relaxing but not sleepy, no abstract drone”* into a local,
+reproducible playlist, then preview it or send it to a streaming service through
+Soundiiz.
 
-- **Local-first.** A local llama.cpp model parses your prompt into a small
-  structured intent; a vector walk over a locally-stored music-embedding catalog
-  picks the tracks. No account, no cloud inference, works offline.
-- **The model never picks songs.** It only translates text → intent. Track
-  selection is deterministic and reproducible.
-- **Then it leaves.** Optionally resolve each track's ISRC via MusicBrainz, then
-  hand off to Soundiiz (a tokenless browser handoff — it matches the catalog and
-  writes to your service) or download a CSV you import yourself.
+- **Local-first.** Intent parsing, reference resolution, personalization,
+  retrieval, ranking, diversity selection, and sequencing run on the desktop.
+- **The language model never chooses songs.** An optional local llama.cpp model
+  translates natural language into a versioned intent. Deterministic Go code
+  selects real catalog tracks.
+- **Useful without a model.** Generate is always available. Catalog-only mode
+  uses the built-in rules parser and asks for a seed artist or track; model mode
+  can infer a starting reference when the prompt does not name one.
+- **Honest about support.** Nuance such as “microdetail” is preserved even when
+  the current catalog cannot score it. Unknown attributes are never presented
+  as enforced constraints.
 
-Go + [Wails v3](https://v3.wails.io) desktop app (macOS / Windows / Linux;
-GTK4 / WebKitGTK 6.0 on Linux), React + TypeScript frontend, pnpm + Taskfile
-build.
+Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
+and Linux, with a React/TypeScript interface.
 
-## Status
+## How generation works
 
-All nine planned milestones are done — see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-for the design and the milestone list, and [`docs/RELEASING.md`](docs/RELEASING.md)
-for how releases are cut.
+```mermaid
+flowchart LR
+    Prompt --> Intent[Typed musical intent]
+    Intent --> Resolve[Artist/track resolution]
+    Resolve --> Retrieve[Audio + co-occurrence + taste + exploration]
+    Profile[Local taste profile] --> Retrieve
+    Semantic[Optional grounded sidecar] --> Retrieve
+    Retrieve --> Rules[Hard eligibility]
+    Rules --> Rank[Transparent ranking]
+    Rank --> Select[MMR diversity]
+    Select --> Order[Transition sequencing]
+    Order --> Playlist[Playlist + evidence + versions]
+```
 
-The installers **don't** bundle a llama.cpp runtime — that keeps them small.
-On first run the setup wizard installs llama.cpp via ggml-org's official
-installer (`llama.app/install.sh` / `install.ps1`): a **GPU build** (CUDA /
-ROCm / Vulkan / Metal) when one is available **plus a CPU build**, so the
-parser can fall back to CPU if a GPU build won't run a given model. Already
-have `llama-server` or the unified `llama` binary? It's picked up from
-PATH / `~/.local/bin` / `~/.llama-app`, or point `ai.llama_server_path` at
-it. `ai.gpu_layers` pins/limits GPU offload.
+References are retrieved independently instead of being collapsed into one
+query. Hard artist/track exclusions and normalized recording deduplication run
+before ranking. Ranking can use seed affinity, explicit positive/negative
+feedback, recent exposure, and listener novelty. MMR selection limits embedding,
+artist, and reliable-album repetition; sequencing preserves required tracks and
+ordered journey waypoints. When eligibility is exhausted, the app returns a
+structured partial result rather than silently bypassing a rule.
 
-The **recommendation catalog** (~957k tracks, derived from the Deej-AI
-dataset) is a compressed ~210 MB archive the app **downloads on first
-launch** (`catalog.archive_url` — a hosted `catalog.tar.zst`), then
-decompresses into your data dir behind a one-time progress popup. Nothing to
-configure, no account. It is not in the repo and not in the installers. See
-[`docs/CATALOG.md`](docs/CATALOG.md) for the hosting details and how to
-regenerate it.
+Every generation records the catalog, algorithm, resolved intent, profile
+snapshot, session context, and full-width RNG seed needed for replay. Slider
+changes apply explicit overrides to that resolved intent, so they do not erase
+the rest of the prompt.
+
+## Local models and hardware selection
+
+The optional first-run model setup installs llama.cpp through its official
+installer. The wizard asks that exact runtime to enumerate usable GPUs and free
+VRAM. It offers only recommended Q4_K_M weights that fit completely on one GPU
+while reserving 1 GiB for context, KV cache, and compute buffers. When no usable
+llama.cpp GPU is reported, it offers the two smallest recommended models.
+
+Current priority:
+
+1. Qwen3.5 35B A3B
+2. Qwen3.5 9B
+3. Mistral Small 3.1 24B
+4. Gemma 3 12B
+5. Qwen3.5 4B
+
+Llama 3.2 3B and Qwen2.5 3B remain available in Settings for compatibility but
+are not recommended. Custom GGUF files remain supported. The curated ordering
+is product policy; the exact five new artifacts have not yet completed the
+application-specific intent benchmark.
+
+## Measured performance
+
+The production-catalog benchmark used 956,917 tracks on Linux/x86-64, an Intel
+Core Ultra 9 285H, 16 GB RAM, and Go 1.27. These are executed local results, not
+universal latency guarantees.
+
+| Operation | Before | Current exact backend |
+|---|---:|---:|
+| Exact retrieval, K=64 | 81.5–84.0 ms | 9.81–10.05 ms |
+| Complete 20-track generation | 438.0–440.2 ms | 111.3–125.3 ms |
+| Retrieval equivalence | — | Recall@K 1.0; identical order/scores |
+
+These current-tree results were rerun on 2026-09-06 using three benchmark
+samples of three iterations each. Parallel exact scanning removed the measured bottleneck without changing
+ranking, so no ANN index was added. The checked-in synthetic evaluation fixture
+tests metric wiring and leakage prevention; it is not evidence of musical
+quality. The 12-case intent benchmark also found that none of the previously
+tested local models met the documented correctness gate. See
+[performance and model evaluation](docs/performance-and-model-evaluation.md)
+and the [evaluation workflow](docs/evaluation.md) for results, limitations, and
+reproduction commands.
+
+## Catalog, semantics, and privacy
+
+The recommendation catalog contains 956,917 real track identities and two
+100-dimensional Deej-AI embedding spaces. Its compressed archive is about
+210 MB and is downloaded once, verified, and unpacked into the application data
+directory. It is not committed or bundled in installers.
+
+The shipped catalog has no grounded style, mood, instrumentation, vocal, date,
+or acoustic-energy features. An optional, versioned semantic sidecar can add
+reviewed evidence and compatible precomputed query vectors. The core app works
+without it, and the desktop runtime never invokes Python; Python is limited to
+offline maintainer tooling that prepares datasets.
+
+Prompts, intent, history, feedback, profiles, and recommendation computation
+stay local. Network actions are explicit: asset/model download, Deezer preview,
+MusicBrainz enrichment, and Soundiiz handoff. Recommendation exposure is stored
+separately from positive feedback, and a generated or briefly previewed track
+is never treated as a like or dislike.
 
 ## Develop
 
-Nothing special — no Git LFS, no large blobs in the repo. `go test ./...`
-needs only Go.
+There are no large blobs or Git LFS requirements in the repository.
 
 ```bash
-# Go core — no toolchain beyond Go needed
+# Fast Go suite
 go test ./...
 
-# Full desktop app
+# Complete CI-equivalent gate
+./scripts/test.sh
+
+# Desktop development
 go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
-wails3 doctor          # check system deps
-wails3 dev             # run with hot reload
-wails3 build           # build bin/playlist-ai
-wails3 package         # per-OS installers (AppImage/deb/rpm, .app/dmg, nsis)
+wails3 doctor
+wails3 dev
+wails3 build
+wails3 package
 ```
 
-`wails3` drives pnpm and the Taskfile; you don't call them directly. On Linux it
-needs `libgtk-4-dev` and `libwebkitgtk-6.0-dev`.
+Linux development requires GTK4 and WebKitGTK 6.0. Run `./scripts/setup.sh` to
+install the documented Go, Node, pnpm, Wails, lint, and GUI prerequisites.
+
+Detailed references:
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Recommendation milestone log](docs/recommendation-milestones.md)
+- [Catalog construction and hosting](docs/CATALOG.md)
+- [Semantic sidecar pilot](docs/semantic-sidecar.md)
+- [Release process](docs/RELEASING.md)
 
 ## Licensing
 
-GPL-3.0. The recommendation technique is ported from
+GPL-3.0. The recommendation technique originated in
 [teticio/Deej-AI](https://github.com/teticio/Deej-AI) and
 [teticio/deej-ai.online-app](https://github.com/teticio/deej-ai.online-app)
-(both GPL-3.0), and the embedding catalog it recommends over (self-hosted —
-see [`docs/CATALOG.md`](docs/CATALOG.md)) is derived from Deej-AI's
-pre-computed datasets. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+(both GPL-3.0). The embedding catalog is derived from Deej-AI’s precomputed
+datasets. See [LICENSE](LICENSE), [NOTICE](NOTICE), and
+[catalog documentation](docs/CATALOG.md).

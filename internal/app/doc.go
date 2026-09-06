@@ -1,39 +1,40 @@
 // Package app is the composition root. It is the only package that constructs
-// concrete implementations and wires them to the ports. Nothing here is a
-// global: New builds a *Container and the caller owns its lifetime.
+// concrete implementations and wires them to ports. New builds a *Container;
+// the caller owns its lifetime and no application dependency is global.
 //
-// ┌──────────── Playlist AI — data flow (catalog-based, no local audio) ─────────────┐
-// │                                                                                 │
-// │  FIRST LAUNCH (one-time, user-initiated, with progress bars):                    │
-// │    • llama GGUF  ───► OS data dir     • catalog (int8 vecs + SQLite) ───► data dir│
-// │                                                                                 │
-// │  ┌──────────── local, offline: the recommendation core ────────────┐             │
-// │  user prompt        ┌───────────────┐   MusicIntent   ┌──────────────────────┐   │
-// │  "upbeat like  ───► │ IntentParser  │ ──── JSON ────► │ RecommendationEngine │   │
-// │   Justice, 20"      │ llama / rules │  (GBNF-          │  deejai walk:         │  │
-// │                     └───────────────┘   constrained)  │   Σ last N vecs →      │ │
-// │   UI sliders: creativity / noise / lookback / total ───►│   blended cosine kNN → │ │
-// │   (override intent, re-run without re-parsing)         │   + Gaussian noise →   │ │
-// │                        ┌───────────────┐  vectors      │   recording/id dedup  │ │
-// │                        │  Catalog      │◄──────────────┤                        │ │
-// │                        │  int8 vecs +  │  Resolve()    │  SimilarityEngine      │ │
-// │                        │  SQLite meta  │  token match   │  brute force, 2×100   │ │
-// │                        └───────────────┘               └──────────┬───────────┘  │
-// │  └───────────────────────────────────────────────────────────────┼────────────┘  │
-// │                                                                  ▼               │
-// │  optional, online, user-initiated (progress-tracked):   ┌──────────────┐          │
-// │   ┌──────────────┐  artist+title   ┌──────────────┐     │  Playlist    │  ► play  │
-// │   │ Enricher     │◄────────────────┤ (per track)  │◄────┤ Artist-Title │──► Preview│
-// │   │ MusicBrainz  │─► ISRC, album,  └──────────────┘     │ + Spotify id │  Deezer→ │
-// │   │ 1 req/s,cache│   year, artists         │            └──────┬───────┘  Spotify │
-// │   └──────────────┘                         ▼                   │           CDN    │
-// │                                   ┌──────────────┐   ┌──────────────┐             │
-// │                                   │ Exporter     │   │ Exporter     │             │
-// │                                   │ Soundiiz API │   │ CSV / TXT    │─► user ─►   │
-// │                                   │ (opt, token) │   │ (download)   │  Soundiiz ─► Qobuz
-// │                                   └──────────────┘   └──────────────┘             │
-// │                                                                                 │
-// │  INVARIANT: prompt → playlist is 100% local. Enrich / export / preview are        │
-// │  optional and online. The LLM only does text → MusicIntent, never track choice.  │
-// └─────────────────────────────────────────────────────────────────────────────────┘
+// The desktop generation path is local and implemented in compiled Go, apart
+// from the optional llama.cpp child process used only to parse natural language:
+//
+//	FIRST RUN (user initiated)
+//	  catalog archive ───────────────► int8 vectors + SQLite metadata
+//	  optional llama.cpp + GGUF ─────► GPU probe + VRAM-filtered model choices
+//
+//	LOCAL GENERATION
+//	  prompt + session ─► IntentParser ─► versioned MusicIntent ─► Resolver
+//	                       llama/rules      evidence + constraints     │
+//	                                                            typed entities
+//	  explicit feedback ─► FeedbackStore ─► reproducible TasteProfile │
+//	                                                               ▼
+//	  control overrides ───────────────────────────────► RecommendationEngine
+//	                                                     │
+//	       ┌─────────────────────────────────────────────┴──────────────┐
+//	       │ retrieve independently: audio · co-occurrence · taste      │
+//	       │ clusters · bounded exploration · optional semantic sidecar │
+//	       └──────────► hard eligibility ─► transparent rank ─► MMR ───┤
+//	                    exclusions +        component scores   select  │
+//	                    recording dedup                              sequence
+//	                                                                  │
+//	                                                                  ▼
+//	       history ◄── playlist + per-pick evidence + structured status
+//	                   + catalog/algorithm/intent/profile/RNG versions
+//
+//	OPTIONAL NETWORK ACTIONS
+//	  playlist ─► Deezer preview
+//	           └► MusicBrainz enrichment ─► Soundiiz handoff
+//	           └───────────────────────────► local CSV export
+//
+// Invariants: the LLM never selects tracks; hard constraints run before
+// ranking; exposures are not likes; the same versioned inputs and lossless RNG
+// seed reproduce a generation. Python is used only by offline dataset helpers,
+// never by the desktop runtime.
 package app
