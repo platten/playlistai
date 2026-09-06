@@ -92,14 +92,19 @@ func TestMatchingPreviewIntentIsReusedForGeneration(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)
 	ctx := context.Background()
-	preview, err := api.ParseIntent(ctx, "like Justice, 10 tracks")
+	session := IntentSessionContext{
+		SessionID: "session", Locale: "en-US",
+		NowPlaying:   &core.TrackRef{ID: "seed0002", Artist: "Björk", Title: "Jóga"},
+		RecentTracks: []core.TrackRef{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}},
+	}
+	preview, err := api.ParseIntentWithContext(ctx, "like Justice, 10 tracks", session)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if preview.Cached {
 		t.Fatal("first parse unexpectedly cached")
 	}
-	generated, err := api.GenerateFromPrompt(ctx, "like Justice, 10 tracks")
+	generated, err := api.GenerateFromPromptWithContext(ctx, "like Justice, 10 tracks", session)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +113,9 @@ func TestMatchingPreviewIntentIsReusedForGeneration(t *testing.T) {
 	}
 	if generated.Request.Reproducibility.ID == "" || generated.Request.Reproducibility.ID != generated.Playlist.Reproducibility.ID {
 		t.Fatalf("initial result is not tied to its request: request=%+v result=%+v", generated.Request.Reproducibility, generated.Playlist.Reproducibility)
+	}
+	if generated.Request.SessionID != session.SessionID {
+		t.Fatalf("session context was not carried into generation: %+v", generated.Request)
 	}
 }
 
@@ -122,6 +130,7 @@ func TestIntentCacheKeyIncludesPromptParserSchemaAndSession(t *testing.T) {
 	variants := []ports.IntentInput{
 		{Prompt: "like Björk", Locale: "en-US"},
 		{Prompt: "like Justice", Locale: "fr-FR"},
+		{Prompt: "like Justice", Locale: "en-US", SessionID: "session-2"},
 		{Prompt: "like Justice", Locale: "en-US", NowPlaying: &core.TrackRef{ID: "seed0001"}},
 		{Prompt: "like Justice", Locale: "en-US", RecentTracks: []core.TrackRef{{ID: "seed0002"}}},
 	}
@@ -155,11 +164,11 @@ func TestRankingInputChangesReproducibilityIdentity(t *testing.T) {
 		Controls:   core.IntentControls{TotalTrackCount: 10, AudioWeight: .5, CooccurrenceWeight: .5},
 		Seed:       "18446744073709551615",
 	}.Normalized()
-	first, err := generationIdentity(base, "catalog-a")
+	first, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	repeated, err := generationIdentity(base, "catalog-a")
+	repeated, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,19 +177,26 @@ func TestRankingInputChangesReproducibilityIdentity(t *testing.T) {
 	}
 	changed := base
 	changed.Controls.AudioWeight = .8
-	second, err := generationIdentity(changed, "catalog-a")
+	second, err := generationIdentity(changed, "catalog-a", "taste-profile/v1", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.ID == second.ID || first.IntentFingerprint == second.IntentFingerprint {
 		t.Fatalf("ranking input reused identity: first=%+v second=%+v", first, second)
 	}
-	otherCatalog, err := generationIdentity(base, "catalog-b")
+	otherCatalog, err := generationIdentity(base, "catalog-b", "taste-profile/v1", "profile-a")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.ID == otherCatalog.ID {
 		t.Fatal("catalog version did not invalidate generation identity")
+	}
+	otherProfile, err := generationIdentity(base, "catalog-a", "taste-profile/v1", "profile-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == otherProfile.ID {
+		t.Fatal("profile snapshot did not invalidate generation identity")
 	}
 }
 

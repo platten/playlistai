@@ -8,7 +8,15 @@ import {
   type ResolutionSelection,
   type SavedPlaylistSummary,
 } from "../lib/api";
-import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import {
+  Button,
+  EmptyState,
+  ErrorState,
+  Icon,
+  ProgressBar,
+  usePreviewPlayer,
+  useProgress,
+} from "../components";
 
 const PLACEHOLDER =
   "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
@@ -38,9 +46,11 @@ const SURPRISES = [
 
 /** The prompt entry point: type it, see the parsed intent, generate. */
 export function GenerateScreen({
+  sessionId,
   onGenerated,
   onNeedCatalog,
 }: {
+  sessionId: string;
   onGenerated: (
     request: BuildPlaylistRequest,
     heading: string,
@@ -56,6 +66,20 @@ export function GenerateScreen({
   const [resolutionChoices, setResolutionChoices] = useState<Record<string, string>>({});
   const debounce = useRef<number | undefined>(undefined);
   const intentProgress = useProgress("intent");
+  const player = usePreviewPlayer();
+
+  const intentContext = useCallback(
+    () => ({
+      sessionId,
+      nowPlaying:
+        player.track && (player.status === "playing" || player.status === "paused")
+          ? player.track
+          : null,
+      recentTracks: player.recentTracks,
+      locale: navigator.language || "",
+    }),
+    [player.recentTracks, player.status, player.track, sessionId],
+  );
 
   // Optional "start from a past playlist" source, gated behind a radio button.
   const [saved, setSaved] = useState<SavedPlaylistSummary[]>([]);
@@ -116,7 +140,7 @@ export function GenerateScreen({
       return;
     }
     debounce.current = window.setTimeout(() => {
-      const call = API.ParseIntent(prompt);
+      const call = API.ParseIntentWithContext(prompt, intentContext());
       activeParse.current = call;
       call
         .then((p) => {
@@ -131,7 +155,7 @@ export function GenerateScreen({
       window.clearTimeout(debounce.current);
       void activeParse.current?.cancel("intent preview cleanup");
     };
-  }, [prompt]);
+  }, [intentContext, prompt]);
 
   useEffect(() => {
     setResolutionChoices({});
@@ -160,8 +184,8 @@ export function GenerateScreen({
       void activeGeneration.current?.cancel("superseded playlist generation");
       const request =
         selections.length > 0
-          ? API.GenerateFromPromptResolved(q, selections)
-          : API.GenerateFromPrompt(q);
+          ? API.GenerateFromPromptResolvedWithContext(q, selections, intentContext())
+          : API.GenerateFromPromptWithContext(q, intentContext());
       activeGeneration.current = request;
       request
         .then((res) => {
@@ -176,7 +200,7 @@ export function GenerateScreen({
           if (sequence === generationSequence.current) setGenerating(false);
         });
     },
-    [onGenerated],
+    [intentContext, onGenerated],
   );
 
   const generate = useCallback(() => {
@@ -186,7 +210,11 @@ export function GenerateScreen({
       void activeParse.current?.cancel("saved playlist selected");
       void activeGeneration.current?.cancel("saved playlist selected");
       setGenerating(false);
-      onGenerated(savedRequest, hit?.name || prompt, savedResult ?? undefined);
+      onGenerated(
+        { ...savedRequest, sessionId, requestId: newRequestID() },
+        hit?.name || prompt,
+        savedResult ?? undefined,
+      );
       return;
     }
     const selections = ambiguousIssues.flatMap((issue) => {
@@ -206,6 +234,7 @@ export function GenerateScreen({
     savedId,
     savedRequest,
     savedResult,
+    sessionId,
     source,
   ]);
 
@@ -457,6 +486,13 @@ export function GenerateScreen({
       {error && <ErrorState variant="inline" message={error} onRetry={generate} className="w-full" />}
     </div>
   );
+}
+
+function newRequestID(): string {
+  if (typeof crypto.randomUUID === "function") return `request-${crypto.randomUUID()}`;
+  const words = new Uint32Array(4);
+  crypto.getRandomValues(words);
+  return `request-${Array.from(words, (word) => word.toString(16).padStart(8, "0")).join("")}`;
 }
 
 function Chip({ children, accent }: { children: React.ReactNode; accent?: boolean }) {

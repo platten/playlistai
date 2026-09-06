@@ -91,3 +91,30 @@ Next dependencies: real profile snapshot/version inputs if personalization is
 introduced, persistent parse caching if startup latency warrants it, and a
 frontend test harness for direct component-level ordering tests. The current
 in-memory parse cache is process-local, and timing is intentionally coarse.
+
+## Milestone 5 — Explicit Feedback and Local Taste Profiles
+
+Added append-only, versioned feedback events for explicit like/dislike,
+more/less-like, review acceptance/removal, and recommendation exposure. Events
+carry track, request/session, interaction context, timestamps, and catalog,
+intent, recommendation, and profile versions in local `taste.sqlite` storage.
+Exposures remain separate evidence and generated or previewed tracks never
+implicitly become likes or dislikes. Durable preferences and request-scoped
+“not for this request” evidence are kept distinct.
+
+The reproducible `taste-profile/v1` builder applies a 30-day half-life and
+produces positive, negative, request-local, and up to four deterministic taste
+cluster centroids in both audio and playlist-co-occurrence spaces. Cold-start
+snapshots are stable. Generation identities now record the exact profile
+snapshot, while ranking remains unchanged. A tested candidate-affinity API
+gives explicit current-request references priority over request feedback and
+durable history for the next ranking milestone.
+
+The UI passes current playback/session context into parsing, offers explicit
+feedback on playlist rows, records review inclusion changes, summarizes the
+local profile, and can clear all local taste data. Saved-playlist reuse starts a
+fresh request/session context without changing the saved result.
+
+Next dependencies: integrate affinity and cluster coverage into candidate
+ranking, define objective weights and evaluation fixtures, add profile-state
+undo/conflict controls, and add component-level tests for feedback interactions.

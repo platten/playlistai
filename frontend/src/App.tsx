@@ -20,9 +20,11 @@ interface PlaylistState {
 interface ReviewState {
   trackIds: string[];
   heading: string;
+  requestId: string;
+  sessionId: string;
 }
 
-function seedToRequest(seed: Seed): BuildPlaylistRequest {
+function seedToRequest(seed: Seed, sessionId: string): BuildPlaylistRequest {
   return {
     version: 2,
     referenceIds: [seed.id],
@@ -37,10 +39,12 @@ function seedToRequest(seed: Seed): BuildPlaylistRequest {
     noRepeatArtist: true,
     artistsExclude: [],
     excludeSeedArtist: false,
+    sessionId,
   } as unknown as BuildPlaylistRequest;
 }
 
 export default function App() {
+  const sessionId = useRef(newSessionID()).current;
   const { choice, cycle } = useTheme();
   const [screen, setScreen] = useState<Screen>("catalog");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
@@ -85,8 +89,8 @@ export default function App() {
     setScreen("playlist");
   };
 
-  const openReview = (trackIds: string[], heading: string) => {
-    setReview({ trackIds, heading });
+  const openReview = (trackIds: string[], heading: string, requestId: string, sourceSessionId: string) => {
+    setReview({ trackIds, heading, requestId, sessionId: sourceSessionId || sessionId });
     setScreen("reviewexport");
   };
 
@@ -150,11 +154,15 @@ export default function App() {
 
         <main className="min-h-0 flex-1 overflow-hidden">
           {screen === "generate" && generateReady && (
-            <GenerateScreen onGenerated={openPlaylist} onNeedCatalog={() => setScreen("catalog")} />
+            <GenerateScreen
+              sessionId={sessionId}
+              onGenerated={openPlaylist}
+              onNeedCatalog={() => setScreen("catalog")}
+            />
           )}
           {screen === "catalog" && (
             <CatalogSearch
-              onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+              onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
             />
           )}
           {screen === "playlist" &&
@@ -163,12 +171,13 @@ export default function App() {
                 request={playlist.request}
                 heading={playlist.heading}
                 initialResult={playlist.initialResult}
+                sessionId={playlist.request.sessionId || sessionId}
                 onBack={() => setScreen(generateReady ? "generate" : "catalog")}
                 onReview={openReview}
               />
             ) : (
               <CatalogSearch
-                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
               />
             ))}
           {screen === "reviewexport" &&
@@ -176,11 +185,13 @@ export default function App() {
               <ReviewExport
                 trackIds={review.trackIds}
                 heading={review.heading}
+                requestId={review.requestId}
+                sessionId={review.sessionId}
                 onBack={() => setScreen("playlist")}
               />
             ) : (
               <CatalogSearch
-                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed), `${seed.artist} — ${seed.title}`)}
+                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
               />
             ))}
           {screen === "settings" && <SettingsScreen />}
@@ -189,6 +200,13 @@ export default function App() {
       </div>
     </PreviewPlayerProvider>
   );
+}
+
+function newSessionID(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const words = new Uint32Array(4);
+  crypto.getRandomValues(words);
+  return Array.from(words, (word) => word.toString(16).padStart(8, "0")).join("");
 }
 
 function NavButton({

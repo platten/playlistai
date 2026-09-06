@@ -44,7 +44,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		},
 	}
 
-	seeds, mode := extractSeeds(prompt, lower, in.NowPlaying)
+	seeds, mode := extractSeeds(prompt, lower, in.NowPlaying, in.RecentTracks)
 	for _, seed := range seeds {
 		ref := typedReference(prompt, seed, core.ReferenceArtist, core.InfluencePositive)
 		intent.References = append(intent.References, ref)
@@ -126,7 +126,7 @@ var (
 	reTailNoise = regexp.MustCompile(`(?i)\s+(?:stuff|music|vibes?|tracks?|songs?|tunes?|playlist|please)\s*$`)
 )
 
-func extractSeeds(orig, lower string, now *core.TrackRef) ([]string, core.Mode) {
+func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef) ([]string, core.Mode) {
 	if m := reJourney.FindStringSubmatch(orig); m != nil {
 		var seeds []string
 		seeds = append(seeds, cleanSeed(m[1]))
@@ -145,8 +145,15 @@ func extractSeeds(orig, lower string, now *core.TrackRef) ([]string, core.Mode) 
 		}
 	}
 
-	if now != nil && reThis.MatchString(lower) {
-		q := strings.TrimSpace(now.Artist + " " + now.Title)
+	if reThis.MatchString(lower) {
+		contextTrack := now
+		if contextTrack == nil && len(recent) > 0 {
+			contextTrack = &recent[0]
+		}
+		if contextTrack == nil {
+			return nil, core.ModeSimilar
+		}
+		q := strings.TrimSpace(contextTrack.Artist + " " + contextTrack.Title)
 		if q != "" {
 			return []string{q}, core.ModeSimilar
 		}

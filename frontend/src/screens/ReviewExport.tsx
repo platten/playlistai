@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clipboard } from "@wailsio/runtime";
-import { API, type EnrichedTrackDTO } from "../lib/api";
+import { API, FeedbackScope, FeedbackType, type EnrichedTrackDTO } from "../lib/api";
 import {
   Button,
   EmptyState,
@@ -27,10 +27,14 @@ type Saved =
 export function ReviewExport({
   trackIds,
   heading,
+  requestId,
+  sessionId,
   onBack,
 }: {
   trackIds: string[];
   heading: string;
+  requestId: string;
+  sessionId: string;
   onBack: () => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -42,6 +46,7 @@ export function ReviewExport({
   const [exportError, setExportError] = useState<string | null>(null);
   const [saved, setSaved] = useState<Saved | null>(null);
   const [copied, setCopied] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const copyURL = (url: string) => {
     Clipboard.SetText(url)
@@ -55,6 +60,7 @@ export function ReviewExport({
   const enrichProgress = useProgress("enrich");
   const exportProgress = useProgress("export");
   const started = useRef(false);
+  const acceptanceRecorded = useRef(false);
 
   const runEnrich = useCallback(() => {
     setEnriching(true);
@@ -95,12 +101,40 @@ export function ReviewExport({
   const setRow = (i: number, patch: Partial<Row>) =>
     setRows((prev) => (prev ? prev.map((r, j) => (j === i ? { ...r, ...patch } : r)) : prev));
 
+  const setIncluded = (index: number, include: boolean) => {
+    const row = rows?.[index];
+    if (!row || row.include === include) return;
+    setRow(index, { include });
+    setFeedbackError(null);
+    API.RecordFeedback({
+      type: include ? FeedbackType.FeedbackAccepted : FeedbackType.FeedbackRemoved,
+      scope: FeedbackScope.FeedbackScopeRequest,
+      trackId: row.dto.id,
+      requestId,
+      sessionId,
+      context: { surface: "review", position: index, rationaleKind: "" },
+    }).catch((feedbackFailure) => setFeedbackError(String(feedbackFailure)));
+  };
+
   const doExport = (kind: "handoff" | "csv") => {
     if (includedTracks.length === 0) return;
     setExporting(kind);
     setExportError(null);
     setSaved(null);
-    const call =
+    const recordAcceptance = acceptanceRecorded.current
+      ? Promise.resolve()
+      : API.RecordTrackAcceptance({
+          trackIds: includedTracks.map((track) => track.id),
+          requestId,
+          sessionId,
+        })
+          .then(() => {
+            acceptanceRecorded.current = true;
+          })
+          .catch((feedbackFailure) => {
+            setFeedbackError(String(feedbackFailure));
+          });
+    const call = recordAcceptance.then(() =>
       kind === "handoff"
         ? API.OpenSoundiizHandoff(name.trim() || "Playlist", includedTracks).then((res) =>
             setSaved({ kind: "handoff", url: res.url, count: res.count, opened: res.opened }),
@@ -111,7 +145,8 @@ export function ReviewExport({
                 ? { kind: "csv-canceled" }
                 : { kind: "csv", path: res.path, count: res.count },
             ),
-          );
+          ),
+    );
     call.catch((e) => setExportError(String(e))).finally(() => setExporting(null));
   };
 
@@ -181,7 +216,7 @@ export function ReviewExport({
                       <input
                         type="checkbox"
                         checked={r.include}
-                        onChange={(e) => setRow(i, { include: e.target.checked })}
+                        onChange={(e) => setIncluded(i, e.target.checked)}
                         className="mt-0.5 size-3.5 accent-[var(--pai-accent)]"
                         aria-label={`Include ${r.dto.artist} — ${r.dto.title}`}
                       />
@@ -225,6 +260,7 @@ export function ReviewExport({
           </div>
 
           <div className="mt-4 flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-4">
+            {feedbackError && <ErrorState variant="inline" message={feedbackError} />}
             <label className="flex items-center gap-3 text-[13px]">
               <span className="w-28 shrink-0 text-muted">Playlist name</span>
               <input

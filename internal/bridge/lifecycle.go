@@ -16,8 +16,6 @@ import (
 
 const (
 	recommendationAlgorithmVersion = "deejai/v4"
-	profileVersion                 = "none/v1"
-	profileSnapshot                = "none"
 	maxParsedIntentCacheEntries    = 64
 )
 
@@ -154,12 +152,13 @@ func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {
 func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVersion int) (string, error) {
 	payload := struct {
 		Prompt         string          `json:"prompt"`
+		SessionID      string          `json:"sessionId"`
 		ParserIdentity string          `json:"parserIdentity"`
 		SchemaVersion  int             `json:"schemaVersion"`
 		NowPlaying     *core.TrackRef  `json:"nowPlaying"`
 		RecentTracks   []core.TrackRef `json:"recentTracks"`
 		Locale         string          `json:"locale"`
-	}{input.Prompt, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale}
+	}{input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -168,7 +167,7 @@ func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVe
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func generationIdentity(intent core.MusicIntent, catalogVersion string) (Reproducibility, error) {
+func generationIdentity(intent core.MusicIntent, catalogVersion, profileVersion, profileSnapshot string) (Reproducibility, error) {
 	intent = intent.Normalized()
 	raw, err := json.Marshal(struct {
 		CatalogVersion   string           `json:"catalogVersion"`

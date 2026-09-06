@@ -28,6 +28,8 @@ type BuildPlaylistRequest struct {
 	Intent          core.MusicIntent `json:"intent"`
 	Overrides       ControlOverrides `json:"overrides"`
 	Reproducibility Reproducibility  `json:"reproducibility"`
+	SessionID       string           `json:"sessionId"`
+	RequestID       string           `json:"requestId"`
 
 	ReferenceIDs      []string     `json:"referenceIds,omitempty"`
 	RequiredIDs       []string     `json:"requiredIds,omitempty"`
@@ -94,6 +96,12 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	}
 	intent = intent.Normalized()
 
+	profileStarted := time.Now()
+	profile, err := a.generationTasteProfile(ctx, req.SessionID, req.RequestID)
+	if err != nil {
+		return PlaylistResult{}, err
+	}
+	profileTiming := StageTiming{Stage: "profile", Milliseconds: time.Since(profileStarted).Milliseconds()}
 	started := time.Now()
 	playlist, err := a.app.Reco.Build(ctx, intent)
 	if err != nil {
@@ -122,7 +130,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	}
 	out.Status = GenerationStatus{
 		State: "complete", PartialReasons: []PlaylistNotice{},
-		Timings: []StageTiming{{Stage: "recommend", Milliseconds: time.Since(started).Milliseconds()}},
+		Timings: []StageTiming{profileTiming, {
+			Stage: "recommend", Milliseconds: time.Since(started).Milliseconds(),
+		}},
 	}
 	if len(out.Tracks) < out.Intent.Count {
 		out.Status.State = "partial"
@@ -140,11 +150,13 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if a.app.Resolver != nil {
 		catalogVersion = a.app.Resolver.CatalogVersion()
 	}
-	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion)
+	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, profile.AlgorithmVersion, profile.SnapshotID)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
-	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks), "recommend_ms", out.Status.Timings[0].Milliseconds)
+	a.recordExposures(ctx, req, out)
+	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
+		"profile_ms", profileTiming.Milliseconds, "recommend_ms", out.Status.Timings[1].Milliseconds)
 	return out, nil
 }
 

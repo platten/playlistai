@@ -25,6 +25,7 @@ import (
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/similarity/brute"
+	"github.com/platten/playlistai/internal/taste"
 )
 
 // Container holds the wired application. Fields are ports (interfaces); a field
@@ -42,7 +43,9 @@ type Container struct {
 
 	// History persists generated playlists for the Generate screen's
 	// "start from a past playlist" option. nil if the DB could not be opened.
-	History *history.Store
+	History  *history.Store
+	Feedback ports.FeedbackStore
+	Profiles ports.ProfileStore
 
 	// exporters are the wired ports.Exporter implementations, looked up by
 	// Name() via Exporter(). Order is display order.
@@ -93,6 +96,13 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	} else {
 		c.History = hs
 		c.RegisterCloser(hs.Close)
+	}
+	if ts, err := taste.Open(cfg.DataDir); err != nil {
+		log.Warn("taste data unavailable; continuing without personalization", "err", err)
+	} else {
+		c.Feedback = ts
+		c.Profiles = ts
+		c.RegisterCloser(ts.Close)
 	}
 	c.wireEnrichExport()
 	c.wirePreview(cfg.Preview.Provider)

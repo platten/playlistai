@@ -11,6 +11,7 @@ import (
 // lists or embeddings.
 type IntentInput struct {
 	Prompt       string
+	SessionID    string
 	NowPlaying   *core.TrackRef  // resolves "like this"
 	RecentTracks []core.TrackRef // resolves "keep it going"
 	Locale       string

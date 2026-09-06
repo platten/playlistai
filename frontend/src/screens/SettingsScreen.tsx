@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
-import { API, type LlamaRuntimeInfo, type ModelInfo, type ModelStatus } from "../lib/api";
+import {
+  API,
+  type LlamaRuntimeInfo,
+  type ModelInfo,
+  type ModelStatus,
+  type TasteProfileSummary,
+} from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 
 /** ggml-org's official llama.cpp installer landing page. */
@@ -21,12 +27,13 @@ export function SettingsScreen() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
-  const [busy, setBusy] = useState<string | null>(null); // model id, "file", "clear", "llama"
+  const [busy, setBusy] = useState<string | null>(null); // model id, "file", "clear", "llama", "taste"
   const [error, setError] = useState<string | null>(null);
   const [filePath, setFilePath] = useState("");
   const progress = useProgress("model");
   const installProgress = useProgress("llama-install");
   const [previewProvider, setPreviewProviderState] = useState<string | null>(null);
+  const [tasteProfile, setTasteProfile] = useState<TasteProfileSummary | null>(null);
 
   const refresh = useCallback(() => {
     API.GetModelStatus()
@@ -38,6 +45,9 @@ export function SettingsScreen() {
     API.GetModelCatalog()
       .then((c) => setCatalog(c ?? []))
       .catch(() => setCatalog([]));
+    API.GetTasteProfile("", "")
+      .then((profile) => setTasteProfile(profile ?? null))
+      .catch(() => setTasteProfile(null));
   }, []);
 
   useEffect(() => {
@@ -50,6 +60,13 @@ export function SettingsScreen() {
   const choosePreview = (id: string) => {
     setPreviewProviderState(id);
     API.SetPreviewProvider(id).catch(() => undefined);
+  };
+
+  const clearTaste = () => {
+    if (!window.confirm("Clear all local likes, dislikes, request feedback, exposures, and taste profiles?")) {
+      return;
+    }
+    void run("taste", () => API.ClearTasteData());
   };
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
@@ -177,7 +194,7 @@ export function SettingsScreen() {
             note={progress.note}
           />
         )}
-        {busy && !downloadingModel && (
+        {busy && busy !== "taste" && !downloadingModel && (
           <p className="text-[12px] text-faint">
             {busy === "clear" ? "Switching to the rules parser…" : "Starting the model…"}
           </p>
@@ -298,6 +315,36 @@ export function SettingsScreen() {
         <p className="text-[11.5px] text-faint">
           Deezer looks up a 30s preview per track (no account needed). "Spotify" uses just the
           preview link shipped with the catalog, no network calls. "Off" disables playback.
+        </p>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
+          Local taste profile
+        </h2>
+        <div className="flex items-center gap-4 rounded-card border border-line bg-surface px-4 py-3.5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[13.5px] font-medium">
+              {tasteProfile?.coldStart
+                ? "No explicit taste evidence yet"
+                : `${tasteProfile?.positiveEvidence ?? 0} positive · ${tasteProfile?.negativeEvidence ?? 0} negative`}
+            </div>
+            <div className="text-[12px] text-faint">
+              {tasteProfile?.clusterCount ?? 0} taste clusters · {tasteProfile?.exposureCount ?? 0} recommendation exposures
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={busy !== null || !tasteProfile || (tasteProfile.coldStart && tasteProfile.exposureCount === 0)}
+            onClick={clearTaste}
+          >
+            {busy === "taste" ? "Clearing…" : "Clear local taste data"}
+          </Button>
+        </div>
+        <p className="text-[11.5px] text-faint">
+          Generated tracks and preview playback are not likes. Only explicit feedback changes affinity;
+          “less for this playlist” remains request-specific.
         </p>
       </section>
     </div>

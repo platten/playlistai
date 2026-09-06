@@ -29,6 +29,7 @@ interface PlayerState {
 }
 
 interface PlayerAPI extends PlayerState {
+  recentTracks: PreviewTrack[];
   /** Play `track`; toggles play/pause when it's already the current track. */
   toggle: (track: PreviewTrack) => void;
   stop: () => void;
@@ -46,8 +47,10 @@ const PlayerContext = createContext<PlayerAPI | null>(null);
  */
 export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const currentTrackRef = useRef<PreviewTrack | null>(null);
   const requestID = useRef(0);
   const [state, setState] = useState<PlayerState>(INITIAL);
+  const [recentTracks, setRecentTracks] = useState<PreviewTrack[]>([]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -57,7 +60,15 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
     const onTime = () => setState((s) => ({ ...s, currentTime: audio.currentTime }));
     const onMeta = () => setState((s) => ({ ...s, duration: audio.duration || 0 }));
     const onEnded = () => setState((s) => ({ ...s, status: "idle", currentTime: 0 }));
-    const onPlay = () => setState((s) => ({ ...s, status: "playing" }));
+    const onPlay = () => {
+      setState((s) => ({ ...s, status: "playing" }));
+      const track = currentTrackRef.current;
+      if (track) {
+        setRecentTracks((current) =>
+          [track, ...current.filter((item) => item.id !== track.id)].slice(0, 10),
+        );
+      }
+    };
     const onPause = () => setState((s) => (s.status === "playing" ? { ...s, status: "paused" } : s));
     const onError = () => setState((s) => ({ ...s, status: "error", error: "Playback failed" }));
 
@@ -87,6 +98,7 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
       audio.pause();
       audio.src = "";
     }
+    currentTrackRef.current = null;
     setState(INITIAL);
   }, []);
 
@@ -114,6 +126,7 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
       }
 
       const myRequest = ++requestID.current;
+      currentTrackRef.current = track;
       setState({ track, status: "loading", currentTime: 0, duration: 0, error: null });
 
       API.GetPreviewURL(track.id)
@@ -139,7 +152,10 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
     [state.track, state.status],
   );
 
-  const value = useMemo<PlayerAPI>(() => ({ ...state, toggle, stop, seek }), [state, toggle, stop, seek]);
+  const value = useMemo<PlayerAPI>(
+    () => ({ ...state, recentTracks, toggle, stop, seek }),
+    [state, recentTracks, toggle, stop, seek],
+  );
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }

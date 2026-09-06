@@ -4,10 +4,12 @@ package fakes
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -240,6 +242,97 @@ func (p *IntentParser) Info() ports.ParserInfo {
 }
 
 var _ ports.IntentParser = (*IntentParser)(nil)
+
+// ---------------------------------------------------------------------------
+// FeedbackStore / ProfileStore
+// ---------------------------------------------------------------------------
+
+type FeedbackStore struct {
+	mu     sync.Mutex
+	events []core.FeedbackEvent
+}
+
+func (s *FeedbackStore) RecordFeedback(_ context.Context, event core.FeedbackEvent) (core.FeedbackEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if event.ID == "" {
+		event.ID = fmt.Sprintf("fake-%d", len(s.events)+1)
+	}
+	if event.Version == 0 {
+		event.Version = core.FeedbackEventVersion
+	}
+	if event.OccurredAt.IsZero() {
+		event.OccurredAt = time.Unix(int64(len(s.events)+1), 0).UTC()
+	}
+	if err := event.Validate(); err != nil {
+		return core.FeedbackEvent{}, err
+	}
+	s.events = append(s.events, event)
+	return event, nil
+}
+
+func (s *FeedbackStore) RecordFeedbackBatch(ctx context.Context, events []core.FeedbackEvent) error {
+	for _, event := range events {
+		if _, err := s.RecordFeedback(ctx, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *FeedbackStore) ListFeedback(_ context.Context, query ports.FeedbackQuery) ([]core.FeedbackEvent, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]core.FeedbackEvent, 0, len(s.events))
+	for _, event := range s.events {
+		if query.RequestID == "" && query.SessionID == "" || event.Scope == core.FeedbackScopeDurable ||
+			event.RequestID == query.RequestID || event.SessionID == query.SessionID {
+			out = append(out, event)
+		}
+	}
+	return out, nil
+}
+
+func (s *FeedbackStore) ClearFeedback(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = nil
+	return nil
+}
+
+type ProfileStore struct {
+	mu       sync.Mutex
+	profiles []core.TasteProfile
+}
+
+func (s *ProfileStore) SaveProfile(_ context.Context, profile core.TasteProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profiles = append(s.profiles, profile)
+	return nil
+}
+
+func (s *ProfileStore) LatestProfile(_ context.Context, catalogVersion, requestID, sessionID string) (core.TasteProfile, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for index := len(s.profiles) - 1; index >= 0; index-- {
+		profile := s.profiles[index]
+		if profile.CatalogVersion == catalogVersion && profile.RequestID == requestID && profile.SessionID == sessionID {
+			return profile, true, nil
+		}
+	}
+	return core.TasteProfile{}, false, nil
+}
+
+func (s *ProfileStore) ClearProfiles(_ context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.profiles = nil
+	return nil
+}
+
+var _ ports.FeedbackStore = (*FeedbackStore)(nil)
+var _ ports.ProfileStore = (*ProfileStore)(nil)
 
 // ---------------------------------------------------------------------------
 // SimilarityEngine

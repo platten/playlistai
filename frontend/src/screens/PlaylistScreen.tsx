@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API, type BuildPlaylistRequest, type PlaylistResult } from "../lib/api";
+import {
+  API,
+  FeedbackScope,
+  FeedbackType,
+  type BuildPlaylistRequest,
+  type PlaylistResult,
+} from "../lib/api";
 import {
   Button,
   EmptyState,
@@ -28,14 +34,16 @@ export function PlaylistScreen({
   request,
   heading,
   initialResult,
+  sessionId,
   onBack,
   onReview,
 }: {
   request: BuildPlaylistRequest;
   heading: string;
   initialResult?: PlaylistResult;
+  sessionId: string;
   onBack: () => void;
-  onReview: (trackIds: string[], heading: string) => void;
+  onReview: (trackIds: string[], heading: string, requestId: string, sessionId: string) => void;
 }) {
   const initial = request.intent?.controls;
   const [audioWeight, setAudioWeight] = useState(initial?.audioWeight ?? request.creativity ?? 0.5);
@@ -61,6 +69,8 @@ export function PlaylistScreen({
   const [busy, setBusy] = useState(!initialResultMatches);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [feedback, setFeedback] = useState<Record<string, string[]>>({});
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const player = usePreviewPlayer();
 
   const debounce = useRef<number | undefined>(undefined);
@@ -72,6 +82,13 @@ export function PlaylistScreen({
     () =>
       `${JSON.stringify(request.intent?.references ?? [])}|${JSON.stringify(request.intent?.requiredTracks ?? [])}|${(request.seedIds ?? []).join(",")}|${request.mode}`,
     [request.intent, request.seedIds, request.mode],
+  );
+  const feedbackRequestId = useMemo(
+    () =>
+      request.requestId ||
+      initialResult?.reproducibility?.id ||
+      `request-${sessionId}-${randomSeed()}`,
+    [initialResult?.reproducibility?.id, request.requestId, requestKey, sessionId],
   );
   useEffect(() => {
     const controls = request.intent?.controls;
@@ -86,6 +103,8 @@ export function PlaylistScreen({
     setResult(initialResultMatches ? initialResult : null);
     setBusy(!initialResultMatches);
     setExpanded(new Set());
+    setFeedback({});
+    setFeedbackError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialResult, initialResultMatches, request.reproducibility?.id, requestKey]);
 
@@ -115,6 +134,8 @@ export function PlaylistScreen({
     setError(null);
     const call = API.BuildPlaylist({
       ...request,
+      requestId: feedbackRequestId,
+      sessionId,
       overrides: {
         totalTrackCount: count,
         audioWeight,
@@ -139,6 +160,8 @@ export function PlaylistScreen({
       });
   }, [
     request,
+    feedbackRequestId,
+    sessionId,
     audioWeight,
     cooccurrenceWeight,
     discovery,
@@ -167,6 +190,30 @@ export function PlaylistScreen({
     (request.intent?.requiredTracks ?? []).length ||
     (request.requiredIds ?? []).length ||
     (request.version < 2 ? (request.seedIds ?? []).length : 0);
+
+  const recordFeedback = (
+    track: NonNullable<PlaylistResult["tracks"]>[number],
+    position: number,
+    type: FeedbackType,
+    scope: FeedbackScope,
+  ) => {
+    setFeedbackError(null);
+    API.RecordFeedback({
+      type,
+      scope,
+      trackId: track.id,
+      requestId: feedbackRequestId,
+      sessionId,
+      context: { surface: "playlist", position, rationaleKind: track.kind },
+    })
+      .then(() =>
+        setFeedback((current) => ({
+          ...current,
+          [track.id]: [...(current[track.id] ?? []), type],
+        })),
+      )
+      .catch((feedbackFailure) => setFeedbackError(String(feedbackFailure)));
+  };
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[880px] flex-col px-6 py-6">
@@ -203,6 +250,8 @@ export function PlaylistScreen({
             onReview(
               tracks.map((t) => t.id),
               heading,
+              feedbackRequestId,
+              sessionId,
             )
           }
         >
@@ -278,6 +327,8 @@ export function PlaylistScreen({
         </div>
       ))}
 
+      {feedbackError && <ErrorState variant="inline" message={feedbackError} className="mt-3" />}
+
       <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
         {error ? (
           <ErrorState message={error} onRetry={build} />
@@ -286,29 +337,112 @@ export function PlaylistScreen({
         ) : tracks.length === 0 ? (
           <EmptyState title="No playlist" description="The seeds didn't resolve to anything." />
         ) : (
-          tracks.map((t, i) => (
-            <TrackRow
-              key={`${t.id}-${i}`}
-              index={i + 1}
-              title={t.title}
-              artist={t.artist}
-              provenance={KIND_TO_PROVENANCE[t.kind]}
-              reason={expanded.has(i) ? t.detail : undefined}
-              active={player.track?.id === t.id}
-              onPlay={() => player.toggle({ id: t.id, artist: t.artist, title: t.title })}
-              onClick={() =>
-                setExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(i)) next.delete(i);
-                  else next.add(i);
-                  return next;
-                })
-              }
-            />
-          ))
+          tracks.map((t, i) => {
+            const recorded = feedback[t.id] ?? [];
+            return (
+              <div key={`${t.id}-${i}`}>
+                <TrackRow
+                  index={i + 1}
+                  title={t.title}
+                  artist={t.artist}
+                  provenance={KIND_TO_PROVENANCE[t.kind]}
+                  reason={expanded.has(i) ? t.detail : undefined}
+                  active={player.track?.id === t.id}
+                  onPlay={() => player.toggle({ id: t.id, artist: t.artist, title: t.title })}
+                  onClick={() =>
+                    setExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(i)) next.delete(i);
+                      else next.add(i);
+                      return next;
+                    })
+                  }
+                />
+                {expanded.has(i) && (
+                  <div className="ml-[64px] flex flex-wrap items-center gap-1 pb-2.5 text-[11.5px] text-faint">
+                    <span className="mr-1">Taste feedback</span>
+                    <FeedbackButton
+                      label="Like"
+                      durable
+                      disabled={recorded.includes("like")}
+                      onClick={() =>
+                        recordFeedback(
+                          t,
+                          i,
+                          FeedbackType.FeedbackLike,
+                          FeedbackScope.FeedbackScopeDurable,
+                        )
+                      }
+                    />
+                    <FeedbackButton
+                      label="Dislike"
+                      durable
+                      disabled={recorded.includes("dislike")}
+                      onClick={() =>
+                        recordFeedback(
+                          t,
+                          i,
+                          FeedbackType.FeedbackDislike,
+                          FeedbackScope.FeedbackScopeDurable,
+                        )
+                      }
+                    />
+                    <FeedbackButton
+                      label="More like this"
+                      disabled={recorded.includes("more_like")}
+                      onClick={() =>
+                        recordFeedback(
+                          t,
+                          i,
+                          FeedbackType.FeedbackMoreLike,
+                          FeedbackScope.FeedbackScopeRequest,
+                        )
+                      }
+                    />
+                    <FeedbackButton
+                      label="Less for this playlist"
+                      disabled={recorded.includes("less_like")}
+                      onClick={() =>
+                        recordFeedback(
+                          t,
+                          i,
+                          FeedbackType.FeedbackLessLike,
+                          FeedbackScope.FeedbackScopeRequest,
+                        )
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
+  );
+}
+
+function FeedbackButton({
+  label,
+  durable,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  durable?: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={durable ? "Saved as a durable taste preference" : "Applies only to this playlist request"}
+      className="rounded-control border border-line px-2 py-1 text-muted hover:border-line-strong hover:text-text disabled:border-accent/30 disabled:bg-accent-quiet disabled:text-accent"
+    >
+      {disabled ? `${label} recorded` : label}
+    </button>
   );
 }
 

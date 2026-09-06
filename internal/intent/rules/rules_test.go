@@ -60,6 +60,17 @@ func TestSeedFromNowPlaying(t *testing.T) {
 	}
 }
 
+func TestSeedFromRecentSessionTrack(t *testing.T) {
+	t.Parallel()
+	m, _ := (&Parser{}).Parse(context.Background(), ports.IntentInput{
+		Prompt:       "more of this",
+		RecentTracks: []core.TrackRef{{Artist: "Björk", Title: "Jóga"}},
+	})
+	if len(m.Seeds.Queries) != 1 || m.Seeds.Queries[0] != "Björk Jóga" {
+		t.Fatalf("seeds = %#v", m.Seeds.Queries)
+	}
+}
+
 func TestCount(t *testing.T) {
 	t.Parallel()
 	cases := map[string]int{

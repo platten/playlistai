@@ -3,25 +3,34 @@
  * `../bindings/github.com/...` path. Regenerate with `wails3 generate bindings`.
  */
 export { API } from "../../bindings/github.com/platten/playlistai/internal/bridge";
+export {
+  FeedbackScope,
+  FeedbackType,
+} from "../../bindings/github.com/platten/playlistai/internal/core";
 export type {
   BuildPlaylistRequest,
   ControlOverrides,
   CatalogInfo,
   EnrichedTrackDTO,
   ExportSaveResult,
+  FeedbackReceipt,
   GenerateResult,
   InstalledModel,
   IntentPreview,
+  IntentSessionContext,
   LlamaRuntimeInfo,
   ModelInfo,
   ModelStatus,
   PlaylistResult,
   PlaylistTrack,
   PreviewResult,
+  RecordAcceptanceRequest,
+  RecordFeedbackRequest,
   ResolutionSelection,
   SavedPlaylistSummary,
   SavedPlaylist,
   SimilarResult,
   Status,
+  TasteProfileSummary,
   TrackHit,
 } from "../../bindings/github.com/platten/playlistai/internal/bridge";
