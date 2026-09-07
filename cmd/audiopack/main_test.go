@@ -65,3 +65,20 @@ func TestAssemblyRejectsInvalidInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinWorkerBundleWithoutCalibration(t *testing.T) {
+	o := fixtureOptions(t)
+	o.builtin, o.worker = true, ""
+	o.audioOutput, o.textOutput = "audio_embeds", "text_embeds"
+	o.textUnpadded = true
+	if err := assemble(o); err != nil {
+		t.Fatal(err)
+	}
+	m, err := audio.ReadRuntimeBundle(o.output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Version != 2 || m.File(o.output, "worker") != "" || m.Policy.Valid() || !m.TextUnpadded || m.Model.Weights != m.EmbeddingFingerprint() {
+		t.Fatalf("invalid custom runtime bundle: %+v", m)
+	}
+}

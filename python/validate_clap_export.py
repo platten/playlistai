@@ -52,10 +52,14 @@ def main():
     parser.add_argument("--go-fixtures", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--reuse-export", action="store_true")
+    parser.add_argument("--music-and-speech", action="store_true", help="Validate the pinned public Xenova FP32 export against LAION music-and-speech")
     args = parser.parse_args()
+    if args.music_and_speech and not args.reuse_export:
+        parser.error("--music-and-speech validates the public graphs and requires --reuse-export")
     with (args.source / "pytorch_model.bin").open("rb") as stream:
         weights_sha256 = hashlib.file_digest(stream, "sha256").hexdigest()
-    if weights_sha256 != WEIGHTS_SHA256:
+    expected_hash = "b73c5e596fda5b29b522a1ab3f0842977fe2b147bf8b78c2ec5f7ae6267038a1" if args.music_and_speech else WEIGHTS_SHA256
+    if weights_sha256 != expected_hash:
         raise ValueError("source weights do not match the pinned reference revision")
     args.output.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(2)
@@ -102,6 +106,8 @@ def main():
             reference = audio_model(torch.from_numpy(reference_mel)).numpy()
             started = time.perf_counter()
             actual = audio_session.run(None, {"input_features": go_mel})[0]
+            if args.music_and_speech:
+                actual = actual / np.linalg.norm(actual, axis=-1, keepdims=True)
             case = compare(reference, actual)
             case.update({"kind": "synthetic_audio", "toneHz": hz, "milliseconds": (time.perf_counter() - started) * 1000})
             cases.append(case)
@@ -113,14 +119,22 @@ def main():
             go_ids = np.asarray([fixture["ids"]], dtype=np.int64)
             mask = (go_ids != tokenizer.pad_token_id).astype(np.int64)
             started = time.perf_counter()
-            actual = text_session.run(None, {"input_ids": go_ids, "attention_mask": mask})[0]
+            feed = {"input_ids": go_ids, "attention_mask": mask}
+            if args.music_and_speech:
+                # This public graph omits attention_mask. Remove padding so
+                # its implicit all-ones attention matches reference masking.
+                feed = {"input_ids": go_ids[:, :int(mask.sum())]}
+            actual = text_session.run(None, feed)[0]
+            if args.music_and_speech:
+                actual = actual / np.linalg.norm(actual, axis=-1, keepdims=True)
             case = compare(reference, actual)
             case.update({"kind": "text", "text": fixture["text"], "milliseconds": (time.perf_counter() - started) * 1000})
             cases.append(case)
             if index == 0:
                 health_text = reference.reshape(-1).tolist()
     report = {
-        "model": "laion/larger_clap_music", "referenceRevision": REVISION,
+        "model": "laion/larger_clap_music_and_speech" if args.music_and_speech else "laion/larger_clap_music",
+        "referenceRevision": "195c3a3e68faebb3e2088b9a79e79b43ddbda76b" if args.music_and_speech else REVISION,
         "referenceWeightsSHA256": weights_sha256,
         "reference": {"torch": torch.__version__, "transformers": "4.57.1", "onnxruntime": ort.__version__},
         "preprocessing": fixtures["preprocessing"], "fixtures": len(cases),

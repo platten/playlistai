@@ -8,6 +8,7 @@ type AudioModelIdentity struct {
 	Preprocessing string `json:"preprocessing"`
 	Runtime       string `json:"runtime"`
 	Dimension     int    `json:"dimension"`
+	Weights       string `json:"weights,omitempty"` // fingerprint of paired encoders and tokenizer
 }
 
 type PreviewIdentity struct {

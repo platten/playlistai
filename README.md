@@ -58,9 +58,9 @@ the rest of the prompt.
 
 The optional first-run model setup installs llama.cpp through its official
 installer. The wizard asks that exact runtime to enumerate usable GPUs and free
-VRAM. It offers only recommended Q4_K_M weights that fit completely on one GPU
+VRAM. It offers the single largest recommended Q4_K_M weight that fits completely on one GPU
 while reserving 1 GiB for context, KV cache, and compute buffers. When no usable
-llama.cpp GPU is reported, it offers the two smallest recommended models.
+llama.cpp GPU is reported, it offers the largest model from the bounded CPU recommendation list.
 
 Current priority:
 
@@ -163,6 +163,7 @@ benchmark wrappers for all three operating systems.
 Detailed references:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [CLAP model candidates and custom bundles](docs/clap-model-candidates.md)
 - [Recommendation milestone log](docs/recommendation-milestones.md)
 - [Catalog construction and hosting](docs/CATALOG.md)
 - [Semantic sidecar pilot](docs/semantic-sidecar.md)

@@ -13,6 +13,18 @@ func (a *API) GetAnalysisStatus(ctx context.Context) (app.AnalysisStatus, error)
 func (a *API) InspectAnalysisBundle(path string) (audio.BundleManifest, error) {
 	return a.app.InspectAnalysisBundle(path)
 }
+
+func (a *API) GetRecommendedAnalysisBundle() (audio.BundleManifest, error) {
+	return audio.RecommendedBundle()
+}
+
+func (a *API) InstallRecommendedAnalysisBundle(ctx context.Context) error {
+	ctx, _, finish := a.operations.begin(ctx, "analysis-download")
+	defer finish()
+	a.operations.cancel("prompt-generation")
+	a.operations.cancel("playlist-build")
+	return a.app.InstallRecommendedAnalysisBundle(ctx, NewWailsProgress())
+}
 func (a *API) InstallAnalysisBundle(ctx context.Context, path string) error {
 	ctx, _, finish := a.operations.begin(ctx, "analysis-download")
 	defer finish()

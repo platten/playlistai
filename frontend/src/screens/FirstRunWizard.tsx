@@ -363,7 +363,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
               <Icon.Check size={14} className="mt-0.5 flex-none text-good" />
               <span>
                 {hardware.gpuName || "llama.cpp GPU"} · {fmtGB(hardware.vramBytes)} VRAM.
-                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. Models below fit
+                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. The model below is the largest recommendation that fits
                 in the {fmtGB(hardware.fitBytes)} available after replacing any active
                 model, with {fmtGB(hardware.reserveBytes)} left for context, KV cache,
                 and compute buffers.
@@ -373,8 +373,8 @@ function ModelStep({ onNext }: { onNext: () => void }) {
             <>
               <Icon.Warn size={14} className="mt-0.5 flex-none text-faint" />
               <span>
-                This llama.cpp runtime reports no usable GPU. Showing the two smallest
-                recommended models for CPU inference.
+                This llama.cpp runtime reports no usable GPU. Showing the largest
+                model from the CPU recommendation list.
               </span>
             </>
           )}

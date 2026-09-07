@@ -5,12 +5,14 @@ package main
 import (
 	"flag"
 	"os"
+
+	"github.com/platten/playlistai/internal/audioruntime"
 )
 
 func main() {
 	dir := flag.String("bundle", "", "verified model bundle directory")
 	flag.Parse()
-	if err := run(*dir); err != nil {
+	if err := audioruntime.Run(*dir); err != nil {
 		os.Exit(1)
 	}
 }

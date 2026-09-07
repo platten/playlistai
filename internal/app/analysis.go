@@ -28,6 +28,7 @@ type analysisState struct {
 }
 
 type AnalysisStatus struct {
+	Installed     bool                      `json:"installed"`
 	Available     bool                      `json:"available"`
 	Enabled       bool                      `json:"enabled"`
 	Model         string                    `json:"model"`
@@ -41,7 +42,7 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 	s := &c.analysis
 	s.bundles = &audio.BundleManager{Directory: filepath.Join(c.cfg.DataDir, "music-analysis")}
 	s.enabled = config.LoadPrefs(c.cfg.DataDir).AnalysisEnabled
-	s.detail = "Music CLAP is awaiting a validated model bundle. Catalog recommendations remain available."
+	s.detail = "Download the recommended CLAP model or choose a compatible custom bundle."
 	store, err := audio.OpenStore(c.cfg.DataDir)
 	if err != nil {
 		s.detail = "Local analysis storage is unavailable."
@@ -95,6 +96,11 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 		worker.Unload()
 	}
 	s.detail = "Preview audio is processed in memory. Derived features stay on this device until cleared. Assessments cover the preview only."
+	if !manifest.Policy.Valid() {
+		s.enabled = false
+		worker.Unload()
+		s.detail = "CLAP model installed and inference validated. Automatic musical-fit decisions await a calibrated policy."
+	}
 	return nil
 }
 
@@ -120,8 +126,9 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s := &c.analysis
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	status := AnalysisStatus{Enabled: s.enabled, Available: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
+	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
 	if s.manifest != nil {
+		status.Model = s.manifest.Label
 		status.DownloadBytes = s.manifest.DownloadBytes()
 		status.MemoryBytes = s.manifest.MemoryBytes
 	}
@@ -157,6 +164,18 @@ func (c *Container) InstallAnalysisBundle(ctx context.Context, path string, p po
 	if err != nil {
 		return err
 	}
+	return c.installAnalysisManifest(ctx, manifest, p)
+}
+
+func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p ports.Progress) error {
+	manifest, err := audio.RecommendedBundle()
+	if err != nil {
+		return err
+	}
+	return c.installAnalysisManifest(ctx, manifest, p)
+}
+
+func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.BundleManifest, p ports.Progress) error {
 	if c.analysis.store == nil {
 		return fmt.Errorf("analysis storage unavailable")
 	}

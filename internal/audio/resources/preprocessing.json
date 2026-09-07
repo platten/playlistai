@@ -1,0 +1,1 @@
+{"version": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1", "samplingRate": 48000, "segmentSamples": 480000, "fftSize": 1024, "hopSize": 480, "melBins": 64, "minimumFrequency": 50, "maximumFrequency": 14000, "melScale": "slaney", "padding": "reflect", "floor": 1e-10}

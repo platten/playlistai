@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
+	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/logging"
@@ -31,6 +32,12 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
+		if err := audioruntime.Run(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(log); err != nil {
 		log.Error("fatal", "err", err)

@@ -187,9 +187,10 @@ are ineligible for essential or strict criteria, which can shorten a playlist.
 
 The optional audio pipeline, persistence, native worker, bundle installer and UI
 are implemented. A real authorized Deezer preview passed the complete Go/native/
-SQLite vertical slice. **A production music-analysis bundle is not enabled or
-published:** reviewed musical-fit calibration, held-out listening comparisons,
-and clean-machine platform installations are unfinished gates. Catalog-only
+SQLite vertical slice. The wizard now downloads and inference-validates a pinned
+public CLAP bundle. **Automatic musical-fit decisions remain disabled for that
+bundle:** reviewed calibration, held-out listening comparisons, and clean-machine
+platform installations are unfinished gates. Catalog-only
 recommendations and existing GGUF installations remain usable.
 
 Listeners independently enable external preview lookups in Settings after installing
@@ -317,8 +318,10 @@ revision, preprocessing contract, measured parity and calibration-policy metadat
 Artifacts resume independently; healthy verified files are reused. Activation
 updates the active pointer only after actual native health inference, leaving
 the prior bundle active on failed download/health. Existing GGUF handling is
-unchanged. A local development bundle may run inference before calibration;
-the desktop install/activation paths still reject that bundle.
+unchanged. Legacy v1 bundles require a calibrated policy and their own worker.
+Version 2 uses the application's isolated native worker and permits installation
+with an empty policy; automatic musical-fit decisions stay disabled until a
+reviewed policy is supplied. Both encoders must pass native reference checks.
 
 ### Executed measurements and validation
 
@@ -462,9 +465,9 @@ this session. Therefore quality comparisons, threshold selection, held-out
 metrics and population-level coverage/latency measurements have not been run.
 Clean-machine Windows, macOS and Linux installation/removal/resume checks are
 also unexecuted; this WSL2 host run is not a substitute. Platform-specific
-runtime artifacts, dependency licenses and memory coexistence with the LLM need
-validation before offering a public bundle. No release, deployment, model
-publication or default language-model change is included.
+runtime artifacts and dependency licenses are now pinned in the recommended
+bundle; memory coexistence with the LLM still needs platform measurements.
+No release, deployment or model publication is included.
 
 ## Open descriptions and metadata retrieval (intent v8)
 

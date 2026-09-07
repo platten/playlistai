@@ -19,8 +19,12 @@ import (
 )
 
 type options struct {
+	sourceURL, modelLicense                                                      string
 	export, source, worker, runtime, licenses, platform, baseURL, policy, output string
 	memory                                                                       int64
+	builtin                                                                      bool
+	audioOutput, textOutput                                                      string
+	textUnpadded                                                                 bool
 }
 
 func main() {
@@ -35,19 +39,28 @@ func main() {
 	flag.StringVar(&o.policy, "policy", "", "optional frozen development calibration policy JSON")
 	flag.StringVar(&o.output, "output", "", "bundle output directory")
 	flag.Int64Var(&o.memory, "memory-bytes", 0, "platform memory budget")
+	flag.BoolVar(&o.builtin, "builtin-worker", false, "create a v2 bundle using the application's native worker")
+	flag.StringVar(&o.audioOutput, "audio-output", "embedding", "audio ONNX output name for v2 bundles")
+	flag.StringVar(&o.textOutput, "text-output", "embedding", "text ONNX output name for v2 bundles")
+	flag.BoolVar(&o.textUnpadded, "text-unpadded", false, "text graph accepts variable-length input_ids without attention_mask")
+	flag.StringVar(&o.sourceURL, "model-source-url", "", "custom model provenance URL (defaults to its Hugging Face model ID)")
+	flag.StringVar(&o.modelLicense, "model-license", "", "custom model license attribution (full notices are still required)")
 	flag.Parse()
 	if err := assemble(o); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println("Assembled local bundle. Desktop activation still requires a reviewed calibration policy.")
+	fmt.Println("Assembled local bundle. Automatic musical-fit decisions require a reviewed calibration policy.")
 }
 
 func assemble(o options) error {
-	for _, value := range []string{o.export, o.source, o.worker, o.runtime, o.licenses, o.output, o.platform} {
+	for _, value := range []string{o.export, o.source, o.runtime, o.licenses, o.output, o.platform} {
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("audiopack: all artifact paths, output and target platform are required")
 		}
+	}
+	if !o.builtin && o.worker == "" {
+		return fmt.Errorf("audiopack: worker path or --builtin-worker required")
 	}
 	u, err := url.Parse(o.baseURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || o.memory <= 0 {
@@ -62,13 +75,28 @@ func assemble(o options) error {
 	if err := readJSON(filepath.Join(o.export, "parity.json"), &report); err != nil {
 		return err
 	}
-	if !report.Passed || !report.Valid() || report.Model != "laion/larger_clap_music" || report.Preprocessing != audio.PreprocessingVersion {
+	if !report.Passed || !report.Valid() || report.Model == "" || report.Preprocessing != audio.PreprocessingVersion {
 		return fmt.Errorf("audiopack: incompatible or unvalidated export")
 	}
 	if err := audio.CheckPreprocessing(filepath.Join(o.export, "preprocessing.json")); err != nil {
 		return err
 	}
 	m := audio.BundleManifest{Version: 1, ID: "music-clap-cpu-v1", Label: "Music CLAP · CPU", Platform: o.platform, MemoryBytes: o.memory, License: "Apache-2.0 model; MIT runtime; GPL-3.0 worker", SourceURL: "https://huggingface.co/laion/larger_clap_music", Parity: report.ParityReport, Model: core.AudioModelIdentity{Model: report.Model, Revision: report.ReferenceRevision, Preprocessing: report.Preprocessing, Runtime: "onnxruntime/1.26.0/cpu", Dimension: 512}}
+	if o.builtin {
+		m.Version = 2
+		m.ID = "custom-clap-cpu-v2"
+		m.Label = report.Model + " · CPU"
+		m.SourceURL = "https://huggingface.co/" + report.Model
+		m.License = "See bundled model and dependency license notices"
+		m.ONNXOutputNames = []string{o.audioOutput, o.textOutput}
+		m.TextUnpadded = o.textUnpadded
+	}
+	if o.sourceURL != "" {
+		m.SourceURL = o.sourceURL
+	}
+	if o.modelLicense != "" {
+		m.License = o.modelLicense
+	}
 	if o.policy != "" {
 		if err := readJSON(o.policy, &m.Policy); err != nil {
 			return err
@@ -78,8 +106,11 @@ func assemble(o options) error {
 		}
 	}
 	inputs := []struct{ role, path string }{
-		{"worker", o.worker}, {"runtime", o.runtime}, {"audio_model", filepath.Join(o.export, "audio.onnx")}, {"text_model", filepath.Join(o.export, "text.onnx")},
+		{"runtime", o.runtime}, {"audio_model", filepath.Join(o.export, "audio.onnx")}, {"text_model", filepath.Join(o.export, "text.onnx")},
 		{"vocabulary", filepath.Join(o.source, "vocab.json")}, {"merges", filepath.Join(o.source, "merges.txt")}, {"preprocessing", filepath.Join(o.export, "preprocessing.json")}, {"license", o.licenses}, {"health", filepath.Join(o.export, "health.json")},
+	}
+	if !o.builtin {
+		inputs = append(inputs, struct{ role, path string }{"worker", o.worker})
 	}
 	names := map[string]bool{}
 	for _, input := range inputs {
@@ -112,6 +143,9 @@ func assemble(o options) error {
 			return fmt.Errorf("audiopack: empty artifact %s", name)
 		}
 		m.Artifacts = append(m.Artifacts, audio.BundleArtifact{Role: input.role, Name: name, URL: strings.TrimRight(o.baseURL, "/") + "/" + url.PathEscape(name), Size: size, SHA256: hex.EncodeToString(h.Sum(nil))})
+	}
+	if o.builtin {
+		m.Model.Weights = m.EmbeddingFingerprint()
 	}
 	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

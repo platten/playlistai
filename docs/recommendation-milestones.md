@@ -329,8 +329,9 @@ The curated model catalog now contains pinned Q4_K_M artifacts for Qwen3.5 35B
 A3B, Qwen3.5 9B, Mistral Small 3.1 24B, Gemma 3 12B, and Qwen3.5 4B in product
 priority order. The first-run wizard asks its selected llama.cpp binary to
 enumerate devices and free VRAM, retains 1 GiB for context/KV/compute, and shows
-only models whose complete weights fit. With no usable llama.cpp GPU, it shows
-the two smallest recommended models. Llama 3.2 3B and Qwen2.5 3B stay available
+only the largest model whose complete weights fit. With no usable llama.cpp GPU,
+it shows the largest model from the bounded CPU recommendation list. Llama 3.2
+3B and Qwen2.5 3B stay available
 but non-recommended. These five artifacts are not yet covered by the existing
 intent benchmark, so their ordering is not presented as a measured quality
 result.
@@ -542,3 +543,40 @@ checks in scripts/capture-log-window.mjs cover light/dark themes, narrow windows
 scroll/follow behavior, error recovery UI and the close binding. Screenshots are
 in /tmp/playlist-ai-log-window. These browser checks do not exercise native
 window-manager behavior on Windows, macOS or Linux.
+
+## Wizard model selection and public CLAP bundle — 2026-09-07
+
+The language-model step now offers at most one recommendation: the largest
+model in the existing eligible shortlist, preserving GPU memory reserves and
+the two-entry CPU shortlist. Settings retains the full model catalog.
+
+Surveyed public CLAP families, paired ONNX exports and specialized alternatives
+in [CLAP model candidates](clap-model-candidates.md). The wizard downloads the
+full-precision Xenova export of LAION larger CLAP music-and-speech, with pinned
+weights, matching tokenizer and official ONNX Runtime 1.26.0 assets. Linux amd64
+downloads total approximately 793 MB. Downloads resume; runtime extraction checks
+the exact member's size/hash and native inference must pass before activation.
+Users can select a custom manifest and follow linked training/export guidance.
+
+Version 2 bundles run a Go-managed native worker inside a child of the desktop
+executable, with no Python runtime dependency. Paired artifact fingerprints
+prevent incompatible caches from mixing. Legacy bundle compatibility is retained.
+The public model has passed runtime validation but has no reviewed musical-fit
+calibration policy; installation does not enable automatic fit decisions. The
+wizard states this before download and after installation.
+
+Executed validation: ten public-export/reference comparisons, exact tokenizer
+checks and Go preprocessing comparisons; actual native installation and desktop
+worker health checks with no executable search path/Python setup; the complete
+repository gate; browser fixtures covering one language recommendation, both
+CLAP paths, retry/cancel/inference states, documentation links, both themes and
+a narrow window. Screenshots are in `/tmp/playlist-ai-clap-wizard-ui`.
+Reproduction commands and exact parity errors are in the candidate guide.
+
+Platform limits: native inference was executed on Linux amd64/WSL2 only. Pinned
+runtime files also cover Linux arm64, Windows amd64/arm64 and macOS arm64;
+clean-machine tests are not claimed. Pure-Go application builds reject v2
+installation before downloading; Windows needs an explicit cgo build for the
+built-in worker. Intel macOS needs a custom compatible runtime bundle. The
+2 GiB memory allowance remains provisional. No release or model publication
+was performed, and no weights, recordings or user data enter the repository.

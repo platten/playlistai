@@ -1,0 +1,93 @@
+{
+  "model": "laion/larger_clap_music_and_speech",
+  "referenceRevision": "195c3a3e68faebb3e2088b9a79e79b43ddbda76b",
+  "referenceWeightsSHA256": "b73c5e596fda5b29b522a1ab3f0842977fe2b147bf8b78c2ec5f7ae6267038a1",
+  "reference": {
+    "torch": "2.9.1+cpu",
+    "transformers": "4.57.1",
+    "onnxruntime": "1.26.0"
+  },
+  "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+  "fixtures": 10,
+  "maximumAbsoluteError": 9.834766387939453e-07,
+  "minimumCosine": 0.9999999403953552,
+  "tokenizerCases": 7,
+  "tokenizerExact": true,
+  "preprocessingCases": 3,
+  "preprocessingWithinTolerance": true,
+  "maximumPreprocessingError": 7.62939453125e-06,
+  "cases": [
+    {
+      "maximumAbsoluteError": 9.834766387939453e-07,
+      "cosine": 1.0000001192092896,
+      "kind": "synthetic_audio",
+      "toneHz": 220,
+      "milliseconds": 176.77811899920925
+    },
+    {
+      "maximumAbsoluteError": 4.991888999938965e-07,
+      "cosine": 0.9999999403953552,
+      "kind": "synthetic_audio",
+      "toneHz": 440,
+      "milliseconds": 157.55723799884436
+    },
+    {
+      "maximumAbsoluteError": 3.2782554626464844e-07,
+      "cosine": 1.0000001192092896,
+      "kind": "synthetic_audio",
+      "toneHz": 880,
+      "milliseconds": 165.07025600003544
+    },
+    {
+      "maximumAbsoluteError": 3.0547380447387695e-07,
+      "cosine": 1.0,
+      "kind": "text",
+      "text": "ambient electronica",
+      "milliseconds": 14.78539500021725
+    },
+    {
+      "maximumAbsoluteError": 4.209578037261963e-07,
+      "cosine": 1.0000001192092896,
+      "kind": "text",
+      "text": "relaxing but not sleepy",
+      "milliseconds": 14.850446001219098
+    },
+    {
+      "maximumAbsoluteError": 4.936009645462036e-07,
+      "cosine": 1.0,
+      "kind": "text",
+      "text": "instrumental, no vocals",
+      "milliseconds": 15.328839999710908
+    },
+    {
+      "maximumAbsoluteError": 2.5890767574310303e-07,
+      "cosine": 1.0,
+      "kind": "text",
+      "text": "\u5b87\u591a\u7530\u30d2\u30ab\u30eb\u306e\u97f3\u697d",
+      "milliseconds": 22.1809270005906
+    },
+    {
+      "maximumAbsoluteError": 2.989545464515686e-07,
+      "cosine": 1.0,
+      "kind": "text",
+      "text": "Bj\u00f6rk's shimmering textures",
+      "milliseconds": 16.207483000471257
+    },
+    {
+      "maximumAbsoluteError": 2.123415470123291e-07,
+      "cosine": 1.0,
+      "kind": "text",
+      "text": "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",
+      "milliseconds": 19.597696998971514
+    },
+    {
+      "maximumAbsoluteError": 3.5390257835388184e-07,
+      "cosine": 1.0000001192092896,
+      "kind": "text",
+      "text": " don't  stop\n the music!",
+      "milliseconds": 15.819676998944487
+    }
+  ],
+  "musicalQualityEvaluated": false,
+  "passed": true
+}

@@ -1,6 +1,6 @@
 //go:build cgo
 
-package main
+package audioruntime
 
 import (
 	"encoding/json"
@@ -16,11 +16,13 @@ import (
 )
 
 type inference struct {
-	audio, text *ort.DynamicAdvancedSession
-	tokenizer   *audio.RobertaTokenizer
+	audio, text  *ort.DynamicAdvancedSession
+	tokenizer    *audio.RobertaTokenizer
+	textUnpadded bool
 }
 
-func run(dir string) error {
+// Run serves framed audio/text inference in an isolated child process.
+func Run(dir string) error {
 	manifest, err := audio.ReadRuntimeBundle(dir)
 	if err != nil {
 		return err
@@ -43,12 +45,20 @@ func run(dir string) error {
 			return err
 		}
 	}
-	a, err := ort.NewDynamicAdvancedSession(manifest.File(dir, "audio_model"), []string{"input_features"}, []string{"embedding"}, options)
+	audioOutput, textOutput := "embedding", "embedding"
+	if manifest.Version == 2 {
+		audioOutput, textOutput = manifest.ONNXOutputNames[0], manifest.ONNXOutputNames[1]
+	}
+	a, err := ort.NewDynamicAdvancedSession(manifest.File(dir, "audio_model"), []string{"input_features"}, []string{audioOutput}, options)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = a.Destroy() }()
-	t, err := ort.NewDynamicAdvancedSession(manifest.File(dir, "text_model"), []string{"input_ids", "attention_mask"}, []string{"embedding"}, options)
+	textInputs := []string{"input_ids", "attention_mask"}
+	if manifest.TextUnpadded {
+		textInputs = []string{"input_ids"}
+	}
+	t, err := ort.NewDynamicAdvancedSession(manifest.File(dir, "text_model"), textInputs, []string{textOutput}, options)
 	if err != nil {
 		return err
 	}
@@ -57,7 +67,7 @@ func run(dir string) error {
 	if err != nil {
 		return err
 	}
-	i := inference{audio: a, text: t, tokenizer: tokenizer}
+	i := inference{audio: a, text: t, tokenizer: tokenizer, textUnpadded: manifest.TextUnpadded}
 	for {
 		var request audio.WorkerRequest
 		if err := audio.ReadFrame(os.Stdin, &request, 16<<20); err != nil {
@@ -112,11 +122,21 @@ func (i *inference) textEmbedding(text string) ([]float32, error) {
 	}
 	defer clear(ids)
 	defer clear(mask)
-	x, err := ort.NewTensor(ort.NewShape(1, 77), ids)
+	if i.textUnpadded {
+		count := 0
+		for _, value := range mask {
+			count += int(value)
+		}
+		ids = ids[:count]
+	}
+	x, err := ort.NewTensor(ort.NewShape(1, int64(len(ids))), ids)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = x.Destroy() }()
+	if i.textUnpadded {
+		return infer(i.text, []ort.Value{x})
+	}
 	y, err := ort.NewTensor(ort.NewShape(1, 77), mask)
 	if err != nil {
 		return nil, err
@@ -138,8 +158,11 @@ func infer(session *ort.DynamicAdvancedSession, inputs []ort.Value) ([]float32, 
 	for _, x := range vector {
 		norm += float64(x) * float64(x)
 	}
-	if math.IsNaN(norm) || math.IsInf(norm, 0) || norm < 0.9 || norm > 1.1 {
+	if math.IsNaN(norm) || math.IsInf(norm, 0) || norm <= 1e-12 {
 		return nil, fmt.Errorf("invalid output norm")
+	}
+	for j := range vector {
+		vector[j] /= float32(math.Sqrt(norm))
 	}
 	return vector, nil
 }

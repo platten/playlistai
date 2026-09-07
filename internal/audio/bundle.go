@@ -17,11 +17,15 @@ import (
 )
 
 type BundleArtifact struct {
-	Role   string `json:"role"`
-	Name   string `json:"name"`
-	URL    string `json:"url"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
+	Role           string `json:"role"`
+	Name           string `json:"name"`
+	URL            string `json:"url"`
+	Size           int64  `json:"size"`
+	SHA256         string `json:"sha256"`
+	ArchiveMember  string `json:"archiveMember,omitempty"`
+	UnpackedSize   int64  `json:"unpackedSize,omitempty"`
+	UnpackedSHA256 string `json:"unpackedSHA256,omitempty"`
+	Data           []byte `json:"data,omitempty"` // small preprocessing, license, and reference fixtures
 }
 type ParityReport struct {
 	ReferenceRevision            string  `json:"referenceRevision"`
@@ -50,34 +54,75 @@ type BundleManifest struct {
 	Policy      Policy                  `json:"policy"`
 	Parity      ParityReport            `json:"parity"`
 	Artifacts   []BundleArtifact        `json:"artifacts"`
+	// v2 uses the application's built-in worker and a paired ONNX export.
+	ONNXOutputNames []string `json:"onnxOutputNames,omitempty"`
+	TextUnpadded    bool     `json:"textUnpadded,omitempty"`
 }
 
 func (m BundleManifest) Validate() error {
-	if !m.Policy.Valid() {
+	if m.Version == 2 && !nativeInferenceAvailable {
+		return fmt.Errorf("audio: this bundle requires a cgo-enabled application build")
+	}
+	if !m.Policy.Valid() && (m.Version != 2 || m.Policy != (Policy{})) {
 		return fmt.Errorf("audio: bundle needs a policy calibrated on reviewed development data")
 	}
 	return m.validateRuntime()
 }
 
 func (m BundleManifest) validateRuntime() error {
-	if m.Version != 1 || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model != "laion/larger_clap_music" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
-		return fmt.Errorf("audio: bundle requires compatible platform, provenance, CPU runtime, preprocessing, parity, and calibrated policy")
+	if (m.Version != 1 && m.Version != 2) || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model == "" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
+		return fmt.Errorf("audio: bundle requires compatible platform, provenance, CPU runtime, preprocessing, and parity")
 	}
-	names, roles := map[string]bool{}, map[string]bool{}
+	if m.Version == 2 && (len(m.ONNXOutputNames) != 2 || m.ONNXOutputNames[0] == "" || m.ONNXOutputNames[1] == "") {
+		return fmt.Errorf("audio: paired ONNX output names required")
+	}
+	names, roles := map[string]bool{"bundle.json": true, "bundle.json.tmp": true, "active.json": true}, map[string]bool{}
 	for _, a := range m.Artifacts {
 		hash, err := hex.DecodeString(a.SHA256)
-		if !safeName(a.Name) || names[a.Name] || roles[a.Role] || a.Role == "" || a.Size <= 0 || err != nil || len(hash) != 32 || !strings.HasPrefix(a.URL, "https://") {
+		inline := len(a.Data) > 0 && len(a.Data) <= 1<<20 && (a.Role == "health" || a.Role == "preprocessing" || a.Role == "license")
+		if !safeName(a.Name) || names[a.Name] || roles[a.Role] || a.Role == "" || a.Size <= 0 || err != nil || len(hash) != 32 || (!inline && !strings.HasPrefix(a.URL, "https://")) || len(a.Data) > 0 && !inline {
 			return fmt.Errorf("audio: invalid bundle artifact")
 		}
 		names[a.Name] = true
 		roles[a.Role] = true
+		if m.Version == 2 && a.Role == "worker" {
+			return fmt.Errorf("audio: version 2 bundles use the application's built-in worker")
+		}
+		if a.ArchiveMember != "" {
+			hash, err := hex.DecodeString(a.UnpackedSHA256)
+			if a.Role != "runtime" || !safeArchiveMember(a.ArchiveMember) || !safeName(filepath.Base(a.ArchiveMember)) || names[filepath.Base(a.ArchiveMember)] || a.UnpackedSize <= 0 || a.UnpackedSize > 256<<20 || err != nil || len(hash) != 32 {
+				return fmt.Errorf("audio: invalid runtime archive member")
+			}
+			names[filepath.Base(a.ArchiveMember)] = true
+		}
 	}
 	for _, role := range []string{"worker", "runtime", "audio_model", "text_model", "vocabulary", "merges", "preprocessing", "license", "health"} {
+		if role == "worker" && m.Version == 2 {
+			continue
+		}
 		if !roles[role] {
 			return fmt.Errorf("audio: missing %s artifact", role)
 		}
 	}
+	if m.Version == 2 && m.Model.Weights != m.EmbeddingFingerprint() {
+		return fmt.Errorf("audio: embedding identity does not match paired model artifacts")
+	}
 	return nil
+}
+
+func (m BundleManifest) EmbeddingFingerprint() string {
+	weights := map[string]string{}
+	for _, a := range m.Artifacts {
+		switch a.Role {
+		case "audio_model", "text_model", "vocabulary", "merges":
+			weights[a.Role] = a.SHA256
+		}
+	}
+	return Fingerprint(struct {
+		Artifacts    map[string]string
+		Outputs      []string
+		TextUnpadded bool
+	}{weights, m.ONNXOutputNames, m.TextUnpadded})
 }
 func safeName(s string) bool {
 	return s != "" && s != "." && s != ".." && filepath.Base(s) == s && !strings.ContainsAny(s, "/\\:")
@@ -85,6 +130,9 @@ func safeName(s string) bool {
 func (m BundleManifest) File(dir, role string) string {
 	for _, a := range m.Artifacts {
 		if a.Role == role {
+			if a.ArchiveMember != "" {
+				return filepath.Join(dir, filepath.Base(a.ArchiveMember))
+			}
 			return filepath.Join(dir, a.Name)
 		}
 	}
@@ -117,22 +165,39 @@ func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.P
 	}
 	version := m.ID + "-" + Fingerprint(m)[:16]
 	dir := filepath.Join(b.Directory, version)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
 	var done int64
 	for _, a := range m.Artifacts {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
 		target := filepath.Join(dir, a.Name)
-		if !artifactValid(dir, a) {
+		if !downloadValid(dir, a) {
 			base := done
-			if _, err := dataset.Download(ctx, a.URL, target, a.Size, a.SHA256, func(n, _ int64) { p.Report("analysis-model", base+n, m.DownloadBytes(), "Downloading music analysis") }); err != nil {
+			if len(a.Data) > 0 {
+				if err := os.WriteFile(target, a.Data, 0o600); err != nil {
+					return "", err
+				}
+				if !downloadValid(dir, a) {
+					return "", fmt.Errorf("audio: bundled fixture integrity mismatch")
+				}
+			} else if _, err := dataset.Download(ctx, a.URL, target, a.Size, a.SHA256, func(n, _ int64) { p.Report("analysis-model", base+n, m.DownloadBytes(), "Downloading music analysis") }); err != nil {
+				return "", err
+			}
+		}
+		if a.ArchiveMember != "" && !artifactValid(dir, a) {
+			if err := unpackRuntime(ctx, dir, a); err != nil {
 				return "", err
 			}
 		}
 		done += a.Size
 	}
-	if err := os.Chmod(m.File(dir, "worker"), 0o700); err != nil {
-		return "", err
+	if m.Version == 1 {
+		if err := os.Chmod(m.File(dir, "worker"), 0o700); err != nil {
+			return "", err
+		}
 	}
 	raw, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -168,6 +233,17 @@ func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.P
 }
 
 func artifactValid(dir string, a BundleArtifact) bool {
+	if !downloadValid(dir, a) {
+		return false
+	}
+	if a.ArchiveMember != "" {
+		ok, _ := dataset.Status(dir, &dataset.Manifest{Files: []dataset.File{{Name: filepath.Base(a.ArchiveMember), Size: a.UnpackedSize, SHA256: a.UnpackedSHA256}}})
+		return ok
+	}
+	return true
+}
+
+func downloadValid(dir string, a BundleArtifact) bool {
 	ok, _ := dataset.Status(dir, &dataset.Manifest{Files: []dataset.File{{Name: a.Name, Size: a.Size, SHA256: a.SHA256}}})
 	return ok
 }

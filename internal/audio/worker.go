@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -105,7 +106,16 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 		return nil, err
 	}
 	if w.cmd == nil {
-		cmd := exec.Command(w.Executable, "--bundle", w.BundleDir) //nolint:gosec // checksum-verified managed bundle
+		executable, flag := w.Executable, "--bundle"
+		if executable == "" {
+			var err error
+			executable, err = os.Executable()
+			if err != nil {
+				return nil, err
+			}
+			flag = "--audio-worker"
+		}
+		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
