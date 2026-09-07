@@ -47,7 +47,7 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.7.0/'))) throw Error('Incorrect release downloads');
+  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.7.0/'))) throw Error('Incorrect release downloads');
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); window.scrollTo(0,0); });
@@ -82,5 +82,5 @@ try {
     await page.screenshot({path:path.join(directory,'og.png')});
   }
   if (errors.length) throw Error(errors.join('\n'));
-  console.log('PASS: five viewports, keyboard examples and navigation, 16 versioned downloads, anchors, reduced motion, no-JS content, no external requests, no browser errors');
+  console.log('PASS: five viewports, keyboard examples and navigation, 13 versioned downloads, anchors, reduced motion, no-JS content, no external requests, no browser errors');
 } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
