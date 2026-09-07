@@ -312,7 +312,7 @@ silently restored to their defaults, so the components could not be disabled.
 
 ## Post-milestone Runtime and Onboarding Updates
 
-The desktop recommendation runtime is now fully compiled Go. Semantic sidecar
+The catalog recommendation runtime is now fully compiled Go. Semantic sidecar
 schema v3 stores facet completeness and the bounded query vocabulary needed by its Unicode-aware Go
 query composer; Python and Sentence Transformers remain offline dataset-builder
 dependencies only. The complete test gate includes a `CGO_ENABLED=0` compile of
@@ -382,5 +382,163 @@ absence. Runtime and evaluation now share evidence/hierarchy rules and ordered
 journey-stage accounting. `multichannel/v5` jointly sequences category stages,
 required tracks, waypoints, and hard artist spacing; it returns partial or
 clarification outcomes when they cannot all be satisfied. Parser versions
-advance to v5 without changing intent-v6 history serialization. Full-catalog
+advance to v6 without changing intent-v6 history serialization. Full-catalog
 semantic evidence and held-out listening judgments remain the next dependencies.
+
+The category vocabulary now canonicalizes `electronica` to `electronic` and
+`ambient electronica` to `ambient electronic`, while retaining explicit artist
+context such as “music by Electronica.” This closes the rules-fallback path that
+previously surfaced “no seeds are resolved” for “ambient electronica.”
+
+## Milestone 12 — Description and Preview Evidence (implementation, gated)
+
+Intent v7 and `multichannel/v6` add the original description, open-vocabulary
+genre expansions, six bounded anchor attempts and candidate-wide preview
+eligibility. All retrieval channels pass strict metadata and preview checks
+before personalization/ranking. Required tracks and journey stages retain their
+original criteria. Unsupported or unknown evidence cannot silently fill a
+playlist; strict no-vocals remains unproved by previews.
+
+The owner confirmed Deezer permission for analysis, permanent derived features
+and distributed desktop users. Go now owns bounded preview fetches, MP3 decode,
+48 kHz preprocessing, RoBERTa tokenization, Slaney log-mel features, SQLite
+retention and an isolated CPU ONNX worker. Inference uses music CLAP in its own
+aligned embedding space. The optional worker uses cgo/native ONNX Runtime;
+the existing core cgo-free compile gate still passes. No Python desktop
+requirement or persistent preview file was introduced.
+
+The wizard/settings support checksummed, resumable model/runtime bundles with
+parity, policy, platform and native health gates, plus separate analysis/history/
+taste clearing. Generate keeps its composer visible, shows an editable request
+summary and progressive checked tracks, and supports stop-and-keep. Generation
+IDs protect progress/results against stale work. Full intent, string seed,
+versions and evidence snapshot remain in history.
+
+Executed on 2026-09-07: the full repository gate and Linux production desktop
+build passed; rendered light/dark,
+narrow, reduced-motion, keyboard/ARIA, stale, partial, wizard, download/error and
+retry states passed. Real model export parity passed ten fixtures (maximum
+embedding error `1.043081283569336e-7`, seven exact tokenizer cases, three Go
+log-mel fixtures). An authorized, corroborated Four Tet preview passed
+Go → ONNX → SQLite in 2,071 ms after worker health, fetching 479,827 bytes for
+29.99 seconds. Repeat analysis fetched zero bytes. A separate cached health run
+peaked at 1,127,388 KiB RSS on the WSL2 Linux amd64 host.
+
+The implementation is **not a production music-quality milestone**. Public
+bundle activation remains gated because development listening calibration and
+held-out comparisons have not been performed. The new offline audio review
+reporter validates recording/artist split isolation and three ablations, while
+preserving unknown judgments. Clean-machine Windows/macOS/Linux installations,
+combined LLM memory budgets and human screen-reader validation remain unexecuted.
+No model/publication/release/default-LLM change is included. Architecture,
+provenance, measurements and reproduction commands are in
+[`recommendation-correctness.md`](recommendation-correctness.md).
+
+### Python-free distribution follow-up
+
+Ported analysis-bundle assembly to `cmd/audiopack` and removed the Python helper.
+Removed the explicit Python installation from the cross-build Dockerfile; its
+existing Node runtime parses the Zig checksum manifest. Python remains only in
+offline dataset preparation and model-export/reference-validation tools.
+The desktop and downloaded analysis worker have no Python runtime requirement.
+The real Go packager and native CLAP audio/text health passed with Python
+unavailable on the executable search path; worker memory mappings and Linux
+binary dependency scans contained no Python runtime.
+
+### Deezer request spacing follow-up
+
+Added a shared process-wide two-second minimum between Deezer request starts.
+Metadata, analysis downloads, playback downloads and redirects share the same
+budget. Playback uses a bounded in-memory data URL to prevent browser requests
+from bypassing the throttle; queued work is cancellable. Tests cover concurrent
+dispatch, cancellation, failures, redirects, separate providers and cache hits.
+The analysis deadline includes throttle waiting, so historical pre-throttle
+timings do not represent current uncached performance. No release is included.
+
+## Milestone 13 — Open music descriptions and useful partial results
+
+Intent v8 separates genres, styles, moods, textures, vocal preferences and typed
+artist/album/track references. The local-model grammar has bounded lists and one
+repair attempt. Invalid optional proposals and invented positive references no
+longer become listener requirements. Century dates use deterministic arithmetic;
+classical periods refer to composition, and named destinations pin an actual
+recording last. Production examples describe interpretation structure without
+hardcoded prompt-to-track fits.
+
+MusicBrainz metadata retrieval is bounded to 20 requests/30 seconds per generation,
+uses its shared limiter, caches positive/negative responses, and permits stale
+offline reuse. Genre relationships and aliases come from attributed public pages;
+only subgenres imply broader membership. Recording identity ambiguity is retained.
+Full prompts and taste profiles are never sent to metadata services. Cached exact
+genres work in catalog-only mode; full interpretation needs the optional LLM.
+
+New prompts may produce explicitly labeled best-available suggestions. Proven
+category fit precedes personalization and diversity. Known mismatches and artist
+exclusions remain filtered; unsupported strict requirements still abstain.
+Earlier histories preserve verified-only behavior. Audio-checked tracks stay
+distinct from suggestions, with generation IDs, provisional ordering and
+stop-and-keep controls. Optional CLAP activation remains gated on the listening
+and platform validation described in Milestone 12.
+
+Executed on 2026-09-07: all twelve synthetic prompt contracts generate through
+the parser/resolver/engine; genre alias/cycle/relationship, source grounding,
+namespace, exclusion, temporal scope, destination, cache TTL/offline, metadata
+identity and evidence-priority regressions pass. The complete repository gate
+passes, including race tests, pure-Go core compile, lint, generated bindings,
+TypeScript and production frontend build. Rendered screenshots pass light/dark,
+narrow, reduced-motion, keyboard/ARIA, stale events, suggestions/checked tracks,
+partial results and wizard/download/error/retry fixtures.
+
+`scripts/build.sh` passes on WSL2, producing AppImage, DEB, RPM, Arch and a
+cross-compiled Windows NSIS installer. The shared AppImage wrapper prevents
+linuxdeploy plugin discovery from traversing `/mnt` PATH entries; its regression
+test includes the reported ControlD path. macOS packaging and clean-machine
+installation remain unexecuted. Distribution has no Python runtime dependency.
+Unused helper/icon code and old production example music fits were removed.
+No release, deployment, public model bundle or default-LLM change is included.
+
+The real Qwen3.5-4B/catalog run generated playlists for all twelve prompts. Ten
+passed every intent/output check in the combined run; two intermittent omitted
+fields were fixed and passed targeted live rechecks. Latest results: eleven
+20-track playlists and one 14-track exclusion result, with uncertainty preserved.
+The actual Miles Davis destination check passes. See
+[`data/music-prompts-v8-live.json`](data/music-prompts-v8-live.json) for hashes,
+timings, initial failures and recheck identity. These are development prompt
+checks, not musical-fit judgments or a single clean twelve-case final run.
+
+### Genre artist grounding follow-up
+
+Added MusicBrainz artist-tag search with 100-result pages, pagination to at least
+100 unique artists when available, and explicit coverage/exhaustion reporting.
+Saved seeds randomize artist and recording selection, including cache reuse.
+Samples require MusicBrainz artist-MBID credits and corroborated local recording
+identity; artist tags do not classify an artist's entire catalog. Snapshots retain
+the artist pools, source queries and sampled identities.
+
+Moved one-second MusicBrainz spacing to a shared HTTP transport so concurrent
+clients and redirects cannot bypass it. Regression tests cover pagination,
+seed variation/replay, cache reuse, exclusions, mismatched recording credits,
+small pools, production interval clamping, concurrent dispatch and cancellation.
+
+Live verification on 2026-09-07 fetched 100 dubstep artists from 1,417 available
+MusicBrainz matches, sampled three artists and six corroborated catalog tracks,
+and generated a 20-track playlist. The full repository gate passes. Genre-page
+relationships were unavailable during this run; the artist API pool succeeded
+independently. This check does not claim recording-level genre or listening fit.
+
+## Settings log window — 2026-09-07
+
+Added a Settings action opening a named, separate Wails log window. Reopening
+focuses the existing viewer; closing it preserves the main window and Settings.
+Application and Wails slog records are mirrored to a synchronized, memory-only
+2,000-record buffer, capped at approximately 8 KiB per record. Existing stderr
+output is preserved. The viewer polls incrementally, labels and colors severity,
+supports keyboard scrolling, and pauses automatic scrolling when reading older
+entries. Logs cover the current session only.
+
+Validation: bounded retention, cursors, detached snapshots, grouped attributes,
+severity and concurrent writers tested with Go's race detector. Rendered fixture
+checks in scripts/capture-log-window.mjs cover light/dark themes, narrow windows,
+scroll/follow behavior, error recovery UI and the close binding. Screenshots are
+in /tmp/playlist-ai-log-window. These browser checks do not exercise native
+window-manager behavior on Windows, macOS or Linux.

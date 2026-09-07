@@ -29,6 +29,10 @@ type PersonalizedRecommendationEngine interface {
 // is not part of the user's musical intent. RecentSelections is used when
 // continuing radio; the original Intent references remain the primary anchor.
 type RecommendationRequest struct {
+	StopChecking     <-chan struct{}
+	OnChecked        func(core.TrackRef)
+	OnSuggested      func(core.TrackRef)
+	Progress         Progress
 	Intent           core.MusicIntent
 	Profile          core.TasteProfile
 	RecentSelections []core.TrackRef

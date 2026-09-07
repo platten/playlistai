@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -52,12 +53,18 @@ type Client struct {
 	interval time.Duration
 	hc       *http.Client
 
-	rlMu    sync.Mutex
-	lastReq time.Time
+	limiter *requestLimiter
 
 	dbMu sync.Mutex
 	db   *sql.DB
 }
+
+type requestLimiter struct {
+	gate chan struct{}
+	last time.Time
+}
+
+var applicationLimiters sync.Map
 
 // New opens (creating if needed) the cache and returns a Client.
 func New(cfg Config) (*Client, error) {
@@ -76,6 +83,16 @@ func New(cfg Config) (*Client, error) {
 	if interval <= 0 {
 		interval = time.Second
 	}
+	parsed, err := url.Parse(base)
+	if err != nil {
+		return nil, err
+	}
+	host := strings.ToLower(parsed.Hostname())
+	ip := net.ParseIP(host)
+	// Only local test servers may accelerate the provider's request limit.
+	if host != "localhost" && (ip == nil || !ip.IsLoopback()) && interval < time.Second {
+		interval = time.Second
+	}
 
 	c := &Client{
 		base:     strings.TrimRight(base, "/"),
@@ -84,6 +101,13 @@ func New(cfg Config) (*Client, error) {
 		interval: interval,
 		hc:       &http.Client{Timeout: 20 * time.Second},
 	}
+	limiterKey := strings.ToLower(parsed.Host)
+	if host == "musicbrainz.org" || host == "www.musicbrainz.org" {
+		limiterKey = "musicbrainz.org"
+	}
+	limiter, _ := applicationLimiters.LoadOrStore(limiterKey, &requestLimiter{gate: make(chan struct{}, 1)})
+	c.limiter = limiter.(*requestLimiter)
+	c.hc.Transport = &limitedTransport{client: c, base: http.DefaultTransport}
 
 	if cfg.CachePath != "" {
 		db, err := sql.Open("sqlite", "file:"+cfg.CachePath+"?_pragma=busy_timeout(5000)")
@@ -135,44 +159,27 @@ func (c *Client) one(ctx context.Context, ref core.TrackRef) core.EnrichedTrack 
 		return et
 	}
 
-	if err := c.rateLimit(ctx); err != nil {
-		return core.EnrichedTrack{Ref: ref}
-	}
-
 	et := c.query(ctx, ref)
-	c.cachePut(key, et)
+	if ctx.Err() == nil && et.IdentityStatus != "" {
+		c.cachePut(key, et)
+	}
 	return et
 }
 
-func (c *Client) rateLimit(ctx context.Context) error {
-	c.rlMu.Lock()
-	wait := c.interval - time.Since(c.lastReq)
-	if wait < 0 {
-		wait = 0
-	}
-	c.lastReq = time.Now().Add(wait)
-	c.rlMu.Unlock()
-
-	if wait == 0 {
-		return nil
-	}
-	t := time.NewTimer(wait)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
-}
-
 type mbRecording struct {
-	ID           string           `json:"id"`
-	Score        int              `json:"score"`
-	Title        string           `json:"title"`
-	ISRCs        []string         `json:"isrcs"`
-	ArtistCredit []mbArtistCredit `json:"artist-credit"`
-	Releases     []mbRelease      `json:"releases"`
+	FirstReleaseDate string           `json:"first-release-date"`
+	Genres           []mbTag          `json:"genres"`
+	Tags             []mbTag          `json:"tags"`
+	ID               string           `json:"id"`
+	Score            int              `json:"score"`
+	Title            string           `json:"title"`
+	ISRCs            []string         `json:"isrcs"`
+	ArtistCredit     []mbArtistCredit `json:"artist-credit"`
+	Releases         []mbRelease      `json:"releases"`
+}
+type mbTag struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
 }
 
 type mbArtistCredit struct {
@@ -224,17 +231,53 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		Recordings []mbRecording `json:"recordings"`
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if json.Unmarshal(raw, &body) != nil || len(body.Recordings) == 0 {
+	if json.Unmarshal(raw, &body) != nil {
+		return miss
+	}
+	miss.IdentityStatus = core.ResolutionUnresolved
+	if len(body.Recordings) == 0 {
+		return miss
+	}
+	var matching []mbRecording
+	for _, recording := range body.Recordings {
+		alternative := core.RecordingAlternative{RecordingID: recording.ID, Title: recording.Title, ISRCs: recording.ISRCs, Score: recording.Score}
+		artistMatches := false
+		for _, credit := range recording.ArtistCredit {
+			alternative.Artists = append(alternative.Artists, credit.Name)
+			if core.NormalizeIdentityPart(credit.Name) == core.NormalizeIdentityPart(ref.Artist) {
+				artistMatches = true
+			}
+		}
+		miss.Alternatives = append(miss.Alternatives, alternative)
+		if artistMatches && core.NormalizeIdentityPart(recording.Title) == core.NormalizeIdentityPart(ref.Title) && recording.Score >= c.minScore {
+			matching = append(matching, recording)
+		}
+	}
+	if len(matching) > 1 {
+		miss.IdentityStatus = core.ResolutionAmbiguous
+		return miss
+	}
+	if len(matching) == 0 {
 		return miss
 	}
 
-	top := body.Recordings[0]
+	top := matching[0]
 	et := core.EnrichedTrack{
-		Ref:         ref,
-		MatchScore:  top.Score,
-		Matched:     top.Score >= c.minScore,
-		AllISRCs:    top.ISRCs,
-		RecordingID: top.ID,
+		IdentityStatus: core.ResolutionResolved,
+		Alternatives:   miss.Alternatives,
+		Ref:            ref,
+		MatchScore:     top.Score,
+		Matched:        top.Score >= c.minScore,
+		AllISRCs:       top.ISRCs,
+		RecordingID:    top.ID,
+	}
+	for _, group := range []struct {
+		facet string
+		tags  []mbTag
+	}{{"genre", top.Genres}, {"tag", top.Tags}} {
+		for _, tag := range group.tags {
+			et.GenreTags = append(et.GenreTags, core.AttributedGenreTag{Name: tag.Name, Votes: tag.Count, Source: "musicbrainz", EntityID: top.ID, Facet: group.facet})
+		}
 	}
 	if len(top.ISRCs) > 0 {
 		et.ISRC = top.ISRCs[0]
@@ -298,7 +341,13 @@ func (c *Client) cachePut(key string, et core.EnrichedTrack) {
 // --- helpers -----------------------------------------------------------
 
 func cacheKey(ref core.TrackRef) string {
-	return strings.ToLower(strings.TrimSpace(ref.Artist)) + "\t" + strings.ToLower(strings.TrimSpace(ref.Title))
+	return "identity-v2\t" + strings.ToLower(strings.TrimSpace(ref.Artist)) + "\t" + strings.ToLower(strings.TrimSpace(ref.Title))
+}
+
+func (c *Client) CachedRecording(ref core.TrackRef) (core.EnrichedTrack, bool) {
+	result, ok := c.cacheGet(cacheKey(ref))
+	result.Ref = ref
+	return result, ok
 }
 
 var mbEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)

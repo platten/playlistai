@@ -120,7 +120,13 @@ The shipped catalog has no grounded style, mood, instrumentation, vocal, date,
 or acoustic-energy features. An optional, versioned semantic sidecar can add
 reviewed evidence and compatible precomputed query vectors. The core app works
 without it, and the desktop runtime never invokes Python; Python is limited to
-offline maintainer tooling that prepares datasets.
+offline maintainer tooling that prepares datasets and exports/checks model graphs.
+
+The downloadable music-analysis worker is compiled Go with native ONNX Runtime.
+Audio decoding, preprocessing, tokenization and inference do not require Python,
+pip, PyTorch, or a Python environment on the listener's machine. Bundle assembly
+uses `go run ./cmd/audiopack`; Python export/reference-validation tools are never
+included in desktop or analysis downloads.
 
 Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,

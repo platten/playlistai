@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import LogWindow from "./screens/LogWindow";
 import { initTheme } from "./design/theme";
 import "./design/tokens.css";
 
@@ -13,6 +14,6 @@ if (!root) {
 
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <App />
+    {new URLSearchParams(window.location.search).get("window") === "logs" ? <LogWindow /> : <App />}
   </React.StrictMode>,
 );

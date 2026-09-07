@@ -54,7 +54,7 @@ func TestMissingSemanticEvidenceUsesFixedRequestDenominator(t *testing.T) {
 	candidates := []core.Candidate{candidateFor(cat, "audio", 1), candidateFor(cat, "cooc", 1)}
 	candidates[0].Scores.SemanticMatch = .5
 	candidates[0].Available.SemanticMatch = true
-	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Controls: core.IntentControls{TotalTrackCount: 2}}
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Controls: core.IntentControls{TotalTrackCount: 2}}
 	ranked, err := NewRanker(cat, DefaultConfig()).Rank(context.Background(), candidates, ports.RankRequest{Intent: intent})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestExplorationCandidatesReceiveNegativeSemanticScoring(t *testing.T) {
 	cat := semanticCatalog()
 	sem := semanticData()
 	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
-	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Preferences: core.SemanticPreferences{Styles: []core.IntentPreference{{Value: "electronic", Influence: core.InfluencePositive}, {Value: "sleepy", Influence: core.InfluenceNegative}}}}.Normalized()
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Preferences: core.SemanticPreferences{Styles: []core.IntentPreference{{Value: "electronic", Influence: core.InfluencePositive}, {Value: "sleepy", Influence: core.InfluenceNegative}}}}.Normalized()
 	candidates := []core.Candidate{{Track: mustMeta(t, cat, "sleepy"), Sources: []core.RetrievalEvidence{{Channel: ChannelExploration}}}}
 	scored, _, _, err := engine.scoreSemanticUnion(context.Background(), candidates, intent)
 	if err != nil {
@@ -259,7 +259,7 @@ func TestMissingEssentialQueryVocabularyReturnsUnsupported(t *testing.T) {
 	sem.coverage = &core.QueryCoverage{Matched: []string{"music"}, Unmatched: []string{"electronic"}, Complete: false}
 	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, nil, sem, DefaultConfig())
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion, Seed: "44",
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Seed: "44",
 		EssentialCriteria: []core.MusicalCriterion{{Kind: "style", Scope: "playlist", Value: "electronic"}},
 		Controls:          core.IntentControls{TotalTrackCount: 2, AudioWeight: .5, CooccurrenceWeight: .5},
 	}.Normalized()
@@ -278,7 +278,7 @@ func TestAmbiguousExplicitReferenceNeedsClarification(t *testing.T) {
 		fakes.CatalogTrack{ID: "two", Display: "Second Artist - Collision", Audio: []float32{0, 1}, Track: []float32{0, 1}},
 	)
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion, References: []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Collision", Influence: core.InfluencePositive}},
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, References: []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Collision", Influence: core.InfluencePositive}},
 		Controls: core.IntentControls{TotalTrackCount: 1, AudioWeight: .5, CooccurrenceWeight: .5}, Seed: "45",
 	}.Normalized()
 	playlist, err := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).Build(context.Background(), intent)
@@ -334,7 +334,7 @@ func TestElectronicToRockJourneyReservesStagesAndOrdersDirection(t *testing.T) {
 		positive: []core.SemanticHit{{TrackID: "electronic", Score: .95}, {TrackID: "hybrid", Score: .9}, {TrackID: "rock", Score: .85}},
 	}
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion, Mode: core.ModeJourney, Seed: "46",
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeJourney, Seed: "46",
 		EssentialCriteria: []core.MusicalCriterion{
 			{Kind: "style", Value: "electronic", Scope: "journey_start"},
 			{Kind: "style", Value: "rock", Scope: "journey_end"},

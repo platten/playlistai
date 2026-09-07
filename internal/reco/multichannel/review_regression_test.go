@@ -21,6 +21,15 @@ func TestParsedCategoryAndSeedCannotFulfillWithoutEvidence(t *testing.T) {
 	}
 }
 
+func TestAmbientElectronicaFailsHonestlyWithoutSemanticEvidence(t *testing.T) {
+	intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: "ambient electronica"})
+	cat := testCatalog()
+	playlist, err := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).Build(context.Background(), intent)
+	if err != nil || playlist.Outcome.State != core.OutcomeUnsupported || len(playlist.Tracks) != 0 || !outcomeReason(playlist, "unsupported_essential_criterion") {
+		t.Fatalf("ambient electronica reached seed resolution instead of an evidence outcome: %+v, %v", playlist, err)
+	}
+}
+
 func TestParsedCategoryExclusionRetrievesWithoutSpuriousArtistResolution(t *testing.T) {
 	cat := testCatalog()
 	sem := correctnessFeatures(cat)
@@ -71,7 +80,7 @@ func categoryRegressionFixture() (*fakes.Catalog, *semanticFixture, core.MusicIn
 		positive: []core.SemanticHit{{TrackID: "e1", Score: .9}, {TrackID: "e2", Score: .9}, {TrackID: "r1", Score: .9}, {TrackID: "r2", Score: .9}},
 	}
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion, Mode: core.ModeJourney, Seed: "46",
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeJourney, Seed: "46",
 		EssentialCriteria: []core.MusicalCriterion{{Kind: "style", Value: "electronic", Scope: "journey_start"}, {Kind: "style", Value: "rock", Scope: "journey_end"}},
 		Controls:          core.IntentControls{TotalTrackCount: 4, AudioWeight: .5, CooccurrenceWeight: .5},
 	}.Normalized()

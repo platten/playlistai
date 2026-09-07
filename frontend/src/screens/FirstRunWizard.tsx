@@ -9,9 +9,10 @@ import {
   type ModelStatus,
 } from "../lib/api";
 import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 
-type Step = "welcome" | "catalog" | "model" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "model", "preview", "done"];
+type Step = "welcome" | "catalog" | "model" | "analysis" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "model", "analysis", "preview", "done"];
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -57,7 +58,8 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
       <div className="flex min-h-0 flex-1 flex-col">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
         {step === "catalog" && <CatalogStep onNext={() => setStep("model")} />}
-        {step === "model" && <ModelStep onNext={() => setStep("preview")} />}
+        {step === "model" && <ModelStep onNext={() => setStep("analysis")} />}
+        {step === "analysis" && <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
         {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
@@ -336,7 +338,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
   return (
     <StepShell
-      title="Language model"
+      title="Language understanding"
       description="It turns a typed prompt into a structured request and can infer a catalog starting point. It runs locally with no account. Generate remains available without it in catalog-only mode, which requires a seed artist or track."
     >
       <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[12.5px] text-text">

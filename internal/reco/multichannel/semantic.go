@@ -17,6 +17,7 @@ func semanticQueryText(intent core.MusicIntent) (string, string) {
 			}
 		}
 	}
+	add(intent.Preferences.Genres)
 	add(intent.Preferences.Styles)
 	add(intent.Preferences.Moods)
 	add(intent.Preferences.Instrumentation)

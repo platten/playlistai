@@ -7,6 +7,7 @@ import {
   type TasteProfileSummary,
 } from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 
 /** ggml-org's official llama.cpp installer landing page. */
 const LLAMA_INSTALLER_URL = "https://llama.app";
@@ -99,7 +100,7 @@ export function SettingsScreen() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
-          Language model
+          Language understanding
         </h2>
 
         {/* llama.cpp runtime — required before any model can be used */}
@@ -333,6 +334,22 @@ export function SettingsScreen() {
           Deezer looks up a 30s preview per track (no account needed). "Spotify" uses just the
           preview link shipped with the catalog, no network calls. "Off" disables playback.
         </p>
+      </section>
+
+      <MusicAnalysisCard />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Application logs</h2>
+        <p className="text-[12px] text-muted">View live session logs in a separate window. Settings stays open.</p>
+        <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => void run("logs", () => API.OpenLogWindow())}>
+          Open logs
+        </Button>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Playlist history</h2>
+        <p className="text-[12px] text-muted">Saved descriptions, results, and evidence snapshots stay on this device.</p>
+        <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => { if (window.confirm("Clear all saved playlist history? Audio analysis and taste data are kept.")) void run("history", () => API.ClearPlaylistHistory()); }}>Clear playlist history</Button>
       </section>
 
       <section className="flex flex-col gap-3">

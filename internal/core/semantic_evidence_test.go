@@ -14,6 +14,16 @@ func TestUncertainStyleIsNotEvidenceOfAbsence(t *testing.T) {
 	}
 }
 
+func TestElectronicaAliasesUseElectronicEvidence(t *testing.T) {
+	if CanonicalStyle("electronica") != "electronic" || CanonicalStyle("ambient electronica") != "ambient electronic" {
+		t.Fatal("electronica aliases were not canonicalized")
+	}
+	feature := TrackFeatures{FacetCoverage: []string{"styles"}, Styles: []FeatureValue{{Value: "ambient electronic", Missingness: FeatureKnown, Confidence: .9, Provenance: []FeatureProvenance{{Source: "review"}}}}}
+	if StyleEvidence(feature, "ambient electronica") != EvidenceMatch || StyleEvidence(feature, "electronica") != EvidenceMatch {
+		t.Fatal("canonical electronica evidence did not match its alias")
+	}
+}
+
 func TestJourneySequenceEvidenceRespectsDirectionAndDistinctStages(t *testing.T) {
 	m, u := EvidenceMatch, EvidenceUnknown
 	for _, tc := range []struct {

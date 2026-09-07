@@ -151,6 +151,11 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return err
 }
 
+func (s *Store) Clear(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM playlists")
+	return err
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }

@@ -30,7 +30,7 @@ func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influenc
 	references := append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...)
 	if influence == core.InfluencePositive {
 		for _, anchor := range intent.InferredAnchors {
-			if anchor.Suitability.State == core.EvidenceMatch {
+			if anchor.Suitability.State == core.EvidenceMatch || intent.VerificationPolicy == core.BestAvailable && anchor.Suitability.State != core.EvidenceMismatch {
 				references = append(references, anchor.Reference)
 			}
 		}

@@ -114,16 +114,3 @@ export function useTheme(): ThemeApi {
 
   return { choice, resolved: resolveTheme(choice), setChoice, cycle };
 }
-
-/** True when the viewer asked the OS to reduce motion. */
-export function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-      mq.addEventListener("change", onChange);
-      return () => mq.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-    () => false,
-  );
-}

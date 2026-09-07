@@ -1,0 +1,82 @@
+import { useEffect, useRef, useState } from "react";
+import { API } from "../lib/api";
+import { Button } from "../components/Button";
+
+type Entries = NonNullable<Awaited<ReturnType<typeof API.GetLogs>>>;
+
+export default function LogWindow() {
+  const [entries, setEntries] = useState<Entries>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [follow, setFollow] = useState(true);
+  const scroller = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let disposed = false;
+    let cursor = 0;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const next = (await API.GetLogs(cursor)) ?? [];
+        if (disposed) return;
+        setError(null);
+        if (next.length) {
+          cursor = next[next.length - 1].id;
+          setEntries((previous) => [...previous, ...next].slice(-2000));
+        }
+      } catch (e) {
+        if (!disposed) setError(String(e));
+      } finally {
+        if (!disposed) timer = setTimeout(() => void poll(), 1000);
+      }
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, []);
+
+  useEffect(() => {
+    if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+  }, [entries, follow]);
+
+  const close = () => { void API.CloseLogWindow().catch((e: unknown) => setError(String(e))); };
+
+  return (
+    <main className="flex h-dvh flex-col gap-4 bg-bg p-5 text-text">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Application logs</h1>
+          <p className="mt-1 text-xs text-muted">Live session · latest 2,000 records · kept in memory until the app closes</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={close}>Close logs</Button>
+      </header>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} className="accent-accent" />
+        Follow new entries
+      </label>
+      {error && <p role="alert" className="text-sm text-bad">Could not update logs: {error}. Retrying automatically.</p>}
+      <div
+        ref={scroller}
+        role="region"
+        aria-label="Application log entries"
+        tabIndex={0}
+        onScroll={() => {
+          const node = scroller.current;
+          if (node && node.scrollHeight - node.scrollTop - node.clientHeight > 40) setFollow(false);
+        }}
+        className="min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface p-3 font-mono text-xs focus-visible:outline-accent"
+      >
+        {entries.length === 0 && <p className="text-muted">Waiting for application log entries…</p>}
+        {entries.map((entry) => (
+          <div key={entry.id} className="flex items-start gap-3 border-b border-line py-2">
+            <span className={"w-12 shrink-0 font-semibold " + (
+              entry.level.startsWith("ERROR") ? "text-bad" :
+              entry.level.startsWith("WARN") ? "text-warn" :
+              entry.level.startsWith("INFO") ? "text-accent" : "text-muted"
+            )}>{entry.level}</span>
+            <span className="min-w-0 whitespace-pre-wrap break-words">{entry.text}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted">{entries.length} retained entries · {follow ? "Following live logs" : "Automatic scrolling paused"}</p>
+    </main>
+  );
+}

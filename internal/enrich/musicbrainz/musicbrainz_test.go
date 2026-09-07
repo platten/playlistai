@@ -188,6 +188,40 @@ func TestNewRejectsEmptyUserAgent(t *testing.T) {
 	}
 }
 
+func TestRecordingIdentityAmbiguityAndAttributedEvidence(t *testing.T) {
+	t.Parallel()
+	credit := []mbArtistCredit{{Name: "坂本龍一"}}
+	recordings := []mbRecording{
+		{ID: "wrong-first", Score: 100, Title: "別の曲", ArtistCredit: credit, ISRCs: []string{"WRONG"}},
+		{ID: "correct", Score: 95, Title: "青猫", ArtistCredit: credit, Genres: []mbTag{{Name: "ambient", Count: 3}}},
+	}
+	requests := atomic.Int32{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{"recordings": recordings})
+	}))
+	defer srv.Close()
+	c := newClient(t, srv.URL, time.Millisecond)
+	ref := core.TrackRef{ID: "local", Artist: "坂本龍一", Title: "青猫"}
+	if _, ok := c.CachedRecording(ref); ok || requests.Load() != 0 {
+		t.Fatal("cache-only read made a request")
+	}
+	matched := c.one(context.Background(), ref)
+	if !matched.Matched || matched.RecordingID != "correct" || matched.ISRC != "" || len(matched.Alternatives) != 2 || len(matched.GenreTags) != 1 || matched.GenreTags[0].EntityID != "correct" {
+		t.Fatalf("identity/provenance was lost: %+v", matched)
+	}
+	if cached, ok := c.CachedRecording(ref); !ok || cached.RecordingID != "correct" || requests.Load() != 1 {
+		t.Fatal("generation did not reuse recording cache")
+	}
+	// A second cache avoids reusing the intentionally permanent first result.
+	c2 := newClient(t, srv.URL, time.Millisecond)
+	recordings = append(recordings, mbRecording{ID: "other-edition", Score: 95, Title: ref.Title, ArtistCredit: credit})
+	ambiguous := c2.one(context.Background(), ref)
+	if ambiguous.IdentityStatus != core.ResolutionAmbiguous || ambiguous.Matched || ambiguous.ISRC != "" || len(ambiguous.GenreTags) != 0 || len(ambiguous.Alternatives) != 3 {
+		t.Fatalf("ambiguous identity invented certainty: %+v", ambiguous)
+	}
+}
+
 func TestContextCancelReturnsPartial(t *testing.T) {
 	t.Parallel()
 	srv := newMBServer(t, map[string]mbRecording{"x": {ID: "r", Score: 100, Title: "x"}})

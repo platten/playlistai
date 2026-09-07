@@ -30,10 +30,11 @@ type ComponentEvidence struct {
 // score has an availability bit so missing profile features are not confused
 // with a measured zero.
 type Candidate struct {
-	Track     TrackRef            `json:"track"`
-	Sources   []RetrievalEvidence `json:"sources"`
-	Scores    CandidateScores     `json:"scores"`
-	Available CandidateFeatures   `json:"available"`
+	MusicalFit EvidenceState       `json:"musicalFit,omitempty"`
+	Track      TrackRef            `json:"track"`
+	Sources    []RetrievalEvidence `json:"sources"`
+	Scores     CandidateScores     `json:"scores"`
+	Available  CandidateFeatures   `json:"available"`
 }
 
 type CandidateScores struct {
@@ -108,13 +109,15 @@ type GenerationOutcome struct {
 // requires the catalog, algorithm, profile snapshot, and generation context
 // recorded by the bridge alongside this value.
 type Playlist struct {
-	Tracks    []TrackRef        `json:"tracks"`
-	Mode      Mode              `json:"mode"`
-	Seed      RNGSeed           `json:"seed"` // lossless full-width RNG seed
-	Rationale []StepReason      `json:"rationale"`
-	Intent    MusicIntent       `json:"intent"`
-	Notices   []PlaylistNotice  `json:"notices"`
-	Outcome   GenerationOutcome `json:"outcome"`
+	Assessments   []TrackAssessment      `json:"assessments"`
+	AudioEvidence *AudioEvidenceSnapshot `json:"audioEvidence,omitempty"`
+	Tracks        []TrackRef             `json:"tracks"`
+	Mode          Mode                   `json:"mode"`
+	Seed          RNGSeed                `json:"seed"` // lossless full-width RNG seed
+	Rationale     []StepReason           `json:"rationale"`
+	Intent        MusicIntent            `json:"intent"`
+	Notices       []PlaylistNotice       `json:"notices"`
+	Outcome       GenerationOutcome      `json:"outcome"`
 }
 
 // IDs returns the track ids in order.

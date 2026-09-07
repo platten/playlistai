@@ -42,6 +42,22 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		if err != nil {
 			return ports.SequenceResult{}, err
 		}
+	} else if request.Intent.Destination != nil && len(request.Required) == 1 {
+		end := request.Required[0]
+		request.Required = nil
+		previous := s.startAnchor(request, nil)
+		remaining := append([]core.Candidate(nil), request.Candidates...)
+		for len(remaining) > 0 {
+			candidate, next, ok := s.pick(ctx, remaining, previous, end, items, request, len(items))
+			if !ok {
+				hardExhausted = true
+				break
+			}
+			items = append(items, sequenceItem{track: candidate.Track, candidate: &candidate})
+			remaining = next
+			previous = candidate.Track
+		}
+		items = append(items, sequenceItem{track: end, required: true, fixed: true})
 	} else if request.Intent.Mode == core.ModeJourney && len(request.Required) >= 2 {
 		items, hardExhausted = s.journeyWithRequiredAnchors(ctx, request)
 	} else {

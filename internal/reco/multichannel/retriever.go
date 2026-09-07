@@ -74,6 +74,30 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	}
 
 	byID := make(map[string]*core.Candidate)
+	if intent.Knowledge != nil {
+		for i, track := range intent.Knowledge.Candidates {
+			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
+		}
+	}
+	// Model descriptions and related genres broaden only retrieval. Eligibility
+	// continues to assess the original essential genre, never these hints.
+	if r.semantic != nil {
+		for _, hint := range intent.GenreExpansions {
+			queries := append([]string{hint.Characteristics}, hint.RelatedGenres...)
+			for _, query := range queries {
+				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4))
+				if err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					continue
+				}
+				for index, hit := range hits {
+					r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
+				}
+			}
+		}
+	}
 	var exploration []explorationOption
 	positiveSemantic, _ := semanticQueryText(intent)
 	if positiveSemantic != "" && r.semantic != nil {

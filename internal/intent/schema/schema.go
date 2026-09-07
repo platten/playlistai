@@ -67,44 +67,53 @@ type WireEnergy struct {
 
 // Wire is the exact fixed-order object emitted by the local model.
 type Wire struct {
-	References           []WireReference   `json:"references"`
-	InferredAnchors      []WireAnchor      `json:"inferred_anchors"`
-	RequiredTracks       []WireReference   `json:"required_tracks"`
-	EssentialCriteria    []WireCriterion   `json:"essential_criteria"`
-	Styles               []WirePreference  `json:"styles"`
-	Moods                []WirePreference  `json:"moods"`
-	Instrumentation      []WirePreference  `json:"instrumentation"`
-	VocalPreference      WirePreference    `json:"vocal_preference"`
-	Textures             []WirePreference  `json:"textures"`
-	HardConstraints      []WireConstraint  `json:"hard_constraints"`
-	Unsupported          []WireUnsupported `json:"unsupported_requirements"`
-	Mode                 string            `json:"mode"`
-	JourneyWaypoints     []WireReference   `json:"journey_waypoints"`
-	EnergyTrajectory     []WireEnergy      `json:"energy_trajectory"`
-	TotalCount           int               `json:"total_count"`
-	AudioWeight          float64           `json:"audio_weight"`
-	CooccurrenceWeight   float64           `json:"cooccurrence_weight"`
-	Discovery            float64           `json:"discovery"`
-	ArtistDiversity      float64           `json:"artist_diversity"`
-	TransitionSmoothness float64           `json:"transition_smoothness"`
-	Notes                string            `json:"notes"`
+	Genres               []WirePreference           `json:"genres"`
+	Temporal             []core.TemporalRequirement `json:"temporal"`
+	Destination          []WireReference            `json:"destination"`
+	GenreExpansions      []core.GenreExpansion      `json:"genre_expansions"`
+	References           []WireReference            `json:"references"`
+	InferredAnchors      []WireAnchor               `json:"inferred_anchors"`
+	RequiredTracks       []WireReference            `json:"required_tracks"`
+	EssentialCriteria    []WireCriterion            `json:"essential_criteria"`
+	Styles               []WirePreference           `json:"styles"`
+	Moods                []WirePreference           `json:"moods"`
+	Instrumentation      []WirePreference           `json:"instrumentation"`
+	VocalPreference      WirePreference             `json:"vocal_preference"`
+	Textures             []WirePreference           `json:"textures"`
+	HardConstraints      []WireConstraint           `json:"hard_constraints"`
+	Unsupported          []WireUnsupported          `json:"unsupported_requirements"`
+	Mode                 string                     `json:"mode"`
+	JourneyWaypoints     []WireReference            `json:"journey_waypoints"`
+	EnergyTrajectory     []WireEnergy               `json:"energy_trajectory"`
+	TotalCount           int                        `json:"total_count"`
+	AudioWeight          float64                    `json:"audio_weight"`
+	CooccurrenceWeight   float64                    `json:"cooccurrence_weight"`
+	Discovery            float64                    `json:"discovery"`
+	ArtistDiversity      float64                    `json:"artist_diversity"`
+	TransitionSmoothness float64                    `json:"transition_smoothness"`
+	Notes                string                     `json:"notes"`
 }
 
 // Every rule body is one physical line for the pinned llama.cpp parser.
-const GBNF = `root ::= "{" ws "\"references\":" ws reflist ws "," ws "\"inferred_anchors\":" ws anchorlist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"essential_criteria\":" ws criterionlist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws "}" ws
-reflist ::= "[" ws (ref (ws "," ws ref)*)? ws "]"
-ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
-anchorlist ::= "[" ws (anchor (ws "," ws anchor)*)? ws "]"
-anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"") ws "," ws "\"value\":" ws str ws "," ws "\"role\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
-criterionlist ::= "[" ws (criterion (ws "," ws criterion)*)? ws "]"
-criterion ::= "{" ws "\"kind\":" ws ("\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
-preflist ::= "[" ws (pref (ws "," ws pref)*)? ws "]"
+const GBNF = `root ::= "{" ws "\"genres\":" ws preflist ws "," ws "\"temporal\":" ws temporallist ws "," ws "\"destination\":" ws reflist ws "," ws "\"genre_expansions\":" ws genrelist ws "," ws "\"references\":" ws reflist ws "," ws "\"inferred_anchors\":" ws anchorlist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"essential_criteria\":" ws criterionlist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws "}" ws
+temporallist ::= "[" ws (period (ws "," ws period){0,2})? ws "]"
+period ::= "{" ws "\"basis\":" ws ("\"composition\"" | "\"original_release\"") ws "," ws "\"startYear\":" ws int ws "," ws "\"endYear\":" ws int ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"") ws "}"
+genrelist ::= "[" ws (genre (ws "," ws genre){0,2})? ws "]"
+genre ::= "{" ws "\"genre\":" ws str ws "," ws "\"characteristics\":" ws str ws "," ws "\"relatedGenres\":" ws stringlist ws "}"
+stringlist ::= "[" ws (str (ws "," ws str (ws "," ws str)?)?)? ws "]"
+reflist ::= "[" ws (ref (ws "," ws ref){0,7})? ws "]"
+ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
+anchorlist ::= "[" ws (anchor (ws "," ws anchor (ws "," ws anchor)?)?)? ws "]"
+anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"role\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
+criterionlist ::= "[" ws (criterion (ws "," ws criterion){0,7})? ws "]"
+criterion ::= "{" ws "\"kind\":" ws ("\"genre\"" | "\"texture\"" | "\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
+preflist ::= "[" ws (pref (ws "," ws pref){0,7})? ws "]"
 pref ::= "{" ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
-hardlist ::= "[" ws (hard (ws "," ws hard)*)? ws "]"
+hardlist ::= "[" ws (hard (ws "," ws hard){0,7})? ws "]"
 hard ::= "{" ws "\"kind\":" ws str ws "," ws "\"value\":" ws str ws "," ws "\"span\":" ws str ws "}"
-unsupportedlist ::= "[" ws (unsupported (ws "," ws unsupported)*)? ws "]"
+unsupportedlist ::= "[" ws (unsupported (ws "," ws unsupported){0,7})? ws "]"
 unsupported ::= "{" ws "\"text\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
-energylist ::= "[" ws (energy (ws "," ws energy)*)? ws "]"
+energylist ::= "[" ws (energy (ws "," ws energy){0,7})? ws "]"
 energy ::= "{" ws "\"position\":" ws num ws "," ws "\"energy\":" ws num ws "}"
 bool ::= "true" | "false"
 str ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
@@ -139,7 +148,15 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	if err := dec.Decode(&wire); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
-	if prompt != "" {
+	if prompt != "" && wire.Genres != nil {
+		discardInventedInstructions(&wire, prompt)
+		normalizePeriods(&wire, prompt)
+		preserveQualityClauses(&wire, prompt)
+		if err := validateOpenIntent(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+	}
+	if prompt != "" && wire.Genres == nil {
 		if err := validateExplicitReferences(wire, prompt); err != nil {
 			return core.MusicIntent{}, err
 		}
@@ -151,6 +168,7 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 		}
 	}
 	intent := wire.ToCore()
+	intent.OriginalDescription = prompt
 	if err := intent.Validate(); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
@@ -226,11 +244,7 @@ func definingStyleCriteria(prompt string) []definingStyle {
 }
 
 func normalizeStyleLabel(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "rock and roll" {
-		return "rock & roll"
-	}
-	return value
+	return core.CanonicalStyle(strings.ToLower(strings.Join(strings.Fields(value), " ")))
 }
 
 type legacyWire struct {
@@ -268,8 +282,29 @@ func parseLegacy(obj []byte) (core.MusicIntent, error) {
 }
 
 func (w Wire) ToCore() core.MusicIntent {
+	if w.Genres != nil {
+		// Instrumental describes vocal presence rather than an instrument.
+		instrumentation := make([]WirePreference, 0, len(w.Instrumentation))
+		for _, preference := range w.Instrumentation {
+			if strings.EqualFold(preference.Value, "instrumental") && w.VocalPreference.Value == "" {
+				w.VocalPreference = preference
+			} else {
+				instrumentation = append(instrumentation, preference)
+			}
+		}
+		w.Instrumentation = instrumentation
+		valid := make([]WireAnchor, 0, len(w.InferredAnchors))
+		for _, anchor := range w.InferredAnchors {
+			if anchor.Kind == "track" && strings.Contains(anchor.Value, " - ") {
+				valid = append(valid, anchor)
+			}
+		}
+		w.InferredAnchors = valid
+	}
 	references, migratedAnchors := splitReferences(w.References)
 	intent := core.MusicIntent{
+		GenreExpansions:   w.GenreExpansions,
+		Temporal:          w.Temporal,
 		Version:           core.CurrentIntentVersion,
 		References:        references,
 		InferredAnchors:   append(migratedAnchors, anchorsToCore(w.InferredAnchors)...),
@@ -277,6 +312,7 @@ func (w Wire) ToCore() core.MusicIntent {
 		EssentialCriteria: criteriaToCore(w.EssentialCriteria),
 		Preferences: core.SemanticPreferences{
 			Styles:              preferencesToCore(w.Styles),
+			Genres:              preferencesToCore(w.Genres),
 			Moods:               preferencesToCore(w.Moods),
 			Instrumentation:     preferencesToCore(w.Instrumentation),
 			TextureDescriptions: preferencesToCore(w.Textures),
@@ -314,6 +350,51 @@ func (w Wire) ToCore() core.MusicIntent {
 				Evidence: evidence(constraint.Span, true),
 			})
 		}
+	}
+	for _, genre := range intent.Preferences.Genres {
+		if genre.Influence == core.InfluenceNegative {
+			continue
+		}
+		found := false
+		for _, criterion := range intent.EssentialCriteria {
+			if strings.EqualFold(criterion.Value, genre.Value) {
+				found = true
+			}
+		}
+		soft := false
+		for _, e := range genre.Evidence {
+			soft = soft || strings.Contains(strings.ToLower(e.Text), "influence") || strings.Contains(strings.ToLower(e.Text), "touch of")
+		}
+		if !found && !soft {
+			scope := "playlist"
+			if intent.Mode == core.ModeJourney {
+				scope = "journey_start"
+			}
+			intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: "genre", Value: genre.Value, Scope: scope, Evidence: genre.Evidence})
+		}
+	}
+	if w.Genres == nil {
+		intent.VerificationPolicy = core.VerifiedOnly
+	} else {
+		// Expansion roots are optional model suggestions. A hallucinated root
+		// must neither replace a requested category nor invalidate that request.
+		intent.GenreExpansions = nil
+		seen := map[string]bool{}
+		for _, expansion := range w.GenreExpansions {
+			key := core.NormalizeIdentityPart(expansion.Genre)
+			for _, criterion := range intent.EssentialCriteria {
+				if !seen[key] && key == core.NormalizeIdentityPart(criterion.Value) && (criterion.Kind == "genre" || criterion.Kind == "style") {
+					intent.GenreExpansions = append(intent.GenreExpansions, expansion)
+					seen[key] = true
+				}
+			}
+		}
+	}
+	if len(w.Destination) == 1 {
+		d := referenceToCore(w.Destination[0])
+		intent.Destination = &d
+		intent.Mode = core.ModeJourney
+		intent.Journey.Waypoints = append(intent.Journey.Waypoints, d)
 	}
 	return intent
 }

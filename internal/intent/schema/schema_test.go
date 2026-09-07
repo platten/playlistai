@@ -37,7 +37,7 @@ func TestParseValid(t *testing.T) {
 
 func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
 	t.Parallel()
-	m, err := Parse([]byte(FewShot[2].JSON))
+	m, err := Parse([]byte(legacyExamples[2].JSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
 	if len(m.Preferences.TextureDescriptions[0].Evidence) == 0 {
 		t.Fatal("texture evidence missing")
 	}
-	if len(m.References) != 0 || len(m.InferredAnchors) != 2 || m.InferredAnchors[0].Reference.Query != "Four Tet" || m.InferredAnchors[0].Reference.Evidence[0].Explicit {
+	if len(m.References) != 0 || len(m.InferredAnchors) != 2 || m.InferredAnchors[0].Reference.Query != "Four Tet - Two Thousand and Seventeen" || m.InferredAnchors[0].Reference.Evidence[0].Explicit {
 		t.Fatalf("seedless prompt did not separate its inferred starting points: refs=%+v anchors=%+v", m.References, m.InferredAnchors)
 	}
 	if len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "ambient electronic" {
@@ -74,12 +74,12 @@ func TestSemanticValidationRejectsNegativeRequiredTrack(t *testing.T) {
 
 func TestParseForPromptRejectsInventedExplicitReference(t *testing.T) {
 	t.Parallel()
-	wire := FewShot[3].JSON
+	wire := legacyExamples[3].JSON
 	wire = strings.Replace(wire, `"references":[]`, `"references":[{"kind":"artist","value":"Electronic","influence":"positive","explicit":true,"span":"electronic"}]`, 1)
 	if _, err := ParseForPrompt([]byte(wire), "electronic music"); err == nil {
 		t.Fatal("model-invented explicit artist passed source validation")
 	}
-	if _, err := ParseForPrompt([]byte(FewShot[0].JSON), FewShot[0].Prompt); err != nil {
+	if _, err := ParseForPrompt([]byte(legacyExamples[0].JSON), legacyExamples[0].Prompt); err != nil {
 		t.Fatalf("grounded explicit reference rejected: %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func TestParseForPromptRejectsInventedExplicitReference(t *testing.T) {
 func TestParseForPromptRequiresEssentialCategoryAcrossQualifiedPrompts(t *testing.T) {
 	for _, prompt := range []string{"electronic music", "electronic music, no rock", "electronic music with some rock influence"} {
 		t.Run(prompt, func(t *testing.T) {
-			raw := []byte(FewShot[3].JSON)
+			raw := []byte(legacyExamples[3].JSON)
 			var wire Wire
 			if err := json.Unmarshal(raw, &wire); err != nil {
 				t.Fatal(err)
@@ -105,7 +105,7 @@ func TestParseForPromptRequiresEssentialCategoryAcrossQualifiedPrompts(t *testin
 func TestParseForPromptPreservesExclusionAndDeliberateInfluence(t *testing.T) {
 	base := func() Wire {
 		var wire Wire
-		if err := json.Unmarshal([]byte(FewShot[3].JSON), &wire); err != nil {
+		if err := json.Unmarshal([]byte(legacyExamples[3].JSON), &wire); err != nil {
 			t.Fatal(err)
 		}
 		return wire
@@ -124,7 +124,7 @@ func TestParseForPromptPreservesExclusionAndDeliberateInfluence(t *testing.T) {
 }
 
 func TestParseForPromptRequiresBothCategoryJourneyStages(t *testing.T) {
-	raw := []byte(FewShot[3].JSON)
+	raw := []byte(legacyExamples[3].JSON)
 	var wire Wire
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		t.Fatal(err)
@@ -187,7 +187,7 @@ func TestParseErrors(t *testing.T) {
 
 func TestFewShotExamplesAreValid(t *testing.T) {
 	t.Parallel()
-	for i, ex := range FewShot {
+	for i, ex := range legacyExamples {
 		var w Wire
 		if err := json.Unmarshal([]byte(ex.JSON), &w); err != nil {
 			t.Fatalf("few-shot %d is not valid JSON: %v", i, err)

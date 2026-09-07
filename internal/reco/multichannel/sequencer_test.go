@@ -131,7 +131,7 @@ func journeyIntent(count int) core.MusicIntent {
 		{Kind: core.ReferenceTrack, TrackID: "end", Influence: core.InfluencePositive},
 	}
 	return core.MusicIntent{
-		Version: core.CurrentIntentVersion, References: append([]core.IntentReference(nil), waypoints...),
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, References: append([]core.IntentReference(nil), waypoints...),
 		RequiredTracks: append([]core.IntentReference(nil), waypoints...),
 		Journey:        core.JourneyPlan{Waypoints: append([]core.IntentReference(nil), waypoints...)},
 		Mode:           core.ModeJourney, Controls: core.IntentControls{

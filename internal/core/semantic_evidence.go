@@ -24,6 +24,8 @@ func FacetComplete(features TrackFeatures, facet string) bool {
 func CanonicalStyle(value string) string {
 	value = NormalizeIdentityPart(value)
 	switch value {
+	case "ambient electronica":
+		return "ambient electronic"
 	case "rock and roll", "rock n roll", "rock roll":
 		return "rock & roll"
 	case "electronica":

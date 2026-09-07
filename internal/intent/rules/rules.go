@@ -25,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v5", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v8", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -35,7 +35,9 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lower := strings.ToLower(prompt)
 
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion,
+		OriginalDescription: prompt,
+		VerificationPolicy:  core.VerifiedOnly,
+		Version:             core.CurrentIntentVersion,
 		Controls: core.IntentControls{
 			TotalTrackCount:      core.DefaultCount,
 			AudioWeight:          core.DefaultCreativity,
@@ -501,8 +503,8 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 }
 
 var knownStyles = []string{
-	"ambient electronic", "rock & roll", "rock and roll", "abstract drone",
-	"electronic", "ambient", "techno", "jazz", "folk", "rock", "drone",
+	"ambient electronic", "ambient electronica", "rock & roll", "rock and roll", "abstract drone",
+	"electronic", "electronica", "ambient", "techno", "jazz", "folk", "rock", "drone",
 }
 
 func isKnownStyle(value string) bool {
@@ -522,7 +524,7 @@ type styleMention struct {
 	influence  core.Influence
 }
 
-var reStyleMention = regexp.MustCompile(`(?i)ambient electronic|rock\s*(?:&|and)\s*roll|abstract drone|electronic|ambient|techno|jazz|folk|rock|drone`)
+var reStyleMention = regexp.MustCompile(`(?i)ambient electronica|ambient electronic|rock\s*(?:&|and)\s*roll|abstract drone|electronica|electronic|ambient|techno|jazz|folk|rock|drone`)
 var reStyleNegation = regexp.MustCompile(`(?i)\b(?:no|not|without|must not include)\s+$`)
 
 func styleMentions(prompt string) []styleMention {
@@ -577,10 +579,7 @@ func isInfluenceQualifier(lower, style string) bool {
 func normalizeStyle(value string) string {
 	value = strings.ToLower(strings.Join(strings.Fields(value), " "))
 	value = strings.TrimSuffix(value, " music")
-	if value == "rock and roll" {
-		return "rock & roll"
-	}
-	return value
+	return core.CanonicalStyle(value)
 }
 
 func extractUnsupportedRequirements(

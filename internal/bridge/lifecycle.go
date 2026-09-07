@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/platten/playlistai/internal/app"
@@ -41,6 +42,7 @@ type GenerationStatus struct {
 }
 
 type Reproducibility struct {
+	EvidenceSnapshot   string       `json:"evidenceSnapshot"`
 	ID                 string       `json:"id"`
 	CatalogVersion     string       `json:"catalogVersion"`
 	AlgorithmVersion   string       `json:"algorithmVersion"`
@@ -49,6 +51,11 @@ type Reproducibility struct {
 	ProfileSnapshot    string       `json:"profileSnapshot"`
 	ContextFingerprint string       `json:"contextFingerprint"`
 	RNGSeed            core.RNGSeed `json:"rngSeed"`
+}
+
+func audioIdentity(generation, evidence string) string {
+	sum := sha256.Sum256([]byte(generation + "\x00" + evidence))
+	return hex.EncodeToString(sum[:])
 }
 
 type parsedIntentEntry struct {
@@ -141,6 +148,16 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 	}
 	if err := ctx.Err(); err != nil {
 		return parsedIntentEntry{}, false, err
+	}
+	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && outcome.Backend == "rules" && cached.IsCachedGenre(ctx, strings.TrimSpace(input.Prompt)) {
+		name := strings.TrimSpace(input.Prompt)
+		evidence := []core.SourceEvidence{{Text: name, Explicit: true, Start: 0, End: len(name)}}
+		outcome.Intent.References = nil
+		outcome.Intent.Seeds.Queries = nil
+		outcome.Intent.Seeds.TrackIDs = nil
+		outcome.Intent.Preferences.Genres = []core.IntentPreference{{Value: name, Influence: core.InfluencePositive, Explicit: true, Evidence: evidence}}
+		outcome.Intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: name, Scope: "playlist", Evidence: evidence}}
+		outcome.Intent.OriginalDescription = input.Prompt
 	}
 	entry := parsedIntentEntry{intent: outcome.Intent.Normalized(), outcome: outcome}
 	a.intentCache.put(key, entry)

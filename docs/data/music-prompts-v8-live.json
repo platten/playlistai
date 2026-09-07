@@ -1,0 +1,137 @@
+{
+  "date": "2026-09-07",
+  "intentVersion": 8,
+  "algorithmVersion": "multichannel/v7",
+  "model": "qwen3.5-4b-q4km.gguf",
+  "modelSHA256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
+  "runtimeSHA256": "97e29d19ff84e5c2fceceaa2b06863928294896d0ebbd8c7ea258ce51a4ddacb",
+  "catalogVersion": "1:956917:1788613313",
+  "host": "WSL2 Linux amd64",
+  "contextTokens": 8192,
+  "audioAnalysisEnabled": false,
+  "interpretation": "Real-model development checks, not held-out listening judgments. Ten cases passed the combined run; two field omissions were fixed and rechecked separately.",
+  "combinedRunFailures": [
+    {
+      "prompt": "classical music from the 20th century with lots of dynamics transitioning to miles davis by the end of the playlist",
+      "errors": [
+        "preference missing: dynamics"
+      ]
+    },
+    {
+      "prompt": "instrumental music",
+      "errors": [
+        "vocal preference missing"
+      ]
+    }
+  ],
+  "latestResults": [
+    {
+      "prompt": "dubstep",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 53947,
+      "evidenceSnapshot": "0aeb46d592f78a10779e971e17a8aae7c1ff08e805b020fe319152af03b76b11",
+      "rechecked": false
+    },
+    {
+      "prompt": "Dubstep but with no skrillex or bassnectar",
+      "errors": null,
+      "trackCount": 14,
+      "outcome": "partial",
+      "milliseconds": 12953,
+      "evidenceSnapshot": "d659b3ed9d0a9e2c6b2c86e9bac6649c34169221b5b0379510efb3005582ae7f",
+      "rechecked": false
+    },
+    {
+      "prompt": "ambient electronica",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 59863,
+      "evidenceSnapshot": "e23512f0acc5688742502478ab282d7f80788516bc2134cd3a24d795155222fe",
+      "rechecked": false
+    },
+    {
+      "prompt": "EDM bangers from the 1990s",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 48902,
+      "evidenceSnapshot": "63871fc105c55a2f977d85ac9d502824f8c1f27810a121064b8a57551debc30e",
+      "rechecked": false
+    },
+    {
+      "prompt": "classical music from the 20th century with lots of dynamics transitioning to miles davis by the end of the playlist",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 69348,
+      "evidenceSnapshot": "d25efab86dad24d6022d59bd4270745bc2ef7771fca246020c553fa5e61f5e3f",
+      "rechecked": true
+    },
+    {
+      "prompt": "ODESZA, build me something with songs like that",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 15779,
+      "evidenceSnapshot": "649022db93e3114c27be27ca79bece196700e0e9b4fc904a4acdd8ead4d07095",
+      "rechecked": false
+    },
+    {
+      "prompt": "1990s club hits",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 38944,
+      "evidenceSnapshot": "52de3f7308cedf501fed32fd41e4a83302b57631319029ccad32a9aad34ee60f",
+      "rechecked": false
+    },
+    {
+      "prompt": "romantic music with female vocals",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 8399,
+      "evidenceSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "rechecked": false
+    },
+    {
+      "prompt": "instrumental music",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 10745,
+      "evidenceSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "rechecked": true
+    },
+    {
+      "prompt": "Marilyn Manson",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "fulfilled",
+      "milliseconds": 10436,
+      "evidenceSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "rechecked": false
+    },
+    {
+      "prompt": "electronic music with a good microdynamics",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 57298,
+      "evidenceSnapshot": "31b94dd952a16463a2c14488fe8f8e2525dae6be2eaabb4510a1f5d9452f4d6d",
+      "rechecked": false
+    },
+    {
+      "prompt": "easy listening, female vocals",
+      "errors": null,
+      "trackCount": 20,
+      "outcome": "partial",
+      "milliseconds": 64942,
+      "evidenceSnapshot": "25cb393c641ca1967c85cdcef319f14a1d7351880af62272a5b8902cdb700e8a",
+      "rechecked": false
+    }
+  ]
+}

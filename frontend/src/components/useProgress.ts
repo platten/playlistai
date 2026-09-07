@@ -3,6 +3,9 @@ import { Events } from "@wailsio/runtime";
 
 /** Payload of the Go-side `playlistai:progress` event (internal/bridge/progress.go). */
 export interface Progress {
+  generationId?: string;
+  suggestedTrack?: { id: string; artist: string; title: string };
+  checkedTrack?: { id: string; artist: string; title: string };
   op: string;
   done: number;
   /** <= 0 means the total is unknown — render indeterminate. */
@@ -25,7 +28,7 @@ function coerce(data: unknown): Progress | null {
  * (e.g. "catalog", "model", "enrich", "export"). Returns the latest matching
  * event, or null before any has arrived.
  */
-export function useProgress(op?: string): Progress | null {
+export function useProgress(op?: string, generationId?: string): Progress | null {
   const [progress, setProgress] = useState<Progress | null>(null);
 
   useEffect(() => {
@@ -34,6 +37,7 @@ export function useProgress(op?: string): Progress | null {
       const p = coerce(raw?.data);
       if (!p) return;
       if (op && p.op !== op) return;
+      if (generationId !== undefined && p.generationId !== generationId) return;
       setProgress(p);
     });
     return () => {
@@ -43,7 +47,7 @@ export function useProgress(op?: string): Progress | null {
         /* runtime not present (tests / pre-startup) */
       }
     };
-  }, [op]);
+  }, [op, generationId]);
 
   return progress;
 }

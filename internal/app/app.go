@@ -36,8 +36,9 @@ import (
 // is nil until the milestone that provides its implementation lands. The bridge
 // layer must tolerate nil ports and report "not ready" to the UI.
 type Container struct {
-	cfg config.Config
-	log *slog.Logger
+	analysis analysisState
+	cfg      config.Config
+	log      *slog.Logger
 
 	Catalog      ports.Catalog
 	Resolver     ports.ReferenceResolver
@@ -45,6 +46,7 @@ type Container struct {
 	Reco         ports.RecommendationEngine
 	BaselineReco ports.RecommendationEngine
 	Enrich       ports.Enricher
+	Knowledge    ports.MusicKnowledge
 
 	// History persists generated playlists for the Generate screen's
 	// "start from a past playlist" option. nil if the DB could not be opened.
@@ -111,6 +113,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 		c.RegisterCloser(ts.Close)
 	}
 	c.wireEnrichExport()
+	c.wireAnalysis(ctx)
 	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
 
@@ -142,6 +145,7 @@ func (c *Container) wireEnrichExport() {
 		c.log.Warn("enricher unavailable; continuing without MusicBrainz", "err", err)
 	} else {
 		c.Enrich = mb
+		c.Knowledge = mb
 		c.RegisterCloser(mb.Close)
 	}
 
@@ -462,9 +466,9 @@ func (c *Container) LoadCatalog() error {
 		if c.Features != nil {
 			// Feature-only sidecars still enforce grounded constraints even when
 			// they do not contain a compatible query encoder.
-			c.Reco = multichannel.NewWithSemantic(cat, c.Sim, cat, c.Features, semanticSearch, mc)
+			c.Reco = multichannel.NewWithSemantic(cat, c.Sim, cat, c.Features, semanticSearch, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
 		} else {
-			c.Reco = multichannel.New(cat, c.Sim, cat, mc)
+			c.Reco = multichannel.New(cat, c.Sim, cat, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
 		}
 	}
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())

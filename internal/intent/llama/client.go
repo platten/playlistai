@@ -98,13 +98,18 @@ func (c *Client) ParseWithProgress(ctx context.Context, in ports.IntentInput, on
 }
 
 func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
-	for attempt, tokenBudget := range []int{900, 1400} {
-		intent, result, err := c.parseAttempt(ctx, in, onDelta, tokenBudget)
+	correction := ""
+	for attempt, tokenBudget := range []int{1800, 2400} {
+		intent, result, err := c.parseAttemptCorrected(ctx, in, onDelta, tokenBudget, correction)
 		if err == nil && result.FinishReason != "length" {
 			return intent, nil
 		}
 		if result.FinishReason != "length" {
-			return core.MusicIntent{}, err
+			if attempt == 1 || result.Content == "" {
+				return core.MusicIntent{}, err
+			}
+			correction = "The previous interpretation was invalid: " + err.Error() + ". Reinterpret the original request. Copy spans verbatim from it, retain every category and modifier, and use Artist - Title for inferred tracks."
+			continue
 		}
 		if attempt == 1 {
 			return core.MusicIntent{}, &TruncatedCompletionError{FinishReason: result.FinishReason, Attempts: attempt + 1}
@@ -113,7 +118,7 @@ func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(c
 	return core.MusicIntent{}, fmt.Errorf("llama: intent parse failed")
 }
 
-func (c *Client) parseAttempt(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int) (core.MusicIntent, completionResult, error) {
+func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int, correction string) (core.MusicIntent, completionResult, error) {
 	body := chatRequest{
 		Messages:           buildMessages(in),
 		Grammar:            schema.GBNF,
@@ -122,6 +127,9 @@ func (c *Client) parseAttempt(ctx context.Context, in ports.IntentInput, onDelta
 		NPredict:           tokenBudget,
 		CachePrompt:        true,
 		Stream:             true,
+	}
+	if correction != "" {
+		body.Messages[0].Content += "\n" + correction
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -238,10 +246,15 @@ func readWholeCompletion(body io.Reader, onDelta func(int)) (completionResult, e
 // the assistant text. Used for short auxiliary generations like a playlist
 // title — not the intent parse, which is grammar-constrained.
 func (c *Client) Complete(ctx context.Context, system, user string, maxTokens int) (string, error) {
+	return c.complete(ctx, system, user, maxTokens, "")
+}
+
+func (c *Client) complete(ctx context.Context, system, user string, maxTokens int, grammar string) (string, error) {
 	if maxTokens <= 0 {
 		maxTokens = 32
 	}
 	body := chatRequest{
+		Grammar: grammar,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
 			{Role: "user", Content: user},

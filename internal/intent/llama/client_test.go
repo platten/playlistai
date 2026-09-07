@@ -91,6 +91,31 @@ func TestClientParseSuccess(t *testing.T) {
 	}
 }
 
+func TestClientRepairsInvalidMeaningOnceWithoutMidConversationSystemMessage(t *testing.T) {
+	requests := 0
+	srv := chatServer(t, func(body []byte) (int, string) {
+		requests++
+		var request chatRequest
+		_ = json.Unmarshal(body, &request)
+		for i, message := range request.Messages {
+			if i > 0 && message.Role == "system" {
+				t.Fatal("runtime rejects system messages after the opening message")
+			}
+		}
+		if requests == 1 {
+			return 200, completion(explicitArtistCompletion("Invented", 5))
+		}
+		if !strings.Contains(request.Messages[0].Content, "previous interpretation was invalid") {
+			t.Fatal("repair did not identify semantic validation error")
+		}
+		return 200, completion(explicitArtistCompletion("Justice", 5))
+	})
+	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "Justice"})
+	if err != nil || requests != 2 || m.References[0].Query != "Justice" {
+		t.Fatalf("repair failed: requests=%d err=%v", requests, err)
+	}
+}
+
 func TestClientRetriesAndReportsTruncatedCompletion(t *testing.T) {
 	t.Parallel()
 	requests := 0

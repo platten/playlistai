@@ -1,5 +1,11 @@
 package bridge
 
+import (
+	"context"
+
+	"github.com/platten/playlistai/internal/deezerhttp"
+)
+
 // PreviewResult is the outcome of GetPreviewURL. A miss (Available == false) is
 // normal — many tracks have no preview anywhere — and is never an error.
 type PreviewResult struct {
@@ -11,7 +17,9 @@ type PreviewResult struct {
 // the configured preview.provider. Returns a zero, unavailable result (no
 // error) whenever preview is off, the catalog isn't loaded, or the id is
 // unknown — the UI just hides the play control in that case.
-func (a *API) GetPreviewURL(id string) (PreviewResult, error) {
+func (a *API) GetPreviewURL(ctx context.Context, id string) (PreviewResult, error) {
+	ctx, _, finish := a.operations.begin(ctx, "preview-playback")
+	defer finish()
 	provider := a.app.PreviewProvider()
 	if provider == nil || a.app.Catalog == nil {
 		return PreviewResult{}, nil
@@ -21,9 +29,15 @@ func (a *API) GetPreviewURL(id string) (PreviewResult, error) {
 		return PreviewResult{}, nil
 	}
 
-	url, ok, err := provider.PreviewURL(a.context(), meta.Ref, meta.PreviewURL)
+	url, ok, err := provider.PreviewURL(ctx, meta.Ref, meta.PreviewURL)
 	if err != nil {
 		return PreviewResult{}, err
+	}
+	if ok {
+		url, err = deezerhttp.PlaybackURL(ctx, url)
+		if err != nil {
+			return PreviewResult{}, err
+		}
 	}
 	return PreviewResult{URL: url, Available: ok}, nil
 }

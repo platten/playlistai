@@ -81,3 +81,24 @@ func TestCategoryExclusionDoesNotBecomeBareArtistOrBroaderGenre(t *testing.T) {
 		})
 	}
 }
+
+func TestElectronicaAliasesAreCategories(t *testing.T) {
+	for prompt, want := range map[string]string{
+		"electronica": "electronic", "electronica music": "electronic",
+		"ambient electronica": "ambient electronic", "ambient electronica music": "ambient electronic",
+	} {
+		t.Run(prompt, func(t *testing.T) {
+			intent, _ := New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+			if len(intent.References) != 0 {
+				t.Fatalf("electronica category became a seed: %+v", intent.References)
+			}
+			if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Value != want {
+				t.Fatalf("alias was not canonicalized: %+v", intent.EssentialCriteria)
+			}
+		})
+	}
+	intent, _ := New().Parse(context.Background(), ports.IntentInput{Prompt: "music by Electronica"})
+	if len(intent.References) != 1 || intent.References[0].Query != "Electronica" || len(intent.EssentialCriteria) != 0 {
+		t.Fatalf("explicit same-named artist context was lost: %+v", intent)
+	}
+}

@@ -66,6 +66,13 @@ func (a *API) DeleteSavedPlaylist(id string) error {
 	return a.app.History.Delete(a.context(), id)
 }
 
+func (a *API) ClearPlaylistHistory(ctx context.Context) error {
+	if a.app.History == nil {
+		return nil
+	}
+	return a.app.History.Clear(ctx)
+}
+
 // LoadSavedPlaylist reads and migrates v1-v4 JSON blobs into the current contract.
 func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	if a.app.History == nil {

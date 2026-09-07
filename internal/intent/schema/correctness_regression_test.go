@@ -9,7 +9,7 @@ import (
 func electronicWire(t *testing.T) Wire {
 	t.Helper()
 	var wire Wire
-	if err := json.Unmarshal([]byte(FewShot[3].JSON), &wire); err != nil {
+	if err := json.Unmarshal([]byte(legacyExamples[3].JSON), &wire); err != nil {
 		t.Fatal(err)
 	}
 	return wire
@@ -81,7 +81,7 @@ func TestInferredRequiredTrackAndLegacyLiveCompletionAreRejected(t *testing.T) {
 }
 
 func TestEveryFewShotPreservesItsPromptMeaning(t *testing.T) {
-	for _, example := range FewShot {
+	for _, example := range legacyExamples {
 		if _, err := ParseForPrompt([]byte(example.JSON), example.Prompt); err != nil {
 			t.Errorf("few-shot %q: %v", example.Prompt, err)
 		}

@@ -49,6 +49,7 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const currentTrackRef = useRef<PreviewTrack | null>(null);
   const requestID = useRef(0);
+  const pendingPreview = useRef<ReturnType<typeof API.GetPreviewURL> | null>(null);
   const [state, setState] = useState<PlayerState>(INITIAL);
   const [recentTracks, setRecentTracks] = useState<PreviewTrack[]>([]);
 
@@ -80,6 +81,8 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
     audio.addEventListener("error", onError);
 
     return () => {
+      requestID.current += 1;
+      void pendingPreview.current?.cancel("preview player closed");
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("ended", onEnded);
@@ -92,6 +95,7 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const stop = useCallback(() => {
+    void pendingPreview.current?.cancel("preview stopped");
     requestID.current += 1;
     const audio = audioRef.current;
     if (audio) {
@@ -126,10 +130,15 @@ export function PreviewPlayerProvider({ children }: { children: ReactNode }) {
       }
 
       const myRequest = ++requestID.current;
+      audio.pause();
+      audio.src = "";
       currentTrackRef.current = track;
       setState({ track, status: "loading", currentTime: 0, duration: 0, error: null });
 
-      API.GetPreviewURL(track.id)
+      void pendingPreview.current?.cancel("preview superseded");
+      const preview = API.GetPreviewURL(track.id);
+      pendingPreview.current = preview;
+      preview
         .then((res) => {
           if (myRequest !== requestID.current) return; // superseded by a later toggle
           if (!res?.available || !res.url) {

@@ -1,35 +1,21 @@
 #!/usr/bin/env bash
-# Copyright (c) 2018-Present Lea Anthony
-# SPDX-License-Identifier: MIT
+# Keep linuxdeploy's PATH-based plugin discovery off Windows/WSL mounts.
+# This wrapper is shared by scripts/build.sh and the direct AppImage task.
+set -euo pipefail
 
-# Fail script on any error
-set -euxo pipefail
-
-# Define variables
-APP_DIR="${APP_NAME}.AppDir"
-
-# Create AppDir structure
-mkdir -p "${APP_DIR}/usr/bin"
-cp -r "${APP_BINARY}" "${APP_DIR}/usr/bin/"
-cp "${ICON_PATH}" "${APP_DIR}/"
-cp "${DESKTOP_FILE}" "${APP_DIR}/"
-
-if [[ $(uname -m) == *x86_64* ]]; then
-    # Download linuxdeploy and make it executable
-    wget -q -4 -N https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-    chmod +x linuxdeploy-x86_64.AppImage
-
-    # Run linuxdeploy to bundle the application
-    ./linuxdeploy-x86_64.AppImage --appdir "${APP_DIR}" --output appimage
-else
-    # Download linuxdeploy and make it executable (arm64)
-    wget -q -4 -N https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage
-    chmod +x linuxdeploy-aarch64.AppImage
-
-    # Run linuxdeploy to bundle the application (arm64)
-    ./linuxdeploy-aarch64.AppImage --appdir "${APP_DIR}" --output appimage
+appimage_path=()
+IFS=: read -r -a inherited_path <<< "${PATH:-}"
+for entry in "${inherited_path[@]}"; do
+  case "$entry" in
+    /mnt|/mnt/*|'') continue ;;
+  esac
+  appimage_path+=("$entry")
+done
+if [ "${#appimage_path[@]}" -eq 0 ]; then
+  echo "AppImage build requires Linux tools on PATH outside /mnt." >&2
+  exit 1
 fi
+PATH="$(IFS=:; echo "${appimage_path[*]}")"
+export PATH
 
-# Rename the generated AppImage
-mv "${APP_NAME}*.AppImage" "${APP_NAME}.AppImage"
-
+exec wails3 generate appimage "$@"

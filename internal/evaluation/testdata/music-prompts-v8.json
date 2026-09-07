@@ -1,0 +1,14 @@
+[
+ {"prompt":"dubstep","genre":"dubstep"},
+ {"prompt":"Dubstep but with no skrillex or bassnectar","genre":"dubstep","excludedArtists":["skrillex","bassnectar"]},
+ {"prompt":"ambient electronica","genre":"ambient electronica"},
+ {"prompt":"EDM bangers from the 1990s","genre":"EDM","startYear":1990,"endYear":1999,"basis":"original_release"},
+ {"prompt":"classical music from the 20th century with lots of dynamics transitioning to miles davis by the end of the playlist","genre":"classical","startYear":1901,"endYear":2000,"basis":"composition","destination":"miles davis","texture":"dynamics"},
+ {"prompt":"ODESZA, build me something with songs like that","artist":"ODESZA"},
+ {"prompt":"1990s club hits","startYear":1990,"endYear":1999,"basis":"original_release"},
+ {"prompt":"romantic music with female vocals","vocal":"female","mood":"romantic"},
+ {"prompt":"instrumental music","vocal":"instrumental"},
+ {"prompt":"Marilyn Manson","artist":"Marilyn Manson"},
+ {"prompt":"electronic music with a good microdynamics","genre":"electronic","texture":"microdynamics"},
+ {"prompt":"easy listening, female vocals","genre":"easy listening","vocal":"female"}
+]

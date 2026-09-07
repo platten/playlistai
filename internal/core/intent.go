@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 6
+	CurrentIntentVersion = 8
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -31,6 +31,7 @@ type Influence string
 const (
 	ReferenceArtist   ReferenceKind = "artist"
 	ReferenceTrack    ReferenceKind = "track"
+	ReferenceAlbum    ReferenceKind = "album"
 	InfluencePositive Influence     = "positive"
 	InfluenceNegative Influence     = "negative"
 )
@@ -143,6 +144,7 @@ type IntentPreference struct {
 }
 
 type SemanticPreferences struct {
+	Genres              []IntentPreference `json:"genres"`
 	Styles              []IntentPreference `json:"styles"`
 	Moods               []IntentPreference `json:"moods"`
 	Instrumentation     []IntentPreference `json:"instrumentation"`
@@ -205,6 +207,13 @@ type IntentConstraints struct {
 }
 
 type MusicIntent struct {
+	VerificationPolicy  VerificationPolicy       `json:"verificationPolicy"`
+	Temporal            []TemporalRequirement    `json:"temporal"`
+	Destination         *IntentReference         `json:"destination,omitempty"`
+	Knowledge           *KnowledgeSnapshot       `json:"knowledge,omitempty"`
+	AnchorAttempts      []InferredAnchor         `json:"anchorAttempts"`
+	OriginalDescription string                   `json:"originalDescription"`
+	GenreExpansions     []GenreExpansion         `json:"genreExpansions"`
 	Version             int                      `json:"version"`
 	References          []IntentReference        `json:"references"`
 	InferredAnchors     []InferredAnchor         `json:"inferredAnchors"`
@@ -235,6 +244,12 @@ type MusicIntent struct {
 func (m MusicIntent) Normalized() MusicIntent {
 	out := m
 	inputVersion := out.Version
+	if out.VerificationPolicy == "" {
+		out.VerificationPolicy = VerifiedOnly
+		if inputVersion >= 8 {
+			out.VerificationPolicy = BestAvailable
+		}
+	}
 	// Only v1/v2 need semantic migration. V3 already has the typed intent;
 	// v4 adds resolution metadata and v5 makes RNG seeds lossless strings.
 	if out.Version < 3 || legacyAdapterOnly(out) {
@@ -285,6 +300,38 @@ func (m MusicIntent) Normalized() MusicIntent {
 
 // Validate checks semantic invariants that JSON decoding and GBNF cannot.
 func (m MusicIntent) Validate() error {
+	if m.VerificationPolicy != "" && m.VerificationPolicy != BestAvailable && m.VerificationPolicy != VerifiedOnly {
+		return fmt.Errorf("intent: invalid verification policy")
+	}
+	for _, period := range m.Temporal {
+		if (period.Basis != "composition" && period.Basis != "original_release") || period.StartYear < 1 || period.EndYear < period.StartYear || period.EndYear > 9999 {
+			return fmt.Errorf("intent: invalid temporal requirement")
+		}
+		if period.Scope != "" && period.Scope != "playlist" && period.Scope != "journey_start" && period.Scope != "journey_end" {
+			return fmt.Errorf("intent: invalid temporal scope")
+		}
+	}
+	if m.Destination != nil && (m.Destination.Influence == InfluenceNegative || (m.Destination.Kind != ReferenceArtist && m.Destination.Kind != ReferenceAlbum && m.Destination.Kind != ReferenceTrack) || strings.TrimSpace(m.Destination.Query) == "" && m.Destination.TrackID == "") {
+		return fmt.Errorf("intent: invalid final destination")
+	}
+
+	if len(m.AnchorAttempts) > 6 {
+		return fmt.Errorf("intent: at most six anchor attempts are allowed")
+	}
+	for _, hint := range m.GenreExpansions {
+		if strings.TrimSpace(hint.Genre) == "" || strings.TrimSpace(hint.Characteristics) == "" || len(hint.RelatedGenres) > 3 {
+			return fmt.Errorf("intent: genre expansions need a genre, characteristics, and at most three related genres")
+		}
+		preserved := false
+		for _, criterion := range m.EssentialCriteria {
+			if (criterion.Kind == "style" || criterion.Kind == "genre") && strings.EqualFold(criterion.Value, hint.Genre) {
+				preserved = true
+			}
+		}
+		if !preserved {
+			return fmt.Errorf("intent: expanded genre must remain an essential criterion")
+		}
+	}
 	if _, err := m.Seed.Canonical(); err != nil {
 		return fmt.Errorf("intent: %w", err)
 	}
@@ -296,7 +343,7 @@ func (m MusicIntent) Validate() error {
 	}
 	for _, group := range [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)} {
 		for _, ref := range group {
-			if ref.Kind != ReferenceArtist && ref.Kind != ReferenceTrack {
+			if ref.Kind != ReferenceArtist && ref.Kind != ReferenceTrack && ref.Kind != ReferenceAlbum {
 				return fmt.Errorf("intent: invalid reference kind %q", ref.Kind)
 			}
 			if ref.Influence != InfluencePositive && ref.Influence != InfluenceNegative {
@@ -314,7 +361,7 @@ func (m MusicIntent) Validate() error {
 	}
 	for _, criterion := range m.EssentialCriteria {
 		switch criterion.Kind {
-		case "style", "mood", "instrumentation", "vocal":
+		case "genre", "style", "texture", "mood", "instrumentation", "vocal":
 		default:
 			return fmt.Errorf("intent: invalid essential criterion kind %q", criterion.Kind)
 		}
@@ -346,7 +393,7 @@ func (m MusicIntent) Validate() error {
 		}
 	}
 	preferenceGroups := [][]IntentPreference{
-		m.Preferences.Styles, m.Preferences.Moods,
+		m.Preferences.Genres, m.Preferences.Styles, m.Preferences.Moods,
 		m.Preferences.Instrumentation, m.Preferences.TextureDescriptions,
 	}
 	for _, group := range preferenceGroups {
@@ -399,7 +446,7 @@ func (m MusicIntent) Validate() error {
 func legacyAdapterOnly(m MusicIntent) bool {
 	typed := len(m.References) > 0 || len(m.InferredAnchors) > 0 || len(m.RequiredTracks) > 0 ||
 		len(m.EssentialCriteria) > 0 || len(m.Journey.Waypoints) > 0 || len(m.HardConstraints) > 0 ||
-		len(m.Preferences.Styles) > 0 || len(m.Preferences.Moods) > 0 ||
+		len(m.Preferences.Genres) > 0 || len(m.Preferences.Styles) > 0 || len(m.Preferences.Moods) > 0 ||
 		len(m.Preferences.Instrumentation) > 0 || m.Preferences.VocalPreference != nil ||
 		len(m.Preferences.TextureDescriptions) > 0
 	if typed {
@@ -686,6 +733,7 @@ func dereferenceCandidate(candidate *ResolutionCandidate) []ResolutionCandidate 
 }
 
 func cleanPreferences(p SemanticPreferences) SemanticPreferences {
+	p.Genres = cleanPreferenceList(p.Genres)
 	p.Styles = cleanPreferenceList(p.Styles)
 	p.Moods = cleanPreferenceList(p.Moods)
 	p.Instrumentation = cleanPreferenceList(p.Instrumentation)

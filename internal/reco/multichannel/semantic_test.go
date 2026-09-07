@@ -57,7 +57,7 @@ func TestSeedlessSemanticRequestReturnsGroundedCatalogTracks(t *testing.T) {
 	if !strings.Contains(engine.AlgorithmVersion(), "semantic:s2:pilot/v1@abc123:precomputed-query-v1") {
 		t.Fatalf("semantic version missing from generation identity: %q", engine.AlgorithmVersion())
 	}
-	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Mode: core.ModeSimilar, Seed: "8",
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeSimilar, Seed: "8",
 		Preferences: core.SemanticPreferences{Moods: []core.IntentPreference{{Value: "relaxing", Influence: core.InfluencePositive, Explicit: true}}},
 		Controls:    core.IntentControls{TotalTrackCount: 2, AudioWeight: .5, CooccurrenceWeight: .5},
 	}
@@ -81,7 +81,7 @@ func TestSeedlessSemanticRequestReturnsGroundedCatalogTracks(t *testing.T) {
 func TestSemanticNegationPenalizesMatchingCandidate(t *testing.T) {
 	cat := semanticCatalog()
 	sem := semanticData()
-	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Mode: core.ModeSimilar,
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeSimilar,
 		Preferences: core.SemanticPreferences{
 			Moods: []core.IntentPreference{{Value: "relaxing", Influence: core.InfluencePositive}, {Value: "sleepy", Influence: core.InfluenceNegative}},
 		}, Controls: core.IntentControls{TotalTrackCount: 2, AudioWeight: .5, CooccurrenceWeight: .5}, Seed: "9"}.Normalized()
@@ -108,7 +108,7 @@ func TestStrictNoVocalsExcludesVocalAndUnknownEvidence(t *testing.T) {
 	cat := semanticCatalog()
 	sem := semanticData()
 	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
-	intent := core.MusicIntent{Version: core.CurrentIntentVersion, Mode: core.ModeSimilar, Seed: "10",
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeSimilar, Seed: "10",
 		Preferences:     core.SemanticPreferences{Instrumentation: []core.IntentPreference{{Value: "instrumental", Influence: core.InfluencePositive}}},
 		HardConstraints: []core.HardConstraint{{Kind: "exclude_vocals", Value: "vocals", Supported: false}},
 		Controls:        core.IntentControls{TotalTrackCount: 2, AudioWeight: .5, CooccurrenceWeight: .5},
@@ -137,7 +137,7 @@ func TestStrictNoVocalsExcludesVocalAndUnknownEvidence(t *testing.T) {
 
 func TestSemanticFallbackIsExplicitAndSeedlessRequiresSidecar(t *testing.T) {
 	cat := semanticCatalog()
-	seeded := core.MusicIntent{Version: core.CurrentIntentVersion, Mode: core.ModeSimilar, Seed: "11",
+	seeded := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeSimilar, Seed: "11",
 		References:  []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "sleepy", Influence: core.InfluencePositive}},
 		Preferences: core.SemanticPreferences{Moods: []core.IntentPreference{{Value: "relaxing", Influence: core.InfluencePositive}}},
 		Controls:    core.IntentControls{TotalTrackCount: 1, AudioWeight: .5, CooccurrenceWeight: .5}}
