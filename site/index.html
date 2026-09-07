@@ -1,810 +1,102 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Playlist AI — a plain-language prompt in, a playlist out</title>
-<meta name="description" content="A local-first desktop app that turns musical intent into a reproducible playlist using exact multi-channel retrieval, personal taste, diversity selection, and transition-aware sequencing. The optional local model parses language — deterministic Go picks the songs." />
-<meta name="theme-color" content="#0d0d12" />
-<link rel="icon" type="image/svg+xml" href="favicon.svg" />
-<link rel="canonical" href="https://platten.github.io/playlistai/" />
-
-<meta property="og:type" content="website" />
-<meta property="og:title" content="Playlist AI" />
-<meta property="og:description" content="Local musical intent, transparent recommendations, reproducible playlists. The model never picks the songs." />
-<meta property="og:image" content="https://platten.github.io/playlistai/og.png" />
-<meta property="og:url" content="https://platten.github.io/playlistai/" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="Playlist AI" />
-<meta name="twitter:description" content="Local musical intent, transparent recommendations, reproducible playlists. The model never picks the songs." />
-<meta name="twitter:image" content="https://platten.github.io/playlistai/og.png" />
-
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;450;500;600&display=swap" rel="stylesheet" />
-
-<style>
-  :root {
-    --bg: #0c0c12;
-    --bg-2: #090910;
-    --surface: #17171f;
-    --surface-2: #1e1e28;
-    --card: #191921;
-    --text: #edeef2;
-    --muted: #a6a6b4;
-    --faint: #74747f;
-    --line: rgba(255,255,255,.10);
-    --line-strong: rgba(255,255,255,.18);
-    --accent: #7c8cff;
-    --accent-2: #9aa5ff;
-    --accent-ink: #0c0c14;
-    --accent-quiet: rgba(124,140,255,.14);
-    --ok: #57c98a;
-    --radius: 14px;
-    --radius-lg: 20px;
-    --shadow: 0 24px 60px -20px rgba(0,0,0,.55), 0 8px 24px -12px rgba(0,0,0,.5);
-    --maxw: 1120px;
-    --font: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color-scheme: dark;
-  }
-
-  /* Committed dark design — matches the app. */
-
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-
-  body {
-    margin: 0;
-    font-family: var(--font);
-    font-size: 16px;
-    line-height: 1.6;
-    color: var(--text);
-    background-color: var(--bg);
-    background-image:
-      radial-gradient(52rem 38rem at 4% -6%, rgba(124,140,255,.22), transparent 60%),
-      radial-gradient(44rem 34rem at 100% 1%, rgba(124,140,255,.13), transparent 58%);
-    background-repeat: no-repeat;
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-    overflow-x: hidden;
-  }
-
-  a { color: inherit; text-decoration: none; }
-  a:focus-visible, button:focus-visible, .btn:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 3px;
-    border-radius: 6px;
-  }
-  img, svg { max-width: 100%; display: block; }
-
-  .wrap { max-width: var(--maxw); margin-inline: auto; padding-inline: 24px; }
-
-  /* ---------- header ---------- */
-  header.site {
-    position: sticky; top: 0; z-index: 50;
-    backdrop-filter: saturate(140%) blur(12px);
-    -webkit-backdrop-filter: saturate(140%) blur(12px);
-    background: color-mix(in srgb, var(--bg) 72%, transparent);
-    border-bottom: 1px solid var(--line);
-  }
-  .nav { display: flex; align-items: center; gap: 18px; height: 62px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: .01em; }
-  .brand .mark { width: 26px; height: 26px; border-radius: 7px; flex: none; }
-  .nav .links { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
-  .nav .links a {
-    padding: 7px 11px; border-radius: 9px; font-size: 14px; color: var(--muted);
-    transition: color .15s, background .15s;
-  }
-  .nav .links a:hover { color: var(--text); background: color-mix(in srgb, var(--text) 7%, transparent); }
-  .nav .spacer { flex: 1; }
-
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 9px 16px; border-radius: 11px; font-size: 14px; font-weight: 500;
-    border: 1px solid transparent; cursor: pointer; white-space: nowrap;
-    transition: transform .12s ease, background .15s, border-color .15s, color .15s;
-  }
-  .btn:active { transform: translateY(1px); }
-  .btn-primary { background: var(--accent); color: var(--accent-ink); }
-  .btn-primary:hover { background: var(--accent-2); }
-  .btn-ghost { border-color: var(--line-strong); color: var(--text); background: color-mix(in srgb, var(--text) 4%, transparent); }
-  .btn-ghost:hover { border-color: var(--accent); }
-  .btn svg { width: 16px; height: 16px; }
-
-  .menu-toggle { display: none; background: none; border: 0; color: var(--text); padding: 8px; cursor: pointer; }
-
-  /* ---------- hero ---------- */
-  .hero { padding: clamp(56px, 9vw, 116px) 0 clamp(48px, 7vw, 92px); }
-  .hero-grid { display: grid; grid-template-columns: 1.02fr .98fr; gap: clamp(32px, 5vw, 64px); align-items: center; }
-  .eyebrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: 12.5px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--accent-2); background: var(--accent-quiet);
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    padding: 5px 11px; border-radius: 999px;
-  }
-  .hero h1 {
-    font-size: clamp(2.35rem, 5.4vw, 3.7rem); line-height: 1.08; font-weight: 600;
-    letter-spacing: -0.02em; margin: 20px 0 0;
-  }
-  .hero h1 .grad {
-    background: linear-gradient(92deg, var(--accent-2), var(--accent));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .hero p.lead { font-size: clamp(1.02rem, 1.9vw, 1.2rem); color: var(--muted); margin: 20px 0 0; max-width: 44ch; }
-  .hero .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
-  .hero .subnote { margin-top: 16px; font-size: 13px; color: var(--faint); }
-  .hero .subnote code { font-family: var(--mono); color: var(--muted); }
-
-  /* ---------- app mock ---------- */
-  .mock {
-    border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
-    background: linear-gradient(180deg, #20202a, #191921);
-    box-shadow: var(--shadow), 0 0 0 1px rgba(124,140,255,.08), 0 40px 90px -30px rgba(124,140,255,.22);
-    overflow: hidden;
-  }
-  .mock .titlebar {
-    display: flex; align-items: center; gap: 8px; padding: 12px 14px;
-    border-bottom: 1px solid var(--line); color: var(--faint); font-size: 12.5px;
-  }
-  .mock .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); }
-  .mock .body { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-  .prompt {
-    border: 1px solid var(--line-strong); border-radius: 12px; background: #101017;
-    padding: 13px 14px; font-size: 14.5px; line-height: 1.55; color: var(--text);
-  }
-  .prompt .cur { display: inline-block; width: 2px; height: 1.05em; vertical-align: -0.18em; margin-left: 1px;
-    background: var(--accent); animation: blink 1.1s steps(1) infinite; }
-  @keyframes blink { 50% { opacity: 0; } }
-  @media (prefers-reduced-motion: reduce) { .prompt .cur { animation: none; } }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 7px; }
-  .chip {
-    font-size: 12px; padding: 4px 9px; border-radius: 8px;
-    border: 1px solid var(--line); color: var(--muted); background: color-mix(in srgb, var(--text) 3%, transparent);
-    white-space: nowrap;
-  }
-  .chip b { color: var(--text); font-weight: 500; }
-  .chip.accent { border-color: color-mix(in srgb, var(--accent) 40%, transparent); color: var(--accent-2); background: var(--accent-quiet); }
-  .chip .lbl { color: var(--faint); }
-
-  .rows { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .row { display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; align-items: center;
-    padding: 10px 13px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
-  .row:last-child { border-bottom: 0; }
-  .row .idx { color: var(--faint); font-family: var(--mono); font-size: 12px; }
-  .row .t { color: var(--text); }
-  .row .a { color: var(--muted); }
-  .row .t .a { font-size: 12.5px; }
-  .prov { font-size: 10.5px; letter-spacing: .03em; text-transform: uppercase; padding: 3px 7px; border-radius: 6px;
-    border: 1px solid var(--line-strong); color: var(--faint); white-space: nowrap; }
-  .prov.seed { color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-quiet); }
-  .prov.taste { color: #57c98a; border-color: rgba(87,201,138,.35); background: rgba(87,201,138,.10); }
-
-  .mock .footbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
-  .mock .footbar .hint { font-size: 11.5px; color: var(--faint); flex: 1; min-width: 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fake-btn { font-size: 12.5px; font-weight: 500; padding: 7px 13px; border-radius: 9px;
-    background: var(--accent); color: var(--accent-ink); white-space: nowrap; }
-
-  /* ---------- generic sections ---------- */
-  section { padding: clamp(56px, 8vw, 104px) 0; }
-  .section-head { max-width: 62ch; margin-bottom: clamp(32px, 5vw, 52px); }
-  .kicker { font-size: 12.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-2); }
-  h2 { font-size: clamp(1.7rem, 3.4vw, 2.4rem); line-height: 1.15; letter-spacing: -0.015em; font-weight: 600; margin: 12px 0 0; }
-  .section-head p { color: var(--muted); font-size: 1.03rem; margin: 14px 0 0; }
-
-  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .principle { border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; background: var(--card); }
-  .principle h3 { margin: 12px 0 6px; font-size: 1.05rem; font-weight: 600; }
-  .principle p { margin: 0; color: var(--muted); font-size: .96rem; }
-  .principle .ic { width: 30px; height: 30px; color: var(--accent-2); }
-
-  /* how it works */
-  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-  .step { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--card); position: relative; }
-  .step .n { font-family: var(--mono); font-size: 12px; color: var(--accent-2); }
-  .step h3 { margin: 8px 0 6px; font-size: 1rem; }
-  .step p { margin: 0; color: var(--muted); font-size: .92rem; }
-  .invariant {
-    margin-top: 22px; display: flex; gap: 12px; align-items: flex-start;
-    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
-    background: var(--accent-quiet); border-radius: var(--radius); padding: 16px 18px;
-    font-size: .96rem;
-  }
-  .invariant svg { width: 20px; height: 20px; color: var(--accent-2); flex: none; margin-top: 2px; }
-  .invariant b { font-weight: 600; }
-
-  /* features */
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .feature { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--card); }
-  .feature h3 { margin: 0 0 6px; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: 8px; }
-  .feature h3 svg { width: 18px; height: 18px; color: var(--accent-2); flex: none; }
-  .feature p { margin: 0; color: var(--muted); font-size: .93rem; }
-
-  /* measured performance */
-  .bench-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
-  .metric { border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; background: var(--card); }
-  .metric .value { display: block; margin-bottom: 4px; color: var(--accent-2); font-family: var(--mono); font-size: 1.45rem; line-height: 1.2; }
-  .metric .label { color: var(--muted); font-size: .9rem; }
-  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
-  .bench-table { width: 100%; border-collapse: collapse; min-width: 620px; font-size: .9rem; }
-  .bench-table th, .bench-table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line); }
-  .bench-table tr:last-child td { border-bottom: 0; }
-  .bench-table th { color: var(--faint); font-size: .75rem; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
-  .bench-table td { color: var(--muted); }
-  .bench-table td:first-child { color: var(--text); }
-  .bench-table .now { color: var(--ok); font-family: var(--mono); }
-  .bench-note { margin: 16px 0 0; color: var(--faint); font-size: .84rem; max-width: 78ch; }
-  .model-panel { margin-top: 22px; border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; background: var(--card); }
-  .model-panel h3 { margin: 0 0 6px; font-size: 1.05rem; }
-  .model-panel p { margin: 0; color: var(--muted); font-size: .92rem; }
-  .model-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; padding: 0; list-style: none; counter-reset: models; }
-  .model-list li { counter-increment: models; border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; color: var(--muted); font-size: .84rem; }
-  .model-list li::before { content: counter(models) ". "; color: var(--accent-2); font-family: var(--mono); }
-  .model-panel .table-wrap { margin: 16px 0; }
-
-  /* privacy */
-  .privacy-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  .pcard { border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; background: var(--card); }
-  .pcard h3 { margin: 0 0 12px; font-size: 1rem; }
-  .pcard ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: .95rem; }
-  .pcard li { margin: 7px 0; }
-  .pcard.stay { border-color: color-mix(in srgb, var(--ok) 34%, transparent); }
-  .pcard.stay h3 { color: var(--ok); }
-
-  /* download */
-  .dl { border: 1px solid var(--line-strong); border-radius: var(--radius-lg); padding: clamp(24px, 4vw, 40px);
-    background: linear-gradient(180deg, var(--surface), var(--surface-2)); box-shadow: var(--shadow); }
-  .platforms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 22px 0 4px; }
-  .platform { border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
-  .platform h3 { margin: 0 0 4px; font-size: .98rem; display: flex; align-items: center; gap: 8px; }
-  .platform h3 svg { width: 18px; height: 18px; color: var(--muted); }
-  .platform p { margin: 0; color: var(--faint); font-size: .86rem; }
-  .dl .note { margin-top: 20px; font-size: 13px; color: var(--faint); }
-
-  .code {
-    position: relative; margin-top: 18px; border: 1px solid var(--line); border-radius: 12px;
-    background: var(--bg-2); overflow: hidden;
-  }
-  .code pre { margin: 0; padding: 16px 18px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: var(--text); }
-  .code .c { color: var(--faint); }
-  .code button.copy {
-    position: absolute; top: 8px; right: 8px; font-size: 11.5px; padding: 5px 9px; border-radius: 7px;
-    border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--muted); cursor: pointer;
-  }
-  .code button.copy:hover { color: var(--text); }
-
-  /* footer */
-  footer.site { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--muted); font-size: 14px; }
-  footer .cols { display: flex; flex-wrap: wrap; gap: 40px 64px; justify-content: space-between; }
-  footer .fcol h4 { margin: 0 0 10px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
-  footer .fcol a { display: block; padding: 3px 0; color: var(--muted); }
-  footer .fcol a:hover { color: var(--text); }
-  footer .legal { margin-top: 32px; font-size: 12.5px; color: var(--faint); max-width: 70ch; }
-
-  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
-  .reveal.in { opacity: 1; transform: none; }
-  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
-
-  /* ---------- responsive ---------- */
-  @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; }
-    .hero .mock { order: 2; }
-    .principles, .flow, .features, .bench-grid { grid-template-columns: 1fr 1fr; }
-    .privacy-grid, .platforms { grid-template-columns: 1fr; }
-    .nav .links { display: none; }
-    .menu-toggle { display: inline-flex; }
-    .nav.open .links {
-      display: flex; position: absolute; left: 0; right: 0; top: 62px; flex-direction: column;
-      background: var(--bg); border-bottom: 1px solid var(--line); padding: 8px 16px 14px;
-    }
-    .nav.open .links a { padding: 10px; }
-  }
-  @media (max-width: 560px) {
-    .principles, .flow, .features, .bench-grid { grid-template-columns: 1fr; }
-    .hero .cta { flex-direction: column; align-items: stretch; }
-    .hero .cta .btn { justify-content: center; }
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Playlist AI — Find the music you have in mind</title>
+  <meta name="description" content="Describe a genre, a feeling, an artist, or a journey. Playlist AI turns your words into playlists on your desktop. Download version 0.7.0 for Windows, macOS, or Linux." />
+  <meta name="theme-color" content="#101113" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="canonical" href="https://platten.github.io/playlistai/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Playlist AI — Find the music you have in mind" />
+  <meta property="og:description" content="Your words. Your taste. Your next playlist. A local-first desktop app, now in version 0.7.0." />
+  <meta property="og:image" content="https://platten.github.io/playlistai/og.png" />
+  <meta property="og:url" content="https://platten.github.io/playlistai/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="site.js" defer></script>
 </head>
 <body>
-<header class="site">
-  <div class="wrap nav" id="nav">
-    <a class="brand" href="#top" aria-label="Playlist AI — home">
-      <img class="mark" src="favicon.svg" alt="" width="26" height="26" />
-      Playlist AI
-    </a>
-    <nav class="links" aria-label="Primary">
-      <a href="#how">How it works</a>
-      <a href="#features">Features</a>
-      <a href="#performance">Performance</a>
-      <a href="#privacy">Privacy</a>
-      <a href="#build">Build from source</a>
-      <a href="https://github.com/platten/playlistai">GitHub</a>
-    </nav>
-    <span class="spacer"></span>
-    <a class="btn btn-primary" href="#download">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-      Download
-    </a>
-    <button class="menu-toggle" id="menuToggle" aria-label="Menu" aria-expanded="false">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button>
-  </div>
-</header>
-
-<main id="top">
-
-  <!-- HERO -->
-  <section class="hero">
-    <div class="wrap hero-grid">
-      <div>
-        <span class="eyebrow">Local-first · Desktop · GPL-3.0</span>
-        <h1>A plain-language prompt in,<br /><span class="grad">a playlist out.</span></h1>
-        <p class="lead">
-          Describe a sound, a mood, exclusions, required tracks, or a journey.
-          Playlist AI resolves that intent, retrieves from a local ~957k-track
-          catalog, and builds a diverse, smoothly ordered playlist you can explain
-          and replay. Then hand it to Spotify, Qobuz or anywhere via Soundiiz.
-        </p>
-        <div class="cta">
-          <a class="btn btn-primary" href="https://github.com/platten/playlistai/releases">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-            Get the app
-          </a>
-          <a class="btn btn-ghost" href="https://github.com/platten/playlistai">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.8-1.3-1.8-1.1-.7 0-.7 0-.7 1.2 0 1.9 1.2 1.9 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>
-            Star on GitHub
-          </a>
-        </div>
-        <p class="subnote">
-          macOS · Windows · Linux. No account. The catalog is one ~210&nbsp;MB download;
-          a local language model is optional.
-        </p>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><div class="wrap nav">
+    <a class="brand" href="#top" aria-label="Playlist AI home"><img src="favicon.svg" width="36" height="36" alt="" />Playlist AI</a>
+    <nav id="navigation" aria-label="Main navigation"><a href="#experience">The experience</a><a href="#new">What’s new</a><a href="#privacy">Privacy</a></nav>
+    <a class="button button-small" href="#download">Get the app <span aria-hidden="true">↗</span></a>
+    <button class="menu-toggle" aria-expanded="false" aria-controls="navigation" aria-label="Open navigation"><span></span><span></span></button>
+  </div></header>
+  <main id="main">
+    <section class="hero wrap" id="top" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <a class="release-link" href="https://github.com/platten/playlistai/releases/tag/v0.7.0"><span class="status-dot"></span> VERSION 0.7.0 IS HERE <span aria-hidden="true">↗</span></a>
+        <h1 id="hero-title">Find the music<br />you have<br /><em>in mind.</em></h1>
+        <p class="lead">A feeling, a favorite artist, a place to start.<br class="desktop-break" /> Turn a few words into your next playlist.</p>
+        <div class="hero-actions"><a class="button" href="#download">Download Playlist AI <span aria-hidden="true">↓</span></a><a class="text-link" href="#experience">Take a look <span aria-hidden="true">↗</span></a></div>
+        <p class="hero-note">Free &amp; open source <span>·</span> Windows, macOS &amp; Linux</p>
       </div>
-
-      <!-- app window mock -->
-      <div class="mock reveal" role="img" aria-label="A mock of the app: a prompt box, the parsed intent shown as chips, and a generated playlist with per-track provenance.">
-        <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:6px">Playlist AI</span></div>
-        <div class="body">
-          <div class="prompt">ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone<span class="cur"></span></div>
-          <div class="chips" aria-label="Parsed intent">
-            <span class="chip accent">reference · inferred locally</span>
-            <span class="chip"><span class="lbl">mood</span> <b>relaxing</b></span>
-            <span class="chip"><span class="lbl">texture</span> <b>microdetail · sparkle</b></span>
-            <span class="chip"><span class="lbl">exclude</span> <b>sleepy · abstract drone</b></span>
-            <span class="chip"><span class="lbl">count</span> <b>20 total</b></span>
-          </div>
-          <div class="rows">
-            <div class="row"><span class="idx">01</span><span class="t">Two Thousand and Seventeen <span class="a">· Four Tet</span></span><span class="prov seed">reference</span></div>
-            <div class="row"><span class="idx">02</span><span class="t">Olson <span class="a">· Boards of Canada</span></span><span class="prov">audio + co-occur</span></div>
-            <div class="row"><span class="idx">03</span><span class="t">Archangel <span class="a">· Burial</span></span><span class="prov taste">taste cluster</span></div>
-            <div class="row"><span class="idx">04</span><span class="t">Cirrus <span class="a">· Bonobo</span></span><span class="prov">transition</span></div>
-            <div class="row"><span class="idx">05</span><span class="t">La femme d’argent <span class="a">· Air</span></span><span class="prov">diversity pick</span></div>
+      <div class="studio">
+        <div class="record" aria-hidden="true"><div class="record-label"><span>PLAYLIST<br />AI</span><i></i><small>SIDE A / 0.7</small></div></div>
+        <div class="studio-window">
+          <div class="window-bar"><span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>YOUR NEXT LISTEN</span><span aria-hidden="true">↗</span></div>
+          <div class="studio-body">
+            <div class="studio-heading"><img src="favicon.svg" alt="" width="26" height="26" /><span>Start with a description.</span></div>
+            <div class="example-buttons" role="group" aria-label="Explore example descriptions"><button type="button" data-example="ambient" aria-pressed="true">A feeling</button><button type="button" data-example="artist" aria-pressed="false">An artist</button><button type="button" data-example="journey" aria-pressed="false">A journey</button></div>
+            <div class="description-preview" aria-live="polite" aria-atomic="true">
+              <p class="example-description" id="example-description">Ambient electronica.<br />Relaxing, but not sleepy.</p>
+              <div class="request-summary"><span class="small-label">YOUR REQUEST</span><dl id="example-summary"><div><dt>Genre</dt><dd>Ambient electronica</dd></div><div><dt>Mood</dt><dd>Relaxing</dd></div><div><dt>Avoid</dt><dd>Sleepy</dd></div></dl></div>
+            </div>
+            <div class="studio-footer"><span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span>A little more you.<br /><strong>A little less searching.</strong></span><a href="#download" class="round-link" aria-label="Download the app to create a playlist">↗</a></div>
           </div>
         </div>
-        <div class="footbar">
-          <span class="hint">Same intent + catalog + profile + seed = same playlist</span>
-          <span class="fake-btn">Generate playlist</span>
-        </div>
+        <p class="demo-caption">Interactive illustration · generate playlists in the desktop app</p>
       </div>
-    </div>
-  </section>
-
-  <!-- PRINCIPLES -->
-  <section id="why">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">What makes it different</span>
-        <h2>Recommendations that stay on your machine.</h2>
-        <p>No cloud inference, no account, no library scan. The parts that can touch the network are optional and only run when you ask.</p>
+    </section>
+    <div class="assurance wrap"><span>Made for curious ears.</span><p>Local language understanding</p><p>Your taste stays private</p><p>No account required</p></div>
+    <section class="section wrap" id="experience" aria-labelledby="experience-title">
+      <div class="section-heading"><p class="eyebrow">01 / THE EXPERIENCE</p><h2 id="experience-title">Less searching.<br /><span class="muted">More finding your sound.</span></h2><p>Start broad or get particular. Give your playlist a direction, then make it your own.</p></div>
+      <div class="experience-grid">
+        <article class="feature feature-description"><span class="feature-index">01</span><h3>Say it your way.</h3><p>Genres, moods, textures, artists, albums and tracks each have a place in your description. Add exclusions when you know what you don’t want.</p><div class="quote-note">“Dubstep, but no Skrillex<br />or Bassnectar.”<span>YOUR WORDS SET THE DIRECTION</span></div></article>
+        <article class="feature feature-journey"><span class="feature-index">02</span><h3>Go somewhere.</h3><p>Build around a reference, or move from one musical world to another. Keep a destination in mind.</p><div class="journey-art" aria-hidden="true"><span>Classical</span><svg viewBox="0 0 340 110" fill="none"><path d="M8 86C82 86 76 24 151 24S240 86 332 20" stroke="currentColor" stroke-width="2"/><circle cx="8" cy="86" r="5" fill="currentColor"/><circle cx="151" cy="24" r="5" fill="currentColor"/><circle cx="332" cy="20" r="5" fill="currentColor"/></svg><span>Miles Davis</span></div></article>
+        <article class="feature feature-control"><span class="feature-index">03</span><h3>Stay in the loop.</h3><p>See when the local model is processing. Review your request, refine a reference, and get a clear explanation when only part of it can be fulfilled.</p><div class="progress-example"><span class="status-dot"></span><span>The local model is processing your request…</span></div></article>
+        <article class="feature feature-export"><span class="feature-index">04</span><h3>Take it with you.</h3><p>Preview tracks, choose what to keep, then export a CSV or continue through Soundiiz. Export uses local track details, without waiting for MusicBrainz validation.</p><div class="export-art"><span>YOUR PLAYLIST</span><span aria-hidden="true">↗</span><div>CSV <i> / </i> Soundiiz</div></div></article>
       </div>
-      <div class="principles">
-        <div class="principle reveal">
-          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
-          <h3>Local-first core</h3>
-          <p>Prompt → intent → playlist runs locally. The desktop core is compiled Go; an optional <code>llama.cpp</code> model parses language, and the built-in rules mode works without it.</p>
-        </div>
-        <div class="principle reveal">
-          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9L9.5 8 12 3Z"/></svg>
-          <h3>The model never picks songs</h3>
-          <p>Its whole job is text → structured musical intent. It never sees the catalog or ranks tracks. Every pick comes from transparent retrieval, eligibility, ranking, and sequencing code.</p>
-        </div>
-        <div class="principle reveal">
-          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          <h3>Your feedback stays yours</h3>
-          <p>Likes, dislikes, request-only feedback, exposures, taste clusters, and history live in local SQLite. Generated or briefly previewed tracks are never silently treated as feedback.</p>
-        </div>
+    </section>
+    <section class="release-section" id="new" aria-labelledby="new-title"><div class="wrap release-grid">
+      <div class="section-heading"><p class="eyebrow">02 / FRESHLY PRESSED</p><h2 id="new-title">A clearer path<br />from idea to playlist.</h2><p>New in version 0.7.0.</p><a class="text-link" href="https://github.com/platten/playlistai/releases/tag/v0.7.0">Read the release notes <span aria-hidden="true">↗</span></a></div>
+      <div class="release-list">
+        <article><span>01</span><div><h3>Descriptions with more detail</h3><p>Keep genres, references, exclusions and journey stages distinct. MusicBrainz-backed artist discovery broadens the starting points.</p></div></article>
+        <article><span>02</span><div><h3>One model recommendation</h3><p>Setup suggests the largest language model in its hardware-eligible shortlist. You can choose another model in Settings.</p></div></article>
+        <article><span>03</span><div><h3>A simpler everyday flow</h3><p>Go straight to Generate. The separate Catalog screen is gone, and export review focuses on the tracks you want to keep.</p></div></article>
+        <article><span>04</span><div><h3>Small details, less friction</h3><p>Choose Deezer or Spotify previews in setup. Open a scrollable log window from Settings when you need a closer look.</p></div></article>
       </div>
-    </div>
-  </section>
-
-  <!-- HOW IT WORKS -->
-  <section id="how">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">How it works</span>
-        <h2>From musical meaning to an ordered playlist.</h2>
-        <p>Each boundary has one job, so hard rules cannot be blurred into preferences and every selected track can carry real scoring evidence.</p>
+    </div></section>
+    <section class="section wrap" aria-labelledby="analysis-title">
+      <div class="analysis-panel"><div class="analysis-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="analysis-core">CLAP<span>AUDIO + TEXT</span></div><span class="analysis-coordinate">LOCAL INFERENCE / PAI 0.7</span></div>
+        <div class="analysis-copy"><p class="eyebrow">OPTIONAL MUSIC ANALYSIS</p><h2 id="analysis-title">A new foundation<br />for listening.</h2><p>Download and validate the full-precision CLAP Music + Speech model in setup, or bring a compatible custom bundle. Paired audio and text encoders run locally, with no Python runtime required by the desktop app.</p><p class="analysis-status"><strong>Available now: installation and inference validation.</strong> Automatic musical-fit filtering still requires a reviewed calibration policy and is not enabled by the recommended bundle.</p><a class="text-link" href="https://github.com/platten/playlistai/blob/v0.7.0/docs/clap-model-candidates.md">Model candidates &amp; custom-bundle guide <span aria-hidden="true">↗</span></a></div>
       </div>
-      <div class="flow">
-        <div class="step reveal">
-          <span class="n">01</span>
-          <h3>Interpret</h3>
-          <p>Preserve references, required tracks, mood, texture, exclusions, count, journey, and source evidence in a versioned intent.</p>
-        </div>
-        <div class="step reveal">
-          <span class="n">02</span>
-          <h3>Resolve</h3>
-          <p>Match artists and tracks separately, Unicode intact. Exact matches win; material ambiguity is shown instead of guessed away.</p>
-        </div>
-        <div class="step reveal">
-          <span class="n">03</span>
-          <h3>Retrieve &amp; rank</h3>
-          <p>Search each reference in both embedding spaces, add taste clusters and bounded exploration, then score transparent components.</p>
-        </div>
-        <div class="step reveal">
-          <span class="n">04</span>
-          <h3>Select &amp; order</h3>
-          <p>Apply hard exclusions and recording dedup, select diverse relevant tracks with MMR, then optimize transitions and waypoints.</p>
-        </div>
-        <div class="step reveal">
-          <span class="n">05</span>
-          <h3>Export</h3>
-          <p>Preview, enrich with MusicBrainz, or use Soundiiz. CSV stays local; every network action is optional and explicit.</p>
-        </div>
+    </section>
+    <section class="section privacy-section wrap" id="privacy" aria-labelledby="privacy-title">
+      <div class="section-heading"><p class="eyebrow">03 / ON YOUR TERMS</p><h2 id="privacy-title">Personal taste.<br /><em>Personal space.</em></h2><p>Your descriptions, language inference, playlist history and taste profile stay on your device. No cloud model receives your prompt.</p></div>
+      <div class="privacy-ledger"><div><span class="ledger-mark" aria-hidden="true">↳</span><h3>At home on your desktop</h3><p>Recommendations and saved feedback are processed locally. If preview analysis is enabled with a calibrated bundle, audio is processed in memory; reusable derived features stay until you clear them.</p></div><div><span class="ledger-mark" aria-hidden="true">↗</span><h3>Clear about outside connections</h3><p>Setup downloads models and recommendation data. MusicBrainz receives genre and reference queries; Deezer receives track lookups. A Soundiiz handoff sends the playlist name and track/artist names when you export.</p></div></div>
+    </section>
+    <section class="download-section" id="download" aria-labelledby="download-title"><div class="wrap">
+      <div class="download-heading"><div><p class="eyebrow">04 / YOUR NEXT LISTEN</p><h2 id="download-title">Make room for<br /><em>something good.</em></h2></div><div><span class="version-label">PLAYLIST AI / 0.7.0</span><p>Free, open source, and yours to explore.<br />Choose your desktop below.</p></div></div>
+      <div class="platforms">
+        <article class="platform"><span class="platform-symbol" aria-hidden="true">⊞</span><h3>Windows</h3><p>Windows x64 · NSIS installer</p><a class="button" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-amd64-installer.exe">Download for Windows <span aria-hidden="true">↓</span></a><a class="secondary-download" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-arm64-installer.exe">Windows ARM64 installer ↗</a><details><summary>Portable downloads</summary><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-windows-amd64.zip">x64 ZIP</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-windows-arm64.zip">ARM64 ZIP</a></details></article>
+        <article class="platform"><span class="platform-symbol mac-symbol" aria-hidden="true">⌘</span><h3>macOS</h3><p>Apple silicon · DMG installer</p><a class="button" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai.dmg">Download for macOS <span aria-hidden="true">↓</span></a><a class="secondary-download" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-macos.zip">Apple silicon portable ZIP ↗</a><p class="platform-note">The 0.7.0 release does not include an Intel Mac build.</p></article>
+        <article class="platform"><span class="platform-symbol" aria-hidden="true">⌁</span><h3>Linux</h3><p>Linux x64 · AppImage</p><a class="button" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-x86_64.AppImage">Download for Linux <span aria-hidden="true">↓</span></a><a class="secondary-download" href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-aarch64.AppImage">Linux ARM64 AppImage ↗</a><details><summary>Packages &amp; portable downloads</summary><div class="package-links"><span>x64</span><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-amd64.deb">DEB</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-amd64.rpm">RPM</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-amd64.pkg.tar.zst">Arch</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-linux-amd64.tar.gz">TAR.GZ</a></div><div class="package-links"><span>ARM64</span><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-arm64.deb">DEB</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-arm64.rpm">RPM</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-arm64.pkg.tar.zst">Arch</a><a href="https://github.com/platten/playlistai/releases/download/v0.7.0/playlist-ai-linux-arm64.tar.gz">TAR.GZ</a></div></details></article>
       </div>
-      <div class="invariant reveal">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4Z"/><path d="m9 12 2 2 4-4"/></svg>
-        <span><b>Invariant:</b> the LLM only does text → intent. Hard exclusions run before ranking, exposures are not likes, and the same catalog, algorithm, intent, profile snapshot, and seed reproduce the same result.</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- FEATURES -->
-  <section id="features">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">Details</span>
-        <h2>More control, without pretending to know more.</h2>
-        <p>The pipeline uses only available evidence, reports missing capabilities, and keeps the original Deej-AI walk as a versioned evaluation baseline.</p>
-      </div>
-      <div class="features">
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>~957k-track catalog</h3>
-          <p>Derived from the Deej-AI dataset. A ~210&nbsp;MB compressed archive the app downloads once and decompresses into your data dir. Not in the repo, not in the installer.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg>Multi-channel retrieval</h3>
-          <p>Each reference independently searches audio and playlist-co-occurrence space. Taste clusters and bounded exploration contribute separate candidates with provenance.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 10 6l4 8 2-4 4 8"/></svg>Similar &amp; journey modes</h3>
-          <p>One or many references can anchor a playlist. Required tracks stay distinct, waypoint order is preserved, and the requested count always means total output tracks.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 3"/></svg>Responsive &amp; reproducible</h3>
-          <p>Initial results are reused, stale work is cancelled, and sliders retain the full intent. Catalog, algorithm, profile snapshot, context, and a lossless seed identify each build.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/></svg>Hardware-aware local models</h3>
-          <p>The wizard asks llama.cpp for usable GPUs and free VRAM, reserves 1&nbsp;GiB for context/KV, and lists only complete weights that fit. CPU mode shows the two smallest choices.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/><path d="M5 5v14"/></svg>Explicit local feedback</h3>
-          <p>Like, dislike, more-like, less-like, acceptance, and removal are explicit events. Recency-weighted positive and negative clusters preserve multiple tastes.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>Hard rules stay hard</h3>
-          <p>Artist/track exclusions and recording duplicates are eligibility rules, never soft penalties. Exhaustion returns a visible partial-result reason instead of an ineligible fallback.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7"/><ellipse cx="12" cy="7" rx="8" ry="3"/></svg>Grounded semantics, optional</h3>
-          <p>A versioned sidecar can add reviewed descriptions and facets. Missing evidence stays unknown; unsupported phrases remain in the intent instead of becoming fabricated metadata.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5 5.5.8-4 3.9.9 5.5L12 21l-4.9 2.6.9-5.5-4-3.9L9.5 8 12 3Z"/></svg>History &amp; continuing radio</h3>
-          <p>History stores the complete result for exact replay. Continuing radio retains the original anchor while incorporating recent selections and relevant taste clusters.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/><path d="M5 5v14"/></svg>Soundiiz &amp; CSV export</h3>
-          <p>Resolve ISRCs through cached, rate-limited MusicBrainz enrichment, use a tokenless Soundiiz browser handoff, or download a compatible CSV.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>Optional 30-second previews</h3>
-          <p>Use Deezer's public preview lookup, the URL already stored in the catalog, or turn playback off. Preview behavior never becomes implicit taste feedback.</p>
-        </div>
-        <div class="feature reveal">
-          <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 9 9l4 5 3-4 4 8"/></svg>Evaluation built in</h3>
-          <p>A repeatable harness measures intent, resolution, retrieval, ranking, hard violations, diversity, transitions, reproducibility, and stage latency without calling synthetic data musical proof.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- PERFORMANCE -->
-  <section id="performance">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">Measured, not guessed</span>
-        <h2>Exact retrieval in about 10 milliseconds.</h2>
-        <p>Executed against the 956,917-track production catalog on Linux/x86-64, an Intel Core Ultra 9 285H, 16&nbsp;GB RAM, and Go&nbsp;1.27.</p>
-      </div>
-      <div class="bench-grid">
-        <div class="metric reveal">
-          <span class="value">9.81–10.05 ms</span>
-          <span class="label">Exact K=64 retrieval, down from 81.5–84.0&nbsp;ms</span>
-        </div>
-        <div class="metric reveal">
-          <span class="value">111.3–125.3 ms</span>
-          <span class="label">Complete 20-track generation, down from 438.0–440.2&nbsp;ms</span>
-        </div>
-        <div class="metric reveal">
-          <span class="value">Recall@K 1.0</span>
-          <span class="label">Parallel and serial exact scans return identical scores and order</span>
-        </div>
-      </div>
-      <div class="table-wrap reveal">
-        <table class="bench-table">
-          <thead>
-            <tr><th>Intent parser</th><th>Schema valid</th><th>Field accuracy</th><th>Median / P95</th><th>Peak RSS</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Rules v2</td><td class="now">100%</td><td>46.4%</td><td>&lt;1 / &lt;1 ms</td><td>n/a</td></tr>
-            <tr><td>Qwen3.5 0.8B Q4_0</td><td class="now">100%</td><td>25.0%</td><td>2.45 / 6.24 s</td><td>1.13 GiB</td></tr>
-            <tr><td>Qwen2.5 3B Q4_K_M</td><td>91.7%</td><td>45.2%</td><td>9.77 / 15.10 s</td><td>3.35 GiB</td></tr>
-            <tr><td>Llama 3.2 3B Q4_K_M</td><td>91.7%</td><td>57.1%</td><td>10.26 / 19.71 s</td><td>3.76 GiB</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="bench-note reveal">
-        Retrieval was rerun on the current tree on 2026-09-06 with three samples of three iterations each. The 12-case intent set also ran each tested model three times; none met the documented correctness and latency gate. The five newly curated model artifacts have not yet run that application-specific benchmark, so their requested priority is not presented as measured quality. The repository has no real listening judgments yet; synthetic fixtures validate execution and leakage guards, not musical recommendation quality.
-        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md">Methods, reproduction commands, and limitations</a>.
-      </p>
-      <div class="model-panel reveal">
-        <h3>Hardware-aware model setup</h3>
-        <p>The wizard keeps this priority order, then filters it using free memory reported by the installed llama.cpp backend. A full GGUF must fit on one GPU with 1&nbsp;GiB still available for context, KV cache, and compute. Settings lists every model and marks the preferred VRAM tiers.</p>
-        <ol class="model-list">
-          <li>Qwen3.5 35B A3B</li>
-          <li>Qwen3.5 9B</li>
-          <li>Mistral Small 3.1 24B</li>
-          <li>Gemma 3 12B</li>
-          <li>Qwen3.5 4B</li>
-        </ol>
-        <div class="table-wrap">
-          <table class="bench-table">
-            <thead><tr><th>GPU memory</th><th>Reference cards</th><th>Preferred intent model</th></tr></thead>
-            <tbody>
-              <tr><td>8 GB</td><td>RTX 5070 Laptop</td><td class="now">Qwen3.5 9B</td></tr>
-              <tr><td>12 GB</td><td>RTX 5070 desktop</td><td class="now">Qwen3.5 9B</td></tr>
-              <tr><td>16 GB</td><td>16 GB NVIDIA GPU</td><td class="now">Qwen3.5 9B</td></tr>
-              <tr><td>24 GB</td><td>RTX 3090 desktop / RTX 5090 Laptop</td><td class="now">Qwen3.5 35B A3B</td></tr>
-              <tr><td>32 GB</td><td>RTX 5090 desktop</td><td class="now">Qwen3.5 35B A3B</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p>Measured example: the test RTX&nbsp;5060 Laptop GPU reports 8123&nbsp;MiB total and 7033&nbsp;MiB free through llama.cpp, so Qwen3.5&nbsp;9B and 4B fit with the reserve. The executed selection-policy benchmark covers RTX&nbsp;5070 Laptop/desktop, RTX&nbsp;3090 desktop, and RTX&nbsp;5090 Laptop/desktop profiles in roughly 0.36–0.45&nbsp;µs per GPU case on the test CPU. These are fit-policy measurements, not GPU inference results, and the exact curated models still need comparative intent evaluation. NVIDIA has no RTX&nbsp;3090 Laptop product. Real choices always use currently free memory; CPU mode offers the two smallest recommendations.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- PRIVACY -->
-  <section id="privacy">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">Privacy</span>
-        <h2>What stays, and what leaves.</h2>
-        <p>No accounts, no telemetry, no cloud inference. Every network call is optional and started by you.</p>
-      </div>
-      <div class="privacy-grid">
-        <div class="pcard stay reveal">
-          <h3>Stays on your machine</h3>
-          <ul>
-            <li>Your prompts and parsed intents</li>
-            <li>The optional model, and all intent inference</li>
-            <li>Retrieval, ranking, selection, and sequencing</li>
-            <li>Playlist history, explicit feedback, and taste profiles</li>
-            <li>Preferences, exposures, and the MusicBrainz cache</li>
-          </ul>
-        </div>
-        <div class="pcard reveal">
-          <h3>Leaves only when you act</h3>
-          <ul>
-            <li>Setup: downloads the catalog; llama.cpp and a model only if you choose them</li>
-            <li>Enrichment: track + artist names to MusicBrainz for ISRCs</li>
-            <li>Soundiiz handoff: playlist title and track/artist names</li>
-            <li>Previews: a track lookup to Deezer's public API</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- DOWNLOAD -->
-  <section id="download">
-    <div class="wrap">
-      <div class="dl reveal">
-        <span class="kicker">Get it</span>
-        <h2 style="margin-top:12px">Download for your platform</h2>
-        <p style="color:var(--muted);margin-top:12px;max-width:60ch">
-          Grab an installer from the GitHub Releases page. Portable archives of the raw
-          binary are attached too. Generate stays available without a model: catalog-only
-          mode simply asks you to name a seed artist or track.
-        </p>
-        <div class="platforms">
-          <div class="platform">
-            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3c-3 0-4 2.5-4 6 0 2-1 3-2 5s-1 4 1 5 4 0 5 0 3 1 5 0 2-3 1-5-2-3-2-5c0-3.5-1-6-4-6Z" stroke-linejoin="round"/></svg>macOS</h3>
-            <p><code>.dmg</code> · Apple silicon &amp; Intel</p>
-          </div>
-          <div class="platform">
-            <h3><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5 10.5 4.4v7.1H3V5.5Zm0 13L10.5 19.6v-7H3v6ZM11.5 4.3 21 3v9.5h-9.5V4.3Zm0 15.4L21 21v-9.5h-9.5v8.2Z"/></svg>Windows</h3>
-            <p><code>-installer.exe</code> (NSIS)</p>
-          </div>
-          <div class="platform">
-            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 10c.6 1 1.4 1.5 3 1.5S14.4 11 15 10M9 16c.8-1 1.8-1.5 3-1.5s2.2.5 3 1.5"/></svg>Linux</h3>
-            <p><code>.AppImage</code>, <code>.deb</code>, <code>.rpm</code>, <code>.pkg.tar.zst</code></p>
-          </div>
-        </div>
-        <a class="btn btn-primary" style="margin-top:22px" href="https://github.com/platten/playlistai/releases">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
-          Open GitHub Releases
-        </a>
-        <p class="note">
-          On Linux the app needs <code>libgtk-4</code> and <code>libwebkitgtk-6.0</code>.
-          Installers aren't code-signed yet — expect a Gatekeeper / SmartScreen prompt on first launch.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- BUILD -->
-  <section id="build">
-    <div class="wrap">
-      <div class="section-head reveal">
-        <span class="kicker">For developers</span>
-        <h2>Build it from source.</h2>
-        <p>No Git LFS, no large blobs, and no Python runtime. The compiled Go core tests need only Go; the desktop shell needs the Wails v3 CLI.</p>
-      </div>
-      <div class="code reveal">
-        <button class="copy" id="copyBtn" type="button">Copy</button>
-        <pre id="snippet"><span class="c"># Go core — no toolchain beyond Go</span>
-go test ./...
-
-<span class="c"># Full desktop app</span>
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.16
-wails3 doctor      <span class="c"># check system deps</span>
-wails3 dev         <span class="c"># hot-reload run</span>
-wails3 build       <span class="c"># bin/playlist-ai</span>
-wails3 package     <span class="c"># per-OS installers</span></pre>
-      </div>
-      <p style="color:var(--faint);font-size:13px;margin-top:16px">
-        Architecture, catalog, and evaluation details are documented in
-        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/ARCHITECTURE.md">ARCHITECTURE.md</a>,
-        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/CATALOG.md">CATALOG.md</a>, and
-        <a style="color:var(--muted);text-decoration:underline" href="https://github.com/platten/playlistai/blob/main/docs/evaluation.md">EVALUATION.md</a>.
-      </p>
-    </div>
-  </section>
-
-</main>
-
-<footer class="site">
-  <div class="wrap">
-    <div class="cols">
-      <div class="fcol" style="max-width:34ch">
-        <div class="brand" style="margin-bottom:10px">
-          <img class="mark" src="favicon.svg" alt="" width="24" height="24" />
-          Playlist AI
-        </div>
-        <p style="margin:0;color:var(--faint);font-size:13px">
-          A plain-language prompt in, a playlist out — on your machine.
-        </p>
-      </div>
-      <div class="fcol">
-        <h4>Project</h4>
-        <a href="https://github.com/platten/playlistai">Repository</a>
-        <a href="https://github.com/platten/playlistai/releases">Releases</a>
-        <a href="https://github.com/platten/playlistai/issues">Issues</a>
-      </div>
-      <div class="fcol">
-        <h4>Docs</h4>
-        <a href="https://github.com/platten/playlistai/blob/main/README.md">README</a>
-        <a href="https://github.com/platten/playlistai/blob/main/docs/ARCHITECTURE.md">Architecture</a>
-        <a href="https://github.com/platten/playlistai/blob/main/docs/CATALOG.md">Catalog</a>
-        <a href="https://github.com/platten/playlistai/blob/main/docs/evaluation.md">Evaluation</a>
-        <a href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md">Benchmarks</a>
-        <a href="https://github.com/platten/playlistai/blob/main/docs/RELEASING.md">Releasing</a>
-      </div>
-      <div class="fcol">
-        <h4>Credits</h4>
-        <a href="https://github.com/teticio/Deej-AI">teticio/Deej-AI</a>
-        <a href="https://github.com/teticio/deej-ai.online-app">deej-ai.online-app</a>
-        <a href="https://v3.wails.io">Wails v3</a>
-      </div>
-    </div>
-    <p class="legal">
-      GPL-3.0. The recommendation technique is ported from teticio/Deej-AI and
-      deej-ai.online-app (both GPL-3.0); the embedding catalog is derived from
-      Deej-AI's pre-computed datasets. Built with Go, Wails&nbsp;v3, React and TypeScript.
-      Spotify, Qobuz, Deezer, Apple Music and Soundiiz are trademarks of their
-      respective owners and are not affiliated with this project.
-      <span id="year"></span>
-    </p>
-  </div>
-</footer>
-
-<script>
-  (function () {
-    // year
-    var y = document.getElementById("year");
-    if (y) y.textContent = "· © " + new Date().getFullYear();
-
-    // mobile menu
-    var nav = document.getElementById("nav");
-    var mt = document.getElementById("menuToggle");
-    if (mt && nav) {
-      mt.addEventListener("click", function () {
-        var open = nav.classList.toggle("open");
-        mt.setAttribute("aria-expanded", String(open));
-      });
-      nav.querySelectorAll(".links a").forEach(function (a) {
-        a.addEventListener("click", function () {
-          nav.classList.remove("open");
-          mt.setAttribute("aria-expanded", "false");
-        });
-      });
-    }
-
-    // copy snippet
-    var btn = document.getElementById("copyBtn");
-    var snip = document.getElementById("snippet");
-    if (btn && snip && navigator.clipboard) {
-      btn.addEventListener("click", function () {
-        navigator.clipboard.writeText(snip.innerText).then(function () {
-          var t = btn.textContent;
-          btn.textContent = "Copied";
-          setTimeout(function () { btn.textContent = t; }, 1400);
-        });
-      });
-    } else if (btn) {
-      btn.style.display = "none";
-    }
-
-    // reveal on scroll — reveal anything at or above the viewport bottom, on
-    // load and every scroll frame, so a fast scroll can never leave a section
-    // stuck hidden. A timeout is a last-resort safety net.
-    var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    var pending = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
-    if (reduce) {
-      pending.forEach(function (el) { el.classList.add("in"); });
-      return;
-    }
-    var ticking = false;
-    function sweep() {
-      ticking = false;
-      var vh = window.innerHeight || document.documentElement.clientHeight;
-      pending = pending.filter(function (el) {
-        if (el.getBoundingClientRect().top < vh - 40) { el.classList.add("in"); return false; }
-        return true;
-      });
-      if (!pending.length) {
-        window.removeEventListener("scroll", onScroll);
-        window.removeEventListener("resize", onScroll);
-      }
-    }
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(sweep);
-    }
-    sweep();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    setTimeout(function () { pending.forEach(function (el) { el.classList.add("in"); }); }, 4000);
-  })();
-</script>
+      <div class="download-footnote"><p>Models and recommendation data download separately during setup. Linux needs GTK4 and WebKitGTK 6.0. Packages are unsigned or ad-hoc signed; your OS may ask you to confirm opening the app.</p><a href="https://github.com/platten/playlistai/releases/tag/v0.7.0">All release assets ↗</a></div>
+    </div></section>
+    <section class="section wrap questions" aria-labelledby="questions-title"><div><p class="eyebrow">A FEW GOOD QUESTIONS</p><h2 id="questions-title">Before you<br />press play.</h2></div><div class="faq-list">
+      <details><summary>Do I need a language model?</summary><p>It’s optional. A local language model helps interpret richer descriptions and infer starting points. Without one, Generate works with the local catalog and asks for a seed artist or track.</p></details>
+      <details><summary>Does everything work offline?</summary><p>Language inference, recommendation processing, history and taste profiles stay local. Setup needs downloads, and metadata discovery, preview lookups and Soundiiz handoff use external services. CSV export uses local track details.</p></details>
+      <details><summary>Can I use my own CLAP model?</summary><p>Yes, with compatible paired encoders, tokenizer, preprocessing and reference checks. Different checkpoints keep separate embedding caches. Read the <a href="https://github.com/platten/playlistai/blob/v0.7.0/docs/clap-model-candidates.md">custom-bundle guide</a> for the contract and links to training and export documentation.</p></details>
+      <details><summary>Does CLAP work on every build?</summary><p>Native inference was validated on Linux x64 under WSL2. The standard pure-Go Windows build needs a native-enabled build or a legacy bundle with its own worker. Hardened macOS builds still need a signing strategy for downloaded runtimes. See the <a href="https://github.com/platten/playlistai/blob/v0.7.0/docs/clap-model-candidates.md">documented limitations</a> before installing analysis models.</p></details>
+      <details><summary>Why might I get fewer tracks than requested?</summary><p>Not every description or recording has enough supporting evidence. Playlist AI explains partial results rather than filling the list with tracks that fail essential requirements. You can refine your description or choose another reference.</p></details>
+      <details><summary>Can I build it myself?</summary><p>Absolutely. Playlist AI is GPL-3.0 software built with Go, Wails and React. The <a href="https://github.com/platten/playlistai#readme">repository setup instructions</a> cover the desktop toolchain. Python is not a desktop runtime requirement.</p></details>
+    </div></section>
+  </main>
+  <footer class="site-footer wrap"><div class="footer-top"><a class="brand" href="#top"><img src="favicon.svg" width="32" height="32" alt="" />Playlist AI</a><p>A few words. A whole new listen.</p><a href="https://github.com/platten/playlistai">Find us on GitHub ↗</a></div><div class="footer-bottom"><span>Free software. Curious ears.</span><nav aria-label="Project links"><a href="https://github.com/platten/playlistai/blob/main/docs/ARCHITECTURE.md">Architecture</a><a href="https://github.com/platten/playlistai/blob/main/docs/recommendation-correctness.md">Evidence &amp; limitations</a><a href="https://github.com/platten/playlistai/issues">Issues</a><a href="https://github.com/platten/playlistai/blob/main/LICENSE">GPL-3.0</a></nav></div><p class="credits">Built on <a href="https://github.com/teticio/Deej-AI">Deej-AI</a> and <a href="https://github.com/teticio/deej-ai.online-app">deej-ai.online-app</a>. Independent of Spotify, Deezer, MusicBrainz and Soundiiz.</p></footer>
 </body>
 </html>
