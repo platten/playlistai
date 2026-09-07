@@ -11,7 +11,7 @@ const output = process.argv[4] || '/tmp/playlist-ai-site';
 await mkdir(output, { recursive: true });
 const server = createServer(async (req, res) => {
   const filename = new URL(req.url, 'http://localhost').pathname;
-  const allowed = new Set(['/', '/index.html', '/styles.css', '/site.js', '/favicon.svg', '/og.png']);
+  const allowed = new Set(['/', '/index.html', '/styles.css', '/site.js', '/favicon.svg', '/og.png', '/app-screenshot.png']);
   if (!allowed.has(filename)) { res.writeHead(404).end(); return; }
   try {
     const target = path.join(directory, filename === '/' ? 'index.html' : filename);
@@ -37,13 +37,7 @@ try {
   if (await page.locator('h1').count() !== 1) throw Error('Expected one main heading');
   await page.keyboard.press('Tab');
   if (await page.evaluate(() => document.activeElement.textContent) !== 'Skip to content') throw Error('Skip link not first keyboard target');
-  await page.getByRole('button', {name:'An artist',exact:true}).click();
-  await page.getByText('ODESZA · artist', {exact:true}).waitFor();
-  await page.getByRole('button', {name:'A journey',exact:true}).focus();
-  await page.keyboard.press('Enter');
-  await page.getByText('Classical · 20th century', {exact:true}).waitFor();
-  if (await page.locator('[data-example][aria-pressed=true]').count() !== 1) throw Error('Example selection is ambiguous');
-  await page.getByRole('button', {name:'A feeling',exact:true}).click();
+  if (await page.locator('.studio-screenshot[alt]').count() !== 1) throw Error('Hero screenshot missing alt text');
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
@@ -78,7 +72,7 @@ try {
   if (process.argv.includes('--social')) {
     await page.setViewportSize({width:1200,height:630});
     await page.goto(origin);
-    await page.addStyleTag({content:'.site-header,.assurance,main>section:not(.hero),.site-footer,.skip-link,.hero-actions,.hero-note,.demo-caption{display:none!important}.hero{width:1080px;padding:25px 0 0;gap:50px;height:630px}.hero h1{font-size:69px;letter-spacing:-4px}.studio{padding-top:65px}.record{width:290px}.studio-body{padding:22px}.example-description{font-size:23px;min-height:76px}.request-summary{margin-top:8px}.studio-footer{margin-top:15px}.hero-copy:before{content:"Playlist AI";display:block;font-size:20px;margin-bottom:30px;color:#b4b2ff}.release-link{font-size:9px}'});
+    await page.addStyleTag({content:'.site-header,.assurance,main>section:not(.hero),.site-footer,.skip-link,.hero-actions,.hero-note,.demo-caption{display:none!important}.hero{width:1080px;padding:25px 0 0;gap:50px;height:630px}.hero h1{font-size:69px;letter-spacing:-4px}.studio{padding-top:65px}.record{width:290px}.hero-copy:before{content:"Playlist AI";display:block;font-size:20px;margin-bottom:30px;color:#b4b2ff}.release-link{font-size:9px}'});
     await page.screenshot({path:path.join(directory,'og.png')});
   }
   if (errors.length) throw Error(errors.join('\n'));

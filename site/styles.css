@@ -52,30 +52,10 @@ em { font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter-sp
 .record-label i { width: 8px; height: 8px; background: var(--bg); border-radius: 50%; margin: 8px; }
 .record-label small { font-size: 5px; letter-spacing: .5px; }
 .studio-window { position: relative; border: 1px solid #48494e; border-radius: 12px; background: #1a1b20; box-shadow: 0 22px 75px #0005; overflow: hidden; }
-.window-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 43px; padding: 0 18px; border-bottom: 1px solid #36373c; color: #aeafb8; font-family: var(--mono); font-size: 8px; letter-spacing: 2px; background: #222329; }
+.window-bar { display: flex; align-items: center; height: 28px; padding: 0 14px; border-bottom: 1px solid #36373c; background: #222329; }
 .window-dots { display: flex; gap: 5px; }
 .window-dots i { width: 6px; height: 6px; background: #595a64; border-radius: 50%; }
-.studio-body { padding: 26px; }
-.studio-heading { display: flex; align-items: center; gap: 9px; font-size: 13px; letter-spacing: -.2px; }
-.example-buttons { display: flex; gap: 7px; margin: 23px 0 20px; }
-.example-buttons button { border: 1px solid #414248; background: transparent; color: #babbc5; font-size: 11px; padding: 7px 12px; border-radius: 5px; }
-.example-buttons button:hover { border-color: var(--accent); }
-.example-buttons button[aria-pressed=true] { background: #b4b2ff19; border-color: #b4b2ff80; color: #d0cfff; }
-.example-description { font-size: clamp(18px, 2vw, 25px); line-height: 1.5; letter-spacing: -.6px; margin: 0; min-height: 82px; }
-.request-summary { border: 1px solid #3b3c45; background: #15161a; border-radius: 7px; margin-top: 16px; padding: 17px 18px; }
-.small-label { font-family: var(--mono); font-size: 8px; letter-spacing: 1.8px; color: #aaabb5; }
-.request-summary dl { margin: 12px 0 0; font-size: 11px; }
-.request-summary dl div { display: grid; grid-template-columns: 70px 1fr; gap: 18px; margin: 7px 0; }
-.request-summary dt { color: #9697a2; }
-.request-summary dd { margin: 0; color: #e6e5ef; }
-.studio-footer { display: flex; align-items: center; gap: 14px; margin-top: 22px; font-size: 10px; color: #b3b4bf; line-height: 1.6; }
-.studio-footer strong { font-weight: 400; color: #ededf4; }
-.wave { display: flex; align-items: center; gap: 3px; height: 25px; color: var(--accent); }
-.wave i { height: 10px; width: 2px; background: currentColor; border-radius: 2px; }
-.wave i:nth-child(2n) { height: 23px; }
-.wave i:nth-child(3n) { height: 17px; }
-.round-link { display: grid; place-items: center; margin-left: auto; border: 1px solid #484950; border-radius: 50%; width: 34px; height: 34px; color: #d5d4fa; font-size: 19px; }
-.round-link:hover { background: #b4b2ff20; }
+.studio-screenshot { width: 100%; height: auto; }
 .demo-caption { font-family: var(--mono); font-size: 8px; color: #a0a1aa; text-align: right; margin: 14px 0 0; letter-spacing: .3px; }
 .assurance { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding-block: 24px; display: flex; justify-content: space-between; align-items: center; gap: 20px; font-size: 11px; color: #b7b8bf; }
 .assurance > span { font-family: Georgia, serif; font-size: 19px; font-style: italic; color: var(--text); }
@@ -187,7 +167,7 @@ h3 { font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.5px;
   .nav { gap: 24px; } .nav nav { gap: 18px; }
   .hero { gap: 30px; } h1 { letter-spacing: -3.5px; }
   .hero-actions { gap: 18px; } .hero-actions .button { font-size: 12px; padding: 16px; }
-  .text-link { font-size: 12px; } .studio-body { padding: 22px; }
+  .text-link { font-size: 12px; }
   .release-grid, .privacy-section, .questions { gap: 48px; }
   .analysis-copy { padding: 35px; } .platform { padding: 22px; }
   .platform .button { font-size: 11px; } .assurance { font-size: 10px; gap: 16px; }
@@ -203,7 +183,7 @@ h3 { font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.5px;
   .lead { font-size: 15px; }
   .studio { width: 100%; max-width: 580px; margin: 0 auto; padding-top: 70px; }
   .record { width: 285px; top: -15px; right: 20px; } .studio-window { margin-top: 35px; }
-  .studio-body { padding: 28px; } .example-description { font-size: 25px; } .demo-caption { text-align: center; }
+  .demo-caption { text-align: center; }
   .assurance { flex-wrap: wrap; justify-content: flex-start; gap: 16px 25px; padding-block: 24px; }
   .assurance > span { width: 100%; font-size: 18px; }
   .section { padding-block: 75px; } h2 { font-size: 40px; }
@@ -233,9 +213,6 @@ h3 { font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.5px;
   .release-link { font-size: 8px; letter-spacing: 1.2px; } .lead { font-size: 14px; }
   .hero-actions { gap: 20px; flex-wrap: wrap; } .hero-note { font-size: 10px; }
   .studio { padding-top: 53px; } .record { width: 230px; right: 10px; top: 0; }
-  .studio-body { padding: 20px; } .example-description { font-size: 23px; min-height: 105px; }
-  .example-buttons { gap: 6px; } .example-buttons button { padding: 8px 10px; }
-  .request-summary { padding: 14px; } .request-summary dl div { grid-template-columns: 54px 1fr; gap: 10px; font-size: 10px; }
   .demo-caption { font-size: 7px; letter-spacing: 0; }
   .assurance { gap: 12px 22px; font-size: 10px; } .assurance p:before { margin-right: 7px; }
   .section { padding-block: 60px; } .eyebrow { font-size: 8px; letter-spacing: 1.6px; margin-bottom: 20px; }
