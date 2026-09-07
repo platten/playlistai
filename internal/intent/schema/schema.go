@@ -3,11 +3,15 @@ package schema
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 // Version keys parsed-intent reuse. It follows the core contract because every
@@ -125,6 +129,9 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 		return core.MusicIntent{}, fmt.Errorf("schema: no JSON object in response")
 	}
 	if bytes.Contains(obj, []byte(`"seeds"`)) && !bytes.Contains(obj, []byte(`"references"`)) {
+		if prompt != "" {
+			return core.MusicIntent{}, fmt.Errorf("schema: legacy model output cannot preserve the current request contract")
+		}
 		return parseLegacy(obj)
 	}
 	var wire Wire
@@ -169,7 +176,7 @@ func validateDefiningMeaning(w Wire, prompt string) error {
 
 func validateKnownModifiers(w Wire, prompt string) error {
 	lower := strings.ToLower(strings.Join(strings.Fields(prompt), " "))
-	styles := []string{"ambient electronic", "rock & roll", "rock and roll", "abstract drone", "electronic", "ambient", "techno", "jazz", "folk", "rock", "drone"}
+	expected, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
 	hasPreference := func(style, influence string) bool {
 		want := normalizeStyleLabel(style)
 		for _, preference := range w.Styles {
@@ -188,8 +195,9 @@ func validateKnownModifiers(w Wire, prompt string) error {
 		}
 		return false
 	}
-	for _, style := range styles {
-		negative := strings.Contains(lower, "no "+style) || strings.Contains(lower, "without "+style) || strings.Contains(lower, "not "+style)
+	for _, preference := range expected.Preferences.Styles {
+		style := preference.Value
+		negative := preference.Influence == core.InfluenceNegative
 		if negative && (!hasPreference(style, "negative") || !hasConstraint(style)) {
 			return fmt.Errorf("schema: explicit style exclusion %q was not preserved as a negative preference and hard exclusion", normalizeStyleLabel(style))
 		}
@@ -207,37 +215,14 @@ type definingStyle struct{ value, scope string }
 // clear genre-led requests without promoting every descriptive adjective to a
 // hard condition. Cross-genre influence wording remains a soft preference.
 func definingStyleCriteria(prompt string) []definingStyle {
-	lower := strings.ToLower(strings.Join(strings.Fields(prompt), " "))
-	styles := []string{"ambient electronic", "rock & roll", "rock and roll", "electronic", "ambient", "techno", "jazz", "folk", "rock", "drone"}
-	canonical := normalizeStyleLabel
-	if from := strings.Index(lower, "from "); from >= 0 {
-		journey := lower[from+len("from "):]
-		if split := strings.Index(journey, " to "); split >= 0 {
-			left, right := strings.TrimSpace(journey[:split]), strings.TrimSpace(journey[split+len(" to "):])
-			for _, suffix := range []string{" music", " songs", " tracks"} {
-				left, right = strings.TrimSuffix(left, suffix), strings.TrimSuffix(right, suffix)
-			}
-			if knownStyle(styles, left) && knownStyle(styles, right) {
-				return []definingStyle{{canonical(left), "journey_start"}, {canonical(right), "journey_end"}}
-			}
-		}
+	// The fallback parser and model validator must agree on defining meaning,
+	// including category+reference requests and songs/tracks wording.
+	intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+	result := make([]definingStyle, 0, len(intent.EssentialCriteria))
+	for _, criterion := range intent.EssentialCriteria {
+		result = append(result, definingStyle{normalizeStyleLabel(criterion.Value), criterion.Scope})
 	}
-	for _, style := range styles {
-		phrase := style + " music"
-		if strings.Contains(lower, phrase) && !strings.Contains(lower, "music by "+style) && !strings.Contains(lower, "like "+style) {
-			return []definingStyle{{canonical(style), "playlist"}}
-		}
-	}
-	return nil
-}
-
-func knownStyle(styles []string, value string) bool {
-	for _, style := range styles {
-		if value == style {
-			return true
-		}
-	}
-	return false
+	return result
 }
 
 func normalizeStyleLabel(value string) string {
@@ -386,7 +371,12 @@ func referenceToCore(ref WireReference) core.IntentReference {
 }
 
 func validateExplicitReferences(w Wire, prompt string) error {
-	lower := strings.ToLower(prompt)
+	expected, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+	for _, reference := range w.RequiredTracks {
+		if !reference.Explicit {
+			return fmt.Errorf("schema: required track %q was not explicitly requested", reference.Value)
+		}
+	}
 	groups := [][]WireReference{w.References, w.RequiredTracks, w.JourneyWaypoints}
 	for _, group := range groups {
 		for _, reference := range group {
@@ -395,18 +385,38 @@ func validateExplicitReferences(w Wire, prompt string) error {
 			}
 			value := strings.ToLower(strings.TrimSpace(reference.Value))
 			span := strings.ToLower(strings.TrimSpace(reference.Span))
-			if value == "" || (!strings.Contains(lower, value) && (span == "" || !strings.Contains(lower, span))) {
+			if value == "" || span == "" || !containsReferenceWords(prompt, span) || !containsReferenceWords(span, value) {
 				return fmt.Errorf("schema: explicit reference %q has no evidence in the user request", reference.Value)
 			}
-			categoryUse := strings.Contains(lower, value+" music") &&
-				!strings.Contains(lower, "by "+value) && !strings.Contains(lower, "like "+value) &&
-				!strings.Contains(lower, "artist "+value)
-			if reference.Kind == "artist" && categoryUse {
-				return fmt.Errorf("schema: artist reference %q conflicts with category wording in the user request", reference.Value)
+			if reference.Kind == "artist" {
+				for _, criterion := range expected.EssentialCriteria {
+					if normalizeStyleLabel(value) != normalizeStyleLabel(criterion.Value) {
+						continue
+					}
+					explicitlyNamed := false
+					for _, ref := range expected.References {
+						if containsReferenceWords(ref.Query, value) {
+							explicitlyNamed = true
+						}
+					}
+					if !explicitlyNamed {
+						return fmt.Errorf("schema: artist reference %q conflicts with category wording in the user request", reference.Value)
+					}
+				}
 			}
 		}
 	}
 	return nil
+}
+
+func containsReferenceWords(text, reference string) bool {
+	words := func(value string) string {
+		return strings.Join(strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+		}), " ")
+	}
+	want := words(reference)
+	return want != "" && strings.Contains(" "+words(text)+" ", " "+want+" ")
 }
 
 func preferencesToCore(in []WirePreference) []core.IntentPreference {

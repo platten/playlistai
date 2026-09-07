@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/platten/playlistai/internal/core"
@@ -645,19 +644,20 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if intent.Mode == core.ModeJourney && len(trajectoryWaypoints) >= 2 {
 		trajectory = NewWaypointTrajectory(o.cat, trajectoryWaypoints)
 	}
-	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{
-		Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints,
-		ReferenceAnchors: references, RecentSelections: recentSelections,
-		Trajectory: trajectory, Seed: seedValue,
-	})
+	stageMembership, err := o.categoryMembership(ctx, append(candidatesForTracks(required), selection.Candidates...), intent)
 	if err != nil {
 		return core.Playlist{}, err
 	}
-	if len(required) == 0 && len(waypoints) == 0 {
-		sequence.Tracks, sequence.Rationale, err = o.orderCategoryJourney(ctx, sequence.Tracks, sequence.Rationale, intent)
-		if err != nil {
-			return core.Playlist{}, err
+	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{
+		Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints,
+		ReferenceAnchors: references, RecentSelections: recentSelections,
+		Trajectory: trajectory, Seed: seedValue, CategoryStages: stageMembership,
+	})
+	if err != nil {
+		if errors.Is(err, core.ErrRequiredTrackConflict) {
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_order_conflict", Detail: err.Error(), Action: "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"}}), nil
 		}
+		return core.Playlist{}, err
 	}
 	playlist := core.Playlist{
 		Tracks: sequence.Tracks, Rationale: sequence.Rationale, Mode: intent.Mode, Seed: seed, Intent: intent,
@@ -688,6 +688,21 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
+	if len(stageMembership) > 0 {
+		states := make([][]core.EvidenceState, len(playlist.Tracks))
+		for index, track := range playlist.Tracks {
+			states[index] = make([]core.EvidenceState, len(stageMembership))
+			for stage, membership := range stageMembership {
+				if membership[track.ID] {
+					states[index][stage] = core.EvidenceMatch
+				}
+			}
+		}
+		if core.JourneySequenceViolations(states, len(stageMembership)) > 0 {
+			playlist.Outcome.State = core.OutcomePartial
+			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "journey_order_incomplete", Detail: "not every category stage could be represented in the requested direction", Action: "choose fitting references for the missing stages or simplify the journey"})
+		}
+	}
 	playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, reserveReasons...)
 	if len(reserveReasons) > 0 && playlist.Outcome.State == core.OutcomeFulfilled {
 		playlist.Outcome.State = core.OutcomePartial
@@ -696,13 +711,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 }
 
 func journeyCriteria(criteria []core.MusicalCriterion) []core.MusicalCriterion {
-	result := make([]core.MusicalCriterion, 0, len(criteria))
-	for _, criterion := range criteria {
-		if strings.HasPrefix(criterion.Scope, "journey_") {
-			result = append(result, criterion)
-		}
-	}
-	return result
+	return core.JourneyCriteria(criteria)
 }
 
 // reserveJourneyStages protects one sufficiently relevant, evidence-backed
@@ -725,6 +734,7 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 	floor := maxFloat(o.cfg.SelectionMinimumRelevance, best-o.cfg.SelectionRelevanceWindow)
 	var reserved []core.Candidate
 	var reasons []core.OutcomeReason
+	assignedFixed := map[string]bool{}
 	for _, criterion := range criteria {
 		fixedCandidates := candidatesForTracks(fixed)
 		_, fixedReport, err := o.filterEssential(ctx, fixedCandidates, []core.MusicalCriterion{criterion})
@@ -733,8 +743,9 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 		}
 		satisfied := false
 		for _, track := range fixed {
-			if fixedReport.Eligible[track.ID] {
+			if !assignedFixed[track.ID] && fixedReport.Eligible[track.ID] {
 				satisfied = true
+				assignedFixed[track.ID] = true
 				break
 			}
 		}
@@ -775,56 +786,20 @@ func maxFloat(left, right float64) float64 {
 	return right
 }
 
-// orderCategoryJourney preserves the sequencer's within-stage transition
-// choices, while placing affirmative start-only, hybrid/via, and end-only
-// evidence in the requested direction.
-func (o *Orchestrator) orderCategoryJourney(ctx context.Context, tracks []core.TrackRef, rationale []core.StepReason, intent core.MusicIntent) ([]core.TrackRef, []core.StepReason, error) {
+func (o *Orchestrator) categoryMembership(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent) ([]map[string]bool, error) {
 	criteria := journeyCriteria(intent.EssentialCriteria)
-	if intent.Mode != core.ModeJourney || len(criteria) < 2 || len(tracks) < 2 {
-		return tracks, rationale, nil
+	if intent.Mode != core.ModeJourney {
+		return nil, nil
 	}
-	type ordered struct {
-		track  core.TrackRef
-		reason core.StepReason
-		stage  int
-		index  int
-	}
-	items := make([]ordered, len(tracks))
-	for index, track := range tracks {
-		items[index] = ordered{track: track, stage: 1, index: index}
-		if index < len(rationale) {
-			items[index].reason = rationale[index]
-		}
-	}
-	for _, criterion := range criteria {
-		_, report, err := o.filterEssential(ctx, candidatesForTracks(tracks), []core.MusicalCriterion{criterion})
+	stages := make([]map[string]bool, len(criteria))
+	for index, criterion := range criteria {
+		_, report, err := o.filterEssential(ctx, candidates, []core.MusicalCriterion{criterion})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		for index := range items {
-			if !report.Eligible[items[index].track.ID] {
-				continue
-			}
-			switch criterion.Scope {
-			case "journey_start":
-				items[index].stage--
-			case "journey_end":
-				items[index].stage++
-			}
-		}
+		stages[index] = report.Eligible
 	}
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].stage != items[j].stage {
-			return items[i].stage < items[j].stage
-		}
-		return items[i].index < items[j].index
-	})
-	orderedTracks := make([]core.TrackRef, len(items))
-	orderedReasons := make([]core.StepReason, len(items))
-	for index, item := range items {
-		orderedTracks[index], orderedReasons[index] = item.track, item.reason
-	}
-	return orderedTracks, orderedReasons, nil
+	return stages, nil
 }
 
 func resolvedReferenceTracks(cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {

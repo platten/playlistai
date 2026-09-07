@@ -133,9 +133,6 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 	noAdjacent := false
 	excludeReferenceArtists := false
 	for _, constraint := range playlist.Intent.HardConstraints {
-		if !constraint.RuntimeEnforced {
-			continue
-		}
 		switch constraint.Kind {
 		case "exclude_artist":
 			excluded[core.NormalizeIdentityPart(constraint.Value)] = struct{}{}
@@ -156,38 +153,11 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 		if noAdjacent && index > 0 && core.NormalizeIdentityPart(track.Artist) == core.NormalizeIdentityPart(playlist.Tracks[index-1].Artist) {
 			violations++
 		}
-		if features != nil {
-			feature, ok, err := features.Features(ctx, track.ID)
-			if err != nil || !ok {
-				for _, constraint := range playlist.Intent.HardConstraints {
-					if constraint.RuntimeEnforced && semanticConstraint(constraint.Kind) {
-						violations++
-					}
-				}
-				continue
-			}
-			for _, constraint := range playlist.Intent.HardConstraints {
-				if !constraint.RuntimeEnforced {
-					continue
-				}
-				switch constraint.Kind {
-				case "exclude_vocals", "require_instrumental":
-					if feature.VocalEvidence.Missingness != core.FeatureKnown || !strings.EqualFold(feature.VocalEvidence.Value, "instrumental") {
-						violations++
-					}
-				case "require_vocals":
-					if feature.VocalEvidence.Missingness != core.FeatureKnown || strings.EqualFold(feature.VocalEvidence.Value, "instrumental") {
-						violations++
-					}
-				case "exclude_style":
-					if !featureKnown(feature.Styles, feature.Tags) || featureHas(constraint.Value, feature.Styles, feature.Tags) {
-						violations++
-					}
-				case "require_style":
-					if !featureHas(constraint.Value, feature.Styles, feature.Tags) {
-						violations++
-					}
-				}
+		feature := evaluationFeatures(ctx, features, track.ID)
+		for _, constraint := range playlist.Intent.HardConstraints {
+			// Judge the requested rule, not the engine's claim that it enforced it.
+			if semanticConstraint(constraint.Kind) && !core.SemanticConstraintSatisfied(feature, constraint) {
+				violations++
 			}
 		}
 	}
@@ -202,40 +172,31 @@ func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, f
 		return 0
 	}
 	violations := 0
+	stages := core.JourneyCriteria(playlist.Intent.EssentialCriteria)
+	journeyStates := make([][]core.EvidenceState, 0, len(playlist.Tracks))
 	for _, track := range playlist.Tracks {
-		feature, ok, err := core.TrackFeatures{}, false, error(nil)
-		if features != nil {
-			feature, ok, err = features.Features(ctx, track.ID)
-		}
+		feature := evaluationFeatures(ctx, features, track.ID)
 		for _, criterion := range playlist.Intent.EssentialCriteria {
-			if err != nil || !ok || criterion.Kind != "style" || !featureHas(criterion.Value, feature.Styles, feature.Tags) {
+			if (criterion.Scope == "" || criterion.Scope == "playlist") && core.CriterionEvidence(feature, criterion) != core.EvidenceMatch {
 				violations++
 			}
 		}
+		states := make([]core.EvidenceState, len(stages))
+		for index, criterion := range stages {
+			states[index] = core.CriterionEvidence(feature, criterion)
+		}
+		journeyStates = append(journeyStates, states)
 	}
-	return violations
+	return violations + core.JourneySequenceViolations(journeyStates, len(stages))
 }
 
-func featureHas(want string, groups ...[]core.FeatureValue) bool {
-	want = normalizeLabel(want)
-	for _, group := range groups {
-		for _, value := range group {
-			if value.Missingness == core.FeatureKnown && normalizeLabel(value.Value) == want {
-				return true
-			}
+func evaluationFeatures(ctx context.Context, store ports.FeatureStore, id string) core.TrackFeatures {
+	if store != nil {
+		if feature, ok, err := store.Features(ctx, id); err == nil && ok {
+			return feature
 		}
 	}
-	return false
-}
-func featureKnown(groups ...[]core.FeatureValue) bool {
-	for _, group := range groups {
-		for _, value := range group {
-			if value.Missingness == core.FeatureKnown {
-				return true
-			}
-		}
-	}
-	return false
+	return core.TrackFeatures{}
 }
 func semanticConstraint(kind string) bool {
 	switch kind {

@@ -36,7 +36,13 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	}
 	var items []sequenceItem
 	var hardExhausted bool
-	if request.Intent.Mode == core.ModeJourney && len(request.Required) >= 2 {
+	if len(request.CategoryStages) > 0 {
+		var err error
+		items, hardExhausted, err = s.categoryJourney(ctx, request)
+		if err != nil {
+			return ports.SequenceResult{}, err
+		}
+	} else if request.Intent.Mode == core.ModeJourney && len(request.Required) >= 2 {
 		items, hardExhausted = s.journeyWithRequiredAnchors(ctx, request)
 	} else {
 		items, hardExhausted = s.greedyFromPrefix(ctx, request)
@@ -44,7 +50,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
 	}
-	items = s.improve(items, request)
+	if len(request.CategoryStages) == 0 {
+		items = s.improve(items, request)
+	}
 	if !s.hardSpacingValid(items, request) {
 		return ports.SequenceResult{}, fmt.Errorf("%w: required ordering violates no-back-to-back artist", core.ErrRequiredTrackConflict)
 	}
@@ -81,9 +89,13 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		})
 	}
 	if hardExhausted {
+		code, detail := "hard_artist_spacing_exhausted", "selected candidates could not be fully ordered without violating the hard no-back-to-back artist rule"
+		if len(request.CategoryStages) > 0 {
+			code, detail = "category_journey_exhausted", "the bounded ordering search could not place all selected tracks while preserving category direction, required order, and hard artist spacing"
+		}
 		result.Notices = append(result.Notices, core.PlaylistNotice{
-			Code:      "hard_artist_spacing_exhausted",
-			Detail:    "selected candidates could not be fully ordered without violating the hard no-back-to-back artist rule",
+			Code:      code,
+			Detail:    detail,
 			Requested: request.Intent.Count, Actual: len(items),
 		})
 	}

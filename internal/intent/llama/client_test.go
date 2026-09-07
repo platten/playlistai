@@ -40,6 +40,14 @@ func completion(content string) string {
 	return string(b)
 }
 
+func explicitArtistCompletion(artist string, count int) string {
+	raw, _ := json.Marshal(schema.Wire{
+		References: []schema.WireReference{{Kind: "artist", Value: artist, Influence: "positive", Explicit: true, Span: artist}},
+		Mode:       "similar", TotalCount: count, AudioWeight: .5, CooccurrenceWeight: .5,
+	})
+	return string(raw)
+}
+
 func TestClientParseSuccess(t *testing.T) {
 	t.Parallel()
 	var got struct {
@@ -50,7 +58,7 @@ func TestClientParseSuccess(t *testing.T) {
 	}
 	srv := chatServer(t, func(body []byte) (int, string) {
 		_ = json.Unmarshal(body, &got)
-		return 200, completion(`{"seeds":["Justice"],"mode":"similar","count":22,"creativity":0.6,"noise":0.2,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":"n"}`)
+		return 200, completion(explicitArtistCompletion("Justice", 22))
 	})
 
 	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "like Justice, 22 songs"})
@@ -106,7 +114,7 @@ func TestClientRetriesAndReportsTruncatedCompletion(t *testing.T) {
 
 func TestClientParseStreamingWithProgress(t *testing.T) {
 	t.Parallel()
-	full := `{"seeds":["Bonobo"],"mode":"similar","count":18,"creativity":0.5,"noise":0.1,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":"n"}`
+	full := explicitArtistCompletion("Bonobo", 18)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -185,7 +193,7 @@ func chunkString(s string, n int) []string {
 func TestClientParseProseWrapped(t *testing.T) {
 	t.Parallel()
 	srv := chatServer(t, func([]byte) (int, string) {
-		return 200, completion("Sure!\n```json\n{\"seeds\":[\"Air\"],\"mode\":\"similar\",\"count\":15,\"creativity\":0.5,\"noise\":0.1,\"lookback\":3,\"exclude_artists\":[],\"no_repeat_artist\":true,\"notes\":\"n\"}\n```")
+		return 200, completion("Sure!\n```json\n" + explicitArtistCompletion("Air", 15) + "\n```")
 	})
 	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "like Air"})
 	if err != nil || len(m.Seeds.Queries) != 1 || m.Seeds.Queries[0] != "Air" {

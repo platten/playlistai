@@ -96,6 +96,10 @@ type SequenceRequest struct {
 	RecentSelections []core.TrackRef
 	Trajectory       Trajectory
 	Seed             int64
+	// CategoryStages contains affirmative track membership for each ordered
+	// musical stage. Every stage requires a distinct track; no post-sort may
+	// override required order or hard artist spacing.
+	CategoryStages []map[string]bool
 }
 
 type SequenceResult struct {

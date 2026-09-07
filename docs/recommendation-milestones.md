@@ -371,3 +371,16 @@ zero and unsupported category requests fail honestly. Next dependencies are a
 licensed, independently reviewed full-catalog evidence source, a built and
 versioned local semantic index, and held-out blind listening judgments. See
 [`recommendation-correctness.md`](recommendation-correctness.md).
+
+### Correctness review follow-up
+
+All nine review findings have focused regressions. Rules and LLM validation
+share category interpretation, keep explicit artist-name evidence separate
+from style instructions, preserve category-plus-seed requests, and retain
+narrow exclusion scope. Uncertain matching facets cannot prove an exclusion's
+absence. Runtime and evaluation now share evidence/hierarchy rules and ordered
+journey-stage accounting. `multichannel/v5` jointly sequences category stages,
+required tracks, waypoints, and hard artist spacing; it returns partial or
+clarification outcomes when they cannot all be satisfied. Parser versions
+advance to v5 without changing intent-v6 history serialization. Full-catalog
+semantic evidence and held-out listening judgments remain the next dependencies.
