@@ -13,6 +13,7 @@ import (
 // current Prefs first and mutate just that field — never construct a fresh
 // Prefs{} with only the field it cares about, or it silently erases the rest.
 type Prefs struct {
+	AnalysisEnabled bool `json:"analysisEnabled"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.
 	ModelPath string `json:"modelPath"`
 	// ModelID is the catalog id when the model came from the built-in catalog.

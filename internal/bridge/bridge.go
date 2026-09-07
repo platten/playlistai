@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
+	"github.com/platten/playlistai/internal/logging"
 )
 
 // Version is stamped at build time via -ldflags "-X .../bridge.Version=...".
@@ -18,6 +19,8 @@ var Version = "dev"
 // API is registered with application.NewService; every exported method becomes
 // callable from TypeScript via the generated bindings.
 type API struct {
+	logs        *logging.Store
+	live        liveGenerations
 	app         *app.Container
 	log         *slog.Logger
 	ctx         context.Context

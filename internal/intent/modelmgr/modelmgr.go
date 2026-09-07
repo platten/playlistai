@@ -122,72 +122,47 @@ func Get(id string) (Model, bool) {
 	return Model{}, false
 }
 
-// Recommendations returns curated recommended models that fit the detected
-// execution mode. On GPU, the complete GGUF must fit in one device while
-// retaining ReserveBytes for context/KV and compute buffers. On CPU (or when
-// llama.cpp cannot enumerate a GPU), it returns the two smallest recommended
-// models, preserving catalog priority order in the result.
+// Recommendations returns at most one model: the largest curated recommended
+// model from the existing hardware-eligible recommendation list. On GPU, the
+// complete GGUF must fit in one device while retaining ReserveBytes for
+// context/KV and compute buffers. Without a GPU, the eligible list remains the
+// two smallest curated models so an unbounded model is not suggested for CPU.
 func Recommendations(models []Model, hw Hardware) []Model {
-	recommended := make([]Model, 0, len(models))
-	for _, m := range models {
-		if m.Recommended {
-			recommended = append(recommended, m)
-		}
-	}
+	capacity := int64(0)
 	if hw.GPUAvailable && hw.AvailableVRAMBytes > hw.ReserveBytes {
-		capacity := hw.AvailableVRAMBytes - hw.ReserveBytes
-		out := make([]Model, 0, len(recommended))
-		for _, m := range recommended {
-			if m.SizeApprox > 0 && m.SizeApprox <= capacity {
-				out = append(out, m)
-			}
-		}
-		total := hw.TotalVRAMBytes
-		if total <= 0 {
-			total = hw.AvailableVRAMBytes
-		}
-		if preferred := preferredModelIndex(out, VRAMTierGB(total)); preferred > 0 {
-			model := out[preferred]
-			copy(out[1:preferred+1], out[:preferred])
-			out[0] = model
-		}
-		return out
+		capacity = hw.AvailableVRAMBytes - hw.ReserveBytes
+	} else if hw.GPUAvailable {
+		return nil
 	}
 
-	type indexedModel struct {
-		model Model
-		index int
-	}
-	bySize := make([]indexedModel, len(recommended))
-	for i, m := range recommended {
-		bySize[i] = indexedModel{model: m, index: i}
-	}
-	sort.SliceStable(bySize, func(i, j int) bool {
-		return bySize[i].model.SizeApprox < bySize[j].model.SizeApprox
-	})
-	if len(bySize) > 2 {
-		bySize = bySize[:2]
-	}
-	sort.Slice(bySize, func(i, j int) bool { return bySize[i].index < bySize[j].index })
-	out := make([]Model, len(bySize))
-	for i := range bySize {
-		out[i] = bySize[i].model
-	}
-	return out
-}
-
-func preferredModelIndex(models []Model, tierGB int) int {
-	for _, candidateTier := range []int{32, 24, 16, 12, 8, 4} {
-		if candidateTier > tierGB {
+	eligible := make([]Model, 0, len(models))
+	for _, model := range models {
+		if !model.Recommended || model.SizeApprox <= 0 {
 			continue
 		}
-		for i, model := range models {
-			if model.BestForVRAM(candidateTier) {
-				return i
-			}
+		if hw.GPUAvailable && model.SizeApprox > capacity {
+			continue
+		}
+		eligible = append(eligible, model)
+	}
+	if !hw.GPUAvailable {
+		sort.SliceStable(eligible, func(i, j int) bool {
+			return eligible[i].SizeApprox < eligible[j].SizeApprox
+		})
+		if len(eligible) > 2 {
+			eligible = eligible[:2]
 		}
 	}
-	return -1
+	if len(eligible) == 0 {
+		return nil
+	}
+	largest := eligible[0]
+	for _, model := range eligible[1:] {
+		if model.SizeApprox > largest.SizeApprox {
+			largest = model
+		}
+	}
+	return []Model{largest}
 }
 
 // Download fetches a catalog model into destDir/<id>.gguf, resuming a partial

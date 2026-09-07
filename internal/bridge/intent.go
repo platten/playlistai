@@ -34,6 +34,7 @@ type IntentPreview struct {
 }
 
 type IntentSessionContext struct {
+	GenerationID string          `json:"generationId"`
 	SessionID    string          `json:"sessionId"`
 	NowPlaying   *core.TrackRef  `json:"nowPlaying"`
 	RecentTracks []core.TrackRef `json:"recentTracks"`
@@ -42,7 +43,8 @@ type IntentSessionContext struct {
 
 func (session IntentSessionContext) input(prompt string) ports.IntentInput {
 	return ports.IntentInput{
-		Prompt: prompt, SessionID: session.SessionID, NowPlaying: session.NowPlaying,
+		GenerationID: session.GenerationID,
+		Prompt:       prompt, SessionID: session.SessionID, NowPlaying: session.NowPlaying,
 		RecentTracks: session.RecentTracks, Locale: session.Locale,
 	}
 }
@@ -146,6 +148,8 @@ func (a *API) generateFromPromptOperation(ctx context.Context, input ports.Inten
 	a.operations.cancel("intent-preview")
 	ctx, current, finish := a.operations.begin(ctx, "prompt-generation")
 	defer finish()
+	ctx, finishGeneration := a.beginGeneration(ctx, input.GenerationID)
+	defer finishGeneration()
 	result, err := a.generateFromPrompt(ctx, input, selections)
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
@@ -164,7 +168,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	}
 
 	// Stream intent-parse progress to the Generate screen ("intent" op).
-	prog := NewWailsProgress()
+	prog := generationProgress(ctx)
 	prog.Report("intent", 0, -1, "understanding your request")
 	parseStarted := time.Now()
 	entry, parsedIntentReused, err := a.parseIntentCached(ctx, input, prog)
@@ -172,20 +176,25 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		return GenerateResult{}, err
 	}
 	m := entry.intent
+	m.VerificationPolicy = core.BestAvailable
 	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
 	m.References = applySelections(m.References, selections)
+	m.InferredAnchors = applyAnchorSelections(m.InferredAnchors, selections)
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
 	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
 	resolveStarted := time.Now()
-	m, issues := intentresolution.Apply(a.app.Resolver, m)
+	if a.app.Knowledge != nil && m.Version >= 8 {
+		m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+		if err != nil {
+			return GenerateResult{}, err
+		}
+	}
+	m, _ = intentresolution.Apply(a.app.Resolver, m)
 	timings = append(timings, StageTiming{Stage: "resolve", Milliseconds: time.Since(resolveStarted).Milliseconds()})
 	if err := ctx.Err(); err != nil {
 		return GenerateResult{}, err
 	}
-	if err := intentresolution.BlockingError(issues); err != nil {
-		return GenerateResult{}, err
-	}
-	if err := validatePromptStart(entry.outcome.Backend, m); err != nil {
+	if err := validatePromptStart(entry.outcome.Backend, entry.outcome.RequestedBackend, m); err != nil {
 		return GenerateResult{}, err
 	}
 
@@ -197,6 +206,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	m = pl.Intent
 	m.Seed = pl.Seed
 	req.Intent = m     // pin the generated seed while retaining the complete interpretation
 	req.Seed = pl.Seed // legacy readers still find the replay seed
@@ -222,8 +232,21 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name, Status: status}, nil
 }
 
-func validatePromptStart(backend string, intent core.MusicIntent) error {
-	if backend == "llama" || len(intent.Seeds.TrackIDs) > 0 || len(intent.Required.TrackIDs) > 0 {
+func applyAnchorSelections(anchors []core.InferredAnchor, selections []ResolutionSelection) []core.InferredAnchor {
+	out := append([]core.InferredAnchor(nil), anchors...)
+	for index := range out {
+		selected := applySelections([]core.IntentReference{out[index].Reference}, selections)
+		out[index].Reference = selected[0]
+	}
+	return out
+}
+
+func validatePromptStart(backend, requestedBackend string, intent core.MusicIntent) error {
+	// A rules fallback while an LLM was requested must preserve the semantic
+	// request and reach the orchestrator's structured unsupported outcome. It
+	// must not silently reinterpret the request as catalog-only artist lookup.
+	llmRequested := backend == "llama" || requestedBackend == "llama"
+	if llmRequested || len(intent.Seeds.TrackIDs) > 0 || len(intent.Required.TrackIDs) > 0 {
 		return nil
 	}
 	if len(intent.Seeds.Queries) == 0 {

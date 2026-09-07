@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
@@ -36,7 +37,7 @@ func TestParseValid(t *testing.T) {
 
 func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
 	t.Parallel()
-	m, err := Parse([]byte(FewShot[2].JSON))
+	m, err := Parse([]byte(legacyExamples[2].JSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,8 +53,11 @@ func TestParseV3PreservesSemanticEvidenceAndUnsupported(t *testing.T) {
 	if len(m.Preferences.TextureDescriptions[0].Evidence) == 0 {
 		t.Fatal("texture evidence missing")
 	}
-	if len(m.References) != 1 || m.References[0].Query != "Four Tet" || len(m.References[0].Evidence) != 1 || m.References[0].Evidence[0].Explicit {
-		t.Fatalf("seedless prompt did not retain its inferred starting point: %+v", m.References)
+	if len(m.References) != 0 || len(m.InferredAnchors) != 2 || m.InferredAnchors[0].Reference.Query != "Four Tet - Two Thousand and Seventeen" || m.InferredAnchors[0].Reference.Evidence[0].Explicit {
+		t.Fatalf("seedless prompt did not separate its inferred starting points: refs=%+v anchors=%+v", m.References, m.InferredAnchors)
+	}
+	if len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "ambient electronic" {
+		t.Fatalf("essential category missing: %+v", m.EssentialCriteria)
 	}
 }
 
@@ -65,6 +69,72 @@ func TestSemanticValidationRejectsNegativeRequiredTrack(t *testing.T) {
 	}
 	if err := wire.ToCore().Validate(); err == nil {
 		t.Fatal("negative required track passed semantic validation")
+	}
+}
+
+func TestParseForPromptRejectsInventedExplicitReference(t *testing.T) {
+	t.Parallel()
+	wire := legacyExamples[3].JSON
+	wire = strings.Replace(wire, `"references":[]`, `"references":[{"kind":"artist","value":"Electronic","influence":"positive","explicit":true,"span":"electronic"}]`, 1)
+	if _, err := ParseForPrompt([]byte(wire), "electronic music"); err == nil {
+		t.Fatal("model-invented explicit artist passed source validation")
+	}
+	if _, err := ParseForPrompt([]byte(legacyExamples[0].JSON), legacyExamples[0].Prompt); err != nil {
+		t.Fatalf("grounded explicit reference rejected: %v", err)
+	}
+}
+
+func TestParseForPromptRequiresEssentialCategoryAcrossQualifiedPrompts(t *testing.T) {
+	for _, prompt := range []string{"electronic music", "electronic music, no rock", "electronic music with some rock influence"} {
+		t.Run(prompt, func(t *testing.T) {
+			raw := []byte(legacyExamples[3].JSON)
+			var wire Wire
+			if err := json.Unmarshal(raw, &wire); err != nil {
+				t.Fatal(err)
+			}
+			wire.References = nil
+			wire.EssentialCriteria = nil
+			changed, _ := json.Marshal(wire)
+			if _, err := ParseForPrompt(changed, prompt); err == nil || !strings.Contains(err.Error(), "defining category") {
+				t.Fatalf("dropped essential category accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestParseForPromptPreservesExclusionAndDeliberateInfluence(t *testing.T) {
+	base := func() Wire {
+		var wire Wire
+		if err := json.Unmarshal([]byte(legacyExamples[3].JSON), &wire); err != nil {
+			t.Fatal(err)
+		}
+		return wire
+	}
+	excluded := base()
+	excluded.Styles = []WirePreference{{Value: "electronic", Influence: "positive", Explicit: true, Span: "electronic"}}
+	raw, _ := json.Marshal(excluded)
+	if _, err := ParseForPrompt(raw, "electronic music, no rock"); err == nil || !strings.Contains(err.Error(), "style exclusion") {
+		t.Fatalf("dropped no-rock meaning accepted: %v", err)
+	}
+	hybrid := base()
+	raw, _ = json.Marshal(hybrid)
+	if _, err := ParseForPrompt(raw, "electronic music with some rock influence"); err == nil || !strings.Contains(err.Error(), "style influence") {
+		t.Fatalf("dropped rock influence accepted: %v", err)
+	}
+}
+
+func TestParseForPromptRequiresBothCategoryJourneyStages(t *testing.T) {
+	raw := []byte(legacyExamples[3].JSON)
+	var wire Wire
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	wire.References = nil
+	wire.Mode = "journey"
+	wire.EssentialCriteria = []WireCriterion{{Kind: "style", Value: "electronic", Scope: "journey_start", Span: "electronic"}}
+	changed, _ := json.Marshal(wire)
+	if _, err := ParseForPrompt(changed, "from electronic to rock"); err == nil || !strings.Contains(err.Error(), "journey_end") {
+		t.Fatalf("dropped journey destination accepted: %v", err)
 	}
 }
 
@@ -117,7 +187,7 @@ func TestParseErrors(t *testing.T) {
 
 func TestFewShotExamplesAreValid(t *testing.T) {
 	t.Parallel()
-	for i, ex := range FewShot {
+	for i, ex := range legacyExamples {
 		var w Wire
 		if err := json.Unmarshal([]byte(ex.JSON), &w); err != nil {
 			t.Fatalf("few-shot %d is not valid JSON: %v", i, err)
@@ -136,7 +206,7 @@ func TestFewShotExamplesAreValid(t *testing.T) {
 
 func TestGBNFMentionsEveryKey(t *testing.T) {
 	t.Parallel()
-	for _, key := range []string{"references", "required_tracks", "styles", "moods", "instrumentation", "vocal_preference", "textures", "hard_constraints", "unsupported_requirements", "mode", "journey_waypoints", "energy_trajectory", "total_count", "audio_weight", "cooccurrence_weight", "discovery", "artist_diversity", "transition_smoothness", "notes"} {
+	for _, key := range []string{"references", "inferred_anchors", "required_tracks", "essential_criteria", "styles", "moods", "instrumentation", "vocal_preference", "textures", "hard_constraints", "unsupported_requirements", "mode", "journey_waypoints", "energy_trajectory", "total_count", "audio_weight", "cooccurrence_weight", "discovery", "artist_diversity", "transition_smoothness", "notes"} {
 		if !contains(GBNF, `\"`+key+`\":`) {
 			t.Fatalf("GBNF is missing key %q", key)
 		}

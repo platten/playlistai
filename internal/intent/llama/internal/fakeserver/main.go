@@ -55,13 +55,14 @@ func main() {
 			}
 		}
 
-		seeds := "[]"
+		references := "[]"
 		if m := regexp.MustCompile(`(?i)like ([A-Za-z][\w ]*)`).FindStringSubmatch(prompt); m != nil {
-			seeds = fmt.Sprintf("[%q]", strings.TrimSpace(m[1]))
+			artist := strings.TrimSpace(m[1])
+			references = fmt.Sprintf(`[{"kind":"artist","value":%q,"influence":"positive","explicit":true,"span":%q}]`, artist, artist)
 		}
 		intent := fmt.Sprintf(
-			`{"seeds":%s,"mode":"similar","count":18,"creativity":0.5,"noise":0.1,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":%q}`,
-			seeds, "fake: "+truncate(prompt, 80))
+			`{"references":%s,"mode":"similar","total_count":18,"audio_weight":0.5,"cooccurrence_weight":0.5,"notes":%q}`,
+			references, "fake: "+truncate(prompt, 80))
 
 		resp := map[string]any{
 			"choices": []map[string]any{

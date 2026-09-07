@@ -16,25 +16,39 @@ Current checked-catalog coverage (2026-09-06):
 | Grounded style/mood/instrument/vocal/date facets | 0 | 0% |
 | Locally analyzed preview segments | 0 | 0% |
 
-The regression suite uses a three-track synthetic sidecar to exercise the
-pipeline, not as evidence about production relevance. Generate and retain a
-real pilot report from its reviewed input before evaluating relevance.
+The regression suite uses synthetic sidecars to exercise the pipeline, not as
+evidence about production relevance. A seven-track reviewed pilot input is
+checked in at [`data/semantic-pilot-reviewed.jsonl`](data/semantic-pilot-reviewed.jsonl);
+it is not a generated or shipped index.
 
-`semantic.sqlite` is optional. Schema v2 stores canonical artist/recording IDs,
+`semantic.sqlite` is optional. Schema v3 stores canonical artist/recording IDs,
 tags, descriptions, supported facets, distinct original-edition and
 release-edition dates, confidence, missingness, provenance, preview segment
-coverage, and a precomputed query vocabulary. Missing evidence stays `unknown`.
+coverage, per-track facet-completeness declarations, and a precomputed query
+vocabulary. Missing evidence stays `unknown`; one known unrelated tag does not
+prove another tag absent.
 The app rejects a sidecar whose catalog version, schema, declared row counts,
 or query encoder is incompatible. It also verifies every retrieved ID against
-the loaded catalog. Schema-v1 sidecars remain readable for grounded feature
-eligibility, but semantic retrieval stays disabled until they are regenerated.
+the loaded catalog. Schema-v1/v2 sidecars remain readable. Their missing
+completeness declarations mean they cannot prove a strict style exclusion by
+absence.
 
 ## Build a bounded pilot
 
 Prepare UTF-8 JSONL with at most 5,000 reviewed records. Every known value must
 be an object containing `value`, `confidence`, and non-empty `provenance`;
 `track_id` must exist in `catalog.sqlite`. Do not use artist/title text as a
-musical description. Then run:
+musical description. First validate the checked-in pilot without loading an
+embedding model:
+
+```sh
+python3 python/build_semantic_sidecar.py \
+  --catalog build/catalog/catalog.sqlite \
+  --input docs/data/semantic-pilot-reviewed.jsonl \
+  --validate-only --feature-version correctness-pilot-2026-09
+```
+
+To build an index, run:
 
 ```sh
 python -m pip install sentence-transformers
@@ -66,6 +80,12 @@ Keep the build model and generated sidecar out of Git. Obsolete runtime keys
 from older config files are ignored so existing installations continue to
 load.
 
+The checked-in pilot validation executed on 2026-09-06 accepted all seven rows
+against catalog version `1:956917:1788613313`. All seven carry style evidence;
+six declare the style facet complete; no other facet is declared complete.
+One row has deliberately low-confidence, incomplete style evidence and remains
+unknown for enforcement. Validation-only mode built no index (`indexBytes=0`).
+
 At 384 float32 dimensions, document vectors cost about 7.3 MiB per 5,000
 tracks before query vectors and SQLite/feature JSON overhead; a full
 956,917-track dense document matrix alone would be about 1.37 GiB. The coverage
@@ -82,16 +102,16 @@ word vectors and normalizes the result. An out-of-vocabulary request returns an
 explicit unavailable result; it is never assigned invented evidence. No
 Python interpreter, model file, or embedding subprocess is needed at runtime.
 
-Cosine similarity supplies separate positive and negative,
-non-probabilistic ranking evidence. Seedless requests work when positive
-semantic intent produces indexed catalog hits. Seeded requests fall back to
-existing audio/co-occurrence retrieval with a `semantic_fallback` notice.
-Recognized strict style/vocal constraints are enforced only when the sidecar
-declares the facet; unknown evidence is ineligible. Other attributes remain
-unsupported.
+Cosine similarity supplies separate positive and negative, non-probabilistic
+ranking evidence. The scorer evaluates every unioned candidate ID, including
+exploration, rather than treating absence from semantic top-K as missing.
+Seedless requests work when positive semantic intent produces indexed catalog
+hits. Seeded requests retain explicit fallback status. Essential criteria and
+recognized strict style/vocal constraints require affirmative evidence;
+unknown evidence is ineligible. Other attributes remain unsupported.
 
 MusicBrainz enrichment must be cached and performed offline from generation.
-Its API requires an identifying User-Agent and at most one request per second;
+Its API requires an identifying User-Agent and applies rate limiting;
 release dates describe particular editions and must not be treated as verified
 original recording dates. See the [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API)
 and [release-date guidance](https://musicbrainz.org/doc/Release/Date).

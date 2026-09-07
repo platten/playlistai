@@ -74,8 +74,32 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	}
 
 	byID := make(map[string]*core.Candidate)
+	if intent.Knowledge != nil {
+		for i, track := range intent.Knowledge.Candidates {
+			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
+		}
+	}
+	// Model descriptions and related genres broaden only retrieval. Eligibility
+	// continues to assess the original essential genre, never these hints.
+	if r.semantic != nil {
+		for _, hint := range intent.GenreExpansions {
+			queries := append([]string{hint.Characteristics}, hint.RelatedGenres...)
+			for _, query := range queries {
+				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4))
+				if err != nil {
+					if ctx.Err() != nil {
+						return nil, ctx.Err()
+					}
+					continue
+				}
+				for index, hit := range hits {
+					r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
+				}
+			}
+		}
+	}
 	var exploration []explorationOption
-	positiveSemantic, negativeSemantic := semanticQueryText(intent)
+	positiveSemantic, _ := semanticQueryText(intent)
 	if positiveSemantic != "" && r.semantic != nil {
 		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget)
 		if err != nil {
@@ -89,9 +113,6 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 				}
 				match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
 				r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
-				if candidate := byID[hit.TrackID]; candidate != nil {
-					candidate.Scores.SemanticMatch, candidate.Available.SemanticMatch = hit.Score, true
-				}
 			}
 		}
 	}
@@ -135,16 +156,8 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			}
 		}
 	}
-	if negativeSemantic != "" && r.semantic != nil && len(byID) > 0 {
-		hits, err := r.semantic.Search(ctx, negativeSemantic, r.cfg.SemanticBudget)
-		if err == nil {
-			for _, hit := range hits {
-				if candidate := byID[hit.TrackID]; candidate != nil {
-					candidate.Scores.SemanticNegativeMatch, candidate.Available.SemanticNegativeMatch = hit.Score, true
-				}
-			}
-		}
-	}
+	// Exploration is part of the bounded candidate union. Semantic scoring is a
+	// later orchestrator stage and therefore applies to these candidates too.
 	r.addExploration(byID, exploration, intent.Controls.Discovery, request.Seed)
 
 	candidates := make([]core.Candidate, 0, len(byID))

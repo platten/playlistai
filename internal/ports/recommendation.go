@@ -29,6 +29,10 @@ type PersonalizedRecommendationEngine interface {
 // is not part of the user's musical intent. RecentSelections is used when
 // continuing radio; the original Intent references remain the primary anchor.
 type RecommendationRequest struct {
+	StopChecking     <-chan struct{}
+	OnChecked        func(core.TrackRef)
+	OnSuggested      func(core.TrackRef)
+	Progress         Progress
 	Intent           core.MusicIntent
 	Profile          core.TasteProfile
 	RecentSelections []core.TrackRef
@@ -96,6 +100,10 @@ type SequenceRequest struct {
 	RecentSelections []core.TrackRef
 	Trajectory       Trajectory
 	Seed             int64
+	// CategoryStages contains affirmative track membership for each ordered
+	// musical stage. Every stage requires a distinct track; no post-sort may
+	// override required order or hard artist spacing.
+	CategoryStages []map[string]bool
 }
 
 type SequenceResult struct {

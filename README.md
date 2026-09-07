@@ -29,20 +29,25 @@ flowchart LR
     Resolve --> Retrieve[Audio + co-occurrence + taste + exploration]
     Profile[Local taste profile] --> Retrieve
     Semantic[Optional grounded sidecar] --> Retrieve
-    Retrieve --> Rules[Hard eligibility]
+    Retrieve --> Score[Whole-union semantic scoring]
+    Score --> Rules[Essential + hard eligibility]
     Rules --> Rank[Transparent ranking]
     Rank --> Select[MMR diversity]
     Select --> Order[Transition sequencing]
     Order --> Playlist[Playlist + evidence + versions]
 ```
 
-References are retrieved independently instead of being collapsed into one
-query. Hard artist/track exclusions and normalized recording deduplication run
-before ranking. Ranking can use seed affinity, explicit positive/negative
+Explicit references and inferred retrieval anchors remain distinguishable.
+Inferred anchors must resolve to real catalog entities and independently pass
+musical-suitability checks. References are retrieved independently instead of
+being collapsed into one query. Essential categories, hard exclusions, and
+normalized recording deduplication run before ranking. Ranking can use seed affinity, explicit positive/negative
 feedback, recent exposure, and listener novelty. MMR selection limits embedding,
 artist, and reliable-album repetition; sequencing preserves required tracks and
 ordered journey waypoints. When eligibility is exhausted, the app returns a
-structured partial result rather than silently bypassing a rule.
+structured partial result rather than silently bypassing a rule. Unsupported
+essential requests return an actionable inability-to-fulfill result instead of
+an unrelated full playlist.
 
 Every generation records the catalog, algorithm, resolved intent, profile
 snapshot, session context, and full-width RNG seed needed for replay. Slider
@@ -53,9 +58,9 @@ the rest of the prompt.
 
 The optional first-run model setup installs llama.cpp through its official
 installer. The wizard asks that exact runtime to enumerate usable GPUs and free
-VRAM. It offers only recommended Q4_K_M weights that fit completely on one GPU
+VRAM. It offers the single largest recommended Q4_K_M weight that fits completely on one GPU
 while reserving 1 GiB for context, KV cache, and compute buffers. When no usable
-llama.cpp GPU is reported, it offers the two smallest recommended models.
+llama.cpp GPU is reported, it offers the largest model from the bounded CPU recommendation list.
 
 Current priority:
 
@@ -115,7 +120,13 @@ The shipped catalog has no grounded style, mood, instrumentation, vocal, date,
 or acoustic-energy features. An optional, versioned semantic sidecar can add
 reviewed evidence and compatible precomputed query vectors. The core app works
 without it, and the desktop runtime never invokes Python; Python is limited to
-offline maintainer tooling that prepares datasets.
+offline maintainer tooling that prepares datasets and exports/checks model graphs.
+
+The downloadable music-analysis worker is compiled Go with native ONNX Runtime.
+Audio decoding, preprocessing, tokenization and inference do not require Python,
+pip, PyTorch, or a Python environment on the listener's machine. Bundle assembly
+uses `go run ./cmd/audiopack`; Python export/reference-validation tools are never
+included in desktop or analysis downloads.
 
 Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
@@ -152,6 +163,7 @@ benchmark wrappers for all three operating systems.
 Detailed references:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [CLAP model candidates and custom bundles](docs/clap-model-candidates.md)
 - [Recommendation milestone log](docs/recommendation-milestones.md)
 - [Catalog construction and hosting](docs/CATALOG.md)
 - [Semantic sidecar pilot](docs/semantic-sidecar.md)

@@ -25,9 +25,9 @@ func BenchmarkCatalogGeneration(b *testing.B) {
 	}
 	b.Cleanup(func() { _ = cat.Close() })
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion,
-		Mode:    core.ModeSimilar,
-		Seed:    "18446744073709551615",
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly,
+		Mode: core.ModeSimilar,
+		Seed: "18446744073709551615",
 		References: []core.IntentReference{{
 			Kind: core.ReferenceArtist, Query: "Boards of Canada", Influence: core.InfluencePositive,
 		}},

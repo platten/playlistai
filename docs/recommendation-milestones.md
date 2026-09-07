@@ -312,8 +312,8 @@ silently restored to their defaults, so the components could not be disabled.
 
 ## Post-milestone Runtime and Onboarding Updates
 
-The desktop recommendation runtime is now fully compiled Go. Semantic sidecar
-schema v2 stores the bounded query vocabulary needed by its Unicode-aware Go
+The catalog recommendation runtime is now fully compiled Go. Semantic sidecar
+schema v3 stores facet completeness and the bounded query vocabulary needed by its Unicode-aware Go
 query composer; Python and Sentence Transformers remain offline dataset-builder
 dependencies only. The complete test gate includes a `CGO_ENABLED=0` compile of
 all packages below the Wails bridge to prevent an interpreter or native library
@@ -321,15 +321,17 @@ dependency from entering the core application.
 
 Generate now remains visible in both parser modes. Catalog-only/rules mode
 clearly requires a seed artist or track. A ready local LLM may infer a grounded,
-non-required starting reference when none is explicit; if model parsing fails
-and generation falls back to rules, the catalog seed requirement is restored.
+non-required starting reference when none is explicit. If model parsing fails,
+the rules fallback preserves the category request and reports its fallback; it
+does not silently turn requested LLM mode into catalog-only artist lookup.
 
 The curated model catalog now contains pinned Q4_K_M artifacts for Qwen3.5 35B
 A3B, Qwen3.5 9B, Mistral Small 3.1 24B, Gemma 3 12B, and Qwen3.5 4B in product
 priority order. The first-run wizard asks its selected llama.cpp binary to
 enumerate devices and free VRAM, retains 1 GiB for context/KV/compute, and shows
-only models whose complete weights fit. With no usable llama.cpp GPU, it shows
-the two smallest recommended models. Llama 3.2 3B and Qwen2.5 3B stay available
+only the largest model whose complete weights fit. With no usable llama.cpp GPU,
+it shows the largest model from the bounded CPU recommendation list. Llama 3.2
+3B and Qwen2.5 3B stay available
 but non-recommended. These five artifacts are not yet covered by the existing
 intent benchmark, so their ordering is not presented as a measured quality
 result.
@@ -344,3 +346,261 @@ all curated models. A separate policy benchmark reports model counts and
 allocation cost without pretending to measure GPU inference. Intent evaluation
 report v2 records the actual llama.cpp device inventory and run settings, and
 `-device` can pin a multi-GPU benchmark to one accelerator.
+
+## Milestone 11 — Recommendation Correctness
+
+Intent v6 distinguishes essential musical criteria, soft preferences, hard
+exclusions, explicit references, and model-inferred anchors. The rules and LLM
+contracts now preserve category-led requests such as “electronic music”; model
+anchors resolve to real entities but steer retrieval only after independent
+musical-suitability validation. LLM truncation gets one bounded retry, parser
+fallback reasons remain structured, and requested model mode no longer becomes
+an artist lookup when fallback parsing occurs.
+
+`multichannel/v4` now unions every channel before batch semantic scoring,
+applies affirmative essential eligibility and strict exclusions before fixed-
+scale ranking, reserves and orders grounded category-journey stages, and
+returns `fulfilled`, `partial`, `unsupported`, or `needs_clarification` based on
+evidence rather than count. Feature-only sidecars remain connected. Schema-v3
+facets declare completeness so an unrelated known tag cannot prove an excluded
+style absent.
+
+A seven-track reviewed pilot input validates against all 956,917 catalog IDs;
+six rows declare complete style evidence and one is intentionally incomplete.
+No generated sidecar is shipped, so production semantic coverage is still
+zero and unsupported category requests fail honestly. Next dependencies are a
+licensed, independently reviewed full-catalog evidence source, a built and
+versioned local semantic index, and held-out blind listening judgments. See
+[`recommendation-correctness.md`](recommendation-correctness.md).
+
+### Correctness review follow-up
+
+All nine review findings have focused regressions. Rules and LLM validation
+share category interpretation, keep explicit artist-name evidence separate
+from style instructions, preserve category-plus-seed requests, and retain
+narrow exclusion scope. Uncertain matching facets cannot prove an exclusion's
+absence. Runtime and evaluation now share evidence/hierarchy rules and ordered
+journey-stage accounting. `multichannel/v5` jointly sequences category stages,
+required tracks, waypoints, and hard artist spacing; it returns partial or
+clarification outcomes when they cannot all be satisfied. Parser versions
+advance to v6 without changing intent-v6 history serialization. Full-catalog
+semantic evidence and held-out listening judgments remain the next dependencies.
+
+The category vocabulary now canonicalizes `electronica` to `electronic` and
+`ambient electronica` to `ambient electronic`, while retaining explicit artist
+context such as “music by Electronica.” This closes the rules-fallback path that
+previously surfaced “no seeds are resolved” for “ambient electronica.”
+
+## Milestone 12 — Description and Preview Evidence (implementation, gated)
+
+Intent v7 and `multichannel/v6` add the original description, open-vocabulary
+genre expansions, six bounded anchor attempts and candidate-wide preview
+eligibility. All retrieval channels pass strict metadata and preview checks
+before personalization/ranking. Required tracks and journey stages retain their
+original criteria. Unsupported or unknown evidence cannot silently fill a
+playlist; strict no-vocals remains unproved by previews.
+
+The owner confirmed Deezer permission for analysis, permanent derived features
+and distributed desktop users. Go now owns bounded preview fetches, MP3 decode,
+48 kHz preprocessing, RoBERTa tokenization, Slaney log-mel features, SQLite
+retention and an isolated CPU ONNX worker. Inference uses music CLAP in its own
+aligned embedding space. The optional worker uses cgo/native ONNX Runtime;
+the existing core cgo-free compile gate still passes. No Python desktop
+requirement or persistent preview file was introduced.
+
+The wizard/settings support checksummed, resumable model/runtime bundles with
+parity, policy, platform and native health gates, plus separate analysis/history/
+taste clearing. Generate keeps its composer visible, shows an editable request
+summary and progressive checked tracks, and supports stop-and-keep. Generation
+IDs protect progress/results against stale work. Full intent, string seed,
+versions and evidence snapshot remain in history.
+
+Executed on 2026-09-07: the full repository gate and Linux production desktop
+build passed; rendered light/dark,
+narrow, reduced-motion, keyboard/ARIA, stale, partial, wizard, download/error and
+retry states passed. Real model export parity passed ten fixtures (maximum
+embedding error `1.043081283569336e-7`, seven exact tokenizer cases, three Go
+log-mel fixtures). An authorized, corroborated Four Tet preview passed
+Go → ONNX → SQLite in 2,071 ms after worker health, fetching 479,827 bytes for
+29.99 seconds. Repeat analysis fetched zero bytes. A separate cached health run
+peaked at 1,127,388 KiB RSS on the WSL2 Linux amd64 host.
+
+The implementation is **not a production music-quality milestone**. Public
+bundle activation remains gated because development listening calibration and
+held-out comparisons have not been performed. The new offline audio review
+reporter validates recording/artist split isolation and three ablations, while
+preserving unknown judgments. Clean-machine Windows/macOS/Linux installations,
+combined LLM memory budgets and human screen-reader validation remain unexecuted.
+No model/publication/release/default-LLM change is included. Architecture,
+provenance, measurements and reproduction commands are in
+[`recommendation-correctness.md`](recommendation-correctness.md).
+
+### Python-free distribution follow-up
+
+Ported analysis-bundle assembly to `cmd/audiopack` and removed the Python helper.
+Removed the explicit Python installation from the cross-build Dockerfile; its
+existing Node runtime parses the Zig checksum manifest. Python remains only in
+offline dataset preparation and model-export/reference-validation tools.
+The desktop and downloaded analysis worker have no Python runtime requirement.
+The real Go packager and native CLAP audio/text health passed with Python
+unavailable on the executable search path; worker memory mappings and Linux
+binary dependency scans contained no Python runtime.
+
+### Deezer request spacing follow-up
+
+Added a shared process-wide two-second minimum between Deezer request starts.
+Metadata, analysis downloads, playback downloads and redirects share the same
+budget. Playback uses a bounded in-memory data URL to prevent browser requests
+from bypassing the throttle; queued work is cancellable. Tests cover concurrent
+dispatch, cancellation, failures, redirects, separate providers and cache hits.
+The analysis deadline includes throttle waiting, so historical pre-throttle
+timings do not represent current uncached performance. No release is included.
+
+## Milestone 13 — Open music descriptions and useful partial results
+
+Intent v8 separates genres, styles, moods, textures, vocal preferences and typed
+artist/album/track references. The local-model grammar has bounded lists and one
+repair attempt. Invalid optional proposals and invented positive references no
+longer become listener requirements. Century dates use deterministic arithmetic;
+classical periods refer to composition, and named destinations pin an actual
+recording last. Production examples describe interpretation structure without
+hardcoded prompt-to-track fits.
+
+MusicBrainz metadata retrieval is bounded to 20 requests/30 seconds per generation,
+uses its shared limiter, caches positive/negative responses, and permits stale
+offline reuse. Genre relationships and aliases come from attributed public pages;
+only subgenres imply broader membership. Recording identity ambiguity is retained.
+Full prompts and taste profiles are never sent to metadata services. Cached exact
+genres work in catalog-only mode; full interpretation needs the optional LLM.
+
+New prompts may produce explicitly labeled best-available suggestions. Proven
+category fit precedes personalization and diversity. Known mismatches and artist
+exclusions remain filtered; unsupported strict requirements still abstain.
+Earlier histories preserve verified-only behavior. Audio-checked tracks stay
+distinct from suggestions, with generation IDs, provisional ordering and
+stop-and-keep controls. Optional CLAP activation remains gated on the listening
+and platform validation described in Milestone 12.
+
+Executed on 2026-09-07: all twelve synthetic prompt contracts generate through
+the parser/resolver/engine; genre alias/cycle/relationship, source grounding,
+namespace, exclusion, temporal scope, destination, cache TTL/offline, metadata
+identity and evidence-priority regressions pass. The complete repository gate
+passes, including race tests, pure-Go core compile, lint, generated bindings,
+TypeScript and production frontend build. Rendered screenshots pass light/dark,
+narrow, reduced-motion, keyboard/ARIA, stale events, suggestions/checked tracks,
+partial results and wizard/download/error/retry fixtures.
+
+`scripts/build.sh` passes on WSL2, producing AppImage, DEB, RPM, Arch and a
+cross-compiled Windows NSIS installer. The shared AppImage wrapper prevents
+linuxdeploy plugin discovery from traversing `/mnt` PATH entries; its regression
+test includes the reported ControlD path. macOS packaging and clean-machine
+installation remain unexecuted. Distribution has no Python runtime dependency.
+Unused helper/icon code and old production example music fits were removed.
+No release, deployment, public model bundle or default-LLM change is included.
+
+The real Qwen3.5-4B/catalog run generated playlists for all twelve prompts. Ten
+passed every intent/output check in the combined run; two intermittent omitted
+fields were fixed and passed targeted live rechecks. Latest results: eleven
+20-track playlists and one 14-track exclusion result, with uncertainty preserved.
+The actual Miles Davis destination check passes. See
+[`data/music-prompts-v8-live.json`](data/music-prompts-v8-live.json) for hashes,
+timings, initial failures and recheck identity. These are development prompt
+checks, not musical-fit judgments or a single clean twelve-case final run.
+
+### Genre artist grounding follow-up
+
+Added MusicBrainz artist-tag search with 100-result pages, pagination to at least
+100 unique artists when available, and explicit coverage/exhaustion reporting.
+Saved seeds randomize artist and recording selection, including cache reuse.
+Samples require MusicBrainz artist-MBID credits and corroborated local recording
+identity; artist tags do not classify an artist's entire catalog. Snapshots retain
+the artist pools, source queries and sampled identities.
+
+Moved one-second MusicBrainz spacing to a shared HTTP transport so concurrent
+clients and redirects cannot bypass it. Regression tests cover pagination,
+seed variation/replay, cache reuse, exclusions, mismatched recording credits,
+small pools, production interval clamping, concurrent dispatch and cancellation.
+
+Live verification on 2026-09-07 fetched 100 dubstep artists from 1,417 available
+MusicBrainz matches, sampled three artists and six corroborated catalog tracks,
+and generated a 20-track playlist. The full repository gate passes. Genre-page
+relationships were unavailable during this run; the artist API pool succeeded
+independently. This check does not claim recording-level genre or listening fit.
+
+## Settings log window — 2026-09-07
+
+Added a Settings action opening a named, separate Wails log window. Reopening
+focuses the existing viewer; closing it preserves the main window and Settings.
+Application and Wails slog records are mirrored to a synchronized, memory-only
+2,000-record buffer, capped at approximately 8 KiB per record. Existing stderr
+output is preserved. The viewer polls incrementally, labels and colors severity,
+supports keyboard scrolling, and pauses automatic scrolling when reading older
+entries. Logs cover the current session only.
+
+Validation: bounded retention, cursors, detached snapshots, grouped attributes,
+severity and concurrent writers tested with Go's race detector. Rendered fixture
+checks in scripts/capture-log-window.mjs cover light/dark themes, narrow windows,
+scroll/follow behavior, error recovery UI and the close binding. Screenshots are
+in /tmp/playlist-ai-log-window. These browser checks do not exercise native
+window-manager behavior on Windows, macOS or Linux.
+
+## Wizard model selection and public CLAP bundle — 2026-09-07
+
+The language-model step now offers at most one recommendation: the largest
+model in the existing eligible shortlist, preserving GPU memory reserves and
+the two-entry CPU shortlist. Settings retains the full model catalog.
+
+Surveyed public CLAP families, paired ONNX exports and specialized alternatives
+in [CLAP model candidates](clap-model-candidates.md). The wizard downloads the
+full-precision Xenova export of LAION larger CLAP music-and-speech, with pinned
+weights, matching tokenizer and official ONNX Runtime 1.26.0 assets. Linux amd64
+downloads total approximately 793 MB. Downloads resume; runtime extraction checks
+the exact member's size/hash and native inference must pass before activation.
+Users can select a custom manifest and follow linked training/export guidance.
+
+Version 2 bundles run a Go-managed native worker inside a child of the desktop
+executable, with no Python runtime dependency. Paired artifact fingerprints
+prevent incompatible caches from mixing. Legacy bundle compatibility is retained.
+The public model has passed runtime validation but has no reviewed musical-fit
+calibration policy; installation does not enable automatic fit decisions. The
+wizard states this before download and after installation.
+
+Executed validation: ten public-export/reference comparisons, exact tokenizer
+checks and Go preprocessing comparisons; actual native installation and desktop
+worker health checks with no executable search path/Python setup; the complete
+repository gate; browser fixtures covering one language recommendation, both
+CLAP paths, retry/cancel/inference states, documentation links, both themes and
+a narrow window. Screenshots are in `/tmp/playlist-ai-clap-wizard-ui`.
+Reproduction commands and exact parity errors are in the candidate guide.
+
+Platform limits: native inference was executed on Linux amd64/WSL2 only. Pinned
+runtime files also cover Linux arm64, Windows amd64/arm64 and macOS arm64;
+clean-machine tests are not claimed. Pure-Go application builds reject v2
+installation before downloading; Windows needs an explicit cgo build for the
+built-in worker. Intel macOS needs a custom compatible runtime bundle. The
+2 GiB memory allowance remains provisional. No release or model publication
+was performed, and no weights, recordings or user data enter the repository.
+
+## Simplify navigation, export and preview setup — 2026-09-07
+
+Removed the standalone Catalog screen, navigation/fallback routes, seed-build
+helper, search/similar-track bridge methods and unused row actions. Generation
+still uses the local recommendation catalog; a missing catalog now links to
+the setup wizard.
+
+Export preparation reads local track details directly, preserving order and
+duplicate entries without calling MusicBrainz. The export page contains track,
+artist, album and inclusion controls, with ISRC, match and confidence UI removed.
+CSV and Soundiiz handoff remain available without an enrichment service. The
+standard CSV schema is retained with an empty ISRC column.
+
+The wizard preview step offers only Deezer and Spotify. It maps a saved off
+preference to Deezer, saves the selected provider on Continue, and stays on the
+step with an actionable error when saving fails. Settings can still disable
+playback previews independently.
+
+Validation: full repository gate passed; Go export tests cover local preparation,
+ordering, duplicates, missing IDs and CSV export without an enricher. Browser
+fixtures in `scripts/capture-export-ui.mjs` cover navigation/setup recovery,
+export selection, retry/empty states, provider persistence and save failures,
+both themes and narrow windows. Screenshots use `/tmp/playlist-ai-export-ui`.

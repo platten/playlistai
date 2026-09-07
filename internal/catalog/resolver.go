@@ -26,6 +26,9 @@ func (c *Catalog) CatalogVersion() string { return c.version }
 // normalized names and aliases win before prefix/token fallback. No query word
 // is silently removed.
 func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	if ref.Kind == core.ReferenceAlbum {
+		return core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: c.version}
+	}
 	key := c.version + "\x00" + string(ref.Kind) + "\x00" + ref.TrackID + "\x00" + normalizeUnicodeSearch(ref.Query)
 	c.resolutionMu.RLock()
 	if cached, ok := c.resolutionCache[key]; ok {

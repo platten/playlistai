@@ -102,6 +102,13 @@ func TestStorePrefersExactPhraseAndComposesKnownTerms(t *testing.T) {
 	if err != nil || len(hits) != 1 || hits[0].TrackID != "relaxing" {
 		t.Fatalf("composed fallback search = %+v, %v", hits, err)
 	}
+	coverage, scores, err := store.Score(context.Background(), "relaxing unknown", []string{"relaxing", "deep", "missing"})
+	if err != nil || coverage.Complete || strings.Join(coverage.Matched, ",") != "relaxing" || strings.Join(coverage.Unmatched, ",") != "unknown" {
+		t.Fatalf("query coverage = %+v, err=%v", coverage, err)
+	}
+	if len(scores) != 3 || scores[0].State != core.EvidenceMatch || scores[2].State != core.EvidenceUnknown {
+		t.Fatalf("batch semantic scores = %+v", scores)
+	}
 }
 
 func TestStoreRejectsCatalogAndQueryVocabularyMismatch(t *testing.T) {

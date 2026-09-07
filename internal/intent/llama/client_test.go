@@ -3,6 +3,7 @@ package llama
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -39,16 +40,25 @@ func completion(content string) string {
 	return string(b)
 }
 
+func explicitArtistCompletion(artist string, count int) string {
+	raw, _ := json.Marshal(schema.Wire{
+		References: []schema.WireReference{{Kind: "artist", Value: artist, Influence: "positive", Explicit: true, Span: artist}},
+		Mode:       "similar", TotalCount: count, AudioWeight: .5, CooccurrenceWeight: .5,
+	})
+	return string(raw)
+}
+
 func TestClientParseSuccess(t *testing.T) {
 	t.Parallel()
 	var got struct {
 		Messages           []chatMessage  `json:"messages"`
 		Grammar            string         `json:"grammar"`
 		ChatTemplateKwargs map[string]any `json:"chat_template_kwargs"`
+		NPredict           int            `json:"n_predict"`
 	}
 	srv := chatServer(t, func(body []byte) (int, string) {
 		_ = json.Unmarshal(body, &got)
-		return 200, completion(`{"seeds":["Justice"],"mode":"similar","count":22,"creativity":0.6,"noise":0.2,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":"n"}`)
+		return 200, completion(explicitArtistCompletion("Justice", 22))
 	})
 
 	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "like Justice, 22 songs"})
@@ -65,6 +75,9 @@ func TestClientParseSuccess(t *testing.T) {
 	if thinking, ok := got.ChatTemplateKwargs["enable_thinking"].(bool); !ok || thinking {
 		t.Fatalf("enable_thinking = %#v, want false", got.ChatTemplateKwargs["enable_thinking"])
 	}
+	if got.NPredict < 900 {
+		t.Fatalf("intent output budget = %d, want enough room for the v6 contract", got.NPredict)
+	}
 	if got.Messages[0].Role != "system" || !strings.Contains(got.Messages[0].Content, "translate") {
 		t.Fatalf("first message = %+v", got.Messages[0])
 	}
@@ -78,9 +91,55 @@ func TestClientParseSuccess(t *testing.T) {
 	}
 }
 
+func TestClientRepairsInvalidMeaningOnceWithoutMidConversationSystemMessage(t *testing.T) {
+	requests := 0
+	srv := chatServer(t, func(body []byte) (int, string) {
+		requests++
+		var request chatRequest
+		_ = json.Unmarshal(body, &request)
+		for i, message := range request.Messages {
+			if i > 0 && message.Role == "system" {
+				t.Fatal("runtime rejects system messages after the opening message")
+			}
+		}
+		if requests == 1 {
+			return 200, completion(explicitArtistCompletion("Invented", 5))
+		}
+		if !strings.Contains(request.Messages[0].Content, "previous interpretation was invalid") {
+			t.Fatal("repair did not identify semantic validation error")
+		}
+		return 200, completion(explicitArtistCompletion("Justice", 5))
+	})
+	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "Justice"})
+	if err != nil || requests != 2 || m.References[0].Query != "Justice" {
+		t.Fatalf("repair failed: requests=%d err=%v", requests, err)
+	}
+}
+
+func TestClientRetriesAndReportsTruncatedCompletion(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	srv := chatServer(t, func(body []byte) (int, string) {
+		requests++
+		var request chatRequest
+		_ = json.Unmarshal(body, &request)
+		if requests == 2 && request.NPredict < 1400 {
+			t.Fatalf("recovery budget = %d", request.NPredict)
+		}
+		response := map[string]any{"choices": []map[string]any{{"message": map[string]string{"role": "assistant", "content": `{"references":[]`}, "finish_reason": "length"}}}
+		raw, _ := json.Marshal(response)
+		return 200, string(raw)
+	})
+	_, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "electronic music"})
+	var truncated *TruncatedCompletionError
+	if !errors.As(err, &truncated) || requests != 2 || truncated.Attempts != 2 {
+		t.Fatalf("truncation recovery: requests=%d err=%v", requests, err)
+	}
+}
+
 func TestClientParseStreamingWithProgress(t *testing.T) {
 	t.Parallel()
-	full := `{"seeds":["Bonobo"],"mode":"similar","count":18,"creativity":0.5,"noise":0.1,"lookback":3,"exclude_artists":[],"no_repeat_artist":true,"notes":"n"}`
+	full := explicitArtistCompletion("Bonobo", 18)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -159,7 +218,7 @@ func chunkString(s string, n int) []string {
 func TestClientParseProseWrapped(t *testing.T) {
 	t.Parallel()
 	srv := chatServer(t, func([]byte) (int, string) {
-		return 200, completion("Sure!\n```json\n{\"seeds\":[\"Air\"],\"mode\":\"similar\",\"count\":15,\"creativity\":0.5,\"noise\":0.1,\"lookback\":3,\"exclude_artists\":[],\"no_repeat_artist\":true,\"notes\":\"n\"}\n```")
+		return 200, completion("Sure!\n```json\n" + explicitArtistCompletion("Air", 15) + "\n```")
 	})
 	m, err := NewClient(srv.URL).Parse(context.Background(), ports.IntentInput{Prompt: "like Air"})
 	if err != nil || len(m.Seeds.Queries) != 1 || m.Seeds.Queries[0] != "Air" {

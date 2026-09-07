@@ -144,7 +144,7 @@ func TestIntentModelDatasetCoversContractCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dataset.Evidence != EvidenceJudged || len(dataset.IntentCases) != 12 {
+	if dataset.Evidence != EvidenceJudged || len(dataset.IntentCases) != 16 {
 		t.Fatalf("dataset evidence/cases = %q/%d", dataset.Evidence, len(dataset.IntentCases))
 	}
 	byID := map[string]IntentCase{}
@@ -161,7 +161,7 @@ func TestIntentModelDatasetCoversContractCases(t *testing.T) {
 	if contextCase.NowPlaying == nil || len(contextCase.RecentTracks) != 1 {
 		t.Fatalf("context case is incomplete: %+v", contextCase)
 	}
-	for _, required := range []string{"multi-reference-negation", "required-versus-reference", "strict-unsupported-vocals", "non-latin-reference", "artist-title-collision", "evidence-spans"} {
+	for _, required := range []string{"multi-reference-negation", "required-versus-reference", "strict-unsupported-vocals", "non-latin-reference", "artist-title-collision", "evidence-spans", "essential-electronic", "essential-electronic-no-rock", "electronic-rock-influence", "electronic-rock-journey"} {
 		if _, ok := byID[required]; !ok {
 			t.Fatalf("required case %q missing", required)
 		}

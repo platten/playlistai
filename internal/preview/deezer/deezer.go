@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/deezerhttp"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -58,7 +59,7 @@ func New(cfg Config) *Provider {
 	if hc == nil {
 		hc = &http.Client{Timeout: 8 * time.Second}
 	}
-	return &Provider{base: base, hc: hc, cache: make(map[string]cacheEntry)}
+	return &Provider{base: base, hc: deezerhttp.Client(hc), cache: make(map[string]cacheEntry)}
 }
 
 // Name implements ports.PreviewProvider.
@@ -73,6 +74,9 @@ type searchResponse struct {
 // PreviewURL implements ports.PreviewProvider.
 func (p *Provider) PreviewURL(ctx context.Context, ref core.TrackRef, bundledURL string) (string, bool, error) {
 	found, ok, err := p.search(ctx, ref)
+	if ctx.Err() != nil {
+		return "", false, ctx.Err()
+	}
 	if err == nil && ok {
 		return found, true, nil
 	}

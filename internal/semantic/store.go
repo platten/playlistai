@@ -164,6 +164,12 @@ func (s *Store) Features(ctx context.Context, trackID string) (core.TrackFeature
 }
 
 func validateFeature(feature core.TrackFeatures) error {
+	validCoverage := map[string]bool{"tags": true, "descriptions": true, "styles": true, "moods": true, "instrumentation": true, "vocal_evidence": true, "release_dates": true, "all": true, "styles_and_tags": true}
+	for _, facet := range feature.FacetCoverage {
+		if feature.SchemaVersion < 3 || !validCoverage[facet] {
+			return fmt.Errorf("invalid facet coverage %q for schema %d", facet, feature.SchemaVersion)
+		}
+	}
 	values := []core.FeatureValue{feature.ArtistID, feature.RecordingID, feature.VocalEvidence, feature.ReleaseDates.OriginalEdition, feature.ReleaseDates.ReleaseEdition}
 	values = append(values, feature.Tags...)
 	values = append(values, feature.Descriptions...)
@@ -206,7 +212,7 @@ func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.Sema
 	if !s.queryReady {
 		return nil, fmt.Errorf("semantic search: %w: sidecar has no embedded Go query vocabulary", core.ErrUnavailable)
 	}
-	query, err := s.queryVector(ctx, text)
+	query, _, err := s.queryVector(ctx, text)
 	if err != nil {
 		return nil, err
 	}
@@ -250,42 +256,89 @@ func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.Sema
 	return hits, rows.Err()
 }
 
-func (s *Store) queryVector(ctx context.Context, text string) ([]float32, error) {
-	keys := queryKeys(text)
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("semantic search: %w: query has no searchable terms", core.ErrUnavailable)
+func (s *Store) queryVector(ctx context.Context, text string) ([]float32, core.QueryCoverage, error) {
+	tokens := semanticTokens(text)
+	coverage := core.QueryCoverage{Unmatched: append([]string(nil), tokens...)}
+	if len(tokens) == 0 {
+		return nil, coverage, fmt.Errorf("semantic search: %w: query has no searchable terms", core.ErrUnavailable)
 	}
 	// A full-phrase entry is an actual encode_query result and is preferable to
 	// composing its component terms. The remaining entries provide bounded
 	// vocabulary fallback for phrases not seen by the offline builder.
-	if len(keys) > 1 {
-		if vector, ok, err := s.lookupQueryVector(ctx, keys[0]); err != nil {
-			return nil, err
+	phrase := strings.Join(tokens, " ")
+	if len(tokens) > 1 {
+		if vector, ok, err := s.lookupQueryVector(ctx, phrase); err != nil {
+			return nil, coverage, err
 		} else if ok {
-			return vector, nil
+			coverage.Matched = []string{phrase}
+			coverage.Unmatched = nil
+			coverage.Complete = true
+			return vector, coverage, nil
 		}
-		keys = keys[1:]
 	}
 	query := make([]float32, s.info.EmbeddingDim)
-	matched := 0
-	for _, key := range keys {
+	coverage.Unmatched = nil
+	for _, key := range tokens {
 		vector, ok, err := s.lookupQueryVector(ctx, key)
 		if err != nil {
-			return nil, err
+			return nil, coverage, err
 		}
 		if !ok {
+			coverage.Unmatched = append(coverage.Unmatched, key)
 			continue
 		}
-		matched++
+		coverage.Matched = append(coverage.Matched, key)
 		for i, value := range vector {
 			query[i] += value
 		}
 	}
-	if matched == 0 {
-		return nil, fmt.Errorf("semantic search: %w: query is outside the sidecar vocabulary", core.ErrUnavailable)
+	if len(coverage.Matched) == 0 {
+		return nil, coverage, fmt.Errorf("semantic search: %w: query is outside the sidecar vocabulary", core.ErrUnavailable)
 	}
+	coverage.Complete = len(coverage.Unmatched) == 0
 	normalize(query)
-	return query, nil
+	return query, coverage, nil
+}
+
+// Score evaluates every requested catalog ID, including candidates outside a
+// semantic top-K. This keeps retrieval breadth separate from feature
+// availability and prevents exploration from escaping semantic scoring.
+func (s *Store) Score(ctx context.Context, text string, trackIDs []string) (core.QueryCoverage, []core.SemanticScore, error) {
+	if !s.queryReady {
+		return core.QueryCoverage{}, nil, fmt.Errorf("semantic scoring: %w: sidecar has no embedded Go query vocabulary", core.ErrUnavailable)
+	}
+	query, coverage, err := s.queryVector(ctx, text)
+	if err != nil {
+		return coverage, nil, err
+	}
+	result := make([]core.SemanticScore, 0, len(trackIDs))
+	for index, id := range trackIDs {
+		if index&127 == 0 {
+			if err := ctx.Err(); err != nil {
+				return coverage, nil, err
+			}
+		}
+		var blob []byte
+		err := s.db.QueryRowContext(ctx, "SELECT embedding FROM semantic_vectors WHERE track_id = ?", id).Scan(&blob)
+		if errors.Is(err, sql.ErrNoRows) {
+			result = append(result, core.SemanticScore{TrackID: id, State: core.EvidenceUnknown})
+			continue
+		}
+		if err != nil {
+			return coverage, nil, err
+		}
+		vector, err := decodeVector(blob, s.info.EmbeddingDim)
+		if err != nil {
+			return coverage, nil, fmt.Errorf("semantic sidecar: track %s: %w", id, err)
+		}
+		score := dot(query, vector)
+		state := core.EvidenceMismatch
+		if score > 0 {
+			state = core.EvidenceMatch
+		}
+		result = append(result, core.SemanticScore{TrackID: id, Score: score, State: state})
+	}
+	return coverage, result, nil
 }
 
 func (s *Store) lookupQueryVector(ctx context.Context, key string) ([]float32, bool, error) {
@@ -358,6 +411,8 @@ func semanticTokens(text string) []string {
 var semanticStopWords = map[string]struct{}{
 	"a": {}, "an": {}, "and": {}, "but": {}, "for": {}, "in": {}, "of": {}, "or": {}, "the": {}, "to": {}, "with": {},
 }
+
+var _ ports.SemanticScorer = (*Store)(nil)
 
 func decodeVector(blob []byte, dim int) ([]float32, error) {
 	if len(blob) != 4*dim {

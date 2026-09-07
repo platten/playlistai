@@ -133,9 +133,6 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 	noAdjacent := false
 	excludeReferenceArtists := false
 	for _, constraint := range playlist.Intent.HardConstraints {
-		if !constraint.RuntimeEnforced {
-			continue
-		}
 		switch constraint.Kind {
 		case "exclude_artist":
 			excluded[core.NormalizeIdentityPart(constraint.Value)] = struct{}{}
@@ -156,64 +153,50 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 		if noAdjacent && index > 0 && core.NormalizeIdentityPart(track.Artist) == core.NormalizeIdentityPart(playlist.Tracks[index-1].Artist) {
 			violations++
 		}
-		if features != nil {
-			feature, ok, err := features.Features(ctx, track.ID)
-			if err != nil || !ok {
-				for _, constraint := range playlist.Intent.HardConstraints {
-					if constraint.RuntimeEnforced && semanticConstraint(constraint.Kind) {
-						violations++
-					}
-				}
-				continue
-			}
-			for _, constraint := range playlist.Intent.HardConstraints {
-				if !constraint.RuntimeEnforced {
-					continue
-				}
-				switch constraint.Kind {
-				case "exclude_vocals", "require_instrumental":
-					if feature.VocalEvidence.Missingness != core.FeatureKnown || !strings.EqualFold(feature.VocalEvidence.Value, "instrumental") {
-						violations++
-					}
-				case "require_vocals":
-					if feature.VocalEvidence.Missingness != core.FeatureKnown || strings.EqualFold(feature.VocalEvidence.Value, "instrumental") {
-						violations++
-					}
-				case "exclude_style":
-					if !featureKnown(feature.Styles, feature.Tags) || featureHas(constraint.Value, feature.Styles, feature.Tags) {
-						violations++
-					}
-				case "require_style":
-					if !featureHas(constraint.Value, feature.Styles, feature.Tags) {
-						violations++
-					}
-				}
+		feature := evaluationFeatures(ctx, features, track.ID)
+		for _, constraint := range playlist.Intent.HardConstraints {
+			// Judge the requested rule, not the engine's claim that it enforced it.
+			if semanticConstraint(constraint.Kind) && !core.SemanticConstraintSatisfied(feature, constraint) {
+				violations++
 			}
 		}
 	}
 	return violations
 }
 
-func featureHas(want string, groups ...[]core.FeatureValue) bool {
-	want = normalizeLabel(want)
-	for _, group := range groups {
-		for _, value := range group {
-			if value.Missingness == core.FeatureKnown && normalizeLabel(value.Value) == want {
-				return true
+// EssentialCriterionViolations is intentionally conservative. Unknown or
+// unavailable evidence counts as a violation when tracks were returned; an
+// honest unsupported empty result does not.
+func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore) int {
+	if len(playlist.Tracks) == 0 || len(playlist.Intent.EssentialCriteria) == 0 {
+		return 0
+	}
+	violations := 0
+	stages := core.JourneyCriteria(playlist.Intent.EssentialCriteria)
+	journeyStates := make([][]core.EvidenceState, 0, len(playlist.Tracks))
+	for _, track := range playlist.Tracks {
+		feature := evaluationFeatures(ctx, features, track.ID)
+		for _, criterion := range playlist.Intent.EssentialCriteria {
+			if (criterion.Scope == "" || criterion.Scope == "playlist") && core.CriterionEvidence(feature, criterion) != core.EvidenceMatch {
+				violations++
 			}
 		}
+		states := make([]core.EvidenceState, len(stages))
+		for index, criterion := range stages {
+			states[index] = core.CriterionEvidence(feature, criterion)
+		}
+		journeyStates = append(journeyStates, states)
 	}
-	return false
+	return violations + core.JourneySequenceViolations(journeyStates, len(stages))
 }
-func featureKnown(groups ...[]core.FeatureValue) bool {
-	for _, group := range groups {
-		for _, value := range group {
-			if value.Missingness == core.FeatureKnown {
-				return true
-			}
+
+func evaluationFeatures(ctx context.Context, store ports.FeatureStore, id string) core.TrackFeatures {
+	if store != nil {
+		if feature, ok, err := store.Features(ctx, id); err == nil && ok {
+			return feature
 		}
 	}
-	return false
+	return core.TrackFeatures{}
 }
 func semanticConstraint(kind string) bool {
 	switch kind {
@@ -265,7 +248,7 @@ func normalizeLabel(value string) string {
 }
 
 func aggregate(cases []CaseMetrics) AggregateMetrics {
-	result := AggregateMetrics{Cases: len(cases)}
+	result := AggregateMetrics{Cases: len(cases), OutcomeCounts: map[core.GenerationOutcomeState]int{}}
 	var recall, ndcg, diversity, share, coverage, repetition, transition float64
 	var recallN, ndcgN, transitionN int
 	for _, item := range cases {
@@ -282,6 +265,8 @@ func aggregate(cases []CaseMetrics) AggregateMetrics {
 			ndcgN++
 		}
 		result.HardConstraintViolations += item.HardConstraintViolations
+		result.EssentialCriterionViolations += item.EssentialCriterionViolations
+		result.OutcomeCounts[item.OutcomeState]++
 		result.RecordingDuplicates += item.RecordingDuplicates
 		diversity += item.ArtistDiversity
 		share += item.MaxArtistShare
@@ -325,7 +310,7 @@ func aggregate(cases []CaseMetrics) AggregateMetrics {
 }
 
 func uncertainty(cases []CaseMetrics) map[string]Interval {
-	values := map[string][]float64{"artistDiversity": {}, "maxArtistShare": {}, "catalogCoverage": {}, "recentExposureRepetition": {}, "hardConstraintViolations": {}, "recordingDuplicates": {}, "totalLatencyMicros": {}}
+	values := map[string][]float64{"artistDiversity": {}, "maxArtistShare": {}, "catalogCoverage": {}, "recentExposureRepetition": {}, "hardConstraintViolations": {}, "essentialCriterionViolations": {}, "recordingDuplicates": {}, "totalLatencyMicros": {}}
 	for _, item := range cases {
 		if item.Error != "" {
 			continue
@@ -335,6 +320,7 @@ func uncertainty(cases []CaseMetrics) map[string]Interval {
 		values["catalogCoverage"] = append(values["catalogCoverage"], item.CatalogCoverage)
 		values["recentExposureRepetition"] = append(values["recentExposureRepetition"], item.RecentExposureRepetition)
 		values["hardConstraintViolations"] = append(values["hardConstraintViolations"], float64(item.HardConstraintViolations))
+		values["essentialCriterionViolations"] = append(values["essentialCriterionViolations"], float64(item.EssentialCriterionViolations))
 		values["recordingDuplicates"] = append(values["recordingDuplicates"], float64(item.RecordingDuplicates))
 		values["totalLatencyMicros"] = append(values["totalLatencyMicros"], float64(item.Latency.TotalMicros))
 		if item.RecallAtK != nil {

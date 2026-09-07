@@ -9,9 +9,10 @@ import {
   type ModelStatus,
 } from "../lib/api";
 import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 
-type Step = "welcome" | "catalog" | "model" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "model", "preview", "done"];
+type Step = "welcome" | "catalog" | "model" | "analysis" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "model", "analysis", "preview", "done"];
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -57,7 +58,8 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
       <div className="flex min-h-0 flex-1 flex-col">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
         {step === "catalog" && <CatalogStep onNext={() => setStep("model")} />}
-        {step === "model" && <ModelStep onNext={() => setStep("preview")} />}
+        {step === "model" && <ModelStep onNext={() => setStep("analysis")} />}
+        {step === "analysis" && <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
         {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
@@ -336,7 +338,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
   return (
     <StepShell
-      title="Language model"
+      title="Language understanding"
       description="It turns a typed prompt into a structured request and can infer a catalog starting point. It runs locally with no account. Generate remains available without it in catalog-only mode, which requires a seed artist or track."
     >
       <div className="flex items-center gap-2 rounded-lg border border-good/30 bg-good/10 px-3 py-2 text-[12.5px] text-text">
@@ -361,7 +363,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
               <Icon.Check size={14} className="mt-0.5 flex-none text-good" />
               <span>
                 {hardware.gpuName || "llama.cpp GPU"} · {fmtGB(hardware.vramBytes)} VRAM.
-                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. Models below fit
+                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. The model below is the largest recommendation that fits
                 in the {fmtGB(hardware.fitBytes)} available after replacing any active
                 model, with {fmtGB(hardware.reserveBytes)} left for context, KV cache,
                 and compute buffers.
@@ -371,8 +373,8 @@ function ModelStep({ onNext }: { onNext: () => void }) {
             <>
               <Icon.Warn size={14} className="mt-0.5 flex-none text-faint" />
               <span>
-                This llama.cpp runtime reports no usable GPU. Showing the two smallest
-                recommended models for CPU inference.
+                This llama.cpp runtime reports no usable GPU. Showing the largest
+                model from the CPU recommendation list.
               </span>
             </>
           )}
@@ -494,26 +496,28 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 const PREVIEW_OPTIONS: { id: string; label: string; description: string }[] = [
   { id: "deezer", label: "Deezer (recommended)", description: "Looks up a 30s preview per track. No account needed." },
   { id: "spotify", label: "Spotify", description: "Uses only the preview link shipped with the catalog — no network calls. Many tracks will have none." },
-  { id: "off", label: "Off", description: "No playback previews anywhere in the app." },
 ];
 
 function PreviewStep({ onNext }: { onNext: () => void }) {
   const [choice, setChoice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     API.GetPreviewProviderName()
-      .then((p) => setChoice(p || "deezer"))
+      .then((p) => setChoice(p === "spotify" ? "spotify" : "deezer"))
       .catch(() => setChoice("deezer"));
   }, []);
 
-  const choose = async (id: string) => {
-    setChoice(id);
+  const save = async () => {
+    if (!choice) return;
     setSaving(true);
+    setError(null);
     try {
-      await API.SetPreviewProvider(id);
-    } catch {
-      /* best-effort; the app still works with whatever was already set */
+      await API.SetPreviewProvider(choice);
+      onNext();
+    } catch (e) {
+      setError(String(e));
     } finally {
       setSaving(false);
     }
@@ -530,7 +534,8 @@ function PreviewStep({ onNext }: { onNext: () => void }) {
             key={o.id}
             type="button"
             disabled={saving}
-            onClick={() => choose(o.id)}
+            onClick={() => setChoice(o.id)}
+            aria-pressed={choice === o.id}
             className={
               "flex items-start gap-3 rounded-card border px-3.5 py-3 text-left transition-colors " +
               (choice === o.id
@@ -554,9 +559,10 @@ function PreviewStep({ onNext }: { onNext: () => void }) {
         ))}
       </div>
 
+      {error && <ErrorState variant="inline" message={error} />}
       <StepFooter>
-        <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} onClick={onNext}>
-          Continue
+        <Button variant="primary" size="sm" disabled={saving || choice === null} iconRight={<Icon.ArrowRight size={14} />} onClick={() => void save()}>
+          {saving ? "Saving…" : "Continue"}
         </Button>
       </StepFooter>
     </StepShell>
@@ -572,7 +578,7 @@ function DoneStep({ finishing, onFinish }: { finishing: boolean; onFinish: () =>
       <div className="flex flex-col gap-2">
         <h1 className="text-[20px] font-semibold">You're set up</h1>
         <p className="max-w-[42ch] text-[14px] text-muted">
-          Type what you want to hear, or search the catalog for a seed track. You can change
+          Describe what you want to hear in Generate. You can change
           any of this later in Settings.
         </p>
       </div>

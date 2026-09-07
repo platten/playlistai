@@ -11,7 +11,7 @@ export type {
   BuildPlaylistRequest,
   ControlOverrides,
   CatalogInfo,
-  EnrichedTrackDTO,
+  ExportTrackDTO,
   ExportSaveResult,
   FeedbackReceipt,
   GenerateResult,
@@ -31,8 +31,6 @@ export type {
   ResolutionSelection,
   SavedPlaylistSummary,
   SavedPlaylist,
-  SimilarResult,
   Status,
   TasteProfileSummary,
-  TrackHit,
 } from "../../bindings/github.com/platten/playlistai/internal/bridge";

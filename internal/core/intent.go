@@ -14,7 +14,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 5
+	CurrentIntentVersion = 8
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -31,6 +31,7 @@ type Influence string
 const (
 	ReferenceArtist   ReferenceKind = "artist"
 	ReferenceTrack    ReferenceKind = "track"
+	ReferenceAlbum    ReferenceKind = "album"
 	InfluencePositive Influence     = "positive"
 	InfluenceNegative Influence     = "negative"
 )
@@ -94,6 +95,47 @@ type IntentReference struct {
 	Resolution *ReferenceResolution `json:"resolution,omitempty"`
 }
 
+// MusicalCriterion is a defining part of the requested music. Unlike a soft
+// preference it must be supported by affirmative musical evidence before a
+// playlist can be reported as fulfilled. It is deliberately narrower than a
+// hard constraint: a simple genre request is essential, while descriptive
+// adjectives remain preferences unless the user makes them strict.
+type MusicalCriterion struct {
+	Kind     string           `json:"kind"` // style | mood | instrumentation | vocal
+	Value    string           `json:"value"`
+	Scope    string           `json:"scope"` // playlist | journey_start | journey_end | journey_via
+	Evidence []SourceEvidence `json:"evidence"`
+}
+
+type EvidenceState string
+
+const (
+	EvidenceMatch       EvidenceState = "match"
+	EvidenceMismatch    EvidenceState = "mismatch"
+	EvidenceUnknown     EvidenceState = "unknown"
+	EvidenceUnsupported EvidenceState = "unsupported"
+)
+
+// AnchorSuitability is independent of entity-resolution confidence. A real
+// catalog artist can resolve exactly while still being unsuitable for the
+// musical criterion that caused the model to propose it.
+type AnchorSuitability struct {
+	State  EvidenceState       `json:"state"`
+	Score  float64             `json:"score"` // evidence-native similarity, not a probability
+	Detail string              `json:"detail"`
+	Source []FeatureProvenance `json:"source"`
+}
+
+// InferredAnchor is a model-proposed retrieval aid, never a claim that the
+// user named the entity. Role and Reason make complementary proposals
+// inspectable; Reference holds catalog resolution separately from suitability.
+type InferredAnchor struct {
+	Reference   IntentReference   `json:"reference"`
+	Role        string            `json:"role"`
+	Reason      string            `json:"reason"`
+	Suitability AnchorSuitability `json:"suitability"`
+}
+
 type IntentPreference struct {
 	Value     string           `json:"value"`
 	Influence Influence        `json:"influence"`
@@ -102,6 +144,7 @@ type IntentPreference struct {
 }
 
 type SemanticPreferences struct {
+	Genres              []IntentPreference `json:"genres"`
 	Styles              []IntentPreference `json:"styles"`
 	Moods               []IntentPreference `json:"moods"`
 	Instrumentation     []IntentPreference `json:"instrumentation"`
@@ -164,9 +207,18 @@ type IntentConstraints struct {
 }
 
 type MusicIntent struct {
+	VerificationPolicy  VerificationPolicy       `json:"verificationPolicy"`
+	Temporal            []TemporalRequirement    `json:"temporal"`
+	Destination         *IntentReference         `json:"destination,omitempty"`
+	Knowledge           *KnowledgeSnapshot       `json:"knowledge,omitempty"`
+	AnchorAttempts      []InferredAnchor         `json:"anchorAttempts"`
+	OriginalDescription string                   `json:"originalDescription"`
+	GenreExpansions     []GenreExpansion         `json:"genreExpansions"`
 	Version             int                      `json:"version"`
 	References          []IntentReference        `json:"references"`
+	InferredAnchors     []InferredAnchor         `json:"inferredAnchors"`
 	RequiredTracks      []IntentReference        `json:"requiredTracks"`
+	EssentialCriteria   []MusicalCriterion       `json:"essentialCriteria"`
 	Preferences         SemanticPreferences      `json:"preferences"`
 	HardConstraints     []HardConstraint         `json:"hardConstraints"`
 	Controls            IntentControls           `json:"controls"`
@@ -191,16 +243,30 @@ type MusicIntent struct {
 
 func (m MusicIntent) Normalized() MusicIntent {
 	out := m
-	legacyOnly := len(out.References) == 0 && len(out.RequiredTracks) == 0 &&
-		(!seedSetEmpty(out.Seeds) || !seedSetEmpty(out.Required))
+	inputVersion := out.Version
+	if out.VerificationPolicy == "" {
+		out.VerificationPolicy = VerifiedOnly
+		if inputVersion >= 8 {
+			out.VerificationPolicy = BestAvailable
+		}
+	}
 	// Only v1/v2 need semantic migration. V3 already has the typed intent;
 	// v4 adds resolution metadata and v5 makes RNG seeds lossless strings.
-	if out.Version < 3 || legacyOnly {
+	if out.Version < 3 || legacyAdapterOnly(out) {
 		out = migrateLegacy(out)
+	}
+	// V3-v5 represented model-inferred starting points as ordinary references.
+	// Move only references whose stored evidence explicitly says they were
+	// inferred. References without evidence retain their historical explicit
+	// seed behavior.
+	if inputVersion > 0 && inputVersion < 6 {
+		out.References, out.InferredAnchors = migrateInferredReferences(out.References, out.InferredAnchors)
 	}
 	out.Version = CurrentIntentVersion
 	out.References = cleanReferences(out.References, false)
+	out.InferredAnchors = cleanInferredAnchors(out.InferredAnchors)
 	out.RequiredTracks = cleanReferences(out.RequiredTracks, true)
+	out.EssentialCriteria = cleanCriteria(out.EssentialCriteria)
 	out.Journey.Waypoints = cleanReferences(out.Journey.Waypoints, false)
 	out.Preferences = cleanPreferences(out.Preferences)
 	out.HardConstraints = cleanHardConstraints(out.HardConstraints)
@@ -234,15 +300,50 @@ func (m MusicIntent) Normalized() MusicIntent {
 
 // Validate checks semantic invariants that JSON decoding and GBNF cannot.
 func (m MusicIntent) Validate() error {
+	if m.VerificationPolicy != "" && m.VerificationPolicy != BestAvailable && m.VerificationPolicy != VerifiedOnly {
+		return fmt.Errorf("intent: invalid verification policy")
+	}
+	for _, period := range m.Temporal {
+		if (period.Basis != "composition" && period.Basis != "original_release") || period.StartYear < 1 || period.EndYear < period.StartYear || period.EndYear > 9999 {
+			return fmt.Errorf("intent: invalid temporal requirement")
+		}
+		if period.Scope != "" && period.Scope != "playlist" && period.Scope != "journey_start" && period.Scope != "journey_end" {
+			return fmt.Errorf("intent: invalid temporal scope")
+		}
+	}
+	if m.Destination != nil && (m.Destination.Influence == InfluenceNegative || (m.Destination.Kind != ReferenceArtist && m.Destination.Kind != ReferenceAlbum && m.Destination.Kind != ReferenceTrack) || strings.TrimSpace(m.Destination.Query) == "" && m.Destination.TrackID == "") {
+		return fmt.Errorf("intent: invalid final destination")
+	}
+
+	if len(m.AnchorAttempts) > 6 {
+		return fmt.Errorf("intent: at most six anchor attempts are allowed")
+	}
+	for _, hint := range m.GenreExpansions {
+		if strings.TrimSpace(hint.Genre) == "" || strings.TrimSpace(hint.Characteristics) == "" || len(hint.RelatedGenres) > 3 {
+			return fmt.Errorf("intent: genre expansions need a genre, characteristics, and at most three related genres")
+		}
+		preserved := false
+		for _, criterion := range m.EssentialCriteria {
+			if (criterion.Kind == "style" || criterion.Kind == "genre") && strings.EqualFold(criterion.Value, hint.Genre) {
+				preserved = true
+			}
+		}
+		if !preserved {
+			return fmt.Errorf("intent: expanded genre must remain an essential criterion")
+		}
+	}
 	if _, err := m.Seed.Canonical(); err != nil {
 		return fmt.Errorf("intent: %w", err)
 	}
 	if m.Mode != "" && m.Mode != ModeSimilar && m.Mode != ModeJourney {
 		return fmt.Errorf("intent: invalid mode %q", m.Mode)
 	}
-	for _, group := range [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints} {
+	if len(m.InferredAnchors) > 3 {
+		return fmt.Errorf("intent: at most 3 inferred anchors are allowed")
+	}
+	for _, group := range [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)} {
 		for _, ref := range group {
-			if ref.Kind != ReferenceArtist && ref.Kind != ReferenceTrack {
+			if ref.Kind != ReferenceArtist && ref.Kind != ReferenceTrack && ref.Kind != ReferenceAlbum {
 				return fmt.Errorf("intent: invalid reference kind %q", ref.Kind)
 			}
 			if ref.Influence != InfluencePositive && ref.Influence != InfluenceNegative {
@@ -258,13 +359,41 @@ func (m MusicIntent) Validate() error {
 			}
 		}
 	}
+	for _, criterion := range m.EssentialCriteria {
+		switch criterion.Kind {
+		case "genre", "style", "texture", "mood", "instrumentation", "vocal":
+		default:
+			return fmt.Errorf("intent: invalid essential criterion kind %q", criterion.Kind)
+		}
+		if strings.TrimSpace(criterion.Value) == "" {
+			return fmt.Errorf("intent: essential criterion has no value")
+		}
+		switch criterion.Scope {
+		case "", "playlist", "journey_start", "journey_end", "journey_via":
+		default:
+			return fmt.Errorf("intent: invalid essential criterion scope %q", criterion.Scope)
+		}
+	}
+	for _, anchor := range m.InferredAnchors {
+		if anchor.Reference.Influence != InfluencePositive {
+			return fmt.Errorf("intent: inferred anchors must be positive references")
+		}
+		if anchor.Suitability.Score < -1 || anchor.Suitability.Score > 1 || math.IsNaN(anchor.Suitability.Score) {
+			return fmt.Errorf("intent: invalid inferred anchor suitability")
+		}
+		switch anchor.Suitability.State {
+		case "", EvidenceMatch, EvidenceMismatch, EvidenceUnknown, EvidenceUnsupported:
+		default:
+			return fmt.Errorf("intent: invalid inferred anchor suitability state %q", anchor.Suitability.State)
+		}
+	}
 	for _, ref := range m.RequiredTracks {
 		if ref.Kind != ReferenceTrack || ref.Influence != InfluencePositive {
 			return fmt.Errorf("intent: required tracks must be positive track references")
 		}
 	}
 	preferenceGroups := [][]IntentPreference{
-		m.Preferences.Styles, m.Preferences.Moods,
+		m.Preferences.Genres, m.Preferences.Styles, m.Preferences.Moods,
 		m.Preferences.Instrumentation, m.Preferences.TextureDescriptions,
 	}
 	for _, group := range preferenceGroups {
@@ -314,6 +443,18 @@ func (m MusicIntent) Validate() error {
 	return nil
 }
 
+func legacyAdapterOnly(m MusicIntent) bool {
+	typed := len(m.References) > 0 || len(m.InferredAnchors) > 0 || len(m.RequiredTracks) > 0 ||
+		len(m.EssentialCriteria) > 0 || len(m.Journey.Waypoints) > 0 || len(m.HardConstraints) > 0 ||
+		len(m.Preferences.Genres) > 0 || len(m.Preferences.Styles) > 0 || len(m.Preferences.Moods) > 0 ||
+		len(m.Preferences.Instrumentation) > 0 || m.Preferences.VocalPreference != nil ||
+		len(m.Preferences.TextureDescriptions) > 0
+	if typed {
+		return false
+	}
+	return !seedSetEmpty(m.Seeds) || !seedSetEmpty(m.Required)
+}
+
 func migrateLegacy(m MusicIntent) MusicIntent {
 	if m.Version < 2 && seedSetEmpty(m.Required) {
 		m.Required = m.Seeds
@@ -356,6 +497,13 @@ func legacyReference(kind ReferenceKind, query, id string) IntentReference {
 func (m *MusicIntent) backfillEngineAdapter() {
 	m.Seeds = IntentSeeds{}
 	allReferences := append(append([]IntentReference(nil), m.References...), m.Journey.Waypoints...)
+	for _, anchor := range m.InferredAnchors {
+		// Unassessed and unsuitable inferred anchors must not silently steer the
+		// compatibility engine. Only affirmative evidence makes one a seed.
+		if anchor.Suitability.State == EvidenceMatch {
+			allReferences = append(allReferences, anchor.Reference)
+		}
+	}
 	for _, ref := range allReferences {
 		if ref.Influence != InfluencePositive {
 			continue
@@ -412,12 +560,96 @@ func intentCapabilities() []CapabilityStatus {
 		{Name: "hard_artist_exclusions", Status: "supported", Detail: "exact normalized artist identity"},
 		{Name: "audio_cooccurrence_weights", Status: "supported", Detail: "independent weights are normalized for blended similarity"},
 		{Name: "total_track_count", Status: "supported", Detail: "total output length including required tracks"},
-		{Name: "semantic_preferences", Status: "unsupported", Detail: "preserved but catalog has no semantic attributes"},
+		{Name: "essential_musical_criteria", Status: "unsupported", Detail: "requires affirmative grounded feature or compatible semantic evidence"},
+		{Name: "semantic_preferences", Status: "unsupported", Detail: "preserved; active only when a compatible grounded semantic sidecar is loaded"},
 		{Name: "discovery", Status: "supported", Detail: "seeded bounded exploration among sufficiently relevant exact-search candidates"},
 		{Name: "artist_diversity", Status: "supported", Detail: "controls transparent MMR concentration penalties and soft artist spacing"},
 		{Name: "transition_smoothness", Status: "supported", Detail: "controls greedy embedding transitions with bounded local improvement"},
 		{Name: "energy_trajectory", Status: "unsupported", Detail: "preserved but catalog has no energy feature"},
 	}
+}
+
+func migrateInferredReferences(references []IntentReference, anchors []InferredAnchor) ([]IntentReference, []InferredAnchor) {
+	explicit := make([]IntentReference, 0, len(references))
+	for _, reference := range references {
+		if evidenceIsInferred(reference.Evidence) {
+			anchors = append(anchors, InferredAnchor{
+				Reference: reference, Role: "legacy_retrieval", Reason: "migrated model-inferred reference",
+				Suitability: AnchorSuitability{State: EvidenceUnknown, Detail: "musical suitability was not recorded by the older contract"},
+			})
+			continue
+		}
+		explicit = append(explicit, reference)
+	}
+	return explicit, anchors
+}
+
+func evidenceIsInferred(evidence []SourceEvidence) bool {
+	if len(evidence) == 0 {
+		return false
+	}
+	for _, item := range evidence {
+		if item.Explicit {
+			return false
+		}
+	}
+	return true
+}
+
+func anchorReferences(anchors []InferredAnchor) []IntentReference {
+	result := make([]IntentReference, 0, len(anchors))
+	for _, anchor := range anchors {
+		result = append(result, anchor.Reference)
+	}
+	return result
+}
+
+func cleanInferredAnchors(in []InferredAnchor) []InferredAnchor {
+	var out []InferredAnchor
+	seen := map[string]struct{}{}
+	for _, anchor := range in {
+		refs := cleanReferences([]IntentReference{anchor.Reference}, false)
+		if len(refs) == 0 {
+			continue
+		}
+		anchor.Reference = refs[0]
+		anchor.Role = strings.TrimSpace(anchor.Role)
+		anchor.Reason = strings.TrimSpace(anchor.Reason)
+		anchor.Suitability.Detail = strings.TrimSpace(anchor.Suitability.Detail)
+		if anchor.Suitability.State == "" {
+			anchor.Suitability.State = EvidenceUnknown
+		}
+		key := string(anchor.Reference.Kind) + "\x00" + strings.ToLower(anchor.Reference.Query) + "\x00" + anchor.Reference.TrackID
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, anchor)
+	}
+	return out
+}
+
+func cleanCriteria(in []MusicalCriterion) []MusicalCriterion {
+	var out []MusicalCriterion
+	seen := map[string]struct{}{}
+	for _, criterion := range in {
+		criterion.Kind = strings.ToLower(strings.TrimSpace(criterion.Kind))
+		criterion.Value = strings.TrimSpace(criterion.Value)
+		criterion.Scope = strings.ToLower(strings.TrimSpace(criterion.Scope))
+		if criterion.Scope == "" {
+			criterion.Scope = "playlist"
+		}
+		if criterion.Kind == "" || criterion.Value == "" {
+			continue
+		}
+		key := criterion.Scope + "\x00" + criterion.Kind + "\x00" + strings.ToLower(criterion.Value)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, criterion)
+	}
+	return out
 }
 
 func cleanReferences(in []IntentReference, required bool) []IntentReference {
@@ -501,6 +733,7 @@ func dereferenceCandidate(candidate *ResolutionCandidate) []ResolutionCandidate 
 }
 
 func cleanPreferences(p SemanticPreferences) SemanticPreferences {
+	p.Genres = cleanPreferenceList(p.Genres)
 	p.Styles = cleanPreferenceList(p.Styles)
 	p.Moods = cleanPreferenceList(p.Moods)
 	p.Instrumentation = cleanPreferenceList(p.Instrumentation)

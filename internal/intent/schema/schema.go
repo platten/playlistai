@@ -3,11 +3,15 @@ package schema
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 // Version keys parsed-intent reuse. It follows the core contract because every
@@ -29,6 +33,21 @@ type WirePreference struct {
 	Span      string `json:"span"`
 }
 
+type WireCriterion struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+	Scope string `json:"scope"`
+	Span  string `json:"span"`
+}
+
+type WireAnchor struct {
+	Kind   string `json:"kind"`
+	Value  string `json:"value"`
+	Role   string `json:"role"`
+	Reason string `json:"reason"`
+	Span   string `json:"span"`
+}
+
 type WireConstraint struct {
 	Kind  string `json:"kind"`
 	Value string `json:"value"`
@@ -48,38 +67,53 @@ type WireEnergy struct {
 
 // Wire is the exact fixed-order object emitted by the local model.
 type Wire struct {
-	References           []WireReference   `json:"references"`
-	RequiredTracks       []WireReference   `json:"required_tracks"`
-	Styles               []WirePreference  `json:"styles"`
-	Moods                []WirePreference  `json:"moods"`
-	Instrumentation      []WirePreference  `json:"instrumentation"`
-	VocalPreference      WirePreference    `json:"vocal_preference"`
-	Textures             []WirePreference  `json:"textures"`
-	HardConstraints      []WireConstraint  `json:"hard_constraints"`
-	Unsupported          []WireUnsupported `json:"unsupported_requirements"`
-	Mode                 string            `json:"mode"`
-	JourneyWaypoints     []WireReference   `json:"journey_waypoints"`
-	EnergyTrajectory     []WireEnergy      `json:"energy_trajectory"`
-	TotalCount           int               `json:"total_count"`
-	AudioWeight          float64           `json:"audio_weight"`
-	CooccurrenceWeight   float64           `json:"cooccurrence_weight"`
-	Discovery            float64           `json:"discovery"`
-	ArtistDiversity      float64           `json:"artist_diversity"`
-	TransitionSmoothness float64           `json:"transition_smoothness"`
-	Notes                string            `json:"notes"`
+	Genres               []WirePreference           `json:"genres"`
+	Temporal             []core.TemporalRequirement `json:"temporal"`
+	Destination          []WireReference            `json:"destination"`
+	GenreExpansions      []core.GenreExpansion      `json:"genre_expansions"`
+	References           []WireReference            `json:"references"`
+	InferredAnchors      []WireAnchor               `json:"inferred_anchors"`
+	RequiredTracks       []WireReference            `json:"required_tracks"`
+	EssentialCriteria    []WireCriterion            `json:"essential_criteria"`
+	Styles               []WirePreference           `json:"styles"`
+	Moods                []WirePreference           `json:"moods"`
+	Instrumentation      []WirePreference           `json:"instrumentation"`
+	VocalPreference      WirePreference             `json:"vocal_preference"`
+	Textures             []WirePreference           `json:"textures"`
+	HardConstraints      []WireConstraint           `json:"hard_constraints"`
+	Unsupported          []WireUnsupported          `json:"unsupported_requirements"`
+	Mode                 string                     `json:"mode"`
+	JourneyWaypoints     []WireReference            `json:"journey_waypoints"`
+	EnergyTrajectory     []WireEnergy               `json:"energy_trajectory"`
+	TotalCount           int                        `json:"total_count"`
+	AudioWeight          float64                    `json:"audio_weight"`
+	CooccurrenceWeight   float64                    `json:"cooccurrence_weight"`
+	Discovery            float64                    `json:"discovery"`
+	ArtistDiversity      float64                    `json:"artist_diversity"`
+	TransitionSmoothness float64                    `json:"transition_smoothness"`
+	Notes                string                     `json:"notes"`
 }
 
 // Every rule body is one physical line for the pinned llama.cpp parser.
-const GBNF = `root ::= "{" ws "\"references\":" ws reflist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws "}" ws
-reflist ::= "[" ws (ref (ws "," ws ref)*)? ws "]"
-ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
-preflist ::= "[" ws (pref (ws "," ws pref)*)? ws "]"
+const GBNF = `root ::= "{" ws "\"genres\":" ws preflist ws "," ws "\"temporal\":" ws temporallist ws "," ws "\"destination\":" ws reflist ws "," ws "\"genre_expansions\":" ws genrelist ws "," ws "\"references\":" ws reflist ws "," ws "\"inferred_anchors\":" ws anchorlist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"essential_criteria\":" ws criterionlist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws "}" ws
+temporallist ::= "[" ws (period (ws "," ws period){0,2})? ws "]"
+period ::= "{" ws "\"basis\":" ws ("\"composition\"" | "\"original_release\"") ws "," ws "\"startYear\":" ws int ws "," ws "\"endYear\":" ws int ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"") ws "}"
+genrelist ::= "[" ws (genre (ws "," ws genre){0,2})? ws "]"
+genre ::= "{" ws "\"genre\":" ws str ws "," ws "\"characteristics\":" ws str ws "," ws "\"relatedGenres\":" ws stringlist ws "}"
+stringlist ::= "[" ws (str (ws "," ws str (ws "," ws str)?)?)? ws "]"
+reflist ::= "[" ws (ref (ws "," ws ref){0,7})? ws "]"
+ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
+anchorlist ::= "[" ws (anchor (ws "," ws anchor (ws "," ws anchor)?)?)? ws "]"
+anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"role\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
+criterionlist ::= "[" ws (criterion (ws "," ws criterion){0,7})? ws "]"
+criterion ::= "{" ws "\"kind\":" ws ("\"genre\"" | "\"texture\"" | "\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
+preflist ::= "[" ws (pref (ws "," ws pref){0,7})? ws "]"
 pref ::= "{" ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
-hardlist ::= "[" ws (hard (ws "," ws hard)*)? ws "]"
+hardlist ::= "[" ws (hard (ws "," ws hard){0,7})? ws "]"
 hard ::= "{" ws "\"kind\":" ws str ws "," ws "\"value\":" ws str ws "," ws "\"span\":" ws str ws "}"
-unsupportedlist ::= "[" ws (unsupported (ws "," ws unsupported)*)? ws "]"
+unsupportedlist ::= "[" ws (unsupported (ws "," ws unsupported){0,7})? ws "]"
 unsupported ::= "{" ws "\"text\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
-energylist ::= "[" ws (energy (ws "," ws energy)*)? ws "]"
+energylist ::= "[" ws (energy (ws "," ws energy){0,7})? ws "]"
 energy ::= "{" ws "\"position\":" ws num ws "," ws "\"energy\":" ws num ws "}"
 bool ::= "true" | "false"
 str ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
@@ -88,11 +122,25 @@ num ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)?
 ws ::= [ \t\n]*`
 
 func Parse(raw []byte) (core.MusicIntent, error) {
+	return parse(raw, "")
+}
+
+// ParseForPrompt additionally verifies that every reference marked explicit
+// is grounded in the user's text. Model confidence cannot manufacture a user
+// instruction that was never present.
+func ParseForPrompt(raw []byte, prompt string) (core.MusicIntent, error) {
+	return parse(raw, prompt)
+}
+
+func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	obj, ok := extractObject(raw)
 	if !ok {
 		return core.MusicIntent{}, fmt.Errorf("schema: no JSON object in response")
 	}
 	if bytes.Contains(obj, []byte(`"seeds"`)) && !bytes.Contains(obj, []byte(`"references"`)) {
+		if prompt != "" {
+			return core.MusicIntent{}, fmt.Errorf("schema: legacy model output cannot preserve the current request contract")
+		}
 		return parseLegacy(obj)
 	}
 	var wire Wire
@@ -100,11 +148,103 @@ func Parse(raw []byte) (core.MusicIntent, error) {
 	if err := dec.Decode(&wire); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
+	if prompt != "" && wire.Genres != nil {
+		discardInventedInstructions(&wire, prompt)
+		normalizePeriods(&wire, prompt)
+		preserveQualityClauses(&wire, prompt)
+		if err := validateOpenIntent(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+	}
+	if prompt != "" && wire.Genres == nil {
+		if err := validateExplicitReferences(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+		if err := validateDefiningMeaning(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+		if err := validateKnownModifiers(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+	}
 	intent := wire.ToCore()
+	intent.OriginalDescription = prompt
 	if err := intent.Validate(); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
 	return intent.Normalized(), nil
+}
+
+func validateDefiningMeaning(w Wire, prompt string) error {
+	for _, expected := range definingStyleCriteria(prompt) {
+		matched := false
+		for _, criterion := range w.EssentialCriteria {
+			span := strings.ToLower(strings.TrimSpace(criterion.Span))
+			if criterion.Kind == "style" && normalizeStyleLabel(criterion.Value) == expected.value && criterion.Scope == expected.scope && span != "" && strings.Contains(strings.ToLower(prompt), span) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return fmt.Errorf("schema: defining category %q was not preserved as essential for %s", expected.value, expected.scope)
+		}
+	}
+	return nil
+}
+
+func validateKnownModifiers(w Wire, prompt string) error {
+	lower := strings.ToLower(strings.Join(strings.Fields(prompt), " "))
+	expected, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+	hasPreference := func(style, influence string) bool {
+		want := normalizeStyleLabel(style)
+		for _, preference := range w.Styles {
+			if normalizeStyleLabel(preference.Value) == want && preference.Influence == influence && preference.Explicit && strings.Contains(lower, strings.ToLower(strings.TrimSpace(preference.Span))) {
+				return strings.TrimSpace(preference.Span) != ""
+			}
+		}
+		return false
+	}
+	hasConstraint := func(style string) bool {
+		want := normalizeStyleLabel(style)
+		for _, constraint := range w.HardConstraints {
+			if constraint.Kind == "exclude_style" && normalizeStyleLabel(constraint.Value) == want && strings.TrimSpace(constraint.Span) != "" && strings.Contains(lower, strings.ToLower(strings.TrimSpace(constraint.Span))) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, preference := range expected.Preferences.Styles {
+		style := preference.Value
+		negative := preference.Influence == core.InfluenceNegative
+		if negative && (!hasPreference(style, "negative") || !hasConstraint(style)) {
+			return fmt.Errorf("schema: explicit style exclusion %q was not preserved as a negative preference and hard exclusion", normalizeStyleLabel(style))
+		}
+		influence := strings.Contains(lower, "some "+style+" influence") || strings.Contains(lower, style+" influence") || strings.Contains(lower, "touch of "+style)
+		if influence && !hasPreference(style, "positive") {
+			return fmt.Errorf("schema: deliberate style influence %q was not preserved as a soft positive preference", normalizeStyleLabel(style))
+		}
+	}
+	return nil
+}
+
+type definingStyle struct{ value, scope string }
+
+// definingStyleCriteria is deliberately reviewed and conservative. It guards
+// clear genre-led requests without promoting every descriptive adjective to a
+// hard condition. Cross-genre influence wording remains a soft preference.
+func definingStyleCriteria(prompt string) []definingStyle {
+	// The fallback parser and model validator must agree on defining meaning,
+	// including category+reference requests and songs/tracks wording.
+	intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+	result := make([]definingStyle, 0, len(intent.EssentialCriteria))
+	for _, criterion := range intent.EssentialCriteria {
+		result = append(result, definingStyle{normalizeStyleLabel(criterion.Value), criterion.Scope})
+	}
+	return result
+}
+
+func normalizeStyleLabel(value string) string {
+	return core.CanonicalStyle(strings.ToLower(strings.Join(strings.Fields(value), " ")))
 }
 
 type legacyWire struct {
@@ -142,12 +282,37 @@ func parseLegacy(obj []byte) (core.MusicIntent, error) {
 }
 
 func (w Wire) ToCore() core.MusicIntent {
+	if w.Genres != nil {
+		// Instrumental describes vocal presence rather than an instrument.
+		instrumentation := make([]WirePreference, 0, len(w.Instrumentation))
+		for _, preference := range w.Instrumentation {
+			if strings.EqualFold(preference.Value, "instrumental") && w.VocalPreference.Value == "" {
+				w.VocalPreference = preference
+			} else {
+				instrumentation = append(instrumentation, preference)
+			}
+		}
+		w.Instrumentation = instrumentation
+		valid := make([]WireAnchor, 0, len(w.InferredAnchors))
+		for _, anchor := range w.InferredAnchors {
+			if anchor.Kind == "track" && strings.Contains(anchor.Value, " - ") {
+				valid = append(valid, anchor)
+			}
+		}
+		w.InferredAnchors = valid
+	}
+	references, migratedAnchors := splitReferences(w.References)
 	intent := core.MusicIntent{
-		Version:        core.CurrentIntentVersion,
-		References:     referencesToCore(w.References),
-		RequiredTracks: referencesToCore(w.RequiredTracks),
+		GenreExpansions:   w.GenreExpansions,
+		Temporal:          w.Temporal,
+		Version:           core.CurrentIntentVersion,
+		References:        references,
+		InferredAnchors:   append(migratedAnchors, anchorsToCore(w.InferredAnchors)...),
+		RequiredTracks:    referencesToCore(w.RequiredTracks),
+		EssentialCriteria: criteriaToCore(w.EssentialCriteria),
 		Preferences: core.SemanticPreferences{
 			Styles:              preferencesToCore(w.Styles),
+			Genres:              preferencesToCore(w.Genres),
 			Moods:               preferencesToCore(w.Moods),
 			Instrumentation:     preferencesToCore(w.Instrumentation),
 			TextureDescriptions: preferencesToCore(w.Textures),
@@ -186,18 +351,153 @@ func (w Wire) ToCore() core.MusicIntent {
 			})
 		}
 	}
+	for _, genre := range intent.Preferences.Genres {
+		if genre.Influence == core.InfluenceNegative {
+			continue
+		}
+		found := false
+		for _, criterion := range intent.EssentialCriteria {
+			if strings.EqualFold(criterion.Value, genre.Value) {
+				found = true
+			}
+		}
+		soft := false
+		for _, e := range genre.Evidence {
+			soft = soft || strings.Contains(strings.ToLower(e.Text), "influence") || strings.Contains(strings.ToLower(e.Text), "touch of")
+		}
+		if !found && !soft {
+			scope := "playlist"
+			if intent.Mode == core.ModeJourney {
+				scope = "journey_start"
+			}
+			intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: "genre", Value: genre.Value, Scope: scope, Evidence: genre.Evidence})
+		}
+	}
+	if w.Genres == nil {
+		intent.VerificationPolicy = core.VerifiedOnly
+	} else {
+		// Expansion roots are optional model suggestions. A hallucinated root
+		// must neither replace a requested category nor invalidate that request.
+		intent.GenreExpansions = nil
+		seen := map[string]bool{}
+		for _, expansion := range w.GenreExpansions {
+			key := core.NormalizeIdentityPart(expansion.Genre)
+			for _, criterion := range intent.EssentialCriteria {
+				if !seen[key] && key == core.NormalizeIdentityPart(criterion.Value) && (criterion.Kind == "genre" || criterion.Kind == "style") {
+					intent.GenreExpansions = append(intent.GenreExpansions, expansion)
+					seen[key] = true
+				}
+			}
+		}
+	}
+	if len(w.Destination) == 1 {
+		d := referenceToCore(w.Destination[0])
+		intent.Destination = &d
+		intent.Mode = core.ModeJourney
+		intent.Journey.Waypoints = append(intent.Journey.Waypoints, d)
+	}
 	return intent
+}
+
+func splitReferences(in []WireReference) ([]core.IntentReference, []core.InferredAnchor) {
+	var references []core.IntentReference
+	var anchors []core.InferredAnchor
+	for _, ref := range in {
+		converted := referenceToCore(ref)
+		if !ref.Explicit {
+			anchors = append(anchors, core.InferredAnchor{
+				Reference: converted, Role: "retrieval", Reason: "model-proposed legacy reference",
+				Suitability: core.AnchorSuitability{State: core.EvidenceUnknown},
+			})
+			continue
+		}
+		references = append(references, converted)
+	}
+	return references, anchors
+}
+
+func anchorsToCore(in []WireAnchor) []core.InferredAnchor {
+	out := make([]core.InferredAnchor, 0, len(in))
+	for _, anchor := range in {
+		out = append(out, core.InferredAnchor{
+			Reference: core.IntentReference{Kind: core.ReferenceKind(anchor.Kind), Query: anchor.Value, Influence: core.InfluencePositive, Evidence: evidence(anchor.Span, false)},
+			Role:      anchor.Role, Reason: anchor.Reason,
+			Suitability: core.AnchorSuitability{State: core.EvidenceUnknown, Detail: "awaiting grounded catalog validation"},
+		})
+	}
+	return out
+}
+
+func criteriaToCore(in []WireCriterion) []core.MusicalCriterion {
+	out := make([]core.MusicalCriterion, 0, len(in))
+	for _, criterion := range in {
+		out = append(out, core.MusicalCriterion{Kind: criterion.Kind, Value: criterion.Value, Scope: criterion.Scope, Evidence: evidence(criterion.Span, true)})
+	}
+	return out
 }
 
 func referencesToCore(in []WireReference) []core.IntentReference {
 	out := make([]core.IntentReference, 0, len(in))
 	for _, ref := range in {
-		out = append(out, core.IntentReference{
-			Kind: core.ReferenceKind(ref.Kind), Query: ref.Value,
-			Influence: core.Influence(ref.Influence), Evidence: evidence(ref.Span, ref.Explicit),
-		})
+		out = append(out, referenceToCore(ref))
 	}
 	return out
+}
+
+func referenceToCore(ref WireReference) core.IntentReference {
+	return core.IntentReference{
+		Kind: core.ReferenceKind(ref.Kind), Query: ref.Value,
+		Influence: core.Influence(ref.Influence), Evidence: evidence(ref.Span, ref.Explicit),
+	}
+}
+
+func validateExplicitReferences(w Wire, prompt string) error {
+	expected, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+	for _, reference := range w.RequiredTracks {
+		if !reference.Explicit {
+			return fmt.Errorf("schema: required track %q was not explicitly requested", reference.Value)
+		}
+	}
+	groups := [][]WireReference{w.References, w.RequiredTracks, w.JourneyWaypoints}
+	for _, group := range groups {
+		for _, reference := range group {
+			if !reference.Explicit {
+				continue
+			}
+			value := strings.ToLower(strings.TrimSpace(reference.Value))
+			span := strings.ToLower(strings.TrimSpace(reference.Span))
+			if value == "" || span == "" || !containsReferenceWords(prompt, span) || !containsReferenceWords(span, value) {
+				return fmt.Errorf("schema: explicit reference %q has no evidence in the user request", reference.Value)
+			}
+			if reference.Kind == "artist" {
+				for _, criterion := range expected.EssentialCriteria {
+					if normalizeStyleLabel(value) != normalizeStyleLabel(criterion.Value) {
+						continue
+					}
+					explicitlyNamed := false
+					for _, ref := range expected.References {
+						if containsReferenceWords(ref.Query, value) {
+							explicitlyNamed = true
+						}
+					}
+					if !explicitlyNamed {
+						return fmt.Errorf("schema: artist reference %q conflicts with category wording in the user request", reference.Value)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func containsReferenceWords(text, reference string) bool {
+	words := func(value string) string {
+		return strings.Join(strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+		}), " ")
+	}
+	want := words(reference)
+	return want != "" && strings.Contains(" "+words(text)+" ", " "+want+" ")
 }
 
 func preferencesToCore(in []WirePreference) []core.IntentPreference {

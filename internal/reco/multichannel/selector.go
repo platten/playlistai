@@ -122,7 +122,7 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 	floor := math.Max(s.cfg.SelectionMinimumRelevance, best-s.cfg.SelectionRelevanceWindow)
 	pool := make([]poolEntry, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.Scores.Total < floor {
+		if candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
 			continue
 		}
 		entry := poolEntry{
@@ -158,7 +158,16 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 		chosen := -1
 		for index := range pool {
 			pool[index].score(s.cfg, lambda)
-			if chosen < 0 || betterMMR(pool[index].candidate, pool[chosen].candidate) {
+			better := chosen < 0
+			if chosen >= 0 {
+				left, right := pool[index].candidate, pool[chosen].candidate
+				if request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
+					better = left.MusicalFit == core.EvidenceMatch
+				} else {
+					better = betterMMR(left, right)
+				}
+			}
+			if better {
 				chosen = index
 			}
 		}

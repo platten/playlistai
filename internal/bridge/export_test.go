@@ -6,23 +6,21 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/platten/playlistai/internal/core"
 )
 
-func TestEnrichPlaylistErrors(t *testing.T) {
+func TestPrepareExportErrors(t *testing.T) {
 	t.Parallel()
 
 	// Bare container: no catalog, no enricher.
 	bare := New(newTestContainer(t), nil)
-	if _, err := bare.EnrichPlaylist([]string{"x"}); err == nil {
-		t.Fatal("expected an error with no catalog/enricher")
+	if _, err := bare.PrepareExport([]string{"x"}); err == nil {
+		t.Fatal("expected an error with no catalog")
 	}
 
 	// Loaded container but only unknown ids: resolves to an empty list with no
 	// network call and no error.
 	loaded := New(newLoadedContainer(t), nil)
-	got, err := loaded.EnrichPlaylist([]string{"not-a-real-id", "also-fake"})
+	got, err := loaded.PrepareExport([]string{"not-a-real-id", "also-fake"})
 	if err != nil {
 		t.Fatalf("unknown ids should not error: %v", err)
 	}
@@ -36,9 +34,10 @@ func TestExportCSVFallbackPath(t *testing.T) {
 	c := newLoadedContainer(t)
 	api := New(c, nil)
 
-	rows := []EnrichedTrackDTO{
-		{ID: "seed0001", Artist: "Justice", Title: "Genesis", ISRC: "FRV840700010", Album: "Cross"},
-		{ID: "seed0003", Artist: "SebastiAn", Title: "Rerun", AllArtists: []string{"SebastiAn", "Mr Oizo"}},
+	c.Enrich = nil
+	rows := []ExportTrackDTO{
+		{ID: "seed0001", Artist: "Justice", Title: "Genesis", Album: "Cross"},
+		{ID: "seed0003", Artist: "SebastiAn, Mr Oizo", Title: "Rerun"},
 	}
 
 	res, err := api.ExportCSV("My Mix / 2026", rows)
@@ -68,7 +67,7 @@ func TestExportCSVFallbackPath(t *testing.T) {
 	if len(recs) != 3 || recs[0][0] != "title" {
 		t.Fatalf("rows = %v", recs)
 	}
-	if recs[1][3] != "FRV840700010" || recs[2][1] != "SebastiAn, Mr Oizo" {
+	if recs[1][3] != "" || recs[1][2] != "Cross" || recs[2][1] != "SebastiAn, Mr Oizo" {
 		t.Fatalf("row content = %v", recs[1:])
 	}
 }
@@ -77,7 +76,7 @@ func TestExportCSVAlwaysHasCSVExtension(t *testing.T) {
 	t.Parallel()
 	c := newLoadedContainer(t)
 	api := New(c, nil)
-	rows := []EnrichedTrackDTO{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}}
+	rows := []ExportTrackDTO{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}}
 
 	for _, name := range []string{"weekend jams", "weekend jams.csv", "weekend jams.CSV", "mix.2026"} {
 		res, err := api.ExportCSV(name, rows)
@@ -94,22 +93,24 @@ func TestExportCSVAlwaysHasCSVExtension(t *testing.T) {
 	}
 }
 
-func TestDTORoundTrip(t *testing.T) {
+func TestPrepareExportWithoutEnrichment(t *testing.T) {
 	t.Parallel()
-	in := core.EnrichedTrack{
-		Ref:        core.TrackRef{ID: "id1", Artist: "A", Title: "B"},
-		Matched:    true,
-		ISRC:       "US1234567890",
-		AllISRCs:   []string{"US1234567890", "GB0987654321"},
-		Album:      "Album",
-		Year:       2019,
-		AllArtists: []string{"A", "C"},
-		MatchScore: 92,
+	c := newLoadedContainer(t)
+	c.Enrich = nil
+	api := New(c, nil)
+	ids := []string{"seed0003", "missing", "seed0001", "seed0003"}
+	rows, err := api.PrepareExport(ids)
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("local preparation failed: %v %v", rows, err)
 	}
-	out := enrichedFromDTO(dtoFromEnriched(in))
-	if out.Ref != in.Ref || out.ISRC != in.ISRC || out.Year != in.Year ||
-		out.MatchScore != in.MatchScore || out.Album != in.Album ||
-		len(out.AllISRCs) != 2 || len(out.AllArtists) != 2 || !out.Matched {
-		t.Fatalf("round trip lost data: %+v", out)
+	for i, id := range []string{"seed0003", "seed0001", "seed0003"} {
+		meta, _ := c.Catalog.Meta(id)
+		if rows[i] != (ExportTrackDTO{ID: id, Artist: meta.Ref.Artist, Title: meta.Ref.Title, Album: meta.Album}) {
+			t.Fatalf("local metadata/order changed: %+v", rows[i])
+		}
+	}
+	res, err := api.ExportCSV("Local playlist", rows)
+	if err != nil || res.Count != 3 {
+		t.Fatalf("export without enrichment failed: %+v %v", res, err)
 	}
 }

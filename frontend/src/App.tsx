@@ -3,13 +3,12 @@ import { useTheme } from "./design/theme";
 import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
 import { GenerateScreen } from "./screens/GenerateScreen";
-import { CatalogSearch, type Seed } from "./screens/CatalogSearch";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FirstRunWizard } from "./screens/FirstRunWizard";
 
-type Screen = "generate" | "catalog" | "playlist" | "reviewexport" | "settings";
+type Screen = "generate" | "playlist" | "reviewexport" | "settings";
 
 interface PlaylistState {
   request: BuildPlaylistRequest;
@@ -22,25 +21,6 @@ interface ReviewState {
   heading: string;
   requestId: string;
   sessionId: string;
-}
-
-function seedToRequest(seed: Seed, sessionId: string): BuildPlaylistRequest {
-  return {
-    version: 2,
-    referenceIds: [seed.id],
-    requiredIds: [],
-    seedIds: [],
-    mode: "similar",
-    creativity: 0.5,
-    noise: 0.1,
-    lookback: 3,
-    count: 25,
-    seed: "0",
-    noRepeatArtist: true,
-    artistsExclude: [],
-    excludeSeedArtist: false,
-    sessionId,
-  } as unknown as BuildPlaylistRequest;
 }
 
 export default function App() {
@@ -96,9 +76,6 @@ export default function App() {
             <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
               Generate
             </NavButton>
-            <NavButton active={screen === "catalog"} onClick={() => setScreen("catalog")}>
-              Catalog
-            </NavButton>
             <NavButton
               active={screen === "playlist"}
               onClick={() => setScreen("playlist")}
@@ -134,48 +111,33 @@ export default function App() {
         </header>
 
         <main className="min-h-0 flex-1 overflow-hidden">
-          {screen === "generate" && (
+          {(screen === "generate" || (screen === "playlist" && !playlist) || (screen === "reviewexport" && !review)) && (
             <GenerateScreen
               sessionId={sessionId}
               parserBackend={parserBackend}
               onGenerated={openPlaylist}
-              onNeedCatalog={() => setScreen("catalog")}
+              onNeedSetup={() => setOnboarded(false)}
             />
           )}
-          {screen === "catalog" && (
-            <CatalogSearch
-              onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
+          {screen === "playlist" && playlist && (
+            <PlaylistScreen
+              request={playlist.request}
+              heading={playlist.heading}
+              initialResult={playlist.initialResult}
+              sessionId={playlist.request.sessionId || sessionId}
+              onBack={() => setScreen("generate")}
+              onReview={openReview}
             />
           )}
-          {screen === "playlist" &&
-            (playlist ? (
-              <PlaylistScreen
-                request={playlist.request}
-                heading={playlist.heading}
-                initialResult={playlist.initialResult}
-                sessionId={playlist.request.sessionId || sessionId}
-                onBack={() => setScreen("generate")}
-                onReview={openReview}
-              />
-            ) : (
-              <CatalogSearch
-                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
-              />
-            ))}
-          {screen === "reviewexport" &&
-            (review ? (
-              <ReviewExport
-                trackIds={review.trackIds}
-                heading={review.heading}
-                requestId={review.requestId}
-                sessionId={review.sessionId}
-                onBack={() => setScreen("playlist")}
-              />
-            ) : (
-              <CatalogSearch
-                onBuildPlaylist={(seed) => openPlaylist(seedToRequest(seed, sessionId), `${seed.artist} — ${seed.title}`)}
-              />
-            ))}
+          {screen === "reviewexport" && review && (
+            <ReviewExport
+              trackIds={review.trackIds}
+              heading={review.heading}
+              requestId={review.requestId}
+              sessionId={review.sessionId}
+              onBack={() => setScreen("playlist")}
+            />
+          )}
           {screen === "settings" && <SettingsScreen />}
         </main>
         <MiniPlayerBar />

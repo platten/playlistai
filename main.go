@@ -14,8 +14,10 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
+	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/logging"
 )
 
 // The frontend build output is embedded into the binary. `wails3 dev` serves
@@ -30,6 +32,12 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
+		if err := audioruntime.Run(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(log); err != nil {
 		log.Error("fatal", "err", err)
@@ -38,6 +46,8 @@ func main() {
 }
 
 func run(log *slog.Logger) error {
+	logs := &logging.Store{}
+	log = slog.New(logging.NewHandler(log.Handler(), logs))
 	cfg := config.Default()
 	if p := os.Getenv("PLAYLISTAI_CONFIG"); p != "" {
 		loaded, err := config.Load(p)
@@ -57,8 +67,9 @@ func run(log *slog.Logger) error {
 		Name:        "Playlist AI",
 		Description: "Local-first playlist recommendations over the Deej-AI embedding catalog.",
 		LogLevel:    slog.LevelInfo,
+		Logger:      log,
 		Services: []application.Service{
-			application.NewService(bridge.New(container, log)),
+			application.NewService(bridge.NewWithLogs(container, log, logs)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -69,6 +80,7 @@ func run(log *slog.Logger) error {
 	})
 
 	wapp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:             "main",
 		Title:            "Playlist AI",
 		Width:            1280,
 		Height:           820,

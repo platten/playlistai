@@ -33,8 +33,9 @@ script_syntax() {
   bash -n scripts/*.sh
 }
 step "Bash script syntax" script_syntax
+step "AppImage PATH isolation" bash scripts/test-appimage.sh
 if has shellcheck; then
-  step "shellcheck" shellcheck scripts/*.sh
+  step "shellcheck" shellcheck scripts/*.sh build/linux/appimage/build.sh
 else
   warn "shellcheck not installed — skipping optional shell script lint"
 fi

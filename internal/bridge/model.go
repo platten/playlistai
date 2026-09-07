@@ -106,11 +106,10 @@ func (a *API) GetModelCatalog() []ModelInfo {
 	return a.modelInfos(modelmgr.Catalog())
 }
 
-// GetModelRecommendations probes the available llama.cpp GPU and returns only
-// recommended GGUFs whose weights fit on that device with context/KV headroom.
-// Without a usable llama.cpp GPU it returns the two smallest recommended CPU
-// choices. CPU mode preserves catalog priority; GPU mode promotes the explicit
-// preferred model for the detected nominal VRAM tier among eligible entries.
+// GetModelRecommendations probes the available llama.cpp GPU and returns the
+// largest recommended GGUF whose weights fit on that device with context/KV
+// headroom. Without a usable GPU it returns the largest model from the bounded
+// CPU shortlist. The setup wizard receives at most one choice.
 func (a *API) GetModelRecommendations() ModelRecommendations {
 	reserve := a.app.ModelVRAMReserve()
 	probeCtx, cancel := context.WithTimeout(a.context(), 6*time.Second)

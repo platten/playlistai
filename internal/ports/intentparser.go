@@ -10,6 +10,7 @@ import (
 // context. No catalog data is ever passed in — the parser must not see track
 // lists or embeddings.
 type IntentInput struct {
+	GenerationID string
 	Prompt       string
 	SessionID    string
 	NowPlaying   *core.TrackRef  // resolves "like this"

@@ -25,6 +25,7 @@ type ControlOverrides struct {
 // BuildPlaylistRequest carries the complete resolved interpretation plus
 // explicit UI overrides. Legacy fields remain for old history records.
 type BuildPlaylistRequest struct {
+	GenerationID     string           `json:"generationId"`
 	Version          int              `json:"version"`
 	Intent           core.MusicIntent `json:"intent"`
 	Overrides        ControlOverrides `json:"overrides"`
@@ -58,13 +59,17 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
-	Tracks          []PlaylistTrack  `json:"tracks"`
-	Mode            string           `json:"mode"`
-	Seed            core.RNGSeed     `json:"seed"`
-	Notices         []PlaylistNotice `json:"notices"`
-	Intent          core.MusicIntent `json:"intent"`
-	Status          GenerationStatus `json:"status"`
-	Reproducibility Reproducibility  `json:"reproducibility"`
+	Assessments     []core.TrackAssessment      `json:"assessments"`
+	GenerationID    string                      `json:"generationId"`
+	AudioEvidence   *core.AudioEvidenceSnapshot `json:"audioEvidence,omitempty"`
+	Tracks          []PlaylistTrack             `json:"tracks"`
+	Mode            string                      `json:"mode"`
+	Seed            core.RNGSeed                `json:"seed"`
+	Notices         []PlaylistNotice            `json:"notices"`
+	Intent          core.MusicIntent            `json:"intent"`
+	Status          GenerationStatus            `json:"status"`
+	Outcome         core.GenerationOutcome      `json:"outcome"`
+	Reproducibility Reproducibility             `json:"reproducibility"`
 }
 
 type PlaylistNotice struct {
@@ -77,6 +82,8 @@ type PlaylistNotice struct {
 func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
 	ctx, current, finish := a.operations.begin(ctx, "playlist-build")
 	defer finish()
+	ctx, finishGeneration := a.beginGeneration(ctx, req.GenerationID)
+	defer finishGeneration()
 	result, err := a.runBuild(ctx, req)
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
@@ -109,8 +116,14 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	recentSelections := resolveRecentSelections(a.app.Catalog, req.RecentSelections)
 	started := time.Now()
 	var playlist core.Playlist
+	progress := generationProgress(ctx)
+	var stop <-chan struct{}
+	if g := generationFromContext(ctx); g != nil {
+		stop = g.stop
+	}
 	if contextual, ok := a.app.Reco.(ports.ContextualRecommendationEngine); ok {
 		playlist, err = contextual.BuildRecommendation(ctx, ports.RecommendationRequest{
+			StopChecking: stop, OnChecked: progress.Checked, OnSuggested: progress.Suggested, Progress: progress,
 			Intent: intent, Profile: profile, RecentSelections: recentSelections,
 		})
 	} else if personalized, ok := a.app.Reco.(ports.PersonalizedRecommendationEngine); ok {
@@ -125,7 +138,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	out := PlaylistResult{
+		GenerationID: progress.generationID, AudioEvidence: playlist.AudioEvidence, Assessments: playlist.Assessments,
 		Mode: string(playlist.Mode), Seed: playlist.Seed, Intent: playlist.Intent,
+		Outcome: playlist.Outcome,
 		Tracks:  make([]PlaylistTrack, 0, len(playlist.Tracks)),
 		Notices: make([]PlaylistNotice, 0, len(playlist.Notices)),
 	}
@@ -147,14 +162,19 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
+	if out.Outcome.State == "" {
+		out.Outcome.State = core.OutcomeFulfilled
+		if len(out.Tracks) < out.Intent.Count {
+			out.Outcome.State = core.OutcomePartial
+		}
+	}
 	out.Status = GenerationStatus{
-		State: "complete", PartialReasons: []PlaylistNotice{},
+		State: string(out.Outcome.State), Reasons: append([]core.OutcomeReason(nil), out.Outcome.Reasons...), PartialReasons: []PlaylistNotice{},
 		Timings: []StageTiming{profileTiming, {
 			Stage: "recommend", Milliseconds: time.Since(started).Milliseconds(),
 		}},
 	}
-	if len(out.Tracks) < out.Intent.Count {
-		out.Status.State = "partial"
+	if out.Outcome.State == core.OutcomePartial {
 		out.Status.PartialReasons = append(out.Status.PartialReasons, out.Notices...)
 		if len(out.Status.PartialReasons) == 0 {
 			reason := PlaylistNotice{
@@ -173,6 +193,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if err != nil {
 		return PlaylistResult{}, err
 	}
+	withEvidenceIdentity(&out.Reproducibility, out.AudioEvidence)
 	a.recordExposures(ctx, req, out)
 	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
 		"profile_ms", profileTiming.Milliseconds, "recommend_ms", out.Status.Timings[1].Milliseconds)

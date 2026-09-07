@@ -70,7 +70,10 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			candidate.Scores.Novelty = clamp((1-historyPositive)/2, 0, 1)
 			candidate.Available.Novelty = true
 		}
-		candidate.Scores.Total = r.total(*candidate, intent)
+	}
+	availability := rankAvailability(result)
+	for index := range result {
+		result[index].Scores.Total = r.total(result[index], intent, availability)
 	}
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].Scores.Total != result[j].Scores.Total {
@@ -99,19 +102,39 @@ func (r *TransparentRanker) exposuresByRecording(exposures map[string]float64) m
 	return result
 }
 
-func (r *TransparentRanker) total(candidate core.Candidate, intent core.MusicIntent) float64 {
+type componentAvailability struct {
+	audio, cooccurrence, listener, retrieval, semantic bool
+}
+
+func rankAvailability(candidates []core.Candidate) componentAvailability {
+	var out componentAvailability
+	for _, candidate := range candidates {
+		out.audio = out.audio || candidate.Available.AudioSeedAffinity
+		out.cooccurrence = out.cooccurrence || candidate.Available.CooccurrenceAffinity
+		out.listener = out.listener || candidate.Available.ListenerAffinity
+		out.retrieval = out.retrieval || candidate.Available.RetrievalFusion
+		out.semantic = out.semantic || candidate.Available.SemanticMatch
+	}
+	return out
+}
+
+func (r *TransparentRanker) total(candidate core.Candidate, intent core.MusicIntent, availability componentAvailability) float64 {
 	var relevance, weights float64
-	add := func(score, weight float64, available bool) {
-		if available && weight > 0 {
-			relevance += weight * score
+	add := func(score, weight float64, channelEnabled, candidateAvailable bool) {
+		if channelEnabled && weight > 0 {
+			// Missing candidate evidence contributes a neutral zero on a fixed
+			// request-wide scale; it never deletes the component's denominator.
+			if candidateAvailable {
+				relevance += weight * score
+			}
 			weights += weight
 		}
 	}
-	add(candidate.Scores.AudioSeedAffinity, intent.Controls.AudioWeight, candidate.Available.AudioSeedAffinity)
-	add(candidate.Scores.CooccurrenceAffinity, intent.Controls.CooccurrenceWeight, candidate.Available.CooccurrenceAffinity)
-	add(candidate.Scores.ListenerAffinity, r.cfg.ListenerWeight, candidate.Available.ListenerAffinity)
-	add(candidate.Scores.RetrievalFusion, r.cfg.RetrievalWeight, candidate.Available.RetrievalFusion)
-	add(candidate.Scores.SemanticMatch, r.cfg.SemanticWeight, candidate.Available.SemanticMatch)
+	add(candidate.Scores.AudioSeedAffinity, intent.Controls.AudioWeight, availability.audio, candidate.Available.AudioSeedAffinity)
+	add(candidate.Scores.CooccurrenceAffinity, intent.Controls.CooccurrenceWeight, availability.cooccurrence, candidate.Available.CooccurrenceAffinity)
+	add(candidate.Scores.ListenerAffinity, r.cfg.ListenerWeight, availability.listener, candidate.Available.ListenerAffinity)
+	add(candidate.Scores.RetrievalFusion, r.cfg.RetrievalWeight, availability.retrieval, candidate.Available.RetrievalFusion)
+	add(candidate.Scores.SemanticMatch, r.cfg.SemanticWeight, availability.semantic, candidate.Available.SemanticMatch)
 	if weights > 0 {
 		relevance /= weights
 	}

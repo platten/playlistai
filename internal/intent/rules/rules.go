@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -23,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v3", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v8", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -33,7 +35,9 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lower := strings.ToLower(prompt)
 
 	intent := core.MusicIntent{
-		Version: core.CurrentIntentVersion,
+		OriginalDescription: prompt,
+		VerificationPolicy:  core.VerifiedOnly,
+		Version:             core.CurrentIntentVersion,
 		Controls: core.IntentControls{
 			TotalTrackCount:      core.DefaultCount,
 			AudioWeight:          core.DefaultCreativity,
@@ -53,6 +57,21 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		}
 	}
 	intent.Mode = mode
+	intent.RequiredTracks = extractRequiredTracks(prompt)
+	for _, artist := range extractArtistExcludes(prompt) {
+		evidence := sourceEvidence(prompt, artist, true)
+		intent.References = append(intent.References, core.IntentReference{
+			Kind: core.ReferenceArtist, Query: artist, Influence: core.InfluenceNegative, Evidence: evidence,
+		})
+		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
+			Kind: "exclude_artist", Value: artist, Supported: true, Evidence: evidence,
+		})
+	}
+	// Entity names are identity evidence, not musical evidence. Mask only the
+	// resolved textual references while keeping byte offsets for source spans.
+	semanticText := maskReferenceText(prompt, append(append([]core.IntentReference(nil), intent.References...), intent.RequiredTracks...))
+	intent.Preferences = extractSemanticPreferences(semanticText)
+	intent.EssentialCriteria = extractEssentialCriteria(semanticText, intent.Preferences)
 
 	if n, ok := extractCount(lower); ok {
 		intent.Controls.TotalTrackCount = n
@@ -63,15 +82,6 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lookback := extractLookback(lower)
 	intent.Controls.TransitionSmoothness = float64(lookback-1) / 9
 
-	for _, artist := range extractArtistExcludes(prompt) {
-		evidence := sourceEvidence(prompt, artist, true)
-		intent.References = append(intent.References, core.IntentReference{
-			Kind: core.ReferenceArtist, Query: artist, Influence: core.InfluenceNegative, Evidence: evidence,
-		})
-		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
-			Kind: "exclude_artist", Value: artist, Supported: true, Evidence: evidence,
-		})
-	}
 	if !reAllowRepeat.MatchString(lower) {
 		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
 			Kind: "no_back_to_back_artist", Value: "true", Supported: true,
@@ -79,9 +89,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	} else {
 		intent.Controls.ArtistDiversity = 0.3
 	}
-	intent.RequiredTracks = extractRequiredTracks(prompt)
-	intent.Preferences = extractSemanticPreferences(prompt)
-	intent.Unsupported, intent.HardConstraints = extractUnsupportedRequirements(prompt, intent.Unsupported, intent.HardConstraints)
+	intent.Unsupported, intent.HardConstraints = extractUnsupportedRequirements(semanticText, intent.Unsupported, intent.HardConstraints)
 	intent.Journey.EnergyTrajectory = extractEnergyTrajectory(lower)
 
 	out := intent.Normalized()
@@ -111,8 +119,20 @@ func extractEnergyTrajectory(lower string) []core.EnergyPoint {
 }
 
 func typedReference(prompt, value string, kind core.ReferenceKind, influence core.Influence) core.IntentReference {
+	evidence := sourceEvidence(prompt, value, true)
+	// When a name repeats a category ("electronic music like Electronic"),
+	// mask the reference clause, not the earlier musical instruction.
+	for _, pattern := range []*regexp.Regexp{reLike, reByArtist} {
+		if match := pattern.FindStringSubmatchIndex(prompt); match != nil {
+			if at := strings.Index(strings.ToLower(prompt[match[2]:match[3]]), strings.ToLower(value)); at >= 0 {
+				start := match[2] + at
+				evidence = []core.SourceEvidence{{Text: prompt[start : start+len(value)], Start: start, End: start + len(value), Explicit: true}}
+				break
+			}
+		}
+	}
 	return core.IntentReference{
-		Kind: kind, Query: value, Influence: influence, Evidence: sourceEvidence(prompt, value, true),
+		Kind: kind, Query: value, Influence: influence, Evidence: evidence,
 	}
 }
 
@@ -129,6 +149,7 @@ func sourceEvidence(prompt, span string, explicit bool) []core.SourceEvidence {
 var (
 	reJourney   = regexp.MustCompile(`(?i)\b(?:from|between)\s+(.+?)\s+(?:to|into|and then|→|->)\s+(.+?)(?:\s+via\s+(.+?))?(?:\s*[,.;]|\s+but\b|\s+with\b|\s+for\b|$)`)
 	reLike      = regexp.MustCompile(`(?i)\b(?:kinda like|kind of like|sort of like|stuff like|songs like|tracks like|things like|music like|similar to|sounds? like|in the style of|reminiscent of|along the lines of|inspired by|like)\s+(.+?)(?:\s*[,.;]|\s+but\b|\s+from\b|\s+with\b|\s+that\b|\s+for\b|\s+\d|$)`)
+	reByArtist  = regexp.MustCompile(`(?i)\b(?:music|songs?|tracks?)\s+by\s+(.+?)(?:\s*[,.;]|\s+but\b|\s+with\b|\s+for\b|$)`)
 	reThis      = regexp.MustCompile(`(?i)\b(this one|this track|this song|this|current(?:ly playing)?|what'?s playing|now playing|keep (?:it )?going|keep playing|more of this|in this vein|same vibe|same energy)\b`)
 	reSeedSplit = regexp.MustCompile(`(?i)\s*(?:,|\band\b|&|\+|\bwith\b)\s*`)
 	reLeadVerb  = regexp.MustCompile(`(?i)^(?:play|give me|make (?:me )?|i want|i'?d like|something|some|a playlist of|playlist of|put on|queue up|build (?:me )?)+\s*`)
@@ -137,6 +158,11 @@ var (
 
 func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef) ([]string, core.Mode) {
 	if m := reJourney.FindStringSubmatch(orig); m != nil {
+		// Category journeys are semantic instructions, not artist lookups. Keep
+		// the journey mode while leaving retrieval anchors to the semantic path.
+		if isKnownStyle(cleanSeed(m[1])) && isKnownStyle(cleanSeed(m[2])) {
+			return nil, core.ModeJourney
+		}
 		var seeds []string
 		seeds = append(seeds, cleanSeed(m[1]))
 		if m[3] != "" {
@@ -151,6 +177,11 @@ func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef
 	if m := reLike.FindStringSubmatch(orig); m != nil {
 		if seeds := splitSeeds(m[1]); len(seeds) > 0 {
 			return dedupeSeeds(seeds), core.ModeSimilar
+		}
+	}
+	if m := reByArtist.FindStringSubmatch(orig); m != nil {
+		if artist := cleanSeed(m[1]); artist != "" {
+			return []string{artist}, core.ModeSimilar
 		}
 	}
 
@@ -171,12 +202,74 @@ func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef
 	// Short bare prompt: "Daft Punk", "play Radiohead", "Bonobo vibes".
 	if fields := strings.Fields(orig); len(fields) > 0 && len(fields) <= 6 {
 		s := reTailNoise.ReplaceAllString(reLeadVerb.ReplaceAllString(orig, ""), "")
-		if s = cleanSeed(s); s != "" && !looksLikeDirective(s) {
+		if s = cleanSeed(s); s != "" && !looksLikeDirective(s) && !looksLikeCategoryRequest(orig, s) {
 			return []string{s}, core.ModeSimilar
 		}
 	}
 
 	return nil, core.ModeSimilar
+}
+
+func looksLikeCategoryRequest(prompt, cleaned string) bool {
+	if categoryPrefix(prompt) {
+		return true
+	}
+	lower := strings.ToLower(strings.TrimSpace(prompt))
+	if isKnownStyle(cleaned) || isKnownMoodOrActivity(cleaned) {
+		return true
+	}
+	for _, suffix := range []string{" music", " songs", " tracks", " playlist", " vibes"} {
+		value := strings.TrimSpace(strings.TrimSuffix(lower, suffix))
+		if strings.HasSuffix(lower, suffix) && (isKnownStyle(value) || isKnownMoodOrActivity(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+// categoryPrefix recognizes a leading category before modifiers and references,
+// but not a category word inside an artist name (for example Aesop Rock).
+func categoryPrefix(prompt string) bool {
+	text := strings.ToLower(strings.TrimSpace(reLeadVerb.ReplaceAllString(prompt, "")))
+	for _, value := range append(append([]string(nil), knownStyles...), "relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful", "focus", "study", "workout", "running", "dinner", "sleep", "instrumental", "no vocals", "acoustic") {
+		if strings.HasPrefix(text, value) && wordBoundary(text, len(value)) {
+			return true
+		}
+	}
+	return false
+}
+
+func wordBoundary(text string, offset int) bool {
+	if offset <= 0 || offset >= len(text) {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(text[offset:])
+	return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+}
+
+func maskReferenceText(prompt string, references []core.IntentReference) string {
+	masked := []byte(prompt)
+	for _, reference := range references {
+		for _, evidence := range reference.Evidence {
+			if !evidence.Explicit || evidence.Start < 0 || evidence.End > len(masked) {
+				continue
+			}
+			for i := evidence.Start; i < evidence.End; i++ {
+				masked[i] = ' '
+			}
+		}
+	}
+	return string(masked)
+}
+
+func isKnownMoodOrActivity(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	for _, item := range []string{"relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful", "focus", "study", "workout", "running", "dinner", "sleep"} {
+		if value == item {
+			return true
+		}
+	}
+	return false
 }
 
 func splitSeeds(s string) []string {
@@ -336,7 +429,7 @@ var (
 func extractArtistExcludes(orig string) []string {
 	var out []string
 	for _, m := range reExclude.FindAllStringSubmatch(orig, -1) {
-		if name := cleanSeed(m[1]); name != "" && !looksLikeDirective(name) {
+		if name := cleanSeed(m[1]); name != "" && !looksLikeDirective(name) && !isKnownStyle(name) && !isKnownMoodOrActivity(name) && !strings.EqualFold(name, "vocals") {
 			out = append(out, name)
 		}
 		if len(out) >= 5 {
@@ -370,14 +463,11 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 		})
 	}
 
-	for _, value := range []string{"ambient electronic", "abstract drone", "electronic", "ambient", "jazz", "techno", "folk"} {
-		if strings.Contains(lower, value) {
-			influence := core.InfluencePositive
-			if strings.Contains(lower, "no "+value) || strings.Contains(lower, "not "+value) {
-				influence = core.InfluenceNegative
-			}
-			add(&out.Styles, value, influence)
-		}
+	for _, mention := range styleMentions(prompt) {
+		out.Styles = append(out.Styles, core.IntentPreference{
+			Value: normalizeStyle(mention.value), Influence: mention.influence, Explicit: true,
+			Evidence: []core.SourceEvidence{{Text: prompt[mention.start:mention.end], Start: mention.start, End: mention.end, Explicit: true}},
+		})
 	}
 	for _, value := range []string{"relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful"} {
 		if strings.Contains(lower, value) {
@@ -412,7 +502,85 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 	return out
 }
 
-var reUnsupportedStyle = regexp.MustCompile(`(?i)\b(?:no|without|must not include)\s+(abstract drone|drone|ambient|techno|jazz)\b`)
+var knownStyles = []string{
+	"ambient electronic", "ambient electronica", "rock & roll", "rock and roll", "abstract drone",
+	"electronic", "electronica", "ambient", "techno", "jazz", "folk", "rock", "drone",
+}
+
+func isKnownStyle(value string) bool {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimSuffix(value, " music")
+	for _, style := range knownStyles {
+		if value == style {
+			return true
+		}
+	}
+	return false
+}
+
+type styleMention struct {
+	value      string
+	start, end int
+	influence  core.Influence
+}
+
+var reStyleMention = regexp.MustCompile(`(?i)ambient electronica|ambient electronic|rock\s*(?:&|and)\s*roll|abstract drone|electronica|electronic|ambient|techno|jazz|folk|rock|drone`)
+var reStyleNegation = regexp.MustCompile(`(?i)\b(?:no|not|without|must not include)\s+$`)
+
+func styleMentions(prompt string) []styleMention {
+	var result []styleMention
+	for _, loc := range reStyleMention.FindAllStringIndex(prompt, -1) {
+		left, _ := utf8.DecodeLastRuneInString(prompt[:loc[0]])
+		if loc[0] > 0 && (unicode.IsLetter(left) || unicode.IsNumber(left)) || !wordBoundary(prompt, loc[1]) {
+			continue
+		}
+		influence := core.InfluencePositive
+		if reStyleNegation.MatchString(prompt[:loc[0]]) {
+			influence = core.InfluenceNegative
+		}
+		result = append(result, styleMention{value: prompt[loc[0]:loc[1]], start: loc[0], end: loc[1], influence: influence})
+	}
+	return result
+}
+
+func extractEssentialCriteria(prompt string, preferences core.SemanticPreferences) []core.MusicalCriterion {
+	lower := strings.ToLower(prompt)
+	if match := reJourney.FindStringSubmatch(prompt); match != nil && isKnownStyle(cleanSeed(match[1])) && isKnownStyle(cleanSeed(match[2])) {
+		result := []core.MusicalCriterion{
+			{Kind: "style", Value: normalizeStyle(cleanSeed(match[1])), Scope: "journey_start", Evidence: sourceEvidence(prompt, cleanSeed(match[1]), true)},
+			{Kind: "style", Value: normalizeStyle(cleanSeed(match[2])), Scope: "journey_end", Evidence: sourceEvidence(prompt, cleanSeed(match[2]), true)},
+		}
+		if match[3] != "" && isKnownStyle(cleanSeed(match[3])) {
+			result = append(result, core.MusicalCriterion{Kind: "style", Value: normalizeStyle(cleanSeed(match[3])), Scope: "journey_via", Evidence: sourceEvidence(prompt, cleanSeed(match[3]), true)})
+		}
+		return result
+	}
+
+	// A category-led request makes its primary genre essential. Qualifiers such
+	// as "with some rock influence" remain soft, preserving deliberate hybrids.
+	categoryLed := categoryPrefix(prompt) || strings.Contains(lower, " music") || strings.Contains(lower, " playlist") || strings.Contains(lower, " tracks") || strings.Contains(lower, " songs")
+	if !categoryLed {
+		return nil
+	}
+	for _, preference := range preferences.Styles {
+		if preference.Influence != core.InfluencePositive || isInfluenceQualifier(lower, preference.Value) {
+			continue
+		}
+		return []core.MusicalCriterion{{Kind: "style", Value: normalizeStyle(preference.Value), Scope: "playlist", Evidence: preference.Evidence}}
+	}
+	return nil
+}
+
+func isInfluenceQualifier(lower, style string) bool {
+	return strings.Contains(lower, "some "+style+" influence") ||
+		strings.Contains(lower, style+" influence") || strings.Contains(lower, "touch of "+style)
+}
+
+func normalizeStyle(value string) string {
+	value = strings.ToLower(strings.Join(strings.Fields(value), " "))
+	value = strings.TrimSuffix(value, " music")
+	return core.CanonicalStyle(value)
+}
 
 func extractUnsupportedRequirements(
 	prompt string,
@@ -425,10 +593,14 @@ func extractUnsupportedRequirements(
 		constraints = append(constraints, core.HardConstraint{Kind: "exclude_vocals", Value: "vocals", Supported: false, Evidence: evidence})
 		unsupported = append(unsupported, core.UnsupportedRequirement{Text: span, Reason: "requires a compatible semantic sidecar with vocal evidence", Evidence: evidence})
 	}
-	for _, match := range reUnsupportedStyle.FindAllStringSubmatchIndex(prompt, -1) {
-		span := prompt[match[0]:match[1]]
-		value := prompt[match[2]:match[3]]
-		evidence := []core.SourceEvidence{{Text: span, Start: match[0], End: match[1], Explicit: true}}
+	for _, mention := range styleMentions(prompt) {
+		if mention.influence != core.InfluenceNegative {
+			continue
+		}
+		prefix := reStyleNegation.FindStringIndex(prompt[:mention.start])
+		span := prompt[prefix[0]:mention.end]
+		value := normalizeStyle(mention.value)
+		evidence := []core.SourceEvidence{{Text: span, Start: prefix[0], End: mention.end, Explicit: true}}
 		constraints = append(constraints, core.HardConstraint{
 			Kind: "exclude_style", Value: value, Supported: false, Evidence: evidence,
 		})

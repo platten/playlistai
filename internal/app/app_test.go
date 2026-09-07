@@ -10,6 +10,7 @@ import (
 
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/fakes"
+	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/reco/multichannel"
@@ -60,6 +61,27 @@ func TestParseIntentDetailedReportsFallback(t *testing.T) {
 	}
 	if !outcome.FallbackUsed || outcome.RequestedBackend != "llama" || outcome.Backend != "rules" || outcome.FallbackReason != "parser_error" {
 		t.Fatalf("fallback outcome = %+v", outcome)
+	}
+}
+
+func TestParserFallbackReasonIsStructured(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"model unavailable", errors.New("llama: HTTP 503"), "parser_error"},
+		{"timeout", context.DeadlineExceeded, "timeout"},
+		{"invalid JSON", errors.New("schema: unexpected end of JSON input"), "invalid_output"},
+		{"truncated completion", &llama.TruncatedCompletionError{FinishReason: "length", Attempts: 2}, "truncated_output"},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			if got := parserFallbackReason(item.err); got != item.want {
+				t.Fatalf("parserFallbackReason(%v) = %q, want %q", item.err, got, item.want)
+			}
+		})
 	}
 }
 

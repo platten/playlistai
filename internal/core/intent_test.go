@@ -1,6 +1,10 @@
 package core
 
-import "testing"
+import (
+	"encoding/json"
+	"reflect"
+	"testing"
+)
 
 func TestMusicIntentNormalized(t *testing.T) {
 	t.Parallel()
@@ -115,6 +119,44 @@ func TestIntentV3AddsResolutionContractWithoutReinterpreting(t *testing.T) {
 	}
 	if got.Controls.TotalTrackCount != 12 || len(got.HardConstraints) != 1 {
 		t.Fatalf("v3 controls or constraints changed: %+v", got)
+	}
+}
+
+func TestIntentV5MigratesOnlyEvidenceMarkedInferredReferences(t *testing.T) {
+	t.Parallel()
+	inferred := IntentReference{Kind: ReferenceArtist, Query: "Four Tet", Influence: InfluencePositive, Evidence: []SourceEvidence{{Text: "ambient electronic", Start: -1, End: -1, Explicit: false}}}
+	explicitWithoutEvidence := IntentReference{Kind: ReferenceArtist, Query: "Björk", Influence: InfluencePositive}
+	got := (MusicIntent{Version: 5, References: []IntentReference{inferred, explicitWithoutEvidence}}).Normalized()
+	if len(got.References) != 1 || got.References[0].Query != "Björk" {
+		t.Fatalf("historical explicit reference changed: %+v", got.References)
+	}
+	if len(got.InferredAnchors) != 1 || got.InferredAnchors[0].Reference.Query != "Four Tet" || got.InferredAnchors[0].Suitability.State != EvidenceUnknown {
+		t.Fatalf("historical inferred reference was not migrated explicitly: %+v", got.InferredAnchors)
+	}
+}
+
+func TestIntentV6SerializationPreservesCorrectnessContract(t *testing.T) {
+	t.Parallel()
+	want := MusicIntent{
+		Version:           CurrentIntentVersion,
+		EssentialCriteria: []MusicalCriterion{{Kind: "style", Value: "electronic", Scope: "playlist", Evidence: []SourceEvidence{{Text: "electronic", Start: 0, End: 10, Explicit: true}}}},
+		InferredAnchors: []InferredAnchor{{
+			Reference: IntentReference{Kind: ReferenceArtist, Query: "Kraftwerk", Influence: InfluencePositive, Evidence: []SourceEvidence{{Text: "electronic", Start: 0, End: 10, Explicit: false}}},
+			Role:      "foundational", Reason: "complementary retrieval proposal", Suitability: AnchorSuitability{State: EvidenceMatch, Score: .8, Detail: "reviewed evidence"},
+		}},
+		Controls: IntentControls{TotalTrackCount: 12, AudioWeight: .5, CooccurrenceWeight: .5}, Seed: "18446744073709551615",
+	}.Normalized()
+	raw, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loaded MusicIntent
+	if err := json.Unmarshal(raw, &loaded); err != nil {
+		t.Fatal(err)
+	}
+	loaded = loaded.Normalized()
+	if !reflect.DeepEqual(loaded.EssentialCriteria, want.EssentialCriteria) || !reflect.DeepEqual(loaded.InferredAnchors, want.InferredAnchors) || loaded.Seed != want.Seed {
+		t.Fatalf("v6 history round trip changed intent:\nwant=%+v\ngot=%+v", want, loaded)
 	}
 }
 

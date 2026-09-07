@@ -47,6 +47,11 @@ Windows Go race detector.
 
 Targets that can't be built here are skipped with a note; `build.sh` still exits 0 as long as the host-OS package succeeded.
 
+AppImage packaging removes `/mnt` entries from its subprocess `PATH`, preventing
+linuxdeploy from scanning inaccessible Windows directories inherited by WSL.
+Install packaging tools on the Linux filesystem. This also applies to
+`wails3 task linux:create:appimage`; your shell's `PATH` is unchanged.
+
 On Windows, `build.ps1` creates the native NSIS package. Pass
 `-Architecture amd64`, `-Architecture arm64`, or `-Architecture all`.
 

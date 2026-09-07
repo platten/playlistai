@@ -188,6 +188,8 @@ export function PlaylistScreen({
   }, [build]);
 
   const tracks = result?.tracks ?? [];
+  const outcomeState = result?.outcome?.state ?? result?.status?.state;
+  const outcomeReasons = result?.outcome?.reasons ?? result?.status?.reasons ?? [];
   const isJourney = (result?.mode ?? request.intent?.mode ?? request.mode) === "journey";
   const requiredCount =
     (request.intent?.requiredTracks ?? []).length ||
@@ -248,7 +250,11 @@ export function PlaylistScreen({
         <Button
           variant="primary"
           size="sm"
-          disabled={tracks.length === 0}
+          disabled={
+            tracks.length === 0 ||
+            outcomeState === "unsupported" ||
+            outcomeState === "needs_clarification"
+          }
           onClick={() =>
             onReview(
               tracks.map((t) => t.id),
@@ -261,6 +267,25 @@ export function PlaylistScreen({
           Review &amp; export
         </Button>
       </div>
+
+      {result && outcomeState && outcomeState !== "fulfilled" && (
+        <div className="mb-3 rounded-card border border-accent/30 bg-accent-quiet px-4 py-3">
+          <p className="text-[12.5px] font-semibold text-text">
+            {outcomeState === "needs_clarification"
+              ? "This request needs clarification"
+              : outcomeState === "unsupported"
+                ? "The musical request could not be verified"
+                : "A verified partial playlist was generated"}
+          </p>
+          {outcomeReasons.map((reason) => (
+            <p key={`${reason.code}-${reason.criterion}`} className="mt-1 text-[12px] text-muted">
+              {reason.detail}
+              {reason.criterion ? ` (${reason.criterion})` : ""}
+              {reason.action ? ` Next: ${reason.action}.` : ""}
+            </p>
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-card border border-line bg-surface px-4 py-4">
         <Slider
@@ -326,7 +351,8 @@ export function PlaylistScreen({
           key={notice.code}
           className="mt-3 rounded-control border border-line bg-surface px-3 py-2 text-[12px] text-muted"
         >
-          {notice.detail} ({notice.actual} of {notice.requested} tracks)
+          {notice.detail}
+          {notice.requested > 0 ? ` (${notice.actual} of ${notice.requested} tracks)` : ""}
         </div>
       ))}
 
@@ -338,7 +364,10 @@ export function PlaylistScreen({
         ) : busy && tracks.length === 0 ? (
           <LoadingRows rows={8} />
         ) : tracks.length === 0 ? (
-          <EmptyState title="No playlist" description="The seeds didn't resolve to anything." />
+          <EmptyState
+            title={outcomeState === "unsupported" ? "Request not fulfilled" : "No playlist"}
+            description={outcomeReasons[0]?.action ?? "No eligible catalog tracks were found."}
+          />
         ) : (
           tracks.map((t, i) => {
             const recorded = feedback[t.id] ?? [];

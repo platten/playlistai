@@ -118,7 +118,9 @@ defaults; the engine never trusts a raw parse.
 type MusicIntent struct {
     Version         int
     References      []IntentReference        // typed, positive/negative; not implicitly output
+    InferredAnchors []InferredAnchor          // model proposals; resolved and suitability-checked
     RequiredTracks  []IntentReference        // positive track references that must appear
+    EssentialCriteria []MusicalCriterion     // affirmative evidence required for fulfillment
     Preferences     SemanticPreferences      // preserved style/mood/instrument/vocal/texture intent
     HardConstraints []HardConstraint         // each declares whether execution is supported
     Controls        IntentControls           // total, weights, discovery, diversity, smoothness
@@ -133,7 +135,7 @@ Those meanings are preserved with source evidence, but are not presented as
 enforced. Live controls re-run `Build` with the complete resolved intent plus
 explicit overrides; they never reconstruct intent from a knob-only DTO.
 
-The current version 5 contract also stores catalog resolution on each typed reference: the selected
+The current version 6 contract also stores catalog resolution on each typed reference: the selected
 artist or track, match confidence/evidence, ranked alternatives, catalog
 version, and weighted real-track representatives. Prompt generation and direct
 recommendation share one resolver port. Ambiguity remains explicit until the
@@ -171,9 +173,9 @@ internal/
               inverse norms, bounded top-K heap, deterministic tie-break by row.
               Matches deej-ai.online-app most_similar.
   reco/       deejai/ — versioned compatibility/evaluation baseline
-              multichannel/ — exact per-reference/channel retrieval, hard
-              eligibility, transparent personalized ranking, relevance-floored
-              MMR selection, waypoint/transition sequencing, semantic pilot
+              multichannel/ — exact per-reference/channel retrieval, whole-union
+              semantic scoring, essential/hard eligibility, transparent personalized
+              ranking, relevance-floored MMR selection, journey/transition sequencing
   intent/     rules/  — dependency-free regex/keyword prompt → core.MusicIntent
                         (always available; the fallback)
               schema/ — LLM wire shape + GBNF grammar + response → core.MusicIntent
@@ -190,7 +192,7 @@ internal/
   export/     [M7] soundiizcsv/ soundiizhandoff/
   preview/    [M8] deezer/ spotifycdn/
   semantic/   optional grounded-feature sidecar + exact semantic scan; schema
-              v2 includes precomputed query vectors consumed entirely in Go
+              v3 adds facet completeness and query vectors consumed entirely in Go
 frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
   src/design/     tokens.css (dark + light palette, @theme inline) · theme.ts (system/explicit/reduced-motion)
   src/components/ ProgressBar (+ useProgress), EmptyState, LoadingState,
@@ -200,7 +202,6 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
   src/screens/    GenerateScreen (always available; catalog-only rules mode
                   requires a seed artist/track, local-model mode may infer one;
                   prompt → parsed-intent chips → playlist),
-                  CatalogSearch (search / "similar to X" / first-launch download),
                   PlaylistScreen (resolved intent + explicit count/discovery/
                   diversity/transition overrides, feedback, evidence, Regenerate),
                   SettingsScreen (AI-model panel: catalog download / use-a-file /
@@ -266,7 +267,7 @@ The original recommendation baseline comes from [teticio/Deej-AI] and its web ba
   similarity walk over two 100-dimensional embedding spaces (`spotifytovec.p`,
   audio-content; `tracktovec.p`, Spotify-playlist co-occurrence), blended by a
   `creativity` weight, with additive Gaussian "noise" and artist/id dedup.
-- The current `multichannel/v3` strategy uses the same two embedding spaces but
+- The current `multichannel/v4` strategy uses the same two embedding spaces but
   replaces Gaussian exploration with bounded exploration, independently queries
   every reference and taste cluster, and separates hard eligibility, ranking,
   diversity selection, and sequencing.
@@ -297,7 +298,9 @@ runtime/onboarding hardening are recorded in
    `LoadingState`, `ErrorState`, `Slider`, `TrackRow`, `Button`). *(done)*
 3. **Catalog** — `catalogfmt.py` + `convert_pickles.py` + synthetic fixtures;
    `internal/catalog` mmap + SQLite loader + token search; `internal/dataset`
-   resumable checksummed download; `CatalogSearch` screen + bridge methods.
+   resumable checksummed download through the first-run wizard. Catalog
+   availability and setup methods remain; the separate browsing screen and
+   its search/similar-track endpoints have been removed.
    `GetCatalogInfo` reports whether a source is even configured so the UI can
    say so plainly instead of offering a download that's guaranteed to fail.
    The real Deej-AI pickles (`python/fetch_pickles.py`, Google Drive) are
@@ -306,8 +309,8 @@ runtime/onboarding hardening are recorded in
    on first launch (`catalog.archive_url`, milestone 9). See
    [`docs/CATALOG.md`](CATALOG.md). *(done)*
 4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
-   (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
-   view with a creativity slider in the Catalog screen. *(done)*
+   (reference-impl parity tested), used internally by recommendation retrieval.
+   *(done)*
 5. **Recommendation** — `internal/reco/deejai` port of `make_playlist` +
    `join_the_dots` + noise + dedup; `parity_playlist.py` golden fixtures (exact
    match); `BuildPlaylist` bridge method; Playlist screen with live
@@ -325,17 +328,19 @@ runtime/onboarding hardening are recorded in
     ClearModel`; the first-run wizard asks its selected llama.cpp runtime to
     enumerate accelerators and free VRAM. GPU recommendations must fit as a
     complete GGUF with 1 GiB reserved for context/KV/compute; nominal tier
-    metadata selects the first eligible model without overriding the fit gate.
-    CPU mode shows the two smallest recommendations. Settings retains every
+    metadata remains available without overriding the fit gate. The wizard shows
+    only the largest eligible model; CPU mode shows the largest model from its
+    bounded CPU recommendation list. Settings retains every
     curated and legacy model and displays the tier picks.
     *(done)*
 7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz
    file import) and `internal/export/soundiizhandoff` (tokenless
    `POST /go/import-playlist`, validated share URL, opened in the browser);
-   `Container.Enrich / Exporter(name)`; bridge `EnrichPlaylist / ExportCSV /
-   OpenSoundiizHandoff`; the ReviewExport screen (enrich progress → per-track
-   match table with editable ISRC + include toggle → name + export). *(done)*
+   `Container.Enrich` supports recommendation evidence. Export uses local track
+   metadata through `PrepareExport / ExportCSV / OpenSoundiizHandoff` and never
+   requires MusicBrainz validation. ReviewExport shows track, artist, album and
+   inclusion controls, without ISRC or confidence fields. *(done)*
 8. **Preview** — `internal/preview/deezer` (public Deezer search API, no key,
    in-memory cache, falls back to the bundled Spotify CDN URL on a miss or a
    request failure) and `internal/preview/spotifycdn` (bundled URL only, no
@@ -344,7 +349,9 @@ runtime/onboarding hardening are recorded in
    `GetPreviewURL(id)`. Frontend: `PreviewPlayerProvider` / `usePreviewPlayer`
    own a single `<audio>` element and resolve a track's URL on first play;
    `MiniPlayerBar` (play/pause, scrub, close) wired into `TrackRow.onPlay` on
-   the Playlist and Catalog screens. *(done)*
+   the Playlist screen. The wizard offers Deezer and Spotify; an existing off
+   preference defaults to Deezer there and the chosen provider is saved on
+   Continue. Settings retains its independent off control. *(done)*
 9. **Polish & ship** — model integrity hashes pinned (size + SHA-256 in
    `models-manifest.json`, verified against a fresh download of each file;
    surfaced as a "verified" badge in Settings); `.github/workflows/release.yml`

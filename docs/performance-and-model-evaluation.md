@@ -96,8 +96,9 @@ The first-run wizard filters recommendations using accelerator memory reported
 by its selected llama.cpp binary. A GPU model is offered only when its complete
 GGUF fits in one enumerated device's free memory (plus the reclaimable active
 model when switching) with 1 GiB held back for context, KV cache, and compute
-buffers. If llama.cpp reports no usable GPU, the wizard offers the two smallest
-recommendations. Settings continues to expose
+buffers. The wizard offers only the largest model that passes this fit check. If
+llama.cpp reports no usable GPU, it offers the largest model from the bounded CPU
+recommendation list. Settings continues to expose
 the full catalog and custom GGUF selection. Artifact size is a conservative
 weight-fit proxy, not a promise that every context size or backend allocation
 will succeed.

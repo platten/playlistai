@@ -26,7 +26,7 @@ func testCatalog() *fakes.Catalog {
 
 func testIntent(count int) core.MusicIntent {
 	return core.MusicIntent{
-		Version:    core.CurrentIntentVersion,
+		Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly,
 		References: []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "seed", Influence: core.InfluencePositive}},
 		Controls:   core.IntentControls{TotalTrackCount: count, AudioWeight: .5, CooccurrenceWeight: .5},
 		Mode:       core.ModeSimilar, Seed: "42",

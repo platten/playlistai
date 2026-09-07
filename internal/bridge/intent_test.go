@@ -143,17 +143,37 @@ func TestGenerateFromPrompt(t *testing.T) {
 func TestPromptStartRequirementDependsOnParserBackend(t *testing.T) {
 	t.Parallel()
 	seedless := core.MusicIntent{}.Normalized()
-	if err := validatePromptStart("rules", seedless); err == nil || !strings.Contains(err.Error(), "seed artist or track") {
+	if err := validatePromptStart("rules", "rules", seedless); err == nil || !strings.Contains(err.Error(), "seed artist or track") {
 		t.Fatalf("catalog-only seed requirement = %v", err)
 	}
-	if err := validatePromptStart("llama", seedless); err != nil {
+	if err := validatePromptStart("llama", "llama", seedless); err != nil {
 		t.Fatalf("local model should be allowed to supply or omit an anchor: %v", err)
+	}
+	if err := validatePromptStart("rules", "llama", seedless); err != nil {
+		t.Fatalf("LLM fallback must preserve a seedless semantic request: %v", err)
 	}
 	resolved := seedless
 	resolved.References = []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "track-id", Influence: core.InfluencePositive}}
 	resolved = resolved.Normalized()
-	if err := validatePromptStart("rules", resolved); err != nil {
+	if err := validatePromptStart("rules", "rules", resolved); err != nil {
 		t.Fatalf("catalog track seed rejected: %v", err)
+	}
+}
+
+func TestControlOverridesPreserveEssentialCriteriaAndInferredAnchors(t *testing.T) {
+	count := 7
+	intent := core.MusicIntent{
+		Version:           core.CurrentIntentVersion,
+		EssentialCriteria: []core.MusicalCriterion{{Kind: "style", Value: "electronic", Scope: "playlist", Evidence: []core.SourceEvidence{{Text: "electronic", Explicit: true}}}},
+		InferredAnchors: []core.InferredAnchor{{
+			Reference: core.IntentReference{Kind: core.ReferenceArtist, Query: "Kraftwerk", Influence: core.InfluencePositive, Evidence: []core.SourceEvidence{{Text: "", Explicit: false}}},
+			Role:      "foundational electronic", Reason: "complements the requested category", Suitability: core.AnchorSuitability{State: core.EvidenceMatch, Score: .9},
+		}},
+		Controls: core.IntentControls{TotalTrackCount: 20, AudioWeight: .5, CooccurrenceWeight: .5},
+	}.Normalized()
+	got := applyOverrides(intent, ControlOverrides{TotalTrackCount: &count}).Normalized()
+	if count != got.Count || !reflect.DeepEqual(got.EssentialCriteria, intent.EssentialCriteria) || !reflect.DeepEqual(got.InferredAnchors, intent.InferredAnchors) {
+		t.Fatalf("correctness contract changed by a slider override:\nbefore=%+v\nafter=%+v", intent, got)
 	}
 }
 
