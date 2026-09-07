@@ -202,7 +202,6 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
   src/screens/    GenerateScreen (always available; catalog-only rules mode
                   requires a seed artist/track, local-model mode may infer one;
                   prompt → parsed-intent chips → playlist),
-                  CatalogSearch (search / "similar to X" / first-launch download),
                   PlaylistScreen (resolved intent + explicit count/discovery/
                   diversity/transition overrides, feedback, evidence, Regenerate),
                   SettingsScreen (AI-model panel: catalog download / use-a-file /
@@ -299,7 +298,9 @@ runtime/onboarding hardening are recorded in
    `LoadingState`, `ErrorState`, `Slider`, `TrackRow`, `Button`). *(done)*
 3. **Catalog** — `catalogfmt.py` + `convert_pickles.py` + synthetic fixtures;
    `internal/catalog` mmap + SQLite loader + token search; `internal/dataset`
-   resumable checksummed download; `CatalogSearch` screen + bridge methods.
+   resumable checksummed download through the first-run wizard. Catalog
+   availability and setup methods remain; the separate browsing screen and
+   its search/similar-track endpoints have been removed.
    `GetCatalogInfo` reports whether a source is even configured so the UI can
    say so plainly instead of offering a download that's guaranteed to fail.
    The real Deej-AI pickles (`python/fetch_pickles.py`, Google Drive) are
@@ -308,8 +309,8 @@ runtime/onboarding hardening are recorded in
    on first launch (`catalog.archive_url`, milestone 9). See
    [`docs/CATALOG.md`](CATALOG.md). *(done)*
 4. **Similarity** — `internal/similarity/brute` blended two-space cosine engine
-   (reference-impl parity tested); `SimilarTracks` bridge method; "similar to X"
-   view with a creativity slider in the Catalog screen. *(done)*
+   (reference-impl parity tested), used internally by recommendation retrieval.
+   *(done)*
 5. **Recommendation** — `internal/reco/deejai` port of `make_playlist` +
    `join_the_dots` + noise + dedup; `parity_playlist.py` golden fixtures (exact
    match); `BuildPlaylist` bridge method; Playlist screen with live
@@ -336,9 +337,10 @@ runtime/onboarding hardening are recorded in
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz
    file import) and `internal/export/soundiizhandoff` (tokenless
    `POST /go/import-playlist`, validated share URL, opened in the browser);
-   `Container.Enrich / Exporter(name)`; bridge `EnrichPlaylist / ExportCSV /
-   OpenSoundiizHandoff`; the ReviewExport screen (enrich progress → per-track
-   match table with editable ISRC + include toggle → name + export). *(done)*
+   `Container.Enrich` supports recommendation evidence. Export uses local track
+   metadata through `PrepareExport / ExportCSV / OpenSoundiizHandoff` and never
+   requires MusicBrainz validation. ReviewExport shows track, artist, album and
+   inclusion controls, without ISRC or confidence fields. *(done)*
 8. **Preview** — `internal/preview/deezer` (public Deezer search API, no key,
    in-memory cache, falls back to the bundled Spotify CDN URL on a miss or a
    request failure) and `internal/preview/spotifycdn` (bundled URL only, no
@@ -347,7 +349,9 @@ runtime/onboarding hardening are recorded in
    `GetPreviewURL(id)`. Frontend: `PreviewPlayerProvider` / `usePreviewPlayer`
    own a single `<audio>` element and resolve a track's URL on first play;
    `MiniPlayerBar` (play/pause, scrub, close) wired into `TrackRow.onPlay` on
-   the Playlist and Catalog screens. *(done)*
+   the Playlist screen. The wizard offers Deezer and Spotify; an existing off
+   preference defaults to Deezer there and the chosen provider is saved on
+   Continue. Settings retains its independent off control. *(done)*
 9. **Polish & ship** — model integrity hashes pinned (size + SHA-256 in
    `models-manifest.json`, verified against a fresh download of each file;
    surfaced as a "verified" badge in Settings); `.github/workflows/release.yml`

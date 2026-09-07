@@ -580,3 +580,27 @@ installation before downloading; Windows needs an explicit cgo build for the
 built-in worker. Intel macOS needs a custom compatible runtime bundle. The
 2 GiB memory allowance remains provisional. No release or model publication
 was performed, and no weights, recordings or user data enter the repository.
+
+## Simplify navigation, export and preview setup — 2026-09-07
+
+Removed the standalone Catalog screen, navigation/fallback routes, seed-build
+helper, search/similar-track bridge methods and unused row actions. Generation
+still uses the local recommendation catalog; a missing catalog now links to
+the setup wizard.
+
+Export preparation reads local track details directly, preserving order and
+duplicate entries without calling MusicBrainz. The export page contains track,
+artist, album and inclusion controls, with ISRC, match and confidence UI removed.
+CSV and Soundiiz handoff remain available without an enrichment service. The
+standard CSV schema is retained with an empty ISRC column.
+
+The wizard preview step offers only Deezer and Spotify. It maps a saved off
+preference to Deezer, saves the selected provider on Continue, and stays on the
+step with an actionable error when saving fails. Settings can still disable
+playback previews independently.
+
+Validation: full repository gate passed; Go export tests cover local preparation,
+ordering, duplicates, missing IDs and CSV export without an enricher. Browser
+fixtures in `scripts/capture-export-ui.mjs` cover navigation/setup recovery,
+export selection, retry/empty states, provider persistence and save failures,
+both themes and narrow windows. Screenshots use `/tmp/playlist-ai-export-ui`.

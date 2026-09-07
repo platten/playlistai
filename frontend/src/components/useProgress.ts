@@ -25,7 +25,7 @@ function coerce(data: unknown): Progress | null {
 
 /**
  * Subscribe to progress events. Pass an `op` to only track one operation
- * (e.g. "catalog", "model", "enrich", "export"). Returns the latest matching
+ * (e.g. "catalog", "model", "export"). Returns the latest matching
  * event, or null before any has arrived.
  */
 export function useProgress(op?: string, generationId?: string): Progress | null {

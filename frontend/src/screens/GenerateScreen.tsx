@@ -53,7 +53,7 @@ export function GenerateScreen({
   sessionId,
   parserBackend,
   onGenerated,
-  onNeedCatalog,
+  onNeedSetup,
 }: {
   sessionId: string;
   parserBackend: string;
@@ -62,7 +62,7 @@ export function GenerateScreen({
     heading: string,
     initialResult?: PlaylistResult,
   ) => void;
-  onNeedCatalog: () => void;
+  onNeedSetup: () => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [info, setInfo] = useState<CatalogInfo | null>(null);
@@ -323,8 +323,8 @@ export function GenerateScreen({
           title="Download the catalog first"
           description="Playlist AI needs the embedding catalog before it can recommend anything."
           action={
-            <Button variant="primary" onClick={onNeedCatalog}>
-              Go to Catalog
+            <Button variant="primary" onClick={onNeedSetup}>
+              Open setup
             </Button>
           }
         />

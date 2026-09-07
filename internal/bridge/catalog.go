@@ -1,15 +1,9 @@
 package bridge
 
-import (
-	"context"
-
-	"github.com/platten/playlistai/internal/ports"
-)
-
 // Catalog-facing bridge methods. All are safe to call before the catalog is
 // loaded; they return zero values or a clear error.
 
-// CatalogInfo is the snapshot the Catalog screen polls.
+// CatalogInfo reports local recommendation data availability during setup.
 type CatalogInfo struct {
 	Loaded     bool `json:"loaded"`
 	TrackCount int  `json:"trackCount"`
@@ -51,94 +45,6 @@ func (a *API) GetCatalogInfo() CatalogInfo {
 		Bundled:    bundled,
 		AutoSetup:  autoSetup,
 	}
-}
-
-// TrackHit is a catalog search result.
-type TrackHit struct {
-	ID     string `json:"id"`
-	Artist string `json:"artist"`
-	Title  string `json:"title"`
-}
-
-// SearchCatalog runs a token-substring search over "Artist - Title". Returns an
-// empty list when the catalog is not loaded or the query is empty.
-func (a *API) SearchCatalog(query string, limit int) []TrackHit {
-	if a.app.Catalog == nil {
-		return []TrackHit{}
-	}
-	if limit <= 0 {
-		limit = 50
-	}
-	refs := a.app.Catalog.Resolve(query, limit)
-	hits := make([]TrackHit, 0, len(refs))
-	for _, r := range refs {
-		hits = append(hits, TrackHit{ID: r.ID, Artist: r.Artist, Title: r.Title})
-	}
-	return hits
-}
-
-// SimilarResult is the payload for SimilarTracks.
-type SimilarResult struct {
-	Seed TrackHit   `json:"seed"`
-	Hits []TrackHit `json:"hits"`
-}
-
-// SimilarTracks returns the catalog tracks most similar to a seed track, blended
-// between the two embedding spaces by creativity (0 = playlist co-occurrence,
-// 1 = pure audio). The seed itself is excluded. Empty when the catalog or
-// similarity engine is not ready.
-func (a *API) SimilarTracks(ctx context.Context, id string, k int, creativity float64) SimilarResult {
-	res := SimilarResult{Hits: []TrackHit{}}
-	if a.app.Catalog == nil || a.app.Sim == nil {
-		return res
-	}
-	if k <= 0 {
-		k = 25
-	}
-	creativity = clamp01(creativity)
-
-	meta, ok := a.app.Catalog.Meta(id)
-	if !ok {
-		return res
-	}
-	res.Seed = TrackHit{ID: id, Artist: meta.Ref.Artist, Title: meta.Ref.Title}
-
-	v, ok := a.app.Catalog.Vectors(id)
-	if !ok {
-		return res
-	}
-
-	matches, err := a.app.Sim.Search(ctx, ports.SimilarityQuery{
-		AudioSum: v.Audio,
-		TrackSum: v.Track,
-		Weights:  [2]float32{float32(creativity), float32(1 - creativity)},
-		K:        k + 1,
-		Exclude:  map[string]struct{}{id: {}},
-	})
-	if err != nil {
-		return res
-	}
-	for _, m := range matches {
-		mm, ok := a.app.Catalog.Meta(m.ID)
-		if !ok {
-			continue
-		}
-		res.Hits = append(res.Hits, TrackHit{ID: m.ID, Artist: mm.Ref.Artist, Title: mm.Ref.Title})
-		if len(res.Hits) >= k {
-			break
-		}
-	}
-	return res
-}
-
-func clamp01(v float64) float64 {
-	if v < 0 {
-		return 0
-	}
-	if v > 1 {
-		return 1
-	}
-	return v
 }
 
 // DownloadCatalog gets the catalog onto disk and loads it, emitting

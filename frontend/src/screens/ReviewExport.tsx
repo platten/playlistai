@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Clipboard } from "@wailsio/runtime";
-import { API, FeedbackScope, FeedbackType, type EnrichedTrackDTO } from "../lib/api";
+import { API, FeedbackScope, FeedbackType, type ExportTrackDTO } from "../lib/api";
 import {
   Button,
   EmptyState,
@@ -12,8 +12,7 @@ import {
 } from "../components";
 
 interface Row {
-  dto: EnrichedTrackDTO;
-  isrc: string;
+  dto: ExportTrackDTO;
   include: boolean;
 }
 
@@ -22,8 +21,7 @@ type Saved =
   | { kind: "csv"; path: string; count: number }
   | { kind: "csv-canceled" };
 
-/** Resolve ISRC + metadata for a playlist via MusicBrainz, let the user review
- *  each match, then hand the list to Soundiiz (tokenless) or download a CSV. */
+/** Review local playlist details, then hand off to Soundiiz or download a CSV. */
 export function ReviewExport({
   trackIds,
   heading,
@@ -38,8 +36,8 @@ export function ReviewExport({
   onBack: () => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
-  const [enriching, setEnriching] = useState(true);
-  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [name, setName] = useState(heading);
   const [exporting, setExporting] = useState<null | "handoff" | "csv">(null);
@@ -57,46 +55,43 @@ export function ReviewExport({
       .catch(() => setExportError("Could not copy the link to the clipboard."));
   };
 
-  const enrichProgress = useProgress("enrich");
   const exportProgress = useProgress("export");
-  const started = useRef(false);
   const acceptanceRecorded = useRef(false);
 
-  const runEnrich = useCallback(() => {
-    setEnriching(true);
-    setEnrichError(null);
+  const loadSequence = useRef(0);
+  const loadTracks = useCallback(() => {
+    const sequence = ++loadSequence.current;
+    setLoading(true);
+    setLoadError(null);
     setSaved(null);
-    API.EnrichPlaylist(trackIds)
+    API.PrepareExport(trackIds)
       .then((res) => {
+        if (sequence !== loadSequence.current) return;
         const list = res ?? [];
         setRows(
           list.map((dto) => ({
             dto,
-            isrc: dto.isrc,
             include: true,
           })),
         );
       })
-      .catch((e) => setEnrichError(String(e)))
-      .finally(() => setEnriching(false));
+      .catch((e) => { if (sequence === loadSequence.current) setLoadError(String(e)); })
+      .finally(() => { if (sequence === loadSequence.current) setLoading(false); });
   }, [trackIds]);
 
   useEffect(() => {
-    if (started.current) return;
-    started.current = true;
-    runEnrich();
-  }, [runEnrich]);
+    acceptanceRecorded.current = false;
+    loadTracks();
+    return () => { loadSequence.current++; };
+  }, [loadTracks]);
 
-  const includedTracks = useMemo<EnrichedTrackDTO[]>(
+  const includedTracks = useMemo<ExportTrackDTO[]>(
     () =>
       (rows ?? [])
         .filter((r) => r.include)
-        .map((r) => ({ ...r.dto, isrc: r.isrc.trim() })),
+        .map((r) => r.dto),
     [rows],
   );
-
-  const matched = (rows ?? []).filter((r) => r.dto.matched).length;
-  const withIsrc = (rows ?? []).filter((r) => r.isrc.trim() !== "").length;
 
   const setRow = (i: number, patch: Partial<Row>) =>
     setRows((prev) => (prev ? prev.map((r, j) => (j === i ? { ...r, ...patch } : r)) : prev));
@@ -165,30 +160,25 @@ export function ReviewExport({
           <h1 className="truncate text-[15px] font-semibold">Review &amp; export</h1>
           <p className="text-[12px] text-faint">
             {rows
-              ? `${rows.length} tracks · ${matched} matched · ${withIsrc} with ISRC`
-              : "resolving metadata…"}
+              ? `${rows.length} tracks`
+              : "Loading tracks…"}
           </p>
         </div>
       </div>
 
-      {enriching ? (
+      {loading ? (
         <div className="rounded-card border border-line bg-surface p-4">
-          <ProgressBar
-            label="Looking up ISRCs on MusicBrainz"
-            done={enrichProgress?.done ?? 0}
-            total={enrichProgress?.total ?? trackIds.length}
-            note={enrichProgress?.note}
-          />
+          <p role="status" className="text-[13px] text-muted">Loading tracks…</p>
           <div className="mt-3">
             <LoadingRows rows={6} />
           </div>
         </div>
-      ) : enrichError ? (
-        <ErrorState message={enrichError} onRetry={runEnrich} />
+      ) : loadError ? (
+        <ErrorState message={loadError} onRetry={loadTracks} />
       ) : !rows || rows.length === 0 ? (
         <EmptyState
           title="Nothing to export"
-          description="None of these tracks resolved against the catalog."
+          description="No local track details are available for this playlist."
         />
       ) : (
         <>
@@ -197,10 +187,8 @@ export function ReviewExport({
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-faint">
                   <th className="w-10 px-3 py-2 font-medium" />
-                  <th className="px-3 py-2 font-medium">Your track</th>
-                  <th className="px-3 py-2 font-medium">MusicBrainz match</th>
-                  <th className="w-[168px] px-3 py-2 font-medium">ISRC</th>
-                  <th className="w-[108px] px-3 py-2 font-medium">Confidence</th>
+                  <th className="px-3 py-2 font-medium">Track</th>
+                  <th className="px-3 py-2 font-medium">Album</th>
                 </tr>
               </thead>
               <tbody>
@@ -226,32 +214,7 @@ export function ReviewExport({
                       <div className="text-[12px] text-muted">{r.dto.artist}</div>
                     </td>
                     <td className="px-3 py-2 align-top text-[12px] text-muted">
-                      {r.dto.matched ? (
-                        <>
-                          <div className="text-text/90">
-                            {(r.dto.allArtists ?? []).join(", ") || r.dto.artist}
-                          </div>
-                          <div>
-                            {[r.dto.album, r.dto.year > 0 ? String(r.dto.year) : ""]
-                              .filter(Boolean)
-                              .join(" · ") || "—"}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="text-faint">no confident match</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <input
-                        value={r.isrc}
-                        onChange={(e) => setRow(i, { isrc: e.target.value })}
-                        placeholder="—"
-                        spellCheck={false}
-                        className="w-full rounded-control border border-line bg-bg px-2 py-1 font-mono text-[12px] text-text outline-none focus:border-accent"
-                      />
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <Confidence score={r.dto.matched ? r.dto.matchScore : 0} />
+                      {r.dto.album || "—"}
                     </td>
                   </tr>
                 ))}
@@ -349,28 +312,6 @@ export function ReviewExport({
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function Confidence({ score }: { score: number }) {
-  const pct = Math.max(0, Math.min(100, score));
-  const tone =
-    score === 0
-      ? "bg-line"
-      : score >= 85
-        ? "bg-good"
-        : score >= 60
-          ? "bg-warn"
-          : "bg-bad";
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-pill bg-line">
-        <div className={"h-full rounded-pill " + tone} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="w-6 text-right font-mono text-[11px] text-faint">
-        {score > 0 ? score : "—"}
-      </span>
     </div>
   );
 }

@@ -16,92 +16,33 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// EnrichedTrackDTO is one row of the review-and-export screen: the user's track
-// plus whatever MusicBrainz resolved for it. The frontend may edit ISRC / artist
-// / title and hand the list straight back to an export method.
-type EnrichedTrackDTO struct {
-	ID         string   `json:"id"`
-	Artist     string   `json:"artist"`
-	Title      string   `json:"title"`
-	Matched    bool     `json:"matched"`
-	ISRC       string   `json:"isrc"`
-	AllISRCs   []string `json:"allIsrcs"`
-	Album      string   `json:"album"`
-	Year       int      `json:"year"`
-	AllArtists []string `json:"allArtists"`
-	MatchScore int      `json:"matchScore"`
+// ExportTrackDTO contains the local track details shown for export.
+type ExportTrackDTO struct {
+	ID     string `json:"id"`
+	Artist string `json:"artist"`
+	Title  string `json:"title"`
+	Album  string `json:"album"`
 }
 
-func dtoFromEnriched(e core.EnrichedTrack) EnrichedTrackDTO {
-	return EnrichedTrackDTO{
-		ID:         e.Ref.ID,
-		Artist:     e.Ref.Artist,
-		Title:      e.Ref.Title,
-		Matched:    e.Matched,
-		ISRC:       e.ISRC,
-		AllISRCs:   e.AllISRCs,
-		Album:      e.Album,
-		Year:       e.Year,
-		AllArtists: e.AllArtists,
-		MatchScore: e.MatchScore,
-	}
-}
-
-func enrichedFromDTO(d EnrichedTrackDTO) core.EnrichedTrack {
-	return core.EnrichedTrack{
-		Ref:        core.TrackRef{ID: d.ID, Artist: d.Artist, Title: d.Title},
-		Matched:    d.Matched,
-		ISRC:       d.ISRC,
-		AllISRCs:   d.AllISRCs,
-		Album:      d.Album,
-		Year:       d.Year,
-		AllArtists: d.AllArtists,
-		MatchScore: d.MatchScore,
-	}
-}
-
-// EnrichPlaylist resolves ISRC + metadata for a list of catalog track ids via
-// MusicBrainz, emitting playlistai:progress events under op "enrich". It blocks
-// (~1 request/second per uncached track). Unknown ids are skipped; unmatched
-// tracks come back with matched=false. A partial result from a canceled context
-// is returned without an error so the UI can still show what resolved.
-func (a *API) EnrichPlaylist(trackIDs []string) ([]EnrichedTrackDTO, error) {
-	if a.app.Enrich == nil {
-		return nil, errors.New("enrichment is unavailable")
-	}
+// PrepareExport reads local track details without enrichment or network access.
+// Preserve playlist order and duplicates; unknown IDs are skipped.
+func (a *API) PrepareExport(trackIDs []string) ([]ExportTrackDTO, error) {
 	if a.app.Catalog == nil {
 		return nil, errors.New("catalog not loaded")
 	}
-
-	refs := make([]core.TrackRef, 0, len(trackIDs))
+	out := make([]ExportTrackDTO, 0, len(trackIDs))
 	for _, id := range trackIDs {
 		if m, ok := a.app.Catalog.Meta(id); ok {
-			refs = append(refs, m.Ref)
+			out = append(out, ExportTrackDTO{ID: m.Ref.ID, Artist: m.Ref.Artist, Title: m.Ref.Title, Album: m.Album})
 		}
-	}
-	if len(refs) == 0 {
-		return []EnrichedTrackDTO{}, nil
-	}
-
-	enriched, err := a.app.Enrich.Enrich(a.context(), refs, NewWailsProgress())
-	if err != nil && len(enriched) == 0 {
-		return nil, err
-	}
-	if err != nil {
-		a.log.Warn("enrichment returned a partial result", "err", err, "resolved", len(enriched))
-	}
-
-	out := make([]EnrichedTrackDTO, 0, len(enriched))
-	for _, e := range enriched {
-		out = append(out, dtoFromEnriched(e))
 	}
 	return out, nil
 }
 
-func (a *API) exportRequest(name string, tracks []EnrichedTrackDTO) ports.ExportRequest {
+func (a *API) exportRequest(name string, tracks []ExportTrackDTO) ports.ExportRequest {
 	req := ports.ExportRequest{Name: name, Tracks: make([]core.EnrichedTrack, 0, len(tracks))}
 	for _, t := range tracks {
-		req.Tracks = append(req.Tracks, enrichedFromDTO(t))
+		req.Tracks = append(req.Tracks, core.EnrichedTrack{Ref: core.TrackRef{ID: t.ID, Artist: t.Artist, Title: t.Title}, Album: t.Album})
 	}
 	return req
 }
@@ -116,7 +57,7 @@ type ExportSaveResult struct {
 // ExportCSV writes the playlist as a Soundiiz-compatible CSV. When the app has a
 // window it shows a native Save dialog; otherwise (and when the dialog is
 // dismissed with no window) it falls back to <DataDir>/exports/<name>.csv.
-func (a *API) ExportCSV(name string, tracks []EnrichedTrackDTO) (ExportSaveResult, error) {
+func (a *API) ExportCSV(name string, tracks []ExportTrackDTO) (ExportSaveResult, error) {
 	exp, ok := a.app.Exporter("csv")
 	if !ok {
 		return ExportSaveResult{}, errors.New("csv exporter not wired")
@@ -178,7 +119,7 @@ type SoundiizHandoffResult struct {
 // OpenSoundiizHandoff posts the playlist to Soundiiz's tokenless import endpoint,
 // validates the returned share URL, opens it in the user's browser, and returns
 // it. Only the playlist name and the track/artist names leave the machine.
-func (a *API) OpenSoundiizHandoff(name string, tracks []EnrichedTrackDTO) (SoundiizHandoffResult, error) {
+func (a *API) OpenSoundiizHandoff(name string, tracks []ExportTrackDTO) (SoundiizHandoffResult, error) {
 	exp, ok := a.app.Exporter("soundiiz-handoff")
 	if !ok {
 		return SoundiizHandoffResult{}, errors.New("soundiiz exporter not wired")
