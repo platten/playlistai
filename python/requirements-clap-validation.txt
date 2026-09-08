@@ -2,6 +2,6 @@
 # https://download.pytorch.org/whl/cpu separately; never package this environment.
 torch==2.9.1
 transformers==5.10.1
-onnx==1.20.1
+onnx==1.22.0
 onnxruntime==1.26.0
 numpy==2.3.4
