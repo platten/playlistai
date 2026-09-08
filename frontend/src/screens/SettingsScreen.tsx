@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
+import { MusicMetadataCard } from "../components/MusicMetadataCard";
 
 /** ggml-org's official llama.cpp installer landing page. */
 const LLAMA_INSTALLER_URL = "https://llama.app";
@@ -23,7 +24,7 @@ const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "off", label: "Off" },
 ];
 
-/** Settings — currently just the AI-model panel. */
+/** Local models, playback, metadata providers, and user data controls. */
 export function SettingsScreen() {
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
@@ -325,6 +326,7 @@ export function SettingsScreen() {
       </section>
 
       <MusicAnalysisCard />
+      <MusicMetadataCard />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Application logs</h2>

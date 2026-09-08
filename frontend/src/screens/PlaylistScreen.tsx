@@ -72,6 +72,8 @@ export function PlaylistScreen({
   const [busy, setBusy] = useState(!initialResultMatches);
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const discogsSources = [...new Set((result?.intent ?? request.intent)?.knowledge?.sources ?? [])]
+    .filter((source) => /^https:\/\/www\.discogs\.com\/release\/[0-9]+$/.test(source));
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [feedback, setFeedback] = useState<Record<string, string[]>>({});
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -367,6 +369,18 @@ export function PlaylistScreen({
           {notice.requested > 0 ? ` (${notice.actual} of ${notice.requested} tracks)` : ""}
         </div>
       ))}
+
+      {discogsSources.length > 0 && (
+        <details className="mt-3 text-[12px] text-muted">
+          <summary className="cursor-pointer">Data provided by Discogs</summary>
+          <p className="mt-1">Release tracklists helped find catalog candidates; musical fit is assessed separately.</p>
+          <div className="mt-1 flex flex-wrap gap-3">
+            {discogsSources.map((source, i) => (
+              <a key={source} href={source} target="_blank" rel="noreferrer" className="text-accent hover:underline">Data provided by Discogs · release {i + 1}</a>
+            ))}
+          </div>
+        </details>
+      )}
 
       {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} className="mt-3" />}
 

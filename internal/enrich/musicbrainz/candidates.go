@@ -31,6 +31,7 @@ type candidateStream struct {
 	position            int
 	failures            int
 	lastError           error
+	fallback            *discogsCandidates
 }
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
@@ -74,6 +75,24 @@ func (s *candidateStream) Snapshot() *core.KnowledgeSnapshot {
 }
 
 func (s *candidateStream) Next(ctx context.Context) (core.TrackRef, error) {
+	if s.fallback != nil {
+		return s.nextDiscogs(ctx)
+	}
+	track, err := s.nextMusicBrainz(ctx)
+	// A legitimate empty result and caller cancellation are not outages.
+	// Cached (including stale offline) MusicBrainz data has already won here.
+	if err == nil || err == io.EOF || ctx.Err() != nil || s.replay {
+		return track, err
+	}
+	if !s.client.MetadataStatus().DiscogsConfigured {
+		return track, fmt.Errorf("%w; configure a Discogs personal API token in Settings for fallback discovery", err)
+	}
+	s.fallback = &discogsCandidates{}
+	s.snapshot.Notices = append(s.snapshot.Notices, "MusicBrainz discovery is unavailable. Trying Discogs release tracklists; every catalog candidate still requires the same musical checks.")
+	return s.nextDiscogs(ctx)
+}
+
+func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, error) {
 	if err := ctx.Err(); err != nil {
 		return core.TrackRef{}, err
 	}

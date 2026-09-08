@@ -67,6 +67,7 @@ type parsedIntentEntry struct {
 type intentCache struct {
 	mu      sync.Mutex
 	entries map[string]parsedIntentEntry
+	epoch   uint64
 }
 
 type activeOperation struct {
@@ -135,11 +136,25 @@ func (c *intentCache) put(key string, entry parsedIntentEntry) {
 	c.entries[key] = entry
 }
 
+func (c *intentCache) scopedKey(key string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return fmt.Sprintf("%d:%s", c.epoch, key)
+}
+
+func (c *intentCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.epoch++ // late parses may finish, but their earlier keys cannot be reused
+	c.entries = nil
+}
+
 func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, progress ports.Progress) (parsedIntentEntry, bool, error) {
 	key, err := a.intentCacheKey(input)
 	if err != nil {
 		return parsedIntentEntry{}, false, err
 	}
+	key = a.intentCache.scopedKey(key)
 	if entry, ok := a.intentCache.get(key); ok {
 		entry.intent = a.confirmSubmittedGenre(ctx, input, entry.intent, entry.outcome.Backend)
 		a.intentCache.put(key, entry)

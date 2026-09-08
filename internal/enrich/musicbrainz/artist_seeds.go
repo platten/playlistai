@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"golang.org/x/text/unicode/norm"
@@ -126,13 +127,21 @@ func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, c
 		p.Report("generation", 0, 0, detail)
 	}
 	notice(fmt.Sprintf("Artist %q was not found under that name in the local catalog. Looking up the artist and popular tracks online.", ref.Query))
-	artist, ambiguous, err := c.findSeedArtist(ctx, ref.Query, snapshot)
+	mbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	artist, ambiguous, err := c.findSeedArtist(mbCtx, ref.Query, snapshot)
+	cancel()
 	if ambiguous {
 		notice(fmt.Sprintf("MusicBrainz has multiple artists matching %q. Add a specific track or album to identify the artist; no online seed was selected.", ref.Query))
 		return ref
 	}
 	if err != nil || artist.ID == "" {
 		if err != nil {
+			if c.MetadataStatus().DiscogsConfigured {
+				notice("MusicBrainz artist lookup was unavailable. Trying Discogs release tracklists.")
+				if found, ok := c.discogsArtistSeed(ctx, ref, cat, resolver, snapshot); ok {
+					return found
+				}
+			}
 			notice(fmt.Sprintf("MusicBrainz artist lookup was unavailable: %v. Trying Deezer's artist search.", err))
 		} else {
 			notice(fmt.Sprintf("MusicBrainz did not identify %q. Trying Deezer's artist search.", ref.Query))

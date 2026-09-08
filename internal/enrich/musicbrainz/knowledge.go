@@ -37,29 +37,64 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 	return c.metadataGet(ctx, c.base, path, "knowledge-v1:", c.hc, negative)
 }
 
-func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, client *http.Client, negative bool) ([]byte, error) {
-	key := namespace + path
-	var cached string
-	var fetched int64
-	if c.db != nil {
-		_ = c.db.QueryRowContext(ctx, "SELECT json,fetched_at FROM mb_cache WHERE key=?", key).Scan(&cached, &fetched)
-	}
-	ttl := 30 * 24 * time.Hour
-	if negative || negativeKnowledge(cached) || namespace == "deezer-seeds-v1:" {
+func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, client *http.Client, _ bool) ([]byte, error) {
+	key := metadataKey(base, path, namespace)
+	ttl := musicBrainzTTL
+	if namespace == "deezer-seeds-v1:" {
 		ttl = 24 * time.Hour
 	}
-	if cached != "" && time.Since(time.Unix(fetched, 0)) < ttl {
-		return []byte(cached), nil
+	if namespace == "discogs-v1:" {
+		ttl = discogsTTL
+	}
+	var cached cachedResponse
+	var epoch uint64
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		cached = c.readCache(ctx, key)
+		if cached.body != "" && !validMetadata(path, namespace, []byte(cached.body)) {
+			cached = cachedResponse{}
+		}
+		age := time.Since(time.Unix(cached.fetched, 0))
+		if cached.body != "" && age >= 0 && age < ttl {
+			return []byte(cached.body), nil
+		}
+		// Discogs content must not be served after its separate freshness limit.
+		if namespace == "discogs-v1:" {
+			cached = cachedResponse{}
+		}
+		if only, _ := ctx.Value(cacheOnlyKey{}).(bool); only {
+			if cached.body != "" {
+				return []byte(cached.body), nil
+			}
+			return nil, core.ErrUnavailable
+		}
+		owner, done, generation := c.takeFetch(key)
+		if owner {
+			epoch = generation
+			defer c.finishFetch(key)
+			// A writer may have completed between the read and gate acquisition.
+			if latest := c.readCache(ctx, key); latest.body != "" && time.Since(time.Unix(latest.fetched, 0)) >= 0 && time.Since(time.Unix(latest.fetched, 0)) < ttl && validMetadata(path, namespace, []byte(latest.body)) {
+				return []byte(latest.body), nil
+			}
+			break
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	budget, _ := ctx.Value(knowledgeBudgetKey{}).(*knowledgeBudget)
 	fallback := func(err error) ([]byte, error) {
-		if cached != "" {
-			return []byte(cached), nil
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if cached.body != "" {
+			return []byte(cached.body), nil
 		}
 		return nil, err
-	}
-	if only, _ := ctx.Value(cacheOnlyKey{}).(bool); only {
-		return fallback(core.ErrUnavailable)
 	}
 	if budget != nil {
 		if budget.requests >= KnowledgeRequests {
@@ -111,19 +146,49 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 	if err != nil || len(raw) > 4<<20 {
 		return fallback(fmt.Errorf("invalid metadata response"))
 	}
-	if path != "/genres" && !strings.HasPrefix(path, "/genre/") && !json.Valid(raw) {
-		return fallback(fmt.Errorf("invalid metadata JSON"))
+	if !validMetadata(path, namespace, raw) {
+		return fallback(fmt.Errorf("invalid metadata response"))
 	}
-	var providerError struct {
-		Error json.RawMessage `json:"error"`
+	// Cache only the public fields used by the Discogs fallback, not images,
+	// marketplace data or user information returned alongside release metadata.
+	if namespace == "discogs-v1:" {
+		var err error
+		raw, err = sanitizeDiscogs(path, raw)
+		if err != nil {
+			return fallback(err)
+		}
 	}
-	if json.Unmarshal(raw, &providerError) == nil && len(providerError.Error) > 0 && string(providerError.Error) != "null" {
-		return fallback(fmt.Errorf("metadata provider returned an error"))
-	}
-	if c.db != nil {
-		_, _ = c.db.ExecContext(ctx, "INSERT OR REPLACE INTO mb_cache(key,json,fetched_at) VALUES(?,?,?)", key, string(raw), time.Now().Unix())
-	}
+	c.writeCache(ctx, key, raw, epoch)
 	return raw, nil
+}
+
+func validMetadata(path, namespace string, raw []byte) bool {
+	if namespace == "knowledge-v1:" && (path == "/genres" || strings.HasPrefix(path, "/genre/")) {
+		body := strings.ToLower(string(raw))
+		if path == "/genres" {
+			return strings.Contains(body, "href=\"/genre/") || strings.Contains(body, "href='/genre/")
+		}
+		return strings.Contains(body, "<html") || strings.Contains(body, "<a ") || strings.Contains(body, "<table")
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || object == nil {
+		return false
+	}
+	for _, key := range []string{"error", "message"} {
+		if value := object[key]; len(value) > 0 && string(value) != "null" {
+			return false
+		}
+	}
+	// Endpoint envelopes must be present. A successful empty array is valid;
+	// an unrelated JSON object or provider error is not a negative result.
+	endpoint, _, _ := strings.Cut(path, "?")
+	field := map[string]string{"/ws/2/recording": "recordings", "/ws/2/artist": "artists", "/ws/2/release-group": "release-groups", "/database/search": "results"}[endpoint]
+	if field != "" {
+		var values []json.RawMessage
+		value, ok := object[field]
+		return ok && strings.HasPrefix(strings.TrimSpace(string(value)), "[") && json.Unmarshal(value, &values) == nil
+	}
+	return true
 }
 
 func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
@@ -171,18 +236,14 @@ func (c *Client) GenreNames(ctx context.Context) (core.GenreGraph, error) {
 	}
 	// Previously retrieved aliases make abbreviated and non-Latin names
 	// resolvable without a fresh request or a built-in genre alias table.
-	if c.db != nil {
-		rows, err := c.db.QueryContext(ctx, "SELECT key,json FROM mb_cache WHERE key LIKE 'knowledge-v1:/genre/%/aliases' ORDER BY key")
-		if err == nil {
-			for rows.Next() {
-				var key, body string
-				if rows.Scan(&key, &body) == nil {
-					id := strings.TrimSuffix(strings.TrimPrefix(key, "knowledge-v1:/genre/"), "/aliases")
-					readGenrePage([]byte(body), id, c.base, &graph, true)
-				}
-			}
-			_ = rows.Close()
-		}
+	aliases := c.cachedAliases(ctx)
+	ids := make([]string, 0, len(aliases))
+	for id := range aliases {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		readGenrePage([]byte(aliases[id]), id, c.base, &graph, true)
 	}
 	graph.Version = knowledgeHash(graph)
 	return graph, nil
@@ -541,6 +602,11 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 	path := "/ws/2/release-group?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}.Encode()
 	raw, err := c.knowledgeGet(mbCtx, path, false)
 	if err != nil {
+		if c.MetadataStatus().DiscogsConfigured && ctx.Err() == nil {
+			if found, ok := c.resolveDiscogsAlbum(ctx, ref, cat, resolver, snapshot); ok {
+				return found
+			}
+		}
 		snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("MusicBrainz album lookup for %q was unavailable: %v. Trying Deezer album metadata.", ref.Query, err))
 		return c.resolveDeezerAlbum(ctx, ref, cat, resolver, snapshot)
 	}
@@ -648,17 +714,4 @@ func (c *Client) compositionEvidence(ctx context.Context, track *core.EnrichedTr
 			}
 		}
 	}
-}
-
-func negativeKnowledge(raw string) bool {
-	var object map[string]json.RawMessage
-	if json.Unmarshal([]byte(raw), &object) != nil {
-		return false
-	}
-	for _, key := range []string{"recordings", "release-groups", "artists"} {
-		if value, ok := object[key]; ok && strings.TrimSpace(string(value)) == "[]" {
-			return true
-		}
-	}
-	return false
 }

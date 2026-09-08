@@ -130,7 +130,11 @@ included in desktop or analysis downloads.
 
 Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
-MusicBrainz enrichment, and Soundiiz handoff. Recommendation exposure is stored
+MusicBrainz metadata, optional Discogs fallback, and Soundiiz handoff. MusicBrainz
+queries reuse a one-week cache; **Settings → Music metadata** can clear it and
+configure the Discogs token. Fallback requests are capped at 25/minute and still
+pass the normal musical-fit checks. See [metadata setup and cache policy](docs/music-metadata.md).
+Recommendation exposure is stored
 separately from positive feedback, and a generated or briefly previewed track
 is never treated as a like or dislike.
 

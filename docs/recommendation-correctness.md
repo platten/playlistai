@@ -1,5 +1,15 @@
 # Recommendation Correctness
 
+## Metadata cache and provider fallback (2026-09-08)
+
+All MusicBrainz lookups now share a one-week cache, including successful empty
+queries and recording enrichment. Settings can clear provider caches without
+deleting playlists, taste profiles or audio analysis. Optional, token-configured
+Discogs fallback supplies catalog-matched genre candidates and artist/album
+references during MusicBrainz outages, capped at 25 requests/minute including
+retries. Release-level metadata never bypasses recording-level musical checks.
+See [cache policy, setup, boundaries and executed regression results](music-metadata.md).
+
 ## Correctness contract
 
 Intent contract v7 separates five concepts that must not be conflated:

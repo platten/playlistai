@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -41,8 +40,12 @@ type Config struct {
 	MirrorURL string
 	// DeezerURL overrides the public artist/top-track endpoint for tests.
 	DeezerURL string
-	// MinScore: results scoring below this are Matched == false but still carry
-	// whatever metadata the top hit had. Default 85.
+	// DiscogsURL overrides the fallback endpoint for local tests only.
+	DiscogsURL string
+	// CredentialPath holds the optional Discogs personal token (not ordinary preferences).
+	CredentialPath string
+	// MinScore: lower-scoring results remain unmatched; exact artist/title
+	// identity is also required. Default 85.
 	MinScore int
 	// Interval between live requests. Default 1s; tests set it lower.
 	Interval time.Duration
@@ -57,11 +60,15 @@ type Client struct {
 	hc           *http.Client
 	deezerBase   string
 	deezerClient *http.Client
+	discogs      *discogsClient
 
 	limiter *requestLimiter
 
-	dbMu sync.Mutex
-	db   *sql.DB
+	dbMu       sync.Mutex
+	db         *sql.DB
+	cacheEpoch uint64
+	memory     map[string]cachedResponse
+	inflight   map[string]chan struct{}
 }
 
 type requestLimiter struct {
@@ -118,6 +125,10 @@ func New(cfg Config) (*Client, error) {
 		c.deezerBase = "https://api.deezer.com"
 	}
 	c.deezerClient = deezerhttp.Client(&http.Client{Timeout: 8 * time.Second})
+	c.discogs, err = newDiscogs(cfg.DiscogsURL, cfg.CredentialPath)
+	if err != nil {
+		return nil, err
+	}
 
 	if cfg.CachePath != "" {
 		db, err := sql.Open("sqlite", "file:"+cfg.CachePath+"?_pragma=busy_timeout(5000)")
@@ -132,6 +143,7 @@ func New(cfg Config) (*Client, error) {
 		}
 		c.db = db
 	}
+	c.expireDiscogs(context.Background())
 	return c, nil
 }
 
@@ -163,17 +175,7 @@ func (c *Client) Enrich(ctx context.Context, refs []core.TrackRef, p ports.Progr
 }
 
 func (c *Client) one(ctx context.Context, ref core.TrackRef) core.EnrichedTrack {
-	key := cacheKey(ref)
-	if et, ok := c.cacheGet(key); ok {
-		et.Ref = ref
-		return et
-	}
-
-	et := c.query(ctx, ref)
-	if ctx.Err() == nil && et.IdentityStatus != "" {
-		c.cachePut(key, et)
-	}
-	return et
+	return c.query(ctx, ref)
 }
 
 type mbRecording struct {
@@ -215,32 +217,20 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 	miss := core.EnrichedTrack{Ref: ref}
 
 	lucene := fmt.Sprintf(`artist:"%s" AND recording:"%s"`, mbEscape(ref.Artist), mbEscape(ref.Title))
-	endpoint := c.base + "/ws/2/recording?" + url.Values{
+	path := "/ws/2/recording?" + url.Values{
 		"query": {lucene},
 		"fmt":   {"json"},
 		"limit": {"3"},
 	}.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	raw, err := c.knowledgeGet(ctx, path, false)
 	if err != nil {
-		return miss
-	}
-	req.Header.Set("User-Agent", c.ua)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.hc.Do(req)
-	if err != nil {
-		return miss
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
 		return miss
 	}
 
 	var body struct {
 		Recordings []mbRecording `json:"recordings"`
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if json.Unmarshal(raw, &body) != nil {
 		return miss
 	}
@@ -310,54 +300,12 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 	return et
 }
 
-// --- cache -------------------------------------------------------------
-
-func (c *Client) cacheGet(key string) (core.EnrichedTrack, bool) {
-	if c.db == nil {
-		return core.EnrichedTrack{}, false
-	}
-	c.dbMu.Lock()
-	defer c.dbMu.Unlock()
-
-	var js string
-	err := c.db.QueryRow("SELECT json FROM mb_cache WHERE key = ?", key).Scan(&js)
-	if err != nil {
-		return core.EnrichedTrack{}, false
-	}
-	var et core.EnrichedTrack
-	if json.Unmarshal([]byte(js), &et) != nil {
-		return core.EnrichedTrack{}, false
-	}
-	return et, true
-}
-
-func (c *Client) cachePut(key string, et core.EnrichedTrack) {
-	if c.db == nil {
-		return
-	}
-	et.Ref = core.TrackRef{} // the ref is per-query, not cacheable
-	js, err := json.Marshal(et)
-	if err != nil {
-		return
-	}
-	c.dbMu.Lock()
-	defer c.dbMu.Unlock()
-	_, _ = c.db.Exec(
-		"INSERT OR REPLACE INTO mb_cache (key, json, fetched_at) VALUES (?, ?, ?)",
-		key, string(js), time.Now().Unix(),
-	)
-}
-
 // --- helpers -----------------------------------------------------------
 
-func cacheKey(ref core.TrackRef) string {
-	return "identity-v2\t" + strings.ToLower(strings.TrimSpace(ref.Artist)) + "\t" + strings.ToLower(strings.TrimSpace(ref.Title))
-}
-
 func (c *Client) CachedRecording(ref core.TrackRef) (core.EnrichedTrack, bool) {
-	result, ok := c.cacheGet(cacheKey(ref))
-	result.Ref = ref
-	return result, ok
+	// Reinterpret cached raw evidence using today's identity policy; never fetch.
+	result := c.query(context.WithValue(context.Background(), cacheOnlyKey{}, true), ref)
+	return result, result.IdentityStatus != ""
 }
 
 var mbEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)

@@ -175,18 +175,18 @@ func TestKnowledgeNegativeTTLAndOfflineStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = client.knowledgeGet(ctx, "/negative", false); err != nil || calls != 2 {
-		t.Fatal("negative response used the longer positive TTL")
+	if _, err = client.knowledgeGet(ctx, "/negative", false); err != nil || calls != 1 {
+		t.Fatal("negative response was not reused for one week")
 	}
 	_, err = client.db.Exec("UPDATE mb_cache SET fetched_at=?", time.Now().Add(-40*24*time.Hour).Unix())
 	if err != nil {
 		t.Fatal(err)
 	}
 	offline := context.WithValue(ctx, cacheOnlyKey{}, true)
-	if raw, err := client.knowledgeGet(offline, "/negative", false); err != nil || len(raw) == 0 || calls != 2 {
+	if raw, err := client.knowledgeGet(offline, "/negative", false); err != nil || len(raw) == 0 || calls != 1 {
 		t.Fatal("offline stale response lost")
 	}
-	if _, err := client.knowledgeGet(offline, "/missing", false); err == nil || calls != 2 {
+	if _, err := client.knowledgeGet(offline, "/missing", false); err == nil || calls != 1 {
 		t.Fatal("offline miss performed network lookup")
 	}
 }
