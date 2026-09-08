@@ -98,8 +98,14 @@ jobs:
           cache: true
 
       - uses: pnpm/action-setup@v5
+        if: runner.os != 'Windows'
         with:
           version: ${{ env.PNPM_VERSION }}
+
+      - name: Install pnpm (official Windows installer)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\install-pnpm.ps1 -Version $env:PNPM_VERSION
 
       - uses: actions/setup-node@v5
         with:

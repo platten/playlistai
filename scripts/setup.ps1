@@ -94,15 +94,13 @@ if (-not (Test-Command "node") -or (Get-NumericVersion (& node --version)) -lt $
 }
 
 if (-not (Test-Command "pnpm")) {
-    Write-Info "install pnpm $PnpmVersion"
-    if (Test-Command "corepack") {
-        & corepack enable
-        & corepack prepare "pnpm@$PnpmVersion" --activate
-    } elseif (Test-Command "npm") {
-        & npm install --global "pnpm@$PnpmVersion"
-    }
+    & (Join-Path $PSScriptRoot "install-pnpm.ps1") -Version $PnpmVersion
 }
-if (Test-Command "pnpm") { Write-Pass "pnpm $(& pnpm --version)" } else { $missing.Add("pnpm") }
+if (Test-Command "pnpm") {
+    $pnpmVersionText = (& pnpm --version | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) { throw "pnpm failed its health check - run scripts/install-pnpm.ps1 to repair it" }
+    Write-Pass "pnpm $pnpmVersionText"
+} else { $missing.Add("pnpm") }
 
 if (-not (Test-Command "makensis")) {
     [void](Install-SystemPackage -WingetID "NSIS.NSIS" -ScoopName "nsis")

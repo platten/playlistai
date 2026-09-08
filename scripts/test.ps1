@@ -32,6 +32,8 @@ Invoke-TestStep "PowerShell syntax" {
     if ($parseErrors.Count -gt 0) { throw ($parseErrors -join [Environment]::NewLine) }
 }
 
+Invoke-TestStep "pnpm installer failure handling" { & (Join-Path $PSScriptRoot "test-pnpm-installer.ps1") }
+
 if ((Test-Command "node") -and (Test-Command "pnpm")) {
     if (Test-Command "wails3") {
         Invoke-TestStep "wails3 generate bindings" { & wails3 generate bindings -clean=true -ts -i }

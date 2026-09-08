@@ -210,6 +210,13 @@ func TestArchiveTraversalLinksAndExpansion(t *testing.T) {
 func makeJob(t *testing.T) (job, string) {
 	t.Helper()
 	parent := t.TempDir()
+	// Match detectInstallation's canonical paths. Windows runners expose TEMP
+	// through an 8.3 alias; macOS may expose it through /var -> /private/var.
+	// readJob deliberately rejects unresolved staging paths.
+	parent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(parent, "playlist-ai")
 	dir, err := os.MkdirTemp(parent, ".playlist-ai-update-")
 	if err != nil {
@@ -230,7 +237,7 @@ func makeJob(t *testing.T) (job, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return job{Target: target, Payload: payload, Kind: "linux", ParentPID: 1, OldHash: oldHash, NewHash: newHash}, dir
+	return job{Target: target, Payload: payload, Kind: runtime.GOOS, ParentPID: 1, OldHash: oldHash, NewHash: newHash}, dir
 }
 
 func TestReplacementRollbackAndChangedPayload(t *testing.T) {
@@ -374,6 +381,9 @@ func TestSuccessfulRetrySupersedesOldFailure(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "job.json"), raw, 0600); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := readJob(filepath.Join(dir, "job.json")); err != nil {
+			t.Fatalf("invalid outcome fixture: %v", err)
+		}
 		raw, _ = json.Marshal(result{Target: j.Target, Success: success, Message: message})
 		filename := filepath.Join(dir, "result.json")
 		if err := os.WriteFile(filename, raw, 0600); err != nil {
@@ -406,17 +416,29 @@ func TestSuccessfulRetrySupersedesOldFailure(t *testing.T) {
 }
 
 func TestHelperEnvironmentPreservesConfigurationAndDropsMountPaths(t *testing.T) {
+	root := t.TempDir()
+	mount := filepath.Join(root, "old-mount")
+	retained := []string{filepath.Join(root, "bin"), mount + "-other"}
+	paths := append([]string{mount, filepath.Join(mount, "bin")}, retained...)
 	t.Setenv("PLAYLISTAI_CONFIG", "custom.toml")
-	t.Setenv("APPDIR", "/tmp/old-mount")
-	t.Setenv("APPIMAGE", "/home/me/playlist-ai.AppImage")
-	t.Setenv("LD_LIBRARY_PATH", "/tmp/old-mount/lib")
-	t.Setenv("PATH", strings.Join([]string{"/tmp/old-mount/bin", "/usr/bin"}, string(os.PathListSeparator)))
+	t.Setenv("APPDIR", mount)
+	t.Setenv("APPIMAGE", filepath.Join(root, "playlist-ai.AppImage"))
+	t.Setenv("LD_LIBRARY_PATH", filepath.Join(mount, "lib"))
+	t.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
 	values := map[string]string{}
 	for _, entry := range cleanEnvironment() {
 		key, value, _ := strings.Cut(entry, "=")
-		values[key] = value
+		// Windows preserves the inherited spelling (often "Path").
+		values[strings.ToUpper(key)] = value
 	}
-	if !filepath.IsAbs(values["PLAYLISTAI_CONFIG"]) || values["APPIMAGE"] != "" || values["LD_LIBRARY_PATH"] != "" || strings.Contains(values["PATH"], "old-mount") {
-		t.Fatal("unsafe or broken helper environment")
+	wantConfig, err := filepath.Abs("custom.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values["PLAYLISTAI_CONFIG"] != wantConfig || values["APPIMAGE"] != "" || values["APPDIR"] != "" || values["LD_LIBRARY_PATH"] != "" {
+		t.Fatal("configuration path or AppImage variables were not cleaned")
+	}
+	if want := strings.Join(retained, string(os.PathListSeparator)); values["PATH"] != want {
+		t.Fatalf("helper PATH = %q, want %q", values["PATH"], want)
 	}
 }

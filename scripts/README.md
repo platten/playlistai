@@ -15,7 +15,8 @@ from the repository root and expose the same core workflows.
 The test commands run Go vet/tests, a pure-Go core compile, lint when installed,
 Wails binding generation, frontend typechecking, and the production frontend
 build. The Bash gate also checks all shell scripts; the PowerShell gate parses
-all `.ps1` files. Use `--no-race` or `-NoRace` only where the Go race detector
+all `.ps1` files and tests pnpm installer failure handling without network access.
+Use `--no-race` or `-NoRace` only where the Go race detector
 is unavailable.
 
 ## Prerequisites
@@ -36,6 +37,17 @@ when absent) and falls back to an existing Scoop installation. `-NoSystem` skips
 changes but still installs project Go/Node tools when their runtimes exist. Use
 `-WithRace` to install/check the modern mingw-w64 compiler required by the
 Windows Go race detector.
+
+Windows setup installs missing pnpm through the [official PowerShell
+installer](https://pnpm.io/installation#on-windows), pinned to the project's
+pnpm 9 release line. Run `.\scripts\install-pnpm.ps1` to install or repair it
+independently, or pass `-Version 9.15.9` for an exact version. The wrapper checks
+the installed executable and version, makes `PNPM_HOME` available immediately,
+and preserves the existing Go/Node toolchain order on `PATH`. Windows CI and
+release jobs use the same wrapper before Node's pnpm cache setup; it also
+exports `PNPM_HOME` and `PATH` for later Actions steps. It does not change
+Microsoft Defender settings. If Windows blocks the executable, installation
+fails with a diagnostic instead of letting the contributor gate skip pnpm.
 
 ## What `build.sh` can package, and where
 

@@ -1002,3 +1002,29 @@ Validation completed: the full repository gate passed, including race-enabled
 Go tests, vet, lint, pure-Go compilation, Wails binding generation and frontend
 typecheck/build. An odd-frame regression covers floating-point rounding when
 centered sample boundaries are stored in seconds.
+
+## Windows contributor CI repair — 2026-09-08
+
+CI run `34212548266` reached Go tests after successfully installing pnpm and
+building the frontend. Its two updater failures were reproduced with a native
+Windows test executable using an 8.3 `TEMP` alias and uppercase `PATH`. Canonical
+fixture directories now satisfy the existing staging-path checks; helper
+environment fixtures use native path separators and normalize variable-name
+casing while checking the exact retained PATH. No production security checks
+were relaxed and neither failing test was skipped.
+
+Windows setup, CI and release packaging now share `scripts/install-pnpm.ps1`,
+which downloads the official PowerShell installer, selects pnpm 9, verifies the
+installed executable/version, preserves current toolchain precedence and exports
+the environment for subsequent Actions steps. Offline contributor checks cover
+download failure, nonzero installer exit, missing executable, temporary-file
+cleanup and avoiding PATH/Actions exports after failed installation.
+
+Validation: native Windows updater tests passed under the reproduced CI
+conditions; the real official pnpm 9.15.9 installer passed with version, PATH and
+Actions-export checks in Windows PowerShell 5.1 and PowerShell 7. Offline
+failure-path checks passed in both editions. The complete Linux
+repository gate and CI/release actionlint passed. Windows installer validation
+used a temporary PNPM_HOME and restored the previous user environment. A hosted
+GitHub Actions rerun and full native Windows application packaging were not run
+as part of this local repair.
