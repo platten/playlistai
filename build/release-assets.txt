@@ -1,0 +1,16 @@
+playlist-ai-x86_64.AppImage
+playlist-ai-aarch64.AppImage
+playlist-ai-amd64.deb
+playlist-ai-arm64.deb
+playlist-ai-amd64.rpm
+playlist-ai-arm64.rpm
+playlist-ai-amd64.pkg.tar.zst
+playlist-ai-arm64.pkg.tar.zst
+playlist-ai-linux-amd64.tar.gz
+playlist-ai-linux-arm64.tar.gz
+playlist-ai-windows-amd64.zip
+playlist-ai-windows-arm64.zip
+playlist-ai-amd64-installer.exe
+playlist-ai-arm64-installer.exe
+playlist-ai.dmg
+playlist-ai-macos.zip

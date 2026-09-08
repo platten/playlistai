@@ -9,6 +9,8 @@ import (
 	"strings"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
@@ -150,6 +152,7 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	}
 	if prompt != "" && wire.Genres != nil {
 		discardInventedInstructions(&wire, prompt)
+		preserveCategoryJourney(&wire, prompt)
 		normalizePeriods(&wire, prompt)
 		preserveQualityClauses(&wire, prompt)
 		if err := validateOpenIntent(wire, prompt); err != nil {
@@ -466,7 +469,7 @@ func validateExplicitReferences(w Wire, prompt string) error {
 			}
 			value := strings.ToLower(strings.TrimSpace(reference.Value))
 			span := strings.ToLower(strings.TrimSpace(reference.Span))
-			if value == "" || span == "" || !containsReferenceWords(prompt, span) || !containsReferenceWords(span, value) {
+			if value == "" || span == "" || !containsReferenceWords(prompt, span) || !referenceGrounded(span, reference) {
 				return fmt.Errorf("schema: explicit reference %q has no evidence in the user request", reference.Value)
 			}
 			if reference.Kind == "artist" {
@@ -490,9 +493,29 @@ func validateExplicitReferences(w Wire, prompt string) error {
 	return nil
 }
 
+func referenceGrounded(text string, ref WireReference) bool {
+	if containsReferenceWords(text, ref.Value) {
+		return true
+	}
+	if ref.Kind != "album" && ref.Kind != "track" {
+		return false
+	}
+	artist, title, qualified := core.QualifiedReferenceParts(ref.Value)
+	return qualified && containsReferenceWords(text, artist) && containsReferenceWords(text, title)
+}
+
 func containsReferenceWords(text, reference string) bool {
 	words := func(value string) string {
-		return strings.Join(strings.FieldsFunc(strings.ToLower(value), func(r rune) bool {
+		// Models may restore accents omitted by the listener. Match the
+		// catalog's Unicode normalization before testing source grounding,
+		// retaining word boundaries and every script rather than fuzzy names.
+		value = strings.Map(func(r rune) rune {
+			if unicode.Is(unicode.Mn, r) {
+				return -1
+			}
+			return unicode.ToLower(r)
+		}, norm.NFKD.String(value))
+		return strings.Join(strings.FieldsFunc(value, func(r rune) bool {
 			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
 		}), " ")
 	}

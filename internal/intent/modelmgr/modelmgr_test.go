@@ -106,7 +106,7 @@ func TestRecommendationsFitGPUWithHeadroom(t *testing.T) {
 	}
 }
 
-func TestRecommendationsCPUUsesLargestModelFromSafeShortlist(t *testing.T) {
+func TestRecommendationsCPUUsesOnlySmallestCatalogModel(t *testing.T) {
 	t.Parallel()
 	models := []Model{
 		{ID: "large", SizeApprox: 8 << 30, Recommended: true},
@@ -117,7 +117,7 @@ func TestRecommendationsCPUUsesLargestModelFromSafeShortlist(t *testing.T) {
 	}
 
 	got := Recommendations(models, Hardware{})
-	if len(got) != 1 || got[0].ID != "small-second" {
+	if len(got) != 1 || got[0].ID != "legacy-tiny" {
 		t.Fatalf("CPU recommendations = %+v", got)
 	}
 }
@@ -134,7 +134,7 @@ func TestRecommendationsDoNotOfferUnusableModels(t *testing.T) {
 			t.Fatalf("available=%d: unexpected recommendation %+v", available, got)
 		}
 	}
-	if got := Recommendations(models[:2], Hardware{}); len(got) != 0 {
+	if got := Recommendations(models[1:2], Hardware{}); len(got) != 0 {
 		t.Fatalf("unusable CPU models recommended: %+v", got)
 	}
 }
@@ -162,7 +162,7 @@ func TestCatalogRecommendationsForCommonHardware(t *testing.T) {
 		hardware  Hardware
 		wantModel []string
 	}{
-		{name: "CPU", wantModel: []string{"qwen3.5-9b-q4km"}},
+		{name: "CPU", wantModel: []string{"qwen2.5-3b-instruct-q4km"}},
 		{name: "4 GiB GPU", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 4 << 30, AvailableVRAMBytes: 4 << 30, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-4b-q4km"}},
 		{name: "test RTX 5060 observed free VRAM", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 8123 << 20, AvailableVRAMBytes: 7033 << 20, ReserveBytes: reserve}, wantModel: []string{"qwen3.5-9b-q4km"}},
 		{name: "RTX 5070 Laptop 8 GiB", hardware: Hardware{GPUAvailable: true, TotalVRAMBytes: 8 << 30, AvailableVRAMBytes: 8 << 30, ReserveBytes: reserve}, wantModel: []string{"gemma-3-12b-it-qat-q4km"}},

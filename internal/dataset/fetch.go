@@ -11,8 +11,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/platten/playlistai/internal/httpretry"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -107,7 +109,7 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpretry.Client(http.DefaultClient).Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -121,6 +123,9 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 	var out *os.File
 	switch resp.StatusCode {
 	case http.StatusPartialContent:
+		if !validResumeRange(resp.Header.Get("Content-Range"), have, size, resp.ContentLength) {
+			return have, fmt.Errorf("invalid download resume range")
+		}
 		out, err = os.OpenFile(part, os.O_WRONLY|os.O_APPEND, 0o644) //nolint:gosec
 	case http.StatusOK:
 		have = 0
@@ -134,7 +139,13 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 	}
 	defer out.Close()
 
-	written, err := copyHashed(out, h, resp.Body, have, func(done int64) {
+	var body io.Reader = resp.Body
+	if size > 0 {
+		// Enforce the manifest bound while streaming, before a remote server
+		// can fill the disk. Hash validation alone runs too late to do this.
+		body = io.LimitReader(resp.Body, size-have)
+	}
+	written, err := copyHashed(out, h, body, have, func(done int64) {
 		if onProgress != nil {
 			onProgress(done, total)
 		}
@@ -146,6 +157,14 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 
 	if size > 0 && got != size {
 		return got, fmt.Errorf("size %d, expected %d", got, size)
+	}
+	if size > 0 {
+		var extra [1]byte
+		if n, err := io.ReadFull(resp.Body, extra[:]); n > 0 || err != io.EOF {
+			out.Close()
+			_ = os.Remove(part)
+			return got, fmt.Errorf("download exceeds declared size or has an incomplete response")
+		}
 	}
 	if verify {
 		if sum := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(sum, sha256hex) {
@@ -166,6 +185,25 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 		return got, err
 	}
 	return got, nil
+}
+
+func validResumeRange(header string, start, size, length int64) bool {
+	value, ok := strings.CutPrefix(header, "bytes ")
+	if !ok {
+		return false
+	}
+	rangeText, totalText, ok := strings.Cut(value, "/")
+	if !ok {
+		return false
+	}
+	firstText, lastText, ok := strings.Cut(rangeText, "-")
+	if !ok {
+		return false
+	}
+	first, e1 := strconv.ParseInt(firstText, 10, 64)
+	last, e2 := strconv.ParseInt(lastText, 10, 64)
+	total, e3 := strconv.ParseInt(totalText, 10, 64)
+	return e1 == nil && e2 == nil && e3 == nil && first == start && first >= 0 && last >= first && total > last && last == total-1 && (size == 0 || total == size) && (length < 0 || length == total-first)
 }
 
 func copyHashed(dst io.Writer, h hash.Hash, src io.Reader, startAt int64, onProgress func(int64)) (int64, error) {

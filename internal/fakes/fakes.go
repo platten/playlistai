@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -113,6 +116,13 @@ func fakeCandidate(kind core.ReferenceKind, ref core.TrackRef, artistIDs []strin
 }
 
 func normalizeFake(value string) string {
+	// Match the production catalog's accent-insensitive reference lookup.
+	value = strings.Map(func(r rune) rune {
+		if unicode.Is(unicode.Mn, r) {
+			return -1
+		}
+		return r
+	}, norm.NFKD.String(value))
 	return strings.Join(strings.Fields(strings.ToLower(value)), " ")
 }
 

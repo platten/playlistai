@@ -1,0 +1,17 @@
+[
+  {"prompt":"Radiohead for a rainy train ride: intimate, restless, and quietly hopeful.","artist":"Radiohead"},
+  {"prompt":"Prince-inspired funk for cooking with friends: playful bass, crisp drums, and a little swagger.","artist":"Prince"},
+  {"prompt":"Something like Massive Attack and Portishead: shadowy grooves for a city after midnight.","artists":["Massive Attack","Portishead"]},
+  {"prompt":"Nina Simone for a slow Sunday morning, with expressive singing and warm piano.","artist":"Nina Simone"},
+  {"prompt":"Songs with the glossy, joyful feel of Daft Punk's album Discovery, with room for other artists.","album":"Discovery"},
+  {"prompt":"Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.","track":"Superstition"},
+  {"prompt":"Jazz-funk with elastic basslines and lively percussion for a sunny walk.","genre":"jazz-funk"},
+  {"prompt":"Shoegaze that feels like sunlight through fog: blurred guitars, gentle momentum, and dreamy melodies.","genre":"shoegaze"},
+  {"prompt":"Dub techno for a late-night workspace: spacious echoes and a steady pulse.","genre":"dub techno"},
+  {"prompt":"Warm analog synthesizers, arpeggios, and a retro-futuristic soundtrack for driving through neon streets."},
+  {"prompt":"A small jazz trio with brushed drums, upright bass, and piano; instrumental, no vocals.","vocal":"instrumental"},
+  {"prompt":"Romantic soul with expressive female vocals, relaxed drums, and a warm, unhurried feel.","vocal":"female"},
+  {"prompt":"A journey from ambient to energetic electronic, like a quiet room gradually becoming a dance floor.","journeyGenres":["ambient","electronic"]},
+  {"prompt":"A journey from soul to disco: begin with a warm groove and finish ready to dance.","journeyGenres":["soul","disco"]},
+  {"prompt":"A journey from acoustic folk to indie rock, moving from a fireside conversation to a small festival stage.","journeyGenres":["acoustic folk","indie rock"]}
+]

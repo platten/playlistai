@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/platten/playlistai/internal/process"
 )
 
 // errRuntimeMissing is returned by New when no llama runtime can be found.
@@ -72,7 +74,9 @@ func ProbeDevices(ctx context.Context, r Runtime) ([]Device, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	args := append(r.subcmd(), "--list-devices")
-	out, err := exec.CommandContext(probeCtx, r.Path, args...).CombinedOutput() //nolint:gosec // validated local runtime
+	cmd := exec.CommandContext(probeCtx, r.Path, args...) //nolint:gosec // validated local runtime
+	process.Background(cmd)
+	out, err := cmd.CombinedOutput()
 	devices := ParseDeviceList(string(out))
 	if len(devices) > 0 {
 		return devices, nil
@@ -314,6 +318,7 @@ func runInstaller(ctx context.Context, extraEnv []string, onLine func(string)) e
 		cmd.Env = append(os.Environ(), env...)
 	}
 
+	process.Background(cmd)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
 	cmd.Stderr = pw

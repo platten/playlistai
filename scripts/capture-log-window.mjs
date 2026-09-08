@@ -25,7 +25,7 @@ try {
   }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({
     contentType: "application/javascript",
-    body: "export const Events={On:()=>()=>{}}; export const Clipboard={}; export const Call={}; export const CancellablePromise=Promise;"
+    body: "export const Events={On:()=>()=>{}}; export const Clipboard={}; export const Call={}; export const CancellablePromise=Promise; export const System={IsMac:()=>false};"
   }));
   await page.goto("http://127.0.0.1:9245/?window=logs");
   await page.getByText("150 retained entries", { exact: false }).waitFor();
@@ -46,6 +46,15 @@ try {
   await page.screenshot({path:output+"/narrow.png"});
   await page.evaluate(()=>{window.__fail=true;});
   await page.getByRole("alert").waitFor();
+  await page.screenshot({path:output+'/error-narrow.png'});
+  await page.getByRole('button',{name:'Dismiss error',exact:true}).focus();
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(2200);
+  if(await page.getByRole('alert').count()) throw Error('Polling resurrected dismissed error');
+  await page.evaluate(()=>{window.__fail=false;});
+  await page.waitForTimeout(1200);
+  await page.evaluate(()=>{window.__fail=true;});
+  await page.getByRole('alert').waitFor();
   await page.getByRole("button",{name:"Close logs"}).click();
   if(!await page.evaluate(()=>window.__closed)) throw Error("Close action not called");
   if(errors.length) throw Error(errors.join("\n"));

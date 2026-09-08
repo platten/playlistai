@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"github.com/platten/playlistai/internal/httpretry"
 )
 
 func (l *requestLimiter) acquire(ctx context.Context) error {
@@ -39,6 +41,10 @@ type limitedTransport struct {
 }
 
 func (t *limitedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return httpretry.RoundTrip(req, t.roundTripOnce)
+}
+
+func (t *limitedTransport) roundTripOnce(req *http.Request) (*http.Response, error) {
 	if err := t.client.limiter.acquire(req.Context()); err != nil {
 		return nil, err
 	}

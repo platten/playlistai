@@ -118,7 +118,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	if len(request.Intent.Journey.EnergyTrajectory) > 0 {
 		result.Notices = append(result.Notices, core.PlaylistNotice{
 			Code:      "energy_trajectory_unsupported",
-			Detail:    "energy trajectory was preserved but not applied because the catalog has no acoustic energy feature",
+			Detail:    "The requested energy change is saved, but these recordings have no measured energy evidence. Review how the playlist builds or winds down.",
 			Requested: request.Intent.Count, Actual: len(items),
 		})
 	}

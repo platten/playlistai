@@ -126,9 +126,22 @@ func (c *Catalog) resolveArtist(query string) core.ReferenceResolution {
 	for key, artist := range byArtist {
 		kind := matchKind[key]
 		confidence := map[string]float64{"exact": 1, "alias": .98, "prefix": .88, "tokens": .76}[kind]
-		candidates = append(candidates, c.artistCandidate(artist, confidence, kind, query))
+		candidates = append(candidates, core.ResolutionCandidate{
+			Kind: core.ReferenceArtist, EntityID: "artist:" + normalizeUnicodeSearch(artist), Artist: artist,
+			Confidence: confidence,
+			Evidence:   []core.ResolutionEvidence{{Match: kind, NormalizedQuery: unicodeQuery, MatchedText: artist}},
+		})
 	}
-	return rankResolution(candidates)
+	// Rank identities before computing medoids. Broad/short artist names can
+	// match hundreds of entities; only the visible alternatives need vectors.
+	result := rankResolution(candidates)
+	if result.Selected != nil {
+		result.Selected.Representatives = c.artistRepresentatives(result.Selected.Artist)
+	}
+	for i := range result.Alternatives {
+		result.Alternatives[i].Representatives = c.artistRepresentatives(result.Alternatives[i].Artist)
+	}
+	return result
 }
 
 func artistFallbackKind(latinQuery, unicodeQuery, latinArtist, unicodeArtist string) string {
@@ -168,7 +181,13 @@ func (c *Catalog) resolveTrack(query string) core.ReferenceResolution {
 		seenRecording[recording] = struct{}{}
 		candidates = append(candidates, trackCandidate(row.ref, confidence, kind, query))
 	}
-	return rankResolution(candidates)
+	result := rankResolution(candidates)
+	if result.Status == core.ResolutionUnresolved {
+		if artist, title, ok := core.QualifiedReferenceParts(query); ok && query != artist+" - "+title {
+			return c.resolveTrack(artist + " - " + title)
+		}
+	}
+	return result
 }
 
 func rankResolution(candidates []core.ResolutionCandidate) core.ReferenceResolution {

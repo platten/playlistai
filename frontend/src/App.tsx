@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { System } from "@wailsio/runtime";
 import { useTheme } from "./design/theme";
 import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
@@ -7,6 +8,7 @@ import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FirstRunWizard } from "./screens/FirstRunWizard";
+import { UpdatePrompt } from "./components/UpdatePrompt";
 
 type Screen = "generate" | "playlist" | "reviewexport" | "settings";
 
@@ -24,6 +26,10 @@ interface ReviewState {
 }
 
 export default function App() {
+  return <><AppContent /><UpdatePrompt /></>;
+}
+
+function AppContent() {
   const sessionId = useRef(newSessionID()).current;
   const { choice, cycle } = useTheme();
   const [screen, setScreen] = useState<Screen>("generate");
@@ -63,16 +69,20 @@ export default function App() {
     return <div className="h-full bg-bg" />;
   }
   if (!onboarded) {
-    return <FirstRunWizard onDone={() => setOnboarded(true)} />;
+    return <div className="h-full overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"><FirstRunWizard onDone={() => setOnboarded(true)} /></div>;
   }
 
   return (
     <PreviewPlayerProvider>
       <div className="flex h-full flex-col bg-bg text-text">
-        <header className="flex h-13 flex-none items-center gap-3 border-b border-line bg-surface/60 px-5">
+        <header className={
+          "flex min-h-13 flex-none flex-wrap items-center gap-2 border-b border-line bg-surface/60 py-2 sm:gap-3 " +
+          // The macOS full-size content view shares this row with native controls.
+          (System.IsMac() ? "pl-24 pr-3 sm:pr-5" : "px-3 sm:px-5")
+        }>
           <AppIcon size={20} className="shrink-0 rounded-[5px]" />
           <span className="shrink-0 font-semibold tracking-[0.01em]">Playlist AI</span>
-          <nav className="ml-3 flex shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1">
+          <nav className="order-last flex w-full shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1 sm:order-none sm:ml-3 sm:w-auto">
             <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
               Generate
             </NavButton>
@@ -110,7 +120,7 @@ export default function App() {
           </button>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden">
+        <main key={screen} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
           {(screen === "generate" || (screen === "playlist" && !playlist) || (screen === "reviewexport" && !review)) && (
             <GenerateScreen
               sessionId={sessionId}
@@ -169,6 +179,7 @@ function NavButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      aria-current={active ? "page" : undefined}
       className={
         "h-7 shrink-0 whitespace-nowrap rounded-md px-3 text-[12.5px] font-medium transition-colors disabled:opacity-40 " +
         (active

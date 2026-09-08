@@ -9,16 +9,25 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	buildinfo "github.com/platten/playlistai/build"
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/logging"
+	"github.com/platten/playlistai/internal/updater"
 )
 
 // Version is stamped at build time via -ldflags "-X .../bridge.Version=...".
 var Version = "dev"
 
+func init() {
+	if Version == "dev" {
+		Version = buildinfo.Version
+	}
+}
+
 // API is registered with application.NewService; every exported method becomes
 // callable from TypeScript via the generated bindings.
 type API struct {
+	updates     *updater.Manager
 	logs        *logging.Store
 	live        liveGenerations
 	app         *app.Container
@@ -33,7 +42,7 @@ func New(a *app.Container, log *slog.Logger) *API {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &API{app: a, log: log, ctx: context.Background()}
+	return &API{app: a, log: log, ctx: context.Background(), updates: updater.New(Version)}
 }
 
 // ServiceName implements application.ServiceName.

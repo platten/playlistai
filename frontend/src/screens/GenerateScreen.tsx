@@ -13,7 +13,6 @@ import {
 import {
   Button,
   EmptyState,
-  ErrorState,
   Icon,
   ProgressBar,
   usePreviewPlayer,
@@ -71,6 +70,9 @@ export function GenerateScreen({
   const [parsing, setParsing] = useState(false);
   const [processingSeconds, setProcessingSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
+  const noticeRef = useRef<HTMLDivElement>(null);
   const [resolutionChoices, setResolutionChoices] = useState<Record<string, string>>({});
   const debounce = useRef<number | undefined>(undefined);
   const [generationId, setGenerationId] = useState("");
@@ -171,6 +173,7 @@ export function GenerateScreen({
     setParsing(false);
     if (generating) return;
     setPreview(null);
+    setParseError(null);
     if (prompt.trim() === "") {
       return;
     }
@@ -182,8 +185,11 @@ export function GenerateScreen({
         .then((p) => {
           if (sequence === parseSequence.current) setPreview(p ?? null);
         })
-        .catch(() => {
-          if (sequence === parseSequence.current) setPreview(null);
+        .catch((e) => {
+          if (sequence === parseSequence.current) {
+            setPreview(null);
+            setParseError(String(e));
+          }
         })
         .finally(() => {
           if (sequence === parseSequence.current) setParsing(false);
@@ -200,15 +206,31 @@ export function GenerateScreen({
     setResolutionChoices({});
   }, [preview]);
 
-  // Catalog-only parsing can only retrieve by a catalog reference. A local
-  // model may infer that starting point, or use grounded seedless retrieval.
-  // A rules fallback for a requested local-model parse preserves the semantic
-  // request; only an explicitly catalog-only session requires a named seed.
+  useEffect(() => {
+    setError(null);
+    setOutcome(null);
+    setDismissedNotice(null);
+  }, [prompt, source]);
+
+  useEffect(() => {
+    if (error || outcome) noticeRef.current?.scrollIntoView({ block: "start" });
+  }, [error, outcome]);
+
+  // Both parsers can preserve category requests for online seed discovery.
+  // Ask for a named reference only when no usable musical intent was parsed.
   const activeBackend = preview?.parser?.requestedBackend || preview?.backend || parserBackend;
   const catalogOnly = activeBackend !== "llama";
+  const energyPoints = preview?.intent.journey?.energyTrajectory ?? [];
+  const requestedEnergy = energyPoints.length < 2 ? "" : energyPoints.length > 2 ? "changes through the journey" :
+    energyPoints[0].energy < energyPoints[energyPoints.length - 1].energy ? "build toward the end" :
+    energyPoints[0].energy > energyPoints[energyPoints.length - 1].energy ? "wind down toward the end" : "stay steady overall";
+  const instrumentalRequest = (preview?.intent.hardConstraints ?? []).some((c) => c.kind === "exclude_vocals" || c.kind === "require_instrumental") ||
+    (preview?.intent.preferences.vocalPreference?.influence !== "negative" && ["instrumental", "no vocals"].includes(preview?.intent.preferences.vocalPreference?.value.toLowerCase() ?? "")) ||
+    (preview?.intent.preferences.instrumentation ?? []).some((p) => p.influence !== "negative" && p.value.toLowerCase() === "instrumental");
   const needsSeed =
     source === "fresh" &&
     catalogOnly &&
+    !instrumentalRequest &&
     (preview === null ||
       ((preview.seeds ?? []).length === 0 && (preview.requiredTracks ?? []).length === 0 && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0));
   const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred);
@@ -218,6 +240,44 @@ export function GenerateScreen({
   const ambiguityNeedsChoice = ambiguousIssues.some(
     (issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)],
   );
+  const outcomeReasons = outcome?.outcome?.reasons ?? outcome?.status?.reasons ?? [];
+  const lookupNotices = (outcome?.notices ?? []).filter((notice) => notice.code.startsWith("music_lookup_")).map((notice) => notice.detail);
+  const noticeTitle = error
+    ? "Playlist generation failed"
+    : outcome
+      ? (outcome.outcome?.state ?? outcome.status?.state) === "needs_clarification"
+        ? "Refine your request"
+        : "Musical fit could not be established"
+      : "Your request needs attention";
+  const noticeDetails = error
+    ? [error, "Generation did not complete. Retry, or edit your description and try again. If this keeps happening, open Settings → Application logs for more details."]
+    : outcome
+      ? outcomeReasons.length > 0
+        ? [...outcomeReasons.map((reason) => `${reason.criterion ? `${reason.criterion}: ` : ""}${reason.detail}${reason.action ? ` Next: ${reason.action}` : ""}`), ...lookupNotices]
+        : [...lookupNotices, "No tracks were returned for this request. The available evidence did not establish a playlist that meets it. Add an artist or track reference, or relax a requirement, then try again."]
+      : !generating && source === "fresh"
+        ? [
+          ...(parseError ? [`The request summary could not be prepared: ${parseError}. You can retry generation or edit your description.`] : []),
+          ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
+          ...unresolvedIssues.map((issue) => issue.influence === "negative"
+            ? `The excluded ${issue.kind} “${issue.query}” has no local catalog match. Its exclusion is preserved; it will not be used for a seed lookup.`
+            : issue.kind === "artist"
+            ? `Artist “${issue.query}” was not found under that name in the local catalog. Generate playlist will search MusicBrainz and Deezer for the artist, then try popular tracks in order until a catalog seed is found. If those do not match, it will check additional recordings within the lookup limit.`
+            : `No catalog match was found for the ${issue.kind} “${issue.query}”. Check the spelling, include the artist with an album or track title, or use another reference.`),
+          ...(needsSeed && preview && !parsing ? ["Catalog-only mode could not find an artist, track, or cached genre to start from. Add a named reference, or set up a local language model in Settings to interpret descriptions."] : []),
+        ]
+        : [];
+  const noticeKey = JSON.stringify(noticeDetails);
+  const showNotice = noticeDetails.length > 0 && dismissedNotice !== noticeKey;
+
+  const selectReference = (key: string, trackId: string) => {
+    const choices = { ...resolutionChoices, [key]: trackId };
+    setResolutionChoices(choices);
+    if (ambiguousIssues.every((issue) => choices[resolutionIssueKey(issue.kind, issue.query)])) {
+      // The last selection can remove the notice; keep keyboard focus useful.
+      window.requestAnimationFrame(() => document.getElementById("generate-playlist")?.focus());
+    }
+  };
 
   const runGenerate = useCallback(
     (text: string, selections: ResolutionSelection[] = []) => {
@@ -228,6 +288,7 @@ export function GenerateScreen({
       setGenerationId(id);
       setCheckedTracks([]);
       setOutcome(null);
+      setDismissedNotice(null);
       setGenerating(true);
       setError(null);
       const sequence = ++generationSequence.current;
@@ -240,10 +301,13 @@ export function GenerateScreen({
       activeGeneration.current = request;
       request
         .then((res) => {
-          if (sequence === generationSequence.current && res && res.playlist.generationId === id) {
-            if ((res.playlist.tracks ?? []).length === 0) setOutcome(res.playlist);
-            else onGenerated(res.request, res.name || q, res.playlist);
+          if (sequence !== generationSequence.current) return;
+          if (!res?.playlist || res.playlist.generationId !== id) {
+            setError("The generator returned no result for the active request. Please try generating again.");
+            return;
           }
+          if ((res.playlist.tracks ?? []).length === 0) setOutcome(res.playlist);
+          else onGenerated(res.request, res.name || q, res.playlist);
         })
         .catch((e) => {
           if (sequence === generationSequence.current) setError(String(e));
@@ -256,6 +320,7 @@ export function GenerateScreen({
   );
 
   const generate = useCallback(() => {
+    setDismissedNotice(null);
     if (source === "saved" && savedRequest) {
       const hit = saved.find((item) => item.id === savedId);
       generationSequence.current += 1;
@@ -269,7 +334,10 @@ export function GenerateScreen({
       );
       return;
     }
-    if (needsSeed) return;
+    if (ambiguityNeedsChoice || (needsSeed && preview && !parseError)) {
+      window.requestAnimationFrame(() => noticeRef.current?.scrollIntoView({ block: "start" }));
+      return;
+    }
     const selections = ambiguousIssues.flatMap((issue) => {
       const trackId = resolutionChoices[resolutionIssueKey(issue.kind, issue.query)];
       return trackId
@@ -290,6 +358,9 @@ export function GenerateScreen({
     sessionId,
     source,
     needsSeed,
+    ambiguityNeedsChoice,
+    preview,
+    parseError,
   ]);
 
   const surprise = useCallback(() => {
@@ -333,15 +404,38 @@ export function GenerateScreen({
   }
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[820px] flex-col items-center gap-6 overflow-auto px-4 py-8 sm:px-8">
+    <div className="mx-auto flex min-h-full w-full max-w-[820px] flex-col items-center gap-6 px-4 py-8 sm:px-8">
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
         <p className="text-[14px] text-muted">
           {catalogOnly
-            ? "Catalog-only mode requires a seed artist or track from the catalog. Use plain language for everything else."
+            ? "Describe genres, artists, tracks, or a journey. Generation can look up starting tracks when needed."
             : "Describe what you want to hear. The local model can infer a catalog starting point, so naming an artist or track is optional."}
         </p>
       </div>
+
+      {showNotice && (
+        <div ref={noticeRef} className="w-full scroll-mt-4 rounded-card border border-warn/40 bg-surface p-4">
+          <div className="flex items-start gap-3">
+            <Icon.Warn size={18} className="mt-0.5 shrink-0 text-warn" />
+            <div role="alert" className="min-w-0 flex-1 break-words">
+              <h2 className="font-semibold">{noticeTitle}</h2>
+              {noticeDetails.map((detail, index) => <p key={index} className="mt-2 text-[13px] text-muted">{detail}</p>)}
+            </div>
+            <button type="button" aria-label="Dismiss request message" className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-accent-quiet hover:text-text" onClick={() => { setDismissedNotice(noticeKey); document.getElementById("music-description")?.focus(); }}><Icon.X size={16} /></button>
+          </div>
+          {ambiguousIssues.map((issue) => (
+            <label key={resolutionIssueKey(issue.kind, issue.query)} className="mt-3 flex flex-col gap-1 text-[13px]">
+              Choose the intended {issue.kind} for “{issue.query}”
+              <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(resolutionIssueKey(issue.kind, issue.query), event.target.value)}>
+                <option value="">Select a match…</option>
+                {(issue.alternatives ?? []).map((alternative) => <option key={alternative.entityId} value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
+              </select>
+            </label>
+          ))}
+          <Button className="mt-3" variant="ghost" size="sm" onClick={() => document.getElementById("music-description")?.focus()}>Edit description</Button>
+        </div>
+      )}
 
       {saved.length > 0 && (
         <div className="flex w-full flex-wrap items-center gap-x-5 gap-y-2 text-[12.5px]">
@@ -409,7 +503,7 @@ export function GenerateScreen({
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !generating && !needsSeed && !ambiguityNeedsChoice) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !generating) {
               e.preventDefault();
               generate();
             }
@@ -436,11 +530,11 @@ export function GenerateScreen({
         <div className="flex flex-wrap items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
           <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
             {catalogOnly
-              ? "Name an artist, track or cached genre · Enter to generate"
+              ? "Genres, artists, tracks or a journey · Enter to generate"
               : "Artist or track optional in local-model mode · Enter to generate"}
           </span>
           <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
-            {catalogOnly ? "catalog only" : "local model"}
+            {catalogOnly ? "basic interpretation" : "local model"}
           </span>
           <Button
             variant="ghost"
@@ -452,10 +546,11 @@ export function GenerateScreen({
             Surprise me
           </Button>
           <Button
+            id="generate-playlist"
             variant="primary"
             size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
-            disabled={generating || prompt.trim() === "" || needsSeed || ambiguityNeedsChoice}
+            disabled={generating || prompt.trim() === "" || (source === "saved" && !savedRequest)}
             onClick={generate}
           >
             {generating ? "Generating…" : "Generate playlist"}
@@ -477,10 +572,6 @@ export function GenerateScreen({
           </>}
         </section>
       )}
-      {outcome && <div role="status" className="w-full rounded-card border border-line bg-surface p-4">
-        <p className="text-[14px] font-medium">{outcome.status.state === "needs_clarification" ? "Refine your request" : "Musical fit could not be established"}</p>
-        {(outcome.outcome.reasons ?? []).map((reason, index) => <p key={index} className="mt-2 text-[12.5px] text-muted">{reason.criterion && `${reason.criterion}: `}{reason.detail} {reason.action}</p>)}
-      </div>}
 
       {preview && (
         <div className="w-full">
@@ -493,6 +584,7 @@ export function GenerateScreen({
             {(preview.intent.preferences.instrumentation ?? []).length > 0 && <p>Instrumentation: {(preview.intent.preferences.instrumentation ?? []).map((preference) => preference.value).join(" · ")}</p>}
             {(preview.intent.temporal ?? []).map((period, index) => <p key={index}>{period.basis === "composition" ? "Composed" : "Originally released"}: {period.startYear}–{period.endYear}{period.scope === "journey_start" ? " (starting stage)" : period.scope === "journey_end" ? " (ending stage)" : ""}</p>)}
             {preview.intent.destination && <p>Finish with {preview.intent.destination.query}</p>}
+            {requestedEnergy && <p>Requested energy: {requestedEnergy}</p>}
             {(preview.intent.essentialCriteria ?? []).length > 0 && <p>Essential: {(preview.intent.essentialCriteria ?? []).map((criterion) => `${criterion.value}${criterion.scope.startsWith("journey_") ? ` (${criterion.scope.replace("journey_", "")})` : ""}`).join(", ")}</p>}
             <p>{[...(preview.intent.preferences.styles ?? []), ...(preview.intent.preferences.moods ?? []), ...(preview.intent.preferences.textureDescriptions ?? [])].map((p) => `${p.influence === "negative" ? "avoid " : ""}${p.value}`).join(" · ")}</p>
             {(preview.intent.hardConstraints ?? []).filter((c) => c.kind !== "no_back_to_back_artist").map((c) => <p key={`${c.kind}-${c.value}`}>Required rule: {c.kind.replace(/_/g, " ")} {c.value}</p>)}
@@ -500,7 +592,7 @@ export function GenerateScreen({
             {(preview.requiredTracks ?? []).length > 0 && <p>Must include: {(preview.requiredTracks ?? []).join(", ")}</p>}
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-[12px] text-muted">Interpretation details and diagnostics</summary>
-          <p className="mt-2 text-[12px] text-muted">Generation may look up extracted music names and genres in MusicBrainz. Your full description and taste profile stay local. Cached metadata can be reused offline; musical fit may remain approximate.</p>
+          <p className="mt-2 text-[12px] text-muted">Generation may look up extracted music names and genres in MusicBrainz, and missing artists' popular tracks in Deezer. Your full description and taste profile stay local. Cached metadata can be reused offline; musical fit may remain approximate.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {needsSeed && (
               <Chip>
@@ -562,41 +654,10 @@ export function GenerateScreen({
             ))}
           </div>
           </details>
-          {ambiguousIssues.map((issue) => (
-            <label
-              key={`ambiguous-${issue.kind}-${issue.query}`}
-              className="mt-2 flex items-center gap-2 text-[12.5px] text-muted"
-            >
-              <span>Choose the intended {issue.kind} for “{issue.query}”</span>
-              <select
-                value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""}
-                onChange={(event) =>
-                  setResolutionChoices((current) => ({
-                    ...current,
-                    [resolutionIssueKey(issue.kind, issue.query)]: event.target.value,
-                  }))
-                }
-                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-text outline-none focus:border-line-strong"
-              >
-                <option value="">Select a match…</option>
-                {(issue.alternatives ?? []).map((alternative) => (
-                  <option
-                    key={alternative.entityId}
-                    value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}
-                  >
-                    {alternative.artist}
-                    {alternative.title ? ` — ${alternative.title}` : ""} (
-                    {Math.round(alternative.confidence * 100)}%)
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
           {preview.notes && <p className="mt-2.5 text-[12.5px] text-muted italic">“{preview.notes}”</p>}
         </div>
       )}
 
-      {error && <ErrorState variant="inline" message={error} onRetry={generate} className="w-full" />}
     </div>
   );
 }

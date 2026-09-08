@@ -32,6 +32,22 @@ app downloads it (~210 MB, `catalog.archive_url`) and decompresses it on
 first launch. Releases need nothing for this. See
 [`docs/CATALOG.md`](CATALOG.md).
 
+Application releases must never attach `catalog.tar.zst`, a catalog directory,
+SQLite catalogs or vector data. Keep local catalog build outputs in place for
+development; their presence under `bin/` does not make them release assets.
+The release workflow uploads exact application package filenames, then checks
+the assembled `dist/` directory against
+[`build/release-assets.txt`](../build/release-assets.txt). Publication fails on
+unexpected entries (including directories and symlinks), empty files or missing
+packages. Only the validated paths reach the GitHub Release action. The later
+winget step uploads its specifically named metadata ZIP separately.
+
+Run `bash scripts/validate-release-assets.sh dist` to validate an assembled
+release and print its upload list. Never manually upload `bin/*` or `dist/*`.
+When intentionally adding an application package format, update the explicit
+workflow paths and approved list together. The guard regression tests run in
+CI and `scripts/test.sh` via `bash scripts/test-release-assets.sh`.
+
 ## Cutting a release
 
 1. Bump the version in two places (they must match):
@@ -145,7 +161,14 @@ Bump `ManifestVersion` in the three template files if the winget schema moves on
 ## Known gaps
 
 - The macOS "Liquid Glass" icon (`Assets.car`, built from
-  `build/appicon.icon/`) is only regenerated during a macOS packaging run;
+  `build/appicon.icon/`) is generated during a macOS packaging run with
+  Xcode 26 or newer and is not checked in. Its full-size `playlist-ai.png`
+  layer is a copy of `build/appicon.png`; update both when changing the artwork.
+  See [Apple's Icon Composer guide](https://developer.apple.com/documentation/xcode/creating-your-app-icon-using-icon-composer)
+  for the 1024-pixel canvas and supported layer formats.
+  Icon generation clears old compiled assets before rebuilding, and bundle
+  assembly removes any previously bundled asset catalog so an unsupported
+  toolchain cannot retain an outdated icon. The files
   `build/darwin/icons.icns` / `build/windows/icon.ico` / `build/appicon.png`
   (regenerated from `build/appicon.svg` via `wails3 generate icons`) are the
   cross-platform fallbacks and are checked in.
@@ -165,3 +188,19 @@ Bump `ManifestVersion` in the three template files if the winget schema moves on
   publish releases.
 - The catalog and the llama.cpp runtime are both set up by the app on first
   launch, so every package format (AppImage included) behaves the same.
+
+## Startup application updates
+
+Production builds now read `info.version` from `build/config.yml` for the running
+application version as well as installer metadata. Verify the packaged binary
+with `playlist-ai --version`. Keep the existing release asset names and ensure
+GitHub reports a SHA-256 digest for every application asset. Preserve the macOS
+portable `.app` ZIP upload; the updater also supports the existing arm64 DMG.
+For an Intel macOS release, publish `playlist-ai-macos-amd64.zip` explicitly.
+
+See [Application updates](application-updates.md) for the startup prompt,
+installer/portable behavior, trust boundaries, recovery and platform test matrix.
+Before publishing the first updater-enabled release, execute upgrades on Windows
+(NSIS/UAC and portable), macOS (signed bundle and DMG), and Linux (AppImage and
+portable) using packaged builds. Existing 0.7.0 binaries do not gain an updater
+until users install an updater-enabled build.

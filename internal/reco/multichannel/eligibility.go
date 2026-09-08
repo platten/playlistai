@@ -3,9 +3,30 @@ package multichannel
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 )
+
+// A required album's resolved members are selectable content, even when they
+// also serve as retrieval references. Ordinary seeds remain excluded.
+func requiredAlbumMembers(intent core.MusicIntent) map[string]struct{} {
+	members := map[string]struct{}{}
+	for _, c := range intent.HardConstraints {
+		if c.Kind != "require_album" {
+			continue
+		}
+		for _, ref := range intent.References {
+			if ref.Kind != core.ReferenceAlbum || !strings.EqualFold(ref.Query, c.Value) || ref.Resolution == nil || ref.Resolution.Status != core.ResolutionResolved || ref.Resolution.Selected == nil {
+				continue
+			}
+			for _, track := range ref.Resolution.Selected.Representatives {
+				members[track.TrackID] = struct{}{}
+			}
+		}
+	}
+	return members
+}
 
 type eligibility struct {
 	excludedIDs        map[string]struct{}
@@ -19,9 +40,12 @@ func newEligibility(intent core.MusicIntent, references, required []core.TrackRe
 		excludedIDs: make(map[string]struct{}), excludedRecordings: make(map[string]struct{}),
 		excludedArtists: make(map[string]struct{}), referenceArtists: make(map[string]struct{}),
 	}
+	albumMembers := requiredAlbumMembers(intent)
 	for _, reference := range references {
-		e.excludedIDs[reference.ID] = struct{}{}
-		e.excludedRecordings[core.ProvisionalRecordingKey(reference)] = struct{}{}
+		if _, member := albumMembers[reference.ID]; !member {
+			e.excludedIDs[reference.ID] = struct{}{}
+			e.excludedRecordings[core.ProvisionalRecordingKey(reference)] = struct{}{}
+		}
 		e.referenceArtists[core.NormalizeIdentityPart(reference.Artist)] = struct{}{}
 	}
 	for _, track := range required {

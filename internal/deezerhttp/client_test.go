@@ -127,7 +127,7 @@ func TestOtherProvidersAndLookalikesAreNotDeezer(t *testing.T) {
 			t.Fatalf("incorrect host classification %s", address)
 		}
 	}
-	address := "https://spotify.invalid/p"
+	address := "https://p.scdn.co/p"
 	got, err := PlaybackURL(context.Background(), address)
 	if err != nil || got != address {
 		t.Fatal("changed other provider playback")
@@ -154,4 +154,45 @@ func TestPlaybackRejectsOversizedAudioAndForeignRedirect(t *testing.T) {
 			t.Fatal("unsafe preview accepted")
 		}
 	}
+}
+
+func TestPlaybackRejectsUntrustedURLsBeforeNetworkOrWebView(t *testing.T) {
+	client := &http.Client{Transport: roundTripper(func(*http.Request) (*http.Response, error) { t.Fatal("unsafe URL dispatched"); return nil, nil })}
+	for _, address := range []string{"file:///etc/passwd", "http://127.0.0.1/private", "https://127.0.0.1/private", "data:audio/mpeg;base64,AAAA", "javascript:alert(1)", "https://p.scdn.co.evil.invalid/a", "https://api.deezer.com/private", "https://cdn.dzcdn.net:1234/a", "https://user:password@p.scdn.co/a", "https://other.invalid/audio"} {
+		if got, err := playbackURL(context.Background(), address, client); err == nil || got != "" {
+			t.Errorf("unsafe URL accepted: %q => %q %v", address, got, err)
+		}
+	}
+	for _, address := range []string{"https://p.scdn.co/mp3-preview/fixture", "https://podz-content.spotifycdn.com/fixture"} {
+		if got, err := playbackURL(context.Background(), address, client); err != nil || got != address {
+			t.Errorf("supported Spotify URL rejected: %q %v", got, err)
+		}
+	}
+}
+
+func TestRetriesKeepDeezerDispatchSpacing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var starts []time.Time
+		client := &http.Client{Transport: &throttledTransport{limiter: newLimiter(Interval), base: roundTripper(func(*http.Request) (*http.Response, error) {
+			starts = append(starts, time.Now())
+			r := response("fixture")
+			if len(starts) < 4 {
+				r.StatusCode = http.StatusTooManyRequests
+			}
+			if len(starts) == 2 {
+				r.Header.Set("Retry-After", "3")
+			}
+			return r, nil
+		})}}
+		r, err := client.Get("https://api.deezer.com/search")
+		if err != nil || r.StatusCode != http.StatusOK || len(starts) != 4 {
+			t.Fatalf("retry failed: %v attempts=%d", err, len(starts))
+		}
+		_ = r.Body.Close()
+		for i, minimum := range []time.Duration{Interval, 3 * time.Second, 4 * time.Second} {
+			if starts[i+1].Sub(starts[i]) < minimum {
+				t.Fatal("retry bypassed throttle or server cooldown")
+			}
+		}
+	})
 }

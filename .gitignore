@@ -20,6 +20,7 @@ frontend/node_modules
 frontend/bindings
 
 # Generated packaging artifacts
+/build/darwin/Assets.car
 build/linux/appimage/build
 # staged into build/linux/appimage/ by `wails3 task linux:create:appimage`
 build/linux/appimage/playlist-ai

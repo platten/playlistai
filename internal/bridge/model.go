@@ -101,43 +101,44 @@ func (a *API) ReinstallLlamaRuntime() error {
 	return a.app.InstallLlamaRuntime(a.context(), NewWailsProgress(), true)
 }
 
-// GetModelCatalog returns the built-in list of downloadable models.
+// GetModelCatalog retains all downloads with hardware-specific recommendation badges.
 func (a *API) GetModelCatalog() []ModelInfo {
-	return a.modelInfos(modelmgr.Catalog())
+	hw, _ := a.modelHardware()
+	return a.modelInfos(modelmgr.CatalogForHardware(modelmgr.Catalog(), hw))
 }
 
 // GetModelRecommendations probes the available llama.cpp GPU and returns the
 // largest recommended GGUF whose weights fit on that device with context/KV
-// headroom. Without a usable GPU it returns the largest model from the bounded
-// CPU shortlist. The setup wizard receives at most one choice.
+// headroom. CPU mode recommends only the smallest catalog model.
+// The smallest catalog download is always included as an
+// alternative, with only the hardware-selected choice marked recommended.
 func (a *API) GetModelRecommendations() ModelRecommendations {
+	hw, info := a.modelHardware()
+	return ModelRecommendations{Models: a.modelInfos(modelmgr.WizardModels(modelmgr.Catalog(), hw)), Hardware: info}
+}
+
+func (a *API) modelHardware() (modelmgr.Hardware, ModelHardwareInfo) {
 	reserve := a.app.ModelVRAMReserve()
+	if a.app.Config().AI.GPULayers < 0 {
+		return modelmgr.Hardware{ReserveBytes: reserve}, ModelHardwareInfo{Mode: "cpu", ReserveBytes: reserve}
+	}
 	probeCtx, cancel := context.WithTimeout(a.context(), 6*time.Second)
 	defer cancel()
 	device, gpu := a.app.LlamaHardware(probeCtx)
 	fitBytes := device.FreeBytes
-	// An active managed model is reclaimable when the user switches models.
-	// Add its file size back without ever exceeding the device's total VRAM.
-	if gpu {
-		if activePath, _ := a.app.CurrentModel(); activePath != "" {
-			if stat, err := os.Stat(activePath); err == nil {
-				fitBytes = min(device.TotalBytes, fitBytes+stat.Size())
-			}
-		}
-	}
+	// A selected model's file size does not establish how much GPU memory its
+	// process occupies. Use measured free memory, bounded by device capacity.
+	fitBytes = max(0, min(fitBytes, device.TotalBytes))
 	hw := modelmgr.Hardware{GPUAvailable: gpu, TotalVRAMBytes: device.TotalBytes, AvailableVRAMBytes: fitBytes, ReserveBytes: reserve}
 	mode := "cpu"
 	if gpu {
 		mode = "gpu"
 	}
-	return ModelRecommendations{
-		Models: a.modelInfos(modelmgr.Recommendations(modelmgr.Catalog(), hw)),
-		Hardware: ModelHardwareInfo{
-			Mode: mode, GPUAvailable: gpu, GPUName: device.Name,
-			VRAMBytes: device.TotalBytes, VRAMFreeBytes: device.FreeBytes,
-			FitBytes: fitBytes, ReserveBytes: reserve,
-			VRAMTierGB: modelmgr.VRAMTierGB(device.TotalBytes),
-		},
+	return hw, ModelHardwareInfo{
+		Mode: mode, GPUAvailable: gpu, GPUName: device.Name,
+		VRAMBytes: device.TotalBytes, VRAMFreeBytes: device.FreeBytes,
+		FitBytes: fitBytes, ReserveBytes: reserve,
+		VRAMTierGB: modelmgr.VRAMTierGB(device.TotalBytes),
 	}
 }
 

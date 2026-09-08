@@ -329,9 +329,9 @@ runtime/onboarding hardening are recorded in
     enumerate accelerators and free VRAM. GPU recommendations must fit as a
     complete GGUF with 1 GiB reserved for context/KV/compute; nominal tier
     metadata remains available without overriding the fit gate. The wizard shows
-    only the largest eligible model; CPU mode shows the largest model from its
-    bounded CPU recommendation list. Settings retains every
-    curated and legacy model and displays the tier picks.
+    the largest eligible GPU model and the smallest download; CPU mode recommends
+    only the smallest catalog model. Settings retains every curated and legacy
+    model, with only the hardware-selected recommendation carrying a badge.
     *(done)*
 7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz

@@ -22,6 +22,7 @@ try {
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: `
     export const Events={On(){return ()=>{};}}; export const Clipboard={SetText:async()=>{}};
     export const Call={}; export const CancellablePromise=Promise;
+    export const System={IsMac:()=>false};
   ` }));
   await page.route("**/src/lib/api.ts", route => route.fulfill({ contentType: "application/javascript", body: `
     export const FeedbackScope={}; export const FeedbackType={};
@@ -48,7 +49,10 @@ try {
 
   await page.goto("http://127.0.0.1:9245/?review");
   await page.getByText("Error: Local read failed", {exact:true}).waitFor().catch(async e => { console.error(await page.locator('body').innerText()); throw e; });
-  await page.getByRole("button", {name:"Try again",exact:true}).click();
+  await page.getByRole('button',{name:'Dismiss error',exact:true}).focus();
+  await page.keyboard.press('Enter');
+  if(await page.getByRole('alert').count()) throw Error('Export load error was not dismissed');
+  await page.getByRole('button',{name:'Try again',exact:true}).click();
   await page.getByRole("cell", {name:"First track Local artist"}).waitFor();
   if(await page.getByText(/ISRC|Confidence|MusicBrainz/).count()) throw Error("Removed export fields remain");
   await page.getByRole("checkbox", {name:"Include Second artist — Second track"}).uncheck();
@@ -80,6 +84,8 @@ try {
     if(await page.getByRole("button", {name:new RegExp('^'+expected)}).getAttribute('aria-pressed')!=='true') throw Error("Wrong preview selection");
     await page.getByRole("button", {name:"Continue",exact:true}).click();
     await page.getByText("Error: Could not save preview preference", {exact:true}).waitFor();
+    await page.getByRole('button',{name:'Dismiss error',exact:true}).click();
+    if(await page.getByRole('alert').count()) throw Error('Wizard save error was not dismissed');
     await page.getByRole("heading", {name:"Track previews",exact:true}).waitFor();
     await page.screenshot({path:output+'/preview'+suffix+'.png',fullPage:true});
     await page.getByRole("button", {name:"Continue",exact:true}).click();

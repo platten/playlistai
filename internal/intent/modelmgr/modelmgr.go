@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -122,47 +121,95 @@ func Get(id string) (Model, bool) {
 	return Model{}, false
 }
 
-// Recommendations returns at most one model: the largest curated recommended
-// model from the existing hardware-eligible recommendation list. On GPU, the
-// complete GGUF must fit in one device while retaining ReserveBytes for
-// context/KV and compute buffers. Without a GPU, the eligible list remains the
-// two smallest curated models so an unbounded model is not suggested for CPU.
-func Recommendations(models []Model, hw Hardware) []Model {
-	capacity := int64(0)
-	if hw.GPUAvailable && hw.AvailableVRAMBytes > hw.ReserveBytes {
-		capacity = hw.AvailableVRAMBytes - hw.ReserveBytes
-	} else if hw.GPUAvailable {
-		return nil
+func modelBytes(model Model) int64 {
+	if model.Size > 0 {
+		return model.Size
 	}
+	return model.SizeApprox
+}
+
+func smallestModel(models []Model) Model {
+	var smallest Model
+	for _, model := range models {
+		if modelBytes(model) > 0 && (smallest.ID == "" || modelBytes(model) < modelBytes(smallest)) {
+			smallest = model
+		}
+	}
+	return smallest
+}
+
+func gpuModelCapacity(hw Hardware) int64 {
+	available := hw.AvailableVRAMBytes
+	if hw.TotalVRAMBytes > 0 {
+		available = min(available, hw.TotalVRAMBytes)
+	}
+	return max(0, available-max(0, hw.ReserveBytes))
+}
+
+// Recommendations selects the largest curated GPU model whose complete weights
+// fit in one device's available memory with runtime headroom. CPU mode selects
+// only the smallest catalog model, independently of static priority badges.
+func Recommendations(models []Model, hw Hardware) []Model {
+	if !hw.GPUAvailable {
+		model := smallestModel(models)
+		if model.ID == "" {
+			return nil
+		}
+		model.Recommended = true
+		return []Model{model}
+	}
+	capacity := gpuModelCapacity(hw)
 
 	eligible := make([]Model, 0, len(models))
 	for _, model := range models {
-		if !model.Recommended || model.SizeApprox <= 0 {
+		if !model.Recommended || modelBytes(model) <= 0 {
 			continue
 		}
-		if hw.GPUAvailable && model.SizeApprox > capacity {
+		if modelBytes(model) > capacity {
 			continue
 		}
 		eligible = append(eligible, model)
-	}
-	if !hw.GPUAvailable {
-		sort.SliceStable(eligible, func(i, j int) bool {
-			return eligible[i].SizeApprox < eligible[j].SizeApprox
-		})
-		if len(eligible) > 2 {
-			eligible = eligible[:2]
-		}
 	}
 	if len(eligible) == 0 {
 		return nil
 	}
 	largest := eligible[0]
 	for _, model := range eligible[1:] {
-		if model.SizeApprox > largest.SizeApprox {
+		if modelBytes(model) > modelBytes(largest) {
 			largest = model
 		}
 	}
 	return []Model{largest}
+}
+
+// WizardModels includes the smallest catalog download alongside the single
+// hardware-selected recommendation. Listing the smaller alternative does not
+// imply it fits in GPU memory; only a fitting choice receives the badge.
+func WizardModels(models []Model, hw Hardware) []Model {
+	choices := Recommendations(models, hw)
+	smallest := smallestModel(models)
+	if smallest.ID == "" || (len(choices) > 0 && choices[0].ID == smallest.ID) {
+		return choices
+	}
+	smallest.Recommended = len(choices) == 0 && (!hw.GPUAvailable ||
+		modelBytes(smallest) <= gpuModelCapacity(hw))
+	return append(choices, smallest)
+}
+
+// CatalogForHardware retains every manual choice, but marks only the same
+// hardware-selected recommendation offered in setup. Never mutate the catalog.
+func CatalogForHardware(models []Model, hw Hardware) []Model {
+	recommended := ""
+	for _, model := range WizardModels(models, hw) {
+		if model.Recommended {
+			recommended = model.ID
+		}
+	}
+	out := append([]Model(nil), models...)
+	for i := range out {
+		out[i].Recommended = out[i].ID == recommended
+	}
+	return out
 }
 
 // Download fetches a catalog model into destDir/<id>.gguf, resuming a partial

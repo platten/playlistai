@@ -3,12 +3,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/intent/schema"
+	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/reco/multichannel"
 	"github.com/platten/playlistai/internal/resolution"
 )
@@ -88,7 +92,12 @@ func TestRequestedPromptContractsGenerate(t *testing.T) {
 				t.Fatal(issues)
 			}
 			intent, _ = resolution.Apply(cat, intent)
-			playlist, err := multichannel.New(cat, fakes.NewSimilarityEngine(cat), cat, multichannel.DefaultConfig()).Build(context.Background(), intent)
+			engine := multichannel.New(cat, fakes.NewSimilarityEngine(cat), cat, multichannel.DefaultConfig())
+			if core.WantsInstrumental(intent) {
+				service := fixtureVocalService(t, cat)
+				engine = engine.WithAudioProvider(func() *audio.Service { return service })
+			}
+			playlist, err := engine.Build(context.Background(), intent)
 			if err != nil || len(playlist.Tracks) == 0 {
 				t.Fatalf("no playlist: %+v %v", playlist.Outcome, err)
 			}
@@ -103,5 +112,81 @@ func TestRequestedPromptContractsGenerate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Synthetic class vectors exercise prompt control flow, not musical accuracy.
+type fixtureVocalEncoder struct{}
+
+func (fixtureVocalEncoder) Identity() core.AudioModelIdentity {
+	return core.AudioModelIdentity{Model: "fixture", Revision: "1", Runtime: "fixture", Preprocessing: audio.PreprocessingVersion, Dimension: 2}
+}
+func (fixtureVocalEncoder) EmbedAudio(context.Context, []float32) ([]float32, error) {
+	return nil, fmt.Errorf("cached fixtures must not download audio")
+}
+func (fixtureVocalEncoder) EmbedText(_ context.Context, text string) ([]float32, error) {
+	if strings.Contains(text, "instrumental") || strings.Contains(text, "only on instruments") {
+		return []float32{1, 0}, nil
+	}
+	return []float32{0, 1}, nil
+}
+func fixtureVocalService(t *testing.T, cat *fakes.Catalog) *audio.Service {
+	t.Helper()
+	store, err := audio.OpenStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	encoder := fixtureVocalEncoder{}
+	for row := 0; row < cat.Len(); row++ {
+		meta, _ := cat.Meta(cat.ID(row))
+		record := core.AudioAnalysis{CatalogVersion: cat.CatalogVersion(), TrackID: meta.Ref.ID, TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: meta.Ref.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{EndSeconds: 10, Embedding: []float32{1, 0}}}}
+		record.ID = audio.Fingerprint(record)
+		if err := store.Put(context.Background(), record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &audio.Service{Analyzer: encoder, Store: store, Resolver: deezer.New(deezer.Config{}), Authorized: true, ParityValidated: true}
+}
+
+// The live report is the model test. These checks keep the runner from reporting
+// success when a typed reference or journey direction was silently dropped.
+func TestCreativePromptContractChecksRejectLostMeaning(t *testing.T) {
+	raw, err := os.ReadFile("../../internal/evaluation/testdata/creative-prompts-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []promptCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 15 {
+		t.Fatalf("got %d prompts", len(cases))
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		if seen[c.Prompt] || strings.TrimSpace(c.Prompt) == "" {
+			t.Fatal("empty or duplicate prompt")
+		}
+		seen[c.Prompt] = true
+		if c.Artist != "" || len(c.Artists) > 0 || c.Genre != "" || c.Album != "" || c.Track != "" || c.Vocal != "" || len(c.JourneyGenres) > 0 {
+			if len(checkIntent(c, core.MusicIntent{})) == 0 {
+				t.Fatalf("empty interpretation passed: %s", c.Prompt)
+			}
+		}
+	}
+	c := promptCase{Album: "Fixture Album", Track: "Fixture Track", Artists: []string{"Fixture Artist", "Second Artist"}, JourneyGenres: []string{"category alpha", "category omega"}}
+	intent := core.MusicIntent{Mode: core.ModeJourney, References: []core.IntentReference{
+		{Kind: core.ReferenceAlbum, Query: "Fixture Artist - Fixture Album"},
+		{Kind: core.ReferenceTrack, Query: "Fixture Artist - Fixture Track"},
+		{Kind: core.ReferenceArtist, Query: "Fixture Artist"},
+		{Kind: core.ReferenceArtist, Query: "Second Artist"},
+	}, EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "category alpha", Scope: "journey_start"}, {Kind: "genre", Value: "category omega", Scope: "journey_end"}}}
+	if issues := checkIntent(c, intent); len(issues) > 0 {
+		t.Fatal(issues)
+	}
+	intent.EssentialCriteria[0].Scope, intent.EssentialCriteria[1].Scope = "journey_end", "journey_start"
+	if len(checkIntent(c, intent)) == 0 {
+		t.Fatal("reversed journey passed")
 	}
 }

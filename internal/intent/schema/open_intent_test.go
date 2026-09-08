@@ -7,6 +7,37 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
+func TestExplicitNamesSurviveAccentNormalization(t *testing.T) {
+	for _, test := range []struct{ typed, canonical string }{
+		{"Arvo Part", "Arvo Pärt"},
+		{"Bjork", "Björk"},
+		{"Beyonce", "Beyoncé"},
+		{"Arvo Pa\u0308rt", "Arvo Pärt"},
+	} {
+		t.Run(test.typed, func(t *testing.T) {
+			prompt := "classical music like " + test.typed
+			w := Wire{Genres: []WirePreference{{Value: "classical", Explicit: true, Span: "classical", Influence: "positive"}}, Mode: "similar", TotalCount: 5,
+				References: []WireReference{{Kind: "artist", Value: test.canonical, Explicit: true, Span: test.typed, Influence: "positive"}}}
+			raw, _ := json.Marshal(w)
+			m, err := ParseForPrompt(raw, prompt)
+			if err != nil || len(m.References) != 1 || m.References[0].Query != test.canonical {
+				t.Fatalf("explicit reference was discarded or rejected: references=%+v err=%v", m.References, err)
+			}
+			if m.OriginalDescription != prompt || len(m.Preferences.Genres) != 1 || m.Preferences.Genres[0].Value != "classical" || len(m.Temporal) != 0 {
+				t.Fatalf("description or genre changed, or period invented: %+v", m)
+			}
+		})
+	}
+}
+
+func TestReferenceNormalizationDoesNotGuessDifferentNames(t *testing.T) {
+	for _, name := range []string{"Arvo Party", "Other Arvo Part", "坂本龍一"} {
+		if containsReferenceWords("music like Arvo Part", name) {
+			t.Fatalf("different reference %q matched", name)
+		}
+	}
+}
+
 func TestOpenGenreKeepsOriginalRequirementAndDiscardsInventedExpansionRoot(t *testing.T) {
 	w := Wire{Genres: []WirePreference{{Value: "未知ジャンル", Explicit: true, Span: "未知ジャンル", Influence: "positive"}}, Mode: "similar", TotalCount: 5,
 		GenreExpansions: []core.GenreExpansion{{Genre: "unrequested category", Characteristics: "invented replacement", RelatedGenres: []string{"electronic"}}}}

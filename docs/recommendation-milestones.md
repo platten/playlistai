@@ -604,3 +604,401 @@ ordering, duplicates, missing IDs and CSV export without an enricher. Browser
 fixtures in `scripts/capture-export-ui.mjs` cover navigation/setup recovery,
 export selection, retry/empty states, provider persistence and save failures,
 both themes and narrow windows. Screenshots use `/tmp/playlist-ai-export-ui`.
+
+## Playlist navigation, previews and request messages — 2026-09-07
+
+Main screens scroll at the right window edge. Scrollbar thumbs, tracks and native
+controls follow the light/dark palette, including older WebKit webviews. Setup
+uses the same outer scrolling pattern. Narrow headers wrap without clipping.
+
+Completed generation opens Playlist with its existing result, including partial
+playlists. Empty results stay with the editable description and show detailed
+reasons and next steps above it. Parse failures, generation errors and unresolved
+or ambiguous references also appear in a dismissible, announced message. Closing
+the message returns focus to the composer; dismissal does not bypass required
+reference selection. Cancelled responses cannot navigate over newer generation.
+
+Every playlist row has a labeled Preview button with loading, pause and retry
+states. Missing previews explain provider availability and the Settings option.
+Retries resolve a fresh URL; ended previews can play again. Intentional pauses
+do not report playback-aborted errors. Requests remain on demand through the
+existing provider and throttling; preview availability is not guaranteed.
+Playlist adjustments sit behind a disclosure so the songs appear immediately.
+
+Validation: `scripts/test.sh` passed (bindings, TypeScript, production build,
+Go vet, pure-Go compilation, race tests and lint); the final frontend build also
+passed after playback/layout refinements. `scripts/capture-recommendation-ui.mjs`
+checks complete/partial navigation without rebuilding, stale responses, detailed
+errors, clarification selection/dismissal, preview loading/play/pause/retry/replay
+with a synthetic WAV, and themed scrolling at the window edge. Rendered checks
+cover light/dark, 390/560/1100px windows, reduced motion and keyboard focus.
+Screenshots and the report are in `/tmp/playlist-ai-playlist-ui`. Browser bridge
+fixtures do not claim live-provider coverage or native Windows/macOS testing.
+
+## Preserve accented artist references — 2026-09-07
+
+The model-output validator discarded “Arvo Pärt” as invented when the original
+description used “Arvo Part”. Source grounding now uses Unicode decomposition
+and accent folding with word boundaries, consistent with catalog lookup.
+It preserves the original description and source evidence, and still rejects
+different names. No artist-specific aliases or musical-fit mappings were added.
+
+The rules fallback also preserves an unfamiliar leading description in
+“<description> music like <artist>”, including “classical”, instead of dropping
+it and treating artist similarity as full compliance. Tests cover accentless
+and decomposed names, distinct names, open descriptions and later modifiers.
+
+The exact prompt “classical music like Arvo Part” generated 20 tracks against
+the installed catalog through both the rules parser and a canonicalized model
+output fixture. Both retain the artist and classical requirement and report
+partial/approximate fit without audio evidence. This is a retrieval regression
+check, not a live LLM or listening evaluation. Reproduce with:
+
+```sh
+PLAYLISTAI_TEST_CATALOG=/path/to/catalog go test ./internal/reco/multichannel -run TestClassicalArtistPromptBuildsPlaylist -count=1 -v
+```
+
+## Missing-artist online recovery — 2026-09-07
+
+Generation now explains a missing catalog artist and looks up a corroborated
+MusicBrainz identity, then tries Deezer top tracks in order until a recording
+matches the local catalog. Additional MusicBrainz recordings provide a fallback.
+It preserves artist/title/version identity, local vectors, original intent and
+snapshot provenance. Lookup failures remain actionable clarification outcomes;
+same-title covers and unrelated artists cannot silently replace a reference.
+
+The existing MusicBrainz one-second and Deezer two-second application-wide
+limits remain in effect. Searches are bounded and cancellable, use cached
+metadata offline, and do not run while typing. Sources, limits, cache behavior
+and reproduction commands are in `recommendation-correctness.md`.
+
+Validation: full repository gate passed; HTTP/bridge tests cover later-track
+success, exhausted lookups, mismatched identities/versions, ambiguity, retries,
+budgets, cancellation and replay. Rendered missing/recovered/no-seed states are
+in `/tmp/playlist-ai-artist-recovery-ui`. Deezer's top-track response format was
+checked live; generation assertions use deterministic fixtures.
+
+## Playlist setting explanations — 2026-09-07
+
+Audio similarity, Discovery, Artist diversity, Playlist-context similarity and
+Transition smoothness now have themed help popups on label hover or keyboard
+focus. Each explains what the setting controls and the effect of higher and
+lower values. Help also opens on click, supports Escape dismissal and remains
+within the window. Sliders retain their descriptions for screen readers when
+the popup is closed. Artist diversity captions now reflect its implemented
+repeat and variety behavior.
+
+Validation: the full repository gate passed, with final frontend typecheck and
+production build after the Escape-dismissal refinement. The rendered browser
+checks cover all five settings, keyboard navigation, hoverable help, Escape,
+screen-reader descriptions, light/dark themes and 390-pixel windows. Screenshots
+are in `/tmp/playlist-ai-tooltip-ui/setting-help-{light,dark}.png`.
+
+## Windowless Windows helpers — 2026-09-07
+
+The language-model server, accelerator probe, music-analysis worker and runtime
+installer now start with Windows `CREATE_NO_WINDOW` and `HideWindow`, preventing
+background console popups during generation and setup. Standard streams,
+logging and cancellation retain their existing behavior; other platforms use
+unchanged process startup.
+
+Validation: the full repository gate passed on Linux. The affected packages
+cross-compiled and passed vet for Windows amd64. A Windows-only subprocess test
+checks that the child has no console window and still returns captured output;
+its test binary cross-compiled successfully. Native Windows execution and visual
+verification remain to be run on Windows.
+
+## Playlist diagnostics in session logs — 2026-09-07
+
+Rejected inferred anchors and successful internal constraint checks no longer
+appear as playlist notices. The bridge records their original details, counts
+and generation ID in the session logs at the default retained Info level.
+Technical scoring limitations are logged in full and shown in plain language;
+shortfall, artist-lookup and other actionable notices remain visible. Loading
+older saved results applies the same presentation rules, including partial
+reasons, without changing the stored history record.
+
+Validation: bridge regression coverage checks that diagnostics reach the
+session log once, are removed from both notice lists, and do not hide useful
+shortfall or artist-lookup messages. The full repository gate passed.
+
+## Consistent desktop scrollbar colors — 2026-09-07
+
+Chromium/WebView2 and WebKit now use a complete themed scrollbar, including
+track, thumb and corner, with a periwinkle hover highlight. Standard scrollbar
+properties no longer override those custom parts. Other engines retain the
+standard themed fallback, and forced-color mode retains native accessibility
+styling.
+
+Validation: the full repository gate and rendered browser checks passed. The
+capture script now enables visible scrollbars, asserts exact light/dark colors
+and right-edge placement, and captures both themes in
+`/tmp/playlist-ai-scrollbar-ui/playlist-{light,dark}.png`. Browser verification
+ran in Chromium on Linux; native Windows WebView2 was not available here.
+
+## Preview startup without false failures — 2026-09-07
+
+Preview playback remains Loading until the browser emits `playing`, including
+buffering after startup. Each play attempt has an identity so interrupted or
+superseded promises cannot overwrite a newer attempt. Abort errors are treated
+as interruptions, successful playback clears stale error text, and real media
+or permission failures retain actionable retry messages. Resetting a source no
+longer performs an unnecessary initial seek.
+
+Validation: the full repository gate passed. Rendered Chromium fixtures
+reproduce an interrupted promise followed by playback two seconds later and
+check that no error flashes in between. They also cover genuine playback
+failure and retry, a late rejection after confirmed playback, pause/resume,
+replay, and switching tracks. Screenshots are in
+`/tmp/playlist-ai-preview-start-ui`; these are deterministic browser checks,
+not a live-provider or native Windows playback test.
+
+## Full-size macOS icon artwork — 2026-09-07
+
+Icon Composer now uses the complete 1024-pixel Playlist AI artwork at 100%
+scale, replacing the inset outline layer and light backing. Removed the unused
+outline SVG and stale checked-in Assets.car. Icon generation runs once per
+build, clears stale compiled catalogs, and bundle assembly clears old copies
+before installing freshly generated assets. Older macOS toolchains and cross
+builds retain the existing full-size ICNS fallback.
+
+Validation: source checks confirm a centered 100% layer, 1024-by-1024 dimensions
+and identical artwork to the shared icon. `wails3 task common:generate:icons`
+and the full repository gate passed on Linux. Native Icon Composer compilation
+and Dock/Finder visual verification require Xcode 26 on macOS and were not run.
+
+## Wizard GPU-build messaging — 2026-09-07
+
+Language understanding no longer shows a CPU fallback notice when the staged
+GPU build is installed but the device probe is inconclusive. For other installs,
+the notice says GPU memory could not be confirmed instead of claiming no usable
+GPU exists. Confirmed device details and memory-based model sizing are retained.
+This avoids a misleading warning on Metal-capable Macs; llama.cpp documents
+[Metal as enabled by default on macOS](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md#metal-build).
+
+Validation: the full repository gate and browser fixtures passed for CPU-only,
+installed GPU build with inconclusive detection, and confirmed Apple Metal
+device responses. Screenshots are in `/tmp/playlist-ai-wizard-gpu-ui`. The Metal
+response is a fixture, not a native macOS hardware test.
+
+## Smallest wizard model option — 2026-09-07
+
+Language understanding includes the smallest known-size GGUF download in the
+full catalog (currently Qwen2.5 3B) alongside the hardware-selected recommended
+model. Only the selected recommendation receives the badge. If no curated
+recommendation fits, the smallest option receives the badge only when it fits
+the available memory policy; otherwise it remains an unbadged option with the
+memory limitation explained. A model that already fills both roles appears
+once. The shared catalog and active model are not modified by listing choices.
+
+Validation: the full repository gate passed. Deterministic tests cover CPU/GPU
+selection, insufficient memory, unknown sizes, deduplication and catalog
+immutability. Browser fixtures check badge counts, the smaller model's download
+action, narrow layouts and both themes. Screenshots are in
+`/tmp/playlist-ai-wizard-smallest-ui`. The fixture route now also handles Vite
+reload query strings so binding regeneration does not bypass the mocked API.
+
+## CLAP download counters in megabytes — 2026-09-07
+
+Recommended and custom CLAP downloads show downloaded/total megabytes beside
+the progress bar, with one decimal place (for example, `123.5 MB / 793.1 MB`).
+Unknown totals show the downloaded amount. The card consistently uses decimal
+MB, and progress exposes the formatted amount to screen readers while keeping
+percentage semantics. Captions wrap safely in narrow windows.
+
+Validation: the full repository gate and focused CLAP wizard browser checks
+passed, including MB text, accessibility, custom downloads, retry and narrow
+layout. Screenshot: `/tmp/playlist-ai-clap-mb-ui/download-mb-narrow.png`.
+
+## macOS title-bar clearance — 2026-09-07
+
+The main header uses Wails' synchronous macOS detection to reserve 96 CSS
+pixels at the left for the native close, minimize and full-screen controls.
+The icon and Playlist AI title follow that inset. Other desktop platforms keep
+their existing header padding.
+
+Validation: the full repository gate and recommendation, export and log-window
+browser checks passed. Platform fixtures assert the macOS inset and existing
+Windows/Linux spacing at the desktop minimum width. Light/dark header captures
+are in `/tmp/playlist-ai-mac-titlebar-ui/mac-titlebar-{light,dark}.png`.
+Native macOS window-control verification remains pending.
+
+## Instrumental seed discovery and CLAP vocal screening — 2026-09-07
+
+`Instrumental, no vocals` now reaches seed discovery without a named artist or
+track, including with the rules parser. MusicBrainz recording tags propose
+catalog matches; Deezer recording search and local instrumental title matches
+provide fallback candidates. Sampling preserves a replay seed. Titles and tags
+do not establish musical eligibility. Provider throttles and request budgets
+remain in place, with actionable outage and empty-search messages.
+
+An installed parity-validated CLAP bundle now screens every candidate preview
+for explicit no-vocals/instrumental requests, independently of the optional
+general-fit calibration policy. Every segment must favor instrumental prompts
+over vocal and non-musical descriptions with a conservative abstention band.
+Vocal, uncertain and unavailable previews are excluded before progressive
+display and ranking. Required-track conflicts request clarification. Wizard and
+Settings text explain automatic vocal screening, local feature retention and
+preview-only coverage. The preview CLI supports native v2 worker dispatch and
+`-screen-vocals` for reproducible checks, with no Python runtime.
+
+Validation: deterministic tests cover parsed prompts, strict filtering across
+channels, weak comparisons, later vocal segments, missing/invalid evidence,
+text failures, cache reuse, model capability gates, paging, randomization,
+outages and replay. Full repository and rendered UI checks were run; screenshots
+are in `/tmp/playlist-ai-instrumental-ui` and `/tmp/playlist-ai-vocal-wizard-ui`.
+A live CPU run on the installed catalog returned two checked tracks for a
+three-track request before the 120-second analysis budget expired. A separate
+vocal control was rejected. Reproduction commands, exact observations and the
+pending listening evaluation are recorded in `recommendation-correctness.md`.
+
+## Genre-to-genre journeys — 2026-09-07
+
+Fixed `A journey from ambient to energetic electronic` in rules and local-model
+interpretation. Genre names remain scoped musical categories; energy adjectives
+remain requested qualities instead of being mistaken for artist names. Model
+category normalization supports open-vocabulary genre names and repairs misplaced
+entity destinations. Genre-stage recording lookups run before broader enrichment.
+Best-available generation now reserves and orders genre stages and distinguishes
+known stage evidence from unknown placement. Existing artist journeys and scoped
+date requirements remain covered. The request summary shows energy direction,
+and output explains when energy cannot be verified. Parser and recommendation
+version identifiers were advanced for cache/history compatibility.
+
+Validation: the full repository gate, generation/lookup/replay regression tests
+and rendered recommendation UI checks were run. A live metadata lookup found 34
+catalog candidates and generated six tracks with genre-supported endpoints in
+44.9 seconds. Energy remains unverified; this is not a musical-quality benchmark.
+Screenshots and reproduction details are documented in
+`recommendation-correctness.md`.
+
+## Fifteen creative prompts with native CLAP ranking — 2026-09-08
+
+Added a reproducible set of 15 artist, album, track, genre, descriptive-style and
+journey prompts in `docs/sample-music-prompts.md` and the evaluation fixtures.
+All named artists were active before 2018. The live evaluation uses local LLM
+interpretation, Deej-AI candidate retrieval and native CLAP preview comparisons.
+No sample-specific artists, genres or recommended recordings were added to
+production selection rules.
+
+Parity-validated CLAP bundles now provide advisory description ranking even
+without a calibrated general-fit policy. Unknown categorical evidence remains
+unknown, strict requirements retain their gates, and no-vocals requests screen
+every preview segment. Journey scoring respects stages and uses relative CLAP
+similarity for approximate placement only when stronger metadata is absent.
+Artist/track-only descriptions receive a description comparison when the LLM
+omits structured musical clauses. The wizard explains these capabilities.
+
+Live checks exposed slow representative selection for broad artist matches,
+qualified album/track references rejected after model rewording, and unavailable
+MusicBrainz album lookup. Fixes rank identities before computing representatives,
+honor cancellation, recover source wording only from independently grounded
+artist/title parts, and support exact-identity Deezer album recovery with
+corroborated catalog recordings. Ambiguous albums remain ambiguous. Provider
+request throttles are unchanged.
+
+The evaluation command now supports native worker dispatch, CLAP evidence
+checks and replay using cached features with preview retrieval disabled.
+Executed results, model provenance, reproducible commands and limitations are
+recorded in `recommendation-correctness.md` and the accompanying data report.
+
+Validation completed: all 15 latest live cases produced six checked tracks;
+the final cached replay also passed all 15 with zero preview bytes fetched.
+The full repository gate and rendered wizard/recommendation checks passed.
+All results retain partial-fit status because general CLAP similarities are
+uncalibrated; no listening-quality or full-recording compliance claim is made.
+
+## Correctness and security review — 2026-09-08
+
+Restricted preview URLs before WebView playback; bounded declared-size downloads
+while streaming and validated resumed ranges. Moved strict metadata/essential
+checks before progressive results, preserved selectable required-album members,
+retained ambiguity for truncated album searches and prevented CLAP stage
+preference from overriding contradictory dates. Recommendation version advanced
+to `multichannel/v10`. Corrected the evaluation's automatic GPU-offload label.
+
+Validation: targeted regressions and the full repository gate passed. Go and
+frontend dependency audits found no known vulnerabilities. All 15 recorded
+creative prompts passed the final native CLAP cached replay with six tracks
+per case and no preview downloads. Scope and remaining coverage limits are
+recorded in `recommendation-correctness.md`.
+
+## Hardware-specific model badges in Settings — 2026-09-08
+
+Settings and the setup wizard now share the same recommendation selection.
+GPU mode recommends the largest curated model whose pinned weights fit measured
+free memory on one device, bounded by total device memory and retaining runtime
+headroom. A selected model's file size is no longer assumed to be reclaimable
+GPU memory. CPU mode, including explicitly forced CPU configuration, recommends
+only the smallest catalog download. The full Settings catalog remains available
+for manual selection, with static GPU-tier recommendation badges removed.
+
+Validation: deterministic tests cover pinned size versus display estimates,
+free/total memory bounds, unknown or exhausted GPU memory, CPU selection,
+catalog immutability and Settings/wizard agreement. The full repository gate
+passed. Rendered Settings and wizard checks cover GPU, CPU, no-fitting-model,
+light/dark and narrow-window states.
+
+## Bounded external API backoff — 2026-09-08
+
+Added shared exponential backoff with jitter for transient MusicBrainz/Deezer
+read failures and 429 responses, also used by preview and bundle/catalog
+retrieval. Respect `Retry-After`, cancellation and deadlines; bound each URL to
+four attempts and decline retries whose wait exceeds 30 seconds. Preserve
+provider dispatch throttles and charge retries/redirects to the existing metadata
+request budget. Keep side-effecting exports and local inference single-attempt.
+
+Added virtual-time retry, cleanup, throttle and budget regressions, plus an HTTP
+download retry/resume/checksum fixture. Updated instrumental lookup fallback
+assertions to account for retries. The exact policy and remaining streaming
+limitations are documented in `recommendation-correctness.md`.
+
+Validation completed: `bash scripts/test.sh` passed, including regenerated Wails
+bindings, frontend typecheck/build, `go vet`, pure-Go compilation, race-enabled
+Go tests and golangci-lint (zero issues).
+
+## Startup application updates — 2026-09-08
+
+Added a non-blocking, once-per-session GitHub release check and a themed,
+keyboard-accessible update prompt with release notes, MB download progress,
+cancellation, retry and dismissible errors. Production version reporting now
+uses `build/config.yml`; development builds abstain. Verified packages are
+handed to a hidden helper which waits for normal shutdown, applies the update
+and relaunches. Portable updates retain a rollback copy; installed Windows apps
+use the verified NSIS installer with native UAC approval. macOS verifies the
+bundle signature and signing team. Package-managed/read-only installations
+receive an actionable release-page fallback. No release or deployment is made.
+
+Architecture, security boundaries, recovery behavior, executable checks and
+platform validation limits are documented in `application-updates.md`.
+
+Validation completed: full repository gate passed (race-enabled Go tests,
+vet, lint, pure-Go compilation, regenerated bindings and frontend checks).
+Rendered startup-update checks passed in light/dark and narrow-window states;
+frontend typecheck/build were rerun after fixing focus containment. The production
+binary reports `0.7.0` via `--version`. Updater tests compile for Windows amd64
+and arm64 and macOS arm64. Actual UAC, Gatekeeper and packaged AppImage upgrade
+execution remains host-specific validation, not claimed by these Linux checks.
+
+Follow-up checks: updater lint also passed with Windows and macOS build tags.
+Focused race tests cover superseding stale failure notices after a successful
+retry and preserving custom configuration paths across the helper restart.
+
+## Centered randomized CLAP samples — 2026-09-08
+
+New preview analyses choose a centered random 22–47-second interval, bounded by
+the available provider audio. Shorter previews are analyzed whole. Persist the
+selection policy, available duration and exact analyzed coverage without changing
+the installed CLAP model's ten-second tensor contract. Cached selections and
+legacy embeddings remain reusable; no additional Deezer requests are introduced.
+The fixed-preview versus full-recording limitation is explicit in
+`recommendation-correctness.md`.
+
+Focused audio/application/evaluation tests passed, including synthetic MP3
+analysis, deterministic range/centering checks, cleanup, persistence and cache
+reuse. The full repository gate is recorded below after completion.
+
+Validation completed: the full repository gate passed, including race-enabled
+Go tests, vet, lint, pure-Go compilation, Wails binding generation and frontend
+typecheck/build. An odd-frame regression covers floating-point rounding when
+centered sample boundaries are stored in seconds.

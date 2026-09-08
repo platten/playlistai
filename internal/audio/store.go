@@ -97,8 +97,13 @@ func validateAnalysis(a core.AudioAnalysis) error {
 		return fmt.Errorf("audio: invalid audio hash")
 	}
 	for _, segment := range a.Segments {
-		if segment.StartSeconds < 0 || segment.EndSeconds <= segment.StartSeconds || math.IsNaN(segment.EndSeconds) || math.IsInf(segment.EndSeconds, 0) || !validVector(segment.Embedding, a.Model.Dimension) {
+		if segment.StartSeconds < 0 || math.IsNaN(segment.StartSeconds) || math.IsInf(segment.StartSeconds, 0) || segment.EndSeconds <= segment.StartSeconds || math.IsNaN(segment.EndSeconds) || math.IsInf(segment.EndSeconds, 0) || !validVector(segment.Embedding, a.Model.Dimension) {
 			return fmt.Errorf("audio: invalid segment")
+		}
+	}
+	if a.Sampling != nil {
+		if err := validateSampling(a); err != nil {
+			return err
 		}
 	}
 	return nil

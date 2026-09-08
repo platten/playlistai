@@ -100,6 +100,9 @@ func (c *Client) sampleGenreArtists(ctx context.Context, intent *core.MusicInten
 		for i := range snapshot.ArtistPools {
 			pool := &snapshot.ArtistPools[i]
 			for positions[i] < len(orders[i]) && attempts < maxSampledArtists {
+				if ctx.Err() != nil {
+					return nil
+				}
 				artist := pool.Artists[orders[i][positions[i]]]
 				positions[i]++
 				if used[artist.ID] || excludedArtist(artist.Name, excluded) {
@@ -146,6 +149,9 @@ func (c *Client) sampleArtistRecordings(ctx context.Context, artist core.GenreAr
 	snapshot.Sources = append(snapshot.Sources, c.base+path)
 	added := 0
 	for _, index := range rng.Perm(len(page.Recordings)) {
+		if ctx.Err() != nil {
+			break
+		}
 		recording := page.Recordings[index]
 		credited, blocked := false, false
 		for _, credit := range recording.ArtistCredit {

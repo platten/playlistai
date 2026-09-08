@@ -235,9 +235,9 @@ Positive scores average segment cosines; negative scores use the highest segment
 cosine. Essential and strict clauses require affirmative evidence before ranking,
 personalization, diversity and sequencing. Journey membership and the final
 check use the original stage-specific criteria. Cosines are not probabilities.
-Strict vocal absence remains unknown: a CLAP similarity and a short preview
-cannot prove that an entire recording has no vocals. No acoustic energy or
-vocal detector is claimed by this implementation.
+Explicit instrumental/no-vocals requests use the dedicated preview classifier
+described below. A CLAP comparison and a short preview cannot prove that the
+entire recording has no vocals.
 
 Starting limits are six anchor proposals, `min(200, max(40, 4 * requestedCount))`
 new candidate-analysis attempts, and a cancellable 120-second analysis budget.
@@ -592,3 +592,470 @@ one second apart; delayed concurrent callers cannot dispatch accumulated slots
 together. Waiting is cancellable. Sub-second intervals are accepted only for
 loopback test servers. Cache hits make no request. Deezer's separate two-second
 limiter is unchanged.
+
+## Recover missing artist seeds through online metadata
+
+An explicitly requested positive artist that does not resolve locally now triggers
+online recovery on Generate. The live intent preview remains offline and explains
+the planned lookup. Local matches, local ambiguities, inferred anchors and excluded
+artists do not trigger this recovery path.
+
+1. Search MusicBrainz for the extracted name and its aliases. Retain a unique
+   corroborated identity; multiple matching artists require clarification.
+2. Find a matching Deezer artist, then try its top tracks in provider order.
+   A missing, ambiguous or incompatible catalog recording advances to the next
+   song. The first provider search result is not automatically accepted.
+3. If no popular track can seed, search additional recordings by MusicBrainz
+   artist ID. These results are explicitly described as unordered by popularity.
+4. Accept only a catalog recording with vectors and a matching full title/version
+   and credited artist or verified alias. Do not use a same-title cover. Preserve
+   the original artist reference, adding the chosen track as its representative.
+   This identity match does not establish musical fit; normal recommendation and
+   evidence checks still apply.
+
+Progress and result notices disclose the missing local artist, online lookup,
+chosen seed and number of checked recordings, or the reason recovery failed.
+Original references, source URLs and selected-recording evidence are retained in
+the knowledge snapshot and history. Replaying a saved result does not re-search.
+Only extracted music names are sent to providers, never the full description or
+taste profile. No audio or new model downloads are involved in seed recovery.
+
+Starting limits are 100 Deezer top-track entries and 100 additional MusicBrainz
+recordings per missing artist, within the existing shared 30-second/20-request
+metadata budget. These are bounded search limits, not a guarantee of exhaustive
+discography coverage. Pagination constructs provider URLs locally rather than
+following arbitrary `next` URLs. Deezer requests use the application-wide
+two-second limiter; MusicBrainz retains its one-second limiter. Deezer metadata
+is cached for one day; existing MusicBrainz cache lifetimes remain unchanged.
+Provider errors are not cached as successful responses; stale metadata remains
+usable during outages. If no checked recording exists locally, generation returns
+clarification rather than inventing an embedding or substituting another artist.
+
+Provider references: [MusicBrainz artist search and aliases](https://musicbrainz.org/doc/MusicBrainz_API/Search)
+and [Deezer's public artist top-track endpoint](https://api.deezer.com/artist/27/top?limit=2).
+The Deezer response format and pagination were checked live on 2026-09-07;
+popularity means the provider's top-track ordering, not a global listening rank.
+
+Validation uses local HTTP fixtures for first-track misses, later matches,
+artist ambiguity, covers, version mismatches, recording fallback, exhaustion,
+cancel/budget handling, retryable provider errors, cache reuse and history replay.
+Bridge tests verify offline typing, five-track generation from a recovered alias,
+generation IDs and detailed failed outcomes. Rendered fixtures cover missing-artist
+messages, lookup progress, successful seed disclosure and a dismissible no-seed
+message. Reproduce with `go test ./internal/enrich/musicbrainz ./internal/bridge`
+and `scripts/capture-recommendation-ui.mjs`; the full `scripts/test.sh` gate is
+also required. Live lookup coverage is limited to the documented endpoint check;
+the automated generation tests use fixtures.
+
+### Instrumental and no-vocals requests — 2026-09-07
+
+Structured instrumental preferences and `exclude_vocals` / `require_instrumental`
+constraints activate a dedicated local CLAP preview screen. The recommended,
+parity-validated bundle can run this screen without a general calibration policy.
+The Settings checkbox controls additional calibrated musical-fit assessments;
+installing CLAP and explicitly requesting instrumental/no-vocals music opts into
+vocal screening. Removing the model disables that capability. Missing CLAP yields
+an actionable unsupported outcome instead of admitting unchecked tracks.
+
+The versioned `clap-preview-vocal-contrast/v1` policy compares each segment with
+instrumental, male/female singing, choir, speech/rap, humming/wordless singing,
+silence and noise descriptions. Every segment must favor instrumental music.
+Vocal matches reject; missing/invalid evidence and instrumental leads of at
+most 0.02 cosine units abstain. This separation is an uncalibrated engineering
+guard, not a probability or a benchmark-backed optimum. The generic classifier
+uses no artist-specific fits or genre whitelist. Its basis is CLAP's paired
+[zero-shot audio/text representations](https://huggingface.co/laion/larger_clap_music/blob/main/README.md).
+False positives and negatives remain possible; unheard portions of a recording
+are explicitly unassessed. A separate reviewed listening evaluation is pending.
+
+Seed discovery first searches MusicBrainz instrumental recording tags in up to
+three pages of 100. If no catalog candidates are available, it searches up to
+200 Deezer instrumental title results and includes up to 100 local title matches.
+Tags and titles are retrieval hints only. Corroborated catalog references are
+sampled into at most three initial anchor proposals using a saved string seed.
+All proposals and all candidate channels pass the same vocal screen, including
+required recordings. There is no hardcoded artist/track list. Failed lookup is
+explained, and an empty search returns clarification. Existing provider-wide
+limits remain one MusicBrainz request/second and one Deezer request/two seconds.
+Online metadata lookup retains its 30-second budget; audio retains its separate
+120-second and candidate-count bounds. Cached embeddings are reusable across
+descriptions; vocal assessment versions prevent mixing old eligibility results.
+Only derived features and evidence persist, never preview audio.
+
+Tests cover the exact sample prompt, all-channel vocal rejection, later vocal
+segments, near ties, missing features, invalid identity/vectors, encoder failure,
+feature reuse, required-track conflicts, missing-model guidance, metadata pages,
+randomized proposals, provider outages and history snapshot reuse. Browser
+fixtures cover rules parsing without a named seed, playlist navigation, the
+preview-coverage notice and wizard installation states in both themes.
+
+The live Linux CPU smoke test on 2026-09-07 used the installed
+`clap-music-speech-fp32-v1-125b92a999bc2de8` bundle and the 957k-track catalog.
+For `Instrumental, no vocals`, seed `42`, requested count `3`, MusicBrainz supplied
+19 catalog candidates before its metadata budget expired. The final policy
+selected two preview-screened tracks: Los Straitjackets — Pacifica and Will
+Ackerman — The Bricklayer's Beautiful Daughter. It attempted 39 new analyses,
+fetched 10,076,785 bytes, reused zero analysis records and exhausted the
+120-second audio budget (178.3 seconds for the complete test, including setup
+and lookup). This is a smoke observation, not reviewed musical accuracy or a
+performance benchmark. Earlier lookup attempts encountered MusicBrainz HTTP 503;
+the Deezer fallback also produced a partial playlist. No full-recording guarantee
+or clean-machine cross-platform validation is claimed.
+
+A separate native control checked Beach Fossils — Golden Age (Deezer recording
+484948092, ISRC US8YA1010091). The final policy rejected its 29.99-second preview
+as a vocal match; 479,827 bytes were processed in memory. These few observations
+do not estimate vocal-detection recall or establish calibration.
+
+Reproduce native checks without Python:
+
+```sh
+go build -o /tmp/playlist-ai-audioworker ./cmd/audioworker
+PLAYLISTAI_TEST_CATALOG=/path/to/catalog \
+PLAYLISTAI_TEST_CLAP_BUNDLE=/path/to/installed/bundle \
+PLAYLISTAI_TEST_CLAP_WORKER=/tmp/playlist-ai-audioworker \
+go test -v ./internal/reco/multichannel -run '^TestInstrumentalPromptLiveCLAP$' -count=1
+
+go run ./cmd/audiopreview -authorized -screen-vocals \
+  -bundle /path/to/installed/bundle -data-dir /tmp/derived-features \
+  -artist 'Exact artist' -title 'Exact recording version' \
+  -track-id catalog-track-id -catalog-version catalog-version
+```
+
+The preview CLI now dispatches its built-in native worker for v2 bundles. The
+full gate remains `bash scripts/test.sh`; rendered checks use
+`scripts/capture-recommendation-ui.mjs` and `scripts/capture-clap-wizard.mjs`.
+
+### Genre journeys — 2026-09-07
+
+The sample `A journey from ambient to energetic electronic` now preserves two
+category stages rather than looking for artists named Ambient and Energetic
+Electronic. Rules parsing separates energy adjectives from recognized categories
+and accepts explicit `genre <name>` wording; model interpretation supplies
+additional open-vocabulary genre names. Source-grounded normalization repairs
+category names placed in entity references/destinations, restores start/via/end
+scopes and keeps energy modifiers separate. It does not contain artist-to-genre
+or track-fit mappings. Explicit entity journeys remain entity journeys.
+
+Generation requests a recording search for each original category stage before
+spending the shared MusicBrainz budget on artist sampling or related genres.
+The 100-artist pool target and provider throttling remain unchanged. The normal
+best-available path now reserves and sequences genre stages, giving affirmative
+stage evidence priority over unknown placement. Incomplete recording tags no
+longer let a known destination track masquerade as an unknown start. Tracks with
+no supporting stage evidence remain labeled suggestions. Era constraints still
+apply to their own stages; explicit artist destinations keep their existing path.
+
+The request summary shows the genre direction and requested energy change.
+Energy points preserve the requested relative contour, including a via stage;
+they are not measurements. Without acoustic energy evidence the output explains
+that the requested energy change is unverified. Current genre evidence can guide
+the journey without claiming that its ending energy has been established.
+Parser identities advance to `rules/v9` and `llama/v9`, and the recommendation
+algorithm to `multichannel/v8`, separating parse reuse and history reproduction
+from earlier behavior without changing the stored intent schema.
+
+Regression tests exercise the exact sample through both parsers, reversed and
+via journeys, unfamiliar model-supplied genres, entity disambiguation, online
+stage lookup priority, generation, direction, short-count clarification and
+history replay. Rendered fixtures verify that the sample needs no named artist,
+shows both stages and requested energy, announces lookup progress and opens the
+playlist screen; screenshots are in `/tmp/playlist-ai-journey-ui`.
+
+A live Linux test on 2026-09-07 with the installed 957k-track catalog found 34
+recording candidates and generated all six requested tracks in 44.9 seconds.
+The first and last recordings had MusicBrainz evidence matching the ambient and
+electronic stages, respectively. Artist pool/graph enrichment was incomplete;
+the output was correctly partial because descriptive qualities remain unverified.
+This was a metadata-grounded smoke test, not a listening-quality or energy
+benchmark. Reproduce it with:
+
+```sh
+PLAYLISTAI_TEST_JOURNEY_CATALOG=/path/to/catalog \
+go test -v ./internal/reco/multichannel -run '^TestGenreJourneyLiveCatalog$' -count=1
+bash scripts/test.sh
+```
+
+## Creative description evaluation and preview similarity
+
+The fifteen requests in [sample-music-prompts.md](sample-music-prompts.md) and
+[`creative-prompts-v1.json`](../internal/evaluation/testdata/creative-prompts-v1.json)
+exercise popular artist references, an album, a track, named genres, descriptions
+without a genre name, no-vocals screening, and three category journeys. They are
+development examples, not a held-out musical-quality benchmark. No example
+artists, songs, or genre-to-track mappings were added to production selection.
+
+The installed parity-validated CLAP bundle now supplies **ranking similarities**
+for best-available descriptions even without a general calibration policy.
+`AudioClauseAssessment.scoreAvailable` distinguishes a usable cosine from an
+unknown categorical judgment. `state` remains unknown without calibration;
+strict style requirements still require supported affirmative evidence. The
+existing instrumental/vocal contrast continues to reject vocal and uncertain
+segments. If parsing supplies no structured audio clauses, the original
+request becomes a local text-comparison clause rather than skipping CLAP.
+Missing previews, unresolved recording identities, or failed text comparisons
+cannot become checked candidates. All candidate channels use the same check.
+The compatibility identity still separates CLAP's paired 512-dimensional
+embeddings from the Deej-AI catalog's two 100-dimensional spaces.
+
+Journey clauses retain their scopes without duplicate playlist-wide genre
+clauses. Ranking rewards fit to either requested stage; a start-stage track
+need not also sound like the destination. Where metadata cannot place a track,
+relative CLAP stage similarities guide approximate placement. They do not
+become affirmative genre evidence, and final coverage retains the partial-fit
+notice. Existing date restrictions and known stage evidence take precedence.
+The algorithm identity is `multichannel/v9`; the preview ranking policy is
+`clap-preview-similarity/v1` (plus the vocal policy when applicable).
+
+Live evaluation exposed two general defects. Artist discovery computed medoids
+for every fuzzy match before retaining at most five alternatives; a short name
+could therefore overrun the lookup budget by minutes. Identity ranking now
+precedes representative calculations, and artist/recording sampling checks
+cancellation before additional catalog work. The 100-artist discovery target
+and application-wide provider limits remain unchanged: MusicBrainz at most one
+request/second, Deezer at most one request/two seconds, including preview fetches.
+
+The second defect discarded qualified references when source wording and model
+word order differed. Artist/title grounding now accepts conventional possessive,
+`Artist - Title`, and `Title by Artist` forms only when both complete parts are
+present in the supplied source span. This works with accent normalization and
+preserves typed album/track identities. Literal track titles containing "by"
+are resolved before considering the qualified-reference fallback. Album lookup
+accepts the same qualified forms. The parser identity is `llama/v10` so earlier
+interpretation caches are not silently reused.
+
+Reproduce the live evaluation with an installed model, runtime, catalog, and
+validated analysis bundle (no Python runtime):
+
+```sh
+go build -o /tmp/playlist-ai-musiccheck ./cmd/musiccheck
+/tmp/playlist-ai-musiccheck \
+  -model /path/to/model.gguf -runtime /path/to/llama \
+  -catalog /path/to/catalog -bundle /path/to/installed/clap-bundle \
+  -prompts internal/evaluation/testdata/creative-prompts-v1.json \
+  -online -count 6 -analysis-dir /tmp/musiccheck-analysis \
+  -cache /tmp/music-prompts-metadata.sqlite -output /tmp/creative-live.json
+```
+
+`-case` selects an exact prompt for a targeted recheck. To exercise the final
+recommendation code with recorded LLM intents, frozen metadata and reusable
+native CLAP features, without downloading previews again:
+
+```sh
+/tmp/playlist-ai-musiccheck \
+  -catalog /path/to/catalog -bundle /path/to/installed/clap-bundle \
+  -prompts internal/evaluation/testdata/creative-prompts-v1.json \
+  -replay /tmp/creative-live.json -cached-audio-only -count 6 \
+  -analysis-dir /tmp/musiccheck-analysis -output /tmp/creative-replay.json
+```
+
+Replay is a separate check, not another LLM evaluation or a promise of identical
+selection across algorithm versions. It recomputes request comparisons locally
+and requires an eligible CLAP assessment for every selected recording. The
+live runner also checks typed reference preservation, explicit artist
+exclusions, vocal preferences, requested genre-stage order in intent, and a
+nonempty playlist. Deterministic tests separately cover relative journey
+placement, unknown evidence, failed text inference, qualified reference
+inventions, literal titles, bounded artist alternatives, and cancellation.
+
+The qualified-album recheck also encountered a MusicBrainz HTTP 503 response.
+Album lookup now reserves recovery time within the shared lookup budget, records
+provider failures explicitly, and can use Deezer album metadata. Its search
+examines up to 25 results, requires matching artist and complete album title,
+and corroborates up to 100 listed recordings against catalog artist/title/version
+identity. It does not choose the first search result or infer genre/vocal
+properties from album membership. Multiple matching album identities remain
+ambiguous through the subsequent local-resolution pass. Qualified references
+with a title-only model span expand that span to the actual request only when
+both named parts are present; fabricated spans remain invalid. MusicBrainz's
+[release-group search contract](https://musicbrainz.org/doc/MusicBrainz_API/Search/ReleaseGroupSearch)
+remains the primary album lookup.
+
+Source recovery also handles the model copying its normalized qualified identity
+into the span (for example, `Title by Artist` for `Artist's track Title`). The
+recovery requires both complete identity parts in the actual request and either
+a literal source span or a span consisting exactly of that identity. Arbitrary
+invented spans and absent artists/titles remain invalid. The stored source is
+the actual request, not the model's rewritten quote.
+
+### Executed creative-prompt results (2026-09-07–08)
+
+The [development report](data/creative-prompts-v1-live.json) records all 15
+prompts, selected recordings, typed references, journey criteria, model hashes,
+metadata/audio snapshot identities and native preview-assessment coverage.
+The initial full live run passed 13 of 15 intent checks. The album and track
+reference cases were repaired and rerun with the real LLM, online identity
+lookup, Deej-AI retrieval and native CLAP inference. All 15 latest live results
+contain six tracks with eligible, scored preview assessments (90 selections).
+The final code also replayed all 15 successfully using recorded LLM intents and
+metadata, with native CLAP text comparisons and cached audio features only.
+
+| Measurement | Latest live results | Final cached replay |
+| --- | ---: | ---: |
+| Prompts passing execution/intent checks | 15 / 15 | 15 / 15 |
+| Selected tracks with analyzed preview evidence | 90 / 90 | 90 / 90 |
+| Per-case elapsed time, minimum / median / maximum | 135.2 / 163.8 / 189.9 seconds | 112 / 240 / 688 milliseconds |
+| Preview bytes fetched | 137,713,694 | 0 |
+| Reused analysis records | 48 | 339 |
+
+Live totals combine the initial run's passing cases and the two latest targeted
+rechecks; they are not a single fresh-model run of the final code. Failed earlier
+attempts are described separately and are excluded from these totals. Timings
+include parsing, metadata resolution and generation for each live case, but
+exclude process startup, catalog opening and native-worker health checks.
+Cache warmth varies. Replay skips LLM inference and external metadata lookup;
+it is a cache-compatibility and final-code execution check, not another live
+language-model or provider-availability benchmark. Analysis attempts include
+unavailable or ambiguous previews; unchecked tracks are excluded.
+
+The host was Linux amd64 under WSL2. Local language inference used
+`qwen3.5-9b-q4km.gguf`, an 8,192-token context and automatic runtime GPU
+offload (the configured value `0` leaves the runtime default in effect; it does
+not force CPU). The actual offloaded layer count was not recorded. CLAP used
+`laion/larger_clap_music_and_speech` revision
+`195c3a3e68faebb3e2088b9a79e79b43ddbda76b`, 512-dimensional embeddings and
+ONNX Runtime 1.26.0 CPU. Deej-AI used the installed 956,917-track catalog's two
+100-dimensional int8 vector spaces. RNG seed was the string `"42"`.
+The report preserves complete model/runtime/catalog hashes and preprocessing
+identity. The analysis directory contains reusable SQLite features, not preview
+files. No Python runtime was used.
+
+All outcomes remain `partial`: the CLAP bundle has validated inference parity,
+but no calibrated general musical-fit policy. The no-vocals case passed the
+preview-segment vocal screen for every selection. This does not certify unheard
+portions of recordings; trio instrumentation, female vocals, genres, moods and
+transition quality were not independently listening-verified. First-result
+latency, peak memory, held-out listening judgments and threshold calibration
+were not measured in this run.
+
+Validation passed with `bash scripts/test.sh`: Bash syntax, AppImage PATH
+isolation, shellcheck, generated Wails bindings, TypeScript checking, production
+frontend build, Go vet, pure-Go core compilation, race-enabled Go tests and
+zero lint issues. Rendered wizard/recommendation checks passed light/dark,
+narrow-window, keyboard, reduced-motion, progress, error, partial-result and
+preview states. Screenshots were captured in `/tmp/creative-final-clap-wizard`
+and `/tmp/creative-recommendation-ui`; their fixtures exercise UI behavior and
+are separate from the real-model evaluation.
+
+### Correctness and security review (2026-09-08)
+
+Reviewed the changed recommendation orchestration, intent grounding, provider
+lookup, preview handling, native worker, bundle installation and frontend state
+paths. Applied the following fixes with deterministic regression coverage:
+
+- Preview playback previously forwarded arbitrary non-Deezer URLs to the
+  desktop WebView. It now accepts only HTTPS on the two Spotify CDN hosts
+  present in the catalog, or downloads an authorized Deezer CDN preview through
+  the existing bounded, throttled client. Local files, private IP URLs, foreign
+  hosts, credentials and custom ports are rejected before network dispatch or
+  forwarding to the WebView. Redirect checks and the two-second Deezer limit
+  remain enforced.
+- A manifest's download size was checked only after copying the response to
+  disk. The downloader now limits streaming writes to the declared remaining
+  size and rejects excess response bytes before activation, including chunked
+  and resumed responses. Resume responses must describe the requested offset
+  and consistent end/total/length; a bad range leaves the existing partial file
+  untouched. This size bound applies when the caller supplies a declared size,
+  as model/runtime bundle installation does.
+- Album membership, known playlist-date conflicts and essential musical
+  contradictions could be filtered after a track had already been emitted as
+  checked. Metadata eligibility now precedes deduplication and preview analysis
+  for both verification policies; progressive audio results also pass essential
+  criteria and have a possible journey stage. Required-track metadata conflicts
+  return clarification before preview work.
+- Required album members were excluded as retrieval seeds, making a resolved
+  album-only request empty. Those members now enter retrieval explicitly and
+  remain selectable while ordinary seed exclusion, artist exclusions, recent
+  track exclusion and recording deduplication remain active. Album membership
+  is enforced in both policies and recorded as a runtime-enforced constraint.
+- Partial MusicBrainz/Deezer album search pages could incorrectly establish a
+  unique match. Truncated searches now retain ambiguity instead of selecting
+  the first visible match. Relative CLAP stage similarity also cannot favor a
+  destination that conflicts with known stage dates.
+
+The recommendation identity is now `multichannel/v10`. The creative evaluation
+provenance was corrected: LLM GPU setting `0` uses automatic runtime offload,
+not forced CPU. The existing report remains an observation of its recorded v9
+run; it is not relabeled as a new live model benchmark.
+
+Executed validation: `bash scripts/test.sh` passed, including race tests,
+TypeScript/build checks, pure-Go compilation and lint. Dependency checks with
+`go run golang.org/x/vuln/cmd/govulncheck@latest ./...` (govulncheck v1.7.0) and
+`pnpm audit --json` reported no known vulnerabilities on this date. These scans
+do not constitute a vulnerability assessment of downloaded native binaries.
+All 15 creative prompts were additionally replayed against the reviewed code
+using recorded local LLM intents, frozen metadata and native CLAP cached
+features, producing six checked tracks per case with zero preview downloads.
+The replay command is the one documented above; its temporary output is
+`/tmp/playlist-review-replay-final.json`. This review did not rerun fresh LLM
+inference, listening evaluation or clean-machine macOS/Windows packaging tests.
+
+## External request retries — 2026-09-08
+
+MusicBrainz and Deezer reads (including preview resolution and audio retrieval),
+remote manifests and model/runtime/catalog downloads share a bounded Go retry
+policy. Bodyless GET/HEAD requests retry transport failures and HTTP 408, 429,
+500, 502, 503 and 504. There are at most four attempts per request URL, with
+one-, two- and four-second exponential delays plus up to 25% positive jitter.
+Both delta-seconds and HTTP-date `Retry-After` values set a minimum delay.
+A delay exceeding 30 seconds or the remaining request deadline returns the last
+failure immediately, allowing the existing caller fallback; the server's delay
+is never shortened to force another attempt. Other client errors return directly.
+Cancellation interrupts waits, and discarded response bodies are closed.
+
+Each retry passes through its provider's existing application-wide limiter:
+Deezer remains at most one dispatch every two seconds; MusicBrainz remains at
+most one every second. Redirects also pass through those transports. Metadata
+retries and redirects consume the same 20-request generation budget instead of
+multiplying it. Existing timeouts, redirect restrictions and stale-cache recovery
+remain in place. No prompt/audio payload logging or new runtime dependency is
+introduced.
+
+Retries cover connection/header failures and HTTP error responses, not malformed
+successful JSON or a failure while consuming a successful streaming response.
+Interrupted downloads retain their existing explicit resume behavior, checksums
+and size bounds. Side-effecting Soundiiz export POSTs and local LLM inference are
+not automatically replayed.
+
+Validation: deterministic virtual-time tests exercise increasing delays,
+transient/permanent statuses, network failures, both `Retry-After` formats,
+overflowing cooldown values, attempt limits, cancellation, request deadlines,
+response cleanup, provider spacing and metadata budget exhaustion. An HTTP
+fixture verifies that a 429 retry preserves the download Range header, partial
+file and final checksum. Instrumental fallback tests count exhausted retries
+before cross-provider recovery. Run `bash scripts/test.sh` for the complete gate.
+
+## Centered randomized preview evidence — 2026-09-08
+
+New CLAP analyses select one continuous interval with a random duration between
+22 and 47 seconds, centered in the available provider audio to within one PCM
+frame. The upper duration is capped by the available audio: a 30-second preview
+therefore yields 22–30 seconds of evidence. Audio at most 22 seconds long is used
+whole. Selection is uniform at 48 kHz PCM-frame precision. CLAP still receives
+its parity-validated ten-second inputs, including the existing repeat/zero
+padding of the final partial segment; padding never increases observed coverage.
+
+The current Deezer integration receives fixed preview URLs without a verified
+offset into the full recording. It cannot request a middle-of-song excerpt or
+extend a preview to 47 seconds. Centering is therefore relative to the available
+preview, and `PreviewOffsetKnown` remains false. No other provider is substituted,
+no extra request is made to try to change the excerpt, and the two-second Deezer
+throttle remains in force. Vocal screening describes sampled-preview evidence;
+a vocal passage outside the selected interval remains unassessed.
+
+Each new analysis persists `sampling.policy` (`centered-random-duration-22-47s/v1`),
+the available duration, actual preview-relative coverage start/end/duration, and
+each ten-second segment's actual source interval. These values participate in
+the analysis fingerprint. Sampling is separate from the model/preprocessing
+identity, so installed CLAP bundles and aligned embeddings remain compatible.
+Cached analyses retain their existing selection rather than fetching or choosing
+again for every description; legacy whole-preview rows remain readable and
+reusable with their original fingerprints. Clearing analysis in Settings causes
+subsequent checks to create new selections. Encoded audio, the complete decoded
+preview and borrowed segment buffers are still cleared after use or failure.
+
+Deterministic tests exercise duration endpoints, centering, short previews and
+seeded random variation. A synthetic MP3 service test verifies the selected
+coverage, CLAP input count, buffer cleanup, SQLite round trip, cache reuse and
+rejection of invalid coverage. This is implementation validation, not a musical
+quality benchmark or a new calibration of fit/vocal thresholds.

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "./cn";
-import { Warn } from "./icons";
+import { Warn, X } from "./icons";
 
 export interface ErrorStateProps {
   title?: string;
@@ -8,6 +8,8 @@ export interface ErrorStateProps {
   message?: ReactNode;
   /** Usually a "Try again" <button>. */
   onRetry?: () => void;
+  /** Clear the notice in its owner; a subsequent failure can show it again. */
+  onDismiss: () => void;
   retryLabel?: string;
   className?: string;
   /** "panel" fills a region; "inline" is a compact strip. */
@@ -19,10 +21,21 @@ export function ErrorState({
   title = "Something went wrong",
   message,
   onRetry,
+  onDismiss,
   retryLabel = "Try again",
   className,
   variant = "panel",
 }: ErrorStateProps) {
+  const dismiss = (
+    <button
+      type="button"
+      onClick={onDismiss}
+      aria-label="Dismiss error"
+      className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-inset hover:text-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+    >
+      <X size={16} />
+    </button>
+  );
   if (variant === "inline") {
     return (
       <div
@@ -33,16 +46,17 @@ export function ErrorState({
         role="alert"
       >
         <Warn size={15} className="shrink-0 text-bad" />
-        <span className="text-text">{message ?? title}</span>
+        <span className="min-w-0 flex-1 break-words text-text">{message ?? title}</span>
         {onRetry && (
           <button
             type="button"
             onClick={onRetry}
-            className="ml-auto text-[12px] font-medium text-bad hover:underline"
+            className="shrink-0 text-[12px] font-medium text-bad hover:underline"
           >
             {retryLabel}
           </button>
         )}
+        {dismiss}
       </div>
     );
   }
@@ -50,11 +64,12 @@ export function ErrorState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 px-6 py-14 text-center",
+        "relative flex flex-col items-center justify-center gap-3 break-words px-6 py-14 text-center",
         className,
       )}
       role="alert"
     >
+      <div className="absolute right-2 top-2">{dismiss}</div>
       <div className="grid size-11 place-items-center rounded-card border border-bad/30 bg-bad/10 text-bad">
         <Warn size={20} />
       </div>

@@ -10,13 +10,13 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/net/html"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/httpretry"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -27,20 +27,24 @@ type knowledgeBudgetKey struct{}
 type cacheOnlyKey struct{}
 type knowledgeBudget struct {
 	requests int
-	backoff  time.Time
+	backoffs map[string]time.Time
 }
 
 // knowledgeGet caches exact provider responses, not prompts. Stale cache is
 // usable offline. Only valid responses enter the cache; outages aren't misses.
 func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) ([]byte, error) {
-	key := "knowledge-v1:" + path
+	return c.metadataGet(ctx, c.base, path, "knowledge-v1:", c.hc, negative)
+}
+
+func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, client *http.Client, negative bool) ([]byte, error) {
+	key := namespace + path
 	var cached string
 	var fetched int64
 	if c.db != nil {
 		_ = c.db.QueryRowContext(ctx, "SELECT json,fetched_at FROM mb_cache WHERE key=?", key).Scan(&cached, &fetched)
 	}
 	ttl := 30 * 24 * time.Hour
-	if negative || negativeKnowledge(cached) {
+	if negative || negativeKnowledge(cached) || namespace == "deezer-seeds-v1:" {
 		ttl = 24 * time.Hour
 	}
 	if cached != "" && time.Since(time.Unix(fetched, 0)) < ttl {
@@ -60,7 +64,7 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 		if budget.requests >= KnowledgeRequests {
 			return fallback(fmt.Errorf("metadata request budget exhausted"))
 		}
-		if delay := time.Until(budget.backoff); delay > 0 {
+		if delay := time.Until(budget.backoffs[namespace]); delay > 0 {
 			timer := time.NewTimer(delay)
 			defer timer.Stop()
 			select {
@@ -69,16 +73,22 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 			case <-timer.C:
 			}
 		}
-		budget.requests++
+		ctx = httpretry.WithAttemptCheck(ctx, func() error {
+			if budget.requests >= KnowledgeRequests {
+				return fmt.Errorf("metadata request budget exhausted")
+			}
+			budget.requests++
+			return nil
+		})
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return fallback(err)
 	}
 	req.Header.Set("User-Agent", c.ua)
 	req.Header.Set("Accept", "application/json,text/html")
 	req.Header.Set("Accept-Language", "en")
-	resp, err := c.hc.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return fallback(err)
 	}
@@ -86,12 +96,13 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 	if resp.StatusCode != http.StatusOK {
 		if budget != nil && (resp.StatusCode == 429 || resp.StatusCode == 503) {
 			wait := 5 * time.Second
-			if seconds, e := strconv.Atoi(resp.Header.Get("Retry-After")); e == nil {
-				wait = time.Duration(max(0, seconds)) * time.Second
-			} else if at, e := http.ParseTime(resp.Header.Get("Retry-After")); e == nil {
-				wait = time.Until(at)
+			if value := resp.Header.Get("Retry-After"); value != "" {
+				wait = httpretry.RetryAfter(value, time.Now())
 			}
-			budget.backoff = time.Now().Add(wait)
+			if budget.backoffs == nil {
+				budget.backoffs = make(map[string]time.Time)
+			}
+			budget.backoffs[namespace] = time.Now().Add(wait)
 		}
 		return fallback(fmt.Errorf("music metadata HTTP %d", resp.StatusCode))
 	}
@@ -101,6 +112,12 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 	}
 	if path != "/genres" && !strings.HasPrefix(path, "/genre/") && !json.Valid(raw) {
 		return fallback(fmt.Errorf("invalid metadata JSON"))
+	}
+	var providerError struct {
+		Error json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(raw, &providerError) == nil && len(providerError.Error) > 0 && string(providerError.Error) != "null" {
+		return fallback(fmt.Errorf("metadata provider returned an error"))
 	}
 	if c.db != nil {
 		_, _ = c.db.ExecContext(ctx, "INSERT OR REPLACE INTO mb_cache(key,json,fetched_at) VALUES(?,?,?)", key, string(raw), time.Now().Unix())
@@ -203,6 +220,11 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		p = ports.NopProgress{}
 	}
 	p.Report("generation", 0, 0, "Resolving music references")
+	// Explicit missing artists take priority over broad genre discovery.
+	intent = c.resolveMissingArtists(ctx, intent, cat, resolver, &snapshot, p)
+	if core.WantsInstrumental(intent) && len(intent.Seeds.TrackIDs) == 0 && len(intent.Required.TrackIDs) == 0 {
+		c.discoverInstrumental(ctx, &intent, cat, resolver, &snapshot, p)
+	}
 	// Album identity must be resolved before the ordinary artist/track resolver.
 	for _, group := range []*[]core.IntentReference{&intent.References, &intent.Journey.Waypoints} {
 		refs := append([]core.IntentReference(nil), (*group)...)
@@ -217,7 +239,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		d := *intent.Destination
 		if d.Kind == core.ReferenceAlbum {
 			d = c.resolveAlbum(ctx, d, cat, resolver, &snapshot)
-		} else {
+		} else if d.Resolution == nil || d.Resolution.Status != core.ResolutionResolved || d.Resolution.CatalogVersion != resolver.CatalogVersion() {
 			r := resolver.ResolveReference(d)
 			d.Resolution = &r
 			if r.Selected != nil && len(r.Selected.Representatives) > 0 {
@@ -238,6 +260,21 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		}
 	}
 	if len(genres) > 0 {
+		// Give each requested category stage a recording lookup before artist
+		// enrichment and related genres spend the shared metadata budget.
+		if intent.Mode == core.ModeJourney && len(core.JourneyCriteria(intent.EssentialCriteria)) > 1 {
+			p.Report("generation", 0, 0, "Finding recordings for each journey stage")
+			seen := map[string]bool{}
+			for _, criterion := range core.JourneyCriteria(intent.EssentialCriteria) {
+				if criterion.Kind != "genre" && criterion.Kind != "style" {
+					continue
+				}
+				if !seen[criterion.Value] {
+					seen[criterion.Value] = true
+					c.searchKnowledgeRecordings(ctx, `tag:"`+mbEscape(criterion.Value)+`"`, cat, resolver, &snapshot)
+				}
+			}
+		}
 		p.Report("generation", 0, 0, "Finding genre artists and sampling recordings")
 		if err := c.sampleGenreArtists(ctx, &intent, genres, cat, resolver, &snapshot); err != nil {
 			return intent, err
@@ -293,12 +330,22 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	}
 	// Enrich starting points with recording-level evidence, never artist tags.
 	for _, a := range intent.InferredAnchors {
+		if ctx.Err() != nil {
+			break
+		}
 		r := resolver.ResolveReference(a.Reference)
 		if r.Selected == nil || len(r.Selected.Representatives) == 0 {
 			continue
 		}
 		meta, ok := cat.Meta(r.Selected.Representatives[0].TrackID)
 		if !ok {
+			continue
+		}
+		known := false
+		for _, track := range snapshot.Tracks {
+			known = known || track.Ref.ID == meta.Ref.ID
+		}
+		if known {
 			continue
 		}
 		c.searchKnowledgeRecordings(ctx, `artist:"`+mbEscape(meta.Ref.Artist)+`" AND recording:"`+mbEscape(meta.Ref.Title)+`"`, cat, resolver, &snapshot)
@@ -337,6 +384,9 @@ func (c *Client) searchKnowledgeRecordings(ctx context.Context, query string, ca
 	}
 	snapshot.Sources = append(snapshot.Sources, c.base+path)
 	for _, r := range body.Recordings {
+		if ctx.Err() != nil {
+			break
+		}
 		c.addKnowledgeRecording(r, cat, resolver, snapshot)
 	}
 }
@@ -399,20 +449,26 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 }
 
 func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) core.IntentReference {
+	// Reserve part of the shared deadline for recovery from a provider outage.
+	mbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	title, artist := ref.Query, ""
-	if i := strings.LastIndex(strings.ToLower(title), " by "); i >= 0 {
-		title, artist = title[:i], title[i+4:]
+	if a, t, ok := core.QualifiedReferenceParts(ref.Query); ok {
+		title, artist = t, a
 	}
 	query := `releasegroup:"` + mbEscape(title) + `" AND primarytype:album`
 	if artist != "" {
 		query += ` AND artist:"` + mbEscape(artist) + `"`
 	}
 	path := "/ws/2/release-group?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}.Encode()
-	raw, err := c.knowledgeGet(ctx, path, false)
+	raw, err := c.knowledgeGet(mbCtx, path, false)
 	if err != nil {
-		return ref
+		snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("MusicBrainz album lookup for %q was unavailable: %v. Trying Deezer album metadata.", ref.Query, err))
+		return c.resolveDeezerAlbum(ctx, ref, cat, resolver, snapshot)
 	}
+	snapshot.Sources = append(snapshot.Sources, c.base+path)
 	var body struct {
+		Count  int `json:"count"`
 		Groups []struct {
 			ID           string           `json:"id"`
 			Title        string           `json:"title"`
@@ -420,7 +476,7 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 		} `json:"release-groups"`
 	}
 	if json.Unmarshal(raw, &body) != nil {
-		return ref
+		return c.resolveDeezerAlbum(ctx, ref, cat, resolver, snapshot)
 	}
 	result := core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: resolver.CatalogVersion()}
 	for _, g := range body.Groups {
@@ -433,8 +489,9 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 		candidate := core.ResolutionCandidate{Kind: core.ReferenceAlbum, EntityID: g.ID, Artist: g.ArtistCredit[0].Name, Title: g.Title, Confidence: 1, Evidence: []core.ResolutionEvidence{{Match: "exact", MatchedText: g.Title}}}
 		result.Alternatives = append(result.Alternatives, candidate)
 	}
-	if len(result.Alternatives) > 1 {
+	if len(result.Alternatives) > 1 || body.Count > len(body.Groups) {
 		result.Status = core.ResolutionAmbiguous
+		snapshot.Notices = append(snapshot.Notices, "The album search is ambiguous or incomplete. Add the artist and exact album title to narrow the lookup.")
 	} else if len(result.Alternatives) == 1 {
 		candidate := result.Alternatives[0]
 		albumSnapshot := core.KnowledgeSnapshot{}
@@ -455,6 +512,9 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 		}
 	}
 	ref.Resolution = &result
+	if result.Status == core.ResolutionUnresolved {
+		return c.resolveDeezerAlbum(ctx, ref, cat, resolver, snapshot)
+	}
 	return ref
 }
 

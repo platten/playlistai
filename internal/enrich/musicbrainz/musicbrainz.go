@@ -22,6 +22,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/deezerhttp"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -38,6 +39,8 @@ type Config struct {
 	CachePath string
 	// MirrorURL overrides https://musicbrainz.org when set.
 	MirrorURL string
+	// DeezerURL overrides the public artist/top-track endpoint for tests.
+	DeezerURL string
 	// MinScore: results scoring below this are Matched == false but still carry
 	// whatever metadata the top hit had. Default 85.
 	MinScore int
@@ -47,11 +50,13 @@ type Config struct {
 
 // Client implements ports.Enricher.
 type Client struct {
-	base     string
-	ua       string
-	minScore int
-	interval time.Duration
-	hc       *http.Client
+	base         string
+	ua           string
+	minScore     int
+	interval     time.Duration
+	hc           *http.Client
+	deezerBase   string
+	deezerClient *http.Client
 
 	limiter *requestLimiter
 
@@ -108,6 +113,11 @@ func New(cfg Config) (*Client, error) {
 	limiter, _ := applicationLimiters.LoadOrStore(limiterKey, &requestLimiter{gate: make(chan struct{}, 1)})
 	c.limiter = limiter.(*requestLimiter)
 	c.hc.Transport = &limitedTransport{client: c, base: http.DefaultTransport}
+	c.deezerBase = strings.TrimRight(cfg.DeezerURL, "/")
+	if c.deezerBase == "" {
+		c.deezerBase = "https://api.deezer.com"
+	}
+	c.deezerClient = deezerhttp.Client(&http.Client{Timeout: 8 * time.Second})
 
 	if cfg.CachePath != "" {
 		db, err := sql.Open("sqlite", "file:"+cfg.CachePath+"?_pragma=busy_timeout(5000)")

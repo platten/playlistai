@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { API } from "../lib/api";
 import { Button } from "../components/Button";
+import { ErrorState } from "../components/ErrorState";
 
 type Entries = NonNullable<Awaited<ReturnType<typeof API.GetLogs>>>;
 
 export default function LogWindow() {
   const [entries, setEntries] = useState<Entries>([]);
   const [error, setError] = useState<string | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
+  const [dismissedPollError, setDismissedPollError] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -18,13 +21,14 @@ export default function LogWindow() {
       try {
         const next = (await API.GetLogs(cursor)) ?? [];
         if (disposed) return;
-        setError(null);
+        setPollError(null);
+        setDismissedPollError(null);
         if (next.length) {
           cursor = next[next.length - 1].id;
           setEntries((previous) => [...previous, ...next].slice(-2000));
         }
       } catch (e) {
-        if (!disposed) setError(String(e));
+        if (!disposed) setPollError(String(e));
       } finally {
         if (!disposed) timer = setTimeout(() => void poll(), 1000);
       }
@@ -37,7 +41,10 @@ export default function LogWindow() {
     if (follow && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
   }, [entries, follow]);
 
-  const close = () => { void API.CloseLogWindow().catch((e: unknown) => setError(String(e))); };
+  const close = () => {
+    setError(null);
+    void API.CloseLogWindow().catch((e: unknown) => setError(`Could not close logs: ${String(e)}`));
+  };
 
   return (
     <main className="flex h-dvh flex-col gap-4 bg-bg p-5 text-text">
@@ -52,7 +59,8 @@ export default function LogWindow() {
         <input type="checkbox" checked={follow} onChange={(e) => setFollow(e.target.checked)} className="accent-accent" />
         Follow new entries
       </label>
-      {error && <p role="alert" className="text-sm text-bad">Could not update logs: {error}. Retrying automatically.</p>}
+      {pollError && pollError !== dismissedPollError && <ErrorState variant="inline" message={`Could not update logs: ${pollError}. Retrying automatically.`} onDismiss={() => setDismissedPollError(pollError)} />}
+      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} onRetry={close} />}
       <div
         ref={scroller}
         role="region"

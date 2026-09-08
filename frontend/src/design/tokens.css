@@ -10,6 +10,7 @@
  */
 
 :root {
+  color-scheme: dark;
   --pai-bg: #0f0f12;
   --pai-surface: #16161b;
   --pai-panel: #1b1b21;
@@ -31,6 +32,7 @@
 /* System-driven light (no explicit choice stamped on <html>). */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
+    color-scheme: light;
     --pai-bg: #f7f7f9;
     --pai-surface: #ffffff;
     --pai-panel: #ffffff;
@@ -52,6 +54,7 @@
 
 /* Explicit choices win over the system in both directions. */
 :root[data-theme="light"] {
+  color-scheme: light;
   --pai-bg: #f7f7f9;
   --pai-surface: #ffffff;
   --pai-panel: #ffffff;
@@ -70,6 +73,7 @@
   --pai-elev: 0 1px 0 rgb(0 0 0 / 0.02) inset, 0 18px 40px -22px rgb(20 22 60 / 0.28);
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --pai-bg: #0f0f12;
   --pai-surface: #16161b;
   --pai-panel: #1b1b21;
@@ -117,6 +121,27 @@
   * {
     box-sizing: border-box;
     border-color: var(--pai-line);
+    scrollbar-width: thin;
+    scrollbar-color: var(--pai-faint) var(--pai-bg);
+  }
+  /* Use the fully themed scrollbar in Chromium/WebView2 and WebKit. Standard
+     scrollbar-color/width override these pseudo-elements in newer Chromium,
+     so reset them here instead of mixing native and custom scrollbar parts. */
+  @media (forced-colors: none) {
+    @supports selector(::-webkit-scrollbar) {
+      * { scrollbar-color: auto; scrollbar-width: auto; }
+      ::-webkit-scrollbar { width: 10px; height: 10px; background: var(--pai-bg); }
+      ::-webkit-scrollbar-track,
+      ::-webkit-scrollbar-track-piece,
+      ::-webkit-scrollbar-corner { background: var(--pai-bg); }
+      ::-webkit-scrollbar-thumb {
+        background: var(--pai-faint);
+        border: 2px solid var(--pai-bg);
+        border-radius: 999px;
+      }
+      ::-webkit-scrollbar-thumb:hover { background: var(--pai-accent); }
+      ::-webkit-scrollbar-button { display: none; }
+    }
   }
   html,
   body,

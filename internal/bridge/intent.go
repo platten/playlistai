@@ -249,6 +249,18 @@ func validatePromptStart(backend, requestedBackend string, intent core.MusicInte
 	if llmRequested || len(intent.Seeds.TrackIDs) > 0 || len(intent.Required.TrackIDs) > 0 {
 		return nil
 	}
+	// Online artist recovery produces detailed notices, including misses and
+	// outages. Let the orchestrator return those with a clarification outcome.
+	if intent.Knowledge != nil {
+		if core.WantsInstrumental(intent) || len(intent.Knowledge.Candidates) > 0 || len(core.JourneyCriteria(intent.EssentialCriteria)) > 0 {
+			return nil
+		}
+		for _, ref := range intent.References {
+			if ref.Kind == core.ReferenceArtist && ref.Influence == core.InfluencePositive {
+				return nil
+			}
+		}
+	}
 	if len(intent.Seeds.Queries) == 0 {
 		return errors.New(
 			"catalog-only mode requires a seed artist or track, e.g. \"something like Bonobo, 20 tracks\"")

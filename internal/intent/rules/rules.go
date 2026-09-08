@@ -25,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v8", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v9", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -91,6 +91,9 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	}
 	intent.Unsupported, intent.HardConstraints = extractUnsupportedRequirements(semanticText, intent.Unsupported, intent.HardConstraints)
 	intent.Journey.EnergyTrajectory = extractEnergyTrajectory(lower)
+	if _, trajectory := CategoryJourney(prompt, nil); len(trajectory) > 0 {
+		intent.Journey.EnergyTrajectory = trajectory
+	}
 
 	out := intent.Normalized()
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
@@ -160,7 +163,7 @@ func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef
 	if m := reJourney.FindStringSubmatch(orig); m != nil {
 		// Category journeys are semantic instructions, not artist lookups. Keep
 		// the journey mode while leaving retrieval anchors to the semantic path.
-		if isKnownStyle(cleanSeed(m[1])) && isKnownStyle(cleanSeed(m[2])) {
+		if criteria, _ := CategoryJourney(orig, nil); len(criteria) > 0 {
 			return nil, core.ModeJourney
 		}
 		var seeds []string
@@ -469,7 +472,7 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 			Evidence: []core.SourceEvidence{{Text: prompt[mention.start:mention.end], Start: mention.start, End: mention.end, Explicit: true}},
 		})
 	}
-	for _, value := range []string{"relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful"} {
+	for _, value := range []string{"relaxing", "sleepy", "upbeat", "mellow", "dreamy", "dark", "joyful", "energetic", "calm", "gentle", "intense"} {
 		if strings.Contains(lower, value) {
 			influence := core.InfluencePositive
 			if strings.Contains(lower, "not "+value) || strings.Contains(lower, "no "+value) {
@@ -499,8 +502,24 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 		preference := core.IntentPreference{Value: "vocals", Influence: core.InfluencePositive, Explicit: true, Evidence: sourceEvidence(prompt, "vocal", true)}
 		out.VocalPreference = &preference
 	}
+	// Preserve an open-vocabulary description before an explicit reference,
+	// e.g. "<musical description> music like <artist>". Reference text is
+	// already masked; this is a requested style, not an artist classification.
+	if match := reLeadingMusicDescription.FindStringSubmatch(reLeadVerb.ReplaceAllString(prompt, "")); match != nil {
+		value := strings.TrimSpace(match[1])
+		covered := isKnownStyle(value) || isKnownMoodOrActivity(value)
+		for _, preference := range out.Instrumentation {
+			covered = covered || strings.EqualFold(value, preference.Value)
+		}
+		if !covered && !reDescriptionNegation.MatchString(value) {
+			out.Styles = append([]core.IntentPreference{{Value: value, Influence: core.InfluencePositive, Explicit: true, Evidence: sourceEvidence(prompt, value, true)}}, out.Styles...)
+		}
+	}
 	return out
 }
+
+var reLeadingMusicDescription = regexp.MustCompile(`(?i)^\s*(.+?)\s+music\s+(?:like|by|similar to|inspired by)\b`)
+var reDescriptionNegation = regexp.MustCompile(`(?i)\b(?:no|not|without|except)\b`)
 
 var knownStyles = []string{
 	"ambient electronic", "ambient electronica", "rock & roll", "rock and roll", "abstract drone",
@@ -545,15 +564,8 @@ func styleMentions(prompt string) []styleMention {
 
 func extractEssentialCriteria(prompt string, preferences core.SemanticPreferences) []core.MusicalCriterion {
 	lower := strings.ToLower(prompt)
-	if match := reJourney.FindStringSubmatch(prompt); match != nil && isKnownStyle(cleanSeed(match[1])) && isKnownStyle(cleanSeed(match[2])) {
-		result := []core.MusicalCriterion{
-			{Kind: "style", Value: normalizeStyle(cleanSeed(match[1])), Scope: "journey_start", Evidence: sourceEvidence(prompt, cleanSeed(match[1]), true)},
-			{Kind: "style", Value: normalizeStyle(cleanSeed(match[2])), Scope: "journey_end", Evidence: sourceEvidence(prompt, cleanSeed(match[2]), true)},
-		}
-		if match[3] != "" && isKnownStyle(cleanSeed(match[3])) {
-			result = append(result, core.MusicalCriterion{Kind: "style", Value: normalizeStyle(cleanSeed(match[3])), Scope: "journey_via", Evidence: sourceEvidence(prompt, cleanSeed(match[3]), true)})
-		}
-		return result
+	if criteria, _ := CategoryJourney(prompt, nil); len(criteria) > 0 {
+		return criteria
 	}
 
 	// A category-led request makes its primary genre essential. Qualifiers such

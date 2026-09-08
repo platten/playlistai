@@ -26,6 +26,20 @@ func TestCategoryRemainsEssentialAlongsideExplicitReference(t *testing.T) {
 	}
 }
 
+func TestOpenMusicalDescriptionSurvivesAlongsideNamedReference(t *testing.T) {
+	for _, description := range []string{"classical", "unfamiliar hybrid", "未知ジャンル"} {
+		prompt := description + " music like Arvo Part"
+		intent, err := New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+		if err != nil || len(intent.References) != 1 || intent.References[0].Query != "Arvo Part" || len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Value != description {
+			t.Fatalf("description/reference lost for %q: %+v, %v", prompt, intent, err)
+		}
+	}
+	intent, _ := New().Parse(context.Background(), ports.IntentInput{Prompt: "classical music like Arvo Part with piano and some jazz influence"})
+	if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Value != "classical" {
+		t.Fatalf("later modifiers displaced the leading description: %+v", intent.EssentialCriteria)
+	}
+}
+
 func TestArtistNamesDoNotBecomeMusicalEvidence(t *testing.T) {
 	for prompt, want := range map[string]string{
 		"play Aesop Rock": "Aesop Rock", "play music by Electronic": "Electronic",

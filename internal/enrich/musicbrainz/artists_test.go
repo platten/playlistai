@@ -96,3 +96,31 @@ func TestSmallGenrePoolRetainsProviderExhaustion(t *testing.T) {
 		t.Fatal("invented missing artists or lost exhaustion")
 	}
 }
+
+type cancelingArtistResolver struct {
+	*fakes.Catalog
+	cancel context.CancelFunc
+	calls  int
+}
+
+func (r *cancelingArtistResolver) ResolveReference(core.IntentReference) core.ReferenceResolution {
+	r.calls++
+	r.cancel()
+	return core.ReferenceResolution{Status: core.ResolutionUnresolved}
+}
+
+func TestArtistSamplingStopsResolvingAfterBudgetCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cat := fakes.NewCatalog(2)
+	resolver := &cancelingArtistResolver{Catalog: cat, cancel: cancel}
+	snapshot := core.KnowledgeSnapshot{ArtistPools: []core.GenreArtistPool{{Genre: "fixture", Artists: []core.GenreArtist{{ID: "a", Name: "One"}, {ID: "b", Name: "Two"}}}}}
+	intent := core.MusicIntent{Seed: "42"}
+	client := &Client{}
+	if err := client.sampleGenreArtists(ctx, &intent, nil, cat, resolver, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("continued catalog work after cancellation: %d calls", resolver.calls)
+	}
+}

@@ -102,6 +102,13 @@ export const Warn = (p: IconProps) => (
   </svg>
 );
 
+export const Info = (p: IconProps) => (
+  <svg {...base(p, 2)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v6M12 7h.01" />
+  </svg>
+);
+
 export const Plus = (p: IconProps) => (
   <svg {...base(p, 2.4)}>
     <path d="M12 5v14M5 12h14" />

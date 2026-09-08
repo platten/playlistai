@@ -74,6 +74,9 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	}
 
 	byID := make(map[string]*core.Candidate)
+	for id := range requiredAlbumMembers(intent) {
+		r.addSource(byID, ports.Match{ID: id, Score: 1}, core.RetrievalEvidence{Channel: "required_album", QueryID: id, Rank: 1, Score: 1, QueryWeight: 1})
+	}
 	if intent.Knowledge != nil {
 		for i, track := range intent.Knowledge.Candidates {
 			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})

@@ -1,9 +1,13 @@
 package bridge
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/platten/playlistai/internal/app"
+	"github.com/platten/playlistai/internal/config"
 )
 
 func writeFakeGGUF(t *testing.T, path string, n int) {
@@ -82,5 +86,36 @@ func TestGetModelCatalogIncludesVRAMTierPicks(t *testing.T) {
 		if len(got) != 1 || got[0] != id {
 			t.Fatalf("Settings catalog pick for %d GiB = %v, want %q", tier, got, id)
 		}
+	}
+}
+
+func TestSettingsAndWizardRecommendOnlySmallestInForcedCPUMode(t *testing.T) {
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
+	cfg.Catalog.ArchiveURL = ""
+	cfg.Enrich.CachePath = filepath.Join(cfg.DataDir, "metadata.sqlite")
+	cfg.AI.GPULayers = -1
+	c, err := app.New(context.Background(), cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	api := New(c, nil)
+	catalog := api.GetModelCatalog()
+	var smallest ModelInfo
+	for _, m := range catalog {
+		if m.SizeApprox > 0 && (smallest.ID == "" || m.SizeApprox < smallest.SizeApprox) {
+			smallest = m
+		}
+	}
+	for _, m := range catalog {
+		if m.Recommended != (m.ID == smallest.ID) {
+			t.Fatalf("CPU badge mismatch: %+v", m)
+		}
+	}
+	wizard := api.GetModelRecommendations()
+	if wizard.Hardware.Mode != "cpu" || wizard.Hardware.GPUAvailable || len(wizard.Models) != 1 || wizard.Models[0].ID != smallest.ID || !wizard.Models[0].Recommended {
+		t.Fatalf("wizard/settings mismatch: %+v", wizard)
 	}
 }

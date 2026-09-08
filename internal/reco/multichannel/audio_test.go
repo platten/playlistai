@@ -21,6 +21,15 @@ func (*audioFixtureEncoder) EmbedAudio(context.Context, []float32) ([]float32, e
 	return nil, fmt.Errorf("fixture must reuse stored features")
 }
 func (*audioFixtureEncoder) EmbedText(_ context.Context, text string) ([]float32, error) {
+	if strings.Contains(text, "instrumental") || strings.Contains(text, "only on instruments") {
+		return []float32{1, 0}, nil
+	}
+	if text == "Silence." || text == "Noise without music." {
+		return []float32{-1, 0}, nil
+	}
+	if strings.Contains(text, "singing") || strings.Contains(text, "singer") || strings.Contains(text, "vocals") || strings.Contains(text, "spoken words") {
+		return []float32{0, 1}, nil
+	}
 	if text == "rock" || text == "sleepy" {
 		return []float32{0, 1}, nil
 	}
@@ -34,7 +43,7 @@ func (r *noPreviewFetch) ResolveAudioPreview(context.Context, core.TrackRef, cor
 	return core.ResolvedAudioPreview{}, nil
 }
 
-func cachedAudioService(t *testing.T, cat *fakes.Catalog) (*audio.Service, *noPreviewFetch) {
+func cachedAudioService(t *testing.T, cat *fakes.Catalog, ids ...string) (*audio.Service, *noPreviewFetch) {
 	t.Helper()
 	store, err := audio.OpenStore(t.TempDir())
 	if err != nil {
@@ -43,11 +52,17 @@ func cachedAudioService(t *testing.T, cat *fakes.Catalog) (*audio.Service, *noPr
 	t.Cleanup(func() { _ = store.Close() })
 	encoder := &audioFixtureEncoder{}
 	resolver := &noPreviewFetch{}
-	for _, id := range []string{"seed", "audio", "audio-copy", "cooc", "taste", "blocked", "other", "far", "last"} {
+	if len(ids) == 0 {
+		ids = []string{"seed", "audio", "audio-copy", "cooc", "taste", "blocked", "other", "far", "last"}
+	}
+	for _, id := range ids {
 		meta, _ := cat.Meta(id)
 		vector := []float32{0, 1}
-		if id == "audio" || id == "seed" || id == "last" {
+		if id == "audio" || id == "seed" || id == "last" || id == "instrumental" {
 			vector = []float32{1, 0}
+		}
+		if id == "unknown" {
+			vector = []float32{0.70710677, 0.70710677}
 		}
 		record := core.AudioAnalysis{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: vector}}}
 		record.ID = audio.Fingerprint(record)

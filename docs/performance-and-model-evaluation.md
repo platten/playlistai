@@ -94,11 +94,10 @@ and the official [Gemma 3 QAT GGUF](https://huggingface.co/google/gemma-3-12b-it
 
 The first-run wizard filters recommendations using accelerator memory reported
 by its selected llama.cpp binary. A GPU model is offered only when its complete
-GGUF fits in one enumerated device's free memory (plus the reclaimable active
-model when switching) with 1 GiB held back for context, KV cache, and compute
+GGUF fits in one enumerated device's measured free memory with 1 GiB held back for context, KV cache, and compute
 buffers. The wizard offers only the largest model that passes this fit check. If
-llama.cpp reports no usable GPU, it offers the largest model from the bounded CPU
-recommendation list. Settings continues to expose
+CPU mode is configured or llama.cpp reports no usable GPU, it recommends only
+the smallest catalog model. Settings uses the same hardware-specific badge and continues to expose
 the full catalog and custom GGUF selection. Artifact size is a conservative
 weight-fit proxy, not a promise that every context size or backend allocation
 will succeed.

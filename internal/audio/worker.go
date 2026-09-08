@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/process"
 )
 
 const WorkerProtocol = 1
@@ -116,6 +117,7 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 			flag = "--audio-worker"
 		}
 		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
+		process.Background(cmd)
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {

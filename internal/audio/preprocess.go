@@ -73,7 +73,8 @@ func DecodeMP3(ctx context.Context, encoded []byte) ([]float32, error) {
 }
 
 // Segment starts are deterministic, non-overlapping, and relative to the
-// preview. Short final segments repeat then zero-pad, as declared by the model
+// supplied PCM interval. Callers add its preview offset to stored timestamps.
+// Short final segments repeat then zero-pad, as declared by the model
 // bundle; padded time is never counted as observed coverage.
 func forEachSegment(ctx context.Context, samples []float32, visit func([]float32, float64, float64) error) error {
 	for start := 0; start < len(samples); start += SegmentSamples {

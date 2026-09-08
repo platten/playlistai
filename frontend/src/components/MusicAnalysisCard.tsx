@@ -7,7 +7,7 @@ import { useProgress } from "./useProgress";
 
 type AnalysisStatus = Awaited<ReturnType<typeof API.GetAnalysisStatus>>;
 type Bundle = Awaited<ReturnType<typeof API.InspectAnalysisBundle>>;
-const size = (bytes: number) => `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+const size = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
 export function MusicAnalysisCard() {
   const [status, setStatus] = useState<AnalysisStatus | null>(null);
@@ -44,14 +44,14 @@ export function MusicAnalysisCard() {
         <h2 id="music-analysis-heading" className="text-[15px] font-semibold">Music analysis</h2>
         <p className="mt-1 text-[13px] text-muted">Check musical fit against your description using previews.</p>
       </div>
-      <p className="text-[12.5px] text-muted">When enabled, Deezer receives artist, track, or recording identifiers to retrieve previews. Your descriptions and taste profile stay on this device. Preview audio is processed in memory; reusable features remain until you clear them.</p>
+      <p className="text-[12.5px] text-muted">The installed CLAP model compares previews with your description for ranking and screens no-vocals requests. Deezer receives artist, track, or recording identifiers to retrieve previews. Your descriptions and taste profile stay on this device. Preview audio is processed in memory; reusable features remain until you clear them.</p>
       <p role="status" className="text-[12.5px] text-muted">{status?.detail || "Checking music analysis availability…"}</p>
       {(status?.installed || status?.available) && (
         <>
           <p className="text-[12px] text-faint">{status.model} · {size(status.downloadBytes)} installed artifacts · {size(status.memoryBytes)} memory budget</p>
-          {status.available && <label className="flex items-center gap-2 text-[13px]">
+          {status.generalFitAvailable && <label className="flex items-center gap-2 text-[13px]">
             <input type="checkbox" className="accent-accent" checked={status.enabled} disabled={busy} onChange={(e) => void run(() => API.SetAnalysisEnabled(e.target.checked))} />
-            Check preview audio during generation
+            Check other musical qualities during generation
           </label>}
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => API.RemoveAnalysisModel())}>Remove analysis model</Button>
         </>
@@ -61,18 +61,18 @@ export function MusicAnalysisCard() {
           <h3 className="text-[13px] font-medium">{recommended.label} <span className="text-accent">· Recommended</span></h3>
           <p className="text-[12px] text-muted">Full-precision audio and text encoders · {size((recommended.artifacts ?? []).reduce((n, a) => n + a.size, 0))} download · {size(recommended.memoryBytes)} memory budget</p>
           <p className="text-[12px] text-muted">Downloads from Hugging Face and Microsoft. Installation checks file integrity, embedding compatibility, and local inference before activating the model.</p>
-          <p className="text-[12px] text-muted">You can install and test this bundle now. Automatic musical-fit checks are not yet enabled; they require a reviewed calibration policy.</p>
+          <p className="text-[12px] text-muted">No-vocals requests automatically use the installed CLAP model to screen every candidate preview. Vocal or uncertain previews are excluded. Unheard parts of a song may still contain vocals. Preview similarities help rank other descriptions; categorical musical-fit judgments require a reviewed calibration policy.</p>
           <Button size="sm" variant="primary" disabled={busy} onClick={() => void install(false)}>{installKind === "recommended" ? "Downloading and validating…" : error ? "Retry recommended CLAP download" : "Download and validate CLAP"}</Button>
         </div>
       )}
-      {recommendationError && <p className="text-[12px] text-muted">{recommendationError}</p>}
+      {recommendationError && <ErrorState variant="inline" message={recommendationError} onDismiss={() => setRecommendationError(null)} />}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12px] text-muted">
         <span>{status ? `${size(status.storage.bytes)} · ${status.storage.records} cached recordings` : "Local analysis storage"}</span>
         <Button size="sm" variant="ghost" disabled={busy || !status || status.storage.records === 0} onClick={() => { if (window.confirm("Clear local audio features and their request assessments? Saved playlists and taste data are kept.")) void run(() => API.ClearAnalysis()); }}>Clear analysis</Button>
       </div>
       <details className="text-[12px] text-muted">
         <summary className="cursor-pointer">Use a custom CLAP model bundle</summary>
-        <p className="mt-2">Use paired audio and text encoders producing normalized 512-dimensional embeddings, with the matching tokenizer, preprocessing and reference tests. Different checkpoints keep separate feature caches. A calibrated policy is required for automatic musical-fit decisions.</p>
+        <p className="mt-2">Use paired audio and text encoders producing normalized 512-dimensional embeddings, with the matching tokenizer, preprocessing and reference tests. Different checkpoints keep separate feature caches. No-vocals requests use preview screening; similarities guide ranking, while categorical musical-fit judgments require a calibrated policy.</p>
         <p className="mt-2"><a className="text-accent underline" href="https://github.com/LAION-AI/CLAP#reproducibility" target="_blank" rel="noreferrer">Train or fine-tune CLAP</a>{" · "}<a className="text-accent underline" href="https://huggingface.co/docs/optimum-onnx/onnx/usage_guides/export_a_model" target="_blank" rel="noreferrer">Export a model to ONNX</a></p>
         <label className="mt-3 flex flex-col gap-1">Bundle manifest path
           <input value={path} disabled={busy} onChange={(e) => { setPath(e.target.value); setBundle(null); }} className="min-w-0 rounded-control border border-line bg-inset px-3 py-2 text-text" />
@@ -83,8 +83,15 @@ export function MusicAnalysisCard() {
         </div>
         {bundle && <p className="mt-2">{bundle.label} · {size((bundle.artifacts ?? []).reduce((n, a) => n + a.size, 0))} download · {size(bundle.memoryBytes)} memory · {bundle.license}</p>}
       </details>
-      {installKind && <><ProgressBar label={progress?.note || "Preparing CLAP download…"} done={progress?.done ?? 0} total={progress?.total ?? 0} /><Button size="sm" variant="ghost" onClick={() => void download.current?.cancel("download stopped")}>Stop download</Button></>}
-      {error && <ErrorState variant="inline" message={error} />}
+      {installKind && <><ProgressBar
+        label={progress?.note || "Preparing CLAP download…"}
+        done={progress?.done ?? 0}
+        total={progress?.total ?? 0}
+        note={progress && progress.total > 0
+          ? `${size(progress.done)} / ${size(progress.total)}`
+          : `${size(progress?.done ?? 0)} downloaded`}
+      /><Button size="sm" variant="ghost" onClick={() => void download.current?.cancel("download stopped")}>Stop download</Button></>}
+      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
     </section>
   );
 }

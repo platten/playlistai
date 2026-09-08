@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"database/sql"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -68,6 +69,18 @@ func TestResolutionAliasesUnicodeAmbiguityAndUnmatched(t *testing.T) {
 	}
 }
 
+func TestArtistAccentVariantsResolveToSameCatalogIdentity(t *testing.T) {
+	c := metadataResolverCatalog(t)
+	insertResolverTrack(t, c.db, 0, "part", "Arvo Pärt", "Spiegel im Spiegel")
+	insertResolverTrack(t, c.db, 1, "decoy", "Arvo Party", "Unrelated")
+	for _, query := range []string{"Arvo Part", "Arvo Pärt", "Arvo Pa\u0308rt"} {
+		r := c.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: query})
+		if r.Status != core.ResolutionResolved || r.Selected == nil || r.Selected.Artist != "Arvo Pärt" || r.Selected.Representatives[0].TrackID != "part" {
+			t.Fatalf("%q did not resolve to the accented artist: %+v", query, r)
+		}
+	}
+}
+
 func TestArtistRepresentativesDeterministicAndDiverse(t *testing.T) {
 	c := openTestdata(t)
 	first := c.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: "Kavinsky"})
@@ -130,5 +143,40 @@ func mustExec(t *testing.T, db *sql.DB, statement string) {
 	t.Helper()
 	if _, err := db.Exec(statement); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBroadArtistLookupComputesOnlyVisibleRepresentatives(t *testing.T) {
+	c := metadataResolverCatalog(t)
+	for i := 0; i < 40; i++ {
+		insertResolverTrack(t, c.db, i, fmt.Sprint(i), fmt.Sprintf("Shared %02d", i), "Recording")
+	}
+	got := c.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: "Shared"})
+	if got.Status != core.ResolutionAmbiguous || len(got.Alternatives) != maxAlternatives {
+		t.Fatalf("ambiguity lost: %+v", got)
+	}
+	if len(c.representativeCache) != maxAlternatives {
+		t.Fatalf("computed %d representative sets for %d visible alternatives", len(c.representativeCache), maxAlternatives)
+	}
+	for _, alternative := range got.Alternatives {
+		if len(alternative.Representatives) == 0 {
+			t.Fatal("visible alternative lacks representatives")
+		}
+	}
+}
+
+func TestQualifiedTrackFormsPreserveIdentityAndLiteralTitles(t *testing.T) {
+	c := metadataResolverCatalog(t)
+	insertResolverTrack(t, c.db, 0, "one", "Fixture Artist", "Fixture Title")
+	insertResolverTrack(t, c.db, 1, "literal", "Other Artist", "Living by Myself")
+	for _, query := range []string{"Fixture Title by Fixture Artist", "Fixture Artist's Fixture Title", "Fixture Artist — Fixture Title"} {
+		r := c.ResolveReference(core.IntentReference{Kind: core.ReferenceTrack, Query: query})
+		if r.Selected == nil || r.Selected.EntityID != "one" {
+			t.Fatalf("%q: %+v", query, r)
+		}
+	}
+	literal := c.ResolveReference(core.IntentReference{Kind: core.ReferenceTrack, Query: "Living by Myself"})
+	if literal.Selected == nil || literal.Selected.EntityID != "literal" {
+		t.Fatalf("literal title reinterpreted: %+v", literal)
 	}
 }

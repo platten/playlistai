@@ -9,6 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/history"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/preview/deezer"
 )
 
 func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
@@ -61,5 +62,37 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 	feedback, err := c.Feedback.ListFeedback(ctx, ports.FeedbackQuery{})
 	if err != nil || len(feedback) != 1 {
 		t.Fatal("analysis/history clear removed taste evidence")
+	}
+}
+
+func TestInstalledCLAPScreensExplicitInstrumentalRequestsWithGeneralFitDisabled(t *testing.T) {
+	ctx := context.Background()
+	c, err := New(ctx, testConfig(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	c.analysis.service = &audio.Service{Analyzer: &audio.Worker{Model: core.AudioModelIdentity{Preprocessing: audio.PreprocessingVersion}}, Store: c.analysis.store, Resolver: deezer.New(deezer.Config{}), Authorized: true, ParityValidated: true}
+	intent := core.MusicIntent{HardConstraints: []core.HardConstraint{{Kind: "exclude_vocals"}}}
+	service := c.AudioService()
+	if !service.ReadyFor(intent) || service.Ready() {
+		t.Fatal("dedicated capability unavailable or general checks enabled")
+	}
+	if !service.ReadyFor(core.MusicIntent{VerificationPolicy: core.BestAvailable, OriginalDescription: "A descriptive music request"}) {
+		t.Fatal("installed CLAP unavailable for best-available description ranking")
+	}
+	if service.ReadyFor(core.MusicIntent{VerificationPolicy: core.VerifiedOnly}) {
+		t.Fatal("uncalibrated similarity enabled strict general verification")
+	}
+	status, err := c.GetAnalysisStatus(ctx)
+	if err != nil || !status.Available || status.GeneralFitAvailable || status.Enabled {
+		t.Fatalf("status=%+v %v", status, err)
+	}
+	if c.SetAnalysisEnabled(true) == nil {
+		t.Fatal("uncalibrated general fit enabled")
+	}
+	c.analysis.service.ParityValidated = false
+	if c.AudioService() != nil {
+		t.Fatal("unvalidated model activated")
 	}
 }

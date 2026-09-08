@@ -126,7 +126,7 @@ func (o *Orchestrator) unsupportedStrictReasons(intent core.MusicIntent) []core.
 	}
 	var reasons []core.OutcomeReason
 	for _, constraint := range intent.HardConstraints {
-		if constraint.Kind == "require_album" && o.bestAvailable {
+		if constraint.Kind == "require_album" {
 			resolved := false
 			for _, ref := range intent.References {
 				resolved = resolved || ref.Kind == core.ReferenceAlbum && strings.EqualFold(ref.Query, constraint.Value) && ref.Resolution != nil && ref.Resolution.Status == core.ResolutionResolved
@@ -135,7 +135,7 @@ func (o *Orchestrator) unsupportedStrictReasons(intent core.MusicIntent) []core.
 				continue
 			}
 		}
-		if o.audioSession != nil && (constraint.Kind == "exclude_style" || constraint.Kind == "require_style") {
+		if o.audioSession != nil && o.audioSession.SupportsConstraint(constraint.Kind) {
 			continue
 		}
 		if core.HardConstraintSupported(constraint.Kind) || activeKey[constraint.Kind+"\x00"+constraint.Value] {
@@ -258,6 +258,9 @@ func (o *Orchestrator) assessInferredAnchors(ctx context.Context, intent core.Mu
 				anchor.Reference.Resolution.Selected.Representatives = kept
 				anchor.Reference.TrackID = kept[0].TrackID
 				anchor.Suitability = core.AnchorSuitability{State: core.EvidenceMatch, Detail: "This representative recording passed the description clauses using preview-scoped audio evidence."}
+				if !o.audioSession.Calibrated() {
+					anchor.Suitability = core.AnchorSuitability{State: core.EvidenceUnknown, Detail: "Preview similarity is available for ranking; uncalibrated scores do not establish categorical musical fit."}
+				}
 			}
 			continue
 		}
@@ -541,7 +544,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
 	}
 	if o.audioProvider != nil && len(audio.Clauses(intent)) > 0 {
-		if service := o.audioProvider(); service.Ready() {
+		if service := o.audioProvider(); service.ReadyFor(intent) {
 			catalogVersion := "unknown"
 			if o.resolver != nil {
 				catalogVersion = o.resolver.CatalogVersion()
@@ -554,6 +557,12 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			defer func() {
 				snapshot := o.audioSession.Snapshot()
 				result.AudioEvidence = &snapshot
+				if !service.Policy.Valid() && len(result.Tracks) > 0 {
+					result.Notices = append(result.Notices, core.PlaylistNotice{Code: "audio_similarity_ranking", Detail: "CLAP compared verified previews with your musical descriptions to help rank tracks. Similarities are not calibrated musical-fit judgments; unheard parts of each recording remain unassessed."})
+				}
+				if core.WantsInstrumental(intent) && len(result.Tracks) > 0 {
+					result.Notices = append(result.Notices, core.PlaylistNotice{Code: "vocal_preview_screening", Detail: "CLAP screened every selected preview for vocals. Vocal or uncertain previews were excluded; unheard parts of each recording remain unassessed."})
+				}
 				if snapshot.Stopped || snapshot.BudgetExhausted {
 					if result.Outcome.State == core.OutcomeFulfilled {
 						result.Outcome.State = core.OutcomePartial
@@ -562,6 +571,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 				}
 			}()
 		}
+	}
+	if core.WantsInstrumental(intent) && o.audioSession == nil {
+		return outcomePlaylist(intent, seed, core.OutcomeUnsupported, []core.OutcomeReason{{Code: "vocal_analysis_unavailable", Detail: "This request needs CLAP preview screening to exclude vocals, but the local analysis model is not ready.", Action: "download and validate the CLAP model in Settings, then generate again"}}), nil
 	}
 	if request.Progress != nil {
 		request.Progress.Report("generation", 0, 0, "Finding starting points")
@@ -669,6 +681,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	positiveSemantic, _ := semanticQueryText(intent)
 	semanticSeeded := positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
+		if core.WantsInstrumental(intent) {
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "instrumental_seed_unavailable", Detail: "No suitable instrumental starting point could be found in the catalog or online lookup.", Action: "retry the search or name an instrumental artist or recording"}}), nil
+		}
 		if len(intent.EssentialCriteria) > 0 || len(intent.InferredAnchors) > 0 {
 			reasons := []core.OutcomeReason{{
 				Code: "no_suitable_anchor", Detail: "no inferred anchor had affirmative musical evidence and semantic retrieval is unavailable",
@@ -694,6 +709,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	eligible.excludeRecent(recentSelections)
 	if err := eligible.validateRequired(required, intent.Constraints.ExcludeSeedArtists); err != nil {
 		return core.Playlist{}, err
+	}
+	for _, track := range required {
+		if !o.metadataEligible(track, intent) {
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_metadata_conflict", Detail: "A required recording conflicts with metadata constraints."}}), nil
+		}
 	}
 	if o.audioSession != nil {
 		for _, track := range required {
@@ -723,6 +743,13 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
 		return core.Playlist{}, fmt.Errorf("%w: semantic index produced no grounded candidates", core.ErrNoSeeds)
 	}
+	metadataCandidates := candidates[:0]
+	for _, candidate := range candidates {
+		if o.metadataEligible(candidate.Track, intent) {
+			metadataCandidates = append(metadataCandidates, candidate)
+		}
+	}
+	candidates = metadataCandidates
 	candidates, err = eligible.filter(ctx, candidates, intent.Constraints.ExcludeSeedArtists)
 	if err != nil {
 		return core.Playlist{}, err
@@ -745,6 +772,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	if o.audioSession != nil {
 		checked := make([]core.Candidate, 0, len(candidates))
+		stages := journeyStageCriteria(intent)
 		for i, candidate := range candidates {
 			if request.Progress != nil {
 				request.Progress.Report("generation", int64(i), int64(len(candidates)), "Checking musical fit")
@@ -755,6 +783,28 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 			if !assessment.Eligible {
 				continue
+			}
+			if len(intent.EssentialCriteria) > 0 {
+				fit, _, err := o.filterEssential(ctx, []core.Candidate{candidate}, intent.EssentialCriteria)
+				if err != nil {
+					return core.Playlist{}, err
+				}
+				if len(fit) == 0 {
+					continue
+				}
+			}
+			if intent.Mode == core.ModeJourney && len(stages) > 0 {
+				placeable := false
+				for _, stage := range stages {
+					fit, _, err := o.filterJourneyStage(ctx, []core.Candidate{candidate}, stage, intent)
+					if err != nil {
+						return core.Playlist{}, err
+					}
+					placeable = placeable || len(fit) > 0
+				}
+				if !placeable {
+					continue
+				}
 			}
 			audio.ApplyScores(&candidate, assessment)
 			checked = append(checked, candidate)
@@ -794,21 +844,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	if o.bestAvailable {
-		filtered := candidates[:0]
-		for _, candidate := range candidates {
-			if o.metadataEligible(candidate.Track, intent) {
-				filtered = append(filtered, candidate)
-			}
-		}
-		candidates = filtered
 		if request.OnSuggested != nil && o.audioSession == nil {
 			for _, candidate := range candidates {
 				request.OnSuggested(candidate.Track)
-			}
-		}
-		for _, track := range required {
-			if !o.metadataEligible(track, intent) {
-				return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_metadata_conflict", Detail: "A required recording conflicts with metadata constraints."}}), nil
 			}
 		}
 	}
@@ -820,6 +858,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		request.Progress.Report("generation", 0, 0, "Ordering your playlist")
 	}
 	setSemanticCapability(&intent, semanticMatched, len(semanticNotices) > 0)
+	for index := range intent.HardConstraints {
+		if intent.HardConstraints[index].Kind == "require_album" {
+			intent.HardConstraints[index].RuntimeEnforced = true
+		}
+	}
 	if o.audioSession != nil {
 		intent.Capabilities = append(intent.Capabilities, core.CapabilityStatus{Name: "audio_analysis", Status: "limited", Detail: "Description clauses checked with aligned audio/text embeddings; assessments cover verified previews only."})
 		for index := range intent.Capabilities {
@@ -948,7 +991,7 @@ func journeyCriteria(criteria []core.MusicalCriterion) []core.MusicalCriterion {
 // selected normally.
 func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.Candidate, fixed []core.TrackRef, intent core.MusicIntent) ([]core.Candidate, []core.Candidate, []core.OutcomeReason, error) {
 	criteria := journeyStageCriteria(intent)
-	if (o.bestAvailable && !hasStagePeriods(intent)) || intent.Mode != core.ModeJourney || len(criteria) == 0 {
+	if (o.bestAvailable && !hasStagePeriods(intent) && len(criteria) < 2) || intent.Mode != core.ModeJourney || len(criteria) == 0 {
 		return nil, ranked, nil, nil
 	}
 	used := map[string]bool{}
@@ -987,8 +1030,13 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 		chosen := -1
 		for index, candidate := range ranked {
 			if !used[candidate.Track.ID] && report.Eligible[candidate.Track.ID] && candidate.Scores.Total >= floor {
-				chosen = index
-				break
+				if chosen < 0 {
+					chosen = index
+				}
+				if !o.bestAvailable || criterion.Kind == "" || o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceMatch {
+					chosen = index
+					break
+				}
 			}
 		}
 		if chosen < 0 {
@@ -1015,7 +1063,7 @@ func maxFloat(left, right float64) float64 {
 }
 
 func (o *Orchestrator) categoryMembership(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent) ([]map[string]bool, error) {
-	if o.bestAvailable && !hasStagePeriods(intent) {
+	if o.bestAvailable && !hasStagePeriods(intent) && len(journeyCriteria(intent.EssentialCriteria)) < 2 {
 		return nil, nil
 	}
 	criteria := journeyStageCriteria(intent)

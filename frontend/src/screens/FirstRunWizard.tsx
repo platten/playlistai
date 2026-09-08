@@ -39,7 +39,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
   const stepIndex = STEPS.indexOf(step);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[640px] flex-col px-8 py-10">
+    <div className="mx-auto flex min-h-full w-full max-w-[640px] flex-col px-4 py-10 sm:px-8">
       <div className="flex items-center gap-3 pb-8">
         <div className="flex items-center gap-1.5">
           {STEPS.slice(0, -1).map((s, i) => (
@@ -59,7 +59,7 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
         {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
         {step === "catalog" && <CatalogStep onNext={() => setStep("model")} />}
         {step === "model" && <ModelStep onNext={() => setStep("analysis")} />}
-        {step === "analysis" && <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
+        {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
         {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
@@ -166,7 +166,7 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
           <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={download}>
             Download catalog
           </Button>
-          {error && <ErrorState variant="inline" message={error} onRetry={download} />}
+          {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} onRetry={download} />}
         </div>
       )}
 
@@ -321,7 +321,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
           <Button variant="subtle" size="sm" onClick={() => void refresh()}>
             Re-check
           </Button>
-          {error && <ErrorState variant="inline" message={error} onRetry={() => void installRuntime()} />}
+          {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} onRetry={() => void installRuntime()} />}
         </div>
 
         <StepFooter>
@@ -356,25 +356,24 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         </button>
       </div>
 
-      {hardware && (
+      {hardware && (hardware.gpuAvailable || !builds.includes("gpu")) && (
         <div className="flex items-start gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-[12px] text-muted">
           {hardware.gpuAvailable ? (
             <>
               <Icon.Check size={14} className="mt-0.5 flex-none text-good" />
               <span>
                 {hardware.gpuName || "llama.cpp GPU"} · {fmtGB(hardware.vramBytes)} VRAM.
-                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. The model below is the largest recommendation that fits
-                in the {fmtGB(hardware.fitBytes)} available after replacing any active
-                model, with {fmtGB(hardware.reserveBytes)} left for context, KV cache,
-                and compute buffers.
+                {" "}{fmtGB(hardware.vramFreeBytes)} is currently free. Model recommendations use
+                the {fmtGB(hardware.fitBytes)} currently available, with {fmtGB(hardware.reserveBytes)} left for context, KV cache,
+                and compute buffers. The smallest download is also listed.
               </span>
             </>
           ) : (
             <>
-              <Icon.Warn size={14} className="mt-0.5 flex-none text-faint" />
+              <Icon.Info size={14} className="mt-0.5 flex-none text-faint" />
               <span>
-                This llama.cpp runtime reports no usable GPU. Showing the largest
-                model from the CPU recommendation list.
+                CPU mode recommends only the smallest model. A larger GPU recommendation
+                needs a usable accelerator with enough available memory.
               </span>
             </>
           )}
@@ -414,6 +413,8 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         {catalog.map((m) => (
           <div
             key={m.id}
+            role="group"
+            aria-label={m.label}
             className="flex items-center gap-3 rounded-card border border-line bg-surface px-3.5 py-3"
           >
             <div className="min-w-0">
@@ -448,10 +449,11 @@ function ModelStep({ onNext }: { onNext: () => void }) {
             </Button>
           </div>
         ))}
-        {hardware?.gpuAvailable && catalog.length === 0 && (
+        {hardware?.gpuAvailable && !catalog.some((model) => model.recommended) && (
           <div className="rounded-card border border-line bg-surface px-3.5 py-3 text-[12px] text-muted">
-            None of the recommended model weights fit with the required VRAM headroom.
-            You can continue in catalog-only mode or choose a custom GGUF in Settings.
+            No model is recommended for the available GPU memory with the required headroom.
+            The smallest download is still listed; check its RAM requirement before choosing it.
+            You can also continue in catalog-only mode.
           </div>
         )}
       </div>
@@ -467,7 +469,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         ) : (
           <p className="text-[12px] text-faint">Starting the model…</p>
         ))}
-      {error && <ErrorState variant="inline" message={error} />}
+      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
 
       {!usingLocal && !busy && (
         <p className="text-[12px] text-faint">
@@ -559,7 +561,7 @@ function PreviewStep({ onNext }: { onNext: () => void }) {
         ))}
       </div>
 
-      {error && <ErrorState variant="inline" message={error} />}
+      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
       <StepFooter>
         <Button variant="primary" size="sm" disabled={saving || choice === null} iconRight={<Icon.ArrowRight size={14} />} onClick={() => void save()}>
           {saving ? "Saving…" : "Continue"}

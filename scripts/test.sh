@@ -34,6 +34,7 @@ script_syntax() {
 }
 step "Bash script syntax" script_syntax
 step "AppImage PATH isolation" bash scripts/test-appimage.sh
+step "Application-only release assets" bash scripts/test-release-assets.sh
 if has shellcheck; then
   step "shellcheck" shellcheck scripts/*.sh build/linux/appimage/build.sh
 else

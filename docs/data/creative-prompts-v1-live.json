@@ -1,0 +1,3649 @@
+{
+  "date": "2026-09-08",
+  "fixture": "internal/evaluation/testdata/creative-prompts-v1.json",
+  "intentVersion": 8,
+  "finalAlgorithmVersion": "multichannel/v9",
+  "finalParserVersion": "llama/v10",
+  "verificationPolicy": "best_available",
+  "requestedCount": 6,
+  "seed": "42",
+  "host": "Linux amd64, WSL2 (6.18.33.2-microsoft-standard-WSL2)",
+  "llm": {
+    "model": "qwen3.5-9b-q4km.gguf",
+    "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+    "runtimeSHA256": "97e29d19ff84e5c2fceceaa2b06863928294896d0ebbd8c7ea258ce51a4ddacb",
+    "contextTokens": 8192,
+    "gpuLayerSetting": 0,
+    "gpuMode": "Automatic runtime default (setting 0), not forced CPU; actual offloaded layer count was not recorded."
+  },
+  "catalog": {
+    "version": "1:956917:1788613313",
+    "tracks": 956917,
+    "spaces": [
+      "Deej-AI audio",
+      "Deej-AI playlist context"
+    ],
+    "dimensionsPerSpace": 100,
+    "quantization": "int8",
+    "vectorsSHA256": "5ab9b616402234fe070b209377e17322d945c09c16a228109b27ab74d4071ac3"
+  },
+  "clap": {
+    "model": "laion/larger_clap_music_and_speech",
+    "revision": "195c3a3e68faebb3e2088b9a79e79b43ddbda76b",
+    "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+    "runtime": "onnxruntime/1.26.0/cpu",
+    "dimension": 512,
+    "weights": "433ed0b2f651ca8869ed41276bbb929b406900ebac239569748923371a2b23a3"
+  },
+  "interpretation": "Development execution checks, not held-out listening judgments. Initial combined run passed 13 typed-intent checks; album and track cases were fixed and rechecked live. All final-engine cached replays passed. General CLAP similarity is uncalibrated, so all outcomes remain partial. Every selected track has corroborated, analyzed preview evidence. No Python runtime used.",
+  "limitations": [
+    "Live results combine a full run with two targeted rechecks; they are not a single final-code fresh-model benchmark.",
+    "Cached replay reuses recorded LLM intent and metadata; it does not exercise fresh language inference or provider availability.",
+    "Reported per-case elapsed times exclude process startup and native-worker health checks; cache warmth varies.",
+    "No first-result latency, peak-memory measurement, held-out listening assessment, or probability calibration was performed.",
+    "Preview-only vocal screening cannot establish absence of vocals in unheard portions; trio instrumentation, female vocals, mood and genre accuracy were not independently listening-verified."
+  ],
+  "initialFailures": [
+    {
+      "prompt": "Songs with the glossy, joyful feel of Daft Punk's album Discovery, with room for other artists.",
+      "errors": [
+        "reference kind not preserved: Discovery"
+      ]
+    },
+    {
+      "prompt": "Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.",
+      "errors": [
+        "reference kind not preserved: Superstition"
+      ]
+    }
+  ],
+  "additionalRecoveryFailures": [
+    "Broad fuzzy-artist representative calculations exceeded the intended budget; identity ranking now precedes medoids.",
+    "MusicBrainz release-group search returned HTTP 503; exact-identity Deezer album recovery was added.",
+    "The LLM rewrote an explicit qualified track source span; normalization now recovers only grounded identity wording."
+  ],
+  "liveMetrics": {
+    "cases": 15,
+    "tracks": 90,
+    "minimumMilliseconds": 135241,
+    "medianMilliseconds": 163778,
+    "maximumMilliseconds": 189940,
+    "previewBytesFetched": 137713694,
+    "cacheHits": 48
+  },
+  "replayMetrics": {
+    "cases": 15,
+    "tracks": 90,
+    "minimumMilliseconds": 112,
+    "medianMilliseconds": 240,
+    "maximumMilliseconds": 688,
+    "previewBytesFetched": 0,
+    "cacheHits": 339
+  },
+  "latestLiveResults": [
+    {
+      "prompt": "Radiohead for a rainy train ride: intimate, restless, and quietly hopeful.",
+      "errors": [],
+      "milliseconds": 156917,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "f9e7e27477cfaf2ff96d8fc4a5f86957e2771fc2f4dcf312b163c52aa5c449e4",
+      "audioSnapshot": "1bc79b02804aa351bac967efd23599578fbe17617a7d3b9dc31075eab37b9db6",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 36,
+      "cacheHits": 0,
+      "previewBytesFetched": 11996929,
+      "analysisMilliseconds": 120002,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Radiohead",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "61uR8t4baCXvt56RPwz8pZ",
+          "artist": "Radiohead",
+          "title": "Molasses",
+          "analysisId": "8a8571de82165735cd85848db27b497567ab7a7cb8f62844fdd9940951210565",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "5l8wjltY40pSESSjO0pQ4m",
+          "artist": "Radiohead",
+          "title": "Punchdrunk Lovesick Singalong",
+          "analysisId": "c0b1c8fba5dbd51eec1f5f3ffb8a9291d6b37acaf0bfa261fb2a6365a75e1054",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2Rty7vHMKFHqQ87dZEIRyM",
+          "artist": "Radiohead",
+          "title": "Yes I Am",
+          "analysisId": "17f046330b89f84fccea12cc19cde00b9bab646db53ddb845e371cd1d40c0d1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2wOvYLilnDJfuPXGHGFAWZ",
+          "artist": "Radiohead",
+          "title": "Ripcord",
+          "analysisId": "4c905540289333bbf88d516008f19671aec66cd01a5eb639d62fb58f4f798ed4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6MKWCO8g2W05UcaFyfQ6Cl",
+          "artist": "Radiohead",
+          "title": "Sit Down. Stand Up",
+          "analysisId": "b67c7f73428f78d6c3cca72eb22ffb9fbee4f0fab54e89f1a9daa57dd842e681",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "4h37RgtBg9iynN3BIL5lFU",
+          "artist": "Radiohead",
+          "title": "Morning Bell",
+          "analysisId": "850951abb465f0e3d5dab4ca0062fa06142723d8b082140f83cc8a2095cb6d15",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "intimate",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "restless",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "quietly hopeful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Prince-inspired funk for cooking with friends: playful bass, crisp drums, and a little swagger.",
+      "errors": [],
+      "milliseconds": 172507,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "6d7533bd29d5b9ddc68533fc5f824d0445e9f9b1d3fdf12d06d68933f143511e",
+      "audioSnapshot": "929bf67d15705221fe5fdc025157c2f91c6a658c4075da0ae63d5a93616c0017",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 37,
+      "cacheHits": 0,
+      "previewBytesFetched": 10076367,
+      "analysisMilliseconds": 120002,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Prince",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7KsXSnQc8qdeBSOnTM5Vvn",
+          "artist": "Patti LaBelle",
+          "title": "On My Own",
+          "analysisId": "8e76cb65740ed4d6aad1c0b43b65871a9d5c84b61c2f2e961e4a8291c9d6b57c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4gFVTfg1EFuuXJguJe1Z7W",
+          "artist": "Luther Vandross",
+          "title": "A House Is Not a Home",
+          "analysisId": "cf8afe7ab9d9b085074a3159ab41e69833791cdfb06b76e990cccaf664df59d9",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "6XJdmdiLRvvQXRLMenQmjx",
+          "artist": "Rick James",
+          "title": "Fire And Desire",
+          "analysisId": "bb22100cbbf0e14beeeb46f417d6c5df3e6d3debb4bfa48a660f118e18b5cc87",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "2mx0O7IniovyDS8Wi0B3Sq",
+          "artist": "Zapp",
+          "title": "Doo Wa Ditty (Blow That Thing)",
+          "analysisId": "9e70d145bd0381484f696f4d074a8080c18eadf5191da84729c2e7d440963fdf",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Erjz2X8a2kZWpYgIib5TN",
+          "artist": "Funkadelic",
+          "title": "One Nation Under A Groove",
+          "analysisId": "c300315d6c6da2f885b769144abb021dbedf471daa413ed15b2fc2e8a0c695c4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "0GIfaHgivfBCV67eYF996A",
+          "artist": "Parliament",
+          "title": "P-Funk (Wants To Get Funked Up)",
+          "analysisId": "f6407bfd505286f8500431143e1f9fb0f6d4981ac8dfcb8590767215fff143e2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "funk",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "Prince-inspired",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "playful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "swagger",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "bass",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "crisp",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Something like Massive Attack and Portishead: shadowy grooves for a city after midnight.",
+      "errors": [],
+      "milliseconds": 139064,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "audioSnapshot": "29c7cc8f32a0089b41bc33f241a2d4557c3d158b506b4f568015f5d36bfe6ff9",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 38,
+      "cacheHits": 0,
+      "previewBytesFetched": 9596540,
+      "analysisMilliseconds": 120001,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Massive Attack",
+          "status": "resolved"
+        },
+        {
+          "kind": "artist",
+          "query": "Portishead",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7rIevKaMfH1CpUl9xKLyEs",
+          "artist": "Massive Attack",
+          "title": "Small Time Shoot 'Em Up",
+          "analysisId": "ac17800b28c4fdd2902815f6fd8a5b57f551e0f89c7107cd7f702f2a86237109",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6K3gtAIEWNqYHfd4mSEKcT",
+          "artist": "Portishead",
+          "title": "Plastic",
+          "analysisId": "7c856e2c57682006f5d40a79c8c8a81be46c10ca86bdb7f0c4aaf3d19805a479",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "2wC0qK8JN6gblb0ZJzE2d9",
+          "artist": "Tricky",
+          "title": "Hell Is Round The Corner",
+          "analysisId": "aeaf0939844c13f85d35ee146f93393360150ab98f0283ef68a56a83016b2370",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6ggJ6MceyHGWtUg1KLp3M1",
+          "artist": "Massive Attack",
+          "title": "Risingson",
+          "analysisId": "a3b4cc999e9261e14f26893de6c6f89fcc963e3039d991df2c2fadd27ff5f224",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "5LrkJFmitzUrKZnt5iXl8A",
+          "artist": "Massive Attack",
+          "title": "Euro Child",
+          "analysisId": "95378a04d9f2322e225fb1178c68e506b4795a2ddf58e0a8d46828b933f03c8e",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "3aK3iIvgT5FQgKAjLunrMN",
+          "artist": "Portishead",
+          "title": "Elysium",
+          "analysisId": "b45bb82b404a4a6a713be10b633e5586ce5eefae30ef8ad60b4d34adb2fbb9ad",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "mood",
+          "text": "shadowy",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "grooves",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Nina Simone for a slow Sunday morning, with expressive singing and warm piano.",
+      "errors": [],
+      "milliseconds": 161691,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "8799952cb229d3568936f419fdb0fb76e6a9cac64437a988685db1894c1f0e68",
+      "audioSnapshot": "5958fdbc727d1f96326a6dd55cd22afde06bf013f9d1f174e334d1365d1063f6",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 42,
+      "cacheHits": 0,
+      "previewBytesFetched": 7677232,
+      "analysisMilliseconds": 120002,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Nina Simone",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "3cfz4PB3iCqG12StNkKvRo",
+          "artist": "Nina Simone",
+          "title": "Tomorrow Is My Turn",
+          "analysisId": "80e6439b10459c1a3a13b130bac34bd97322012821825f1b54bafc1c7723304b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4nkqR6YY92pi7vCniJKhxI",
+          "artist": "Sarah Vaughan",
+          "title": "Shulie A Bop",
+          "analysisId": "6a8341b14546bfd9f0428014fb4893cba3e3599cd02a82f431cfeaee3f6ceb9e",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "41t0GDYrvt2TtV8gUWWatC",
+          "artist": "Dean Martin",
+          "title": "Have A Little Sympathy",
+          "analysisId": "3f4b827ee286d6c50ef31465b949fa6a685a8bf89936d24399c5eb89504e4f57",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "25j2iO7iukdUHZLYQwP30O",
+          "artist": "Nina Simone",
+          "title": "The Last Rose Of Summer",
+          "analysisId": "95b0c713ed8f2f4687f52e80d4cdc08ee498e3eb21671493c9493177778c50b6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Sqv7KrLRowdwRwgpT4FAh",
+          "artist": "Sarah Vaughan",
+          "title": "I'll Never Smile Again",
+          "analysisId": "70a460d26f5f488828b423ca69702a71e11be58067712b588b4c8396d805e5d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "0vIrBoL76snu42nVzHm2fx",
+          "artist": "Bengt Berger",
+          "title": "Chetu",
+          "analysisId": "f6ba64d9513841e09e9a9b3b9ad7fec92c0b6cc22477e40e4a4948d2f94b368a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "expressive singing",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "warm piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "slow",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "Sunday morning",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "warm",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "expressive singing",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Songs with the glossy, joyful feel of Daft Punk's album Discovery, with room for other artists.",
+      "errors": [],
+      "milliseconds": 135241,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "5d1ffa6cdeb0e53e96b7986b52df1b4fda2613d56a173a007e1f2825febc286c",
+      "audioSnapshot": "186cbbfeeeadd72f4c54ef83b84ab00cc2395b90d9a97c1bfdb320e5acaac4ed",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 43,
+      "cacheHits": 14,
+      "previewBytesFetched": 479827,
+      "analysisMilliseconds": 86260,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "album",
+          "query": "Discovery by Daft Punk",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7pdDBqpilpdW7c40DpFMW9",
+          "artist": "Justice",
+          "title": "DVNO",
+          "analysisId": "a0872599130677be6031d2bf4b58be99968e55cc166e187f7f3bf6d269176536",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2A3emhzbZo7eSvEUtAm3ZS",
+          "artist": "Justice",
+          "title": "Phantom Pt. II",
+          "analysisId": "ec4f9a529386f90c8ac881a4da92e1a7bc7ac45c84f108fc7ec91acbf105b263",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Q6mwJseOFYBJ10d5CXp4o",
+          "artist": "Kavinsky",
+          "title": "Odd Look",
+          "analysisId": "3611c9fd963ca2f3c39a44d5cc0c56a0a46750d408a18a5b6080fec4fc5def1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2cSRuejq6DU9U6OkSmUw17",
+          "artist": "Desire",
+          "title": "Under Your Spell",
+          "analysisId": "1fcf70f068c77219d8ffc90ade24858392089bdf7385c14093d113ff65b584d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "0LpnNgvF6z5HJYAgLClfMB",
+          "artist": "Justice",
+          "title": "D.A.N.C.E. (WWW)",
+          "analysisId": "25b4218bab58598a00cc2c56b227d4c46632f4bcda304b0554d5fb6130c50ec3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1HW1jt9QfaFBAL7UxEblDb",
+          "artist": "Lucy Hale",
+          "title": "Bless Myself",
+          "analysisId": "91589d05ce7bfeb7dcaef324ba6fba28be2c4d02eae8861ae138a68160b5603f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "glossy, joyful feel",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "joyful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "glossy",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.",
+      "errors": [],
+      "milliseconds": 137829,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "audioSnapshot": "1d77c38cdda14032c32022bec02010c667073538dc46ee24b319506c68ddfbbe",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 38,
+      "cacheHits": 0,
+      "previewBytesFetched": 10556612,
+      "analysisMilliseconds": 120028,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "track",
+          "query": "Superstition by Stevie Wonder",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0x3jYUWbnbygky6JSnoSpX",
+          "artist": "Stevie Wonder",
+          "title": "Maybe Your Baby",
+          "analysisId": "898b5354c041270da2712543f028f64d6ef45784b9eba46bc67114e019caf217",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "1inwt0v9a4ib9yS6Y4KsdM",
+          "artist": "Stevie Wonder",
+          "title": "You Haven't Done Nothin'",
+          "analysisId": "5bbcbd77c93ef532efe8ebfcdccf775113a89351ddbac398ea652000d050e648",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "1qhxzvlJCR8DPIQxKnvYEa",
+          "artist": "Earl St. Clair",
+          "title": "Ain't Got It Like That",
+          "analysisId": "728f0882ca74a5665f5b46cf50a11e0d20918199b9a6bb61ebf2d7a62d0553ef",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "2ADfheRRkK5P2f1t8si3Lj",
+          "artist": "Gloria Jones",
+          "title": "Tainted Love",
+          "analysisId": "32ab8fd77ca67bb2d180426f747cc5451b6c4a56761e085f6e65041f52625952",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "3gyAIXrDvHQAsk5UF2V1Bn",
+          "artist": "Jamiroquai",
+          "title": "Hurtin'",
+          "analysisId": "93e852a0917c6896896b47394daef5bb4c1b50e0bac052cd82c06471a7a7c03f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "687YZan9Gol1UVvbpUSO6Y",
+          "artist": "Stevie Wonder",
+          "title": "I Wish",
+          "analysisId": "1f85bdd89a3e0faefc5efeeddb470b1ed1fe5ed42db3051ffb47546f3984a271",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "description",
+          "text": "Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Jazz-funk with elastic basslines and lively percussion for a sunny walk.",
+      "errors": [],
+      "milliseconds": 181513,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "3423056450b0a752c0b8cd41ec752fb89c94a0822e5faf574170560e8c2a28df",
+      "audioSnapshot": "86113dcd8035b26f65bac307d42d127e7710a5e97306c15cebdec1a6cd8b817f",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 39,
+      "cacheHits": 8,
+      "previewBytesFetched": 9117131,
+      "analysisMilliseconds": 120001,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0X5DcGkbxCXSadgj01ZXd7",
+          "artist": "Cannonball Adderley",
+          "title": "Autumn Leaves",
+          "analysisId": "48628542f8290695edfcb9b8aeb24fbb414b387f4456d049a660a053c23f2440",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "3sFwziMhmpgRmekNdvIMqg",
+          "artist": "Miles Davis",
+          "title": "Milestones (feat. John Coltrane, Cannonball Adderley, Red Garland, Paul Chambers & Philly Joe Jones)",
+          "analysisId": "6bb8d5340d2e8a0d3dcd853bd69288eb4b17b98c5b14f0d7634ada5e951448cb",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Ce66JznW8QbeyTdSzdGwR",
+          "artist": "Herbie Hancock",
+          "title": "Chameleon",
+          "analysisId": "9228452725d79fc0320f3ce757dce52bbeeafbe9ab1f20cfa69290eb134cc19b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "0GIfaHgivfBCV67eYF996A",
+          "artist": "Parliament",
+          "title": "P-Funk (Wants To Get Funked Up)",
+          "analysisId": "f6407bfd505286f8500431143e1f9fb0f6d4981ac8dfcb8590767215fff143e2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Erjz2X8a2kZWpYgIib5TN",
+          "artist": "Funkadelic",
+          "title": "One Nation Under A Groove",
+          "analysisId": "c300315d6c6da2f885b769144abb021dbedf471daa413ed15b2fc2e8a0c695c4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "2mx0O7IniovyDS8Wi0B3Sq",
+          "artist": "Zapp",
+          "title": "Doo Wa Ditty (Blow That Thing)",
+          "analysisId": "9e70d145bd0381484f696f4d074a8080c18eadf5191da84729c2e7d440963fdf",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "jazz-funk",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "elastic basslines",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "lively percussion",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "sunny",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Shoegaze that feels like sunlight through fog: blurred guitars, gentle momentum, and dreamy melodies.",
+      "errors": [],
+      "milliseconds": 174887,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "ad5ea0bbcbdee0574f8e2f75e27f3b10fda38d6199cb63d0b23562db66afa205",
+      "audioSnapshot": "1f689e96aa25eed9c6f09b007d77e5e30d38184ef7dd8ecb3a8532b328434c62",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 35,
+      "cacheHits": 0,
+      "previewBytesFetched": 10556612,
+      "analysisMilliseconds": 120031,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0oxYB9GoOIDrdzniNdKC44",
+          "artist": "Slowdive",
+          "title": "When the Sun Hits",
+          "analysisId": "817c3509c010640d288e77ae7574ed954f44a4f48271a9f6b7869168451d0e18",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "1wXJjKJy5Pt38Bu3tUzTUL",
+          "artist": "Slowdive",
+          "title": "Machine Gun",
+          "analysisId": "e0a81d4613f21875d0bcf616004939646c5c75cf6e905b6043f4d56ea7ad80f3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "4qyJE4D584f7qJCRSy7HOE",
+          "artist": "Slowdive",
+          "title": "40 Days",
+          "analysisId": "97959035cc7974a6efb6e5dd483a855de425e11c74baaba11f4158d6422223a9",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "7gjo7CYtOAcm0q8hGEHQ23",
+          "artist": "my bloody valentine",
+          "title": "only tomorrow",
+          "analysisId": "f1df78738606b1b17d4bedbfcad124952a7803606db0ffdee7898f50644bdafc",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "0qwQNrs1GYvF9uqw5gF7Nw",
+          "artist": "my bloody valentine",
+          "title": "honey power",
+          "analysisId": "e8ec0fa16f4a16297148a6cf032cd9297f9d71fd6fe74434837722cf12703964",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "2W70vgf87uyNB2XRpRDEES",
+          "artist": "Slowdive",
+          "title": "Alison",
+          "analysisId": "087b44ea13e41f95a21f1dc501979c2bc4ed7d2ee895e7f8099df742dc13eee6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "shoegaze",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "gentle momentum",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "dreamy melodies",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "sunlight through fog",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "gentle momentum",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "dreamy melodies",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Dub techno for a late-night workspace: spacious echoes and a steady pulse.",
+      "errors": [],
+      "milliseconds": 178062,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "9800a851274467dc0ac67b30346c7e4dc67c5a3ca1ea29296fef6fbfb27dbfc5",
+      "audioSnapshot": "dc4df1c62c4f67f5e55d2763712553adc9aa9202415161bb620a72d486e08470",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 31,
+      "cacheHits": 0,
+      "previewBytesFetched": 11995676,
+      "analysisMilliseconds": 120002,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "2DQlQcYponGtEwvEHRHYvu",
+          "artist": "Boards of Canada",
+          "title": "Peacock Tail",
+          "analysisId": "9460b0f47d1deea5b29414641874176bfec82fa87f1ac11865bc5ddafae77355",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6EuGf9ZfK9CcSoq2M0SYto",
+          "artist": "Massive Attack",
+          "title": "What Your Soul Sings",
+          "analysisId": "b730b9770a78b14be9fd96154e515d5be4e34afdeac25ade4a9b42093701a404",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "742r2XTuPCteoLoBwOPxBP",
+          "artist": "Sneaker Pimps",
+          "title": "Half Life",
+          "analysisId": "ba6af87812f99e9298acb2f2b05e60138b7b0b701faf8f552beeef8e80736a40",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "5Rq2hPEd7UWN6i9tME54dj",
+          "artist": "Lamb",
+          "title": "Angelica",
+          "analysisId": "437b77b8453ff71194cc51aeadc93f7e06a988b6c5d90c39598f21b1a41b053b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1bne4gsJshCv77LeKqQb1A",
+          "artist": "Lemon Jelly",
+          "title": "Space Walk",
+          "analysisId": "6ef1a3f225e551446c2668d79223a926c229ded6445708ab3d7863ed381fcea3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "4OO2lavE7yz5Ane6fEYXp3",
+          "artist": "Boards of Canada",
+          "title": "Everything You Do Is A Balloon",
+          "analysisId": "34bd1e4c7298efe44c4e6cf0d791909c30aa7923b77f46c8cdfe65665ddbefef",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "dub techno",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "spacious echoes",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "steady pulse",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Warm analog synthesizers, arpeggios, and a retro-futuristic soundtrack for driving through neon streets.",
+      "errors": [],
+      "milliseconds": 143813,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "e65cfd6dd63e6c1206c67e55d6b4af415990fef00ff8a41bbca2575cc0dafae5",
+      "audioSnapshot": "6c4fbc86c871c1f81387763b8c450c5ea5dd61ea530601a44be78c3d50dbb28d",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 38,
+      "cacheHits": 0,
+      "previewBytesFetched": 9596540,
+      "analysisMilliseconds": 120001,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "3JzMRR6eCFFILPAS2ChPx6",
+          "artist": "Roxy Music",
+          "title": "Trash",
+          "analysisId": "d026b68631a8d4fb8eeac2748ee0e8f98fd29536200c336604aeaf256ee362b8",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6fGmNs09PPcQ3NGIFLeXAB",
+          "artist": "L'Impératrice",
+          "title": "Dreaming of You",
+          "analysisId": "92066f1eb808880c99d387ea734ab493a7631c0b41177dc8d0d3cc2fa3dafa81",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Q6mwJseOFYBJ10d5CXp4o",
+          "artist": "Kavinsky",
+          "title": "Odd Look",
+          "analysisId": "3611c9fd963ca2f3c39a44d5cc0c56a0a46750d408a18a5b6080fec4fc5def1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2cSRuejq6DU9U6OkSmUw17",
+          "artist": "Desire",
+          "title": "Under Your Spell",
+          "analysisId": "1fcf70f068c77219d8ffc90ade24858392089bdf7385c14093d113ff65b584d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6vi4I2vZkN5mDePmVSSVTq",
+          "artist": "M83",
+          "title": "Reunion",
+          "analysisId": "40f6f968611e25540f6574f9178c0b09b49b10e9b6ff852b44737e434f71c90f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1s9i7W8zx7Nxx78MUIsvjV",
+          "artist": "M83",
+          "title": "Outro",
+          "analysisId": "b51e6c9301b564e9ca27cb0c25e6715738ac3c7579895589c1d5fb19663d6245",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "texture",
+          "text": "warm analog synthesizers",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "arpeggios",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "retro-futuristic soundtrack",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A small jazz trio with brushed drums, upright bass, and piano; instrumental, no vocals.",
+      "errors": [],
+      "milliseconds": 169108,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "d48f8b0953ecc221d7e297cc6df25dcefa6408e9997e003acd5b2a279d4b2ddb",
+      "audioSnapshot": "cd9d41e5250da98e55157b7a6e28aa3d7c8718bf3675296b40354b8be3c94c56",
+      "policyVersion": "clap-preview-similarity/v1+clap-preview-vocal-contrast/v1",
+      "newAnalysisAttempts": 43,
+      "cacheHits": 3,
+      "previewBytesFetched": 7677650,
+      "analysisMilliseconds": 116480,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "17OHsQ5RBrU6b9lTaPP0vh",
+          "artist": "Gerry Mulligan Sextet",
+          "title": "Prelude In E Minor",
+          "analysisId": "ebb95163e6fc854c76b5d342f73e79f8e6fc772f1b226afb2370414d5b2ff5cc",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.35624947072852536
+            }
+          ]
+        },
+        {
+          "id": "0Dt1B5dNfajRczQKZA87aL",
+          "artist": "Keith Jarrett",
+          "title": "So Tender",
+          "analysisId": "b5d6d23ebb7f9a47809930291d455341e1a4de2730bd3184ffa73af97085bc0c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.2838545051806258
+            }
+          ]
+        },
+        {
+          "id": "6n9GGoiLwNlY5Ro7NsdbJP",
+          "artist": "Charles Mingus",
+          "title": "Moanin'",
+          "analysisId": "176acf8be39b0e49dcc59762be7aba785d2d1a9dfcbda60b71a2ce3e31950420",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.15784709869812624
+            }
+          ]
+        },
+        {
+          "id": "0X5DcGkbxCXSadgj01ZXd7",
+          "artist": "Cannonball Adderley",
+          "title": "Autumn Leaves",
+          "analysisId": "48628542f8290695edfcb9b8aeb24fbb414b387f4456d049a660a053c23f2440",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.3033123145247545
+            }
+          ]
+        },
+        {
+          "id": "4rmCI9VWrwrJTJ8XQ80BMN",
+          "artist": "Duke Ellington",
+          "title": "My Little Brown Book",
+          "analysisId": "6a40faa5d008088fc90ced6b33660d668a69960ead969407c094a775dd4d925d",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.19520713030799344
+            }
+          ]
+        },
+        {
+          "id": "5NONW0vtWMfbMKrARaRfw9",
+          "artist": "Ludovico Einaudi",
+          "title": "Ritornare",
+          "analysisId": "64305f1115669b3d04ffc7dde5fbfa64a53d1ee13b4d562d97247298118a55be",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.15080901802700847
+            }
+          ]
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "instrumentation",
+          "text": "brushed drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "upright bass",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "instrumental",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "vocals",
+          "scope": "playlist",
+          "strict": true,
+          "negative": true
+        }
+      ]
+    },
+    {
+      "prompt": "Romantic soul with expressive female vocals, relaxed drums, and a warm, unhurried feel.",
+      "errors": [],
+      "milliseconds": 143526,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "3a972787fc6a31a343e68f5b0439e7ae4af7d4ab6c392f97efdec1a433bd9fa5",
+      "audioSnapshot": "12df8c4f73c58a340bd988ab337dc0098d5e74efdadacfe0437ef56873204026",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 35,
+      "cacheHits": 0,
+      "previewBytesFetched": 10556612,
+      "analysisMilliseconds": 120001,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7zkLpY72g6lKQbiHDqri1S",
+          "artist": "Norah Jones",
+          "title": "Sunrise",
+          "analysisId": "85ecce76b59f3b58bd9238107912fb3ee53c963883c2bb751dcab2164a53fa85",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "1GGK81j5LaThJjnJHhfGDq",
+          "artist": "Diana Krall",
+          "title": "Just The Way You Are",
+          "analysisId": "bfa74f0e37075069ba8d8bc93b20c6a05c2a9526bd1be6303c667fd0147c90d5",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "5qpiNT4qeoHnlsO8NdKrnr",
+          "artist": "Madeleine Peyroux",
+          "title": "Smile",
+          "analysisId": "2416fd5937925535bff57ad9dc4bbc3c10b375c09c91e727f8993d5890480379",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "5qXhjrcfWlEb7XgAjxnBpl",
+          "artist": "Melody Gardot",
+          "title": "All That I Need Is Love",
+          "analysisId": "30f47490fdd7833dd3b35cb7bab5dde7f3100c37c1f65aba0c7b8c8c5c49b558",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "7a4zmOB89TE5AC3nAMwhMN",
+          "artist": "Stacey Kent",
+          "title": "What a Wonderful World",
+          "analysisId": "a78222e5bf822261b8eaf7a683e44e0b2e565f40916737679478cb16effb0de2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "3k8WOOIt8iHgfXzTXBonDC",
+          "artist": "Diana Krall",
+          "title": "Cry Me A River",
+          "analysisId": "75f68b5130db6d3f44bf8d798b3199ad45e6b48d532ff5dce7a8cad661122b29",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "romantic soul",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "warm",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "relaxed",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "relaxed drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "expressive female vocals",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from ambient to energetic electronic, like a quiet room gradually becoming a dance floor.",
+      "errors": [],
+      "milliseconds": 171545,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "22734a2174219e0f0128d05cae9917270e211fc22349bcc38ef03fa3fe8e9adc",
+      "audioSnapshot": "f0b4397bc59c221ad3b7b5aa4b3c2aea15af50c7cd8913f95109ebf91f629b85",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 39,
+      "cacheHits": 19,
+      "previewBytesFetched": 9116713,
+      "analysisMilliseconds": 120003,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "ambient",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "electronic",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "1bne4gsJshCv77LeKqQb1A",
+          "artist": "Lemon Jelly",
+          "title": "Space Walk",
+          "analysisId": "6ef1a3f225e551446c2668d79223a926c229ded6445708ab3d7863ed381fcea3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "5Rq2hPEd7UWN6i9tME54dj",
+          "artist": "Lamb",
+          "title": "Angelica",
+          "analysisId": "437b77b8453ff71194cc51aeadc93f7e06a988b6c5d90c39598f21b1a41b053b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6EuGf9ZfK9CcSoq2M0SYto",
+          "artist": "Massive Attack",
+          "title": "What Your Soul Sings",
+          "analysisId": "b730b9770a78b14be9fd96154e515d5be4e34afdeac25ade4a9b42093701a404",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "2DQlQcYponGtEwvEHRHYvu",
+          "artist": "Boards of Canada",
+          "title": "Peacock Tail",
+          "analysisId": "9460b0f47d1deea5b29414641874176bfec82fa87f1ac11865bc5ddafae77355",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "0N6s5R09GPSh6HHR0YpNPG",
+          "artist": "Max Cooper",
+          "title": "Impermanence",
+          "analysisId": "80ee3dd8796e8078495aed179cf10115f9be4911dcfe33e34d35e0672c437455",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7kXmJwrZGIhDaLT9sNo3ut",
+          "artist": "The Chemical Brothers",
+          "title": "Hey Boy Hey Girl",
+          "analysisId": "c440fe309062937b2dc1e80e2cdea21c84311ba29b46e394b65eb4ccf472b2dd",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "ambient",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "electronic",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from soul to disco: begin with a warm groove and finish ready to dance.",
+      "errors": [],
+      "milliseconds": 163778,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "325797ef1457768aa1d25c571af4c93dad3847a4811779afdb647371462cc89c",
+      "audioSnapshot": "832bff9e05c4845324278ef4cb5c88b1bbc3ee5aeb28c8f8f9037a845e356798",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 4,
+      "previewBytesFetched": 5757924,
+      "analysisMilliseconds": 104278,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "soul",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "disco",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "7l0nTXAz0gzUkKBU2EXP4G",
+          "artist": "The Gap Band",
+          "title": "I Don't Believe You Want To Get Up And Dance (Oops, Up Side Your Head)",
+          "analysisId": "cc169b8ebdeacede0f65e1698062997c1158b4f0710a2c9623789de82b21b069",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "4kzAFfDqXzTD5AJzTjPtPf",
+          "artist": "CHIC",
+          "title": "Everybody Dance",
+          "analysisId": "ba7aedacbdd0d071a92b75a0324bc5b4a37dd2126bb5c74dc2ce54d9af59af23",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7d8DvrdW2u2QIpx5NpM6es",
+          "artist": "Karen Young",
+          "title": "Hot Shot",
+          "analysisId": "56a75aea8261ee247146062279edd1db74070551eb71770528a383a2c42bb851",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7CzOmyycNt3kV9gctt9yuH",
+          "artist": "The Edge Of Daybreak",
+          "title": "I Wanna Dance With You",
+          "analysisId": "e310ee40e61fc5558c3ade57ea2a4fb7dc88bb0b2f3c65973cfa4441d2d34814",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "12Hf5kl3Sog4FbAJ890eC9",
+          "artist": "Yvonne Baker",
+          "title": "You Didn't Say A Word",
+          "analysisId": "6665598084b22ed8f9692d09ebc79fa628708996c538a9ae3ce20357a9b8e6da",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "55TihUjVHdi3zChAUtKgHE",
+          "artist": "Rahaan",
+          "title": "Disco Fantasy",
+          "analysisId": "8772ae1f4a940e381f991480716786e399db67c43b41e2aaaafe8120ff38ee28",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "soul",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "disco",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from acoustic folk to indie rock, moving from a fireside conversation to a small festival stage.",
+      "errors": [],
+      "milliseconds": 189940,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": false,
+      "cachedAudioOnly": false,
+      "knowledgeSnapshot": "9077efaa77c5558514292794d1116dac85ea93dc646217ac44a84fcae000961d",
+      "audioSnapshot": "bdf106bda42f2153a7f6eea77d2ab0e6d01beee456423dcbb7804d203490b683",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 31,
+      "cacheHits": 0,
+      "previewBytesFetched": 12955329,
+      "analysisMilliseconds": 120051,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "acoustic folk",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "indie rock",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "6a1wMgJ42Okk5LjulbrtcZ",
+          "artist": "Bon Iver",
+          "title": "Flume",
+          "analysisId": "925becc2604deffec8da32cac97f9a0a9ba84dc3b03c7172ca9ed94164bdf2f3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6hqAK8yLtC40min1WRPOZk",
+          "artist": "The Gaslight Anthem",
+          "title": "National Anthem",
+          "analysisId": "a9c84f09894d0594056db94d0f42e3033738dff0693f1eb2162a03f402034e1f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6KIvl5KkeTnd9Z7X6cHzRW",
+          "artist": "The National",
+          "title": "Conversation 16",
+          "analysisId": "8d5e09a5c0751e7c938db11b4b2abaa07a8b5bf2fe1c7680b3a9847dd013ec2c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "086myS9r57YsLbJpU0TgK9",
+          "artist": "Arctic Monkeys",
+          "title": "Why'd You Only Call Me When You're High?",
+          "analysisId": "8a31e5077b3e4ee7765a6c81d468371a28603de34456588e4a52471f5913654b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6DESft0qm6RhoYf5wzeoGH",
+          "artist": "Bon Iver",
+          "title": "Holocene",
+          "analysisId": "f0438f7a2b6096af66685ee6f53c47362cae08d77f2ca590f25d892d6f3e7111",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "65aZDJQwNllPxuLPixJ4YO",
+          "artist": "The National",
+          "title": "Fake Empire",
+          "analysisId": "c557cda16adaa2a30516ca9fd23da10ccb6fe8e79c269ab2875282e7ba1d4031",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "acoustic folk",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "indie rock",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "fireside conversation",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "small festival stage",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    }
+  ],
+  "finalCachedReplay": [
+    {
+      "prompt": "Radiohead for a rainy train ride: intimate, restless, and quietly hopeful.",
+      "errors": [],
+      "milliseconds": 240,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "f9e7e27477cfaf2ff96d8fc4a5f86957e2771fc2f4dcf312b163c52aa5c449e4",
+      "audioSnapshot": "46cf711517a9f7bd1fb0fe569031d4e00485207d2553d1aaac87f6bdb35411e5",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 40,
+      "cacheHits": 25,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 239,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Radiohead",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "61uR8t4baCXvt56RPwz8pZ",
+          "artist": "Radiohead",
+          "title": "Molasses",
+          "analysisId": "8a8571de82165735cd85848db27b497567ab7a7cb8f62844fdd9940951210565",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "5l8wjltY40pSESSjO0pQ4m",
+          "artist": "Radiohead",
+          "title": "Punchdrunk Lovesick Singalong",
+          "analysisId": "c0b1c8fba5dbd51eec1f5f3ffb8a9291d6b37acaf0bfa261fb2a6365a75e1054",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2Rty7vHMKFHqQ87dZEIRyM",
+          "artist": "Radiohead",
+          "title": "Yes I Am",
+          "analysisId": "17f046330b89f84fccea12cc19cde00b9bab646db53ddb845e371cd1d40c0d1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2wOvYLilnDJfuPXGHGFAWZ",
+          "artist": "Radiohead",
+          "title": "Ripcord",
+          "analysisId": "4c905540289333bbf88d516008f19671aec66cd01a5eb639d62fb58f4f798ed4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6MKWCO8g2W05UcaFyfQ6Cl",
+          "artist": "Radiohead",
+          "title": "Sit Down. Stand Up",
+          "analysisId": "b67c7f73428f78d6c3cca72eb22ffb9fbee4f0fab54e89f1a9daa57dd842e681",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "4h37RgtBg9iynN3BIL5lFU",
+          "artist": "Radiohead",
+          "title": "Morning Bell",
+          "analysisId": "850951abb465f0e3d5dab4ca0062fa06142723d8b082140f83cc8a2095cb6d15",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "intimate",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "restless",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "quietly hopeful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Prince-inspired funk for cooking with friends: playful bass, crisp drums, and a little swagger.",
+      "errors": [],
+      "milliseconds": 653,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "6d7533bd29d5b9ddc68533fc5f824d0445e9f9b1d3fdf12d06d68933f143511e",
+      "audioSnapshot": "e4e224e5b34f8e029b9abc6e319990c45abe05a8d89ff10e2bf3bdf1e513af55",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 21,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 273,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Prince",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7KsXSnQc8qdeBSOnTM5Vvn",
+          "artist": "Patti LaBelle",
+          "title": "On My Own",
+          "analysisId": "8e76cb65740ed4d6aad1c0b43b65871a9d5c84b61c2f2e961e4a8291c9d6b57c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4gFVTfg1EFuuXJguJe1Z7W",
+          "artist": "Luther Vandross",
+          "title": "A House Is Not a Home",
+          "analysisId": "cf8afe7ab9d9b085074a3159ab41e69833791cdfb06b76e990cccaf664df59d9",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "6XJdmdiLRvvQXRLMenQmjx",
+          "artist": "Rick James",
+          "title": "Fire And Desire",
+          "analysisId": "bb22100cbbf0e14beeeb46f417d6c5df3e6d3debb4bfa48a660f118e18b5cc87",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "2mx0O7IniovyDS8Wi0B3Sq",
+          "artist": "Zapp",
+          "title": "Doo Wa Ditty (Blow That Thing)",
+          "analysisId": "9e70d145bd0381484f696f4d074a8080c18eadf5191da84729c2e7d440963fdf",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Erjz2X8a2kZWpYgIib5TN",
+          "artist": "Funkadelic",
+          "title": "One Nation Under A Groove",
+          "analysisId": "c300315d6c6da2f885b769144abb021dbedf471daa413ed15b2fc2e8a0c695c4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "0GIfaHgivfBCV67eYF996A",
+          "artist": "Parliament",
+          "title": "P-Funk (Wants To Get Funked Up)",
+          "analysisId": "f6407bfd505286f8500431143e1f9fb0f6d4981ac8dfcb8590767215fff143e2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "funk",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "Prince-inspired",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "playful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "swagger",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "bass",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "crisp",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Something like Massive Attack and Portishead: shadowy grooves for a city after midnight.",
+      "errors": [],
+      "milliseconds": 256,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "audioSnapshot": "906e1decae2b57b3ec4ed9b757b1d8be9cd0f34098c3b73fafeb7d4e92958bd4",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 20,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 254,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Massive Attack",
+          "status": "resolved"
+        },
+        {
+          "kind": "artist",
+          "query": "Portishead",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7rIevKaMfH1CpUl9xKLyEs",
+          "artist": "Massive Attack",
+          "title": "Small Time Shoot 'Em Up",
+          "analysisId": "ac17800b28c4fdd2902815f6fd8a5b57f551e0f89c7107cd7f702f2a86237109",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6K3gtAIEWNqYHfd4mSEKcT",
+          "artist": "Portishead",
+          "title": "Plastic",
+          "analysisId": "7c856e2c57682006f5d40a79c8c8a81be46c10ca86bdb7f0c4aaf3d19805a479",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "2wC0qK8JN6gblb0ZJzE2d9",
+          "artist": "Tricky",
+          "title": "Hell Is Round The Corner",
+          "analysisId": "aeaf0939844c13f85d35ee146f93393360150ab98f0283ef68a56a83016b2370",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6ggJ6MceyHGWtUg1KLp3M1",
+          "artist": "Massive Attack",
+          "title": "Risingson",
+          "analysisId": "a3b4cc999e9261e14f26893de6c6f89fcc963e3039d991df2c2fadd27ff5f224",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "5LrkJFmitzUrKZnt5iXl8A",
+          "artist": "Massive Attack",
+          "title": "Euro Child",
+          "analysisId": "95378a04d9f2322e225fb1178c68e506b4795a2ddf58e0a8d46828b933f03c8e",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "3aK3iIvgT5FQgKAjLunrMN",
+          "artist": "Portishead",
+          "title": "Elysium",
+          "analysisId": "b45bb82b404a4a6a713be10b633e5586ce5eefae30ef8ad60b4d34adb2fbb9ad",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "mood",
+          "text": "shadowy",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "grooves",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Nina Simone for a slow Sunday morning, with expressive singing and warm piano.",
+      "errors": [],
+      "milliseconds": 235,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "8799952cb229d3568936f419fdb0fb76e6a9cac64437a988685db1894c1f0e68",
+      "audioSnapshot": "62800e0ea9cbc97b5bc52579d6af55b6cade3b4758945c4e709eed9f9ca266ca",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 42,
+      "cacheHits": 17,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 234,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "artist",
+          "query": "Nina Simone",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "25j2iO7iukdUHZLYQwP30O",
+          "artist": "Nina Simone",
+          "title": "The Last Rose Of Summer",
+          "analysisId": "95b0c713ed8f2f4687f52e80d4cdc08ee498e3eb21671493c9493177778c50b6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "4nkqR6YY92pi7vCniJKhxI",
+          "artist": "Sarah Vaughan",
+          "title": "Shulie A Bop",
+          "analysisId": "6a8341b14546bfd9f0428014fb4893cba3e3599cd02a82f431cfeaee3f6ceb9e",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "41t0GDYrvt2TtV8gUWWatC",
+          "artist": "Dean Martin",
+          "title": "Have A Little Sympathy",
+          "analysisId": "3f4b827ee286d6c50ef31465b949fa6a685a8bf89936d24399c5eb89504e4f57",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "6EZXO2zjC6KlLbNwc2HDMc",
+          "artist": "Chet Baker",
+          "title": "Let's Get Lost",
+          "analysisId": "87829430352b801f0d4a79e4a13012967893368057c47d24c795214c958b597e",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Sqv7KrLRowdwRwgpT4FAh",
+          "artist": "Sarah Vaughan",
+          "title": "I'll Never Smile Again",
+          "analysisId": "70a460d26f5f488828b423ca69702a71e11be58067712b588b4c8396d805e5d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        },
+        {
+          "id": "0vIrBoL76snu42nVzHm2fx",
+          "artist": "Bengt Berger",
+          "title": "Chetu",
+          "analysisId": "f6ba64d9513841e09e9a9b3b9ad7fec92c0b6cc22477e40e4a4948d2f94b368a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 7,
+          "unknownComparisons": 7,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "expressive singing",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "warm piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "slow",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "Sunday morning",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "warm",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "expressive singing",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Songs with the glossy, joyful feel of Daft Punk's album Discovery, with room for other artists.",
+      "errors": [],
+      "milliseconds": 339,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "5d1ffa6cdeb0e53e96b7986b52df1b4fda2613d56a173a007e1f2825febc286c",
+      "audioSnapshot": "45ab595466043ffe236c1da78f25e4acdffe4ee64aeea9f7d06bed3f8b23f5a1",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 43,
+      "cacheHits": 15,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 339,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "album",
+          "query": "Discovery by Daft Punk",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7pdDBqpilpdW7c40DpFMW9",
+          "artist": "Justice",
+          "title": "DVNO",
+          "analysisId": "a0872599130677be6031d2bf4b58be99968e55cc166e187f7f3bf6d269176536",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2A3emhzbZo7eSvEUtAm3ZS",
+          "artist": "Justice",
+          "title": "Phantom Pt. II",
+          "analysisId": "ec4f9a529386f90c8ac881a4da92e1a7bc7ac45c84f108fc7ec91acbf105b263",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Q6mwJseOFYBJ10d5CXp4o",
+          "artist": "Kavinsky",
+          "title": "Odd Look",
+          "analysisId": "3611c9fd963ca2f3c39a44d5cc0c56a0a46750d408a18a5b6080fec4fc5def1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2cSRuejq6DU9U6OkSmUw17",
+          "artist": "Desire",
+          "title": "Under Your Spell",
+          "analysisId": "1fcf70f068c77219d8ffc90ade24858392089bdf7385c14093d113ff65b584d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "0LpnNgvF6z5HJYAgLClfMB",
+          "artist": "Justice",
+          "title": "D.A.N.C.E. (WWW)",
+          "analysisId": "25b4218bab58598a00cc2c56b227d4c46632f4bcda304b0554d5fb6130c50ec3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1HW1jt9QfaFBAL7UxEblDb",
+          "artist": "Lucy Hale",
+          "title": "Bless Myself",
+          "analysisId": "91589d05ce7bfeb7dcaef324ba6fba28be2c4d02eae8861ae138a68160b5603f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "glossy, joyful feel",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "joyful",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "glossy",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.",
+      "errors": [],
+      "milliseconds": 112,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "a51c7938d267d6b2b460c6ce759359141992a7c6c8e1bae5f6fe86e2fa249cd2",
+      "audioSnapshot": "9ccf9b4f036a49f7bbe6feaea8c64f8420838c708adf634e41352481ff858054",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 40,
+      "cacheHits": 21,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 112,
+      "budgetExhausted": true,
+      "references": [
+        {
+          "kind": "track",
+          "query": "Superstition by Stevie Wonder",
+          "status": "resolved"
+        }
+      ],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0x3jYUWbnbygky6JSnoSpX",
+          "artist": "Stevie Wonder",
+          "title": "Maybe Your Baby",
+          "analysisId": "898b5354c041270da2712543f028f64d6ef45784b9eba46bc67114e019caf217",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "1inwt0v9a4ib9yS6Y4KsdM",
+          "artist": "Stevie Wonder",
+          "title": "You Haven't Done Nothin'",
+          "analysisId": "5bbcbd77c93ef532efe8ebfcdccf775113a89351ddbac398ea652000d050e648",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "1qhxzvlJCR8DPIQxKnvYEa",
+          "artist": "Earl St. Clair",
+          "title": "Ain't Got It Like That",
+          "analysisId": "728f0882ca74a5665f5b46cf50a11e0d20918199b9a6bb61ebf2d7a62d0553ef",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "2ADfheRRkK5P2f1t8si3Lj",
+          "artist": "Gloria Jones",
+          "title": "Tainted Love",
+          "analysisId": "32ab8fd77ca67bb2d180426f747cc5451b6c4a56761e085f6e65041f52625952",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "3gyAIXrDvHQAsk5UF2V1Bn",
+          "artist": "Jamiroquai",
+          "title": "Hurtin'",
+          "analysisId": "93e852a0917c6896896b47394daef5bb4c1b50e0bac052cd82c06471a7a7c03f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        },
+        {
+          "id": "687YZan9Gol1UVvbpUSO6Y",
+          "artist": "Stevie Wonder",
+          "title": "I Wish",
+          "analysisId": "1f85bdd89a3e0faefc5efeeddb470b1ed1fe5ed42db3051ffb47546f3984a271",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 1,
+          "unknownComparisons": 1,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "description",
+          "text": "Build around the springy groove of Stevie Wonder's track Superstition, then introduce related discoveries.",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Jazz-funk with elastic basslines and lively percussion for a sunny walk.",
+      "errors": [],
+      "milliseconds": 189,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "3423056450b0a752c0b8cd41ec752fb89c94a0822e5faf574170560e8c2a28df",
+      "audioSnapshot": "01eec8220a4a1d6caca0795b6a578b7373cc139691bf510762c0a05eb561880c",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 40,
+      "cacheHits": 30,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 188,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0X5DcGkbxCXSadgj01ZXd7",
+          "artist": "Cannonball Adderley",
+          "title": "Autumn Leaves",
+          "analysisId": "48628542f8290695edfcb9b8aeb24fbb414b387f4456d049a660a053c23f2440",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "3sFwziMhmpgRmekNdvIMqg",
+          "artist": "Miles Davis",
+          "title": "Milestones (feat. John Coltrane, Cannonball Adderley, Red Garland, Paul Chambers & Philly Joe Jones)",
+          "analysisId": "6bb8d5340d2e8a0d3dcd853bd69288eb4b17b98c5b14f0d7634ada5e951448cb",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Ce66JznW8QbeyTdSzdGwR",
+          "artist": "Herbie Hancock",
+          "title": "Chameleon",
+          "analysisId": "9228452725d79fc0320f3ce757dce52bbeeafbe9ab1f20cfa69290eb134cc19b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "0GIfaHgivfBCV67eYF996A",
+          "artist": "Parliament",
+          "title": "P-Funk (Wants To Get Funked Up)",
+          "analysisId": "f6407bfd505286f8500431143e1f9fb0f6d4981ac8dfcb8590767215fff143e2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "4Erjz2X8a2kZWpYgIib5TN",
+          "artist": "Funkadelic",
+          "title": "One Nation Under A Groove",
+          "analysisId": "c300315d6c6da2f885b769144abb021dbedf471daa413ed15b2fc2e8a0c695c4",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "2mx0O7IniovyDS8Wi0B3Sq",
+          "artist": "Zapp",
+          "title": "Doo Wa Ditty (Blow That Thing)",
+          "analysisId": "9e70d145bd0381484f696f4d074a8080c18eadf5191da84729c2e7d440963fdf",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "jazz-funk",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "elastic basslines",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "lively percussion",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "sunny",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Shoegaze that feels like sunlight through fog: blurred guitars, gentle momentum, and dreamy melodies.",
+      "errors": [],
+      "milliseconds": 341,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "ad5ea0bbcbdee0574f8e2f75e27f3b10fda38d6199cb63d0b23562db66afa205",
+      "audioSnapshot": "f6f9b1c9a8903d47be33c503a3ac1e361443a2509bb6e2831040c3b930816966",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 40,
+      "cacheHits": 21,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 160,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "0oxYB9GoOIDrdzniNdKC44",
+          "artist": "Slowdive",
+          "title": "When the Sun Hits",
+          "analysisId": "817c3509c010640d288e77ae7574ed954f44a4f48271a9f6b7869168451d0e18",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "1wXJjKJy5Pt38Bu3tUzTUL",
+          "artist": "Slowdive",
+          "title": "Machine Gun",
+          "analysisId": "e0a81d4613f21875d0bcf616004939646c5c75cf6e905b6043f4d56ea7ad80f3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "4qyJE4D584f7qJCRSy7HOE",
+          "artist": "Slowdive",
+          "title": "40 Days",
+          "analysisId": "97959035cc7974a6efb6e5dd483a855de425e11c74baaba11f4158d6422223a9",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "7gjo7CYtOAcm0q8hGEHQ23",
+          "artist": "my bloody valentine",
+          "title": "only tomorrow",
+          "analysisId": "f1df78738606b1b17d4bedbfcad124952a7803606db0ffdee7898f50644bdafc",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "0qwQNrs1GYvF9uqw5gF7Nw",
+          "artist": "my bloody valentine",
+          "title": "honey power",
+          "analysisId": "e8ec0fa16f4a16297148a6cf032cd9297f9d71fd6fe74434837722cf12703964",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        },
+        {
+          "id": "2W70vgf87uyNB2XRpRDEES",
+          "artist": "Slowdive",
+          "title": "Alison",
+          "analysisId": "087b44ea13e41f95a21f1dc501979c2bc4ed7d2ee895e7f8099df742dc13eee6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 9,
+          "unknownComparisons": 9,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "shoegaze",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "gentle momentum",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "dreamy melodies",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "sunlight through fog",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "blurred guitars",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "gentle momentum",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "dreamy melodies",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Dub techno for a late-night workspace: spacious echoes and a steady pulse.",
+      "errors": [],
+      "milliseconds": 688,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "9800a851274467dc0ac67b30346c7e4dc67c5a3ca1ea29296fef6fbfb27dbfc5",
+      "audioSnapshot": "d77b3f2c1cee867956128310413447039eb2ee9f7078d382f2636d6d8c7be13b",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 40,
+      "cacheHits": 25,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 175,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "2DQlQcYponGtEwvEHRHYvu",
+          "artist": "Boards of Canada",
+          "title": "Peacock Tail",
+          "analysisId": "9460b0f47d1deea5b29414641874176bfec82fa87f1ac11865bc5ddafae77355",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6EuGf9ZfK9CcSoq2M0SYto",
+          "artist": "Massive Attack",
+          "title": "What Your Soul Sings",
+          "analysisId": "b730b9770a78b14be9fd96154e515d5be4e34afdeac25ade4a9b42093701a404",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "742r2XTuPCteoLoBwOPxBP",
+          "artist": "Sneaker Pimps",
+          "title": "Half Life",
+          "analysisId": "ba6af87812f99e9298acb2f2b05e60138b7b0b701faf8f552beeef8e80736a40",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "5Rq2hPEd7UWN6i9tME54dj",
+          "artist": "Lamb",
+          "title": "Angelica",
+          "analysisId": "437b77b8453ff71194cc51aeadc93f7e06a988b6c5d90c39598f21b1a41b053b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1bne4gsJshCv77LeKqQb1A",
+          "artist": "Lemon Jelly",
+          "title": "Space Walk",
+          "analysisId": "6ef1a3f225e551446c2668d79223a926c229ded6445708ab3d7863ed381fcea3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "4OO2lavE7yz5Ane6fEYXp3",
+          "artist": "Boards of Canada",
+          "title": "Everything You Do Is A Balloon",
+          "analysisId": "34bd1e4c7298efe44c4e6cf0d791909c30aa7923b77f46c8cdfe65665ddbefef",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "dub techno",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "spacious echoes",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "steady pulse",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "Warm analog synthesizers, arpeggios, and a retro-futuristic soundtrack for driving through neon streets.",
+      "errors": [],
+      "milliseconds": 145,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "e65cfd6dd63e6c1206c67e55d6b4af415990fef00ff8a41bbca2575cc0dafae5",
+      "audioSnapshot": "59e901fa357151c8000d36afd66fb4c257182064a4f4878c52fb9051b4f8ffca",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 42,
+      "cacheHits": 20,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 145,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "3JzMRR6eCFFILPAS2ChPx6",
+          "artist": "Roxy Music",
+          "title": "Trash",
+          "analysisId": "d026b68631a8d4fb8eeac2748ee0e8f98fd29536200c336604aeaf256ee362b8",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6fGmNs09PPcQ3NGIFLeXAB",
+          "artist": "L'Impératrice",
+          "title": "Dreaming of You",
+          "analysisId": "92066f1eb808880c99d387ea734ab493a7631c0b41177dc8d0d3cc2fa3dafa81",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "3Q6mwJseOFYBJ10d5CXp4o",
+          "artist": "Kavinsky",
+          "title": "Odd Look",
+          "analysisId": "3611c9fd963ca2f3c39a44d5cc0c56a0a46750d408a18a5b6080fec4fc5def1a",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "2cSRuejq6DU9U6OkSmUw17",
+          "artist": "Desire",
+          "title": "Under Your Spell",
+          "analysisId": "1fcf70f068c77219d8ffc90ade24858392089bdf7385c14093d113ff65b584d6",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "6vi4I2vZkN5mDePmVSSVTq",
+          "artist": "M83",
+          "title": "Reunion",
+          "analysisId": "40f6f968611e25540f6574f9178c0b09b49b10e9b6ff852b44737e434f71c90f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        },
+        {
+          "id": "1s9i7W8zx7Nxx78MUIsvjV",
+          "artist": "M83",
+          "title": "Outro",
+          "analysisId": "b51e6c9301b564e9ca27cb0c25e6715738ac3c7579895589c1d5fb19663d6245",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 3,
+          "unknownComparisons": 3,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "texture",
+          "text": "warm analog synthesizers",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "texture",
+          "text": "arpeggios",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "style",
+          "text": "retro-futuristic soundtrack",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A small jazz trio with brushed drums, upright bass, and piano; instrumental, no vocals.",
+      "errors": [],
+      "milliseconds": 337,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "d48f8b0953ecc221d7e297cc6df25dcefa6408e9997e003acd5b2a279d4b2ddb",
+      "audioSnapshot": "a160484481c31302d26c030b48409b24294d4954a6b7c456e0b731d46dd5a9c0",
+      "policyVersion": "clap-preview-similarity/v1+clap-preview-vocal-contrast/v1",
+      "newAnalysisAttempts": 42,
+      "cacheHits": 19,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 337,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "17OHsQ5RBrU6b9lTaPP0vh",
+          "artist": "Gerry Mulligan Sextet",
+          "title": "Prelude In E Minor",
+          "analysisId": "ebb95163e6fc854c76b5d342f73e79f8e6fc772f1b226afb2370414d5b2ff5cc",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.35624947072852536
+            }
+          ]
+        },
+        {
+          "id": "0Dt1B5dNfajRczQKZA87aL",
+          "artist": "Keith Jarrett",
+          "title": "So Tender",
+          "analysisId": "b5d6d23ebb7f9a47809930291d455341e1a4de2730bd3184ffa73af97085bc0c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.2838545051806258
+            }
+          ]
+        },
+        {
+          "id": "6n9GGoiLwNlY5Ro7NsdbJP",
+          "artist": "Charles Mingus",
+          "title": "Moanin'",
+          "analysisId": "176acf8be39b0e49dcc59762be7aba785d2d1a9dfcbda60b71a2ce3e31950420",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.15784709869812624
+            }
+          ]
+        },
+        {
+          "id": "0X5DcGkbxCXSadgj01ZXd7",
+          "artist": "Cannonball Adderley",
+          "title": "Autumn Leaves",
+          "analysisId": "48628542f8290695edfcb9b8aeb24fbb414b387f4456d049a660a053c23f2440",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.3033123145247545
+            }
+          ]
+        },
+        {
+          "id": "4rmCI9VWrwrJTJ8XQ80BMN",
+          "artist": "Duke Ellington",
+          "title": "My Little Brown Book",
+          "analysisId": "6a40faa5d008088fc90ced6b33660d668a69960ead969407c094a775dd4d925d",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.19520713030799344
+            }
+          ]
+        },
+        {
+          "id": "5NONW0vtWMfbMKrARaRfw9",
+          "artist": "Ludovico Einaudi",
+          "title": "Ritornare",
+          "analysisId": "64305f1115669b3d04ffc7dde5fbfa64a53d1ee13b4d562d97247298118a55be",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 3,
+          "strictAssessments": [
+            {
+              "kind": "vocal",
+              "text": "vocals",
+              "state": "match",
+              "score": 0.15080901802700847
+            }
+          ]
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "instrumentation",
+          "text": "brushed drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "upright bass",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "piano",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "instrumental",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "vocals",
+          "scope": "playlist",
+          "strict": true,
+          "negative": true
+        }
+      ]
+    },
+    {
+      "prompt": "Romantic soul with expressive female vocals, relaxed drums, and a warm, unhurried feel.",
+      "errors": [],
+      "milliseconds": 415,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "3a972787fc6a31a343e68f5b0439e7ae4af7d4ab6c392f97efdec1a433bd9fa5",
+      "audioSnapshot": "8cef737dca5d3a04b817c6ffd9761dfac6a21a2fd0bb121bfc2cf5bfaa9a3231",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 22,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 204,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [],
+      "tracks": [
+        {
+          "id": "7zkLpY72g6lKQbiHDqri1S",
+          "artist": "Norah Jones",
+          "title": "Sunrise",
+          "analysisId": "85ecce76b59f3b58bd9238107912fb3ee53c963883c2bb751dcab2164a53fa85",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "1GGK81j5LaThJjnJHhfGDq",
+          "artist": "Diana Krall",
+          "title": "Just The Way You Are",
+          "analysisId": "bfa74f0e37075069ba8d8bc93b20c6a05c2a9526bd1be6303c667fd0147c90d5",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "5qpiNT4qeoHnlsO8NdKrnr",
+          "artist": "Madeleine Peyroux",
+          "title": "Smile",
+          "analysisId": "2416fd5937925535bff57ad9dc4bbc3c10b375c09c91e727f8993d5890480379",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "5qXhjrcfWlEb7XgAjxnBpl",
+          "artist": "Melody Gardot",
+          "title": "All That I Need Is Love",
+          "analysisId": "30f47490fdd7833dd3b35cb7bab5dde7f3100c37c1f65aba0c7b8c8c5c49b558",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "7a4zmOB89TE5AC3nAMwhMN",
+          "artist": "Stacey Kent",
+          "title": "What a Wonderful World",
+          "analysisId": "a78222e5bf822261b8eaf7a683e44e0b2e565f40916737679478cb16effb0de2",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        },
+        {
+          "id": "3k8WOOIt8iHgfXzTXBonDC",
+          "artist": "Diana Krall",
+          "title": "Cry Me A River",
+          "analysisId": "75f68b5130db6d3f44bf8d798b3199ad45e6b48d532ff5dce7a8cad661122b29",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 5,
+          "unknownComparisons": 5,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "style",
+          "text": "romantic soul",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "warm",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "relaxed",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "instrumentation",
+          "text": "relaxed drums",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "vocal",
+          "text": "expressive female vocals",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from ambient to energetic electronic, like a quiet room gradually becoming a dance floor.",
+      "errors": [],
+      "milliseconds": 211,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "22734a2174219e0f0128d05cae9917270e211fc22349bcc38ef03fa3fe8e9adc",
+      "audioSnapshot": "bed533f608fd3e7ffe6f12b0cd67697d46ec635967bf4c6e50a7f8710d92f1c4",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 41,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 211,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "ambient",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "electronic",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "0N6s5R09GPSh6HHR0YpNPG",
+          "artist": "Max Cooper",
+          "title": "Impermanence",
+          "analysisId": "80ee3dd8796e8078495aed179cf10115f9be4911dcfe33e34d35e0672c437455",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "2DQlQcYponGtEwvEHRHYvu",
+          "artist": "Boards of Canada",
+          "title": "Peacock Tail",
+          "analysisId": "9460b0f47d1deea5b29414641874176bfec82fa87f1ac11865bc5ddafae77355",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "6EuGf9ZfK9CcSoq2M0SYto",
+          "artist": "Massive Attack",
+          "title": "What Your Soul Sings",
+          "analysisId": "b730b9770a78b14be9fd96154e515d5be4e34afdeac25ade4a9b42093701a404",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "5Rq2hPEd7UWN6i9tME54dj",
+          "artist": "Lamb",
+          "title": "Angelica",
+          "analysisId": "437b77b8453ff71194cc51aeadc93f7e06a988b6c5d90c39598f21b1a41b053b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "1bne4gsJshCv77LeKqQb1A",
+          "artist": "Lemon Jelly",
+          "title": "Space Walk",
+          "analysisId": "6ef1a3f225e551446c2668d79223a926c229ded6445708ab3d7863ed381fcea3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "3pa1twfh1McWMyKH3Z5Tvb",
+          "artist": "The Chemical Brothers",
+          "title": "Dig Your Own Hole",
+          "analysisId": "c663a544d12d9cf1c29ca010c16c0730ff711e9f3ad2e32ddd782e7411f9873b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "ambient",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "electronic",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from soul to disco: begin with a warm groove and finish ready to dance.",
+      "errors": [],
+      "milliseconds": 133,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "325797ef1457768aa1d25c571af4c93dad3847a4811779afdb647371462cc89c",
+      "audioSnapshot": "89527f7a959ec3e5e794db095b61811ae8f1d2957cb481262319e2aaf6fab7e5",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 16,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 133,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "soul",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "disco",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "12Hf5kl3Sog4FbAJ890eC9",
+          "artist": "Yvonne Baker",
+          "title": "You Didn't Say A Word",
+          "analysisId": "6665598084b22ed8f9692d09ebc79fa628708996c538a9ae3ce20357a9b8e6da",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "55TihUjVHdi3zChAUtKgHE",
+          "artist": "Rahaan",
+          "title": "Disco Fantasy",
+          "analysisId": "8772ae1f4a940e381f991480716786e399db67c43b41e2aaaafe8120ff38ee28",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7d8DvrdW2u2QIpx5NpM6es",
+          "artist": "Karen Young",
+          "title": "Hot Shot",
+          "analysisId": "56a75aea8261ee247146062279edd1db74070551eb71770528a383a2c42bb851",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "4kzAFfDqXzTD5AJzTjPtPf",
+          "artist": "CHIC",
+          "title": "Everybody Dance",
+          "analysisId": "ba7aedacbdd0d071a92b75a0324bc5b4a37dd2126bb5c74dc2ce54d9af59af23",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7l0nTXAz0gzUkKBU2EXP4G",
+          "artist": "The Gap Band",
+          "title": "I Don't Believe You Want To Get Up And Dance (Oops, Up Side Your Head)",
+          "analysisId": "cc169b8ebdeacede0f65e1698062997c1158b4f0710a2c9623789de82b21b069",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        },
+        {
+          "id": "7pkfH9OWFFUrJK295evIoC",
+          "artist": "La Pegatina",
+          "title": "Y si voy",
+          "analysisId": "99954bc2f50176c996f3248a9e8d820a88de463134ce429ec0e135eab52e8052",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 2,
+          "unknownComparisons": 2,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "soul",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "disco",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    },
+    {
+      "prompt": "A journey from acoustic folk to indie rock, moving from a fireside conversation to a small festival stage.",
+      "errors": [],
+      "milliseconds": 187,
+      "trackCount": 6,
+      "outcome": "partial",
+      "replayed": true,
+      "cachedAudioOnly": true,
+      "knowledgeSnapshot": "9077efaa77c5558514292794d1116dac85ea93dc646217ac44a84fcae000961d",
+      "audioSnapshot": "a2bf2e182e5c70203a5df2261207efd1892ee860127b8dd86682bf89d577c402",
+      "policyVersion": "clap-preview-similarity/v1",
+      "newAnalysisAttempts": 41,
+      "cacheHits": 26,
+      "previewBytesFetched": 0,
+      "analysisMilliseconds": 187,
+      "budgetExhausted": true,
+      "references": [],
+      "journeyCriteria": [
+        {
+          "kind": "genre",
+          "value": "acoustic folk",
+          "scope": "journey_start"
+        },
+        {
+          "kind": "genre",
+          "value": "indie rock",
+          "scope": "journey_end"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "6hqAK8yLtC40min1WRPOZk",
+          "artist": "The Gaslight Anthem",
+          "title": "National Anthem",
+          "analysisId": "a9c84f09894d0594056db94d0f42e3033738dff0693f1eb2162a03f402034e1f",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6a1wMgJ42Okk5LjulbrtcZ",
+          "artist": "Bon Iver",
+          "title": "Flume",
+          "analysisId": "925becc2604deffec8da32cac97f9a0a9ba84dc3b03c7172ca9ed94164bdf2f3",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "7nzsY8vlnKdvGOEE0rjAXZ",
+          "artist": "Arctic Monkeys",
+          "title": "Arabella",
+          "analysisId": "c18a620c6fd74097ad041375306dbec1c6038cd205f2ac272371bbd29fb4fdd5",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6KIvl5KkeTnd9Z7X6cHzRW",
+          "artist": "The National",
+          "title": "Conversation 16",
+          "analysisId": "8d5e09a5c0751e7c938db11b4b2abaa07a8b5bf2fe1c7680b3a9847dd013ec2c",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "6DESft0qm6RhoYf5wzeoGH",
+          "artist": "Bon Iver",
+          "title": "Holocene",
+          "analysisId": "f0438f7a2b6096af66685ee6f53c47362cae08d77f2ca590f25d892d6f3e7111",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        },
+        {
+          "id": "086myS9r57YsLbJpU0TgK9",
+          "artist": "Arctic Monkeys",
+          "title": "Why'd You Only Call Me When You're High?",
+          "analysisId": "8a31e5077b3e4ee7765a6c81d468371a28603de34456588e4a52471f5913654b",
+          "identityMethod": "corroborated_artist_title_version",
+          "usableComparisons": 4,
+          "unknownComparisons": 4,
+          "strictAssessments": []
+        }
+      ],
+      "clauses": [
+        {
+          "kind": "genre",
+          "text": "acoustic folk",
+          "scope": "journey_start",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "genre",
+          "text": "indie rock",
+          "scope": "journey_end",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "fireside conversation",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        },
+        {
+          "kind": "mood",
+          "text": "small festival stage",
+          "scope": "playlist",
+          "strict": false,
+          "negative": false
+        }
+      ]
+    }
+  ]
+}

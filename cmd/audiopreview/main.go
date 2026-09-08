@@ -12,11 +12,19 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/audio"
+	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/preview/deezer"
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
+		if err := audioruntime.Run(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -30,6 +38,7 @@ func run() error {
 	catalog := flag.String("catalog-version", "", "catalog identity")
 	directory := flag.String("data-dir", "", "local derived-feature store")
 	authorized := flag.Bool("authorized", false, "provider agreement covers analysis, permanent derivatives, and desktop distribution")
+	screenVocals := flag.Bool("screen-vocals", false, "also run preview-only CLAP instrumental/vocal screening")
 	flag.Parse()
 	if !*authorized || *artist == "" || *title == "" || *id == "" || *catalog == "" || *directory == "" {
 		return fmt.Errorf("explicit provider authorization, exact recording, catalog version, and data directory are required")
@@ -72,6 +81,21 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	var assessment *core.AudioAssessment
+	if *screenVocals {
+		service := &audio.Service{Resolver: deezer.New(deezer.Config{}), Analyzer: w, Store: store, Authorized: *authorized, ParityValidated: m.Parity.Valid()}
+		intent := core.MusicIntent{OriginalDescription: "Instrumental, no vocals", HardConstraints: []core.HardConstraint{{Kind: "exclude_vocals"}}}
+		session, e := service.Begin(ctx, intent, *catalog, nil)
+		if e != nil {
+			return e
+		}
+		defer session.Close()
+		checked, e := session.Check(ctx, track, false)
+		if e != nil {
+			return e
+		}
+		assessment = &checked
+	}
 	return json.NewEncoder(os.Stdout).Encode(struct {
 		AnalysisID           string                    `json:"analysisId"`
 		Identity             core.PreviewIdentity      `json:"identity"`
@@ -81,5 +105,6 @@ func run() error {
 		HealthMilliseconds   int64                     `json:"healthMilliseconds"`
 		AnalysisMilliseconds int64                     `json:"analysisMilliseconds"`
 		Storage              core.AnalysisStorageUsage `json:"storage"`
-	}{record.ID, record.Identity, record.Coverage, hit, fetched, healthMS, time.Since(started).Milliseconds(), usage})
+		VocalScreening       *core.AudioAssessment     `json:"vocalScreening,omitempty"`
+	}{record.ID, record.Identity, record.Coverage, hit, fetched, healthMS, time.Since(started).Milliseconds(), usage, assessment})
 }

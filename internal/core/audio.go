@@ -35,6 +35,14 @@ type AudioSegment struct {
 	Embedding    []float32 `json:"embedding"`
 }
 
+// AudioSampling records how a reusable evidence interval was selected. The
+// interval itself is in Coverage, relative to the provider preview unless its
+// offset into the recording is known. Nil denotes a legacy whole-preview row.
+type AudioSampling struct {
+	Policy           string  `json:"policy"`
+	AvailableSeconds float64 `json:"availableSeconds"`
+}
+
 type AudioAnalysis struct {
 	ID             string             `json:"id"`
 	TrackID        string             `json:"trackId"`
@@ -45,6 +53,7 @@ type AudioAnalysis struct {
 	AudioSHA256    string             `json:"audioSha256"`
 	Segments       []AudioSegment     `json:"segments"`
 	Coverage       PreviewCoverage    `json:"coverage"`
+	Sampling       *AudioSampling     `json:"sampling,omitempty"`
 	// PreviewOffsetKnown=false means segment times are relative to the preview,
 	// not offsets into the complete recording.
 	PreviewOffsetKnown bool   `json:"previewOffsetKnown"`
@@ -61,9 +70,11 @@ type AudioClause struct {
 }
 
 type AudioClauseAssessment struct {
-	Clause AudioClause   `json:"clause"`
-	Score  float64       `json:"score"` // cosine similarity, never a probability
-	State  EvidenceState `json:"state"`
+	Clause AudioClause `json:"clause"`
+	Score  float64     `json:"score"` // cosine similarity, never a probability
+	// A usable similarity can guide ranking while categorical fit stays unknown.
+	ScoreAvailable bool          `json:"scoreAvailable,omitempty"`
+	State          EvidenceState `json:"state"`
 }
 
 type AudioAssessment struct {

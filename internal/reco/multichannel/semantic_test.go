@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/ports"
@@ -107,7 +108,8 @@ func TestSemanticNegationPenalizesMatchingCandidate(t *testing.T) {
 func TestStrictNoVocalsExcludesVocalAndUnknownEvidence(t *testing.T) {
 	cat := semanticCatalog()
 	sem := semanticData()
-	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
+	service, _ := cachedAudioService(t, cat, "sleepy", "instrumental", "unknown")
+	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
 	intent := core.MusicIntent{Version: core.CurrentIntentVersion, VerificationPolicy: core.VerifiedOnly, Mode: core.ModeSimilar, Seed: "10",
 		Preferences:     core.SemanticPreferences{Instrumentation: []core.IntentPreference{{Value: "instrumental", Influence: core.InfluencePositive}}},
 		HardConstraints: []core.HardConstraint{{Kind: "exclude_vocals", Value: "vocals", Supported: false}},

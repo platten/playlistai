@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/logging"
+	"github.com/platten/playlistai/internal/updater"
 )
 
 // The frontend build output is embedded into the binary. `wails3 dev` serves
@@ -32,6 +34,16 @@ func init() {
 }
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Fprintln(os.Stdout, bridge.Version)
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == "--app-update-worker" {
+		if err := updater.RunWorker(os.Args[2]); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
 		if err := audioruntime.Run(os.Args[2]); err != nil {
 			os.Exit(1)

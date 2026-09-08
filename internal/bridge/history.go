@@ -126,6 +126,7 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 		}
 	}
 	result = migrateLoadedResult(result)
+	a.presentPlaylistNotices(&result)
 	return SavedPlaylist{
 		Summary: SavedPlaylistSummary{
 			ID: record.ID, Name: record.Name, Prompt: record.Prompt, Notes: record.Notes,

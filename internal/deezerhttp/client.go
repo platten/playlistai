@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/platten/playlistai/internal/httpretry"
 )
 
 const Interval = 2 * time.Second
@@ -61,6 +63,10 @@ type throttledTransport struct {
 }
 
 func (t *throttledTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return httpretry.RoundTrip(req, t.roundTripOnce)
+}
+
+func (t *throttledTransport) roundTripOnce(req *http.Request) (*http.Response, error) {
 	if !IsDeezer(req.URL) {
 		return t.base.RoundTrip(req)
 	}
@@ -103,10 +109,17 @@ func playbackURL(ctx context.Context, address string, source *http.Client) (stri
 	if err != nil {
 		return "", err
 	}
-	if !IsDeezer(u) {
+	// Catalog and provider metadata are data, not permission to make the
+	// desktop WebView access arbitrary URLs, local files or private services.
+	validHTTPS := func(u *url.URL) bool { return u.Scheme == "https" && u.User == nil && u.Port() == "" && u.Opaque == "" }
+	host := strings.ToLower(u.Hostname())
+	if validHTTPS(u) && (host == "p.scdn.co" || host == "podz-content.spotifycdn.com") {
 		return address, nil
 	}
-	allowed := func(u *url.URL) bool { return IsDeezer(u) && u.Scheme == "https" && u.User == nil }
+	allowed := func(u *url.URL) bool {
+		host := strings.ToLower(u.Hostname())
+		return validHTTPS(u) && (host == "dzcdn.net" || strings.HasSuffix(host, ".dzcdn.net"))
+	}
 	if !allowed(u) {
 		return "", fmt.Errorf("deezer: invalid preview URL")
 	}

@@ -102,7 +102,7 @@ func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIn
 		if constraint.Kind == "require_album" {
 			member := false
 			for _, ref := range intent.References {
-				if ref.Kind != core.ReferenceAlbum || !strings.EqualFold(ref.Query, constraint.Value) || ref.Resolution == nil || ref.Resolution.Selected == nil {
+				if ref.Kind != core.ReferenceAlbum || !strings.EqualFold(ref.Query, constraint.Value) || ref.Resolution == nil || ref.Resolution.Status != core.ResolutionResolved || ref.Resolution.Selected == nil {
 					continue
 				}
 				for _, representative := range ref.Resolution.Selected.Representatives {
@@ -175,14 +175,21 @@ func (o *Orchestrator) annotateFit(ctx context.Context, playlist *core.Playlist)
 	unknown := false
 	for i, track := range playlist.Tracks {
 		assessment := core.TrackAssessment{TrackID: track.ID, State: core.EvidenceMatch}
+		journeySeen, journeyMatch := false, false
 		for _, c := range playlist.Intent.EssentialCriteria {
 			if strings.HasPrefix(c.Scope, "journey_") {
+				journeySeen = true
+				journeyMatch = journeyMatch || o.bestCriterion(ctx, track.ID, c) == core.EvidenceMatch
 				continue
 			}
 			if o.bestCriterion(ctx, track.ID, c) != core.EvidenceMatch {
 				assessment.State = core.EvidenceUnknown
 				assessment.Reasons = append(assessment.Reasons, "Suggested fit for "+c.Value+"; supporting evidence is incomplete.")
 			}
+		}
+		if journeySeen && !journeyMatch {
+			assessment.State = core.EvidenceUnknown
+			assessment.Reasons = append(assessment.Reasons, "Suggested journey placement; genre evidence is incomplete.")
 		}
 		if len(playlist.Intent.Temporal) > 0 || len(playlist.Intent.Preferences.Moods) > 0 || len(playlist.Intent.Preferences.TextureDescriptions) > 0 || playlist.Intent.Preferences.VocalPreference != nil || len(playlist.Intent.Preferences.Instrumentation) > 0 {
 			assessment.State = core.EvidenceUnknown
@@ -269,7 +276,34 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 	}
 	result := make([]core.Candidate, 0, len(eligible))
 	for _, candidate := range eligible {
-		if o.stageDateEligible(candidate.Track.ID, criterion.Scope, intent) {
+		fits := true
+		// Incomplete tags do not mean a known destination track also belongs
+		// at the start. Prefer its affirmative stage evidence to an unknown fit.
+		if o.bestAvailable && criterion.Kind != "" && o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceUnknown {
+			for _, other := range journeyCriteria(intent.EssentialCriteria) {
+				if other.Scope != criterion.Scope && o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMatch {
+					fits = false
+					break
+				}
+			}
+			// When metadata cannot place a preview, prefer the stage whose
+			// description is closer in CLAP space. This is approximate placement;
+			// bestCriterion stays unknown and final coverage still reports it.
+			if fits && o.audioSession != nil {
+				if score, ok := o.audioSession.StageSimilarity(candidate.Track.ID, criterion); ok {
+					for _, other := range journeyCriteria(intent.EssentialCriteria) {
+						if other.Scope == criterion.Scope || !o.stageDateEligible(candidate.Track.ID, other.Scope, intent) || o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMismatch {
+							continue
+						}
+						if otherScore, available := o.audioSession.StageSimilarity(candidate.Track.ID, other); available && otherScore > score+1e-6 {
+							fits = false
+							break
+						}
+					}
+				}
+			}
+		}
+		if fits && o.stageDateEligible(candidate.Track.ID, criterion.Scope, intent) {
 			result = append(result, candidate)
 		} else {
 			delete(report.Eligible, candidate.Track.ID)

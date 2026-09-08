@@ -70,6 +70,7 @@ export function PlaylistScreen({
     initialResultMatches ? initialResult : null,
   );
   const [busy, setBusy] = useState(!initialResultMatches);
+  const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [feedback, setFeedback] = useState<Record<string, string[]>>({});
@@ -221,8 +222,8 @@ export function PlaylistScreen({
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[880px] flex-col px-6 py-6">
-      <div className="flex items-center gap-3 pb-4">
+    <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col px-4 py-6 sm:px-6">
+      <div className="flex flex-wrap items-center gap-3 pb-4">
         <button
           type="button"
           onClick={onBack}
@@ -268,8 +269,11 @@ export function PlaylistScreen({
         </Button>
       </div>
 
-      {result && outcomeState && outcomeState !== "fulfilled" && (
-        <div className="mb-3 rounded-card border border-accent/30 bg-accent-quiet px-4 py-3">
+      {result && result !== dismissedOutcome && outcomeState && outcomeState !== "fulfilled" && (
+        <div className="relative mb-3 rounded-card border border-accent/30 bg-accent-quiet py-3 pl-4 pr-12">
+          <button type="button" aria-label="Dismiss playlist message" onClick={() => setDismissedOutcome(result)} className="absolute right-2 top-2 grid size-8 place-items-center rounded-control text-muted hover:bg-inset hover:text-text">
+            <Icon.X size={16} />
+          </button>
           <p className="text-[12.5px] font-semibold text-text">
             {outcomeState === "needs_clarification"
               ? "This request needs clarification"
@@ -287,9 +291,12 @@ export function PlaylistScreen({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-x-8 gap-y-4 rounded-card border border-line bg-surface px-4 py-4">
+      <details className="rounded-card border border-line bg-surface px-4 py-3">
+        <summary className="cursor-pointer text-[13px] font-medium text-muted">Adjust playlist</summary>
+        <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-4">
         <Slider
           label="Audio similarity"
+          help="How much a song's sound influences its selection. Higher values favor songs that sound closer to your reference tracks; lower values give other recommendation signals more influence."
           value={audioWeight}
           onValueChange={setAudioWeight}
           format={(v) => v.toFixed(2)}
@@ -298,6 +305,7 @@ export function PlaylistScreen({
         />
         <Slider
           label="Playlist-context similarity"
+          help="How much shared playlist listening patterns influence selection. Higher values favor songs that tend to appear in playlists with your references, even when their sound differs. Lower values reduce that influence."
           value={cooccurrenceWeight}
           onValueChange={setCooccurrenceWeight}
           format={(v) => v.toFixed(2)}
@@ -306,6 +314,7 @@ export function PlaylistScreen({
         />
         <Slider
           label="Discovery"
+          help="How far the playlist explores beyond the closest matches. Higher values introduce more exploratory candidates and give more weight to unfamiliar music when listening history is available. Lower values stay closer to familiar territory. Your exclusions still apply."
           value={discovery}
           onValueChange={setDiscovery}
           format={(v) => v.toFixed(2)}
@@ -314,6 +323,7 @@ export function PlaylistScreen({
         />
         <Slider
           label="Transition smoothness"
+          help="How much similarity between neighboring songs influences their order. Higher values favor gentler changes from one song to the next; lower values allow sharper changes. This adjusts the playlist order, not playback crossfading."
           value={transitionSmoothness}
           onValueChange={setTransitionSmoothness}
           format={(v) => v.toFixed(2)}
@@ -322,11 +332,12 @@ export function PlaylistScreen({
         />
         <Slider
           label="Artist diversity"
+          help="How strongly the playlist favors a wider mix of artists and spaces out repeat appearances. Higher values encourage more variety; lower values allow more concentration on the same artists. Available matches and your explicit repeat rules still constrain the result."
           value={artistDiversity}
           onValueChange={setArtistDiversity}
           format={(v) => v.toFixed(2)}
-          leftHint="preserved only"
-          rightHint="limited support"
+          leftHint="more repeats"
+          rightHint="more variety"
         />
         <Stepper
           label="Total tracks"
@@ -345,6 +356,7 @@ export function PlaylistScreen({
           Exclude other tracks by reference artists
         </label>
       </div>
+      </details>
 
       {(result?.notices ?? []).map((notice) => (
         <div
@@ -356,11 +368,12 @@ export function PlaylistScreen({
         </div>
       ))}
 
-      {feedbackError && <ErrorState variant="inline" message={feedbackError} className="mt-3" />}
+      {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} className="mt-3" />}
 
-      <div className="mt-4 min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface p-2">
+      <p className="mt-4 text-[12px] text-muted">Listen to a short preview of each song. Availability depends on your preview provider.</p>
+      <div className="mt-2 rounded-card border border-line bg-surface p-2">
         {error ? (
-          <ErrorState message={error} onRetry={build} />
+          <ErrorState message={error} onDismiss={() => setError(null)} onRetry={build} />
         ) : busy && tracks.length === 0 ? (
           <LoadingRows rows={8} />
         ) : tracks.length === 0 ? (
@@ -380,6 +393,9 @@ export function PlaylistScreen({
                   provenance={KIND_TO_PROVENANCE[t.kind]}
                   reason={expanded.has(i) ? t.detail : undefined}
                   active={player.track?.id === t.id}
+                  previewStatus={player.track?.id === t.id ? player.status : "idle"}
+                  previewError={player.track?.id === t.id ? player.error : null}
+                  onDismissPreviewError={player.stop}
                   onPlay={() => player.toggle({ id: t.id, artist: t.artist, title: t.title })}
                   onClick={() =>
                     setExpanded((prev) => {

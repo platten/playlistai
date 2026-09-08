@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/platten/playlistai/internal/process"
 )
 
 // Server manages a llama runtime child process bound to loopback.
@@ -96,6 +98,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	cmd := exec.Command(s.bin, args...) //nolint:gosec // bin/model come from validated config
+	process.Background(cmd)
 	cmd.Stdout = logWriter{s.log, "llama-server"}
 	cmd.Stderr = logWriter{s.log, "llama-server"}
 	if err := cmd.Start(); err != nil {

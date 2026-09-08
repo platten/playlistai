@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/platten/playlistai/internal/httpretry"
 )
 
 // File is one downloadable artifact in a Manifest.
@@ -47,7 +49,7 @@ func LoadManifest(ctx context.Context, location string) (*Manifest, error) {
 		if err != nil {
 			return nil, err
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpretry.Client(http.DefaultClient).Do(req)
 		if err != nil {
 			return nil, err
 		}

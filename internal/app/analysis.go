@@ -28,14 +28,15 @@ type analysisState struct {
 }
 
 type AnalysisStatus struct {
-	Installed     bool                      `json:"installed"`
-	Available     bool                      `json:"available"`
-	Enabled       bool                      `json:"enabled"`
-	Model         string                    `json:"model"`
-	Detail        string                    `json:"detail"`
-	DownloadBytes int64                     `json:"downloadBytes"`
-	MemoryBytes   int64                     `json:"memoryBytes"`
-	Storage       core.AnalysisStorageUsage `json:"storage"`
+	Installed           bool                      `json:"installed"`
+	Available           bool                      `json:"available"`
+	GeneralFitAvailable bool                      `json:"generalFitAvailable"`
+	Enabled             bool                      `json:"enabled"`
+	Model               string                    `json:"model"`
+	Detail              string                    `json:"detail"`
+	DownloadBytes       int64                     `json:"downloadBytes"`
+	MemoryBytes         int64                     `json:"memoryBytes"`
+	Storage             core.AnalysisStorageUsage `json:"storage"`
 }
 
 func (c *Container) wireAnalysis(ctx context.Context) {
@@ -99,7 +100,7 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 	if !manifest.Policy.Valid() {
 		s.enabled = false
 		worker.Unload()
-		s.detail = "CLAP model installed and inference validated. Automatic musical-fit decisions await a calibrated policy."
+		s.detail = "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit."
 	}
 	return nil
 }
@@ -108,7 +109,14 @@ func (c *Container) AudioService() *audio.Service {
 	c.analysis.mu.Lock()
 	defer c.analysis.mu.Unlock()
 	if !c.analysis.enabled {
-		return nil
+		if !c.analysis.service.InferenceReady() {
+			return nil
+		}
+		// The installed model ranks best-available descriptions and screens vocals.
+		// The setting controls additional calibrated musical-fit assessments.
+		service := *c.analysis.service
+		service.Policy = audio.Policy{}
+		return &service
 	}
 	return c.analysis.service
 }
@@ -126,7 +134,7 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s := &c.analysis
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
+	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
 	if s.manifest != nil {
 		status.Model = s.manifest.Label
 		status.DownloadBytes = s.manifest.DownloadBytes()

@@ -48,7 +48,7 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 	for i, reference := range references {
 		var result core.ReferenceResolution
 		if reference.Resolution != nil && reference.Resolution.CatalogVersion == resolver.CatalogVersion() &&
-			reference.Resolution.Status == core.ResolutionResolved && reference.Resolution.Selected != nil {
+			(reference.Kind == core.ReferenceAlbum || reference.Resolution.Status == core.ResolutionResolved && reference.Resolution.Selected != nil) {
 			result = *reference.Resolution
 		} else {
 			result = resolver.ResolveReference(reference)

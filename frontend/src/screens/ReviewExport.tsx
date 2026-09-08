@@ -146,7 +146,7 @@ export function ReviewExport({
   };
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[980px] flex-col px-6 py-6">
+    <div className="mx-auto flex min-h-full w-full max-w-[980px] flex-col px-4 py-6 sm:px-6">
       <div className="flex items-center gap-3 pb-4">
         <button
           type="button"
@@ -161,7 +161,7 @@ export function ReviewExport({
           <p className="text-[12px] text-faint">
             {rows
               ? `${rows.length} tracks`
-              : "Loading tracks…"}
+              : loading ? "Loading tracks…" : "Tracks not loaded"}
           </p>
         </div>
       </div>
@@ -174,15 +174,21 @@ export function ReviewExport({
           </div>
         </div>
       ) : loadError ? (
-        <ErrorState message={loadError} onRetry={loadTracks} />
-      ) : !rows || rows.length === 0 ? (
+        <ErrorState message={loadError} onDismiss={() => setLoadError(null)} onRetry={loadTracks} />
+      ) : !rows ? (
+        <EmptyState
+          title="Tracks not loaded"
+          description="Load the playlist details to review and export them."
+          action={<Button onClick={loadTracks}>Try again</Button>}
+        />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="Nothing to export"
           description="No local track details are available for this playlist."
         />
       ) : (
         <>
-          <div className="min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface">
+          <div className="overflow-x-auto rounded-card border border-line bg-surface">
             <table className="w-full border-collapse text-[13px]">
               <thead className="sticky top-0 z-10 bg-surface">
                 <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-faint">
@@ -223,7 +229,7 @@ export function ReviewExport({
           </div>
 
           <div className="mt-4 flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-4">
-            {feedbackError && <ErrorState variant="inline" message={feedbackError} />}
+            {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} />}
             <label className="flex items-center gap-3 text-[13px]">
               <span className="w-28 shrink-0 text-muted">Playlist name</span>
               <input
@@ -242,7 +248,7 @@ export function ReviewExport({
               />
             )}
 
-            {exportError && <ErrorState variant="inline" message={exportError} />}
+            {exportError && <ErrorState variant="inline" message={exportError} onDismiss={() => setExportError(null)} />}
 
             {saved?.kind === "handoff" && (
               <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-quiet px-3 py-2.5 text-[12.5px]">

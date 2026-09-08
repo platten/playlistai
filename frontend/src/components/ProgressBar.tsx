@@ -32,9 +32,9 @@ export function ProgressBar({ done = 0, total = 0, label, note, className, size 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       {(label || rightText) && (
-        <div className="flex items-baseline justify-between text-xs">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs">
           {label ? <span className="text-muted">{label}</span> : <span />}
-          {rightText && <span className="font-mono text-[11px] text-faint">{rightText}</span>}
+          {rightText && <span className="ml-auto shrink-0 font-mono text-[11px] text-faint">{rightText}</span>}
         </div>
       )}
       <div
@@ -44,6 +44,7 @@ export function ProgressBar({ done = 0, total = 0, label, note, className, size 
         aria-valuemin={0}
         aria-valuemax={determinate ? 100 : undefined}
         aria-valuenow={determinate ? Math.round(pct) : undefined}
+        aria-valuetext={rightText}
         aria-label={label}
       >
         {determinate ? (

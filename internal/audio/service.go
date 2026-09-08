@@ -44,11 +44,21 @@ type Service struct {
 }
 
 func (s *Service) Ready() bool {
-	return s != nil && s.Authorized && s.ParityValidated && s.Policy.Valid() && s.Resolver != nil && s.Analyzer != nil && s.Store != nil && s.Analyzer.Identity().Preprocessing == PreprocessingVersion
+	return s.InferenceReady() && s.Policy.Valid()
+}
+
+// InferenceReady permits preview similarity ranking and zero-shot vocal
+// screening without claiming a calibrated general musical-fit policy.
+func (s *Service) InferenceReady() bool {
+	return s != nil && s.Authorized && s.ParityValidated && s.Resolver != nil && s.Analyzer != nil && s.Store != nil && s.Analyzer.Identity().Preprocessing == PreprocessingVersion
+}
+
+func (s *Service) ReadyFor(intent core.MusicIntent) bool {
+	return s.Ready() || s.InferenceReady() && (core.WantsInstrumental(intent) || intent.VerificationPolicy == core.BestAvailable)
 }
 
 // AnalyzePreview computes reusable embeddings without making request-specific
-// judgments. Calibration gates those judgments separately in Begin.
+// judgments. Calibration gates categorical musical-fit judgments separately.
 func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog string) (core.AudioAnalysis, int64, error) {
 	if s == nil || !s.Authorized || !s.ParityValidated || s.Resolver == nil || s.Analyzer == nil || s.Store == nil || s.Analyzer.Identity().Preprocessing != PreprocessingVersion {
 		return core.AudioAnalysis{}, 0, fmt.Errorf("audio: verified model and provider authorization required")
@@ -76,8 +86,15 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	if err != nil {
 		return core.AudioAnalysis{}, int64(len(encoded)), err
 	}
-	record := core.AudioAnalysis{TrackID: ref.ID, CatalogVersion: catalog, TrackKey: core.ProvisionalRecordingKey(ref), Identity: preview.Identity, Model: s.Analyzer.Identity(), AudioSHA256: hex.EncodeToString(hash[:]), AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano), Coverage: core.PreviewCoverage{Available: true, CoveredSeconds: float64(len(samples)) / SampleRate, Source: "deezer"}}
-	err = forEachSegment(ctx, samples, func(segment []float32, start, end float64) error {
+	first, last := randomEvidenceBounds(len(samples))
+	offset := float64(first) / SampleRate
+	record := core.AudioAnalysis{
+		TrackID: ref.ID, CatalogVersion: catalog, TrackKey: core.ProvisionalRecordingKey(ref), Identity: preview.Identity,
+		Model: s.Analyzer.Identity(), AudioSHA256: hex.EncodeToString(hash[:]), AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Sampling: &core.AudioSampling{Policy: PreviewSamplingVersion, AvailableSeconds: float64(len(samples)) / SampleRate},
+		Coverage: core.PreviewCoverage{Available: true, StartSeconds: offset, EndSeconds: float64(last) / SampleRate, CoveredSeconds: float64(last-first) / SampleRate, Source: "deezer"},
+	}
+	err = forEachSegment(ctx, samples[first:last], func(segment []float32, start, end float64) error {
 		vector, err := s.Analyzer.EmbedAudio(ctx, segment)
 		if err != nil {
 			return err
@@ -85,7 +102,7 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		if !validVector(vector, record.Model.Dimension) {
 			return fmt.Errorf("audio: incompatible model output")
 		}
-		record.Segments = append(record.Segments, core.AudioSegment{StartSeconds: start, EndSeconds: end, Embedding: append([]float32(nil), vector...)})
+		record.Segments = append(record.Segments, core.AudioSegment{StartSeconds: offset + start, EndSeconds: offset + end, Embedding: append([]float32(nil), vector...)})
 		return nil
 	})
 	clear(samples)

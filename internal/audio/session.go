@@ -12,6 +12,7 @@ import (
 )
 
 const AnalysisBudget = 120 * time.Second
+const SimilarityPolicyVersion = "clap-preview-similarity/v1"
 
 func CandidateAnalysisLimit(count int) int { return min(200, max(40, 4*count)) }
 
@@ -34,8 +35,8 @@ type Session struct {
 }
 
 func (s *Service) Begin(ctx context.Context, intent core.MusicIntent, catalog string, stop <-chan struct{}) (*Session, error) {
-	if !s.Ready() {
-		return nil, fmt.Errorf("audio: analysis requires an installed parity-validated model and calibrated policy")
+	if !s.ReadyFor(intent) {
+		return nil, fmt.Errorf("audio: analysis requires an authorized, parity-validated model supporting the requested checks")
 	}
 	budgetCtx, cancel := context.WithTimeout(ctx, AnalysisBudget)
 	go func() {
@@ -46,6 +47,15 @@ func (s *Service) Begin(ctx context.Context, intent core.MusicIntent, catalog st
 		}
 	}()
 	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: Clauses(intent), queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
+	if !s.Policy.Valid() {
+		x.snapshot.PolicyVersion = SimilarityPolicyVersion
+	}
+	if core.WantsInstrumental(intent) {
+		if x.snapshot.PolicyVersion != "" {
+			x.snapshot.PolicyVersion += "+"
+		}
+		x.snapshot.PolicyVersion += VocalPolicyVersion
+	}
 	// Runtime capabilities, resolved anchor assessments and RNG controls do
 	// not change the musical questions. Replay keeps the same assessment key.
 	x.fingerprint = Fingerprint(struct {
@@ -62,6 +72,8 @@ func (s *Session) Close() {
 	}
 	clear(s.queries)
 }
+
+func (s *Session) Calibrated() bool { return s.service.Policy.Valid() }
 
 func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
 	if s.ctx != nil {
@@ -87,6 +99,15 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 	}
 	add := func(kind string, preferences []core.IntentPreference) {
 		for _, p := range preferences {
+			// A stage genre is already represented by its scoped essential
+			// clause. Repeating it at playlist scope would flatten a journey.
+			duplicate := false
+			for _, c := range intent.EssentialCriteria {
+				duplicate = duplicate || c.Kind == kind && strings.EqualFold(c.Value, p.Value) && p.Influence != core.InfluenceNegative
+			}
+			if duplicate {
+				continue
+			}
 			out = append(out, core.AudioClause{Kind: kind, Text: p.Value, Scope: "playlist", Negative: p.Influence == core.InfluenceNegative})
 		}
 	}
@@ -118,6 +139,19 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 		}
 		out = append(out, core.AudioClause{Kind: kind, Text: text, Scope: "playlist", Strict: true, Negative: negative})
 	}
+	if core.WantsInstrumental(intent) {
+		// Vocal preferences must not become optional ranking hints.
+		strict := false
+		for _, clause := range out {
+			strict = strict || clause.Strict && instrumentalClause(clause)
+		}
+		if !strict {
+			out = append(out, core.AudioClause{Kind: "vocal", Text: "vocals", Scope: "playlist", Strict: true, Negative: true})
+		}
+	}
+	if len(out) == 0 && strings.TrimSpace(intent.OriginalDescription) != "" {
+		out = append(out, core.AudioClause{Kind: "description", Text: intent.OriginalDescription, Scope: "playlist"})
+	}
 	return out
 }
 
@@ -141,7 +175,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	if prior, ok := s.checked[track.ID]; ok {
 		return prior, nil
 	}
-	out := core.AudioAssessment{TrackID: track.ID, IntentFingerprint: s.fingerprint, PolicyVersion: s.service.Policy.Version, Detail: "Preview evidence is unavailable; musical fit is unknown."}
+	out := core.AudioAssessment{TrackID: track.ID, IntentFingerprint: s.fingerprint, PolicyVersion: s.snapshot.PolicyVersion, Detail: "Preview evidence is unavailable; musical fit is unknown."}
 	defer func() {
 		// Unknown and missing evidence stays visible in the history snapshot.
 		// Only reusable analyses have an analysis ID and enter the feature DB.
@@ -186,13 +220,25 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	out.Identity = record.Identity
 	out.Detail = "Checked against the available preview only; the rest of the recording is unassessed."
 	out.Eligible = true
+	vocalState, vocalScore := core.EvidenceUnknown, 0.0
+	if core.WantsInstrumental(s.intent) {
+		vocalState, vocalScore = s.instrumentalEvidence(record)
+		out.Detail = "CLAP vocal screening compared instrumental, singing, speech and non-musical descriptions for every sampled preview segment. This is a preview-only zero-shot assessment, not a guarantee about the complete recording."
+	}
 	journeySeen, journeyMatched := false, false
+	scored := false
 	for _, clause := range s.clauses {
 		assessment := core.AudioClauseAssessment{Clause: clause, State: core.EvidenceUnknown}
 		// A contrastive similarity cannot prove strict absence, particularly
 		// outside the preview. Unsupported hard clauses also remain unknown.
-		supported := clause.Kind == "genre" || clause.Kind == "style" || clause.Kind == "mood" || clause.Kind == "instrumentation" || clause.Kind == "texture" || clause.Kind == "vocal"
-		if supported && (!clause.Strict || clause.Kind != "vocal") {
+		supported := clause.Kind == "genre" || clause.Kind == "style" || clause.Kind == "mood" || clause.Kind == "instrumentation" || clause.Kind == "texture" || clause.Kind == "vocal" || clause.Kind == "description"
+		if core.WantsInstrumental(s.intent) && instrumentalClause(clause) {
+			assessment.State, assessment.Score = vocalState, vocalScore
+			assessment.ScoreAvailable = vocalState != core.EvidenceUnknown
+			if !clause.Negative && len(s.queries[instrumentalPrompts[0]]) > 0 {
+				assessment.Score = segmentSimilarity(s.queries[instrumentalPrompts[0]], record.Segments, false)
+			}
+		} else if supported && (!clause.Strict || clause.Kind != "vocal") {
 			query, ok := s.queries[clause.Text]
 			if !ok {
 				query, err = s.service.Analyzer.EmbedText(s.ctx, clause.Text)
@@ -204,17 +250,21 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 			}
 			if len(query) > 0 {
 				assessment.Score = segmentSimilarity(query, record.Segments, clause.Negative)
-				assessment.State = core.EvidenceMismatch
-				if !clause.Negative && assessment.Score >= s.service.Policy.MinimumPositive || clause.Negative && assessment.Score <= s.service.Policy.MaximumNegative {
-					assessment.State = core.EvidenceMatch
+				assessment.ScoreAvailable = true
+				if s.service.Policy.Valid() {
+					assessment.State = core.EvidenceMismatch
+					if !clause.Negative && assessment.Score >= s.service.Policy.MinimumPositive || clause.Negative && assessment.Score <= s.service.Policy.MaximumNegative {
+						assessment.State = core.EvidenceMatch
+					}
 				}
 			}
 		}
 		out.Clauses = append(out.Clauses, assessment)
-		if clause.Essential && strings.HasPrefix(clause.Scope, "journey_") {
+		scored = scored || assessment.ScoreAvailable
+		if clause.Essential && strings.HasPrefix(clause.Scope, "journey_") && (s.service.Policy.Valid() || instrumentalClause(clause)) {
 			journeySeen = true
 			journeyMatched = journeyMatched || assessment.State == core.EvidenceMatch
-		} else if (clause.Essential || clause.Strict) && assessment.State != core.EvidenceMatch {
+		} else if (clause.Strict || clause.Essential && (s.service.Policy.Valid() || instrumentalClause(clause))) && assessment.State != core.EvidenceMatch {
 			out.Eligible = false
 		}
 	}
@@ -224,6 +274,10 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	if len(s.clauses) == 0 {
 		out.Eligible = false
 		out.Detail = "No musical clauses were available to assess against the description."
+	}
+	if !scored && !s.service.Policy.Valid() {
+		out.Eligible = false
+		out.Detail = "The preview was analyzed, but no usable description comparison was available."
 	}
 	if err := ctx.Err(); err != nil {
 		return out, err
@@ -260,20 +314,44 @@ func (s *Session) Criterion(trackID string, criterion core.MusicalCriterion) cor
 	return core.EvidenceUnknown
 }
 
+// StageSimilarity guides placement within a journey without claiming that an
+// uncalibrated similarity verifies stage membership.
+func (s *Session) StageSimilarity(trackID string, criterion core.MusicalCriterion) (float64, bool) {
+	for _, a := range s.checked[trackID].Clauses {
+		if a.Clause.Essential && a.Clause.Kind == criterion.Kind && a.Clause.Text == criterion.Value && a.Clause.Scope == criterion.Scope && a.ScoreAvailable {
+			return a.Score, true
+		}
+	}
+	return 0, false
+}
+
 func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
 	var positives, negatives int
 	var positive, negative float64
+	stageScores := map[string]float64{}
+	stageCounts := map[string]int{}
 	for _, clause := range a.Clauses {
-		if clause.State == core.EvidenceUnknown {
+		if clause.State == core.EvidenceUnknown && !clause.ScoreAvailable {
 			continue
 		}
 		if clause.Clause.Negative {
 			negatives++
 			negative += clause.Score
+		} else if strings.HasPrefix(clause.Clause.Scope, "journey_") {
+			stageScores[clause.Clause.Scope] += clause.Score
+			stageCounts[clause.Clause.Scope]++
 		} else {
 			positives++
 			positive += clause.Score
 		}
+	}
+	if len(stageScores) > 0 {
+		best := -1.0
+		for scope, total := range stageScores {
+			best = max(best, total/float64(stageCounts[scope]))
+		}
+		positive += best
+		positives++
 	}
 	if positives > 0 {
 		candidate.Scores.SemanticMatch = positive / float64(positives)

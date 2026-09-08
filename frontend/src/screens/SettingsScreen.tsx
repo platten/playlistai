@@ -17,10 +17,6 @@ function fmtGB(bytes: number): string {
   return (bytes / 1e9).toFixed(1) + " GB";
 }
 
-function vramTierLabel(tiers: number[]): string {
-  return `recommended for ${tiers.join("/")} GB GPU`;
-}
-
 const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "deezer", label: "Deezer" },
   { id: "spotify", label: "Spotify" },
@@ -95,7 +91,7 @@ export function SettingsScreen() {
   const downloadingModel = busy !== null && catalog.some((m) => m.id === busy && !m.installed);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-[720px] flex-col gap-6 overflow-auto px-8 py-8">
+    <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 py-8 sm:px-8">
       <h1 className="text-[16px] font-semibold">Settings</h1>
 
       <section className="flex flex-col gap-3">
@@ -204,7 +200,7 @@ export function SettingsScreen() {
             {busy === "clear" ? "Switching to the rules parser…" : "Starting the model…"}
           </p>
         )}
-        {error && <ErrorState variant="inline" message={error} />}
+        {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
 
         {!runtimeReady && (
           <p className="text-[12px] text-warn">
@@ -213,8 +209,8 @@ export function SettingsScreen() {
         )}
 
         <p className="text-[11.5px] text-faint">
-          GPU tier badges identify the preferred intent model when its complete weights fit.
-          Setup still checks currently free VRAM and keeps 1 GB for context and runtime buffers.
+          GPU mode recommends the largest model that fits currently available GPU memory,
+          with room reserved for context and runtime buffers. CPU mode recommends only the smallest model.
         </p>
 
         <div className="rounded-card border border-line bg-surface">
@@ -232,14 +228,6 @@ export function SettingsScreen() {
                     {m.recommended && (
                       <span className="rounded-pill bg-accent-quiet px-1.5 py-px text-[10.5px] text-accent">
                         recommended
-                      </span>
-                    )}
-                    {(m.bestForVramGb?.length ?? 0) > 0 && (
-                      <span
-                        className="rounded-pill border border-accent/25 bg-accent-quiet px-1.5 py-px text-[10.5px] text-accent"
-                        title="Preferred for intent parsing at these nominal VRAM tiers; actual free-memory fit is checked separately."
-                      >
-                        {vramTierLabel(m.bestForVramGb ?? [])}
                       </span>
                     )}
                     {m.verified && (

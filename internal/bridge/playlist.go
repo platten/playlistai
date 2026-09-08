@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -149,6 +150,12 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 			Code: notice.Code, Detail: notice.Detail, Requested: notice.Requested, Actual: notice.Actual,
 		})
 	}
+	if playlist.Intent.Knowledge != nil {
+		for i, detail := range playlist.Intent.Knowledge.Notices {
+			out.Notices = append(out.Notices, PlaylistNotice{Code: fmt.Sprintf("music_lookup_%d", i), Detail: detail})
+		}
+	}
+	a.presentPlaylistNotices(&out)
 	for index, ref := range playlist.Tracks {
 		track := PlaylistTrack{
 			ID: ref.ID, Artist: ref.Artist, Title: ref.Title,

@@ -36,10 +36,24 @@ func preserveQualityClauses(w *Wire, prompt string) {
 // Unmentioned positive entities are model inventions, not listener instructions.
 // Required tracks, exclusions and destinations still require strict validation.
 func discardInventedInstructions(w *Wire, prompt string) {
+	for _, group := range []*[]WireReference{&w.References, &w.JourneyWaypoints, &w.RequiredTracks, &w.Destination} {
+		for i := range *group {
+			ref := &(*group)[i]
+			_, _, qualified := core.QualifiedReferenceParts(ref.Value)
+			literalSpan := containsReferenceWords(prompt, ref.Span)
+			// Models sometimes copy their normalized artist/title value into
+			// the source span. Recover actual source evidence only for that
+			// exact rewrite, with both identity parts present in the request.
+			rewrittenIdentity := qualified && containsReferenceWords(ref.Value, ref.Span) && containsReferenceWords(ref.Span, ref.Value)
+			if ref.Explicit && referenceGrounded(prompt, *ref) && (literalSpan || rewrittenIdentity) && (!literalSpan || !referenceGrounded(ref.Span, *ref)) {
+				ref.Span = prompt
+			}
+		}
+	}
 	for _, group := range []*[]WireReference{&w.References, &w.JourneyWaypoints} {
 		kept := make([]WireReference, 0, len(*group))
 		for _, ref := range *group {
-			if ref.Influence == "negative" || containsReferenceWords(prompt, ref.Value) {
+			if ref.Influence == "negative" || referenceGrounded(prompt, ref) {
 				kept = append(kept, ref)
 			}
 		}
@@ -88,7 +102,7 @@ func validateOpenIntent(w Wire, prompt string) error {
 	present := func(span string) bool { return strings.TrimSpace(span) != "" && containsReferenceWords(prompt, span) }
 	for _, refs := range [][]WireReference{w.References, w.RequiredTracks, w.JourneyWaypoints, w.Destination} {
 		for _, ref := range refs {
-			if !ref.Explicit || !present(ref.Span) || !containsReferenceWords(ref.Span, ref.Value) {
+			if !ref.Explicit || !present(ref.Span) || !referenceGrounded(ref.Span, ref) {
 				return fmt.Errorf("schema: ungrounded explicit %s reference %q", ref.Kind, ref.Value)
 			}
 			if ref.Influence == "negative" {

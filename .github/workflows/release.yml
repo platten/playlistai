@@ -36,8 +36,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
+            appimage_arch: x86_64
           - arch: arm64
             runner: ubuntu-24.04-arm
+            appimage_arch: aarch64
     runs-on: ${{ matrix.runner }}
     env:
       HAS_PGP_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY != '' && 'true' || 'false' }}
@@ -103,10 +105,10 @@ jobs:
         with:
           name: linux-packages-${{ matrix.arch }}
           path: |
-            bin/*.AppImage
-            bin/*.deb
-            bin/*.rpm
-            bin/*.pkg.tar.zst
+            bin/playlist-ai-${{ matrix.appimage_arch }}.AppImage
+            bin/playlist-ai-${{ matrix.arch }}.deb
+            bin/playlist-ai-${{ matrix.arch }}.rpm
+            bin/playlist-ai-${{ matrix.arch }}.pkg.tar.zst
             bin/playlist-ai-linux-${{ matrix.arch }}.tar.gz
           if-no-files-found: error
           retention-days: 7
@@ -203,7 +205,7 @@ jobs:
         with:
           name: macos-packages
           path: |
-            bin/*.dmg
+            bin/playlist-ai.dmg
             bin/playlist-ai-macos.zip
           if-no-files-found: error
           retention-days: 7
@@ -284,7 +286,7 @@ jobs:
         with:
           name: windows-packages-${{ matrix.arch }}
           path: |
-            bin/*-installer.exe
+            bin/playlist-ai-${{ matrix.arch }}-installer.exe
             bin/playlist-ai-windows-${{ matrix.arch }}.zip
           if-no-files-found: error
           retention-days: 7
@@ -296,17 +298,28 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
 
-      - name: List release assets
-        run: ls -la dist
+      - name: Validate application-only release assets
+        id: assets
+        run: |
+          set -euo pipefail
+          files="$(bash scripts/validate-release-assets.sh dist)"
+          {
+            echo 'files<<APPLICATION_RELEASE_FILES'
+            printf '%s\n' "$files"
+            echo 'APPLICATION_RELEASE_FILES'
+          } >> "$GITHUB_OUTPUT"
 
       - uses: softprops/action-gh-release@v3
         with:
-          files: dist/*
+          files: ${{ steps.assets.outputs.files }}
+          fail_on_unmatched_files: true
           generate_release_notes: true
           draft: true
 
