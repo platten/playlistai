@@ -17,6 +17,7 @@ type categoryPath struct {
 	nextRequired int
 	lastWaypoint int
 	score        float64
+	capacity     int // upper bound on reachable total length without reversing stages
 }
 
 // categoryJourney jointly enforces direction, required-track order and artist
@@ -66,6 +67,23 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 			for _, item := range path.items {
 				used[recordingKeys[item.track.ID]] = true
 			}
+			capacity := make([]int, stages)
+			for stage := max(0, path.stage); stage <= min(path.stage+1, stages-1); stage++ {
+				remaining := map[string]bool{}
+				for _, item := range pool {
+					key := recordingKeys[item.track.ID]
+					if used[key] {
+						continue
+					}
+					for future := stage; future < stages; future++ {
+						if request.CategoryStages[future][item.track.ID] {
+							remaining[key] = true
+							break
+						}
+					}
+				}
+				capacity[stage] = min(request.Intent.Count, len(path.items)+len(remaining))
+			}
 			for _, item := range pool {
 				if used[recordingKeys[item.track.ID]] || request.Intent.Constraints.NoRepeatArtistBackToBack && previous.ID != "" && previousArtist != "" && previousArtist == artistKeys[item.track.ID] {
 					continue
@@ -89,7 +107,7 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 					if !request.CategoryStages[stage][item.track.ID] {
 						continue
 					}
-					extended := categoryPath{stage: stage, nextRequired: path.nextRequired, lastWaypoint: path.lastWaypoint, score: score}
+					extended := categoryPath{stage: stage, nextRequired: path.nextRequired, lastWaypoint: path.lastWaypoint, score: score, capacity: capacity[stage]}
 					if item.required {
 						extended.nextRequired++
 					}
@@ -144,6 +162,11 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 func betterCategoryBeam(left, right categoryPath) bool {
 	if left.nextRequired != right.nextRequired {
 		return left.nextRequired > right.nextRequired
+	}
+	// Do not let a better immediate transition crowd out paths that can still
+	// use the requested number of tracks. This is a bound, not weaker eligibility.
+	if left.capacity != right.capacity {
+		return left.capacity > right.capacity
 	}
 	return left.score > right.score
 }

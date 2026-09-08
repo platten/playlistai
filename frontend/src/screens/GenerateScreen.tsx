@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
+import generateSamples from "../lib/generateSamples.json";
 import { PROGRESS_EVENT, type Progress } from "../components/useProgress";
 import {
   API,
@@ -22,7 +23,7 @@ import {
 const INTENT_PLACEHOLDER =
   "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
 const CATALOG_PLACEHOLDER =
-  'Catalog-only mode requires a seed artist or track, e.g. "like Bonobo, 20 tracks, keep it mellow"';
+  'Name a genre, artist or track, e.g. "Classical 10 tracks" or "like Bonobo, 20 tracks"';
 
 const resolutionIssueKey = (kind: string, query: string) => `${kind}\u0000${query}`;
 
@@ -47,7 +48,7 @@ const SURPRISES = [
   "like Portishead, 20 tracks",
 ];
 
-/** The prompt entry point: type it, see the parsed intent, generate. */
+/** The prompt entry point: editing is local; submit to parse and generate. */
 export function GenerateScreen({
   sessionId,
   parserBackend,
@@ -70,11 +71,9 @@ export function GenerateScreen({
   const [parsing, setParsing] = useState(false);
   const [processingSeconds, setProcessingSeconds] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
   const [dismissedNotice, setDismissedNotice] = useState<string | null>(null);
   const noticeRef = useRef<HTMLDivElement>(null);
   const [resolutionChoices, setResolutionChoices] = useState<Record<string, string>>({});
-  const debounce = useRef<number | undefined>(undefined);
   const [generationId, setGenerationId] = useState("");
   const activeGenerationId = useRef("");
   const intentProgress = useProgress("intent", generationId);
@@ -118,16 +117,15 @@ export function GenerateScreen({
   const activeParse = useRef<ReturnType<typeof API.ParseIntent> | null>(null);
   const activeGeneration = useRef<ReturnType<typeof API.GenerateFromPrompt> | null>(null);
   const savedSequence = useRef(0);
-  const parseSequence = useRef(0);
   const generationSequence = useRef(0);
 
   useEffect(() => {
     setProcessingSeconds(0);
-    if (!parsing && !generating) return;
+    if (!generating) return;
     const started = Date.now();
     const timer = window.setInterval(() => setProcessingSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => window.clearInterval(timer);
-  }, [parsing, generating]);
+  }, [generating]);
 
   const refreshSaved = useCallback(() => {
     API.ListSavedPlaylists()
@@ -167,40 +165,8 @@ export function GenerateScreen({
   };
 
   useEffect(() => {
-    window.clearTimeout(debounce.current);
-    const sequence = ++parseSequence.current;
-    void activeParse.current?.cancel("superseded intent preview");
-    setParsing(false);
-    if (generating) return;
     setPreview(null);
-    setParseError(null);
-    if (prompt.trim() === "") {
-      return;
-    }
-    debounce.current = window.setTimeout(() => {
-      setParsing(true);
-      const call = API.ParseIntentWithContext(prompt, intentContext());
-      activeParse.current = call;
-      call
-        .then((p) => {
-          if (sequence === parseSequence.current) setPreview(p ?? null);
-        })
-        .catch((e) => {
-          if (sequence === parseSequence.current) {
-            setPreview(null);
-            setParseError(String(e));
-          }
-        })
-        .finally(() => {
-          if (sequence === parseSequence.current) setParsing(false);
-        });
-    }, 200);
-    return () => {
-      parseSequence.current += 1;
-      window.clearTimeout(debounce.current);
-      void activeParse.current?.cancel("intent preview cleanup");
-    };
-  }, [generating, intentContext, prompt]);
+  }, [prompt]);
 
   useEffect(() => {
     setResolutionChoices({});
@@ -257,7 +223,6 @@ export function GenerateScreen({
         : [...lookupNotices, "No tracks were returned for this request. The available evidence did not establish a playlist that meets it. Add an artist or track reference, or relax a requirement, then try again."]
       : !generating && source === "fresh"
         ? [
-          ...(parseError ? [`The request summary could not be prepared: ${parseError}. You can retry generation or edit your description.`] : []),
           ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
           ...unresolvedIssues.map((issue) => issue.influence === "negative"
             ? `The excluded ${issue.kind} “${issue.query}” has no local catalog match. Its exclusion is preserved; it will not be used for a seed lookup.`
@@ -282,7 +247,7 @@ export function GenerateScreen({
   const runGenerate = useCallback(
     (text: string, selections: ResolutionSelection[] = []) => {
       const q = text.trim();
-      if (q === "") return;
+      if (q === "" || activeGenerationId.current) return;
       const id = newRequestID();
       activeGenerationId.current = id;
       setGenerationId(id);
@@ -294,14 +259,28 @@ export function GenerateScreen({
       const sequence = ++generationSequence.current;
       void activeParse.current?.cancel("generation started");
       void activeGeneration.current?.cancel("superseded playlist generation");
-      const request =
-        selections.length > 0
-          ? API.GenerateFromPromptResolvedWithContext(q, selections, intentContext())
-          : API.GenerateFromPromptWithContext(q, intentContext());
-      activeGeneration.current = request;
-      request
+      const context = intentContext();
+      setParsing(true);
+      const parse = API.ParseIntentWithContext(q, context);
+      activeParse.current = parse;
+      parse
+        .then(async (summary) => {
+          if (sequence !== generationSequence.current) return;
+          setParsing(false);
+          setPreview(summary ?? null);
+          // Only genuine identity ambiguity pauses a submitted request.
+          const unresolvedChoices = (summary?.resolutionIssues ?? []).some((issue) =>
+            !issue.inferred && issue.status === "ambiguous" && !selections.some((choice) => choice.kind === issue.kind && choice.query === issue.query));
+          if (unresolvedChoices) return;
+          const request = selections.length > 0
+            ? API.GenerateFromPromptResolvedWithContext(q, selections, context)
+            : API.GenerateFromPromptWithContext(q, context);
+          activeGeneration.current = request;
+          return await request;
+        })
         .then((res) => {
           if (sequence !== generationSequence.current) return;
+          if (!res) return;
           if (!res?.playlist || res.playlist.generationId !== id) {
             setError("The generator returned no result for the active request. Please try generating again.");
             return;
@@ -313,13 +292,18 @@ export function GenerateScreen({
           if (sequence === generationSequence.current) setError(String(e));
         })
         .finally(() => {
-          if (sequence === generationSequence.current) setGenerating(false);
+          if (sequence === generationSequence.current) {
+            activeGenerationId.current = "";
+            setParsing(false);
+            setGenerating(false);
+          }
         });
     },
     [intentContext, onGenerated],
   );
 
   const generate = useCallback(() => {
+    if (activeGenerationId.current) return;
     setDismissedNotice(null);
     if (source === "saved" && savedRequest) {
       const hit = saved.find((item) => item.id === savedId);
@@ -334,7 +318,7 @@ export function GenerateScreen({
       );
       return;
     }
-    if (ambiguityNeedsChoice || (needsSeed && preview && !parseError)) {
+    if (ambiguityNeedsChoice) {
       window.requestAnimationFrame(() => noticeRef.current?.scrollIntoView({ block: "start" }));
       return;
     }
@@ -360,7 +344,6 @@ export function GenerateScreen({
     needsSeed,
     ambiguityNeedsChoice,
     preview,
-    parseError,
   ]);
 
   const surprise = useCallback(() => {
@@ -370,13 +353,11 @@ export function GenerateScreen({
     setSavedId("");
     setSavedRequest(null);
     setSavedResult(null);
-    runGenerate(pick);
-  }, [runGenerate]);
+  }, []);
 
   useEffect(
     () => () => {
       savedSequence.current += 1;
-      parseSequence.current += 1;
       generationSequence.current += 1;
       activeGenerationId.current = "";
       void activeSaved.current?.cancel("generate screen unmounted");
@@ -446,6 +427,7 @@ export function GenerateScreen({
               name="prompt-source"
               className="accent-accent"
               checked={source === "fresh"}
+              disabled={generating}
               onChange={() => {
                 savedSequence.current += 1;
                 void activeSaved.current?.cancel("saved playlist load abandoned");
@@ -463,6 +445,7 @@ export function GenerateScreen({
               name="prompt-source"
               className="accent-accent"
               checked={source === "saved"}
+              disabled={generating}
               onChange={() => {
                 setSource("saved");
                 if (savedId) pickSaved(savedId);
@@ -473,6 +456,7 @@ export function GenerateScreen({
           {source === "saved" && (
             <select
               value={savedId}
+              disabled={generating}
               onChange={(e) => pickSaved(e.target.value)}
               className="min-w-0 max-w-[340px] flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text outline-none focus:border-line-strong"
             >
@@ -490,7 +474,7 @@ export function GenerateScreen({
       )}
 
       <div className="flex w-full flex-wrap gap-2" aria-label="Description examples">
-        {["Ambient electronica with a gentle pulse", "Relaxing but not sleepy, like Bonobo", "Instrumental, no vocals", "A journey from ambient to energetic electronic"].map((example) => (
+        {generateSamples.map(({ prompt: example }) => (
           <button type="button" key={example} disabled={generating} onClick={() => { setSource("fresh"); setPrompt(example); }} className="rounded-pill border border-line bg-surface px-3 py-1.5 text-left text-[12px] text-muted hover:text-text">{example}</button>
         ))}
       </div>
@@ -500,6 +484,7 @@ export function GenerateScreen({
           id="music-description"
           aria-label="Describe the music you want to hear"
           autoFocus
+          disabled={generating}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
@@ -547,6 +532,8 @@ export function GenerateScreen({
           </Button>
           <Button
             id="generate-playlist"
+            aria-busy={generating}
+            className="disabled:bg-panel disabled:text-faint disabled:opacity-100"
             variant="primary"
             size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
@@ -562,7 +549,7 @@ export function GenerateScreen({
         <section className="flex w-full flex-col gap-3" aria-label="Generation progress">
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" disabled={!checkedTracks.some((track) => !track.suggested)} onClick={() => API.StopAndKeepCheckedTracks(generationId)}>Stop and keep checked tracks</Button>
-            <Button variant="ghost" size="sm" onClick={() => { generationSequence.current += 1; activeGenerationId.current = ""; void activeGeneration.current?.cancel("generation cancelled"); setGenerating(false); setCheckedTracks([]); }}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={() => { generationSequence.current += 1; activeGenerationId.current = ""; void activeParse.current?.cancel("generation cancelled"); void activeGeneration.current?.cancel("generation cancelled"); setParsing(false); setGenerating(false); setCheckedTracks([]); }}>Cancel</Button>
           </div>
           {checkedTracks.length > 0 && <>
             <p role="status" className="text-[12px] text-muted">{checkedTracks.length} {checkedTracks.length === 1 ? "track" : "tracks"} {checkedTracks.some((track) => track.suggested) ? "suggested; musical fit may be approximate" : "checked"} · Order is provisional until sequencing finishes.</p>

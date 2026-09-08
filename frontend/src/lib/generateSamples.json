@@ -1,0 +1,6 @@
+[
+  {"prompt":"Ambient electronica with a gentle pulse","genre":"ambient electronic"},
+  {"prompt":"Relaxing but not sleepy, like Bonobo","artist":"Bonobo","mood":"relaxing","negativeMood":"sleepy"},
+  {"prompt":"Instrumental, no vocals","vocal":"instrumental"},
+  {"prompt":"A journey from ambient to energetic electronic","journeyGenres":["ambient","electronic"]}
+]

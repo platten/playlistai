@@ -31,14 +31,21 @@ type Session struct {
 	checked       map[string]core.AudioAssessment
 	started       time.Time
 	newCandidates int
+	limit         int
 	snapshot      core.AudioEvidenceSnapshot
 }
 
 func (s *Service) Begin(ctx context.Context, intent core.MusicIntent, catalog string, stop <-chan struct{}) (*Session, error) {
+	return s.BeginWithBudget(ctx, intent, catalog, stop, AnalysisBudget)
+}
+
+// BeginWithBudget lets iterative generation share one bounded session across
+// candidate refills; it never resets the analysis or request cancellation state.
+func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, catalog string, stop <-chan struct{}, budget time.Duration) (*Session, error) {
 	if !s.ReadyFor(intent) {
 		return nil, fmt.Errorf("audio: analysis requires an authorized, parity-validated model supporting the requested checks")
 	}
-	budgetCtx, cancel := context.WithTimeout(ctx, AnalysisBudget)
+	budgetCtx, cancel := context.WithTimeout(ctx, budget)
 	go func() {
 		select {
 		case <-stop:
@@ -47,6 +54,10 @@ func (s *Service) Begin(ctx context.Context, intent core.MusicIntent, catalog st
 		}
 	}()
 	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: Clauses(intent), queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
+	x.limit = CandidateAnalysisLimit(intent.Count)
+	if budget > AnalysisBudget {
+		x.limit = min(1000, max(100, 20*intent.Count))
+	}
 	if !s.Policy.Valid() {
 		x.snapshot.PolicyVersion = SimilarityPolicyVersion
 	}
@@ -149,7 +160,7 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 			out = append(out, core.AudioClause{Kind: "vocal", Text: "vocals", Scope: "playlist", Strict: true, Negative: true})
 		}
 	}
-	if len(out) == 0 && strings.TrimSpace(intent.OriginalDescription) != "" {
+	if len(out) == 0 && len(intent.References) == 0 && len(intent.RequiredTracks) == 0 && len(intent.Seeds.TrackIDs) == 0 && len(intent.Seeds.Queries) == 0 && strings.TrimSpace(intent.OriginalDescription) != "" {
 		out = append(out, core.AudioClause{Kind: "description", Text: intent.OriginalDescription, Scope: "playlist"})
 	}
 	return out
@@ -194,7 +205,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		return out, err
 	}
 	if !hit {
-		if !anchor && s.newCandidates >= CandidateAnalysisLimit(s.intent.Count) {
+		if !anchor && s.newCandidates >= s.limit {
 			s.snapshot.BudgetExhausted = true
 			out.Detail = "The new-analysis count limit was reached before this track could be checked."
 			return out, nil

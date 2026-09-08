@@ -68,7 +68,7 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 			return ref
 		}
 		local := resolver.ResolveReference(ref)
-		if local.Status != core.ResolutionUnresolved {
+		if local.Status == core.ResolutionResolved {
 			return ref
 		}
 		key := seedNameKey(ref.Query)
@@ -76,7 +76,11 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 			ref.TrackID, ref.Resolution = prior.TrackID, prior.Resolution
 			return ref
 		}
-		ref = c.findArtistSeed(ctx, ref, cat, resolver, snapshot, p)
+		if local.Status == core.ResolutionAmbiguous {
+			ref = c.disambiguateArtist(ctx, ref, local, snapshot, p)
+		} else {
+			ref = c.findArtistSeed(ctx, ref, cat, resolver, snapshot, p)
+		}
 		resolved[key] = ref
 		return ref
 	}
@@ -92,6 +96,28 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 		intent.Destination = &destination
 	}
 	return intent
+}
+
+// A shortened name may match unrelated catalog artists. Resolve it only when
+// a single MusicBrainz identity explicitly associates that name with a local
+// candidate. Search rank, catalog size, and LLM guesses cannot establish this.
+func (c *Client) disambiguateArtist(ctx context.Context, ref core.IntentReference, local core.ReferenceResolution, snapshot *core.KnowledgeSnapshot, p ports.Progress) core.IntentReference {
+	p.Report("generation", 0, 0, fmt.Sprintf("Checking artist identity for %q", ref.Query))
+	artist, ambiguous, err := c.findSeedArtist(ctx, ref.Query, snapshot, local.Alternatives...)
+	if err != nil || ambiguous || artist.ID == "" {
+		return ref
+	}
+	for _, candidate := range local.Alternatives {
+		if !seedNameMatches(candidate.Artist, artist.names()) || len(candidate.Representatives) == 0 {
+			continue
+		}
+		candidate.Evidence = append(candidate.Evidence, core.ResolutionEvidence{Match: "musicbrainz_alias", NormalizedQuery: seedNameKey(ref.Query), MatchedText: artist.ID + ": " + artist.Name})
+		ref.TrackID = candidate.Representatives[0].TrackID
+		ref.Resolution = &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: local.CatalogVersion, Selected: &candidate}
+		snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("Resolved %q to %q using MusicBrainz artist-name evidence.", ref.Query, candidate.Artist))
+		return ref
+	}
+	return ref
 }
 
 func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, p ports.Progress) core.IntentReference {
@@ -154,7 +180,7 @@ func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, c
 	return ref
 }
 
-func (c *Client) findSeedArtist(ctx context.Context, query string, snapshot *core.KnowledgeSnapshot) (seedArtist, bool, error) {
+func (c *Client) findSeedArtist(ctx context.Context, query string, snapshot *core.KnowledgeSnapshot, candidates ...core.ResolutionCandidate) (seedArtist, bool, error) {
 	path := "/ws/2/artist?" + url.Values{"query": {`artist:"` + mbEscape(query) + `" OR alias:"` + mbEscape(query) + `"`}, "fmt": {"json"}, "limit": {"100"}}.Encode()
 	raw, err := c.knowledgeGet(ctx, path, false)
 	if err != nil {
@@ -172,6 +198,15 @@ func (c *Client) findSeedArtist(ctx context.Context, query string, snapshot *cor
 	for _, artist := range page.Artists {
 		if artist.ID == "" || !seedNameMatches(query, artist.names()) {
 			continue
+		}
+		if len(candidates) > 0 {
+			corroborated := false
+			for _, candidate := range candidates {
+				corroborated = corroborated || seedNameMatches(candidate.Artist, artist.names())
+			}
+			if !corroborated {
+				continue
+			}
 		}
 		if match.ID != "" && match.ID != artist.ID {
 			return seedArtist{}, true, nil

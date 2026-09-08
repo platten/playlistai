@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -25,7 +24,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v9", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v10", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -48,7 +47,8 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		},
 	}
 
-	seeds, mode := extractSeeds(prompt, lower, in.NowPlaying, in.RecentTracks)
+	musicalText := maskTrackCounts(prompt)
+	seeds, mode := extractSeeds(musicalText, strings.ToLower(musicalText), in.NowPlaying, in.RecentTracks)
 	for _, seed := range seeds {
 		ref := typedReference(prompt, seed, catalogReferenceKind(seed), core.InfluencePositive)
 		intent.References = append(intent.References, ref)
@@ -69,11 +69,11 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	}
 	// Entity names are identity evidence, not musical evidence. Mask only the
 	// resolved textual references while keeping byte offsets for source spans.
-	semanticText := maskReferenceText(prompt, append(append([]core.IntentReference(nil), intent.References...), intent.RequiredTracks...))
+	semanticText := maskReferenceText(musicalText, append(append([]core.IntentReference(nil), intent.References...), intent.RequiredTracks...))
 	intent.Preferences = extractSemanticPreferences(semanticText)
 	intent.EssentialCriteria = extractEssentialCriteria(semanticText, intent.Preferences)
 
-	if n, ok := extractCount(lower); ok {
+	if n, ok := TrackCount(prompt); ok {
 		intent.Controls.TotalTrackCount = n
 	}
 	intent.Controls.AudioWeight = extractCreativity(lower)
@@ -214,6 +214,9 @@ func extractSeeds(orig, lower string, now *core.TrackRef, recent []core.TrackRef
 }
 
 func looksLikeCategoryRequest(prompt, cleaned string) bool {
+	if bareMusicDescription(prompt) != "" {
+		return true
+	}
 	if categoryPrefix(prompt) {
 		return true
 	}
@@ -331,35 +334,6 @@ func nonEmpty(in []string) []string {
 	return out
 }
 
-// --- count -------------------------------------------------------------
-
-var reDigitsCount = regexp.MustCompile(`(?i)\b(\d{1,3})\s*(?:songs?|tracks?|tunes?|of them|long)\b`)
-
-var wordCounts = map[string]int{
-	"ten": 10, "twelve": 12, "fifteen": 15, "sixteen": 16, "eighteen": 18,
-	"twenty": 20, "twenty-five": 25, "twenty five": 25, "thirty": 30,
-	"forty": 40, "fifty": 50, "sixty": 60, "hundred": 100,
-	"a dozen": 12, "half a dozen": 6, "a handful": 8, "a few": 5,
-}
-
-func extractCount(lower string) (int, bool) {
-	if m := reDigitsCount.FindStringSubmatch(lower); m != nil {
-		if n, err := strconv.Atoi(m[1]); err == nil {
-			return n, true
-		}
-	}
-	for phrase, n := range wordCounts {
-		if strings.Contains(lower, phrase+" song") || strings.Contains(lower, phrase+" track") ||
-			strings.Contains(lower, phrase+" tune") || strings.Contains(lower, phrase+" of them") {
-			return n, true
-		}
-	}
-	if strings.Contains(lower, "a dozen") {
-		return 12, true
-	}
-	return 0, false
-}
-
 // --- creativity / noise / lookback -----------------------------------
 
 var (
@@ -459,6 +433,9 @@ func extractRequiredTracks(prompt string) []core.IntentReference {
 func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 	lower := strings.ToLower(prompt)
 	var out core.SemanticPreferences
+	if value := bareMusicDescription(prompt); value != "" && !isKnownStyle(value) && !isKnownMoodOrActivity(value) && value != "instrumental" && value != "acoustic" {
+		out.Genres = append(out.Genres, core.IntentPreference{Value: strings.ToLower(value), Influence: core.InfluencePositive, Explicit: true, Evidence: sourceEvidence(prompt, value, true)})
+	}
 	add := func(dst *[]core.IntentPreference, value string, influence core.Influence) {
 		*dst = append(*dst, core.IntentPreference{
 			Value: value, Influence: influence, Explicit: true,
@@ -519,7 +496,15 @@ func extractSemanticPreferences(prompt string) core.SemanticPreferences {
 }
 
 var reLeadingMusicDescription = regexp.MustCompile(`(?i)^\s*(.+?)\s+music\s+(?:like|by|similar to|inspired by)\b`)
+var reBareMusicDescription = regexp.MustCompile(`(?i)^\s*([^,;.!?"“”]+?)\s+music\s*[,.;!?]?\s*$`)
 var reDescriptionNegation = regexp.MustCompile(`(?i)\b(?:no|not|without|except)\b`)
+
+func bareMusicDescription(prompt string) string {
+	if match := reBareMusicDescription.FindStringSubmatch(reLeadVerb.ReplaceAllString(prompt, "")); match != nil && !reDescriptionNegation.MatchString(match[1]) {
+		return strings.TrimSpace(match[1])
+	}
+	return ""
+}
 
 var knownStyles = []string{
 	"ambient electronic", "ambient electronica", "rock & roll", "rock and roll", "abstract drone",
@@ -566,6 +551,11 @@ func extractEssentialCriteria(prompt string, preferences core.SemanticPreference
 	lower := strings.ToLower(prompt)
 	if criteria, _ := CategoryJourney(prompt, nil); len(criteria) > 0 {
 		return criteria
+	}
+	for _, preference := range preferences.Genres {
+		if preference.Influence == core.InfluencePositive {
+			return []core.MusicalCriterion{{Kind: "genre", Value: preference.Value, Scope: "playlist", Evidence: preference.Evidence}}
+		}
 	}
 
 	// A category-led request makes its primary genre essential. Qualifiers such

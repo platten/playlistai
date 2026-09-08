@@ -2,6 +2,8 @@ package musicbrainz
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -10,7 +12,97 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
+	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/ports"
 )
+
+func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
+	for _, genre := range []string{"Classical", "Gqom", "未知ジャンル"} {
+		t.Run(genre, func(t *testing.T) {
+			artistLookups := 0
+			firstSearch := ""
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if firstSearch == "" && (r.URL.Path == "/ws/2/artist" || r.URL.Path == "/ws/2/recording") {
+					firstSearch = r.URL.Path
+				}
+				switch r.URL.Path {
+				case "/genres":
+					_, _ = fmt.Fprintf(w, `<a href="/genre/g1"><bdi>%s</bdi></a>`, genre)
+				case "/genre/g1", "/genre/g1/aliases":
+					_, _ = w.Write([]byte(`<html></html>`))
+				case "/ws/2/artist":
+					if r.URL.Query().Get("query") != `tag:"`+genre+`"` {
+						artistLookups++
+					}
+					_, _ = w.Write([]byte(`{"count":0,"artists":[]}`))
+				case "/ws/2/recording":
+					_, _ = fmt.Fprintf(w, `{"recordings":[{"id":"recording","title":"One","artist-credit":[{"name":"Artist","artist":{"id":"artist"}}],"tags":[{"name":%q,"count":3}]}]}`, genre)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			client, err := New(Config{UserAgent: "fixture", MirrorURL: srv.URL, CachePath: filepath.Join(t.TempDir(), "cache.sqlite"), Interval: time.Nanosecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One", Audio: []float32{1, 0}, Track: []float32{1, 0}})
+			for range 2 {
+				intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: genre + " 10 tracks"})
+				got, err := client.ResolveMusic(context.Background(), intent, cat, cat, nil)
+				if err != nil || got.Controls.TotalTrackCount != 10 || len(got.References) != 0 || len(got.EssentialCriteria) != 1 || got.EssentialCriteria[0].Value != genre || len(got.Knowledge.Candidates) != 1 {
+					t.Fatalf("counted genre failed: %+v, %v", got, err)
+				}
+			}
+			if artistLookups != 0 {
+				t.Fatalf("genre was searched as artist %d times", artistLookups)
+			}
+			if firstSearch != "/ws/2/recording" {
+				t.Fatal("artist sampling ran before genre recordings")
+			}
+		})
+	}
+}
+
+func TestGenreRecordingSearchExpandsWithinBound(t *testing.T) {
+	for _, match := range []bool{false, true} {
+		t.Run(fmt.Sprint(match), func(t *testing.T) {
+			var offsets []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				offsets = append(offsets, r.URL.Query().Get("offset"))
+				title := "Absent"
+				if match && len(offsets) == 2 {
+					title = "One"
+				}
+				recordings := make([]map[string]any, 100)
+				for i := range recordings {
+					recordings[i] = map[string]any{"id": "recording", "title": title, "artist-credit": []map[string]any{{"name": "Artist", "artist": map[string]string{"id": "artist"}}}}
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"count": 1000, "recordings": recordings})
+			}))
+			defer srv.Close()
+			client, err := New(Config{UserAgent: "fixture", MirrorURL: srv.URL, Interval: time.Nanosecond})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One", Audio: []float32{1, 0}, Track: []float32{1, 0}})
+			var snapshot core.KnowledgeSnapshot
+			client.searchKnowledgeRecordings(context.Background(), `tag:"Classical"`, cat, cat, &snapshot, 1)
+			want := 3
+			if match {
+				want = 2
+			}
+			if len(offsets) != want || offsets[0] != "" || offsets[1] != "100" {
+				t.Fatalf("page budget/early stop: %v", offsets)
+			}
+			if match && len(snapshot.Candidates) != 1 {
+				t.Fatal("later catalog match lost")
+			}
+		})
+	}
+}
 
 func TestKnowledgeGraphBudgetCacheAndRecordingIdentity(t *testing.T) {
 	calls := 0

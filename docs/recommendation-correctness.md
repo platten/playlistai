@@ -1059,3 +1059,209 @@ seeded random variation. A synthetic MP3 service test verifies the selected
 coverage, CLAP input count, buffer cleanup, SQLite round trip, cache reuse and
 rejection of invalid coverage. This is implementation validation, not a musical
 quality benchmark or a new calibration of fit/vocal thresholds.
+
+## Counted genres and submit-only generation — 2026-09-08
+
+`Classical 10 tracks` exposed three separate issues: count words reached the
+fallback genre-name lookup, the provider index reader skipped names wrapped in
+`<bdi>`, and artist sampling could consume the metadata budget before ordinary
+genre requests reached recordings carrying genre evidence. Counts are now
+separated from lookup names; nested genre labels are read; and direct genre
+recording searches precede artist sampling. Ordinary searches may inspect up to
+three 100-recording pages, stopping early at the candidate target and retaining
+the existing shared request/time budgets. Journeys reserve a first page for each
+stage. Category identity lookup is separate from slower relationship enrichment.
+
+There is no new genre whitelist. Bare names are reclassified only with provider
+genre evidence, while explicit `like`/`by` references remain references. Submitted
+rules parses can check the provider before offering misleading artist choices;
+legacy background preview calls remain network-free. Musical eligibility,
+exclusions and partial-result handling are unchanged.
+
+The composer no longer parses on a typing timer. Generate (or Enter) starts the
+parse/build transaction; its button is disabled and gray throughout. Surprise
+me only fills the description. Cancellation supersedes both stages. A completed
+nonempty result opens the playlist directly and reuses the returned playlist;
+identity clarification and empty-result explanations stay with the composer.
+
+Validation: deterministic provider fixtures cover cold/warm caches, real-shaped
+nested markup, Classical/Gqom/non-Latin categories, count/source preservation,
+recording-first retrieval and bounded pagination. Model-output/rules fixtures
+produce ten tracks and replay identically. Browser fixtures cover submit-only
+processing, disabled controls, cancellation, ambiguity, light/dark/narrow layouts
+and navigation without rebuilding. These are correctness tests, not listening
+judgments.
+
+Executed live smoke command:
+
+```sh
+GOCACHE=/tmp/playlist-ai-go-cache \
+PLAYLISTAI_TEST_COUNTED_GENRE_CATALOG=/path/to/catalog \
+go test ./internal/reco/multichannel -run TestCountedGenreLiveCatalog -v -count=1
+```
+
+Against the installed catalog, live MusicBrainz and a fresh metadata cache, the
+rules-path request `Classical 10 tracks` returned **3 tracks in 30.95 seconds**,
+with an explicit partial outcome (`eligible_tracks_exhausted`). The requested
+total remained ten; provider coverage and the metadata deadline limited the
+result. Before the fixes this smoke returned zero tracks. This run used neither
+a live LLM nor CLAP, and does not establish held-out musical precision or promise
+ten matches for every genre. No installed model or musical-fit threshold changed.
+
+Final checks passed: `scripts/test.sh` (including race tests, vet, lint,
+pure-Go core compilation, bindings, frontend typecheck/build), the rendered
+browser regression script, and `wails3 build` producing `bin/playlist-ai`.
+
+## Generate sample acceptance — 2026-09-08
+
+The four visible example prompts now come from
+`frontend/src/lib/generateSamples.json`. The UI, browser checks and recommendation
+acceptance suite consume that same file. It is also valid input for
+`cmd/musiccheck --prompts` when evaluating an installed local language model.
+
+`TestEveryGenerateSampleBuildsPlaylist` parses the exact sample wording, checks
+category/reference/vocal/negation/journey preservation, generates the default
+20 tracks against synthetic attributed metadata and cached audio features, and
+replays each playlist. All four cases pass, including five repeated runs. These
+fixtures are control-flow evidence, not judgments about actual music.
+
+The journey sample exposed a sequencing defect: score-only beam pruning could
+discard paths capable of using all selected tracks, returning 13 of 20 despite
+adequate stage coverage. The beam now prioritizes an upper bound on achievable
+length before transition score, while retaining required-order, recording
+deduplication, category direction and hard artist-spacing checks. The algorithm
+version is `multichannel/v11`; no eligibility threshold changed. A single-run
+100-track synthetic sequencing benchmark took 106.8 ms and allocated 58.8 MB on
+the Intel Core Ultra 9 285H test host; this is not end-to-end generation latency.
+
+Reproduce the dependency-light acceptance test:
+
+```sh
+go test ./internal/reco/multichannel -run TestEveryGenerateSampleBuildsPlaylist -v
+```
+
+For real catalog/provider/CLAP smoke checks (network access and an installed
+analysis bundle required):
+
+```sh
+go build -o /tmp/playlist-generate-audioworker ./cmd/audioworker
+PLAYLISTAI_TEST_GENERATE_CATALOG=/path/to/catalog \
+PLAYLISTAI_TEST_CLAP_BUNDLE=/path/to/analysis-bundle \
+PLAYLISTAI_TEST_CLAP_WORKER=/tmp/playlist-generate-audioworker \
+go test ./internal/reco/multichannel -run TestGenerateSamplesLive -v -count=1 -timeout=70m
+```
+
+The worker must be `cmd/audioworker`, not the desktop executable: the explicit
+worker override uses its `--bundle` protocol. The smoke test health-checks it
+before generation. Live tests preserve normal analysis budgets and report
+partial results honestly; they do not bypass vocal screening or manufacture
+genre evidence to make examples pass.
+
+Executed live results (installed catalog, rules fallback, installed CLAP bundle,
+live MusicBrainz/Deezer; fresh test caches shared across the four cases):
+
+| Exact Generate prompt | Tracks / requested | Elapsed | Outcome |
+| --- | ---: | ---: | --- |
+| Ambient electronica with a gentle pulse | 14 / 20 | 150.85 s | Partial / suggested fit |
+| Relaxing but not sleepy, like Bonobo | 18 / 20 | 120.64 s | Partial / suggested fit |
+| Instrumental, no vocals | 3 / 20 | 150.33 s | Partial / preview-screened |
+| A journey from ambient to energetic electronic | 16 / 20 | 119.31 s | Partial / suggested fit |
+
+All four live smoke cases passed (551.73 seconds total including startup).
+Provider timeouts, incomplete musical evidence and analysis budgets limited
+lengths; this does **not** establish full 20-track fulfillment or held-out musical
+precision. No live local-LLM parsing benchmark was performed in this run. The
+instrumental case retains preview-scoped vocal screening, not a claim about
+unheard portions of recordings. Final `scripts/test.sh`, rendered browser
+regressions and the Linux desktop build passed.
+
+## Iterative artist discovery and checked continuation (2026-09-08)
+
+The desktop strategy is now `multichannel/v12+iterative/v1`. The earlier
+fixed-batch results above are a baseline, not measurements of this strategy.
+
+```mermaid
+flowchart TD
+  A[Submitted description and requested count] --> B[Resolved musical intent]
+  B --> C{Genre request?}
+  C -->|Yes| D[MusicBrainz artist-tag pools]
+  D --> E[Seeded random artist and catalog recording]
+  C -->|No| F[Original references and recommendation candidates]
+  E --> G[Identity, exclusions and grounded semantic checks]
+  F --> G
+  G --> H{Musical characteristics specified?}
+  H -->|Yes| I[Cached features or verified preview through CLAP]
+  H -->|No| J[Eligible candidate]
+  I -->|Rejected or unavailable| C
+  I -->|Eligible| J
+  J --> K{Selection and sequencing can fill requested count?}
+  K -->|No| C
+  K -->|Yes| L[Return playlist with evidence and fulfillment status]
+```
+
+`PrepareMusic` obtains genre artist pools without eagerly spending the metadata
+budget on a fixed recording batch. Discovery samples up to 100 artists, shuffles
+recordings deterministically using the generation seed, rotates artists, and
+reuses remaining recordings after the artist rotation. It only returns real
+catalog identities. Artist tags do **not** become recording-level genre evidence.
+A sparse compound-tag search can supplement all constituent tags with `AND`, retaining
+every word; no genre whitelist or implicit genre exclusion is introduced.
+
+The implementation uses MusicBrainz's documented [artist/recording search](https://musicbrainz.org/doc/MusicBrainz_API/Search)
+and existing cached, identified, [rate-limited requests](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
+One recording page (up to 100 results) is examined per sampled artist. This is a
+bounded provider pool, **not** proof of full-catalog exhaustion.
+The catalog exposes an exact, cancellable all-recordings query for a resolved
+artist spelling. This avoids a repeated full fuzzy scan for every provider
+recording and does not impose the old 60-row search window. Recording-ID
+conflicts remain ambiguous rather than trusting the first release edition.
+Unavailable recording pages advance to another artist, stopping after three
+consecutive provider failures before falling back to available candidates.
+
+For other requests, accepted tracks become continuation queries alongside the
+unchanged original references. Attempted IDs are excluded from subsequent exact
+retrieval, preventing the same rejected batch from being retried. All refills
+receive metadata, hard-exclusion, recording-deduplication, semantic and available
+CLAP checks. Required tracks count toward the total; the default remains 20.
+The loop stops only when the final selector/sequencer can fill that total, or
+when cancellation, pool exhaustion or a safety budget intervenes.
+
+Iteration shares one audio session: up to 15 minutes, at most 1,000 candidate
+steps and `min(1000, max(100, 20*count))` new preview analyses. Budget limits and
+provider failures remain distinguishable from confirmed musical mismatch.
+Entity-only requests no longer embed the entire prompt as a musical clause and
+skip CLAP. Descriptive requests require the authorized analysis service; setup
+guidance is returned when unavailable. Preview bytes remain transient, while
+derived analyses are reused from the local store.
+
+History adds optional `knowledge.discovery` (ordered attempts, including rejects)
+and `knowledge.discoveryRecorded`. Recorded discovery replays without querying
+changing artist pools. Existing history loads without migration; its first use
+of iterative discovery records a new snapshot. A new prompt generation can
+refresh discovery; replay intentionally retains its recorded search scope.
+The metadata-only journey regression remains an explicit baseline fixture.
+
+Validation includes synthetic rejection/refill, continuation-anchor preservation,
+count, cancellation, cached-feature reuse, non-Latin genre lookup, compound tags,
+artist rotation and offline discovery replay. All four visible Generate samples
+produce 20 tracks in deterministic fixtures; this is not musical-quality evidence.
+Live rules-parser/real-catalog/installed-CLAP smoke runs produced:
+
+| Prompt | Tracks | Elapsed | Evidence/outcome |
+| --- | ---: | ---: | --- |
+| Relaxing but not sleepy, like Bonobo | 20/20 | 106.80 s | Partial / suggested fit |
+| Ambient electronica with a gentle pulse | 20/20 | 190.77 s | 26 new analyses; partial / suggested fit |
+
+The ambient run used a 100-artist pool and recorded 13 direct discovery draws;
+catalog continuation completed the result after an artist-page interruption.
+Earlier development attempts returned zero tracks when sparse compound-tag
+coverage or provider interruptions prevented discovery; the fallback and retry
+changes address those failure paths, not the provider's availability. A slow
+pre-optimization run was stopped and is not counted as a successful benchmark.
+Only these two samples were rerun live for this iteration; all four have
+deterministic acceptance coverage. These uncontrolled smoke measurements are not a
+held-out quality or statistically controlled speed comparison. CLAP similarities
+remain uncalibrated, previews do not cover complete recordings, and unavailable
+provider coverage or strict evidence may still yield fewer tracks.
+The full `scripts/test.sh` gate (including race tests, lint, regenerated bindings,
+frontend checks and pure-Go core compilation) and the Linux desktop build passed.

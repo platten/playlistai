@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"reflect"
@@ -8,6 +9,23 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 )
+
+func TestArtistRecordingsHasNoSearchWindowAndHonorsCancellation(t *testing.T) {
+	c := metadataResolverCatalog(t)
+	for i := 0; i < 75; i++ {
+		insertResolverTrack(t, c.db, i, fmt.Sprint(i), "坂本龍一", fmt.Sprintf("Track %d", i))
+	}
+	insertResolverTrack(t, c.db, 75, "decoy", "Other", "坂本龍一")
+	tracks, err := c.ArtistRecordings(context.Background(), "坂本龍一")
+	if err != nil || len(tracks) != 75 {
+		t.Fatalf("recordings=%d err=%v", len(tracks), err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := c.ArtistRecordings(ctx, "坂本龍一"); err != context.Canceled {
+		t.Fatalf("cancellation=%v", err)
+	}
+}
 
 func TestTypedResolutionExactOutsideOldWindowAndCollisions(t *testing.T) {
 	c := metadataResolverCatalog(t)

@@ -17,21 +17,27 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
-	bestAvailable  bool
-	knowledge      *core.KnowledgeSnapshot
-	anchorProposer func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)
-	audioProvider  func() *audio.Service
-	audioSession   *audio.Session // set only on the request-local orchestrator copy
-	cat            ports.Catalog
-	resolver       ports.ReferenceResolver
-	retriever      ports.CandidateRetriever
-	ranker         ports.Ranker
-	selector       ports.CandidateSelector
-	sequencer      ports.PlaylistSequencer
-	features       ports.FeatureStore
-	semantic       ports.SemanticSearcher
-	scorer         ports.SemanticScorer
-	cfg            Config
+	bestAvailable   bool
+	candidateSource ports.MusicCandidateSource
+	knowledge       *core.KnowledgeSnapshot
+	anchorProposer  func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)
+	audioProvider   func() *audio.Service
+	audioSession    *audio.Session // set only on the request-local orchestrator copy
+	cat             ports.Catalog
+	resolver        ports.ReferenceResolver
+	retriever       ports.CandidateRetriever
+	ranker          ports.Ranker
+	selector        ports.CandidateSelector
+	sequencer       ports.PlaylistSequencer
+	features        ports.FeatureStore
+	semantic        ports.SemanticSearcher
+	scorer          ports.SemanticScorer
+	cfg             Config
+}
+
+func (o *Orchestrator) WithCandidateSource(source ports.MusicCandidateSource) *Orchestrator {
+	o.candidateSource = source
+	return o
 }
 
 func (o *Orchestrator) WithAnchorProposer(propose func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)) *Orchestrator {
@@ -66,8 +72,12 @@ func New(cat ports.Catalog, sim ports.SimilarityEngine, resolver ports.Reference
 }
 
 func (o *Orchestrator) AlgorithmVersion() string {
+	version := AlgorithmVersion
+	if o.candidateSource != nil {
+		version += "+iterative/v1"
+	}
 	if o.semantic == nil && o.features == nil {
-		return AlgorithmVersion
+		return version
 	}
 	var info core.FeatureStoreInfo
 	if o.features != nil {
@@ -76,7 +86,7 @@ func (o *Orchestrator) AlgorithmVersion() string {
 	if o.semantic != nil {
 		info = o.semantic.Info()
 	}
-	return fmt.Sprintf("%s+semantic:s%d:%s@%s:%s", AlgorithmVersion, info.SchemaVersion, info.FeatureVersion, info.ModelRevision, info.QueryEncoder)
+	return fmt.Sprintf("%s+semantic:s%d:%s@%s:%s", version, info.SchemaVersion, info.FeatureVersion, info.ModelRevision, info.QueryEncoder)
 }
 
 type essentialEvidenceReport struct {
@@ -536,6 +546,15 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return core.Playlist{}, fmt.Errorf("seed: %w", err)
 	}
 	intent.Seed = seed
+	var discovery ports.MusicCandidateStream
+	if o.candidateSource != nil {
+		discovery = o.candidateSource.OpenCandidates(intent, o.cat, o.resolver)
+		if discovery != nil {
+			o.knowledge = discovery.Snapshot()
+			intent.Knowledge = o.knowledge
+			defer func() { result.Intent.Knowledge = discovery.Snapshot() }()
+		}
+	}
 
 	if reasons := explicitResolutionReasons(resolutionIssues); len(reasons) > 0 {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
@@ -549,7 +568,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			if o.resolver != nil {
 				catalogVersion = o.resolver.CatalogVersion()
 			}
-			o.audioSession, err = service.Begin(ctx, intent, catalogVersion, request.StopChecking)
+			budget := audio.AnalysisBudget
+			if o.candidateSource != nil {
+				budget = iterativeBudget
+			}
+			o.audioSession, err = service.BeginWithBudget(ctx, intent, catalogVersion, request.StopChecking, budget)
 			if err != nil {
 				return core.Playlist{}, err
 			}
@@ -679,7 +702,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
 	positiveSemantic, _ := semanticQueryText(intent)
-	semanticSeeded := positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
+	semanticSeeded := discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
 		if core.WantsInstrumental(intent) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "instrumental_seed_unavailable", Detail: "No suitable instrumental starting point could be found in the catalog or online lookup.", Action: "retry the search or name an instrumental artist or recording"}}), nil
@@ -703,6 +726,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	if intent.Count < len(required) {
 		return core.Playlist{}, fmt.Errorf("%w: requested %d tracks but %d are required", core.ErrCountBelowRequired, intent.Count, len(required))
+	}
+	if stages := journeyCriteria(intent.EssentialCriteria); intent.Mode == core.ModeJourney && intent.Count < len(stages) {
+		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "journey_count_too_short", Detail: "The requested count cannot represent every journey stage.", Action: "increase the track count or remove a stage"}}), nil
 	}
 
 	eligible := newEligibility(intent, references, required)
@@ -740,7 +766,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	semanticNotices = append(semanticNotices, scoreNotices...)
 	semanticMatched := hasSemanticCandidates(candidates)
-	if len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
+	if discovery == nil && len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
 		return core.Playlist{}, fmt.Errorf("%w: semantic index produced no grounded candidates", core.ErrNoSeeds)
 	}
 	metadataCandidates := candidates[:0]
@@ -770,7 +796,15 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_constraint_conflict", Detail: err.Error(), Action: "remove the required track or relax the conflicting exclusion"}}), nil
 		}
 	}
-	if o.audioSession != nil {
+	if o.candidateSource != nil {
+		var notices []core.PlaylistNotice
+		candidates, notices, err = o.collectIteratively(ctx, candidates, discovery, intent, request, eligible, references, required, waypoints, seedValue)
+		if err != nil {
+			return core.Playlist{}, err
+		}
+		semanticNotices = append(semanticNotices, notices...)
+		semanticMatched = hasSemanticCandidates(candidates)
+	} else if o.audioSession != nil {
 		checked := make([]core.Candidate, 0, len(candidates))
 		stages := journeyStageCriteria(intent)
 		for i, candidate := range candidates {

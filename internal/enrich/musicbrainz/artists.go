@@ -19,10 +19,39 @@ const maxSampledArtists = 6
 const recordingsPerArtist = 3
 
 func (c *Client) genreArtists(ctx context.Context, genre string) core.GenreArtistPool {
+	query := `tag:"` + mbEscape(genre) + `"`
+	pool := c.genreArtistsQuery(ctx, genre, query)
+	// A compound description may be represented by separate artist tags.
+	// Require every term, never drop a trailing word or infer recording genre.
+	terms := strings.Fields(genre)
+	if len(pool.Artists) < genreArtistTarget && pool.Complete && len(terms) > 1 && len(terms) <= 4 {
+		var clauses []string
+		for _, term := range terms {
+			clauses = append(clauses, `tag:"`+mbEscape(term)+`"`)
+		}
+		fallback := c.genreArtistsQuery(ctx, genre, strings.Join(clauses, " AND "))
+		seen := map[string]bool{}
+		for _, artist := range pool.Artists {
+			seen[artist.ID] = true
+		}
+		for _, artist := range fallback.Artists {
+			if !seen[artist.ID] && len(pool.Artists) < genreArtistTarget {
+				pool.Artists = append(pool.Artists, artist)
+				seen[artist.ID] = true
+			}
+		}
+		pool.Sources = append(pool.Sources, fallback.Sources...)
+		pool.Available = max(pool.Available, fallback.Available)
+		pool.Complete = pool.Complete && fallback.Complete && len(pool.Artists) >= pool.Available
+	}
+	return pool
+}
+
+func (c *Client) genreArtistsQuery(ctx context.Context, genre, query string) core.GenreArtistPool {
 	pool := core.GenreArtistPool{Genre: genre}
 	seen := map[string]bool{}
 	for offset := 0; len(pool.Artists) < genreArtistTarget; {
-		path := "/ws/2/artist?" + url.Values{"query": {`tag:"` + mbEscape(genre) + `"`}, "fmt": {"json"}, "limit": {"100"}, "offset": {fmt.Sprint(offset)}}.Encode()
+		path := "/ws/2/artist?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}, "offset": {fmt.Sprint(offset)}}.Encode()
 		raw, err := c.knowledgeGet(ctx, path, false)
 		if err != nil {
 			break

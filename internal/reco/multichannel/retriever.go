@@ -50,6 +50,9 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 		references = requiredFallbackVectors(r.cat, intent)
 	}
 	exclude := make(map[string]struct{})
+	for id := range request.AttemptedIDs {
+		exclude[id] = struct{}{}
+	}
 	for _, reference := range references {
 		for _, representative := range reference.reps {
 			exclude[representative.id] = struct{}{}
@@ -166,6 +169,9 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	candidates := make([]core.Candidate, 0, len(byID))
 	var maxFusion float64
 	for _, candidate := range byID {
+		if _, attempted := request.AttemptedIDs[candidate.Track.ID]; attempted {
+			continue
+		}
 		candidate.Scores.RetrievalFusion = reciprocalRankFusion(candidate.Sources, r.cfg.ReciprocalRankConstant)
 		if candidate.Scores.RetrievalFusion > maxFusion {
 			maxFusion = candidate.Scores.RetrievalFusion

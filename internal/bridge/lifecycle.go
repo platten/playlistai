@@ -6,11 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
+	"time"
 
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -140,6 +141,8 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 		return parsedIntentEntry{}, false, err
 	}
 	if entry, ok := a.intentCache.get(key); ok {
+		entry.intent = a.confirmSubmittedGenre(ctx, input, entry.intent, entry.outcome.Backend)
+		a.intentCache.put(key, entry)
 		return entry, true, nil
 	}
 	outcome, err := a.app.ParseIntentDetailed(ctx, input, progress)
@@ -149,19 +152,38 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 	if err := ctx.Err(); err != nil {
 		return parsedIntentEntry{}, false, err
 	}
-	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && outcome.Backend == "rules" && cached.IsCachedGenre(ctx, strings.TrimSpace(input.Prompt)) {
-		name := strings.TrimSpace(input.Prompt)
-		evidence := []core.SourceEvidence{{Text: name, Explicit: true, Start: 0, End: len(name)}}
-		outcome.Intent.References = nil
-		outcome.Intent.Seeds.Queries = nil
-		outcome.Intent.Seeds.TrackIDs = nil
-		outcome.Intent.Preferences.Genres = []core.IntentPreference{{Value: name, Influence: core.InfluencePositive, Explicit: true, Evidence: evidence}}
-		outcome.Intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: name, Scope: "playlist", Evidence: evidence}}
+	name := rules.BareGenreQuery(input.Prompt)
+	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && outcome.Backend == "rules" && name != "" && cached.IsCachedGenre(ctx, name) {
 		outcome.Intent.OriginalDescription = input.Prompt
+		outcome.Intent = rules.ApplyConfirmedGenre(outcome.Intent, name)
 	}
 	entry := parsedIntentEntry{intent: outcome.Intent.Normalized(), outcome: outcome}
+	entry.intent = a.confirmSubmittedGenre(ctx, input, entry.intent, outcome.Backend)
 	a.intentCache.put(key, entry)
 	return entry, false, nil
+}
+
+// Explicitly submitted parsing can check provider genre identity before the UI
+// offers misleading artist alternatives. Legacy preview calls remain offline.
+func (a *API) confirmSubmittedGenre(ctx context.Context, input ports.IntentInput, intent core.MusicIntent, backend string) core.MusicIntent {
+	name := rules.BareGenreQuery(input.Prompt)
+	provider, ok := a.app.Knowledge.(ports.GenreNameKnowledge)
+	if !ok || backend != "rules" || input.GenerationID == "" || name == "" || len(intent.EssentialCriteria) > 0 || len(intent.Preferences.Genres) > 0 {
+		return intent
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	graph, err := provider.GenreNames(ctx)
+	if err != nil {
+		return intent
+	}
+	for _, node := range graph.Nodes {
+		if node.ID == graph.ID(name) {
+			intent.OriginalDescription = input.Prompt
+			return rules.ApplyConfirmedGenre(intent, name)
+		}
+	}
+	return intent
 }
 
 func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {

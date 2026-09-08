@@ -126,7 +126,7 @@ func TestGenerateFromPrompt(t *testing.T) {
 	if len(res.Playlist.Tracks[0].Sources) == 0 || len(res.Playlist.Tracks[0].Evidence) == 0 {
 		t.Fatalf("structured recommendation evidence was not bridged: %+v", res.Playlist.Tracks[0])
 	}
-	if res.Playlist.Reproducibility.AlgorithmVersion != multichannel.AlgorithmVersion {
+	if res.Playlist.Reproducibility.AlgorithmVersion != multichannel.AlgorithmVersion+"+iterative/v1" {
 		t.Fatalf("algorithm version = %q", res.Playlist.Reproducibility.AlgorithmVersion)
 	}
 	// The generated name is a short label (<= 6 words), not the raw prompt.

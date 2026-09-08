@@ -47,6 +47,8 @@ type VersionedRecommendationEngine interface {
 }
 
 type RetrievalRequest struct {
+	// AttemptedIDs are request-local exclusions, not changes to musical intent.
+	AttemptedIDs     map[string]struct{}
 	Intent           core.MusicIntent
 	Profile          core.TasteProfile
 	RecentSelections []core.TrackRef

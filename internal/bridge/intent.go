@@ -66,7 +66,8 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 	if a.app.IntentParser() == nil {
 		return IntentPreview{Backend: "none", Seeds: []string{}, RequiredTracks: []string{}, ArtistsExclude: []string{}}, nil
 	}
-	// No progress bar for the live, keystroke-debounced preview.
+	// The composer invokes this after submission; legacy preview callers remain
+	// supported. The frontend owns the parse/build transaction's progress UI.
 	started := time.Now()
 	entry, reused, err := a.parseIntentCached(ctx, input, nil)
 	if err != nil {
@@ -184,7 +185,11 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
 	resolveStarted := time.Now()
 	if a.app.Knowledge != nil && m.Version >= 8 {
-		m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+		if knowledge, ok := a.app.Knowledge.(ports.IterativeMusicKnowledge); ok {
+			m, err = knowledge.PrepareMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+		} else {
+			m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+		}
 		if err != nil {
 			return GenerateResult{}, err
 		}
@@ -252,7 +257,7 @@ func validatePromptStart(backend, requestedBackend string, intent core.MusicInte
 	// Online artist recovery produces detailed notices, including misses and
 	// outages. Let the orchestrator return those with a clarification outcome.
 	if intent.Knowledge != nil {
-		if core.WantsInstrumental(intent) || len(intent.Knowledge.Candidates) > 0 || len(core.JourneyCriteria(intent.EssentialCriteria)) > 0 {
+		if core.WantsInstrumental(intent) || len(intent.Knowledge.Candidates) > 0 || len(intent.EssentialCriteria) > 0 || len(intent.Preferences.Genres) > 0 {
 			return nil
 		}
 		for _, ref := range intent.References {

@@ -470,6 +470,9 @@ func (c *Container) LoadCatalog() error {
 		} else {
 			c.Reco = multichannel.New(cat, c.Sim, cat, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
 		}
+		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
+			c.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
+		}
 	}
 	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
 	return nil

@@ -17,6 +17,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/httpretry"
+	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -126,7 +127,7 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 }
 
 func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
-	graph, err := c.Graph(context.WithValue(ctx, cacheOnlyKey{}, true), []string{name})
+	graph, err := c.GenreNames(context.WithValue(ctx, cacheOnlyKey{}, true))
 	if err != nil {
 		return false
 	}
@@ -139,29 +140,34 @@ func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
 	return false
 }
 
-// Graph loads the provider's small genre-name index, then only the requested
-// genre relationships. Names not present in MusicBrainz remain valid input.
-func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, error) {
+// GenreNames loads identity only. Slow relationship pages must not consume the
+// discovery budget before a counted genre has even been classified.
+func (c *Client) GenreNames(ctx context.Context) (core.GenreGraph, error) {
 	graph := core.GenreGraph{}
 	raw, err := c.knowledgeGet(ctx, "/genres", false)
 	if err != nil {
 		return graph, err
 	}
-	z := html.NewTokenizer(strings.NewReader(string(raw)))
-	for z.Next() != html.ErrorToken {
-		token := z.Token()
-		if token.Type != html.StartTagToken || token.Data != "a" {
-			continue
-		}
-		id := ""
-		for _, a := range token.Attr {
-			if a.Key == "href" && strings.HasPrefix(a.Val, "/genre/") {
-				id = strings.TrimPrefix(a.Val, "/genre/")
+	doc, err := html.Parse(strings.NewReader(string(raw)))
+	if err != nil {
+		return graph, err
+	}
+	var visit func(*html.Node)
+	visit = func(node *html.Node) {
+		if node.Type == html.ElementNode && node.Data == "a" {
+			id, ok := strings.CutPrefix(nodeAttr(node, "href"), "/genre/")
+			// Names are wrapped in <bdi> on the live site, not direct text.
+			if name := nodeText(node); ok && id != "" && !strings.ContainsAny(id, "/?#") && name != "" {
+				graph.Nodes = append(graph.Nodes, core.GenreNode{ID: id, Name: name})
 			}
 		}
-		if id != "" && z.Next() == html.TextToken {
-			graph.Nodes = append(graph.Nodes, core.GenreNode{ID: id, Name: z.Token().Data})
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			visit(child)
 		}
+	}
+	visit(doc)
+	if len(graph.Nodes) == 0 {
+		return graph, fmt.Errorf("genre index contains no readable genre names")
 	}
 	// Previously retrieved aliases make abbreviated and non-Latin names
 	// resolvable without a fresh request or a built-in genre alias table.
@@ -177,6 +183,16 @@ func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, er
 			}
 			_ = rows.Close()
 		}
+	}
+	graph.Version = knowledgeHash(graph)
+	return graph, nil
+}
+
+// Graph enriches the name index with the requested genre relationships.
+func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, error) {
+	graph, err := c.GenreNames(ctx)
+	if err != nil {
+		return graph, err
 	}
 	seen := map[string]bool{}
 	for _, name := range names {
@@ -194,6 +210,7 @@ func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, er
 			readGenrePage(aliases, id, c.base, &graph, true)
 		}
 	}
+	graph.Version = ""
 	graph.Version = knowledgeHash(graph)
 	return graph, nil
 }
@@ -202,6 +219,12 @@ func knowledgeHash(value any) string {
 	raw, _ := json.Marshal(value)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+type iterativeKnowledgeKey struct{}
+
+func (c *Client) PrepareMusic(ctx context.Context, intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, p ports.Progress) (core.MusicIntent, error) {
+	return c.ResolveMusic(context.WithValue(ctx, iterativeKnowledgeKey{}, true), intent, cat, resolver, p)
 }
 
 func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, p ports.Progress) (core.MusicIntent, error) {
@@ -220,6 +243,20 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		p = ports.NopProgress{}
 	}
 	p.Report("generation", 0, 0, "Resolving music references")
+	// A cold cache must recognize the same categories as a warm one. Check
+	// provider genre identity before treating a bare category as an artist.
+	if name := rules.BareGenreQuery(intent.OriginalDescription); name != "" && len(intent.EssentialCriteria) == 0 && len(intent.Preferences.Genres) == 0 {
+		if graph, err := c.GenreNames(ctx); err == nil {
+			for _, node := range graph.Nodes {
+				if node.ID == graph.ID(name) {
+					intent = rules.ApplyConfirmedGenre(intent, name)
+					break
+				}
+			}
+		} else {
+			snapshot.Notices = append(snapshot.Notices, "Genre-name lookup unavailable; the bare description could not be checked against provider categories.")
+		}
+	}
 	// Explicit missing artists take priority over broad genre discovery.
 	intent = c.resolveMissingArtists(ctx, intent, cat, resolver, &snapshot, p)
 	if core.WantsInstrumental(intent) && len(intent.Seeds.TrackIDs) == 0 && len(intent.Required.TrackIDs) == 0 {
@@ -259,19 +296,37 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 			genres = append(genres, criterion.Value)
 		}
 	}
-	if len(genres) > 0 {
-		// Give each requested category stage a recording lookup before artist
-		// enrichment and related genres spend the shared metadata budget.
-		if intent.Mode == core.ModeJourney && len(core.JourneyCriteria(intent.EssentialCriteria)) > 1 {
-			p.Report("generation", 0, 0, "Finding recordings for each journey stage")
-			seen := map[string]bool{}
-			for _, criterion := range core.JourneyCriteria(intent.EssentialCriteria) {
-				if criterion.Kind != "genre" && criterion.Kind != "style" {
-					continue
-				}
-				if !seen[criterion.Value] {
-					seen[criterion.Value] = true
-					c.searchKnowledgeRecordings(ctx, `tag:"`+mbEscape(criterion.Value)+`"`, cat, resolver, &snapshot)
+	iterative, _ := ctx.Value(iterativeKnowledgeKey{}).(bool)
+	if iterative {
+		seen := map[string]bool{}
+		for _, genre := range genres {
+			key := core.NormalizeIdentityPart(genre)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			p.Report("generation", 0, 0, "Finding artists for the requested genre")
+			pool := c.genreArtists(ctx, genre)
+			snapshot.ArtistPools = append(snapshot.ArtistPools, pool)
+			snapshot.Sources = append(snapshot.Sources, pool.Sources...)
+		}
+	}
+	if len(genres) > 0 && !iterative {
+		// Ordinary genre requests need the same priority as journey stages.
+		// Otherwise artist sampling can exhaust the budget before any recording
+		// with track-level genre evidence is retrieved.
+		p.Report("generation", 0, 0, "Finding recordings for requested genres")
+		seen := map[string]bool{}
+		for _, genre := range genres {
+			key := core.NormalizeIdentityPart(genre)
+			if !seen[key] {
+				seen[key] = true
+				query := `tag:"` + mbEscape(genre) + `"`
+				if intent.Mode == core.ModeJourney {
+					// Reserve a first page for every stage before expanding any.
+					c.searchKnowledgeRecordings(ctx, query, cat, resolver, &snapshot)
+				} else {
+					c.searchKnowledgeRecordings(ctx, query, cat, resolver, &snapshot, intent.Controls.TotalTrackCount)
 				}
 			}
 		}
@@ -315,6 +370,9 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	}
 	queried := map[string]bool{}
 	for _, genre := range queries {
+		if iterative && len(genres) > 0 {
+			break
+		}
 		key := core.NormalizeIdentityPart(genre)
 		if queried[key] {
 			continue
@@ -370,33 +428,53 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	return intent, nil
 }
 
-func (c *Client) searchKnowledgeRecordings(ctx context.Context, query string, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) {
-	path := "/ws/2/recording?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}}.Encode()
-	raw, err := c.knowledgeGet(ctx, path, false)
-	if err != nil {
-		return
+func (c *Client) searchKnowledgeRecordings(ctx context.Context, query string, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, targets ...int) {
+	pages := 1
+	if len(targets) > 0 {
+		pages = 3
 	}
-	var body struct {
-		Recordings []mbRecording `json:"recordings"`
-	}
-	if json.Unmarshal(raw, &body) != nil {
-		return
-	}
-	snapshot.Sources = append(snapshot.Sources, c.base+path)
-	for _, r := range body.Recordings {
-		if ctx.Err() != nil {
+	for page := 0; page < pages && ctx.Err() == nil; page++ {
+		values := url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}}
+		if page > 0 {
+			values.Set("offset", fmt.Sprint(page*100))
+		}
+		path := "/ws/2/recording?" + values.Encode()
+		raw, err := c.knowledgeGet(ctx, path, false)
+		if err != nil {
+			return
+		}
+		var body struct {
+			Count      int           `json:"count"`
+			Recordings []mbRecording `json:"recordings"`
+		}
+		if json.Unmarshal(raw, &body) != nil {
+			return
+		}
+		snapshot.Sources = append(snapshot.Sources, c.base+path)
+		for _, r := range body.Recordings {
+			if ctx.Err() != nil {
+				break
+			}
+			c.addKnowledgeRecording(r, cat, resolver, snapshot)
+		}
+		// Expand identity lookup, never relax musical eligibility. All pages
+		// share the existing provider request and time budgets.
+		if len(body.Recordings) < 100 || body.Count <= (page+1)*100 || len(targets) > 0 && len(snapshot.Candidates) >= targets[0] {
 			break
 		}
-		c.addKnowledgeRecording(r, cat, resolver, snapshot)
 	}
 }
 
-func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) {
+func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, knownIDs ...string) {
 	if len(r.ArtistCredit) == 0 {
 		return
 	}
 	query := r.ArtistCredit[0].Name + " - " + r.Title
-	resolved := resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceTrack, Query: query})
+	reference := core.IntentReference{Kind: core.ReferenceTrack, Query: query}
+	if len(knownIDs) > 0 {
+		reference.TrackID = knownIDs[0]
+	}
+	resolved := resolver.ResolveReference(reference)
 	if resolved.Status != core.ResolutionResolved || resolved.Selected == nil || len(resolved.Selected.Representatives) == 0 {
 		return
 	}

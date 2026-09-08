@@ -1,6 +1,6 @@
 // Rendered UI smoke checks with deterministic bridge fixtures, not live audio.
 // Usage: node scripts/capture-recommendation-ui.mjs <playwright-module> <chromium> [output-dir]
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -26,6 +26,7 @@ let active;
 const tracks = Array.from({length:30}, (_,i)=>({id:String(i+1),artist:'Fixture Artist '+(i+1),title:'Playlist track '+(i+1),kind:'ranked',detail:'Fixture musical fit'}));
 window.__buildCalls=0;
 window.__generationCalls=0;
+window.__parseCalls=0;
 const emit = (data) => window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:data}));
 const methods = {
 GetOnboarded:()=> !window.location.search.includes('wizard'), GetStatus:()=>({parserBackend:'llama'}), GetCatalogInfo:()=>({loaded:true}), ListSavedPlaylists:()=>[],
@@ -65,8 +66,26 @@ try {
   await page.route(/.*@wailsio_runtime\.js.*/, (route) => route.fulfill({ contentType: "application/javascript", body: runtime }));
   await page.goto("http://127.0.0.1:9245");
   const composer = page.getByRole("textbox", { name: "Describe the music you want to hear" });
+  const samples = JSON.parse(await readFile(new URL('../frontend/src/lib/generateSamples.json', import.meta.url), 'utf8'));
+  for (const sample of samples) {
+    await page.getByRole('button', {name:sample.prompt,exact:true}).click();
+    assert.equal(await composer.inputValue(), sample.prompt, 'Each shared sample fills the exact generation request');
+    assert.equal(await page.evaluate(() => window.__generationCalls), 0, 'Choosing a sample waits for submission');
+  }
+  await composer.fill("Classical 10 tracks");
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => typeof window.__finishParse), 'undefined', 'Counted genre typing must stay local');
+  await page.getByRole('button', {name:'Surprise me',exact:true}).click();
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => window.__generationCalls), 0, 'Surprise only fills the description');
+  assert.equal(await page.evaluate(() => typeof window.__finishParse), 'undefined', 'Surprise does not parse');
   await composer.fill("Ambient electronica, relaxing but not sleepy");
-  await page.getByText("The local model is reading your description…", { exact: true }).waitFor();
+  await page.waitForTimeout(350);
+  assert.equal(await page.evaluate(() => typeof window.__finishParse), 'undefined', 'Typing must not start parsing');
+  assert.equal(await page.evaluate(() => window.__generationCalls), 0, 'Typing must not generate');
+  await page.getByRole('button', {name:'Generate playlist',exact:true}).click();
+  await page.getByText("The local model is processing your request…", { exact: true }).waitFor();
+  assert.equal(await page.locator('#generate-playlist').isDisabled(), true, 'Generate is disabled throughout parsing');
   await page.getByText("1s elapsed", { exact: true }).waitFor();
   for (const theme of ["light", "dark"]) {
     await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
@@ -74,7 +93,7 @@ try {
   }
   await page.evaluate(() => window.__finishParse());
   await page.getByRole("heading", { name: "Your request" }).waitFor();
-  if (await page.getByText("The local model is reading your description…", { exact: true }).count()) throw new Error("Processing indicator remained after parsing");
+  assert.equal(await page.locator('#generate-playlist').isDisabled(), true, 'Generate stays disabled during the build');
   for (const theme of ["light", "dark"]) {
     await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
     await page.screenshot({ path: path.join(output, `composer-${theme}.png`), fullPage: true });
@@ -85,7 +104,6 @@ try {
   await page.keyboard.press("Tab");
   if (await page.evaluate(() => document.activeElement === document.body)) throw new Error("Keyboard focus lost");
   await page.screenshot({ path: path.join(output, "composer-narrow.png"), fullPage: true });
-  await page.getByRole("button", { name: "Generate playlist", exact: true }).click();
   await page.getByText("The local model is processing your request…", { exact: true }).waitFor();
   await page.screenshot({ path: path.join(output, "processing-generation-narrow.png"), fullPage: true });
   await page.evaluate(() => window.__advanceGeneration());
@@ -108,6 +126,8 @@ try {
   assert.equal(await composer.evaluate(el=>document.activeElement===el), true, 'Dismiss returns focus to composer');
 
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
+  await page.waitForFunction(()=>window.__generationCalls===2);
   await page.evaluate(()=>window.__failGeneration());
   await page.getByRole('heading',{name:'Playlist generation failed'}).waitFor();
   await page.getByRole('alert').getByText(/Music lookup timed out/).waitFor();
@@ -116,16 +136,17 @@ try {
 
   await composer.fill('Instrumental with no vocals');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
+  await page.waitForFunction(()=>window.__generationCalls===3);
   await page.evaluate(()=>window.__finishGeneration('needs_clarification',true));
   await page.getByRole('heading',{name:'Refine your request'}).waitFor();
   await page.getByRole('alert').getByText(/Vocal evidence is unknown.*Add a known instrumental reference/).waitFor();
   await page.screenshot({path:path.join(output,'clarification.png'),fullPage:true});
   await composer.fill('Instrumental, no vocals');
-  await page.getByText('The local model is reading your description…',{exact:true}).waitFor();
-  await page.evaluate(()=>window.__finishParse([],true));
-  await page.waitForFunction(()=>!document.body.textContent.includes('The local model is reading your description…'));
   const instrumentalCalls=await page.evaluate(()=>window.__generationCalls);
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse([],true));
+  await page.waitForFunction(n=>window.__generationCalls===n+1,instrumentalCalls);
   assert.equal(await page.evaluate(()=>window.__generationCalls),instrumentalCalls+1,'Instrumental rules prompt must allow online seed discovery');
   await page.evaluate(()=>window.__finishGeneration('fulfilled',false,[{code:'vocal_preview_screening',detail:'CLAP screened every selected preview for vocals. Unheard parts remain unassessed.'}]));
   await page.getByRole('button',{name:'Playlist',exact:true}).waitFor();
@@ -133,7 +154,8 @@ try {
   await page.screenshot({path:path.join(output,'instrumental-playlist.png'),fullPage:true});
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('A journey from ambient to energetic electronic');
-  await page.getByText('The local model is reading your description…',{exact:true}).waitFor();
+  const journeyCalls=await page.evaluate(()=>window.__generationCalls);
+  await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
   await page.evaluate(()=>window.__finishParse([],false,{backend:'rules',parser:{requestedBackend:'rules'},mode:'journey',count:6,intent:{version:8,mode:'journey',references:[],essentialCriteria:[{kind:'style',value:'ambient',scope:'journey_start'},{kind:'style',value:'electronic',scope:'journey_end'}],preferences:{styles:[],genres:[],moods:[{value:'energetic',influence:'positive'}]},hardConstraints:[],journey:{energyTrajectory:[{position:0,energy:.5},{position:1,energy:.8}]}}}));
   await page.getByText('Essential: ambient (start), electronic (end)',{exact:true}).waitFor();
   await page.getByText('Requested energy: build toward the end',{exact:true}).waitFor();
@@ -142,8 +164,6 @@ try {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     await page.screenshot({path:path.join(output,'genre-journey-'+theme+'.png'),fullPage:true});
   }
-  const journeyCalls=await page.evaluate(()=>window.__generationCalls);
-  await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.__generationCalls),journeyCalls+1,'Genre journey must not demand an artist seed');
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'generation',generationId:window.__generationId,note:'Finding recordings for each journey stage',done:0,total:0}})));
   await page.getByText('Finding recordings for each journey stage',{exact:true}).waitFor();
@@ -151,7 +171,7 @@ try {
   await page.waitForFunction(()=>document.querySelector('[aria-current="page"]')?.textContent==='Playlist');
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('Something like an ambiguous artist');
-  await page.getByText('The local model is reading your description…',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
   await page.evaluate(()=>window.__finishParse([{kind:'artist',query:'Ambiguous Artist',status:'ambiguous',inferred:false,alternatives:[{entityId:'artist-a',artist:'Artist A',representatives:[{trackId:'a'}]},{entityId:'artist-b',artist:'Artist B',representatives:[{trackId:'b'}]}]}]));
   const select=page.getByRole('combobox',{name:'Choose the intended artist for “Ambiguous Artist”'});
   await select.waitFor();
@@ -163,6 +183,8 @@ try {
   await select.selectOption('b');
   await page.waitForFunction(()=>document.activeElement?.id==='generate-playlist');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
+  await page.waitForFunction(()=>window.__selections?.length>0);
   assert.equal(await page.evaluate(()=>window.__selections[0].trackId),'b');
   await page.evaluate(()=>window.__finishGeneration());
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
@@ -301,19 +323,23 @@ try {
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('Ambient electronic');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
+  await page.waitForFunction(()=>window.__generationId);
   await page.evaluate(()=>window.__finishGeneration('partial'));
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
   await page.getByText('A verified partial playlist was generated',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('A new musical description');
-  await page.getByText('The local model is reading your description…',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
   await page.evaluate(()=>window.__failParse());
   await page.getByRole('alert').getByText(/Local model unavailable/).waitFor();
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
   await page.evaluate(()=>window.__staleFinish=window.__finishGeneration);
   await page.getByRole('button',{name:'Cancel',exact:true}).click();
   await composer.fill('A newer musical description');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
   await page.evaluate(()=>window.__staleFinish());
   await page.getByRole('button',{name:'Generating…',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Generate',exact:true}).getAttribute('aria-current'),'page','Cancelled result cannot navigate over newer work');
@@ -322,11 +348,9 @@ try {
   await page.setViewportSize({width:560,height:800});
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('music like Missing Artist');
-  await page.getByText('The local model is reading your description…',{exact:true}).waitFor();
-  await page.evaluate(()=>window.__finishParse([{kind:'artist',query:'Missing Artist',influence:'positive',status:'unresolved',inferred:false,alternatives:[]}]));
-  await page.getByRole('alert').getByText(/Artist “Missing Artist”.*try popular tracks in order/).waitFor();
-  await page.screenshot({path:path.join(output,'missing-artist-before-generation.png'),fullPage:true});
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse([{kind:'artist',query:'Missing Artist',influence:'positive',status:'unresolved',inferred:false,alternatives:[]}]));
+  assert.equal(await page.locator('#generate-playlist').isDisabled(),true,'Missing artist recovery remains part of submitted processing');
   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'generation',generationId:window.__generationId,note:'Artist Missing Artist is absent from the local catalog. Checking popular tracks online.'}})));
   await page.getByText('Artist Missing Artist is absent from the local catalog. Checking popular tracks online.',{exact:true}).waitFor();
   await page.evaluate(()=>window.__finishGeneration('fulfilled',false,[{code:'music_lookup_0',detail:'Artist Missing Artist was not found under that name in the local catalog.'},{code:'music_lookup_1',detail:'Found the artist online. Using Fixture Artist — Playlist track 1 as the seed after checking 3 recordings.'}]));
@@ -336,6 +360,7 @@ try {
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('music like Missing Artist');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
+  await page.evaluate(()=>window.__finishParse());
   await page.evaluate(()=>window.__finishGeneration('needs_clarification',true,[{code:'music_lookup_0',detail:'Found Missing Artist online, but none of the 100 checked recordings has a verified catalog match. Try a specific track or another artist.'}]));
   await page.getByRole('alert').getByText(/none of the 100 checked recordings/).waitFor();
   await page.screenshot({path:path.join(output,'missing-artist-no-seed.png'),fullPage:true});

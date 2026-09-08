@@ -39,6 +39,13 @@ func discardInventedInstructions(w *Wire, prompt string) {
 	for _, group := range []*[]WireReference{&w.References, &w.JourneyWaypoints, &w.RequiredTracks, &w.Destination} {
 		for i := range *group {
 			ref := &(*group)[i]
+			// A model may expand a surname into a full artist name. Keep the
+			// literal user reference and let catalog/provider evidence resolve
+			// identity; model expansion alone is not an authenticated alias.
+			if ref.Kind == "artist" && ref.Explicit && containsReferenceWords(prompt, ref.Span) &&
+				!containsReferenceWords(prompt, ref.Value) && containsReferenceWords(ref.Value, ref.Span) {
+				ref.Value = strings.TrimSpace(ref.Span)
+			}
 			_, _, qualified := core.QualifiedReferenceParts(ref.Value)
 			literalSpan := containsReferenceWords(prompt, ref.Span)
 			// Models sometimes copy their normalized artist/title value into

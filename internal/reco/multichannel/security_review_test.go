@@ -19,6 +19,9 @@ func TestMetadataRequirementsBeforeProgressAndSelection(t *testing.T) {
 			intent := testIntent(2)
 			intent.VerificationPolicy = policy
 			intent.OriginalDescription = "Music from the chosen album"
+			// Keep an actual musical clause so this tests audio-progress gating;
+			// album identity alone intentionally no longer triggers CLAP.
+			intent.Preferences.Moods = []core.IntentPreference{{Value: "relaxing", Influence: core.InfluencePositive}}
 			intent.HardConstraints = []core.HardConstraint{{Kind: "require_album", Value: "Chosen album"}}
 			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceAlbum, Query: "Chosen album", Influence: core.InfluencePositive, Resolution: &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: cat.CatalogVersion(), Selected: &core.ResolutionCandidate{Kind: core.ReferenceAlbum, Representatives: []core.WeightedTrack{{TrackID: "audio", Weight: 1}}}}})
 			seen := 0

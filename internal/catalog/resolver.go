@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strings"
@@ -8,6 +9,26 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
+
+// ArtistRecordings reads the entire resolved artist catalog, not the first
+// search page or the representative medoids. Unknown provider spellings must
+// be resolved before this exact identity query.
+func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {
+	rows, err := c.db.QueryContext(ctx, "SELECT id, artist, title FROM tracks WHERE artist = ? ORDER BY row", artist)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tracks []core.TrackRef
+	for rows.Next() {
+		var track core.TrackRef
+		if err := rows.Scan(&track.ID, &track.Artist, &track.Title); err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, track)
+	}
+	return tracks, rows.Err()
+}
 
 const (
 	maxAlternatives       = 5

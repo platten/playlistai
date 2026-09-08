@@ -11,6 +11,8 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
+	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/reco/multichannel"
 )
 
 func TestGenerateGenreJourneyUsesStageLookupsAndReplays(t *testing.T) {
@@ -54,7 +56,11 @@ func TestGenerateGenreJourneyUsesStageLookupsAndReplays(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	c.Knowledge = client
+	// Preserve the metadata-only engine as a documented replay baseline. The
+	// iterative desktop path requires preview analysis for musical clauses and
+	// has separate synthetic CLAP/stream acceptance tests.
+	c.Knowledge = struct{ ports.MusicKnowledge }{client}
+	c.Reco = multichannel.New(c.Catalog, c.Sim, c.Resolver, multichannel.DefaultConfig())
 	api := New(c, nil)
 	const prompt = "A journey from ambient to energetic electronic"
 	preview, err := api.ParseIntent(context.Background(), prompt)

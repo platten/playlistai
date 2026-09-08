@@ -119,6 +119,47 @@ func TestMatchingPreviewIntentIsReusedForGeneration(t *testing.T) {
 	}
 }
 
+type submittedGenreKnowledge struct{ calls int }
+
+func (k *submittedGenreKnowledge) GenreNames(context.Context) (core.GenreGraph, error) {
+	k.calls++
+	return core.GenreGraph{Nodes: []core.GenreNode{{ID: "classical-id", Name: "Classical"}}}, nil
+}
+
+func (*submittedGenreKnowledge) ResolveMusic(_ context.Context, intent core.MusicIntent, _ ports.Catalog, _ ports.ReferenceResolver, _ ports.Progress) (core.MusicIntent, error) {
+	return intent, nil
+}
+
+func TestSubmittedCountedGenreIsConfirmedBeforeArtistAlternatives(t *testing.T) {
+	c := newLoadedContainer(t)
+	knowledge := &submittedGenreKnowledge{}
+	c.Knowledge = knowledge
+	api := New(c, nil)
+	ctx := context.Background()
+	// Legacy preview clients must never initiate provider requests while typing.
+	if _, err := api.ParseIntent(ctx, "Classical 10 tracks"); err != nil {
+		t.Fatal(err)
+	}
+	if knowledge.calls != 0 {
+		t.Fatal("background preview accessed provider")
+	}
+	for range 2 {
+		preview, err := api.ParseIntentWithContext(ctx, "Classical 10 tracks", IntentSessionContext{GenerationID: "submitted"})
+		if err != nil || preview.Count != 10 || len(preview.Seeds) != 0 || len(preview.ResolutionIssues) != 0 || len(preview.Intent.EssentialCriteria) != 1 || preview.Intent.EssentialCriteria[0].Value != "Classical" {
+			t.Fatalf("genre preview = %+v, %v", preview, err)
+		}
+	}
+	if knowledge.calls != 1 {
+		t.Fatalf("confirmed parse not reused: %d lookups", knowledge.calls)
+	}
+	if _, err := api.ParseIntentWithContext(ctx, "like Classical, 10 tracks", IntentSessionContext{GenerationID: "explicit"}); err != nil {
+		t.Fatal(err)
+	}
+	if knowledge.calls != 1 {
+		t.Fatal("explicit artist reinterpreted as genre")
+	}
+}
+
 func TestIntentCacheKeyIncludesPromptParserSchemaAndSession(t *testing.T) {
 	t.Parallel()
 	api := New(newLoadedContainer(t), nil)

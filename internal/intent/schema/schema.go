@@ -150,6 +150,9 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	if err := dec.Decode(&wire); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
+	if count, ok := rules.TrackCount(prompt); ok {
+		wire.TotalCount = min(core.MaxCount, max(core.MinCount, count))
+	}
 	if prompt != "" && wire.Genres != nil {
 		discardInventedInstructions(&wire, prompt)
 		preserveCategoryJourney(&wire, prompt)
