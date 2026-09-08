@@ -24,6 +24,7 @@ type FeedbackStore interface {
 // raw events so callers can inspect or replay the exact projection used.
 type ProfileStore interface {
 	SaveProfile(ctx context.Context, profile core.TasteProfile) error
+	ProfileByID(ctx context.Context, snapshotID string) (core.TasteProfile, bool, error)
 	LatestProfile(ctx context.Context, catalogVersion, requestID, sessionID string) (core.TasteProfile, bool, error)
 	ClearProfiles(ctx context.Context) error
 }

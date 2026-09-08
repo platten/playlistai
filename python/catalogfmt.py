@@ -205,6 +205,7 @@ def write_catalog(out_dir: Path, tracks: Iterable[Track], *, source: str) -> dic
             db.executescript(
                 """
                 CREATE INDEX tracks_artist_search_idx ON tracks(artist_search);
+                CREATE INDEX tracks_artist_row_idx ON tracks(artist, row);
                 CREATE INDEX tracks_title_search_idx ON tracks(title_search);
                 CREATE INDEX tracks_unicode_search_idx ON tracks(unicode_search);
                 CREATE INDEX artist_alias_search_idx ON artist_aliases(alias_search);

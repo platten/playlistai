@@ -17,6 +17,7 @@ type discogsCandidates struct {
 	queries     []discogsPageCursor
 	used        map[int64]bool
 	read        int
+	pageRead    int
 }
 
 type discogsPageCursor struct {
@@ -65,7 +66,6 @@ func (s *candidateStream) loadDiscogsPages(ctx context.Context) {
 			r := page.Results[i]
 			if r.ID > 0 && r.Type == "release" && !f.used[r.ID] {
 				pool = append(pool, r.ID)
-				f.used[r.ID] = true
 			}
 		}
 		pools = append(pools, pool)
@@ -77,6 +77,7 @@ func (s *candidateStream) loadDiscogsPages(ctx context.Context) {
 			}
 		}
 	}
+	f.pageRead = 0
 }
 
 // Discogs provides a bounded discovery fallback, not a genre-verification
@@ -102,6 +103,11 @@ func (s *candidateStream) nextDiscogs(ctx context.Context) (core.TrackRef, error
 			return core.TrackRef{}, err
 		}
 		var tracks []core.TrackRef
+		// Reserve equal detail budgets for later search pages. A full first
+		// page must not consume the entire 60-release allowance.
+		if f.pageRead >= discogsDiscoveryReleases/discogsSearchPages && f.hasMorePages() {
+			f.releases = nil
+		}
 		if f.read >= discogsDiscoveryReleases && len(f.releases) > 0 {
 			f.releases = nil
 			s.snapshot.Notices = append(s.snapshot.Notices, "Discogs discovery reached its 60-release limit; remaining provider results were not fetched.")
@@ -113,10 +119,19 @@ func (s *candidateStream) nextDiscogs(ctx context.Context) (core.TrackRef, error
 			s.loadDiscogsPages(ctx)
 			continue
 		}
-		if len(f.releases) > 0 {
+		if len(s.pending) == 0 {
+			s.windowReads = 0
+		}
+		if len(f.releases) > 0 && s.windowReads < discoveryWindow {
 			id := f.releases[0]
 			f.releases = f.releases[1:]
+			if f.used[id] {
+				continue
+			}
+			f.used[id] = true
 			f.read++
+			f.pageRead++
+			s.windowReads++
 			release, err := s.client.discogsRelease(ctx, id)
 			if err != nil {
 				f.lastError = err
@@ -129,6 +144,7 @@ func (s *candidateStream) nextDiscogs(ctx context.Context) (core.TrackRef, error
 				key := core.ProvisionalRecordingKey(track)
 				if !s.seen[key] {
 					tracks = append(tracks, track)
+					s.recordEvidence(track.ID, "discogs_release_sample", discogsSource(id))
 					s.seen[key] = true
 				}
 			}

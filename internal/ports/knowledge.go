@@ -29,6 +29,12 @@ type MusicCandidateStream interface {
 	Snapshot() *core.KnowledgeSnapshot
 }
 
+// MusicCandidateEvidence preserves provider attribution, including replay.
+// Legacy streams without evidence are described as generic metadata discovery.
+type MusicCandidateEvidence interface {
+	Evidence(trackID string) []core.RetrievalEvidence
+}
+
 // ArtistRecordingCatalog avoids a full fuzzy catalog scan for every recording
 // on an artist's provider page. artist is a resolved catalog spelling.
 type ArtistRecordingCatalog interface {

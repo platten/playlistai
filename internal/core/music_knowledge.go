@@ -76,15 +76,17 @@ func (g GenreGraph) Matches(want, actual string) bool {
 type KnowledgeSnapshot struct {
 	// Discovery records the ordered pull stream, including rejected candidates,
 	// so history replay does not consult a changing external artist search.
-	Discovery         []TrackRef        `json:"discovery,omitempty"`
-	DiscoveryRecorded bool              `json:"discoveryRecorded,omitempty"`
-	ArtistPools       []GenreArtistPool `json:"artistPools,omitempty"`
-	ID                string            `json:"id"`
-	Graph             GenreGraph        `json:"graph"`
-	Tracks            []EnrichedTrack   `json:"tracks"`
-	Candidates        []TrackRef        `json:"candidates"`
-	Sources           []string          `json:"sources"`
-	Notices           []string          `json:"notices"`
+	Discovery         []TrackRef                     `json:"discovery,omitempty"`
+	DiscoveryRecorded bool                           `json:"discoveryRecorded,omitempty"`
+	DiscoveryKey      string                         `json:"discoveryKey,omitempty"`
+	DiscoveryEvidence map[string][]RetrievalEvidence `json:"discoveryEvidence,omitempty"`
+	ArtistPools       []GenreArtistPool              `json:"artistPools,omitempty"`
+	ID                string                         `json:"id"`
+	Graph             GenreGraph                     `json:"graph"`
+	Tracks            []EnrichedTrack                `json:"tracks"`
+	Candidates        []TrackRef                     `json:"candidates"`
+	Sources           []string                       `json:"sources"`
+	Notices           []string                       `json:"notices"`
 }
 
 type TrackAssessment struct {

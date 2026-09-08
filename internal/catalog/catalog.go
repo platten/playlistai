@@ -30,8 +30,9 @@ type Catalog struct {
 	dim   int
 	count int
 
-	ids   []string       // row -> track id
-	rowOf map[string]int // track id -> row
+	ids        []string         // row -> track id
+	rowOf      map[string]int   // track id -> row
+	artistRows map[string][]int // exact spelling -> rows; supports old read-only catalogs
 
 	metaStmt            *sql.Stmt
 	resolveMax          int
@@ -119,19 +120,22 @@ func (c *Catalog) loadResolutionMetadata() {
 }
 
 func (c *Catalog) loadIndex() error {
-	rows, err := c.db.Query("SELECT row, id FROM tracks ORDER BY row")
+	rows, err := c.db.Query("SELECT row, id, artist FROM tracks ORDER BY row")
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 
 	c.ids = make([]string, 0, c.count)
+	c.artistRows = make(map[string][]int)
 	for rows.Next() {
 		var row int
 		var id string
-		if err := rows.Scan(&row, &id); err != nil {
+		var artist string
+		if err := rows.Scan(&row, &id, &artist); err != nil {
 			return err
 		}
+		c.artistRows[artist] = append(c.artistRows[artist], row)
 		if row != len(c.ids) {
 			return fmt.Errorf("catalog: row column not contiguous at %d (got %d)", len(c.ids), row)
 		}

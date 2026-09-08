@@ -1,5 +1,24 @@
 # Recommendation Milestones
 
+## Review follow-up — Discovery and replay (2026-09-08)
+
+Implemented `multichannel/v13`: bounded overcomplete candidate selection,
+stop-aware provider I/O, lazy catalog continuation, input-keyed discovery
+replay, provider-specific pick evidence and exact taste-snapshot loading.
+MusicBrainz/Discogs use four-lookup buffering windows; Discogs reserves detail
+budget for subsequent full search pages. Cache expiration remains strict while
+indexed cleanup runs at most once per minute on access. Existing read-only
+catalogs get an in-memory artist-to-row index; new catalogs also get a SQL
+artist/row index. No runtime dependency or model change was added.
+
+The full repository gate passes. A local 956,917-track catalog microbenchmark
+measured median exact artist lookup at 76.94 ms for the old scan and 0.503 ms
+for batched indexed reads. This is not end-to-end generation or musical-quality
+evidence. See [correctness and compatibility decisions](recommendation-correctness.md#discovery-ranking-and-replay-review-fixes-2026-09-08).
+Next dependencies: held-out listening evaluation and live-provider latency
+measurement for the larger eligible pool; oversampling can require more CLAP
+checks, and the artist index adds startup work and memory.
+
 ## Milestone 1 — Correctness
 
 Implemented against baseline `4c100e7`. Recommendation walks now keep reference

@@ -1,5 +1,55 @@
 # Recommendation Correctness
 
+## Discovery, ranking and replay review fixes (2026-09-08)
+
+`multichannel/v13` repairs first-N selection: iterative generation gathers
+`max(2 × remaining slots, remaining slots + 8)` eligible candidates before
+attempting final ranking/MMR/sequencing. Existing 15-minute, 1,000-attempt and
+provider limits still apply; an exhausted pool can produce a smaller result.
+If selection cannot fill the count, discovery continues within those limits.
+Hard exclusions and preview/essential checks remain eligibility gates, not
+ranking penalties. No new genre inference or model default was introduced.
+
+```mermaid
+flowchart LR
+    D[Bounded provider discovery] --> E[Identity, exclusions and musical checks]
+    E --> P[Overcomplete eligible pool]
+    P --> R[Personalized ranking and MMR]
+    R --> S[Sequence selected tracks]
+    D -->|exhausted or unavailable| C[Lazy catalog continuation]
+    C --> E
+```
+
+The stop-and-keep signal cancels discovery I/O as well as preview analysis;
+accepted candidates remain available to final selection. Full cancellation
+still discards the result. Progress describes provisional candidates rather
+than promising that every checked recording will appear in the playlist.
+
+New knowledge snapshots contain a versioned discovery input key and per-track
+provider evidence. Changed seed, controls, references or musical criteria
+resample candidates without discarding the shared provider response cache.
+Unkeyed legacy streams retain offline replay behavior; bridge control changes
+explicitly invalidate their old sample. Legacy provenance is reported as
+generic metadata discovery, not guessed to be MusicBrainz. Discogs and
+MusicBrainz attribution survive snapshot serialization.
+
+Exact rebuilds load the recorded taste snapshot by ID, checking profile,
+catalog and recommendation versions. Changed intent/context/control inputs
+use current taste. Missing snapshots or incompatible versions produce an
+actionable regeneration error, not silent substitution. Previously saved
+playlists still open directly from their stored result; legacy requests with
+no profile snapshot retain current-profile defaults.
+
+Regression coverage includes later higher-ranked candidates, lazy retrieval,
+blocked discovery cancellation, changed-input invalidation, exact profile
+replay after new exposures, missing snapshots, provider provenance, realistic
+full Discogs pages, buffered releases, expired caches and batched artist lookup.
+The repository gate passes, including race tests, pure-Go compilation, lint,
+generated bindings, TypeScript and production frontend build. Algorithm tests
+are deterministic fixtures, not listening-quality evidence. Executed lookup
+measurements and reproduction commands are in
+[the performance report](performance-and-model-evaluation.md#artist-discovery-lookup-2026-09-08).
+
 ## Metadata cache and provider fallback (2026-09-08)
 
 All MusicBrainz lookups now share a one-week cache, including successful empty

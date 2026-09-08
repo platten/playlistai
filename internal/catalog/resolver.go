@@ -14,7 +14,35 @@ import (
 // search page or the representative medoids. Unknown provider spellings must
 // be resolved before this exact identity query.
 func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {
-	rows, err := c.db.QueryContext(ctx, "SELECT id, artist, title FROM tracks WHERE artist = ? ORDER BY row", artist)
+	if c.artistRows != nil {
+		var tracks []core.TrackRef
+		ids := c.artistRows[artist]
+		for len(ids) > 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			// Bounded primary-key batches avoid both a table scan and one SQL
+			// statement per recording. Rows are already sorted by catalog order.
+			n := min(256, len(ids))
+			args := make([]any, n)
+			for i, row := range ids[:n] {
+				args[i] = row
+			}
+			query := "SELECT id, artist, title FROM tracks WHERE row IN (" + strings.TrimSuffix(strings.Repeat("?,", n), ",") + ") ORDER BY row"
+			batch, err := c.artistRecordingQuery(ctx, query, args...)
+			if err != nil {
+				return nil, err
+			}
+			tracks = append(tracks, batch...)
+			ids = ids[n:]
+		}
+		return tracks, ctx.Err()
+	}
+	return c.artistRecordingQuery(ctx, "SELECT id, artist, title FROM tracks WHERE artist = ? ORDER BY row", artist)
+}
+
+func (c *Catalog) artistRecordingQuery(ctx context.Context, query string, args ...any) ([]core.TrackRef, error) {
+	rows, err := c.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

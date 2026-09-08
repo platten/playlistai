@@ -288,6 +288,22 @@ func (s *Store) SaveProfile(ctx context.Context, profile core.TasteProfile) erro
 	return nil
 }
 
+func (s *Store) ProfileByID(ctx context.Context, snapshotID string) (core.TasteProfile, bool, error) {
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, `SELECT profile_json FROM taste_profiles WHERE snapshot_id = ?`, snapshotID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return core.TasteProfile{}, false, nil
+	}
+	if err != nil {
+		return core.TasteProfile{}, false, fmt.Errorf("taste: snapshot: %w", err)
+	}
+	var profile core.TasteProfile
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		return core.TasteProfile{}, false, fmt.Errorf("taste: decode snapshot: %w", err)
+	}
+	return profile, true, nil
+}
+
 func (s *Store) LatestProfile(ctx context.Context, catalogVersion, requestID, sessionID string) (core.TasteProfile, bool, error) {
 	var raw []byte
 	err := s.db.QueryRowContext(ctx, `SELECT profile_json FROM taste_profiles

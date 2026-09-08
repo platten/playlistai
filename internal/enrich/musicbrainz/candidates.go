@@ -39,6 +39,52 @@ type candidateStream struct {
 	recordingPages      map[string]int
 	exactByArtist       map[string]map[string]string
 	recordingReads      int
+	windowReads         int
+}
+
+// Rotate across at most four fresh artists/releases, then consume the buffered
+// tracks round-robin before opening another network window.
+const discoveryWindow = 4
+
+func discoveryKey(intent core.MusicIntent, catalog string) string {
+	intent = intent.Normalized()
+	constraints := make([][2]string, 0, len(intent.HardConstraints))
+	for _, c := range intent.HardConstraints {
+		constraints = append(constraints, [2]string{c.Kind, c.Value})
+	}
+	return knowledgeHash(struct {
+		Version     string
+		Catalog     string
+		Seed        core.RNGSeed
+		Controls    core.IntentControls
+		Description string
+		Preferences core.SemanticPreferences
+		Criteria    []core.MusicalCriterion
+		Constraints [][2]string
+		References  []core.IntentReference
+		Required    []core.IntentReference
+		Mode        core.Mode
+		Journey     core.JourneyPlan
+		Temporal    []core.TemporalRequirement
+		Destination *core.IntentReference
+		Policy      core.VerificationPolicy
+	}{"discovery/v2", catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
+		intent.Preferences, intent.EssentialCriteria, constraints, intent.References, intent.RequiredTracks, intent.Mode,
+		intent.Journey, intent.Temporal, intent.Destination, intent.VerificationPolicy})
+}
+
+func (s *candidateStream) Evidence(trackID string) []core.RetrievalEvidence {
+	if evidence := s.snapshot.DiscoveryEvidence[trackID]; len(evidence) > 0 {
+		return append([]core.RetrievalEvidence(nil), evidence...)
+	}
+	return []core.RetrievalEvidence{{Channel: "metadata_discovery", QueryWeight: 1}}
+}
+
+func (s *candidateStream) recordEvidence(trackID, channel, source string) {
+	if s.snapshot.DiscoveryEvidence == nil {
+		s.snapshot.DiscoveryEvidence = make(map[string][]core.RetrievalEvidence)
+	}
+	s.snapshot.DiscoveryEvidence[trackID] = []core.RetrievalEvidence{{Channel: channel, QueryID: source, QueryWeight: 1}}
 }
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
@@ -70,7 +116,14 @@ func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, reso
 		raw, _ := json.Marshal(intent.Knowledge)
 		_ = json.Unmarshal(raw, &s.snapshot) // independent request-owned slices
 	}
-	s.replay = s.snapshot.DiscoveryRecorded
+	key := discoveryKey(intent, resolver.CatalogVersion())
+	// Unkeyed legacy snapshots retain their original offline replay behavior.
+	s.replay = s.snapshot.DiscoveryRecorded && (s.snapshot.DiscoveryKey == "" || s.snapshot.DiscoveryKey == key)
+	if !s.replay {
+		s.snapshot.Discovery = nil
+		s.snapshot.DiscoveryEvidence = nil
+	}
+	s.snapshot.DiscoveryKey = key
 	s.snapshot.DiscoveryRecorded = true
 	return s
 }
@@ -165,7 +218,10 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		if len(s.artists) == 0 && len(s.pending) == 0 {
 			s.artists, s.deferredArtists = s.deferredArtists, nil
 		}
-		if len(s.artists) > 0 {
+		if len(s.pending) == 0 {
+			s.windowReads = 0
+		}
+		if len(s.artists) > 0 && s.windowReads < discoveryWindow {
 			artist := s.artists[0]
 			s.artists = s.artists[1:]
 			// Avoid online recording pages for artists absent from the local
@@ -200,6 +256,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 			}
 			path := "/ws/2/recording?" + values.Encode()
 			s.recordingReads++
+			s.windowReads++
 			raw, err := s.client.knowledgeGet(ctx, path, false)
 			if err != nil {
 				s.failures++
@@ -258,6 +315,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					key := core.ProvisionalRecordingKey(track)
 					if !s.seen[key] {
 						tracks = append(tracks, track)
+						s.recordEvidence(track.ID, "musicbrainz_artist_sample", s.client.base+path)
 						s.seen[key] = true
 					}
 				}

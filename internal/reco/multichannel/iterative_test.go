@@ -46,13 +46,15 @@ func TestIterativeDiscoveryRejectsAndAdvancesUntilCount(t *testing.T) {
 	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_artist", Value: "Blocked Artist"}}
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
 	result, err := engine.Build(context.Background(), intent)
-	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "audio" || source.pulls != 3 {
+	// Ranking now compares all eligible alternatives instead of returning the
+	// first passing preview. "last" has higher combined seed/semantic affinity.
+	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "last" || source.pulls != 4 {
 		t.Fatalf("result=%+v pulls=%d err=%v", result, source.pulls, err)
 	}
 	if fetch.calls != 0 {
 		t.Fatal("cached features were downloaded again")
 	}
-	if len(result.Intent.Knowledge.Discovery) != 3 {
+	if len(result.Intent.Knowledge.Discovery) != 4 {
 		t.Fatal("rejected attempts were not saved")
 	}
 }
@@ -64,7 +66,7 @@ func TestIterativeMissingPreviewDoesNotEndDiscovery(t *testing.T) {
 	intent := testIntent(1)
 	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "style", Value: "electronic", Scope: "playlist"}}
 	result, err := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service }).Build(context.Background(), intent)
-	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "audio" || fetch.calls != 1 {
+	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "audio" || fetch.calls < 1 || fetch.calls > cat.Len() {
 		t.Fatalf("missing-preview refill=%+v calls=%d err=%v", result.Tracks, fetch.calls, err)
 	}
 }

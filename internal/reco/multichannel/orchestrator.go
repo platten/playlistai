@@ -752,11 +752,14 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	candidates, err := o.retriever.Retrieve(ctx, ports.RetrievalRequest{
-		Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
-	})
-	if err != nil {
-		return core.Playlist{}, err
+	var candidates []core.Candidate
+	if o.candidateSource == nil {
+		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
+			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
+		})
+		if err != nil {
+			return core.Playlist{}, err
+		}
 	}
 	semanticNotices := append([]core.PlaylistNotice(nil), anchorNotices...)
 	var positiveCoverage core.QueryCoverage
@@ -766,7 +769,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	semanticNotices = append(semanticNotices, scoreNotices...)
 	semanticMatched := hasSemanticCandidates(candidates)
-	if discovery == nil && len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
+	if o.candidateSource == nil && discovery == nil && len(references) == 0 && len(required) == 0 && len(candidates) == 0 {
 		return core.Playlist{}, fmt.Errorf("%w: semantic index produced no grounded candidates", core.ErrNoSeeds)
 	}
 	metadataCandidates := candidates[:0]

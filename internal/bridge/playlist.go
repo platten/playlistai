@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -109,7 +110,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	intent = intent.Normalized()
 
 	profileStarted := time.Now()
-	profile, err := a.generationTasteProfile(ctx, req.SessionID, req.RequestID)
+	profile, err := a.profileForBuild(ctx, req, intent)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
@@ -266,7 +267,33 @@ func (r BuildPlaylistRequest) resolvedIntent() core.MusicIntent {
 	}.Normalized()
 }
 
+func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, intent core.MusicIntent) (core.TasteProfile, error) {
+	identity := req.Reproducibility
+	fingerprint, err := generationIdentity(intent, identity.CatalogVersion, identity.AlgorithmVersion, identity.ProfileVersion, identity.ProfileSnapshot, resolveRecentSelections(a.app.Catalog, req.RecentSelections))
+	if err != nil {
+		return core.TasteProfile{}, err
+	}
+	if identity.ProfileSnapshot == "" || fingerprint.IntentFingerprint != identity.IntentFingerprint || fingerprint.ContextFingerprint != identity.ContextFingerprint {
+		return a.generationTasteProfile(ctx, req.SessionID, req.RequestID)
+	}
+	if identity.CatalogVersion != a.catalogVersion() || identity.AlgorithmVersion != a.recommendationVersion() {
+		return core.TasteProfile{}, errors.New("saved generation uses a different catalog or recommendation version; regenerate to use the current versions")
+	}
+	if a.app.Profiles == nil {
+		return core.TasteProfile{}, errors.New("saved taste snapshot is unavailable; regenerate to use current preferences")
+	}
+	profile, found, err := a.app.Profiles.ProfileByID(ctx, identity.ProfileSnapshot)
+	if err != nil {
+		return core.TasteProfile{}, err
+	}
+	if !found || profile.CatalogVersion != identity.CatalogVersion || profile.AlgorithmVersion != identity.ProfileVersion {
+		return core.TasteProfile{}, errors.New("saved taste snapshot is missing or incompatible; regenerate to use current preferences")
+	}
+	return profile, nil
+}
+
 func applyOverrides(intent core.MusicIntent, overrides ControlOverrides) core.MusicIntent {
+	original := intent.Normalized()
 	if overrides.TotalTrackCount != nil {
 		intent.Controls.TotalTrackCount = *overrides.TotalTrackCount
 	}
@@ -290,6 +317,16 @@ func applyOverrides(intent core.MusicIntent, overrides ControlOverrides) core.Mu
 	}
 	if overrides.ExcludeSeedArtists != nil {
 		setHardConstraint(&intent, "exclude_reference_artists", *overrides.ExcludeSeedArtists)
+	}
+	// Legacy discovery snapshots lack an input key. Explicit control changes
+	// still invalidate their sampled sequence, while keeping cached identities.
+	if intent.Knowledge != nil && !reflect.DeepEqual(original, intent.Normalized()) {
+		snapshot := *intent.Knowledge
+		snapshot.DiscoveryRecorded = false
+		snapshot.Discovery = nil
+		snapshot.DiscoveryKey = ""
+		snapshot.DiscoveryEvidence = nil
+		intent.Knowledge = &snapshot
 	}
 	return intent
 }

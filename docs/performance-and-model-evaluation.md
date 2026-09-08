@@ -1,5 +1,37 @@
 # Retrieval and Local Intent Model Evaluation
 
+## Artist discovery lookup (2026-09-08)
+
+The review follow-up measured `ArtistRecordings` on the installed 956,917-track
+catalog, Linux/amd64, Intel Core Ultra 9 285H. The lookup returns 238 Radiohead
+recordings. Each row below summarizes three runs of three iterations; the
+baseline and optimized methods read the same immutable database in-process.
+
+| Implementation | Median | Range | Allocated bytes/op |
+| --- | ---: | ---: | ---: |
+| Previous exact-artist table scan | 76.94 ms | 76.51–77.71 ms | 70,408–70,413 |
+| Artist-to-row index, primary-key batches | 0.503 ms | 0.468–0.534 ms | 101,304–101,346 |
+
+The median lookup improvement is approximately 153× on this fixture. This
+isolates metadata lookup: catalog opening, model inference, provider requests,
+CLAP analysis and final recommendation quality are **not** measured here.
+The in-memory artist index adds startup work and memory, and indexed lookups
+allocate more temporary bytes. It is built while loading the existing catalog
+row map, without modifying downloaded catalogs. Reads use at most 256 row IDs
+per SQL query, preserving catalog order. Newly generated catalogs also contain
+an `(artist, row)` SQL index.
+
+```sh
+PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test ./internal/catalog \
+  -run '^$' -bench '^BenchmarkArtistRecordings$' -benchtime=3x -count=3
+```
+
+Other changes remove eager retrieval when provider discovery suffices and
+replace per-lookup cache-wide expiry scans with an expiry index and at most
+one cleanup per minute on access. Expired Discogs responses remain ineligible
+on every read. Live-provider latency and the extra CLAP cost of overcomplete
+selection have not been benchmarked; no end-to-end speedup is claimed.
+
 ## Scope and acceptance criteria
 
 Milestone 10 measured the 956,917-track production catalog on Linux/x86-64,

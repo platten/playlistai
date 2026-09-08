@@ -67,6 +67,12 @@ func TestFeedbackAndProfilePersistence(t *testing.T) {
 	if _, ok, err := reopened.LatestProfile(context.Background(), "catalog", "other-request", "other-session"); err != nil || !ok {
 		t.Fatalf("same snapshot was not retained for another context: ok=%v err=%v", ok, err)
 	}
+	if loaded, ok, err := reopened.ProfileByID(context.Background(), "snapshot"); err != nil || !ok || loaded.SnapshotID != "snapshot" {
+		t.Fatalf("snapshot ID lookup failed: %+v %v", loaded, err)
+	}
+	if _, ok, err := reopened.ProfileByID(context.Background(), "missing"); err != nil || ok {
+		t.Fatal("missing snapshot was not distinguished")
+	}
 	if err := reopened.ClearFeedback(context.Background()); err != nil {
 		t.Fatal(err)
 	}

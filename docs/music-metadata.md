@@ -73,9 +73,13 @@ canonical recording IDs or ISRC enrichment; unavailable evidence stays unknown.
 Genre discovery tries the complete phrase as a Discogs genre, then as a style
 if the genre search is empty. It requests 100 search results per page and can
 iterate up to three pages per phrase (at most eight phrases), with a shared
-60-release-tracklist budget. Later pages are fetched only after current-page
-release candidates and buffered tracks have been consumed. Release IDs are
-deduplicated across pages and genres. Seeded sampling and genre interleaving
+60-release-tracklist budget. Later pages are fetched after the current page's
+allocated detail budget (or available releases) and buffered tracks are consumed.
+When more pages exist, a page round receives 20 of the 60 detail reads so a
+full first page cannot starve later pages. Artist/release discovery rotates
+through four fresh lookups, then drains buffered tracks round-robin before
+opening another window. Release IDs are deduplicated across pages and genres.
+Seeded sampling and genre interleaving
 remain deterministic. It may return fewer tracks; this is not exhaustive
 Discogs coverage. Explicit artist/album recovery retains its eight-detail-read
 bound within the interactive metadata deadline. Album lookup rejects an

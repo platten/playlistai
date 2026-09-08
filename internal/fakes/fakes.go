@@ -328,6 +328,17 @@ func (s *ProfileStore) SaveProfile(_ context.Context, profile core.TasteProfile)
 	return nil
 }
 
+func (s *ProfileStore) ProfileByID(_ context.Context, snapshotID string) (core.TasteProfile, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, profile := range s.profiles {
+		if profile.SnapshotID == snapshotID {
+			return profile, true, nil
+		}
+	}
+	return core.TasteProfile{}, false, nil
+}
+
 func (s *ProfileStore) LatestProfile(_ context.Context, catalogVersion, requestID, sessionID string) (core.TasteProfile, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

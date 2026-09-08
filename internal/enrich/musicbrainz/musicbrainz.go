@@ -64,11 +64,12 @@ type Client struct {
 
 	limiter *requestLimiter
 
-	dbMu       sync.Mutex
-	db         *sql.DB
-	cacheEpoch uint64
-	memory     map[string]cachedResponse
-	inflight   map[string]chan struct{}
+	dbMu               sync.Mutex
+	db                 *sql.DB
+	cacheEpoch         uint64
+	memory             map[string]cachedResponse
+	inflight           map[string]chan struct{}
+	nextDiscogsCleanup time.Time
 }
 
 type requestLimiter struct {
@@ -142,6 +143,10 @@ func New(cfg Config) (*Client, error) {
 			return nil, err
 		}
 		c.db = db
+		if _, err := db.Exec(`CREATE INDEX IF NOT EXISTS mb_cache_expiry ON mb_cache(fetched_at)`); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 	c.expireDiscogs(context.Background())
 	return c, nil

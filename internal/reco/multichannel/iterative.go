@@ -17,11 +17,29 @@ const iterativeAttempts = 1000
 // collectIteratively keeps discovery and recommendation continuation separate
 // from the user's references. Every newly pulled candidate passes the same
 // semantic, hard-eligibility and preview checks before it can seed continuation.
-func (o *Orchestrator) collectIteratively(parent context.Context, initial []core.Candidate, stream ports.MusicCandidateStream, intent core.MusicIntent, request ports.RecommendationRequest, eligible *eligibility, references, required, waypoints []core.TrackRef, seed int64) ([]core.Candidate, []core.PlaylistNotice, error) {
+func (o *Orchestrator) collectIteratively(parent context.Context, initial []core.Candidate, stream ports.MusicCandidateStream, intent core.MusicIntent, request ports.RecommendationRequest, eligible *eligibility, references, required, waypoints []core.TrackRef, seed int64) (out []core.Candidate, outNotices []core.PlaylistNotice, outErr error) {
 	ctx, cancel := context.WithTimeout(parent, iterativeBudget)
 	defer cancel()
 	var accepted []core.Candidate
 	var notices []core.PlaylistNotice
+	go func() {
+		select {
+		case <-request.StopChecking:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	// Stop/budget cancellation interrupts provider I/O as well as analysis, but
+	// must not discard already accepted tracks. Parent cancellation still does.
+	defer func() {
+		if outErr != nil && ctx.Err() != nil && parent.Err() == nil {
+			out, outErr = accepted, nil
+			outNotices = append(outNotices, core.PlaylistNotice{Code: "discovery_stopped", Detail: "Discovery stopped; only eligible tracks were retained."})
+		}
+	}()
+	// Give ranking and MMR actual alternatives instead of stopping at the first
+	// N acceptable records. The existing time/attempt budgets still bound work.
+	target := max(2*(intent.Count-len(required)), intent.Count-len(required)+8)
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
 	}
@@ -73,7 +91,10 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				queue = nil // refill with attempted IDs removed, including replay
 				continue
 			}
-			candidate = core.Candidate{Track: track, Sources: []core.RetrievalEvidence{{Channel: "musicbrainz_artist_sample", QueryID: intent.Knowledge.ID, Rank: len(attempted) + 1, QueryWeight: 1}}}
+			candidate = core.Candidate{Track: track, Sources: []core.RetrievalEvidence{{Channel: "metadata_discovery", Rank: len(attempted) + 1, QueryWeight: 1}}}
+			if source, ok := stream.(ports.MusicCandidateEvidence); ok {
+				candidate.Sources = source.Evidence(track.ID)
+			}
 		} else {
 			if len(queue) == 0 {
 				if err := refill(); err != nil {
@@ -127,7 +148,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		}
 		candidate = batch[0]
 		if request.Progress != nil {
-			request.Progress.Report("generation", int64(len(accepted)+len(required)), int64(intent.Count), "Finding and checking the next track")
+			request.Progress.Report("generation", int64(min(len(accepted), target)), int64(target), "Checking candidates for the final selection")
 		}
 		if o.audioSession != nil {
 			assessment, err := o.audioSession.Check(parent, candidate.Track, false)
@@ -165,7 +186,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		if request.OnChecked != nil && o.audioSession != nil {
 			request.OnChecked(candidate.Track)
 		}
-		if len(accepted)+len(required) >= intent.Count {
+		if len(accepted) >= target {
 			complete, err := o.iterativeComplete(ctx, accepted, intent, request, references, required, waypoints, seed)
 			if err != nil {
 				return nil, notices, err
@@ -182,6 +203,15 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				notices = append(notices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Recommendation continuation was interrupted."})
 				break
 			}
+		}
+	}
+	if len(accepted)+len(required) >= intent.Count {
+		complete, err := o.iterativeComplete(parent, accepted, intent, request, references, required, waypoints, seed)
+		if err != nil {
+			return nil, notices, err
+		}
+		if complete {
+			return accepted, notices, nil
 		}
 	}
 	notices = append(notices, core.PlaylistNotice{Code: "discovery_partial", Detail: "The bounded discovery pool did not yield a complete eligible playlist. Missing previews, evidence and provider coverage can limit results.", Requested: intent.Count, Actual: len(accepted) + len(required)})

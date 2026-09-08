@@ -552,7 +552,7 @@ export function GenerateScreen({
             <Button variant="ghost" size="sm" onClick={() => { generationSequence.current += 1; activeGenerationId.current = ""; void activeParse.current?.cancel("generation cancelled"); void activeGeneration.current?.cancel("generation cancelled"); setParsing(false); setGenerating(false); setCheckedTracks([]); }}>Cancel</Button>
           </div>
           {checkedTracks.length > 0 && <>
-            <p role="status" className="text-[12px] text-muted">{checkedTracks.length} {checkedTracks.length === 1 ? "track" : "tracks"} {checkedTracks.some((track) => track.suggested) ? "suggested; musical fit may be approximate" : "checked"} · Order is provisional until sequencing finishes.</p>
+            <p role="status" className="text-[12px] text-muted">{checkedTracks.length} {checkedTracks.length === 1 ? "track" : "tracks"} {checkedTracks.some((track) => track.suggested) ? "suggested; musical fit may be approximate" : "checked"} · Candidates are provisional; final selection and order may change.</p>
             <ol className="max-h-48 overflow-auto rounded-card border border-line bg-surface p-3 text-[13px]">
               {checkedTracks.slice(0, 20).map((track) => <li key={track.id} className="py-1">{track.artist} — {track.title}{track.suggested && <span className="ml-2 text-muted">Suggested fit</span>}</li>)}
             </ol>
