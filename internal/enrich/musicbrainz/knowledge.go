@@ -179,6 +179,10 @@ func validMetadata(path, namespace string, raw []byte) bool {
 			return false
 		}
 	}
+	if namespace == "discogs-v1:" && strings.HasPrefix(path, "/releases/") {
+		_, err := sanitizeDiscogs(path, raw)
+		return err == nil
+	}
 	// Endpoint envelopes must be present. A successful empty array is valid;
 	// an unrelated JSON object or provider error is not a negative result.
 	endpoint, _, _ := strings.Cut(path, "?")
@@ -599,7 +603,7 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 	if artist != "" {
 		query += ` AND artist:"` + mbEscape(artist) + `"`
 	}
-	path := "/ws/2/release-group?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"5"}}.Encode()
+	path := "/ws/2/release-group?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}}.Encode()
 	raw, err := c.knowledgeGet(mbCtx, path, false)
 	if err != nil {
 		if c.MetadataStatus().DiscogsConfigured && ctx.Err() == nil {

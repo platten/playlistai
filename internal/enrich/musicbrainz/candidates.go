@@ -12,9 +12,11 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// Discovery is bounded to 100 artists and one recording page per artist. The
-// existing metadata client supplies caching, identity checks and rate limiting.
-const discoveryArtists = 100
+// Fetch full 100-record pages and expand only after buffered candidates run out.
+// Artist rotation remains intact; continuation pages share the response cache.
+const discoveryArtists = genreArtistTarget
+const artistRecordingPages = 5
+const discoveryRecordingPages = 100
 
 type candidateStream struct {
 	client              *Client
@@ -32,6 +34,11 @@ type candidateStream struct {
 	failures            int
 	lastError           error
 	fallback            *discogsCandidates
+	deferredArtists     []core.GenreArtist
+	recordingOffsets    map[string]int
+	recordingPages      map[string]int
+	exactByArtist       map[string]map[string]string
+	recordingReads      int
 }
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
@@ -143,11 +150,21 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 			}
 		}
 	}
-	for len(s.artists) > 0 || len(s.pending) > 0 {
+	for len(s.artists) > 0 || len(s.pending) > 0 || len(s.deferredArtists) > 0 {
 		if err := ctx.Err(); err != nil {
 			return core.TrackRef{}, err
 		}
 		var tracks []core.TrackRef
+		if s.recordingReads >= discoveryRecordingPages && (len(s.artists) > 0 || len(s.deferredArtists) > 0) {
+			s.artists, s.deferredArtists = nil, nil
+			s.snapshot.Notices = append(s.snapshot.Notices, "MusicBrainz discovery reached its 100-recording-page limit; remaining provider pages were not fetched.")
+		}
+		if len(s.artists) == 0 && len(s.pending) == 0 && len(s.deferredArtists) == 0 {
+			break
+		}
+		if len(s.artists) == 0 && len(s.pending) == 0 {
+			s.artists, s.deferredArtists = s.deferredArtists, nil
+		}
 		if len(s.artists) > 0 {
 			artist := s.artists[0]
 			s.artists = s.artists[1:]
@@ -157,8 +174,13 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 			if resolution.Status == core.ResolutionUnresolved {
 				continue
 			}
-			var exact map[string]string
-			if catalog, ok := s.cat.(ports.ArtistRecordingCatalog); ok && resolution.Selected != nil {
+			if s.recordingOffsets == nil {
+				s.recordingOffsets = make(map[string]int)
+				s.recordingPages = make(map[string]int)
+				s.exactByArtist = make(map[string]map[string]string)
+			}
+			exact, cached := s.exactByArtist[artist.ID]
+			if catalog, ok := s.cat.(ports.ArtistRecordingCatalog); ok && resolution.Selected != nil && !cached {
 				entries, err := catalog.ArtistRecordings(ctx, resolution.Selected.Artist)
 				if err != nil {
 					return core.TrackRef{}, err
@@ -171,7 +193,13 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					}
 				}
 			}
-			path := "/ws/2/recording?" + url.Values{"query": {"arid:" + artist.ID}, "fmt": {"json"}, "limit": {"100"}}.Encode()
+			s.exactByArtist[artist.ID] = exact
+			values := url.Values{"query": {"arid:" + artist.ID}, "fmt": {"json"}, "limit": {"100"}}
+			if offset := s.recordingOffsets[artist.ID]; offset > 0 {
+				values.Set("offset", fmt.Sprint(offset))
+			}
+			path := "/ws/2/recording?" + values.Encode()
+			s.recordingReads++
 			raw, err := s.client.knowledgeGet(ctx, path, false)
 			if err != nil {
 				s.failures++
@@ -184,12 +212,22 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 			}
 			s.failures = 0
 			var page struct {
+				Count      int           `json:"count"`
 				Recordings []mbRecording `json:"recordings"`
 			}
 			if err := json.Unmarshal(raw, &page); err != nil {
 				return core.TrackRef{}, err
 			}
 			s.snapshot.Sources = append(s.snapshot.Sources, s.client.base+path)
+			s.recordingPages[artist.ID]++
+			s.recordingOffsets[artist.ID] += len(page.Recordings)
+			if len(page.Recordings) > 0 && s.recordingOffsets[artist.ID] < page.Count {
+				if s.recordingPages[artist.ID] < artistRecordingPages {
+					s.deferredArtists = append(s.deferredArtists, artist)
+				} else {
+					s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("MusicBrainz recording lookup for %q reached its five-page limit; additional recordings were not fetched.", artist.Name))
+				}
+			}
 			for _, index := range s.rng.Perm(len(page.Recordings)) {
 				r := page.Recordings[index]
 				credited, blocked := false, false

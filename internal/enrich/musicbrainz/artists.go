@@ -14,7 +14,8 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const genreArtistTarget = 100
+const genreArtistTarget = 300
+const compoundGenreThreshold = 100
 const maxSampledArtists = 6
 const recordingsPerArtist = 3
 
@@ -24,7 +25,7 @@ func (c *Client) genreArtists(ctx context.Context, genre string) core.GenreArtis
 	// A compound description may be represented by separate artist tags.
 	// Require every term, never drop a trailing word or infer recording genre.
 	terms := strings.Fields(genre)
-	if len(pool.Artists) < genreArtistTarget && pool.Complete && len(terms) > 1 && len(terms) <= 4 {
+	if len(pool.Artists) < compoundGenreThreshold && pool.Complete && len(terms) > 1 && len(terms) <= 4 {
 		var clauses []string
 		for _, term := range terms {
 			clauses = append(clauses, `tag:"`+mbEscape(term)+`"`)
@@ -50,7 +51,7 @@ func (c *Client) genreArtists(ctx context.Context, genre string) core.GenreArtis
 func (c *Client) genreArtistsQuery(ctx context.Context, genre, query string) core.GenreArtistPool {
 	pool := core.GenreArtistPool{Genre: genre}
 	seen := map[string]bool{}
-	for offset := 0; len(pool.Artists) < genreArtistTarget; {
+	for offset, pages := 0, 0; len(pool.Artists) < genreArtistTarget && pages < 5; pages++ {
 		path := "/ws/2/artist?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}, "offset": {fmt.Sprint(offset)}}.Encode()
 		raw, err := c.knowledgeGet(ctx, path, false)
 		if err != nil {
@@ -70,6 +71,9 @@ func (c *Client) genreArtistsQuery(ctx context.Context, genre, query string) cor
 		pool.Sources = append(pool.Sources, c.base+path)
 		pool.Available = page.Count
 		for _, artist := range page.Artists {
+			if len(pool.Artists) >= genreArtistTarget {
+				break
+			}
 			if artist.ID == "" || artist.Name == "" || seen[artist.ID] {
 				continue
 			}
@@ -113,7 +117,7 @@ func (c *Client) sampleGenreArtists(ctx context.Context, intent *core.MusicInten
 		seen[key] = true
 		pool := c.genreArtists(ctx, genre)
 		if len(pool.Artists) < genreArtistTarget {
-			snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("Found %d of the target 100 artists for %q; provider coverage or the metadata budget limited this pool.", len(pool.Artists), genre))
+			snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("Found %d of the target %d artists for %q; provider coverage or the metadata budget limited this pool.", len(pool.Artists), genreArtistTarget, genre))
 		}
 		snapshot.Sources = append(snapshot.Sources, pool.Sources...)
 		snapshot.ArtistPools = append(snapshot.ArtistPools, pool)

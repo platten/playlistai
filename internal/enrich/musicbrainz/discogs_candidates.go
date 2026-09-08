@@ -14,6 +14,69 @@ type discogsCandidates struct {
 	initialized bool
 	releases    []int64
 	lastError   error
+	queries     []discogsPageCursor
+	used        map[int64]bool
+	read        int
+}
+
+type discogsPageCursor struct {
+	query url.Values
+	page  int
+	done  bool
+}
+
+func (f *discogsCandidates) hasMorePages() bool {
+	if f.read >= discogsDiscoveryReleases {
+		return false
+	}
+	for _, q := range f.queries {
+		if !q.done {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *candidateStream) loadDiscogsPages(ctx context.Context) {
+	f := s.fallback
+	var pools [][]int64
+	for i := range f.queries {
+		q := &f.queries[i]
+		if q.done || ctx.Err() != nil {
+			continue
+		}
+		q.page++
+		page, err := s.client.discogsSearchPage(ctx, q.query, q.page)
+		if err == nil && q.page == 1 && len(page.Results) == 0 && q.query.Has("genre") {
+			q.query = url.Values{"style": {q.query.Get("genre")}}
+			page, err = s.client.discogsSearchPage(ctx, q.query, q.page)
+		}
+		if err != nil {
+			f.lastError = err
+			q.done = true
+			continue
+		}
+		q.done = q.page >= discogsSearchPages || page.FetchedResults == 0 || (page.Pagination.Pages <= q.page && page.Pagination.Items <= q.page*discogsPageSize)
+		if q.page >= discogsSearchPages && (page.Pagination.Pages > q.page || page.Pagination.Items > q.page*discogsPageSize) {
+			s.snapshot.Notices = append(s.snapshot.Notices, "Discogs search reached its three-page limit; additional search results were not fetched.")
+		}
+		var pool []int64
+		for _, i := range s.rng.Perm(len(page.Results)) {
+			r := page.Results[i]
+			if r.ID > 0 && r.Type == "release" && !f.used[r.ID] {
+				pool = append(pool, r.ID)
+				f.used[r.ID] = true
+			}
+		}
+		pools = append(pools, pool)
+	}
+	for round := 0; round < discogsPageSize; round++ {
+		for _, pool := range pools {
+			if round < len(pool) {
+				f.releases = append(f.releases, pool[round])
+			}
+		}
+	}
 }
 
 // Discogs provides a bounded discovery fallback, not a genre-verification
@@ -25,49 +88,35 @@ func (s *candidateStream) nextDiscogs(ctx context.Context) (core.TrackRef, error
 	f := s.fallback
 	if !f.initialized {
 		f.initialized = true
-		used := map[int64]bool{}
-		var pools [][]int64
+		f.used = make(map[int64]bool)
 		if len(s.genres) > discogsReleaseLimit {
 			s.snapshot.Notices = append(s.snapshot.Notices, "Discogs fallback can search at most eight genre phrases per request; narrow the description if coverage is insufficient.")
 		}
 		for _, genre := range s.genres[:min(len(s.genres), discogsReleaseLimit)] {
-			page, err := s.client.discogsSearch(ctx, url.Values{"genre": {genre}})
-			if err == nil && len(page.Results) == 0 {
-				// Discogs distinguishes broad genres from styles. Try the complete
-				// requested phrase in both fields, never silently drop words.
-				page, err = s.client.discogsSearch(ctx, url.Values{"style": {genre}})
-			}
-			if err != nil {
-				f.lastError = err
-				continue
-			}
-			var pool []int64
-			for _, i := range s.rng.Perm(min(len(page.Results), discogsReleaseLimit)) {
-				r := page.Results[i]
-				if r.ID > 0 && r.Type == "release" && !used[r.ID] {
-					pool = append(pool, r.ID)
-					used[r.ID] = true
-				}
-			}
-			pools = append(pools, pool)
+			f.queries = append(f.queries, discogsPageCursor{query: url.Values{"genre": {genre}}})
 		}
-		// Interleave requested genres within a single bounded release budget.
-		for round := 0; round < discogsReleaseLimit && len(f.releases) < discogsReleaseLimit; round++ {
-			for _, pool := range pools {
-				if round < len(pool) && len(f.releases) < discogsReleaseLimit {
-					f.releases = append(f.releases, pool[round])
-				}
-			}
-		}
+		s.loadDiscogsPages(ctx)
 	}
-	for len(f.releases) > 0 || len(s.pending) > 0 {
+	for len(f.releases) > 0 || len(s.pending) > 0 || f.hasMorePages() {
 		if err := ctx.Err(); err != nil {
 			return core.TrackRef{}, err
 		}
 		var tracks []core.TrackRef
+		if f.read >= discogsDiscoveryReleases && len(f.releases) > 0 {
+			f.releases = nil
+			s.snapshot.Notices = append(s.snapshot.Notices, "Discogs discovery reached its 60-release limit; remaining provider results were not fetched.")
+		}
+		if len(f.releases) == 0 && len(s.pending) == 0 {
+			if !f.hasMorePages() {
+				break
+			}
+			s.loadDiscogsPages(ctx)
+			continue
+		}
 		if len(f.releases) > 0 {
 			id := f.releases[0]
 			f.releases = f.releases[1:]
+			f.read++
 			release, err := s.client.discogsRelease(ctx, id)
 			if err != nil {
 				f.lastError = err
@@ -209,7 +258,7 @@ func (c *Client) resolveDiscogsAlbum(ctx context.Context, ref core.IntentReferen
 	if len(identities) == 0 {
 		return ref, false
 	}
-	if len(identities) > 1 || page.Pagination.Items > len(page.Results) {
+	if len(identities) > 1 || len(page.Results) > discogsReleaseLimit || page.Pagination.Items > max(page.FetchedResults, len(page.Results)) {
 		result.Status = core.ResolutionAmbiguous
 		ref.Resolution = &result
 		snapshot.Notices = append(snapshot.Notices, "Discogs album identity is ambiguous or the search is incomplete. Add the artist and exact album title.")

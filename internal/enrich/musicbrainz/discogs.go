@@ -21,6 +21,9 @@ import (
 
 const discogsInterval = time.Minute / 25
 const discogsReleaseLimit = 8
+const discogsPageSize = 100
+const discogsSearchPages = 3
+const discogsDiscoveryReleases = 60
 
 type discogsClient struct {
 	base                  string
@@ -201,13 +204,18 @@ type discogsRelease struct {
 	Tracklist []discogsTrack  `json:"tracklist"`
 }
 type discogsSearch struct {
-	Pagination struct {
+	// FetchedResults preserves page completeness when duplicate hits collapse.
+	FetchedResults int `json:"fetched_results,omitempty"`
+	Pagination     struct {
 		Items int `json:"items"`
+		Pages int `json:"pages,omitempty"`
 	} `json:"pagination"`
-	Results []struct {
-		ID   int64  `json:"id"`
-		Type string `json:"type"`
-	} `json:"results"`
+	Results []discogsSearchResult `json:"results"`
+}
+
+type discogsSearchResult struct {
+	ID   int64  `json:"id"`
+	Type string `json:"type"`
 }
 
 func sanitizeDiscogs(path string, raw []byte) ([]byte, error) {
@@ -216,6 +224,19 @@ func sanitizeDiscogs(path string, raw []byte) ([]byte, error) {
 		if err := json.Unmarshal(raw, &page); err != nil {
 			return nil, err
 		}
+		// Preserve provider order and pagination totals, but store each usable
+		// release once. Different searches share the same /releases/{id} entry.
+		results := make([]discogsSearchResult, 0, len(page.Results))
+		page.FetchedResults = len(page.Results)
+		seen := make(map[int64]bool)
+		for _, result := range page.Results {
+			if result.ID <= 0 || result.Type != "release" || seen[result.ID] {
+				continue
+			}
+			seen[result.ID] = true
+			results = append(results, result)
+		}
+		page.Results = results
 		return json.Marshal(page)
 	}
 	var release discogsRelease
@@ -224,6 +245,9 @@ func sanitizeDiscogs(path string, raw []byte) ([]byte, error) {
 	}
 	if release.ID <= 0 || release.Tracklist == nil {
 		return nil, errors.New("invalid Discogs release")
+	}
+	if path != fmt.Sprintf("/releases/%d", release.ID) {
+		return nil, errors.New("discogs: returned a different release ID")
 	}
 	return json.Marshal(release)
 }
@@ -244,9 +268,22 @@ func (c *Client) discogsGet(ctx context.Context, path string, value any) error {
 }
 
 func (c *Client) discogsSearch(ctx context.Context, query url.Values) (discogsSearch, error) {
+	return c.discogsSearchPage(ctx, query, 1)
+}
+
+func (c *Client) discogsSearchPage(ctx context.Context, query url.Values, number int) (discogsSearch, error) {
+	if number < 1 || number > discogsSearchPages {
+		return discogsSearch{}, errors.New("discogs: search page limit reached")
+	}
+	// Own the query before adding defaults; callers may reuse it concurrently.
+	values := make(url.Values, len(query)+3)
+	for key, entries := range query {
+		values[key] = append([]string(nil), entries...)
+	}
+	query = values
 	query.Set("type", "release")
-	query.Set("per_page", strconv.Itoa(discogsReleaseLimit))
-	query.Set("page", "1")
+	query.Set("per_page", strconv.Itoa(discogsPageSize))
+	query.Set("page", strconv.Itoa(number))
 	var page discogsSearch
 	err := c.discogsGet(ctx, "/database/search?"+query.Encode(), &page)
 	return page, err
