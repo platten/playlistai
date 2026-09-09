@@ -42,6 +42,10 @@ try {
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
   if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.7.0/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('COMING IN VERSION 0.8.0')) throw Error('Draft release incorrectly advertised');
+  if (!(await page.locator('.version-label').innerText()).includes('PUBLIC DOWNLOAD / 0.7.0')) throw Error('Public download version unclear');
+  if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
+  await page.getByRole('link', {name:'Read the 0.8.0 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); window.scrollTo(0,0); });
@@ -67,7 +71,8 @@ try {
   const noJS = await browser.newPage({javaScriptEnabled:false,viewport:{width:390,height:900}});
   await noJS.goto(origin);
   await noJS.getByRole('link', {name:'Download for Windows',exact:false}).waitFor();
-  if (await noJS.locator('.feature').count() !== 4) throw Error('Content missing without JavaScript');
+  if (await noJS.locator('.experience-grid .feature').count() !== 4) throw Error('Content missing without JavaScript');
+  if (await noJS.locator('.measurement-grid article').count() !== 3) throw Error('Measurements missing without JavaScript');
   await noJS.close();
   if (process.argv.includes('--social')) {
     await page.setViewportSize({width:1200,height:630});
