@@ -41,8 +41,12 @@ func newEligibility(intent core.MusicIntent, references, required []core.TrackRe
 		excludedArtists: make(map[string]struct{}), referenceArtists: make(map[string]struct{}),
 	}
 	albumMembers := requiredAlbumMembers(intent)
+	artistOnly := false
+	for _, c := range intent.HardConstraints {
+		artistOnly = artistOnly || c.Kind == "require_artist"
+	}
 	for _, reference := range references {
-		if _, member := albumMembers[reference.ID]; !member {
+		if _, member := albumMembers[reference.ID]; !member && (!artistOnly || !artistOnlyEligible(intent, reference)) {
 			e.excludedIDs[reference.ID] = struct{}{}
 			e.excludedRecordings[core.ProvisionalRecordingKey(reference)] = struct{}{}
 		}

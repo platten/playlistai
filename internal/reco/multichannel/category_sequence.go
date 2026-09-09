@@ -58,6 +58,11 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 			if err := ctx.Err(); err != nil {
 				return nil, false, err
 			}
+			// A named destination is an endpoint even when the starting
+			// category has no required reference track. Never extend past it.
+			if request.Intent.Destination != nil && len(request.Required) > 0 && path.nextRequired == len(request.Required) {
+				continue
+			}
 			previous := s.startAnchor(request, path.items)
 			previousArtist := artistKeys[previous.ID]
 			if previous.ID != "" && previousArtist == "" {
@@ -113,6 +118,9 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 					extended := categoryPath{stage: stage, nextRequired: path.nextRequired, lastWaypoint: path.lastWaypoint, score: score, capacity: capacity[stage]}
 					if item.required {
 						extended.nextRequired++
+						if request.Intent.Destination != nil && extended.nextRequired == len(request.Required) {
+							extended.capacity = len(path.items) + 1
+						}
 					}
 					if isWaypoint {
 						extended.lastWaypoint = waypoint

@@ -34,4 +34,9 @@ func TestBareGenreQuerySeparatesControlsWithoutGenreWhitelist(t *testing.T) {
 			t.Fatalf("explicit instructions flattened: %q => %q", prompt, got)
 		}
 	}
+	for _, prompt := range []string{"Make a 10-song salsa playlist.", "Give me 10 salsa songs.", "Make a playlist of salsa, ten tracks."} {
+		if got := BareGenreQuery(prompt); got != "salsa" {
+			t.Fatalf("category lookup retained command syntax: %q", got)
+		}
+	}
 }

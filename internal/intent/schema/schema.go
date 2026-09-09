@@ -118,10 +118,10 @@ unsupported ::= "{" ws "\"text\":" ws str ws "," ws "\"reason\":" ws str ws "," 
 energylist ::= "[" ws (energy (ws "," ws energy){0,7})? ws "]"
 energy ::= "{" ws "\"position\":" ws num ws "," ws "\"energy\":" ws num ws "}"
 bool ::= "true" | "false"
-str ::= "\"" ( [^"\\] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) )* "\""
-int ::= "-"? ("0" | [1-9] [0-9]*)
-num ::= "-"? ("0" | [1-9] [0-9]*) ("." [0-9]+)?
-ws ::= [ \t\n]*`
+str ::= "\"" ( [^"\\\x00-\x1F] | "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F]) ){0,512} "\""
+int ::= "-"? ("0" | [1-9] [0-9]{0,3})
+num ::= "-"? ("0" | [1-9] [0-9]{0,3}) ("." [0-9]{1,6})?
+ws ::= [ \t\n]{0,8}`
 
 func Parse(raw []byte) (core.MusicIntent, error) {
 	return parse(raw, "")
@@ -155,7 +155,13 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	}
 	if prompt != "" && wire.Genres != nil {
 		discardInventedInstructions(&wire, prompt)
+		discardReferenceAttributedDescriptions(&wire)
 		preserveCategoryJourney(&wire, prompt)
+		preserveArtistStageDescriptions(&wire, prompt)
+		preserveDefiningCategory(&wire, prompt)
+		normalizeNegativeDescriptions(&wire)
+		preserveArtistOnly(&wire, prompt)
+		preserveNamedDestination(&wire, prompt)
 		normalizePeriods(&wire, prompt)
 		preserveQualityClauses(&wire, prompt)
 		if err := validateOpenIntent(wire, prompt); err != nil {

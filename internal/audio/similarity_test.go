@@ -68,6 +68,17 @@ func TestJourneyClausesKeepScopeAndNegativePreferences(t *testing.T) {
 	}
 }
 
+func TestGenreAndStyleDoNotDoubleScoreTheSameCriterion(t *testing.T) {
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "electronic", Scope: "playlist"}}, Preferences: core.SemanticPreferences{
+		Genres: []core.IntentPreference{{Value: "electronic", Influence: core.InfluencePositive}},
+		Styles: []core.IntentPreference{{Value: "electronic", Influence: core.InfluencePositive}, {Value: "rock", Influence: core.InfluenceNegative}},
+	}}
+	clauses := Clauses(intent)
+	if len(clauses) != 2 || !clauses[0].Essential || !clauses[1].Negative {
+		t.Fatalf("duplicate category score or lost exclusion: %+v", clauses)
+	}
+}
+
 func TestJourneyRankingRewardsEitherStageRatherThanTheirAverage(t *testing.T) {
 	assessment := core.AudioAssessment{Clauses: []core.AudioClauseAssessment{
 		{Clause: core.AudioClause{Scope: "journey_start"}, Score: .9, ScoreAvailable: true, State: core.EvidenceUnknown},

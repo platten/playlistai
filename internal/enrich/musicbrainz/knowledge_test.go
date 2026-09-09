@@ -17,7 +17,7 @@ import (
 )
 
 func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
-	for _, genre := range []string{"Classical", "Gqom", "未知ジャンル"} {
+	for _, genre := range []string{"Classical", "Gqom", "未知ジャンル", "Salsa"} {
 		t.Run(genre, func(t *testing.T) {
 			artistLookups := 0
 			firstSearch := ""
@@ -49,10 +49,12 @@ func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
 			defer client.Close()
 			cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One", Audio: []float32{1, 0}, Track: []float32{1, 0}})
 			for range 2 {
-				intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: genre + " 10 tracks"})
-				got, err := client.ResolveMusic(context.Background(), intent, cat, cat, nil)
-				if err != nil || got.Controls.TotalTrackCount != 10 || len(got.References) != 0 || len(got.EssentialCriteria) != 1 || got.EssentialCriteria[0].Value != genre || len(got.Knowledge.Candidates) != 1 {
-					t.Fatalf("counted genre failed: %+v, %v", got, err)
+				for _, prompt := range []string{genre + " 10 tracks", "Make a 10-song " + genre + " playlist."} {
+					intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+					got, err := client.ResolveMusic(context.Background(), intent, cat, cat, nil)
+					if err != nil || got.Controls.TotalTrackCount != 10 || len(got.References) != 0 || len(got.EssentialCriteria) != 1 || got.EssentialCriteria[0].Value != genre || len(got.Knowledge.Candidates) != 1 {
+						t.Fatalf("counted genre failed: %+v, %v", got, err)
+					}
 				}
 			}
 			if artistLookups != 0 {

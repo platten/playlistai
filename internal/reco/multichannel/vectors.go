@@ -18,6 +18,22 @@ type referenceVectors struct {
 	reps []weightedVectors
 }
 
+func hasExplicitRetrievalReference(cat ports.Catalog, intent core.MusicIntent) bool {
+	for _, group := range [][]core.IntentReference{intent.References, intent.Journey.Waypoints} {
+		for _, ref := range group {
+			// A requested endpoint alone does not seed the starting category.
+			// Keep inferred/genre retrieval for "classical ... ending at X".
+			if intent.Destination != nil && referenceKey(ref) == referenceKey(*intent.Destination) {
+				continue
+			}
+			if ref.Influence != core.InfluenceNegative && len(referenceRepresentatives(cat, ref)) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func positiveReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
 	return intentReferenceVectors(cat, intent, core.InfluencePositive)
 }
@@ -28,7 +44,7 @@ func negativeReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []refe
 
 func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influence core.Influence) []referenceVectors {
 	references := append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...)
-	if influence == core.InfluencePositive {
+	if influence == core.InfluencePositive && (intent.VerificationPolicy != core.BestAvailable || !hasExplicitRetrievalReference(cat, intent)) {
 		for _, anchor := range intent.InferredAnchors {
 			if anchor.Suitability.State == core.EvidenceMatch || intent.VerificationPolicy == core.BestAvailable && anchor.Suitability.State != core.EvidenceMismatch {
 				references = append(references, anchor.Reference)

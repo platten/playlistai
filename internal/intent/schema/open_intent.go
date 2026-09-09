@@ -68,6 +68,26 @@ func discardInventedInstructions(w *Wire, prompt string) {
 	}
 	kept := make([]WireConstraint, 0, len(w.HardConstraints))
 	for _, constraint := range w.HardConstraints {
+		if (constraint.Kind == "journey" || constraint.Kind == "journey_order" || constraint.Kind == "waypoint_order" || constraint.Kind == "transition_order") && len(w.JourneyWaypoints) >= 2 {
+			var names []string
+			for _, ref := range w.JourneyWaypoints {
+				if ref.Influence != "negative" {
+					names = append(names, ref.Value)
+				}
+			}
+			ordered := strings.Join(names, " ")
+			if len(names) >= 2 && containsReferenceWords(ordered, constraint.Value) && containsReferenceWords(constraint.Value, ordered) {
+				continue // same ordered identities are already in the typed journey
+			}
+		}
+		// Output length has exactly one field: total_count. Some models repeat
+		// it as a generic constraint; that cannot become an unsupported musical
+		// requirement. Literal count repair happens before this normalization;
+		// otherwise the validated model control remains authoritative.
+		switch constraint.Kind {
+		case "count", "track_count", "total_count", "playlist_length":
+			continue
+		}
 		if constraint.Kind == "energy_trajectory" && !containsReferenceWords(prompt, "energy") && !containsReferenceWords(prompt, "intensity") {
 			continue
 		}

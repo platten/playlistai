@@ -18,6 +18,7 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/intent/llama"
+	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/reco/multichannel"
@@ -36,13 +37,23 @@ type promptCase struct {
 	Destination     string   `json:"destination"`
 	Vocal           string   `json:"vocal"`
 	Mood            string   `json:"mood"`
+	NegativeMoods   []string `json:"negativeMoods"`
 	Texture         string   `json:"texture"`
 	Artists         []string `json:"artists"`
 	Album           string   `json:"album"`
 	Track           string   `json:"track"`
 	JourneyGenres   []string `json:"journeyGenres"`
+	Count           int      `json:"count"`
+	MinimumArtists  int      `json:"minimumArtists"`
+	OnlyArtist      string   `json:"onlyArtist"`
 }
 type result struct {
+	Algorithm       string           `json:"algorithmVersion"`
+	Catalog         string           `json:"catalogVersion"`
+	Parser          ports.ParserInfo `json:"parser"`
+	ParseOnly       bool             `json:"parseOnly,omitempty"`
+	ParserFallback  string           `json:"parserFallback,omitempty"`
+	ParserIssues    []string         `json:"parserIssues,omitempty"`
 	Prompt          string           `json:"prompt"`
 	Errors          []string         `json:"errors"`
 	Milliseconds    int64            `json:"milliseconds"`
@@ -74,10 +85,14 @@ func main() {
 func run() error {
 	model := flag.String("model", "", "GGUF path")
 	runtime := flag.String("runtime", "", "llama-server path")
+	parseOnly := flag.Bool("parse-only", false, "evaluate interpretation only; not a playlist acceptance run")
 	catalogDir := flag.String("catalog", "", "catalog directory")
 	fixture := flag.String("prompts", "internal/evaluation/testdata/music-prompts-v8.json", "prompt expectations JSON")
 	output := flag.String("output", "/tmp/music-prompts-report.json", "report JSON")
 	cache := flag.String("cache", "/tmp/music-prompts-metadata.sqlite", "metadata cache")
+	dataset := flag.String("metadata", "", "optional installed catalog-matched metadata SQLite dataset")
+	minimum := flag.Int("min-tracks", 1, "minimum eligible output tracks required to pass each case")
+	minArtists := flag.Int("min-artists", 0, "minimum distinct artists for non-artist-only requests")
 	online := flag.Bool("online", false, "allow extracted music-term metadata lookups")
 	single := flag.String("case", "", "optional exact prompt")
 	bundle := flag.String("bundle", "", "optional parity-validated CLAP bundle; permits Deezer preview analysis")
@@ -86,8 +101,8 @@ func run() error {
 	replay := flag.String("replay", "", "reuse LLM intents and metadata from an earlier musiccheck report")
 	cacheOnly := flag.Bool("cached-audio-only", false, "check reusable CLAP features without retrieving new previews")
 	flag.Parse()
-	if *count < 0 || *cacheOnly && *bundle == "" {
-		return fmt.Errorf("count must be nonnegative; cached-audio-only requires a bundle")
+	if *count < 0 || *minimum < 1 || *minArtists < 0 || (*count > 0 && *minimum > *count) || *cacheOnly && *bundle == "" {
+		return fmt.Errorf("count must be nonnegative and at least min-tracks; min-tracks must be positive; cached-audio-only requires a bundle")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -129,12 +144,16 @@ func run() error {
 		engine.WithAnchorProposer(parser.ProposeAnchors)
 	}
 	var mb *musicbrainz.Client
+	if *dataset != "" && !*online {
+		return fmt.Errorf("metadata discovery requires -online to permit provider fallback, as in the desktop")
+	}
 	if *online {
-		mb, err = musicbrainz.New(musicbrainz.Config{UserAgent: "PlaylistAI/0.6 (https://github.com/platten/playlistai)", CachePath: *cache})
+		mb, err = musicbrainz.New(musicbrainz.Config{UserAgent: "PlaylistAI/0.8 (https://github.com/platten/playlistai)", CachePath: *cache, DatasetPath: *dataset})
 		if err != nil {
 			return err
 		}
 		defer mb.Close()
+		engine.WithCandidateSource(mb)
 	}
 	if *bundle != "" {
 		manifest, e := audio.ReadRuntimeBundle(*bundle)
@@ -171,16 +190,30 @@ func run() error {
 	results := []result{}
 	failed := false
 	for _, c := range cases {
+		if err := ctx.Err(); err != nil {
+			return err // Do not report unattempted cases as generation failures.
+		}
 		if *single != "" && c.Prompt != *single {
 			continue
 		}
 		started := time.Now()
 		fmt.Printf("Checking: %s\n", c.Prompt)
-		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly}
+		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly, ParseOnly: *parseOnly, Algorithm: engine.AlgorithmVersion(), Catalog: cat.CatalogVersion()}
+		if parser != nil {
+			r.Parser = parser.Info()
+		}
 		var intent core.MusicIntent
 		var parseErr error
 		if parser != nil {
 			intent, parseErr = parser.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+			if parseErr != nil && ctx.Err() == nil && !*parseOnly {
+				// Match the desktop fallback, while retaining the model failure
+				// and still checking whether the fallback preserved the request.
+				r.ParserFallback = parseErr.Error()
+				fallback := rules.New()
+				intent, parseErr = fallback.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+				r.Parser = fallback.Info()
+			}
 		} else {
 			var ok bool
 			intent, ok = prior[c.Prompt]
@@ -191,29 +224,45 @@ func run() error {
 		fmt.Printf("  Parsed in %s\n", time.Since(started).Round(time.Millisecond))
 		if parseErr != nil {
 			r.Errors = append(r.Errors, parseErr.Error())
+		} else if *parseOnly {
+			r.Intent = intent
+			r.Errors = append(r.Errors, checkIntent(c, intent)...)
 		} else {
 			intent.VerificationPolicy = core.BestAvailable
+			r.ParserIssues = checkIntent(c, intent)
+			expected := c
 			if *count > 0 {
+				r.Errors = append(r.Errors, checkIntent(promptCase{Count: c.Count}, intent)...)
+				expected.Count = 0
 				intent.Controls.TotalTrackCount = *count
 			}
 			intent.Seed = "42"
-			r.Errors = append(r.Errors, checkIntent(c, intent)...)
 			if mb != nil {
-				intent, err = mb.ResolveMusic(ctx, intent, cat, cat, nil)
+				intent, err = mb.PrepareMusic(ctx, intent, cat, cat, nil)
 				if err != nil {
 					r.Errors = append(r.Errors, err.Error())
 				}
 			}
 			intent, _ = resolution.Apply(cat, intent)
+			// Metadata can corroborate a category omitted by the model. Check
+			// end-to-end meaning here, while retaining raw parser issues above.
+			r.Errors = append(r.Errors, checkIntent(expected, intent)...)
 			fmt.Printf("  Resolved in %s\n", time.Since(started).Round(time.Millisecond))
 			r.Intent = intent
-			r.Playlist, err = engine.Build(ctx, intent)
+			lastNote := ""
+			lastDone := int64(-1)
+			progress := ports.ProgressFunc(func(_ string, done, total int64, note string) {
+				if note != lastNote || done != lastDone {
+					fmt.Printf("  %s (%d/%d)\n", note, done, total)
+					lastNote, lastDone = note, done
+				}
+			})
+			r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress})
 			if err != nil {
 				r.Errors = append(r.Errors, err.Error())
 			}
-			if len(r.Playlist.Tracks) == 0 {
-				r.Errors = append(r.Errors, "empty playlist")
-			}
+			r.Errors = append(r.Errors, checkPlaylist(r.Playlist, *minimum, intent.Controls.TotalTrackCount)...)
+			r.Errors = append(r.Errors, checkVariety(r.Playlist, c, *minArtists)...)
 			if *bundle != "" && len(audio.Clauses(intent)) > 0 && len(r.Playlist.Tracks) > 0 {
 				if r.Playlist.AudioEvidence == nil {
 					r.Errors = append(r.Errors, "CLAP evidence missing")
@@ -246,19 +295,57 @@ func run() error {
 		if err = os.WriteFile(*output, append(report, '\n'), 0600); err != nil {
 			return err
 		}
-		fmt.Printf("%s: tracks=%d issues=%v elapsed=%dms\n", c.Prompt, len(r.Playlist.Tracks), r.Errors, r.Milliseconds)
+		if r.ParseOnly {
+			fmt.Printf("%s: interpretation only, issues=%v elapsed=%dms\n", c.Prompt, r.Errors, r.Milliseconds)
+		} else {
+			fmt.Printf("%s: tracks=%d issues=%v elapsed=%dms\n", c.Prompt, len(r.Playlist.Tracks), r.Errors, r.Milliseconds)
+		}
 		failed = failed || len(r.Errors) > 0
 	}
 	if len(results) == 0 {
 		return fmt.Errorf("no prompt cases selected")
+	}
+	report, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*output, append(report, '\n'), 0600); err != nil {
+		return err
 	}
 	if failed {
 		return fmt.Errorf("one or more live prompt checks failed; see %s", *output)
 	}
 	return nil
 }
+
+func checkVariety(p core.Playlist, c promptCase, minimum int) []string {
+	var issues []string
+	minimum = max(c.MinimumArtists, minimum)
+	artists := map[string]bool{}
+	for i, track := range p.Tracks {
+		if c.OnlyArtist != "" && !strings.EqualFold(track.Artist, c.OnlyArtist) {
+			issues = append(issues, "artist-only restriction lost")
+		}
+		if key := core.NormalizeIdentityPart(track.Artist); key != "" {
+			artists[key] = true
+			if minimum > 0 && c.OnlyArtist == "" && i > 0 && key == core.NormalizeIdentityPart(p.Tracks[i-1].Artist) {
+				issues = append(issues, "adjacent artist repeat")
+			}
+		}
+	}
+	if c.OnlyArtist != "" {
+		minimum = 1
+	}
+	if len(artists) < minimum {
+		issues = append(issues, fmt.Sprintf("artist variety lost: got %d, minimum %d", len(artists), minimum))
+	}
+	return issues
+}
 func checkIntent(c promptCase, m core.MusicIntent) []string {
 	var issues []string
+	if c.Count > 0 && m.Controls.TotalTrackCount != c.Count {
+		issues = append(issues, fmt.Sprintf("requested count lost: got %d, want %d", m.Controls.TotalTrackCount, c.Count))
+	}
 	contains := func(v, w string) bool { return strings.Contains(strings.ToLower(v), strings.ToLower(w)) }
 	for _, artist := range c.Artists {
 		issues = append(issues, checkIntent(promptCase{Artist: artist}, m)...)
@@ -272,7 +359,7 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 		}
 		found := false
 		for _, r := range m.References {
-			found = found || r.Kind == reference.kind && contains(r.Query, reference.value)
+			found = found || r.Influence != core.InfluenceNegative && r.Kind == reference.kind && contains(r.Query, reference.value)
 		}
 		if !found {
 			issues = append(issues, "reference kind not preserved: "+reference.value)
@@ -293,7 +380,14 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 	if c.Genre != "" {
 		var words []string
 		for _, g := range m.Preferences.Genres {
-			words = append(words, strings.ToLower(g.Value))
+			if g.Influence != core.InfluenceNegative {
+				words = append(words, strings.ToLower(g.Value))
+			}
+		}
+		for _, criterion := range m.EssentialCriteria {
+			if criterion.Kind == "genre" || criterion.Kind == "style" {
+				words = append(words, strings.ToLower(criterion.Value))
+			}
 		}
 		found := true
 		for _, word := range strings.Fields(strings.ToLower(c.Genre)) {
@@ -306,7 +400,7 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 	if c.Artist != "" {
 		found := false
 		for _, r := range m.References {
-			found = found || r.Kind == core.ReferenceArtist && strings.EqualFold(r.Query, c.Artist)
+			found = found || r.Influence != core.InfluenceNegative && r.Kind == core.ReferenceArtist && strings.EqualFold(r.Query, c.Artist)
 		}
 		if !found {
 			issues = append(issues, "artist not preserved")
@@ -343,6 +437,9 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 		if item.want != "" {
 			found := false
 			for _, p := range item.actual {
+				if p.Influence == core.InfluenceNegative {
+					continue
+				}
 				found = found || contains(p.Value, item.want)
 				for _, evidence := range p.Evidence {
 					found = found || contains(evidence.Text, item.want)
@@ -352,6 +449,38 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 				issues = append(issues, "preference missing: "+item.want)
 			}
 		}
+	}
+	for _, mood := range c.NegativeMoods {
+		found := false
+		for _, p := range m.Preferences.Moods {
+			if p.Influence == core.InfluenceNegative && strings.EqualFold(p.Value, mood) {
+				found = true
+			}
+		}
+		if !found {
+			issues = append(issues, "negative mood missing or scored with double negation: "+mood)
+		}
+	}
+	return issues
+}
+
+// Count acceptance is separate from musical fulfillment. Never pad, retry away
+// exclusions, or label uncalibrated preview evidence as a quality judgment.
+func checkPlaylist(p core.Playlist, minimum, requested int) []string {
+	var issues []string
+	if len(p.Tracks) < minimum {
+		issues = append(issues, fmt.Sprintf("insufficient playlist: got %d tracks, minimum %d", len(p.Tracks), minimum))
+	}
+	if requested > 0 && len(p.Tracks) > requested {
+		issues = append(issues, "playlist exceeds requested count")
+	}
+	seen := map[string]bool{}
+	for _, track := range p.Tracks {
+		key := core.ProvisionalRecordingKey(track)
+		if seen[key] {
+			issues = append(issues, "duplicate recording: "+track.ID)
+		}
+		seen[key] = true
 	}
 	return issues
 }

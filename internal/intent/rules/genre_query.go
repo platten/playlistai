@@ -15,11 +15,21 @@ var explicitReferenceSyntax = regexp.MustCompile(`(?i)\b(?:like|by|artist|track|
 func BareGenreQuery(prompt string) string {
 	text := strings.Trim(strings.TrimSpace(maskTrackCounts(prompt)), ",;.!? ")
 	text = strings.TrimSpace(reLeadVerb.ReplaceAllString(text, ""))
+	text = strings.Join(strings.Fields(text), " ")
+	for _, article := range []string{"a ", "an "} {
+		if strings.HasPrefix(strings.ToLower(text), article) {
+			text = strings.TrimSpace(text[len(article):])
+			break
+		}
+	}
 	if text == "" || explicitReferenceSyntax.MatchString(text) || strings.ContainsAny(text, ",;") {
 		return ""
 	}
-	if strings.HasSuffix(strings.ToLower(text), " music") {
-		text = strings.TrimSpace(text[:len(text)-len(" music")])
+	for _, suffix := range []string{" music", " playlist", " songs", " tracks", " mix"} {
+		if strings.HasSuffix(strings.ToLower(text), suffix) {
+			text = strings.TrimSpace(text[:len(text)-len(suffix)])
+			break
+		}
 	}
 	return text
 }

@@ -51,6 +51,27 @@ func TestCategorySequencingHybridNeedsDistinctTrackPerStage(t *testing.T) {
 	}
 }
 
+func TestCategoryJourneyDestinationWithoutRequiredStartStaysLast(t *testing.T) {
+	cat := artistRequestCatalog()
+	request := ports.SequenceRequest{
+		Intent: journeyIntent(10), Required: refs(cat, "0"),
+		CategoryStages: []map[string]bool{{}, {}},
+	}
+	request.Intent.Destination = &core.IntentReference{Kind: core.ReferenceTrack, TrackID: "0"}
+	// The destination can fit either stage; high transition affinity must
+	// not make it the start or shorten an otherwise feasible playlist.
+	request.CategoryStages[0]["0"], request.CategoryStages[1]["0"] = true, true
+	for i := 1; i < 10; i++ {
+		id := fmt.Sprint(i)
+		request.Candidates = append(request.Candidates, sequencingCandidate(cat, id, .9))
+		request.CategoryStages[(i-1)/5][id] = true
+	}
+	result, err := NewSequencer(cat, DefaultConfig()).Sequence(context.Background(), request)
+	if err != nil || len(result.Tracks) != 10 || result.Tracks[9].ID != "0" {
+		t.Fatalf("destination shortened or reversed journey: %+v, %v", result.Tracks, err)
+	}
+}
+
 func benchmarkCategoryRequest() (*fakes.Catalog, ports.SequenceRequest) {
 	tracks := make([]fakes.CatalogTrack, core.MaxCount)
 	for index := range tracks {

@@ -213,6 +213,19 @@ func TestGBNFMentionsEveryKey(t *testing.T) {
 	}
 }
 
+func TestGBNFBoundsWhitespaceAndScalarExpansion(t *testing.T) {
+	for _, rule := range []string{
+		`ws ::= [ \t\n]{0,8}`,
+		`[^"\\\x00-\x1F]`,
+		`int ::= "-"? ("0" | [1-9] [0-9]{0,3})`,
+		`("." [0-9]{1,6})?`,
+	} {
+		if !contains(GBNF, rule) {
+			t.Fatalf("missing bounded JSON rule: %s", rule)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

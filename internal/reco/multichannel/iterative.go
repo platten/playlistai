@@ -250,12 +250,25 @@ func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.
 		trajectoryWaypoints = required
 	}
 	var trajectory ports.Trajectory
-	if intent.Mode == core.ModeJourney && len(trajectoryWaypoints) >= 2 {
+	if (intent.Mode == core.ModeJourney || o.bestAvailable) && len(trajectoryWaypoints) >= 2 {
 		trajectory = NewWaypointTrajectory(o.cat, trajectoryWaypoints)
 	}
 	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints, ReferenceAnchors: references, RecentSelections: request.RecentSelections, Seed: seed, CategoryStages: membership, Trajectory: trajectory})
 	if errors.Is(err, core.ErrRequiredTrackConflict) {
 		return false, nil
+	}
+	if o.bestAvailable && genreArtistDiversity(intent) {
+		artists := map[string]bool{}
+		for _, track := range sequence.Tracks {
+			if key := core.NormalizeIdentityPart(track.Artist); key != "" {
+				artists[key] = true
+			}
+		}
+		// Keep looking within the same bounded, eligible pool before settling
+		// for a two-artist alternation. Exhaustion still returns safe partials.
+		if len(artists) < min(3, intent.Count) {
+			return false, err
+		}
 	}
 	return len(sequence.Tracks) == intent.Count, err
 }

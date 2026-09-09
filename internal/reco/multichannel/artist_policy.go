@@ -6,10 +6,18 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
-// Genre playlists explore artists within the eligible musical category. This
-// engine policy leaves explicit artist-only requests and stored slider values
-// unchanged; it never widens musical eligibility to manufacture diversity.
+// Suggestions explore artists within the eligible pool, including requests
+// led by named references. Explicit artist/album-only restrictions opt out.
+// Stored slider values and musical eligibility remain unchanged.
 func genreArtistDiversity(intent core.MusicIntent) bool {
+	for _, c := range intent.HardConstraints {
+		if c.Kind == "require_artist" || c.Kind == "require_album" {
+			return false
+		}
+	}
+	if intent.VerificationPolicy == core.BestAvailable {
+		return true
+	}
 	for _, p := range intent.Preferences.Genres {
 		if p.Influence != core.InfluenceNegative && strings.TrimSpace(p.Value) != "" {
 			return true

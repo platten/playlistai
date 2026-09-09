@@ -24,7 +24,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v10", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v11", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -49,6 +49,11 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 
 	musicalText := maskTrackCounts(prompt)
 	seeds, mode := extractSeeds(musicalText, strings.ToLower(musicalText), in.NowPlaying, in.RecentTracks)
+	onlyArtist := OnlyArtist(prompt)
+	if onlyArtist != "" {
+		seeds, mode = []string{onlyArtist}, core.ModeSimilar
+		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "require_artist", Value: onlyArtist, Evidence: sourceEvidence(prompt, onlyArtist, true)})
+	}
 	for _, seed := range seeds {
 		ref := typedReference(prompt, seed, catalogReferenceKind(seed), core.InfluencePositive)
 		intent.References = append(intent.References, ref)
@@ -82,7 +87,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lookback := extractLookback(lower)
 	intent.Controls.TransitionSmoothness = float64(lookback-1) / 9
 
-	if !reAllowRepeat.MatchString(lower) {
+	if explicitArtistSpacing.MatchString(lower) || !reAllowRepeat.MatchString(lower) && onlyArtist == "" {
 		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
 			Kind: "no_back_to_back_artist", Value: "true", Supported: true,
 		})

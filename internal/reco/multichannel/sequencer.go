@@ -81,7 +81,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		Notices: []core.PlaylistNotice{},
 	}
 	if genreArtistDiversity(request.Intent) {
-		result.Notices = append(result.Notices, core.PlaylistNotice{Code: "genre_artist_diversity", Detail: "Genre playlists favor a wider range of eligible artists and never repeat a known artist back to back.", Requested: request.Intent.Count, Actual: len(items)})
+		result.Notices = append(result.Notices, core.PlaylistNotice{Code: "genre_artist_diversity", Detail: "Recommendations favor a wider range of eligible artists and never repeat a known artist back to back.", Requested: request.Intent.Count, Actual: len(items)})
 	}
 	softRelaxations := 0
 	gap := s.softArtistGap(request.Intent)
@@ -429,7 +429,7 @@ func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Conf
 		{Component: "recent_exposure", Score: candidate.Scores.RecentExposure, Weight: -cfg.ExposurePenalty, Available: candidate.Available.RecentExposure},
 		{Component: "listener_novelty", Score: candidate.Scores.Novelty, Weight: cfg.NoveltyWeight * intent.Controls.Discovery, Available: candidate.Available.Novelty},
 		{Component: "reciprocal_rank_fusion", Score: candidate.Scores.RetrievalFusion, Weight: cfg.RetrievalWeight, Available: candidate.Available.RetrievalFusion},
-		{Component: "semantic_text_match", Score: candidate.Scores.SemanticMatch, Weight: cfg.SemanticWeight, Available: candidate.Available.SemanticMatch, Detail: "grounded sidecar descriptions"},
+		{Component: "semantic_text_match", Score: candidate.Scores.SemanticMatch, Weight: cfg.SemanticWeight, Available: candidate.Available.SemanticMatch, Detail: "text comparison with sidecar descriptions or analyzed preview audio; see generation evidence for source and coverage"},
 		{Component: "semantic_negative_match", Score: candidate.Scores.SemanticNegativeMatch, Weight: -cfg.SemanticNegativePenalty, Available: candidate.Available.SemanticNegativeMatch, Detail: "negative semantic preference"},
 	}
 }

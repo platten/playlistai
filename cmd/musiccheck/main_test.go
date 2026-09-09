@@ -11,6 +11,7 @@ import (
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
+	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/reco/multichannel"
@@ -102,7 +103,7 @@ func TestRequestedPromptContractsGenerate(t *testing.T) {
 				t.Fatalf("no playlist: %+v %v", playlist.Outcome, err)
 			}
 			if c.Destination != "" && playlist.Tracks[len(playlist.Tracks)-1].Artist != c.Destination {
-				t.Fatal("destination lost")
+				t.Fatalf("destination lost: tracks=%+v outcome=%+v", playlist.Tracks, playlist.Outcome)
 			}
 			for _, track := range playlist.Tracks {
 				for _, excluded := range c.ExcludedArtists {
@@ -188,5 +189,77 @@ func TestCreativePromptContractChecksRejectLostMeaning(t *testing.T) {
 	intent.EssentialCriteria[0].Scope, intent.EssentialCriteria[1].Scope = "journey_end", "journey_start"
 	if len(checkIntent(c, intent)) == 0 {
 		t.Fatal("reversed journey passed")
+	}
+}
+
+func TestVariedPromptsRequireTenTracks(t *testing.T) {
+	raw, err := os.ReadFile("../../internal/evaluation/testdata/varied-prompts-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []promptCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 40 {
+		t.Fatalf("got %d prompts, want 40", len(cases))
+	}
+	seen := map[string]bool{}
+	for _, c := range cases {
+		count, explicit := rules.TrackCount(c.Prompt)
+		if c.Count != 10 || !explicit || count != 10 || seen[c.Prompt] {
+			t.Fatalf("invalid prompt fixture: %+v", c)
+		}
+		seen[c.Prompt] = true
+		if len(checkIntent(promptCase{Count: c.Count}, core.MusicIntent{})) == 0 {
+			t.Fatal("lost count was accepted")
+		}
+	}
+}
+
+func TestPlaylistAcceptanceBoundsAndDuplicates(t *testing.T) {
+	for _, count := range []int{0, 1, 4, 5, 10, 11} {
+		p := core.Playlist{}
+		for i := 0; i < count; i++ {
+			p.Tracks = append(p.Tracks, core.TrackRef{ID: fmt.Sprint(i), Artist: "Fixture", Title: fmt.Sprintf("Track %d", i)})
+		}
+		issues := checkPlaylist(p, 5, 10)
+		if (len(issues) == 0) != (count >= 5 && count <= 10) {
+			t.Fatalf("count %d: %v", count, issues)
+		}
+	}
+	p := core.Playlist{Tracks: []core.TrackRef{
+		{ID: "one", Artist: "Fixture", Title: "Recording"},
+		{ID: "two", Artist: "fixture", Title: "recording"},
+	}}
+	if issues := checkPlaylist(p, 1, 10); len(issues) == 0 {
+		t.Fatal("different IDs for the same recording inflated the passing count")
+	}
+}
+
+func TestVarietyChecksFixturePolicyAndArtistOnlyException(t *testing.T) {
+	p := core.Playlist{Tracks: []core.TrackRef{
+		{ID: "1", Artist: "Radiohead", Title: "First"},
+		{ID: "2", Artist: "radiohead", Title: "Second"},
+		{ID: "3", Artist: "Other", Title: "Third"},
+	}}
+	if issues := checkVariety(p, promptCase{MinimumArtists: 2}, 0); len(issues) == 0 {
+		t.Fatal("fixture-only diversity policy missed adjacent repeats")
+	}
+	p.Tracks = p.Tracks[:2]
+	if issues := checkVariety(p, promptCase{OnlyArtist: "Radiohead"}, 3); len(issues) > 0 {
+		t.Fatal("artist-only request incorrectly required other artists", issues)
+	}
+}
+
+func TestGenreAssertionAcceptsEssentialStylesButNotOnlySoftHints(t *testing.T) {
+	c := promptCase{Genre: "electronic"}
+	m := core.MusicIntent{Preferences: core.SemanticPreferences{Styles: []core.IntentPreference{{Value: "spacious electronic", Influence: core.InfluencePositive}}}}
+	if len(checkIntent(c, m)) == 0 {
+		t.Fatal("a soft hint passed the defining-category assertion")
+	}
+	m.EssentialCriteria = []core.MusicalCriterion{{Kind: "style", Value: "electronic", Scope: "playlist"}}
+	if issues := checkIntent(c, m); len(issues) > 0 {
+		t.Fatal("equivalent essential-category representation rejected", issues)
 	}
 }

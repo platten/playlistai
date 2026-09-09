@@ -1,0 +1,3624 @@
+{
+  "date": "2026-09-09",
+  "fixture": "internal/evaluation/testdata/varied-prompts-v1.json",
+  "baseCommit": "00d2e88b2655e3114dd8793e84058fb87d3ab532",
+  "sourceState": "Uncommitted development changes based on baseCommit; binary hashes distinguish the execution revisions.",
+  "intentVersion": 8,
+  "algorithmVersion": "multichannel/v16+iterative/v1",
+  "parserVersion": "llama/v12",
+  "rulesVersion": "rules/v11",
+  "verificationPolicy": "best_available",
+  "requestedCount": 10,
+  "minimumTracks": 5,
+  "minimumArtists": 3,
+  "singleArtistException": "Radiohead",
+  "seed": "42",
+  "host": {
+    "os": "Linux amd64, WSL2 6.18.33.2-microsoft-standard-WSL2",
+    "ramMiB": 15781,
+    "gpu": "NVIDIA GeForce RTX 5060 Laptop GPU",
+    "reportedVRAMMiB": 8151
+  },
+  "llm": {
+    "model": "qwen3.5-9b-q4km.gguf",
+    "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+    "runtimeSHA256": "97e29d19ff84e5c2fceceaa2b06863928294896d0ebbd8c7ea258ce51a4ddacb",
+    "contextTokens": 8192,
+    "gpuLayerSetting": 0,
+    "gpuMode": "Automatic runtime offload. nvidia-smi reported the llama process on the GPU; the exact offloaded layer count was not captured."
+  },
+  "catalog": {
+    "version": "1:956917:1788613313",
+    "tracks": 956917
+  },
+  "clap": {
+    "model": "laion/larger_clap_music_and_speech",
+    "revision": "195c3a3e68faebb3e2088b9a79e79b43ddbda76b",
+    "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+    "runtime": "onnxruntime/1.26.0/cpu",
+    "dimension": 512,
+    "weights": "433ed0b2f651ca8869ed41276bbb929b406900ebac239569748923371a2b23a3"
+  },
+  "executionBuilds": {
+    "main-run": {
+      "binarySHA256": "c4dcd8bc537909b43e7c5bb432831e32a0a1bed9ff303d52ebf62b4d4ee0c8f4",
+      "note": "Full 40-case fresh-model run before the final category, stage-scope and endpoint repairs."
+    },
+    "parser-recheck": {
+      "binarySHA256": "07df44ad394469a6902e7679f00edcdc7e02e031b8e6706b968470b73b83dc4f",
+      "note": "Fresh model rechecks of cases 17 and 23. Case 17 passed; case 23 exposed promotion of a reference medoid into required output."
+    },
+    "endpoint-recheck": {
+      "binarySHA256": "dc39075b288f46cc4074f4227862bceff456389c6b1a2d673125e893fb2495a1",
+      "note": "Fresh model runs of cases 23, 32 and 33 after removing reference promotion and preserving the full waypoint path; all passed."
+    }
+  },
+  "interpretation": "Development execution checks, not held-out listening judgments. Final observations combine a full 40-case run with fresh targeted rechecks. No replayed intents or count override were used in these live observations.",
+  "diagnostics": {
+    "earlierDevelopmentRun": {
+      "cases": 40,
+      "passed": 22,
+      "atLeastFive": 28,
+      "sumCaseMilliseconds": 3700572,
+      "note": "An intermediate development build, not an untouched released-engine quality baseline.",
+      "failures": [
+        {
+          "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 48973,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 12114,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 10863,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me 10 tracks inspired by Kraftwerk, Tangerine Dream, and Brian Eno.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 25829,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Make a 10-song playlist inspired by Fela Kuti and Tony Allen, with a variety of artists.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 14398,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+          "errors": [
+            "genre not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 126192,
+          "outcome": "partial"
+        },
+        {
+          "prompt": "Make a 10-track playlist of orchestral music with sweeping strings, dramatic contrasts, and a cinematic atmosphere.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 54539,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me a 10-song playlist that starts with acoustic folk, moves through folk rock, and ends with energetic alternative rock.",
+          "errors": [
+            "journey stages not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 156829,
+          "outcome": "partial"
+        },
+        {
+          "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 41801,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me 10 songs moving from traditional soul through funk into disco. Keep the transitions smooth and avoid placing the same artist back to back.",
+          "errors": [
+            "journey stages not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 103132,
+          "outcome": "partial"
+        },
+        {
+          "prompt": "Make a 10-track instrumental playlist for focused work, blending modern classical, ambient, and gentle electronic music. Start sparse, build a subtle pulse in the middle, and finish calmly. No vocals.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 86507,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Give me 10 blues songs.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 43522,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Make a 10-song salsa playlist.",
+          "errors": [
+            "genre not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 136182,
+          "outcome": "fulfilled"
+        },
+        {
+          "prompt": "Give me 10 drum and bass tracks.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 52456,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Make a 10-song playlist inspired by Björk.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 51199,
+          "outcome": "unsupported"
+        },
+        {
+          "prompt": "Make a 10-song journey from David Bowie to Talking Heads, with related artists bridging the transition.",
+          "errors": [
+            "destination not preserved",
+            "wrong final artist"
+          ],
+          "count": 10,
+          "milliseconds": 26997,
+          "outcome": "fulfilled"
+        },
+        {
+          "prompt": "Give me 10 songs that move from Bonobo to Massive Attack, including related discoveries.",
+          "errors": [
+            "destination not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 222940,
+          "outcome": "partial"
+        },
+        {
+          "prompt": "Make a 10-song playlist inspired by Joni Mitchell, Nick Drake, and Leonard Cohen.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 19537,
+          "outcome": "unsupported"
+        }
+      ]
+    },
+    "mainRun": {
+      "cases": 40,
+      "passed": 38,
+      "atLeastFive": 39,
+      "tenTracks": 39,
+      "totalTracks": 390,
+      "sumCaseMilliseconds": 3239311,
+      "medianMilliseconds": 39932,
+      "p95NearestRankMilliseconds": 180560,
+      "maxMilliseconds": 776113,
+      "parserFallbacks": 0,
+      "outcomes": {
+        "partial": 26,
+        "fulfilled": 13,
+        "unsupported": 1
+      },
+      "failures": [
+        {
+          "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+          "errors": [
+            "genre not preserved"
+          ],
+          "count": 10,
+          "milliseconds": 37966,
+          "outcome": "partial"
+        },
+        {
+          "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 5",
+            "artist variety lost: got 0, minimum 3"
+          ],
+          "count": 0,
+          "milliseconds": 18826,
+          "outcome": "unsupported"
+        }
+      ]
+    },
+    "parserRechecks": [
+      {
+        "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+        "errors": [],
+        "count": 10,
+        "milliseconds": 165677,
+        "outcome": "partial"
+      },
+      {
+        "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+        "errors": [
+          "insufficient playlist: got 0 tracks, minimum 5",
+          "artist variety lost: got 0, minimum 3"
+        ],
+        "count": 0,
+        "milliseconds": 18655,
+        "outcome": "needs_clarification"
+      }
+    ],
+    "endpointRechecks": [
+      {
+        "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+        "errors": [],
+        "count": 10,
+        "milliseconds": 102485,
+        "outcome": "partial"
+      },
+      {
+        "prompt": "Make a 10-song journey from David Bowie to Talking Heads, with related artists bridging the transition.",
+        "errors": [],
+        "count": 10,
+        "milliseconds": 34037,
+        "outcome": "fulfilled"
+      },
+      {
+        "prompt": "Give me 10 songs that move from Bonobo to Massive Attack, including related discoveries.",
+        "errors": [],
+        "count": 10,
+        "milliseconds": 39497,
+        "outcome": "fulfilled"
+      }
+    ]
+  },
+  "finalObservationMetrics": {
+    "cases": 40,
+    "passed": 40,
+    "atLeastFive": 40,
+    "tenTracks": 40,
+    "totalTracks": 400,
+    "sumCaseMilliseconds": 3462863,
+    "medianMilliseconds": 42510.5,
+    "p95NearestRankMilliseconds": 180560,
+    "maxMilliseconds": 776113,
+    "parserFallbacks": 0,
+    "outcomes": {
+      "partial": 27,
+      "fulfilled": 13
+    },
+    "nonArtistOnlyPlaylists": 39,
+    "minimumDistinctArtistsOutsideArtistOnly": 3,
+    "unexpectedAdjacentArtistRepeats": 0,
+    "recordingDuplicateViolations": 0,
+    "descriptivePlaylistsWithAudio": 27,
+    "selectedAudioAssessedTracks": 270,
+    "selectedTracksRequiringAudio": 270
+  },
+  "validation": {
+    "repositoryGate": "PASS: scripts/test.sh (race enabled)",
+    "checks": [
+      "Go vet",
+      "Go race tests",
+      "golangci-lint: 0 issues",
+      "Wails generated bindings",
+      "frontend TypeScript",
+      "frontend production build",
+      "shell syntax and shellcheck",
+      "AppImage PATH and release-asset checks"
+    ],
+    "other": "Focused rules/schema/audio/recommendation/bridge/preview/musiccheck tests passed; git diff --check passed."
+  },
+  "limitations": [
+    "The desktop enables optional AcousticBrainz enrichment, but musiccheck omitted AcousticBrainzURL. These runs did not exercise its lookup or scoring contribution; this runner parity gap remains follow-up work.",
+    "40/40 is a result for these cases and installed assets, not a guarantee for every prompt, seed, provider state or catalog.",
+    "27 outcomes remain partial because CLAP similarity is uncalibrated and only preview segments were assessed; 13 reference-only outcomes are fulfilled.",
+    "No held-out human listening assessment, calibrated genre accuracy, exact tempo or measured perceptual-energy trajectory was established.",
+    "Per-case timings exclude process/model startup and worker health checks. Cache warmth and background validation work varied; do not interpret the runs as a controlled before/after performance benchmark.",
+    "Strict instrumental screening reached its analysis budget and retained ten checked tracks; this case took 776113 ms.",
+    "Unavailable assets/previews, ambiguous identities and contradictory hard requirements can still prevent fulfillment. No constraints were silently removed or unrelated tracks used merely to pad counts.",
+    "Only derived embeddings/features and metadata caches were retained; no preview audio was saved."
+  ],
+  "cases": [
+    {
+      "prompt": "Classical, 10 tracks.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 30453,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "0kfuFHxy83VdjU4pIVY0o7",
+          "artist": "Lingua Ignota",
+          "title": "PERPETUAL FLAME OF CENTRALIA"
+        },
+        {
+          "id": "0GOYGlSQWXhAf0JDTejkOB",
+          "artist": "Alberto Iglesias",
+          "title": "El cajón abierto"
+        },
+        {
+          "id": "5tJDDfRYS9Q0qi4rOfjIMv",
+          "artist": "Clint Mansell",
+          "title": "Are You Receiving?"
+        },
+        {
+          "id": "7Ja0Wxh8wkf11otlJGN2pz",
+          "artist": "Wim Mertens",
+          "title": "Sovereign Abandon"
+        },
+        {
+          "id": "53fKj61JTr8h6YUIpYKyKa",
+          "artist": "Ballaké Sissoko",
+          "title": "N'kapalema"
+        },
+        {
+          "id": "7u38kj1yGDoExUnP6gxxor",
+          "artist": "Yelena Eckemoff",
+          "title": "Mommy's Shawl"
+        },
+        {
+          "id": "2ibGAfYMGEpg52S4349hLn",
+          "artist": "Manfred Mann",
+          "title": "Bare Hugg"
+        },
+        {
+          "id": "5iOPBZk9knoiw9BGnTHzq4",
+          "artist": "Sonic Youth",
+          "title": "Dripping Dream"
+        },
+        {
+          "id": "4KokMvlDr8mZ535cEKJHOz",
+          "artist": "X-RX",
+          "title": "Virus Infect"
+        },
+        {
+          "id": "4U45aEWtQhrm8A5mxPaFZ7",
+          "artist": "Billy Joel",
+          "title": "Vienna"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 8,
+        "elapsedMilliseconds": 16194,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 1
+    },
+    {
+      "prompt": "Electronic music. Make a 10-song playlist.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 41194,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "1jI6K3AhICt2C03DGhYQmI",
+          "artist": "Fairmont",
+          "title": "Mobula"
+        },
+        {
+          "id": "6qIdB3on3ISVwfkQ30WOfb",
+          "artist": "Phace",
+          "title": "Vintage"
+        },
+        {
+          "id": "4AZWLa4hYNKkEmzLGW2ltb",
+          "artist": "DRS",
+          "title": "This Ain't Love"
+        },
+        {
+          "id": "5c5XWCyiQOLrSCo6hRNYOK",
+          "artist": "Kill The Noise",
+          "title": "Part I"
+        },
+        {
+          "id": "3XXkwHcdDSx25VmH7Rq3rx",
+          "artist": "The Bloody Beetroots",
+          "title": "My Name Is Thunder"
+        },
+        {
+          "id": "4kzyhn8i6Hf8daEBqNPfCy",
+          "artist": "Jaymes Young",
+          "title": "Moondust"
+        },
+        {
+          "id": "0iKsBFbuFNA9eSGvhuncCJ",
+          "artist": "St. Vincent",
+          "title": "Teenage Talk"
+        },
+        {
+          "id": "1Szz2K6zjz3tbHJFfuIb4E",
+          "artist": "Kelela",
+          "title": "Happy Ending"
+        },
+        {
+          "id": "2RHJvRwlDize7tOEiHqKpH",
+          "artist": "Mr. Fingers",
+          "title": "Full Moon"
+        },
+        {
+          "id": "4AMNVe8rOzR1uR0HOlIc3w",
+          "artist": "Pharrell Williams",
+          "title": "Baby"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 10,
+        "elapsedMilliseconds": 26195,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 2
+    },
+    {
+      "prompt": "Give me 10 jazz songs.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 31029,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "4y4aTgGwnkkHWItDd3k6vU",
+          "artist": "Stephane Wrembel",
+          "title": "Big Brother"
+        },
+        {
+          "id": "5WJlqR9DhJgIWKJhlx9mdX",
+          "artist": "Preservation Hall Jazz Band",
+          "title": "Louisiana Fairytale"
+        },
+        {
+          "id": "2LOx96luaD0Ksd7Q2xb6be",
+          "artist": "Dinah Washington",
+          "title": "Never Let Me Go"
+        },
+        {
+          "id": "0jf1It36dfQZrBT8sEVLJM",
+          "artist": "Billie Holiday",
+          "title": "Day In Day Out"
+        },
+        {
+          "id": "0ZhSPTDWVBWCYOkqzkvTq7",
+          "artist": "Duke Ellington",
+          "title": "Grace Valse"
+        },
+        {
+          "id": "2bceFfFeryNSJrkwPeyWTw",
+          "artist": "Oneness Of Juju",
+          "title": "Breezin'"
+        },
+        {
+          "id": "2c4Ecmj9hYHm21KOmnZZ9B",
+          "artist": "Curumin",
+          "title": "Vem Menina"
+        },
+        {
+          "id": "1SV4rye5kDpRtoqmnY4xMf",
+          "artist": "Diana Krall",
+          "title": "Operator (That's Not The Way It Feels)"
+        },
+        {
+          "id": "0pg2VKzTsBdbxPzcOkReY2",
+          "artist": "Kid Loco",
+          "title": "A grand love theme"
+        },
+        {
+          "id": "3EiknIr2z7HAhD4PiQPPIy",
+          "artist": "Floating Points",
+          "title": "For Marmish"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 11,
+        "elapsedMilliseconds": 25203,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 3
+    },
+    {
+      "prompt": "Make a 10-song reggae playlist.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 55520,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "55cgP7SktLQWbuBXQ9edqE",
+          "artist": "King Tubby",
+          "title": "You've Caught Me Baby Dub"
+        },
+        {
+          "id": "3doJjbYizhCFDKnRnfrsyw",
+          "artist": "Alborosie",
+          "title": "Likkle Africa"
+        },
+        {
+          "id": "1F20KSAsMpZ9suZR1OryAt",
+          "artist": "Rox",
+          "title": "Rocksteady"
+        },
+        {
+          "id": "3jkNMSWfuFsuCdnzIqWcdq",
+          "artist": "Dub FX",
+          "title": "Future"
+        },
+        {
+          "id": "3VHM3lkb5jjnwuFrYlMvTh",
+          "artist": "DJ Vadim",
+          "title": "That Lite"
+        },
+        {
+          "id": "6YRo8k2DZkVeCphM9uTjbU",
+          "artist": "Criolo",
+          "title": "Linha de Frente"
+        },
+        {
+          "id": "29EValPvF3sNNtLK6PKipj",
+          "artist": "Teddy Pendergrass",
+          "title": "Now Tell Me That You Love Me"
+        },
+        {
+          "id": "2pFLsd3LCZAxhBzkbql331",
+          "artist": "Poco",
+          "title": "Call It Love"
+        },
+        {
+          "id": "0BVE0wMG6v23vuPLyn9Aky",
+          "artist": "Chef'Special",
+          "title": "Wildfire"
+        },
+        {
+          "id": "1i0tGfz67O1uxNgw0uLou9",
+          "artist": "Rancid",
+          "title": "Memphis"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 21,
+        "newAnalyses": 17,
+        "elapsedMilliseconds": 38605,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 4
+    },
+    {
+      "prompt": "Give me 10 heavy metal songs.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 34325,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "1XoYMjhTqjUkYbqi5ewSOv",
+          "artist": "Destruction",
+          "title": "Betrayal"
+        },
+        {
+          "id": "4qEPnr1CGitxmHfwGxGpm8",
+          "artist": "Conan",
+          "title": "Prosper on the Path"
+        },
+        {
+          "id": "20iIpwh9aRvGf4ezVHPTy0",
+          "artist": "Dozer",
+          "title": "From Fire Fell"
+        },
+        {
+          "id": "0APihiT8NDPcZIEwuJHIFQ",
+          "artist": "Turbowolf",
+          "title": "Seven Severed Heads"
+        },
+        {
+          "id": "0qOGcGswBtlJ2N0EpBaK4b",
+          "artist": "Monuments",
+          "title": "Degenerate"
+        },
+        {
+          "id": "7yXjjYTdaYZl9MOWWmov4B",
+          "artist": "Bury Tomorrow",
+          "title": "Garden of Thorns"
+        },
+        {
+          "id": "5u9MqTOdDMIec7P7wIBfCD",
+          "artist": "Blind Guardian",
+          "title": "Valkyries"
+        },
+        {
+          "id": "06MMcYFXcY5LQ3hK1pCZbF",
+          "artist": "Motörhead",
+          "title": "Tales of Glory"
+        },
+        {
+          "id": "51TG9W3y9qyO8BY5RXKgnZ",
+          "artist": "Megadeth",
+          "title": "Symphony Of Destruction"
+        },
+        {
+          "id": "1oQYWDtZY0cOKXogDIu14t",
+          "artist": "Stereophonics",
+          "title": "The Bartender And The Thief"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 13,
+        "elapsedMilliseconds": 27272,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 5
+    },
+    {
+      "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 35081,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "2cJz1loJp5EZM6shmQpLZN",
+          "artist": "Daft Punk",
+          "title": "Harder, Better, Faster, Stronger"
+        },
+        {
+          "id": "6MwsEPFNf1ysVlIvsN2IGX",
+          "artist": "Blaque",
+          "title": "Time After Time (feat. Blaque Ivory)"
+        },
+        {
+          "id": "11rkzIfjyHw1RG9PTZtHg4",
+          "artist": "Althea Rene",
+          "title": "In the Flow"
+        },
+        {
+          "id": "70IlAkErUQ2ncdlY1PkZKo",
+          "artist": "Grizzly Bear",
+          "title": "Don't Ask (Alpha Remix)"
+        },
+        {
+          "id": "1cpBG89HgNF78PbwughEka",
+          "artist": "Rosehip",
+          "title": "Nectar"
+        },
+        {
+          "id": "1zIoTpeTsZJfxpjC83dF3t",
+          "artist": "Col3trane",
+          "title": "Californication (Feels Like I'm Falling In Love)"
+        },
+        {
+          "id": "0RM8MU9SwVtMnJ5BSAykRI",
+          "artist": "Sefton",
+          "title": "Stranded In Passion - Maceo Plex Remix"
+        },
+        {
+          "id": "2sXRSe62Ceg4Kb99sTh3hN",
+          "artist": "Mickey",
+          "title": "I'll Be There (feat. Maelan)"
+        },
+        {
+          "id": "2FSmNYJ71NnAe6S0m2h1sN",
+          "artist": "Phantoms",
+          "title": "Pulling Me In"
+        },
+        {
+          "id": "13phHcF9qjgjukhoeNV8J2",
+          "artist": "INTRESSTandLOUIS",
+          "title": "Find You - Radio Edit"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 6
+    },
+    {
+      "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 43827,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 3,
+      "tracks": [
+        {
+          "id": "61uR8t4baCXvt56RPwz8pZ",
+          "artist": "Radiohead",
+          "title": "Molasses"
+        },
+        {
+          "id": "5NlU70o0tzJlH3Oca3K5Vj",
+          "artist": "Thom Yorke",
+          "title": "There Is No Ice (For My Drink)"
+        },
+        {
+          "id": "0T3ztAdKHMk66hFSrYdtHt",
+          "artist": "alva noto",
+          "title": "Monomom - Live"
+        },
+        {
+          "id": "1F2C3VZllQC9SV32FvMalr",
+          "artist": "Radiohead",
+          "title": "Everything In Its Right Place - Live in France"
+        },
+        {
+          "id": "7HmIeWZfEa9CwzjC6bYtSs",
+          "artist": "Thom Yorke",
+          "title": "Pink Section"
+        },
+        {
+          "id": "13pvBh8JcOH8crCU5KTPp5",
+          "artist": "Radiohead",
+          "title": "Cuttooth"
+        },
+        {
+          "id": "7fvVrkpmN2AvE0gzXcuiF5",
+          "artist": "Thom Yorke",
+          "title": "A Storm That Took Everything"
+        },
+        {
+          "id": "1JjaPYOJEb5nvmVRGbpPz1",
+          "artist": "Radiohead",
+          "title": "Pearly* - Remastered"
+        },
+        {
+          "id": "2Y0Kxmy7o8SNsMOZP9Kc5R",
+          "artist": "Thom Yorke",
+          "title": "The Clock"
+        },
+        {
+          "id": "6PSIzRBv7J3o6Vz8SFDKaT",
+          "artist": "Radiohead",
+          "title": "A Reminder - Remastered"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 7
+    },
+    {
+      "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 12579,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "1sasRttErvmcAmui0YHIdT",
+          "artist": "Barbra Streisand",
+          "title": "Since I Fell For You"
+        },
+        {
+          "id": "5XkQTgl6M6GH57nb8yJPSZ",
+          "artist": "Antonio Vivaldi",
+          "title": "The Four Seasons - Autumn in F Major, RV. 293: III. Allegro"
+        },
+        {
+          "id": "5x11EheGSdxyVBiQY00NIF",
+          "artist": "Alexander Borodin",
+          "title": "Stranger in Paradise"
+        },
+        {
+          "id": "3vVRe4hWXAhC7Q5NNVvqPc",
+          "artist": "JJ Heller",
+          "title": "Love Letter"
+        },
+        {
+          "id": "5klrh466oGToybceGHPGAX",
+          "artist": "Andrew Lloyd Webber",
+          "title": "All I Ask Of You - From 'The Phantom Of The Opera' Motion Picture"
+        },
+        {
+          "id": "6f3DpwwWoyD70HSDw2zWiT",
+          "artist": "Anna Järvinen",
+          "title": "Kom hem"
+        },
+        {
+          "id": "6p41aHzbPF5uSMYUsss9mp",
+          "artist": "V.A",
+          "title": "Le Yachting"
+        },
+        {
+          "id": "5PfjAhHH1xvpGeEPkp0Lyr",
+          "artist": "Frameworks",
+          "title": "Old Friend (feat. J P Cooper)"
+        },
+        {
+          "id": "22wfUYTAWWiZVCbBQvPlkK",
+          "artist": "Hydromag",
+          "title": "P.J.R."
+        },
+        {
+          "id": "6KJL7mov5Qdy1KTecu99dE",
+          "artist": "John Grant",
+          "title": "County Fair"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 8
+    },
+    {
+      "prompt": "Give me 10 tracks inspired by Kraftwerk, Tangerine Dream, and Brian Eno.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 19023,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "6oZO8pH4lTDQxjSsfosuDo",
+          "artist": "Tangerine Dream",
+          "title": "Rubycon"
+        },
+        {
+          "id": "19cXdM9RKCUwAuxnzs3S9V",
+          "artist": "Moebius",
+          "title": "B 36"
+        },
+        {
+          "id": "5OWf02CB9ZOLW9HeUat88V",
+          "artist": "Cluster",
+          "title": "21:32"
+        },
+        {
+          "id": "07mLX3EZagIdiuRH8uo5cH",
+          "artist": "Harmonia",
+          "title": "Ueber Ottenstein - Live"
+        },
+        {
+          "id": "7nLd2aoEhCRTLcIbQHBvjn",
+          "artist": "Klaus Schulze",
+          "title": "Wahnfried 1883"
+        },
+        {
+          "id": "77m8xt5GlGB93TwV9ZF19P",
+          "artist": "Michael Rother",
+          "title": "Fontana Di Luna"
+        },
+        {
+          "id": "27gKkFha9jCTSwkpnarlUz",
+          "artist": "Roedelius",
+          "title": "Langer Atem"
+        },
+        {
+          "id": "34dqvpKVKrYCaaueWGoYBI",
+          "artist": "Deuter",
+          "title": "Aum"
+        },
+        {
+          "id": "0oG5gowiXOmL05VFNvegc2",
+          "artist": "Ashra",
+          "title": "Lotus - Part I - IV"
+        },
+        {
+          "id": "16bEmwXusDZRmWQksp5xUm",
+          "artist": "Popol Vuh",
+          "title": "Train Through Time"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 9
+    },
+    {
+      "prompt": "Make a 10-song playlist inspired by Fela Kuti and Tony Allen, with a variety of artists.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 20214,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "2bhiNB1BAZXLdRtFv0glNe",
+          "artist": "Rob",
+          "title": "Back on You"
+        },
+        {
+          "id": "1inu9ilj3zCKnMn4Bsu46X",
+          "artist": "Segun Bucknor",
+          "title": "Dye Dye"
+        },
+        {
+          "id": "4VOU0lKMm1ki85BnLGJpd7",
+          "artist": "Mercury Dance Band",
+          "title": "Envy No Good"
+        },
+        {
+          "id": "427xw3GoOrYAvTP04f7fQK",
+          "artist": "The Black Star Sound",
+          "title": "Nite Safari"
+        },
+        {
+          "id": "2nhN1xW8YNOTe9L43OeTyj",
+          "artist": "Steele Beautttah",
+          "title": "Africa"
+        },
+        {
+          "id": "123Jfj1Q9aZX6cDbSnvTIk",
+          "artist": "K. Frimpong",
+          "title": "Abrabo"
+        },
+        {
+          "id": "0jCjsypKEYXqTe1M7Dd8tN",
+          "artist": "Chicago Afrobeat Project",
+          "title": "Jekajo"
+        },
+        {
+          "id": "7HbXX2HyVT102NVIaQrvoe",
+          "artist": "The Don Isaac Ezekiel Combination",
+          "title": "Ire"
+        },
+        {
+          "id": "14LCMOzZshxr4DtB8bRK5P",
+          "artist": "Ouinsou Corneille",
+          "title": "Vinon So Minsou"
+        },
+        {
+          "id": "1vyGlvhTNcDFcjugip9BrE",
+          "artist": "Stanislas Tohon",
+          "title": "O Kou"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 10
+    },
+    {
+      "prompt": "Give me 10 songs like 'Teardrop' by Massive Attack.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 11779,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 5,
+      "tracks": [
+        {
+          "id": "7uv632EkfwYhXoqf8rhYrg",
+          "artist": "Massive Attack",
+          "title": "Angel"
+        },
+        {
+          "id": "5LrnMiFzoefl2efZFhSOV1",
+          "artist": "RZA",
+          "title": "Unleash Me"
+        },
+        {
+          "id": "2ttOFglLynQA0J1B7RhlgX",
+          "artist": "Massive Attack",
+          "title": "Pray For Rain"
+        },
+        {
+          "id": "6idE0xZE743iW9aKLAeMrp",
+          "artist": "Tricky",
+          "title": "Ice Pick"
+        },
+        {
+          "id": "0DiSGwSKxb36nYKgeTmwSb",
+          "artist": "Thea",
+          "title": "Baby Boy"
+        },
+        {
+          "id": "4y6aEDPYJ2ObOWoDL84W9u",
+          "artist": "Massive Attack",
+          "title": "Atlas Air"
+        },
+        {
+          "id": "69lL8c7x3OoNLAYSysLbah",
+          "artist": "Tricky",
+          "title": "Antimatter"
+        },
+        {
+          "id": "3zkPvQZx6ZflYZtw6PZ82X",
+          "artist": "Massive Attack",
+          "title": "Girl I Love You"
+        },
+        {
+          "id": "4r6qqd15BZgmxQSGhlfv32",
+          "artist": "Sennen",
+          "title": "SOS"
+        },
+        {
+          "id": "2BndJYJQ17UcEeUFJP5JmY",
+          "artist": "Massive Attack",
+          "title": "Paradise Circus"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 11
+    },
+    {
+      "prompt": "Make a 10-song playlist inspired by 'So What' by Miles Davis and 'Take Five' by the Dave Brubeck Quartet.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 16025,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "6YYu8qFzcY1ZyzzsJIQM12",
+          "artist": "Thelonious Monk",
+          "title": "Straight, No Chaser"
+        },
+        {
+          "id": "0zQE77yszbyv61M4NboU2u",
+          "artist": "Various Artists",
+          "title": "St. Thomas"
+        },
+        {
+          "id": "2Mq2Fzc9HBgvsijVFdSXUl",
+          "artist": "Wes Montgomery",
+          "title": "Four On Six"
+        },
+        {
+          "id": "38R2EViAkYOFG8ZkG3GLtW",
+          "artist": "Dizzy Gillespie",
+          "title": "On The Sunny Side Of The Street"
+        },
+        {
+          "id": "5FYgwqjjq9kPCMj8yArfTr",
+          "artist": "Miles Davis Quintet",
+          "title": "My Funny Valentine - Rudy Van Gelder Remaster 2007"
+        },
+        {
+          "id": "5Kwd8HB9VQ12yFSu0dM4Yi",
+          "artist": "Sonny Rollins",
+          "title": "St. Thomas"
+        },
+        {
+          "id": "3PJMsxg6rz9FOo6xNiASXz",
+          "artist": "Charles Mingus",
+          "title": "Goodbye Pork Pie Hat"
+        },
+        {
+          "id": "0X5DcGkbxCXSadgj01ZXd7",
+          "artist": "Cannonball Adderley",
+          "title": "Autumn Leaves"
+        },
+        {
+          "id": "6ZgaUtMlUzUf7SqbUUnfbu",
+          "artist": "John Coltrane",
+          "title": "Blue Train - Remastered 2003/Rudy Van Gelder Edition"
+        },
+        {
+          "id": "4vLYewWIvqHfKtJDk8c8tq",
+          "artist": "Miles Davis",
+          "title": "So What (feat. John Coltrane, Cannonball Adderley & Bill Evans)"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 12
+    },
+    {
+      "prompt": "Give me 10 tracks mixing house, techno, and UK garage.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 36482,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "4baXYEQbDjse4afjjToEB6",
+          "artist": "Jamiroquai",
+          "title": "Feel So Good"
+        },
+        {
+          "id": "21rRMroQY157d74YBR6a7p",
+          "artist": "Kinky",
+          "title": "Uruapan Breaks"
+        },
+        {
+          "id": "1m8Bi4DPISDIpsr2aA9d2N",
+          "artist": "Martika",
+          "title": "More Than You Know"
+        },
+        {
+          "id": "2NKgzgHTgBQSxvv2kmApZi",
+          "artist": "The The",
+          "title": "That Was the Day"
+        },
+        {
+          "id": "0ivScpItKrlv30VjkB4gGP",
+          "artist": "Sneaker Pimps",
+          "title": "Sick"
+        },
+        {
+          "id": "6ALPLbDJ9eWVij9ep3Cgf4",
+          "artist": "The Jam",
+          "title": "Going Underground"
+        },
+        {
+          "id": "3x5YIaALefX6Uy693iNX5X",
+          "artist": "Beverley Knight",
+          "title": "Shoulda Woulda Coulda"
+        },
+        {
+          "id": "3DmaIugALtDelUzCinhilO",
+          "artist": "Da Hool",
+          "title": "Meet Her at the Loveparade"
+        },
+        {
+          "id": "68ahXxPJrxcEvQFjRmC2ja",
+          "artist": "Stephen Walking",
+          "title": "Dads in Space"
+        },
+        {
+          "id": "3RpWnhwC0cUXnitepeHXVk",
+          "artist": "Wolfgang Gartner",
+          "title": "There And Back"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 7,
+        "elapsedMilliseconds": 14969,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 13
+    },
+    {
+      "prompt": "Make a 10-song playlist combining bossa nova, samba, and Brazilian jazz.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 79014,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "4X2v1zob0sZ7HtY2TyWiuf",
+          "artist": "Elizeth Cardoso",
+          "title": "Eu Bebo Sim"
+        },
+        {
+          "id": "5kunnyRXn1uwU3h1H2MYpI",
+          "artist": "Casuarina",
+          "title": "Disritmia"
+        },
+        {
+          "id": "3OiNjkS2RykIom3FmoWpEG",
+          "artist": "Baden Powell",
+          "title": "Blues a Volonte"
+        },
+        {
+          "id": "78782ive5u9PRGo1fRbPD7",
+          "artist": "Jim Hall",
+          "title": "Simple Samba"
+        },
+        {
+          "id": "6ztzr8YIlJmcrLG0B5T5Lp",
+          "artist": "Arnaldo Antunes",
+          "title": "O Seu Olhar"
+        },
+        {
+          "id": "1sOkm2dUzlfUC3AuoMJLle",
+          "artist": "Youn Sun Nah",
+          "title": "Dancing with You"
+        },
+        {
+          "id": "07Lhzsq3e0Ak0e1nswFLYZ",
+          "artist": "Club des Belugas",
+          "title": "A Men's Scene"
+        },
+        {
+          "id": "1EoV0vQjHaMQ8WehQGXS8O",
+          "artist": "Barbatuques",
+          "title": "Baião Destemperado"
+        },
+        {
+          "id": "5hyq5k3Do9gW3HGvDg5ZEJ",
+          "artist": "Café Quijano",
+          "title": "La Lola"
+        },
+        {
+          "id": "6ah5O9ZNBgqUSzOtG0aRQr",
+          "artist": "Santana",
+          "title": "Black Magic Woman/Gypsy Queen"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 21,
+        "newAnalyses": 22,
+        "elapsedMilliseconds": 56036,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 14
+    },
+    {
+      "prompt": "Give me 10 songs spanning bluegrass, country, and Americana.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 71656,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "5hEKOE5tNY6033Aj8zcKRq",
+          "artist": "Sturgill Simpson",
+          "title": "Just Let Go"
+        },
+        {
+          "id": "2IvFyR1ft5mjIgrz4scqXB",
+          "artist": "Tim Eriksen",
+          "title": "The Cuckoo"
+        },
+        {
+          "id": "4r60174TDhqp3M33NdaAhM",
+          "artist": "Alan Jackson",
+          "title": "I Don't Need The Booze (To Get A Buzz On)"
+        },
+        {
+          "id": "1KhrAWvLIjRlQIJtSTgvsi",
+          "artist": "Josh Turner",
+          "title": "Would You Go With Me"
+        },
+        {
+          "id": "1B75hgRqe7A4fwee3g3Wmu",
+          "artist": "MC Hammer",
+          "title": "U Can't Touch This"
+        },
+        {
+          "id": "70LJMqC86xtqtuw5pliVZW",
+          "artist": "Trixie Mattel",
+          "title": "Break Your Heart"
+        },
+        {
+          "id": "1Ksgx6hc1sXyIWmUMa2wKJ",
+          "artist": "Our Native Daughters",
+          "title": "Quasheba, Quasheba"
+        },
+        {
+          "id": "72AqtnpXP8n3dBQbIOA5Td",
+          "artist": "Robert Ellis",
+          "title": "Topo Chico"
+        },
+        {
+          "id": "5aPqksnUzhgLDJlBhKXNpN",
+          "artist": "Pistol Annies",
+          "title": "Girls Like Us"
+        },
+        {
+          "id": "30oLuh0RIUEMNCsdalEX0F",
+          "artist": "Sondre Lerche",
+          "title": "Go Right Ahead"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 19,
+        "elapsedMilliseconds": 39679,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 15
+    },
+    {
+      "prompt": "Make a 10-song playlist mixing Japanese city pop, funk, and disco.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 75543,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "33YXSNBTg2KvbGur2E1XUw",
+          "artist": "Kings of Leon",
+          "title": "On Call"
+        },
+        {
+          "id": "4qFlPvpOr2gZXMkXvPRfhd",
+          "artist": "Mint Royale",
+          "title": "Show Me"
+        },
+        {
+          "id": "7rHWWHXB9TDNwivu6bTSwQ",
+          "artist": "LCD Soundsystem",
+          "title": "Beat Connection"
+        },
+        {
+          "id": "1Hd1LiHrVX7lWEXiZZQZgY",
+          "artist": "The Headhunters",
+          "title": "God Make Me Funky"
+        },
+        {
+          "id": "4AMRB9Fz1dFLBSbOr4sOjC",
+          "artist": "Gwen Guthrie",
+          "title": "Can't Love You Tonight"
+        },
+        {
+          "id": "3FtX2zJDZHDCKbYkP3aEAy",
+          "artist": "Melba Moore",
+          "title": "Love Me Right"
+        },
+        {
+          "id": "6xs17NF4X10Y7UGwto7S7Z",
+          "artist": "AC/DC",
+          "title": "Safe in New York City"
+        },
+        {
+          "id": "6rKOKHJK3OQuV3FctJltvH",
+          "artist": "Hilary Duff",
+          "title": "Stranger"
+        },
+        {
+          "id": "1KWt1O0TZcdCkg3WIvkQaK",
+          "artist": "Michael Jackson",
+          "title": "Don't Walk Away"
+        },
+        {
+          "id": "2sv05UUweBujdreaadCbrd",
+          "artist": "patten",
+          "title": "Blush Mosaic"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 20,
+        "elapsedMilliseconds": 44901,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 16
+    },
+    {
+      "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 165677,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 4,
+      "tracks": [
+        {
+          "id": "3IfmatoAjPtQOqteemdUnp",
+          "artist": "Aphex Twin",
+          "title": "Donkey Rhubarb"
+        },
+        {
+          "id": "01QJM4L9ysDoikSBKkDLvw",
+          "artist": "Mouse On Mars",
+          "title": "Tamagnocchi"
+        },
+        {
+          "id": "1oV4FDJY0LE1dL5D3NvEA0",
+          "artist": "Aphex Twin",
+          "title": "Vaz Deferenz"
+        },
+        {
+          "id": "10FYeNdSlvRzHjwPiBdLTy",
+          "artist": "Autechre",
+          "title": "Teartear"
+        },
+        {
+          "id": "2LCkVCtVy1ssUjngNvoOie",
+          "artist": "Mouse On Mars",
+          "title": "Twift Shoeblade"
+        },
+        {
+          "id": "5buqDKDW117NA9wRXz9J2y",
+          "artist": "Aphex Twin",
+          "title": "Start As You Mean To Go On"
+        },
+        {
+          "id": "6L7VMEqCZpkgL5WajUxbe1",
+          "artist": "Autechre",
+          "title": "Further"
+        },
+        {
+          "id": "4OLn9JczgVsRespw6XSlHc",
+          "artist": "Aphex Twin",
+          "title": "Wax The Nip"
+        },
+        {
+          "id": "4ogHzwfR0UCxfzGZBYHyV9",
+          "artist": "Squarepusher",
+          "title": "Beep Street"
+        },
+        {
+          "id": "4nouVnQrrO8Q1yje5Gz8Tq",
+          "artist": "Aphex Twin",
+          "title": "Yellow Calx"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 1,
+        "newAnalyses": 32,
+        "elapsedMilliseconds": 129148,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "parser-recheck",
+      "case": 17
+    },
+    {
+      "prompt": "Make a 10-song playlist with warm acoustic instruments, gentle rhythms, and an intimate late-night feel.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 123196,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 4,
+      "tracks": [
+        {
+          "id": "1HkOPLwAJH3kE8UnqgxF4s",
+          "artist": "Bon Iver",
+          "title": "Skinny Love"
+        },
+        {
+          "id": "3JEye8rsrvGdlrBvZUgNIL",
+          "artist": "Benjamin Francis Leftwich",
+          "title": "Atlas Hands"
+        },
+        {
+          "id": "2dW05vYi45Fd65qGrVzPEB",
+          "artist": "Bon Iver",
+          "title": "Wash."
+        },
+        {
+          "id": "7EqB4Si62qbT1P8Yf3ZPKH",
+          "artist": "Keaton Henson",
+          "title": "Alright"
+        },
+        {
+          "id": "1oMA7iNgQb2Wu30k5kaBBL",
+          "artist": "Benjamin Francis Leftwich",
+          "title": "Pictures"
+        },
+        {
+          "id": "5TGv36v9A0AsLq1xJrNs5V",
+          "artist": "Bon Iver",
+          "title": "Towers"
+        },
+        {
+          "id": "2xxXXHuRwJ2FhvUTc0hZco",
+          "artist": "Toddla T",
+          "title": "Badman Flu"
+        },
+        {
+          "id": "3XnfWIv4HEJbwAhAq9jXSk",
+          "artist": "Bon Iver",
+          "title": "Calgary"
+        },
+        {
+          "id": "5044qdWzeyYSF2y7C7bzkG",
+          "artist": "Keaton Henson",
+          "title": "The Pugilist"
+        },
+        {
+          "id": "6a1wMgJ42Okk5LjulbrtcZ",
+          "artist": "Bon Iver",
+          "title": "Flume"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 21,
+        "newAnalyses": 22,
+        "elapsedMilliseconds": 82850,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 18
+    },
+    {
+      "prompt": "Give me 10 songs with jangly guitars, melodic bass lines, and bright indie-pop energy.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 171062,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "6M7VWjQnVsSCTifhHJGKpG",
+          "artist": "Mt. Joy",
+          "title": "Rearrange Us"
+        },
+        {
+          "id": "2xH8hQNePsHBj6G5gmx2XK",
+          "artist": "Mako Road",
+          "title": "Glimmer"
+        },
+        {
+          "id": "53XM8O6sQ4YzCq2jYgXuC6",
+          "artist": "Sticky Fingers",
+          "title": "Cyclone (The Village Sessions)"
+        },
+        {
+          "id": "0wuOSn2Qx2OoghKiXXRdPB",
+          "artist": "Soft Powers",
+          "title": "Palm Nights"
+        },
+        {
+          "id": "0OiKuQ4Y2OG8KpgU69V3AA",
+          "artist": "Superhumanoids",
+          "title": "Palm Springs"
+        },
+        {
+          "id": "4VbDJMkAX3dWNBdn3KH6Wx",
+          "artist": "Foster The People",
+          "title": "Helena Beat"
+        },
+        {
+          "id": "6ztuJGgOU21itua35jvwlt",
+          "artist": "STIG",
+          "title": "Ryyppy"
+        },
+        {
+          "id": "1hUekE1ArfXmZGK3eeb5Pb",
+          "artist": "Common Kings",
+          "title": "Alcoholic"
+        },
+        {
+          "id": "6F6avNUliAxclXutwI36RT",
+          "artist": "Easy Star All-Stars",
+          "title": "Money (Alchemist Remix)"
+        },
+        {
+          "id": "0XB7OxjTbhW3u7F49XpDv9",
+          "artist": "HÆLOS",
+          "title": "Alarms"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 11,
+        "newAnalyses": 29,
+        "elapsedMilliseconds": 123201,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 19
+    },
+    {
+      "prompt": "Make a 10-track playlist of orchestral music with sweeping strings, dramatic contrasts, and a cinematic atmosphere.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 153749,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "4JtvyWkWQTPVcroZf8JJkp",
+          "artist": "Thomas Bergersen",
+          "title": "Heart of Courage"
+        },
+        {
+          "id": "2KNmDKL0Ngf5wd7iB25cap",
+          "artist": "Ramin Djawadi",
+          "title": "Pacific Rim (feat. Tom Morello)"
+        },
+        {
+          "id": "1r8rG99IneBtqgpUxOBBJt",
+          "artist": "London Music Works",
+          "title": "Requiem for a Tower"
+        },
+        {
+          "id": "5xKVYMxOHB2XRLCUafFrz6",
+          "artist": "Hans Zimmer",
+          "title": "Dream Is Collapsing"
+        },
+        {
+          "id": "2TZbQZXOuR8osP2AK8yYMN",
+          "artist": "John Williams",
+          "title": "Theme From Jurassic Park"
+        },
+        {
+          "id": "644es5aYPJghtZLjM1rmSP",
+          "artist": "Howard Shore",
+          "title": "Concerning Hobbits"
+        },
+        {
+          "id": "04g3Pt5IaTSPrWIHaRGJ6r",
+          "artist": "The Outatime Orchestra",
+          "title": "Back To The Future"
+        },
+        {
+          "id": "50csT5Qb2qOF7lHdDQ1Sbx",
+          "artist": "Danny Elfman",
+          "title": "The Batman Theme"
+        },
+        {
+          "id": "1eFAbHxOdvejiM9R5g0qHG",
+          "artist": "Alan Silvestri",
+          "title": "Predator- Main Title from the Motion Picture"
+        },
+        {
+          "id": "3WoSJF85H0qywD4qLp4HDd",
+          "artist": "Nino Rota",
+          "title": "The Godfather Waltz (Main Title)"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 2,
+        "newAnalyses": 37,
+        "elapsedMilliseconds": 119881,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 20
+    },
+    {
+      "prompt": "Make a 10-song journey from ambient electronic through downtempo to melodic house, gradually increasing the energy.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 47840,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "energy_trajectory_unsupported",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "3oITAOGzVUio5PQBc0ONdz",
+          "artist": "Bliss",
+          "title": "Absence of Fear"
+        },
+        {
+          "id": "6oKjbKVOkP0gf0MUxARrGL",
+          "artist": "Above & Beyond",
+          "title": "Little Something"
+        },
+        {
+          "id": "4cpUsHfE4q4Amwkc2OO6xI",
+          "artist": "George FitzGerald",
+          "title": "About Time"
+        },
+        {
+          "id": "6MoOdflktsSbr6LUDthbaw",
+          "artist": "Patchworks",
+          "title": "Sugar"
+        },
+        {
+          "id": "5i2859ZJXGPOzDwdZSOMiH",
+          "artist": "Roxy Music",
+          "title": "Manifesto"
+        },
+        {
+          "id": "4cJZSj6CjroSGT76DOQjeH",
+          "artist": "Rocío Márquez",
+          "title": "El Corte Más Limpio"
+        },
+        {
+          "id": "5J4SbCndOtZJHZtLL9ZHoR",
+          "artist": "The Underachievers",
+          "title": "Stone Cold"
+        },
+        {
+          "id": "26xJxjKLwjg3nmEvZnZlxB",
+          "artist": "Atoms For Peace",
+          "title": "Amok"
+        },
+        {
+          "id": "0fUiBUnYTwlJ897SZIBkU9",
+          "artist": "Emil Germ",
+          "title": "Tease and Burn"
+        },
+        {
+          "id": "4qGK21F2n8zYRNsllinNaS",
+          "artist": "Hot Chip",
+          "title": "I Feel Better"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 9,
+        "elapsedMilliseconds": 23407,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 21
+    },
+    {
+      "prompt": "Give me a 10-song playlist that starts with acoustic folk, moves through folk rock, and ends with energetic alternative rock.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 54416,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "08ZAVXwts5Ye1PFBNo3NGS",
+          "artist": "John Denver",
+          "title": "My Sweet Lady"
+        },
+        {
+          "id": "1n8Y30s5cvf7YTD0ECSl3C",
+          "artist": "Blackfoot",
+          "title": "Wishing Well"
+        },
+        {
+          "id": "5NlFXQ0si6U87gXs6hq81B",
+          "artist": "Robbie Williams",
+          "title": "Candy"
+        },
+        {
+          "id": "2t9OKmiyY6LkfBrU3odXoh",
+          "artist": "Midnight Juggernauts",
+          "title": "Into the Galaxy"
+        },
+        {
+          "id": "0mqLyxIl2k5kfLV9FDenWE",
+          "artist": "Cloud Control",
+          "title": "The Rolling Stones"
+        },
+        {
+          "id": "5SuEuJ2FFfUgKX4tPRfmzU",
+          "artist": "Mona",
+          "title": "Lean Into The Fall"
+        },
+        {
+          "id": "14NBmtQOBRDgDtIbo9gNx8",
+          "artist": "Random Hand",
+          "title": "Scum Triumphant"
+        },
+        {
+          "id": "4oVxzPnsK4wOb4KPCApRD9",
+          "artist": "Audioslave",
+          "title": "Light My Way"
+        },
+        {
+          "id": "5t3S88P1tte6QyUzgMEQd9",
+          "artist": "Holy Fawn",
+          "title": "Arrows"
+        },
+        {
+          "id": "32tYhSiKGLXzjHdnIez9rd",
+          "artist": "The Dream Syndicate",
+          "title": "Filter Me Through You"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 7,
+        "elapsedMilliseconds": 15951,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 22
+    },
+    {
+      "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 102485,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 9,
+      "tracks": [
+        {
+          "id": "6kyZgFuNpWRjOgv0NUlQiE",
+          "artist": "Porn Sword Tobacco",
+          "title": "Watts Towers"
+        },
+        {
+          "id": "5S5WUD8DoVSAVKi3ETaLkc",
+          "artist": "Solar Fields",
+          "title": "Polarity"
+        },
+        {
+          "id": "6jqQ3sKoIoZQXIzRnIgFRN",
+          "artist": "Carbon Based Lifeforms",
+          "title": "System"
+        },
+        {
+          "id": "7mAQcpqUFHFnfoeuhGqbRu",
+          "artist": "Hybrid Leisureland",
+          "title": "Breeze is Nice"
+        },
+        {
+          "id": "3KGTyfcPNvtsXRM9gxV360",
+          "artist": "Green Isac",
+          "title": "Wasa"
+        },
+        {
+          "id": "4l8ekDHfnOaWLRDfJRJHxV",
+          "artist": "Near The Parenthesis",
+          "title": "Good Evening"
+        },
+        {
+          "id": "3QYNEjbELEyN9MpAhlH2mB",
+          "artist": "Aeroc",
+          "title": "Spaced Out"
+        },
+        {
+          "id": "6610WRMcI7jRHt0WxlKQAX",
+          "artist": "Sync24",
+          "title": "Walk on Spheres"
+        },
+        {
+          "id": "7hujuKvP1Mqzm2D75v6qak",
+          "artist": "Carbon Based Lifeforms",
+          "title": "Arecibo"
+        },
+        {
+          "id": "0cCWiYvrKJCMJsucjf3QYF",
+          "artist": "Jon Hopkins",
+          "title": "Water"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 0,
+        "newAnalyses": 21,
+        "elapsedMilliseconds": 83642,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "endpoint-recheck",
+      "case": 23
+    },
+    {
+      "prompt": "Give me 10 songs moving from traditional soul through funk into disco. Keep the transitions smooth and avoid placing the same artist back to back.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 86137,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "1KWt1O0TZcdCkg3WIvkQaK",
+          "artist": "Michael Jackson",
+          "title": "Don't Walk Away"
+        },
+        {
+          "id": "2nxSAQBvF6gDIwZmG6B9nO",
+          "artist": "Martha Reeves & The Vandellas",
+          "title": "I Should Be Proud"
+        },
+        {
+          "id": "6FixOciblTbUmV9pLiYw1s",
+          "artist": "Wilson Pickett",
+          "title": "Hey Joe"
+        },
+        {
+          "id": "3hefAnE3N74TyKr9IB5LRf",
+          "artist": "Breakestra",
+          "title": "Back At The Boathouse"
+        },
+        {
+          "id": "1Hd1LiHrVX7lWEXiZZQZgY",
+          "artist": "The Headhunters",
+          "title": "God Make Me Funky"
+        },
+        {
+          "id": "3LFHoPRyI1KblbRl4LySAF",
+          "artist": "The Temptations",
+          "title": "What It Is?"
+        },
+        {
+          "id": "4AMRB9Fz1dFLBSbOr4sOjC",
+          "artist": "Gwen Guthrie",
+          "title": "Can't Love You Tonight"
+        },
+        {
+          "id": "7rHWWHXB9TDNwivu6bTSwQ",
+          "artist": "LCD Soundsystem",
+          "title": "Beat Connection"
+        },
+        {
+          "id": "33YXSNBTg2KvbGur2E1XUw",
+          "artist": "Kings of Leon",
+          "title": "On Call"
+        },
+        {
+          "id": "6xs17NF4X10Y7UGwto7S7Z",
+          "artist": "AC/DC",
+          "title": "Safe in New York City"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 20,
+        "elapsedMilliseconds": 42208,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 24
+    },
+    {
+      "prompt": "Make a 10-track instrumental playlist for focused work, blending modern classical, ambient, and gentle electronic music. Start sparse, build a subtle pulse in the middle, and finish calmly. No vocals.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 776113,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit",
+        "analysis_stopped"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "energy_trajectory_unsupported",
+        "audio_similarity_ranking",
+        "vocal_preview_screening"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "1zmsJWZBlisnWDPjun9ewH",
+          "artist": "Ludovico Einaudi",
+          "title": "Monday"
+        },
+        {
+          "id": "4yFAn8wsK6JqetXGFqFpTe",
+          "artist": "Goldmund",
+          "title": "The One Acre"
+        },
+        {
+          "id": "4kXDHy4JtWKvGmowev5D84",
+          "artist": "World's End Girlfriend",
+          "title": "River was Filled with Stories 水の線路"
+        },
+        {
+          "id": "4fS4hGJcIydMZrWo68DFMf",
+          "artist": "The Flashbulb",
+          "title": "Undiscovered Colors"
+        },
+        {
+          "id": "3iH02bSNME4ozPhyCfsDnY",
+          "artist": "Gidge",
+          "title": "Hon"
+        },
+        {
+          "id": "5eVFV7ELbdqSGcip1jgaDD",
+          "artist": "Colourbox",
+          "title": "Sleepwalker"
+        },
+        {
+          "id": "6t8Tjq1KEYvWMKsgSoATF3",
+          "artist": "Alejandro Jodorowsky",
+          "title": "Isla (The Sapphic Sleep)"
+        },
+        {
+          "id": "53xtrYKwCtkjxgRrDA8vgg",
+          "artist": "Cal Tjader",
+          "title": "Aquarius"
+        },
+        {
+          "id": "5IKcDGiMimnTtQ5HZs4J8w",
+          "artist": "Murray Gold",
+          "title": "The Same Sonic"
+        },
+        {
+          "id": "702LbrobG2m6QG2sv27qyb",
+          "artist": "Ramin Djawadi",
+          "title": "We Are The Watchers On The Wall"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1+clap-preview-vocal-contrast/v1",
+        "cacheHits": 2,
+        "newAnalyses": 202,
+        "elapsedMilliseconds": 726474,
+        "budgetExhausted": true,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 25
+    },
+    {
+      "prompt": "Punk rock, 10 songs.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 180560,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 5,
+      "tracks": [
+        {
+          "id": "64hsFEXIjs8489ukHxN1OE",
+          "artist": "The Boomtown Rats",
+          "title": "Like Clockwork"
+        },
+        {
+          "id": "2PR3bSEsZRXhi7O6u2iZ3q",
+          "artist": "Chelsea",
+          "title": "Evacuate"
+        },
+        {
+          "id": "5K1E9dBYXIKqTbqlOnshto",
+          "artist": "Dwarves",
+          "title": "Drug Store"
+        },
+        {
+          "id": "670cPGm4gT74dlKMh8e8vc",
+          "artist": "Good Riddance",
+          "title": "Come Dancing"
+        },
+        {
+          "id": "6v7DLjEnRuFocLwUfU1CfX",
+          "artist": "Lower Than Atlantis",
+          "title": "R.O.I."
+        },
+        {
+          "id": "2TFPqkSLfu8pyfh2SksR61",
+          "artist": "The Boomtown Rats",
+          "title": "Diamond Smiles"
+        },
+        {
+          "id": "03QblNa20RzV47y7C2RnOr",
+          "artist": "Dwarves",
+          "title": "The Dwarves Are Still The Best Band Ever"
+        },
+        {
+          "id": "3dRAYFYJmEvPVgmh9OA6Sj",
+          "artist": "Good Riddance",
+          "title": "Tell Me Why"
+        },
+        {
+          "id": "6qtuRsLcCzwLc8wBZ9ZMqA",
+          "artist": "Lower Than Atlantis",
+          "title": "English Kids In America"
+        },
+        {
+          "id": "7abHxEnq5hL62M3vN715SC",
+          "artist": "The Boomtown Rats",
+          "title": "Up All Night"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 13,
+        "newAnalyses": 28,
+        "elapsedMilliseconds": 144490,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 26
+    },
+    {
+      "prompt": "Give me 10 blues songs.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 89546,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "4O9w9kufIaWXCOzKzzInmw",
+          "artist": "Scorpions",
+          "title": "The Future Never Dies"
+        },
+        {
+          "id": "221OWzoN7cDlxo5fenxawk",
+          "artist": "Big Sugar",
+          "title": "All Hell For A Basement"
+        },
+        {
+          "id": "0yI9cLXMRA1IQE4p1Go1JG",
+          "artist": "Buddy Guy",
+          "title": "She's Nineteen Years Old"
+        },
+        {
+          "id": "1bNuAtY81BxOw9Z7IObo7Q",
+          "artist": "John Hiatt",
+          "title": "All the Way Under"
+        },
+        {
+          "id": "4VH5mN8zakUaj8sHKrE1j4",
+          "artist": "Blitzen Trapper",
+          "title": "Country Caravan"
+        },
+        {
+          "id": "71geaRAZ2M5w08T3kl5Xvs",
+          "artist": "Eric Church",
+          "title": "Sinners Like Me"
+        },
+        {
+          "id": "4mcZYzoGwPRDdhWVlygiHf",
+          "artist": "Tom Petty and the Heartbreakers",
+          "title": "Refugee"
+        },
+        {
+          "id": "4GU2GPoPPODiMrbqHsmREj",
+          "artist": "Duffy Power",
+          "title": "Where Am I"
+        },
+        {
+          "id": "1j5131gOPOxU9PQsjXBZct",
+          "artist": "Boo Boo Davis",
+          "title": "Have A Good Time"
+        },
+        {
+          "id": "6TVmNRrCRzU3NlyuubLIzZ",
+          "artist": "Seu Jorge",
+          "title": "Amiga da Minha Mulher"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 7,
+        "newAnalyses": 26,
+        "elapsedMilliseconds": 82526,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 27
+    },
+    {
+      "prompt": "Make a 10-song salsa playlist.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 137622,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "2ATL6pmlSKBxn9M2U9Qp4t",
+          "artist": "Banda Beijo",
+          "title": "Bate Lata"
+        },
+        {
+          "id": "77uhiyzPjrQy8jA10PLcIB",
+          "artist": "Bonny Cepeda",
+          "title": "Una Fotografia"
+        },
+        {
+          "id": "1VMTzYeudf98nwRtUYvrIL",
+          "artist": "Ismael Rivera",
+          "title": "El Cumbanchero"
+        },
+        {
+          "id": "5AWbnZ1k5cMwUAJ3uIIdcl",
+          "artist": "Johnny Pacheco",
+          "title": "Agua De Clavelito"
+        },
+        {
+          "id": "0vTz2kGfBSQYZFiKM5eC2S",
+          "artist": "Ibrahim Ferrer",
+          "title": "Guaguancó callejero"
+        },
+        {
+          "id": "2E7ErgEvSdwOrUk89w4bND",
+          "artist": "King Coya",
+          "title": "Trocintro"
+        },
+        {
+          "id": "4HV7slpl25NXmynjYEp7N0",
+          "artist": "Orchestra Baobab",
+          "title": "Ndiawolou"
+        },
+        {
+          "id": "2xRq05v4VaOwy489OnvXgY",
+          "artist": "The Salsoul Orchestra",
+          "title": "Ritzy Mambo"
+        },
+        {
+          "id": "020Gj87SqDRvzGHELzcCEc",
+          "artist": "Duncan Dhu",
+          "title": "Cien gaviotas"
+        },
+        {
+          "id": "5mpmLk50TcKlmER9D688dh",
+          "artist": "Buena Vista Social Club",
+          "title": "El Carretero"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 0,
+        "newAnalyses": 34,
+        "elapsedMilliseconds": 115377,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 28
+    },
+    {
+      "prompt": "Give me 10 drum and bass tracks.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 177369,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "6fzwardfFs6sVfNA5R1ypt",
+          "artist": "Origin Unknown",
+          "title": "Valley of the Shadows"
+        },
+        {
+          "id": "4m4DSP4BzwvBLnnGCUcoyK",
+          "artist": "Optical",
+          "title": "Slip Thru"
+        },
+        {
+          "id": "4qy2Mp1Hgf7hfVYRDLFamz",
+          "artist": "Smooth",
+          "title": "Drone"
+        },
+        {
+          "id": "6JGFjYSLsQIYEa4bqySGxB",
+          "artist": "Lenzman",
+          "title": "Empty Promise"
+        },
+        {
+          "id": "0T79NiFbhxPF4GLslMt9HL",
+          "artist": "SKC",
+          "title": "Heart Of Love"
+        },
+        {
+          "id": "7KgFRvglPd0rV3yT5eOVHy",
+          "artist": "Matrix",
+          "title": "Temperament"
+        },
+        {
+          "id": "1UwOXJrKDnFsDoB5hxN4Hn",
+          "artist": "Pendulum",
+          "title": "Through The Loop"
+        },
+        {
+          "id": "65eMcjXWCbvlXCJks5Eo8l",
+          "artist": "Misanthrop",
+          "title": "Slap the Ghost"
+        },
+        {
+          "id": "0mceexUyZFF293bJsaIaXw",
+          "artist": "Sustance",
+          "title": "Break the Habit"
+        },
+        {
+          "id": "1Lr9jMrlowBH5EXn4oive0",
+          "artist": "Deep blue",
+          "title": "The Helicopter Tune"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 1,
+        "newAnalyses": 26,
+        "elapsedMilliseconds": 160728,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 29
+    },
+    {
+      "prompt": "Make a 10-song playlist inspired by Björk.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 16580,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 3,
+      "tracks": [
+        {
+          "id": "0k1eo7LKxqHQMizH3NggY3",
+          "artist": "Björk",
+          "title": "Bachelorette - Live"
+        },
+        {
+          "id": "4Sf37RwOXi0HwkWJU1J7m9",
+          "artist": "Orbital",
+          "title": "Planet of the Shapes"
+        },
+        {
+          "id": "7L3D83DHIJCgwkYPRjnGxc",
+          "artist": "Björk",
+          "title": "The Modern Things - Live"
+        },
+        {
+          "id": "30IHEQSPLXaDiFWpEdXDHC",
+          "artist": "Brant Bjork & The Operators",
+          "title": "Electric Lalli Land"
+        },
+        {
+          "id": "2TwYihiZUm2NzzTb98k8mq",
+          "artist": "Orbital",
+          "title": "Choice"
+        },
+        {
+          "id": "67wDl2AEbOQSC0nj4VMM7J",
+          "artist": "Björk",
+          "title": "Enjoy - Live"
+        },
+        {
+          "id": "7bYab61Dffg0ckGLwxglSd",
+          "artist": "Orbital",
+          "title": "Remind"
+        },
+        {
+          "id": "5yeb2BGvRxDiWpJbUCNg9p",
+          "artist": "Björk",
+          "title": "Hyper-ballad - Brodsky Quartet Version"
+        },
+        {
+          "id": "6MyP2ZC46BwmzoremgiugV",
+          "artist": "Orbital",
+          "title": "Lush 3-2"
+        },
+        {
+          "id": "7vwRg2HiGpm76Uybtj1Mbq",
+          "artist": "Björk",
+          "title": "Human Behaviour - Live"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 30
+    },
+    {
+      "prompt": "Give me 10 songs like 宇多田ヒカル, including other artists.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 16128,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "3Hz3tTQwOdM6XkA0ALB2G9",
+          "artist": "TWICE",
+          "title": "Feel Special"
+        },
+        {
+          "id": "6RTF5urAOB5C52nLxeRK5h",
+          "artist": "Red Velvet",
+          "title": "Pose"
+        },
+        {
+          "id": "3YN1BTbPyHC4h05Bw3u2g9",
+          "artist": "CSR",
+          "title": "Pop? Pop!"
+        },
+        {
+          "id": "1v9Aa7OuqDjyvkz3K6NooH",
+          "artist": "Pitbull",
+          "title": "Can't Stop Us Now - Nitti Gritti Remix"
+        },
+        {
+          "id": "7mA8qSlC9F04DEQV8ZcKqx",
+          "artist": "Sam Feldt",
+          "title": "You Should Know (feat. Craig Smart)"
+        },
+        {
+          "id": "7e5XcdOFN3pz4GkUb6FfpH",
+          "artist": "Jonas Blue",
+          "title": "Naked - Nathan Dawe Remix"
+        },
+        {
+          "id": "30WakYO6SFo4XXV9zTsunR",
+          "artist": "Little Mix",
+          "title": "Sweet Melody - PS1 Remix"
+        },
+        {
+          "id": "3Xxy7Mt3QsnjOESgVp2uDO",
+          "artist": "OK KID",
+          "title": "Am Ende"
+        },
+        {
+          "id": "33P1fwoeQmSdo1oS2ip4Fq",
+          "artist": "Tritonal",
+          "title": "Calabasas"
+        },
+        {
+          "id": "15FfKpV7MURQncDusPvqwM",
+          "artist": "Obongjayar",
+          "title": "Frens"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 31
+    },
+    {
+      "prompt": "Make a 10-song journey from David Bowie to Talking Heads, with related artists bridging the transition.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 34037,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 3,
+      "tracks": [
+        {
+          "id": "166RSXPKkSIvxIPPyh5Dro",
+          "artist": "David Bowie",
+          "title": "Leon Take Us Outside"
+        },
+        {
+          "id": "3vf7601jxZBWQJzgYuNwQF",
+          "artist": "Tin Machine",
+          "title": "Amazing - 1999 Remaster"
+        },
+        {
+          "id": "71zn1CfNgeywCKzht5eBLU",
+          "artist": "David Bowie",
+          "title": "You've Been Around - 2003 Remaster"
+        },
+        {
+          "id": "1V7P8RGJRVE1BknEgv1jt9",
+          "artist": "Tin Machine",
+          "title": "Sacrifice Yourself - 1999 Remaster"
+        },
+        {
+          "id": "39eMaQkFhaKL3WT6iLHmeF",
+          "artist": "David Bowie",
+          "title": "Thursday's Child - Omikron: The Nomad Soul Slower Version"
+        },
+        {
+          "id": "5b7VFhTSCxVCaNvs3FGXSZ",
+          "artist": "Tin Machine",
+          "title": "Baby Can Dance - 1999 Remaster"
+        },
+        {
+          "id": "7aRGAdp2ycs5FUQIZpDLVn",
+          "artist": "David Bowie",
+          "title": "Thursday's Child - Radio Edit"
+        },
+        {
+          "id": "2XeDmaAZE1N3QlHKzU6bef",
+          "artist": "Tin Machine",
+          "title": "Maggie's Farm - Live"
+        },
+        {
+          "id": "0CE9O0JRZPDBlLg8wf9qJo",
+          "artist": "David Bowie",
+          "title": "Dead Against It"
+        },
+        {
+          "id": "0x36QYsSOfHGf7MWP97aME",
+          "artist": "Talking Heads",
+          "title": "Walk It Down - 2005 Remaster"
+        }
+      ],
+      "audio": null,
+      "observation": "endpoint-recheck",
+      "case": 32
+    },
+    {
+      "prompt": "Give me 10 songs that move from Bonobo to Massive Attack, including related discoveries.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 39497,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "33Fn05aZtcrRnFYgpWzZ0Y",
+          "artist": "Morcheeba",
+          "title": "Killer Hippie - Bad Vibrations Mix"
+        },
+        {
+          "id": "6pghY2muTr3KKCLNcvta4J",
+          "artist": "Archive",
+          "title": "Man-Made"
+        },
+        {
+          "id": "26W79cOvdaIjiDxmtNo754",
+          "artist": "Tricky",
+          "title": "Five Days"
+        },
+        {
+          "id": "5OXMLLczqQZLNVzVZguSi3",
+          "artist": "Nearly God",
+          "title": "Together Now"
+        },
+        {
+          "id": "6DJMMSO6aPjT0iJYH3GtNK",
+          "artist": "Martina Topley-Bird",
+          "title": "Analyze Me"
+        },
+        {
+          "id": "0835aRaxtOUDeF1QHCo3vK",
+          "artist": "Tommy Veanud",
+          "title": "Internal Flicker"
+        },
+        {
+          "id": "32zlJBGzYuNVv8mqih1Hgw",
+          "artist": "Akira Yamaoka",
+          "title": "Maternal Heart"
+        },
+        {
+          "id": "0DiSGwSKxb36nYKgeTmwSb",
+          "artist": "Thea",
+          "title": "Baby Boy"
+        },
+        {
+          "id": "5LrnMiFzoefl2efZFhSOV1",
+          "artist": "RZA",
+          "title": "Unleash Me"
+        },
+        {
+          "id": "35uKY2ZvXKRdrcFpa9zRFb",
+          "artist": "Massive Attack",
+          "title": "Risingson - Remastered 2006"
+        }
+      ],
+      "audio": null,
+      "observation": "endpoint-recheck",
+      "case": 33
+    },
+    {
+      "prompt": "Make a 10-song playlist inspired by Joni Mitchell, Nick Drake, and Leonard Cohen.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 16512,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 6,
+      "tracks": [
+        {
+          "id": "3oW9RtLV8Ep6L7rxjWwKqP",
+          "artist": "Leonard Cohen",
+          "title": "The Stranger Song - Live at Isle of Wight Festival, UK"
+        },
+        {
+          "id": "485Fz6ioNh0EDtGM0wXMoS",
+          "artist": "Oscar Lang",
+          "title": "Liking All Your Posts"
+        },
+        {
+          "id": "6ZWhBBvENM0vSERv8EmgL6",
+          "artist": "Babe Rainbow",
+          "title": "Bella Luna"
+        },
+        {
+          "id": "5gbPHNfOUvuyS169awDCJV",
+          "artist": "Leonard Cohen",
+          "title": "Humbled in Love"
+        },
+        {
+          "id": "6eMI5ns9sAaJanSTL3WU4R",
+          "artist": "Sunny & The Sunliners",
+          "title": "Smile Now, Cry Later"
+        },
+        {
+          "id": "2BhsSiyQdtY9xZt4Yq137J",
+          "artist": "Leonard Cohen",
+          "title": "Tennessee Waltz - Live at Montreux Jazz Festival"
+        },
+        {
+          "id": "5PbAB7YULvlCaS9BlWaeCr",
+          "artist": "Nina Simone",
+          "title": "Sunday in Savannah - Live at Westbury Music Fair, Westbury, NY - April 1968"
+        },
+        {
+          "id": "3IJ7xrIu1fiY5MjvdcMXbe",
+          "artist": "Leonard Cohen",
+          "title": "Lady Midnight - Live at Isle of Wight Festival, UK"
+        },
+        {
+          "id": "40RaUosMp8ROAFVeqrKZGw",
+          "artist": "Hildur Guðnadóttir",
+          "title": "Penny Taken to the Hospital"
+        },
+        {
+          "id": "2XxzsDD2zlnGz8T6hDWN7L",
+          "artist": "Leonard Cohen",
+          "title": "The Smokey Life"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 34
+    },
+    {
+      "prompt": "Give me 10 songs blending hip-hop, neo-soul, and jazz.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 38701,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "2kQ6txjexMRAfkfbTnLSm0",
+          "artist": "potsu",
+          "title": "food court"
+        },
+        {
+          "id": "18gCfEcwX5MZrSHmzxQQtc",
+          "artist": "Bahramji",
+          "title": "Crazy Heart"
+        },
+        {
+          "id": "16duMJ7cb9aoDBNjBOO2VH",
+          "artist": "Jun Miyake",
+          "title": "Le Mec Dans Un Train"
+        },
+        {
+          "id": "5BQcGyihNd07qVOSNZ1nWi",
+          "artist": "Michael Wollny",
+          "title": "Questions in a World of Blue"
+        },
+        {
+          "id": "5XRxMbRQGilaqxhwPJKChK",
+          "artist": "RAMP",
+          "title": "Deep Velvet"
+        },
+        {
+          "id": "1Rs3d222xwyNcB4PrrAtYa",
+          "artist": "Alemayehu Eshete",
+          "title": "Telantena zare"
+        },
+        {
+          "id": "3xazJfDiimjjLWIskL3HEZ",
+          "artist": "Clube Do Balanço",
+          "title": "Muito Incrementado"
+        },
+        {
+          "id": "1JkpPufBDtHtZlGXFDWRKe",
+          "artist": "Frank Sinatra",
+          "title": "My Baby Just Cares For Me"
+        },
+        {
+          "id": "2m3BCcthxDo4o4JTJ3CejS",
+          "artist": "Daniele Silvestri",
+          "title": "La paranza"
+        },
+        {
+          "id": "6AERxazpPOBLe2N2rZPZja",
+          "artist": "Arsenal",
+          "title": "A volta"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 12,
+        "elapsedMilliseconds": 25218,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 35
+    },
+    {
+      "prompt": "Make a 10-track playlist with distorted guitars, pounding drums, and a tense, restless mood.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 29616,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 6,
+      "tracks": [
+        {
+          "id": "2gbPu2QNqhnnqtfK3yyeZ0",
+          "artist": "TOOL",
+          "title": "Jambi"
+        },
+        {
+          "id": "6XgYuWI1gBWdQ4gZiecpMU",
+          "artist": "Nekrogoblikon",
+          "title": "Goblins"
+        },
+        {
+          "id": "1EE0uHPcbwMqJugelFwOaR",
+          "artist": "Snot",
+          "title": "Tecato"
+        },
+        {
+          "id": "65ShmiE5aLBdcIGr7tHX35",
+          "artist": "TOOL",
+          "title": "Vicarious"
+        },
+        {
+          "id": "7cqnK70AUCBypcveB7OCs1",
+          "artist": "Leprous",
+          "title": "The Sky Is Red"
+        },
+        {
+          "id": "7tvuLLroI0n6uYBWuFig5d",
+          "artist": "TOOL",
+          "title": "Lateralus"
+        },
+        {
+          "id": "4K1Dcu2shklaLyXMRPOgTF",
+          "artist": "Opeth",
+          "title": "Moon Above, Sun Below"
+        },
+        {
+          "id": "2xKDKtJBLDPd7BF3VmSQQO",
+          "artist": "TOOL",
+          "title": "Invincible"
+        },
+        {
+          "id": "0PjvVPV758tHcuuKEd0hjp",
+          "artist": "Corrosion Of Conformity",
+          "title": "Shallow Ground"
+        },
+        {
+          "id": "03sEzk1VyrUZSgyhoQR0LZ",
+          "artist": "TOOL",
+          "title": "Pneuma"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 54,
+        "newAnalyses": 5,
+        "elapsedMilliseconds": 9561,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 36
+    },
+    {
+      "prompt": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 152205,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 6,
+      "tracks": [
+        {
+          "id": "4YPPXfCUuKEWvvsnl64BEA",
+          "artist": "Ralph Vaughan Williams",
+          "title": "The Lark Ascending"
+        },
+        {
+          "id": "1e3hPMCGrwPXYZ1DQhsiCE",
+          "artist": "Harry Gregson-Williams",
+          "title": "Fairytale"
+        },
+        {
+          "id": "3WiXkMTvHYJfC8vemHQNMs",
+          "artist": "Secret Garden",
+          "title": "Anticipation"
+        },
+        {
+          "id": "6l0FhdyFpIEc7JTvfZEfP3",
+          "artist": "Adrien de la Salle",
+          "title": "Open Fields"
+        },
+        {
+          "id": "72xeTsoeHLVhY5X35jlfyv",
+          "artist": "Heitor Pereira",
+          "title": "Moving to Australia"
+        },
+        {
+          "id": "63SalLO6T87OOm86Ar1fcw",
+          "artist": "Kidz Bop Kids",
+          "title": "Just Give Me A Reason"
+        },
+        {
+          "id": "1Q2sqOBW1Bwt1JWuaxV8jJ",
+          "artist": "Heitor Pereira",
+          "title": "Take Her Home"
+        },
+        {
+          "id": "0H312EmYJa6Rjar5yAvBWI",
+          "artist": "Kidz Bop Kids",
+          "title": "Somebody That I Used To Know"
+        },
+        {
+          "id": "6sCRLozlYDw9quJHNiZ2U2",
+          "artist": "Heitor Pereira",
+          "title": "Jillian"
+        },
+        {
+          "id": "4ZbijX6v2KgY2POQnKFnWK",
+          "artist": "Kidz Bop Kids",
+          "title": "Come & Get It"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 0,
+        "newAnalyses": 29,
+        "elapsedMilliseconds": 105848,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 37
+    },
+    {
+      "prompt": "Make a 10-song playlist with syncopated bass, lively percussion, and a celebratory dance groove.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 189368,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "inferred_anchor_rejected",
+        "inferred_anchor_rejected",
+        "genre_artist_diversity",
+        "soft_artist_spacing_relaxed",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 6,
+      "tracks": [
+        {
+          "id": "4SwPirJ6uDdG5PAhRMiosV",
+          "artist": "Fela Kuti",
+          "title": "Lady"
+        },
+        {
+          "id": "0nIfIiTrlOeiFEYpVCJZtY",
+          "artist": "Mulatu Astatke",
+          "title": "Yègellé Tezeta (My Own Memory)"
+        },
+        {
+          "id": "3JcVxQlgVLkjeRcIYBaMD1",
+          "artist": "Ahmed Fakroun",
+          "title": "Falah"
+        },
+        {
+          "id": "7aDwVfvER36HbEi6RkMk00",
+          "artist": "Fela Kuti",
+          "title": "Shakara (Oloje)"
+        },
+        {
+          "id": "5QxZFkKDTbsaM8XWUM5Uwx",
+          "artist": "Antibalas",
+          "title": "World War Iv"
+        },
+        {
+          "id": "2BsHqWLv2LbSSIGsgBoCh6",
+          "artist": "The Skatalites",
+          "title": "Smiling"
+        },
+        {
+          "id": "4IDrUAbqcWwEfa1402xVbR",
+          "artist": "Alton Ellis",
+          "title": "Please Leave Me Alone"
+        },
+        {
+          "id": "5U1qmJbjGGYNPy6JcvYQd3",
+          "artist": "Antibalas",
+          "title": "Gabes New Joint"
+        },
+        {
+          "id": "3yoSHWIvtNQ52Jf3bCoaBa",
+          "artist": "Fela Kuti",
+          "title": "Zombie"
+        },
+        {
+          "id": "1qlSlUzvKDuBlETIxwmVJF",
+          "artist": "Antibalas",
+          "title": "Talkatif"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 0,
+        "newAnalyses": 42,
+        "elapsedMilliseconds": 144740,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 38
+    },
+    {
+      "prompt": "Give me a 10-song journey from blues through soul to funk.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 41163,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "partial",
+      "outcomeReasons": [
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "journey_criterion_missing",
+        "suggested_musical_fit"
+      ],
+      "notices": [
+        "genre_artist_diversity",
+        "audio_similarity_ranking"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 10,
+      "tracks": [
+        {
+          "id": "0yI9cLXMRA1IQE4p1Go1JG",
+          "artist": "Buddy Guy",
+          "title": "She's Nineteen Years Old"
+        },
+        {
+          "id": "4GU2GPoPPODiMrbqHsmREj",
+          "artist": "Duffy Power",
+          "title": "Where Am I"
+        },
+        {
+          "id": "7AljaSBNn7q1oa64y3bzdo",
+          "artist": "Van Morrison",
+          "title": "See Me Through"
+        },
+        {
+          "id": "1bNuAtY81BxOw9Z7IObo7Q",
+          "artist": "John Hiatt",
+          "title": "All the Way Under"
+        },
+        {
+          "id": "2czTKw1mqsTX1i1etKuR3y",
+          "artist": "Sarah Vaughan",
+          "title": "Moonlight In Vermont"
+        },
+        {
+          "id": "5RgWdJs6H52nMyZFQspQWH",
+          "artist": "Stevie Wonder",
+          "title": "Saturn"
+        },
+        {
+          "id": "2PCYL4LjCfX9VxOwZke1mS",
+          "artist": "Billy Preston",
+          "title": "If You Let Me Love You"
+        },
+        {
+          "id": "1jHMrNwkX129QnKUByjHtn",
+          "artist": "Janet Jackson",
+          "title": "Say You Do"
+        },
+        {
+          "id": "4Zt7rGirKYfnEpfT9MDSd6",
+          "artist": "Jazzanova",
+          "title": "Theme From Belle et Fou - Bows"
+        },
+        {
+          "id": "3ttnjkBLvESh8uTrsi7wrT",
+          "artist": "Aloe Blacc",
+          "title": "Good Things"
+        }
+      ],
+      "audio": {
+        "policyVersion": "clap-preview-similarity/v1",
+        "cacheHits": 20,
+        "newAnalyses": 14,
+        "elapsedMilliseconds": 26197,
+        "budgetExhausted": false,
+        "checkedSelected": 10
+      },
+      "observation": "main-run",
+      "case": 39
+    },
+    {
+      "prompt": "Make a playlist only by Radiohead, 10 songs.",
+      "errors": [],
+      "parserIssues": [],
+      "parserFallback": "",
+      "milliseconds": 9540,
+      "parserVersion": "llama/v12",
+      "algorithmVersion": "multichannel/v16+iterative/v1",
+      "catalogVersion": "1:956917:1788613313",
+      "seed": "42",
+      "outcome": "fulfilled",
+      "outcomeReasons": [],
+      "notices": [
+        "soft_artist_spacing_relaxed"
+      ],
+      "count": 10,
+      "distinctCatalogArtists": 1,
+      "tracks": [
+        {
+          "id": "61uR8t4baCXvt56RPwz8pZ",
+          "artist": "Radiohead",
+          "title": "Molasses"
+        },
+        {
+          "id": "02qyINAapIsRrlCE4mWgsr",
+          "artist": "Radiohead",
+          "title": "Coke Babies"
+        },
+        {
+          "id": "4QhzDcpGhiWJzZSgIZQR9q",
+          "artist": "Radiohead",
+          "title": "Dollars and Cents - Live"
+        },
+        {
+          "id": "6NVuMdBwKcxKDJe3ICzZLP",
+          "artist": "Radiohead",
+          "title": "Lull - Remastered"
+        },
+        {
+          "id": "1CQ3Zf1t6SuUXPEKtgtgNt",
+          "artist": "Radiohead",
+          "title": "Where Bluebirds Fly"
+        },
+        {
+          "id": "36smNNHs9GP5I5BGqoDVVX",
+          "artist": "Radiohead",
+          "title": "Palo Alto - Remastered"
+        },
+        {
+          "id": "1JjaPYOJEb5nvmVRGbpPz1",
+          "artist": "Radiohead",
+          "title": "Pearly* - Remastered"
+        },
+        {
+          "id": "7dZXUEXUO6SW9CZPrTGEzo",
+          "artist": "Radiohead",
+          "title": "Morning Bell - Live in Oxford"
+        },
+        {
+          "id": "5l8wjltY40pSESSjO0pQ4m",
+          "artist": "Radiohead",
+          "title": "Punchdrunk Lovesick Singalong"
+        },
+        {
+          "id": "2Rty7vHMKFHqQ87dZEIRyM",
+          "artist": "Radiohead",
+          "title": "Yes I Am"
+        }
+      ],
+      "audio": null,
+      "observation": "main-run",
+      "case": 40
+    }
+  ]
+}

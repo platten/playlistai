@@ -98,6 +98,9 @@ func (o *Orchestrator) bestEssential(ctx context.Context, candidates []core.Cand
 }
 
 func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIntent) bool {
+	if !artistOnlyEligible(intent, track) {
+		return false
+	}
 	metadata, known := o.knowledgeTrack(track.ID)
 	if !acousticCompatible(acousticComparisons(metadata, audio.Clauses(intent))) {
 		return false

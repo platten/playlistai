@@ -136,6 +136,11 @@ func (o *Orchestrator) unsupportedStrictReasons(intent core.MusicIntent) []core.
 	}
 	var reasons []core.OutcomeReason
 	for _, constraint := range intent.HardConstraints {
+		if constraint.Kind == "require_artist" {
+			if _, resolved := requiredArtist(intent, constraint.Value); resolved {
+				continue
+			}
+		}
 		if constraint.Kind == "require_album" {
 			resolved := false
 			for _, ref := range intent.References {
@@ -562,7 +567,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	intent.Seed = seed
 	var discovery ports.MusicCandidateStream
-	if o.candidateSource != nil {
+	// User-named references take retrieval priority over broad genre sampling.
+	// Descriptive clauses still screen every recommendation below.
+	if o.candidateSource != nil && (!o.bestAvailable || !hasExplicitRetrievalReference(o.cat, intent)) {
 		discovery = o.candidateSource.OpenCandidates(intent, o.cat, o.resolver)
 		if discovery != nil {
 			o.knowledge = discovery.Snapshot()
@@ -575,6 +582,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
 	}
 	if reasons := intentCriterionConflictReasons(intent); len(reasons) > 0 {
+		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
+	}
+	if reasons := artistRestrictionConflict(intent); len(reasons) > 0 {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
 	}
 	if o.audioProvider != nil && len(audio.Clauses(intent)) > 0 {
@@ -620,7 +630,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if err != nil {
 		return core.Playlist{}, err
 	}
-	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 {
+	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 && !hasExplicitRetrievalReference(o.cat, intent) {
 		var kept []core.InferredAnchor
 		var rejected []string
 		for _, anchor := range intent.InferredAnchors {
@@ -685,22 +695,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "destination_unresolved", Detail: "The final artist, album or track could not be resolved.", Action: "choose a catalog destination"}}), nil
 		}
 		end := destinations[0]
-		if len(required) == 0 {
-			for _, ref := range references {
-				if ref.ID != end.ID && ref.Artist != end.Artist {
-					required = append(required, ref)
-					break
-				}
-			}
-		}
-		if len(required) == 0 && o.knowledge != nil {
-			for _, ref := range o.knowledge.Candidates {
-				if ref.ID != end.ID && ref.Artist != end.Artist {
-					required = append(required, ref)
-					break
-				}
-			}
-		}
+		// A final artist/track does not require an arbitrary starting medoid
+		// or discovery result. References guide retrieval and trajectory even
+		// when their own recordings lack previews or are excluded from output.
 		found := false
 		for _, ref := range required {
 			if ref.ID == end.ID {
@@ -710,7 +707,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		if !found {
 			required = append(required, end)
 		}
-		waypoints = append([]core.TrackRef(nil), required...)
+		if len(waypoints) == 0 || waypoints[len(waypoints)-1].ID != end.ID {
+			waypoints = append(waypoints, end)
+		}
 	}
 	if intent.Mode == core.ModeJourney {
 		required = orderRequiredByWaypoints(required, waypoints)
@@ -911,7 +910,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	setSemanticCapability(&intent, semanticMatched, len(semanticNotices) > 0)
 	for index := range intent.HardConstraints {
-		if intent.HardConstraints[index].Kind == "require_album" {
+		if intent.HardConstraints[index].Kind == "require_album" || intent.HardConstraints[index].Kind == "require_artist" {
 			intent.HardConstraints[index].RuntimeEnforced = true
 		}
 	}
@@ -963,7 +962,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		trajectoryWaypoints = required
 	}
 	var trajectory ports.Trajectory
-	if intent.Mode == core.ModeJourney && len(trajectoryWaypoints) >= 2 {
+	if (intent.Mode == core.ModeJourney || o.bestAvailable) && len(trajectoryWaypoints) >= 2 {
 		trajectory = NewWaypointTrajectory(o.cat, trajectoryWaypoints)
 	}
 	stageMembership, err := o.categoryMembership(ctx, append(candidatesForTracks(required), selection.Candidates...), intent)

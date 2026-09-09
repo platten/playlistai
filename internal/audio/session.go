@@ -114,7 +114,8 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 			// clause. Repeating it at playlist scope would flatten a journey.
 			duplicate := false
 			for _, c := range intent.EssentialCriteria {
-				duplicate = duplicate || c.Kind == kind && strings.EqualFold(c.Value, p.Value) && p.Influence != core.InfluenceNegative
+				sameKind := c.Kind == kind || (c.Kind == "genre" || c.Kind == "style") && (kind == "genre" || kind == "style")
+				duplicate = duplicate || sameKind && strings.EqualFold(c.Value, p.Value) && p.Influence != core.InfluenceNegative
 			}
 			if duplicate {
 				continue
@@ -131,7 +132,7 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 		add("vocal", []core.IntentPreference{*p})
 	}
 	for _, c := range intent.HardConstraints {
-		if core.HardConstraintSupported(c.Kind) || c.Kind == "require_album" {
+		if core.HardConstraintSupported(c.Kind) || c.Kind == "require_album" || c.Kind == "require_artist" {
 			continue
 		}
 		kind := c.Kind

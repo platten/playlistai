@@ -1386,3 +1386,56 @@ ordering. The older `A,A → B,B` category fixture now expects a two-track parti
 result: filling four positions would violate either direction or artist spacing.
 These deterministic fixtures establish algorithm correctness, not listening
 quality; no new real-world musical-quality benchmark is claimed.
+
+## Forty varied prompts — September 9, 2026
+
+The [40-case acceptance suite](forty-sample-prompts.md) requests ten tracks per
+prompt and checks a five-recording minimum, artist variety, recording identity,
+explicit references, and journey direction. It exercises the installed local
+LLM, native CLAP worker, catalog, and iterative metadata discovery. Public
+example prompts are development cases, not held-out listening judgments.
+
+Implemented corrections in `multichannel/v16`, `llama/v12`, and `rules/v11`:
+
+- Deezer preview analysis tries plain artist/title search first and one alternate
+  syntax for an empty page, retaining exact identity/version corroboration.
+- Grammar whitespace, string, and number expansion are bounded. Literal song
+  counts remain controls even when the model redundantly emits a malformed
+  count constraint. Other strict musical requirements are not removed.
+- Known defining categories omitted from rich descriptions are preserved from
+  source wording, without restricting open-vocabulary genres. Negative concepts
+  separate their influence from copied negation text before audio comparison.
+- Named starting references take priority over inferred artists and broad genre
+  discovery. Several references guide embedding transitions without becoming
+  mandatory output tracks. A lone named destination does not replace the
+  starting category.
+- Artist-name source spans cannot establish model-guessed musical criteria.
+  Ordered journey fields select journey mode consistently, and named endpoints
+  remain endpoints. Simple genre requests can recover an omitted category from
+  the metadata genre graph; raw parser omissions remain visible in the report.
+- A named destination no longer promotes an arbitrary starting medoid or
+  discovery track into required output. Unavailable previews on reference-only
+  tracks cannot block the journey, and intermediate waypoints remain intact.
+- Suggested playlists search for at least three artists when available and
+  separate adjacent artists. Explicit artist-only requests instead enforce the
+  resolved catalog artist; conflicts with exclusions or hard spacing remain
+  visible. Category sequencing never extends beyond the named destination.
+- The command-line acceptance runner records rules fallback diagnostics, checks
+  the prompt's actual count without an override, and stops on cancellation.
+
+The wire/history schema stays at version 8; saved playlists remain readable.
+Regeneration uses the newer algorithm and parser versions. CLAP comparisons are
+preview-only, uncalibrated similarity evidence, not proof that every requested
+property holds throughout a recording. No replacement model, Python runtime,
+or default-LLM change was introduced. Execution results and reproduction commands
+are maintained with the linked suite.
+
+Executed on 2026-09-09: all 40 latest live observations produced ten tracks and
+passed the count/identity/variety/intent checks. These combine the full run with
+fresh targeted rechecks, not a single final-binary measurement. Every mixed-artist
+playlist had at least three artists and no adjacent repeats; all 270 selected
+tracks in descriptive cases had CLAP assessments. Thirteen outcomes were fulfilled
+and 27 retained partial-fit warnings. The strict no-vocals case took 776.1 seconds
+and retained ten checked tracks when its analysis budget ended. The race-enabled
+repository gate passed. See [the detailed measurement record](data/varied-prompts-v1-live.json)
+for earlier failures, execution versions, selected tracks, timings, and limitations.

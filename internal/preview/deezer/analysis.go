@@ -49,8 +49,17 @@ func (p *Provider) ResolveAudioPreview(ctx context.Context, ref core.TrackRef, c
 		var response struct {
 			Data []analysisTrack `json:"data"`
 		}
-		if err := p.analysisJSON(ctx, "/search?q="+url.QueryEscape(deezerQuery(ref))+"&limit=5", &response); err != nil {
+		query := strings.TrimSpace(ref.Artist + " " + ref.Title)
+		if err := p.analysisJSON(ctx, "/search?q="+url.QueryEscape(query)+"&limit=5", &response); err != nil {
 			return out, err
+		}
+		// Plain search avoids observed empty advanced-search responses for
+		// known recordings. Try the alternative syntax once on an empty page;
+		// full artist/title/version corroboration below is unchanged.
+		if len(response.Data) == 0 {
+			if err := p.analysisJSON(ctx, "/search?q="+url.QueryEscape(deezerQuery(ref))+"&limit=5", &response); err != nil {
+				return out, err
+			}
 		}
 		candidates = response.Data
 	}

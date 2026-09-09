@@ -1,5 +1,7 @@
 # Sample music requests
 
+For the expanded ten-track acceptance suite, see [40 varied sample prompts](forty-sample-prompts.md). The older fifteen-case results below remain a separate historical baseline.
+
 These examples cover artist, album, and track references, named genres, descriptive musical qualities, and ordered transitions. Named artists were active before 2018. The application interprets descriptions locally, retrieves candidates using the Deej-AI audio and playlist-context vectors, and uses the installed CLAP model to compare corroborated Deezer previews with the description.
 
 1. Radiohead for a rainy train ride: intimate, restless, and quietly hopeful.

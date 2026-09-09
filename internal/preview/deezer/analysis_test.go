@@ -98,3 +98,58 @@ func TestAnalysisPrefersVerifiedISRCAndPreservesUnicode(t *testing.T) {
 		t.Fatalf("%+v %v", result, err)
 	}
 }
+
+func TestAnalysisEmptySearchFallsBackWithoutWeakeningIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		want       core.ResolutionStatus
+	}{
+		{"exact", `{"data":[{"id":2,"title":"Song","artist":{"name":"Artist"},"preview":"https://cdn.dzcdn.net/right"}]}`, core.ResolutionResolved},
+		{"cover", `{"data":[{"id":2,"title":"Song","artist":{"name":"Other"},"preview":"https://cdn.dzcdn.net/wrong"}]}`, core.ResolutionUnresolved},
+		{"live", `{"data":[{"id":2,"title":"Song","title_version":"Live","artist":{"name":"Artist"},"preview":"https://cdn.dzcdn.net/wrong"}]}`, core.ResolutionUnresolved},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if calls == 1 {
+					if r.URL.Query().Get("q") != "Artist Song" {
+						t.Error("expected plain search first")
+					}
+					_, _ = io.WriteString(w, `{"data":[]}`)
+					return
+				}
+				if !strings.Contains(r.URL.Query().Get("q"), `artist:"`) || calls > 2 {
+					t.Error("unbounded or modified fallback query")
+				}
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			p := New(Config{BaseURL: srv.URL})
+			out, err := p.ResolveAudioPreview(context.Background(), core.TrackRef{ID: "s", Artist: "Artist", Title: "Song"}, core.EnrichedTrack{})
+			if err != nil || calls != 2 || out.Identity.Status != tc.want {
+				t.Fatalf("calls=%d out=%+v err=%v", calls, out, err)
+			}
+			if tc.want != core.ResolutionResolved && out.URL != "" {
+				t.Fatal("fallback accepted an unrelated recording")
+			}
+		})
+	}
+}
+
+func TestAnalysisPlainSearchAvoidsEmptyFieldedProvider(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if strings.Contains(r.URL.Query().Get("q"), `artist:"`) {
+			_, _ = io.WriteString(w, `{"data":[]}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":2,"title":"Around the World","artist":{"name":"Daft Punk"},"preview":"https://cdn.dzcdn.net/right"}]}`)
+	}))
+	defer srv.Close()
+	out, err := New(Config{BaseURL: srv.URL}).ResolveAudioPreview(context.Background(), core.TrackRef{Artist: "Daft Punk", Title: "Around the World"}, core.EnrichedTrack{})
+	if err != nil || calls != 1 || out.Identity.Status != core.ResolutionResolved {
+		t.Fatalf("calls=%d out=%+v err=%v", calls, out, err)
+	}
+}
