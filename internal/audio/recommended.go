@@ -20,6 +20,10 @@ var recommendedResources embed.FS
 const publicCLAPRevision = "e9fd5ac1dbf3280936a7fc3ec8a020453ff184db"
 const publicCLAPSource = "https://huggingface.co/Xenova/larger_clap_music_and_speech/resolve/" + publicCLAPRevision + "/"
 
+// NativeInferenceAvailable reports compiled worker support, not installed models
+// or successful runtime health. Pure-Go builds can still use legacy workers.
+func NativeInferenceAvailable() bool { return nativeInferenceAvailable }
+
 // RecommendedBundle chooses the largest precision variant of the supported
 // public music CLAP family. Other checkpoints require their own paired export.
 func RecommendedBundle() (BundleManifest, error) {

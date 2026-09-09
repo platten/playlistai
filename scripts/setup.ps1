@@ -134,6 +134,13 @@ if (Test-Command "go") {
     }
 }
 
+if ($NoSystem) {
+    & (Join-Path $PSScriptRoot "install-clap-toolchain.ps1") -CheckOnly | Out-Null
+} else {
+    & (Join-Path $PSScriptRoot "install-clap-toolchain.ps1") | Out-Null
+}
+Write-Pass "LLVM-MinGW native CLAP build toolchain (x64 and ARM64)"
+
 if ($WithRace) {
     if (-not (Test-Command "gcc")) {
         if ($packageManager -eq "scoop") {

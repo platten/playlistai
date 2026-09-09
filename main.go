@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/platten/playlistai/internal/app"
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
@@ -34,6 +35,14 @@ func init() {
 }
 
 func main() {
+	// Packaging gate: no GUI, network, models or user-data access required.
+	if len(os.Args) == 2 && os.Args[1] == "--check-audio-worker" {
+		if _, err := audio.RecommendedBundle(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--version" {
 		fmt.Fprintln(os.Stdout, bridge.Version)
 		return

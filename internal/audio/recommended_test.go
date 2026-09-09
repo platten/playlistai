@@ -3,6 +3,7 @@ package audio
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,17 +76,28 @@ func TestRecommendedNativeInstallation(t *testing.T) {
 		if len(artifact.Data) > 0 {
 			continue
 		}
-		name := artifact.Name
+		input := filepath.Join(source, artifact.Name)
 		if artifact.Role == "runtime" {
-			name = "ort.tgz"
+			input = os.Getenv("PLAYLISTAI_TEST_ORT_ARCHIVE")
+			if input == "" {
+				input = filepath.Join(source, "ort.tgz")
+			}
 		}
-		// Hard links avoid copying large read-only download fixtures.
-		if err := os.Link(filepath.Join(source, name), filepath.Join(dir, artifact.Name)); err != nil {
-			t.Fatal(err)
+		output := filepath.Join(dir, artifact.Name)
+		// Reuse files without copying when possible. A Windows test may read
+		// Linux-hosted fixtures over WSL while staging onto its native C: drive.
+		if err := os.Link(input, output); err != nil {
+			if err := copyNativeFixture(input, output); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
+	executable := os.Getenv("PLAYLISTAI_TEST_AUDIO_WORKER")
+	if executable == "" {
+		executable = filepath.Join(source, "audioworker")
+	}
 	manager := &BundleManager{Directory: directory, healthCheck: func(ctx context.Context, dir string, m BundleManifest) error {
-		worker := &Worker{Executable: filepath.Join(source, "audioworker"), BundleDir: dir, Model: m.Model}
+		worker := &Worker{Executable: executable, BundleDir: dir, Model: m.Model}
 		defer worker.Close()
 		return worker.Health(ctx)
 	}}
@@ -118,4 +130,22 @@ func TestRecommendedNativeInstallation(t *testing.T) {
 			t.Fatalf("desktop inference validation failed: %+v", response)
 		}
 	}
+}
+
+func copyNativeFixture(source, dest string) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, in)
+	closeErr := out.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }

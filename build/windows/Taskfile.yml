@@ -27,8 +27,9 @@ tasks:
           OBFUSCATED: '{{.OBFUSCATED}}'
           GARBLE_ARGS: '{{.GARBLE_ARGS}}'
     vars:
-      # Default to CGO_ENABLED=0 if not explicitly set
-      CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
+      # Native Windows packages include the CLAP worker; non-Windows callers
+      # can still explicitly select the existing Docker CGO cross-build path.
+      CGO_ENABLED: '{{.CGO_ENABLED | default (ternary "1" "0" (eq OS "windows"))}}'
 
   build:native:
     summary: Builds the application using native Go cross-compilation
@@ -57,10 +58,13 @@ tasks:
       - cmd: rm -f *.syso
         platforms: [linux, darwin]
     vars:
+      CLAP_CC:
+        sh: '{{if .CC}}echo {{.CC}}{{else if and (eq OS "windows") (ne (.CGO_ENABLED | default "1") "0")}}powershell -NoProfile -ExecutionPolicy Bypass -File "{{.ROOT_DIR}}/scripts/install-clap-toolchain.ps1" -CheckOnly -Architecture {{.ARCH | default ARCH}}{{else}}echo gcc{{end}}'
       BUILD_FLAGS: '{{if eq .DEV "true"}}{{if or .EXTRA_TAGS (eq .OBFUSCATED "true")}}-tags {{if eq .OBFUSCATED "true"}}wails_obfuscated{{if .EXTRA_TAGS}},{{end}}{{end}}{{.EXTRA_TAGS}} {{end}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production{{if eq .OBFUSCATED "true"}},wails_obfuscated{{end}}{{if .EXTRA_TAGS}},{{.EXTRA_TAGS}}{{end}} -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui"{{end}}'
     env:
       GOOS: windows
-      CGO_ENABLED: '{{.CGO_ENABLED | default "0"}}'
+      CGO_ENABLED: '{{.CGO_ENABLED | default (ternary "1" "0" (eq OS "windows"))}}'
+      CC: '{{if .CC}}{{.CC}}{{else}}{{.CLAP_CC}}{{end}}'
       GOARCH: '{{.ARCH | default ARCH}}'
 
   build:docker:

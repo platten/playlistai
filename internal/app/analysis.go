@@ -28,15 +28,17 @@ type analysisState struct {
 }
 
 type AnalysisStatus struct {
-	Installed           bool                      `json:"installed"`
-	Available           bool                      `json:"available"`
-	GeneralFitAvailable bool                      `json:"generalFitAvailable"`
-	Enabled             bool                      `json:"enabled"`
-	Model               string                    `json:"model"`
-	Detail              string                    `json:"detail"`
-	DownloadBytes       int64                     `json:"downloadBytes"`
-	MemoryBytes         int64                     `json:"memoryBytes"`
-	Storage             core.AnalysisStorageUsage `json:"storage"`
+	RecommendedAvailable bool                      `json:"recommendedAvailable"`
+	RecommendedDetail    string                    `json:"recommendedDetail"`
+	Installed            bool                      `json:"installed"`
+	Available            bool                      `json:"available"`
+	GeneralFitAvailable  bool                      `json:"generalFitAvailable"`
+	Enabled              bool                      `json:"enabled"`
+	Model                string                    `json:"model"`
+	Detail               string                    `json:"detail"`
+	DownloadBytes        int64                     `json:"downloadBytes"`
+	MemoryBytes          int64                     `json:"memoryBytes"`
+	Storage              core.AnalysisStorageUsage `json:"storage"`
 }
 
 func (c *Container) wireAnalysis(ctx context.Context) {
@@ -135,6 +137,17 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
+	_, recommendedErr := audio.RecommendedBundle()
+	status.RecommendedAvailable = recommendedErr == nil
+	if recommendedErr != nil {
+		status.RecommendedDetail = "No recommended music analysis bundle is available for this platform. Choose a compatible custom bundle, or continue without analysis."
+		if !audio.NativeInferenceAvailable() {
+			status.RecommendedDetail = "This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker."
+		}
+		if !status.Installed {
+			status.Detail = "Optional music analysis is unavailable in this build. Catalog recommendations remain available."
+		}
+	}
 	if s.manifest != nil {
 		status.Model = s.manifest.Label
 		status.DownloadBytes = s.manifest.DownloadBytes()

@@ -123,12 +123,49 @@ on the user's machine before activation; platform inclusion does not claim a
 clean-machine installation test has already passed on every operating system.
 
 Built-in inference requires a cgo-enabled application, as well as the downloaded
-native library. Linux and macOS desktop builds already enable cgo. The existing
-pure-Go Windows build remains usable for catalog recommendations; it does not
-offer a download it cannot execute. Build Windows with
-`wails3 task windows:build CGO_ENABLED=1` to include the native worker (a compatible
-C compiler is needed on Windows; cross-building uses the existing Wails Docker
-toolchain). A legacy custom bundle can instead supply its own native worker.
+native library. Linux and macOS desktop builds already enable cgo. Following the
+v0.8.0 Windows packaging bug, Windows builds also enable it by default, using
+checksum-pinned [LLVM-MinGW](https://github.com/mstorsjo/llvm-mingw) compilers for
+x64 and ARM64. Run `scripts/setup.ps1`, then `scripts/build.ps1 -Architecture all`.
+The compiler is a developer-only dependency; the isolated worker is compiled
+into the desktop executable. Models and ONNX Runtime still download in the wizard.
+Core recommendation packages remain covered by the pure-Go compilation gate.
+
+Explicit pure-Go builds remain usable without analysis. The wizard checks build
+capability before fetching a recommended bundle and offers clear skip/upgrade
+guidance instead of displaying a raw missing-worker exception. A legacy custom
+bundle can still supply its own native worker. Existing v0.8.0 Windows installers
+must be replaced with a new build; re-downloading model weights cannot fix them.
+
+Windows ONNX Runtime requires Microsoft's Visual C++ runtime, as documented by
+[ONNX Runtime](https://onnxruntime.ai/docs/install/#requirements). This remains a
+host prerequisite; the native build does not remove it. macOS runtime signing
+and actual Windows ARM64 inference still require host-specific validation.
+
+### Windows validation — September 9, 2026
+
+Both Windows amd64 and arm64 desktop executables cross-compiled with cgo and
+LLVM-MinGW 20260908 UCRT. Inspected imports contain Windows/UCRT libraries, not
+compiler DLLs or Python. The amd64 desktop's `--check-audio-worker` probe passed.
+The real recommended-bundle installer test executed on Windows amd64 through
+WSL interoperability, using existing paired model files and the pinned official
+ONNX Runtime 1.26.0 Windows archive. Installation, extraction, activation and
+synthetic audio/text parity health passed, including the production desktop's
+`--audio-worker` with an empty executable search path. Elapsed test time was
+19.82 seconds including fixture staging; this is not playlist latency or musical
+quality evidence. No music audio was downloaded for this test.
+
+Offline PowerShell tests cover compiler checksums, no-download checks, cached
+reuse, target selection and quoted paths. Browser fixtures cover native-capable
+installation/retry and unsupported-build guidance with no download offered and
+the ability to continue. The full Linux repository gate passed, including race
+tests, pure-Go core compilation, vet, lint, bindings and frontend typecheck/build.
+The Windows-hosted compiler and the actual `wails3 task windows:build` command
+also built successfully from a Windows-local checkout. Repeating the real-model
+installer/health test with that Wails desktop passed in 13.31 seconds.
+Native inference has not
+been executed on Windows ARM64 or a clean
+Windows installation without preinstalled Visual C++ runtimes.
 
 Recommended model provenance: upstream LAION revision
 `195c3a3e68faebb3e2088b9a79e79b43ddbda76b`, public ONNX revision

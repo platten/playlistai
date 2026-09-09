@@ -34,8 +34,8 @@ try {
     const methods={
       GetCatalogInfo:()=>({loaded:true}),GetModelStatus:()=>({backend:'llama',modelId:'qwen9'}),GetLlamaRuntime:()=>({available:true,builds:['cpu']}),GetInstalledModels:()=>[],
       GetModelRecommendations:()=>({models:[{id:'qwen3',label:'Qwen2.5 3B',params:'3B',sizeApprox:1929903264,ramGb:4,recommended:true,installed:true}],hardware:{gpuAvailable:false}}),
-      GetRecommendedAnalysisBundle:()=>bundle,
-      GetAnalysisStatus:()=>({installed,available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:793130000,memoryBytes:2147483648}),
+      GetRecommendedAnalysisBundle:()=>{window.__recommendationCalls=(window.__recommendationCalls||0)+1;return bundle;},
+      GetAnalysisStatus:()=>({recommendedAvailable:!window.__unsupported,recommendedDetail:window.__unsupported?'This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker.':'',installed,available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:window.__unsupported?'Optional music analysis is unavailable in this build. Catalog recommendations remain available.':installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:793130000,memoryBytes:2147483648}),
       InspectAnalysisBundle:()=>({...bundle,label:'Custom CLAP fixture'}),
       RemoveAnalysisModel:()=>{installed=false;},
       InstallRecommendedAnalysisBundle:download,InstallAnalysisBundle:download,
@@ -81,6 +81,17 @@ try {
   await page.emulateMedia({reducedMotion:"reduce"});
   await page.screenshot({path:output+"/custom-narrow.png",fullPage:true});
   if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth)) throw Error("Horizontal overflow");
+  await page.addInitScript(() => { window.__unsupported = true; });
+  await page.reload();
+  await page.getByRole("button", {name:"Get started"}).click();
+  await page.getByRole("heading", {name:"Language understanding"}).waitFor();
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByText("Models alone cannot add the missing application worker.", {exact:false}).waitFor();
+  if(await page.getByRole("button",{name:"Download and validate CLAP",exact:true}).count()) throw Error("Unsupported build offered a download");
+  if(await page.evaluate(()=>window.__recommendationCalls||0)) throw Error("Unsupported build attempted bundle discovery");
+  await page.screenshot({path:output+"/unsupported-build.png",fullPage:true});
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByRole("heading", {name:"Music analysis",exact:true}).waitFor({state:"hidden"});
   if(errors.length) throw Error(errors.join("\n"));
   console.log("PASS: one language recommendation, recommended/custom CLAP, download/retry/validation/cancel, calibration state, documentation links, themes and narrow window");
 } finally { await browser.close(); }

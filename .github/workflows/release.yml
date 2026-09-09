@@ -6,8 +6,8 @@ name: Release
 # docs/RELEASING.md), then `git tag vX.Y.Z && git push origin vX.Y.Z`.
 #
 # Linux and Windows are built for both amd64 and arm64. macOS is arm64
-# (the hosted runner). Windows arm64 is a pure-Go cross-compile on the x86
-# runner; Linux arm64 builds natively on an arm64 runner (the build is CGO).
+# (the hosted runner). Windows arm64 is a cgo cross-compile on the x86
+# runner with LLVM-MinGW; Linux arm64 builds natively on an arm64 runner.
 #
 # Code signing on every OS is best-effort: each signing step is skipped
 # (artifacts stay unsigned/ad-hoc-signed) unless the matching secrets are
@@ -255,8 +255,13 @@ jobs:
       # winget consumes this NSIS installer (InstallerType: nullsoft). It
       # supports /S (silent) and registers a QuietUninstallString, so
       # `winget install` / `winget uninstall` work unattended.
+      - name: Install native CLAP build compiler
+        shell: pwsh
+        run: .\scripts\install-clap-toolchain.ps1
+
       - name: Package (NSIS installer, ${{ matrix.arch }})
-        run: wails3 task windows:package ARCH=${{ matrix.arch }}
+        shell: pwsh
+        run: .\scripts\build.ps1 -Architecture ${{ matrix.arch }}
 
       - name: Sign the installer with Authenticode
         if: env.HAS_CERT == 'true'

@@ -24,9 +24,10 @@ export function MusicAnalysisCard() {
   useEffect(() => { void refresh(); return () => { void download.current?.cancel("analysis card closed"); }; }, [refresh]);
   useEffect(() => {
     let disposed = false;
+    if (!status?.recommendedAvailable) { setRecommended(null); return; }
     void API.GetRecommendedAnalysisBundle().then((value) => { if (!disposed) setRecommended(value); }).catch((e: unknown) => { if (!disposed) setRecommendationError(String(e)); });
     return () => { disposed = true; };
-  }, []);
+  }, [status?.recommendedAvailable]);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await fn(); await refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
@@ -46,6 +47,7 @@ export function MusicAnalysisCard() {
       </div>
       <p className="text-[12.5px] text-muted">The installed CLAP model compares previews with your description for ranking and screens no-vocals requests. Deezer receives artist, track, or recording identifiers to retrieve previews. Your descriptions and taste profile stay on this device. Preview audio is processed in memory; reusable features remain until you clear them.</p>
       <p role="status" className="text-[12.5px] text-muted">{status?.detail || "Checking music analysis availability…"}</p>
+      {status && !status.recommendedAvailable && <p role="note" className="rounded-control border border-line p-3 text-[12.5px] text-muted">{status.recommendedDetail}</p>}
       {(status?.installed || status?.available) && (
         <>
           <p className="text-[12px] text-faint">{status.model} · {size(status.downloadBytes)} installed artifacts · {size(status.memoryBytes)} memory budget</p>

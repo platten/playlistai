@@ -12,7 +12,8 @@ attached to a draft GitHub Release.
 | Windows | amd64, arm64  | `playlist-ai-<arch>-installer.exe` (NSIS)   | `playlist-ai-windows-<arch>.zip` |
 
 Linux arm64 builds natively on a `ubuntu-24.04-arm` runner (the build is CGO);
-Windows arm64 is a pure-Go cross-compile on the x86 runner. `ci.yml` builds
+Windows arm64 is a cgo cross-compile with pinned LLVM-MinGW on the x86 runner,
+so both Windows architectures include the built-in CLAP worker. `ci.yml` builds
 every one of these on each push, so a broken arch shows up before a tag is cut.
 
 Packaging itself (AppImage/deb/rpm/dmg/NSIS) always runs — it needs no secrets.
@@ -49,6 +50,18 @@ workflow paths and approved list together. The guard regression tests run in
 CI and `scripts/test.sh` via `bash scripts/test-release-assets.sh`.
 
 ## Cutting a release
+
+Windows packaging requires `scripts/install-clap-toolchain.ps1` (also called by
+`scripts/setup.ps1`). The installer verifies a pinned upstream LLVM-MinGW archive
+and installs it under the local build-tools directory, not application user data.
+CI and release workflows run it before `scripts/build.ps1`. The build wrapper
+requires cgo and validates both architecture/build metadata and, for runnable
+targets, `playlist-ai.exe --check-audio-worker`. The probe exits without starting
+the GUI or downloading models. Do not ship `CGO_ENABLED=0` Windows builds as
+analysis-capable packages. Compilers and models are not release assets.
+
+The original v0.8.0 tag predates this packaging correction. Its existing Windows
+installers still lack the worker; a newly built application is required.
 
 1. Bump the version in two places (they must match):
    - `build/config.yml` → `info.version`

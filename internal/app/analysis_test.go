@@ -23,6 +23,13 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 	if err != nil || status.Enabled || status.Available || c.AudioService() != nil {
 		t.Fatalf("uninstalled analysis active: %+v %v", status, err)
 	}
+	_, recommendationErr := audio.RecommendedBundle()
+	if status.RecommendedAvailable != (recommendationErr == nil) {
+		t.Fatal("wizard capability disagrees with build support")
+	}
+	if !status.RecommendedAvailable && !strings.Contains(status.RecommendedDetail, "continue without analysis") {
+		t.Fatal("unsupported build lacks actionable guidance")
+	}
 	if c.SetAnalysisEnabled(true) == nil {
 		t.Fatal("unvalidated model enabled")
 	}

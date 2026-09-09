@@ -19,9 +19,19 @@ Assert-Command "makensis" "run scripts/setup.ps1 to install NSIS"
 
 $architectures = if ($Architecture -eq "all") { @("amd64", "arm64") } else { @($Architecture) }
 foreach ($arch in $architectures) {
+    $compiler = & (Join-Path $PSScriptRoot "install-clap-toolchain.ps1") -Architecture $arch -CheckOnly
     Write-Info "package Windows NSIS installer ($arch)"
-    & wails3 task windows:package "ARCH=$arch"
+    & wails3 task windows:package "ARCH=$arch" "CGO_ENABLED=1" "CC=$compiler"
     if ($LASTEXITCODE -ne 0) { throw "Windows $arch package failed" }
+    $buildInfo = (& go version -m (Join-Path $RepoRoot "bin\playlist-ai.exe") | Out-String)
+    if ($LASTEXITCODE -ne 0 -or $buildInfo -notmatch 'CGO_ENABLED=1' -or $buildInfo -notmatch "GOARCH=$arch") { throw "Packaged application lacks the expected native build configuration" }
+    if ($arch -eq "amd64" -or $env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
+        $check = Start-Process -FilePath (Join-Path $RepoRoot "bin\playlist-ai.exe") -ArgumentList "--check-audio-worker" -PassThru
+        try {
+            if (-not $check.WaitForExit(15000)) { $check.Kill(); throw "Native CLAP capability check timed out" }
+            if ($check.ExitCode -ne 0) { throw "Packaged application is missing native CLAP support" }
+        } finally { $check.Dispose() }
+    }
     Write-Pass "Windows $arch package"
 }
 

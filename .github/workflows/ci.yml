@@ -140,6 +140,11 @@ jobs:
         shell: pwsh
         run: .\scripts\test.ps1 -NoRace
 
+      - name: Install native CLAP build compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: .\scripts\install-clap-toolchain.ps1
+
       - name: Build
         if: runner.os != 'Windows'
         run: wails3 build

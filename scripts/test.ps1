@@ -33,6 +33,7 @@ Invoke-TestStep "PowerShell syntax" {
 }
 
 Invoke-TestStep "pnpm installer failure handling" { & (Join-Path $PSScriptRoot "test-pnpm-installer.ps1") }
+Invoke-TestStep "CLAP compiler installer" { & (Join-Path $PSScriptRoot "test-clap-toolchain.ps1") }
 
 if ((Test-Command "node") -and (Test-Command "pnpm")) {
     if (Test-Command "wails3") {
