@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 
@@ -60,8 +59,7 @@ func Compact(ctx context.Context, source, dest string) (info Info, err error) {
 	if err != nil {
 		return info, err
 	}
-	u := url.URL{Scheme: "file", Path: abs}
-	if _, err = db.ExecContext(ctx, "ATTACH DATABASE ? AS source", u.String()+"?mode=ro"); err != nil {
+	if _, err = db.ExecContext(ctx, "ATTACH DATABASE ? AS source", readOnlyURI(abs)); err != nil {
 		return info, err
 	}
 	_, err = db.ExecContext(ctx, `PRAGMA page_size=4096; PRAGMA journal_mode=DELETE; PRAGMA synchronous=NORMAL;

@@ -5,6 +5,34 @@ archive. Keep the operator index and original dumps for rebuilding; distribute
 only the compact runtime archive and its manifest. No Python, external
 decompressor, or additional model is needed by the wizard.
 
+## Windows download validation fix
+
+The initial v0.8.0 build can report `invalid uri authority: C:%5CUsers...`
+after decompressing music metadata. This is a desktop path-encoding defect,
+not a bad archive: the drive letter was interpreted as a SQLite URI authority.
+The fix converts native separators and keeps the drive inside an absolute URI
+path (`file:///C:/Users/.../metadata.sqlite?mode=ro`), following
+[SQLite's filename rules](https://www.sqlite.org/uri.html#the_uri_path).
+The same encoder handles read-only dataset loading and compaction attachments.
+Filename punctuation is escaped without changing read-only mode.
+
+Use a desktop build containing this fix, then retry the wizard download. No
+dataset rebuild or user-data reset is necessary. If the verified compressed
+archive remains in the metadata directory, installation reuses it on retry.
+Catalog, size and checksum validation are unchanged.
+
+Regression validation on September 9, 2026 executed the Windows amd64 Go test
+binary through WSL interoperability, not just cross-compilation. Focused tests
+passed for drive-letter URI construction, spaces, Unicode and URI punctuation,
+read-only loading/attachment, missing-file protection, and bundle download through
+offline activation. The complete metadata suite passed on Linux and Windows amd64. UNC URI
+serialization is tested; access to a real network share was not exercised.
+
+```sh
+# Run on Linux/macOS or Windows to exercise that host's native paths:
+go test ./internal/metadata -count=1
+```
+
 ## Build the upload artifact
 
 Wait for the full, checksum-verified import to finish. Then:

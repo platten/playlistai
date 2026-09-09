@@ -77,7 +77,7 @@ func TestBundleInstallIntegrityAndOfflineActivation(t *testing.T) {
 	}))
 	defer server.Close()
 	source := server.URL + "/metadata-manifest.json"
-	dest := t.TempDir()
+	dest := filepath.Join(t.TempDir(), "Paweł #100%", "metadata")
 	if _, err := Install(context.Background(), source, dest, "wrong-catalog", nil); err == nil || downloads.Load() != 0 {
 		t.Fatal("wrong catalog downloaded")
 	}

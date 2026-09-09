@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,8 +49,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: path}
-	db, err := sql.Open("sqlite", u.String()+"?mode=ro")
+	db, err := sql.Open("sqlite", readOnlyURI(path))
 	if err != nil {
 		return nil, err
 	}
