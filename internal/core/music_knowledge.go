@@ -90,9 +90,10 @@ type KnowledgeSnapshot struct {
 }
 
 type TrackAssessment struct {
-	TrackID string        `json:"trackId"`
-	State   EvidenceState `json:"state"`
-	Reasons []string      `json:"reasons"`
+	Comparisons []IntentComparison `json:"comparisons,omitempty"`
+	TrackID     string             `json:"trackId"`
+	State       EvidenceState      `json:"state"`
+	Reasons     []string           `json:"reasons"`
 }
 
 // Artist tags guide retrieval; they do not classify every recording.

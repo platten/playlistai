@@ -112,7 +112,9 @@ func TestRequiredRockTrackDoesNotDisableCategoryDirection(t *testing.T) {
 	intent.RequiredTracks = []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "r1", Influence: core.InfluencePositive}}
 	engine := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, sem, sem, DefaultConfig())
 	playlist, err := engine.Build(context.Background(), intent)
-	if err != nil || playlist.Outcome.State != core.OutcomeFulfilled || len(playlist.Tracks) != 4 || !trackIDSet(playlist.Tracks)["r1"] {
+	// A,A -> B,B cannot fill four slots while preserving category direction and
+	// the genre default forbidding adjacent artists; keep a safe partial result.
+	if err != nil || playlist.Outcome.State != core.OutcomePartial || len(playlist.Tracks) != 2 || !trackIDSet(playlist.Tracks)["r1"] {
 		t.Fatalf("required category journey failed: %+v, %v", playlist, err)
 	}
 	assertCategoryDirection(t, playlist, sem)

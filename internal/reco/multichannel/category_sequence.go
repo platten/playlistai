@@ -63,6 +63,9 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 			if previous.ID != "" && previousArtist == "" {
 				previousArtist = core.NormalizeIdentityPart(previous.Artist)
 			}
+			if len(path.items) == 0 && len(request.RecentSelections) == 0 {
+				previousArtist = "" // reference anchors are not previously played output
+			}
 			used := map[string]bool{}
 			for _, item := range path.items {
 				used[recordingKeys[item.track.ID]] = true

@@ -18,11 +18,20 @@ type Config struct {
 	DataDir string `toml:"data_dir"`
 
 	Catalog        CatalogConfig        `toml:"catalog"`
+	Metadata       MetadataConfig       `toml:"metadata"`
 	AI             AIConfig             `toml:"ai"`
 	Enrich         EnrichConfig         `toml:"enrich"`
 	Preview        PreviewConfig        `toml:"preview"`
 	Semantic       SemanticConfig       `toml:"semantic"`
 	Recommendation RecommendationConfig `toml:"recommendation"`
+}
+
+// The hosted manifest identifies the archive and pins its compressed/expanded
+// checksums and catalog version. Override with TOML or a release linker value.
+var DefaultMetadataManifestURL = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/metadata-manifest.json"
+
+type MetadataConfig struct {
+	ManifestURL string `toml:"manifest_url"`
 }
 
 // SemanticConfig points to an optional offline-built sidecar. The sidecar
@@ -145,7 +154,8 @@ func Default() Config {
 	data := fallbackDataDir()
 
 	cfg := Config{
-		DataDir: data,
+		DataDir:  data,
+		Metadata: MetadataConfig{ManifestURL: DefaultMetadataManifestURL},
 		Catalog: CatalogConfig{
 			Dir: filepath.Join(data, "catalog"),
 			// Deej-AI catalog (~957k tracks), tar+zstd, ~210 MB. Hosted on

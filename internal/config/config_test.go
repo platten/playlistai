@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,27 @@ func TestDefaultValidates(t *testing.T) {
 	t.Parallel()
 	if err := Default().Validate(); err != nil {
 		t.Fatalf("default config invalid: %v", err)
+	}
+}
+
+func TestDefaultMetadataWizardSourceAndOverrides(t *testing.T) {
+	t.Parallel()
+	u, err := url.Parse(Default().Metadata.ManifestURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := u.ResolveReference(&url.URL{Path: "discogs-runtime.sqlite.zst"}).String(); got != "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/discogs-runtime.sqlite.zst" {
+		t.Fatalf("wizard default does not target the hosted archive: %s", got)
+	}
+	for _, source := range []string{"https://example.org/custom/metadata-manifest.json", ""} {
+		path := filepath.Join(t.TempDir(), "config.toml")
+		if err := os.WriteFile(path, []byte("[metadata]\nmanifest_url = \""+source+"\"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := Load(path)
+		if err != nil || cfg.Metadata.ManifestURL != source {
+			t.Fatal(cfg.Metadata, err)
+		}
 	}
 }
 

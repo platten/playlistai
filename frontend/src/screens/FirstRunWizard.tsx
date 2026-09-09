@@ -11,8 +11,8 @@ import {
 import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 
-type Step = "welcome" | "catalog" | "model" | "analysis" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "model", "analysis", "preview", "done"];
+type Step = "welcome" | "catalog" | "metadata" | "model" | "analysis" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "analysis", "preview", "done"];
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -57,7 +57,8 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
 
       <div className="flex min-h-0 flex-1 flex-col">
         {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
-        {step === "catalog" && <CatalogStep onNext={() => setStep("model")} />}
+        {step === "catalog" && <CatalogStep onNext={() => setStep("metadata")} />}
+        {step === "metadata" && <MetadataStep onNext={() => setStep("model")} />}
         {step === "model" && <ModelStep onNext={() => setStep("analysis")} />}
         {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
         {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
@@ -65,6 +66,40 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
       </div>
     </div>
   );
+}
+
+function MetadataStep({ onNext }: { onNext: () => void }) {
+  const [info, setInfo] = useState<Awaited<ReturnType<typeof API.GetMetadataBundleInfo>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const pending = useRef<ReturnType<typeof API.InstallMetadataBundle> | null>(null);
+  const progress = useProgress("metadata");
+  useEffect(() => {
+    let disposed = false;
+    void API.GetMetadataBundleInfo().then((value) => {
+      if (disposed) return;
+      if (!value?.configured || value.installed) onNext();
+      else setInfo(value);
+    }).catch((e: unknown) => { if (!disposed) setError(String(e)); });
+    return () => { disposed = true; void pending.current?.cancel(); };
+  }, [onNext]);
+  const download = async () => {
+    if (pending.current) return;
+    setBusy(true); setError(null);
+    const request = API.InstallMetadataBundle();
+    pending.current = request;
+    try { await request; pending.current = null; onNext(); }
+    catch (e) { setError(String(e)); }
+    finally { pending.current = null; setBusy(false); }
+  };
+  return <StepShell title="Local music knowledge" description="Find genre and style candidates locally, with fewer online lookups. Download once; setup decompresses and verifies the compact dataset on your computer.">
+    <p className="text-[13px] text-muted">Release tags guide discovery. Your musical-fit and exclusion checks still apply, and online lookup remains available for gaps.</p>
+    {busy ? <ProgressBar label="Preparing local music metadata" done={progress?.done ?? 0} total={progress?.total ?? 0} note={progress?.note} /> :
+      <Button variant="primary" disabled={!info?.catalogReady} iconLeft={<Icon.Download size={14} />} onClick={() => void download()}>Download music metadata</Button>}
+    {info && !info.catalogReady && <p className="text-[12px] text-muted">Install the recommendation catalog first, or continue without this optional dataset.</p>}
+    {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
+    <StepFooter><Button variant="subtle" size="sm" disabled={busy} onClick={onNext}>Continue without download</Button></StepFooter>
+  </StepShell>;
 }
 
 function WelcomeStep({ onNext }: { onNext: () => void }) {

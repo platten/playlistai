@@ -1,9 +1,14 @@
 # Music metadata cache and fallback
 
+An optional [local Discogs dataset](local-metadata-dataset.md) now precedes
+online genre discovery. It is built from CC0 monthly dumps, not archived API
+responses. Settings shows its snapshot date and matched-track coverage. Clearing
+the query cache does **not** delete this separately installed dataset.
+
 ## Settings
 
 **Settings → Music metadata → Clear metadata cache** removes cached MusicBrainz,
-Discogs and Deezer metadata and parsed-intent reuse. It stops active generation;
+AcousticBrainz, Discogs and Deezer metadata and parsed-intent reuse. It stops active generation;
 an already-running response cannot refill the cleared cache. Saved playlists,
 their evidence snapshots, taste data, audio features, models and credentials are
 kept. Audio features have their own **Clear analysis** button.
@@ -27,6 +32,7 @@ keys. Redirects are not followed. Do not share your credentials directory.
 | Provider | Freshness | When unavailable |
 | --- | --- | --- |
 | MusicBrainz | Always reuse successful responses younger than 7 days, including empty searches | Valid older responses may be used without changing their original timestamp |
+| AcousticBrainz | Reuse projected per-recording features and confirmed missing recordings for 7 days | Older cached features remain usable; outages are not cached as missing |
 | Discogs | Reuse for less than 6 hours | Expired content is not served; purged on startup and subsequent Discogs access |
 | Deezer metadata | Existing 24-hour policy | Existing stale-data fallback remains |
 
@@ -53,16 +59,149 @@ replaying a saved candidate stream does not re-query either provider.
 
 ```mermaid
 flowchart TD
-    Q[Extracted genre or reference] --> C[MusicBrainz query cache]
+    Q[Extracted genre or reference] --> L[Compatible local Discogs index]
+    L -->|genre candidates found| I[Exact catalog artist and track identity]
+    L -->|missing, exhausted, or other metadata needed| C[MusicBrainz query cache]
     C -->|fresh| M[Reuse response]
     C -->|missing or expired| MB[Rate-limited MusicBrainz]
     MB -->|failure with valid stale data| M
     MB -->|failure without usable data| D[Optional Discogs cache and API]
     D --> R[Bounded release tracklists]
-    R --> I[Exact catalog artist and track identity]
+    R --> I
     I --> F[Existing musical-fit and exclusion checks]
     F --> O[Playlist or honest partial result]
 ```
+
+## Archived acoustic characteristics
+
+The desktop metadata service now supplements resolved MusicBrainz recordings
+with [AcousticBrainz](https://acousticbrainz.org/) data when available. This is
+an archived collection: submissions stopped in 2022. The published data is CC0.
+No model, Python interpreter, audio download, or full database dump is required.
+
+```mermaid
+flowchart LR
+    I[Confident recording MBID] --> C[Weekly per-recording cache]
+    C -->|uncached| A[Bounded AcousticBrainz bulk lookup]
+    A --> P[Sanitized measurements and predictions]
+    C --> S[Saved knowledge snapshot]
+    P --> S
+    S --> U[Expanded playlist row]
+```
+
+The [documented bulk API](https://acousticbrainz.readthedocs.io/api.html) accepts
+up to 25 recording IDs. We request only selected low-level fields and high-level
+classifier outputs, choosing submission offset zero consistently. Only resolved
+recording IDs leave the app—not prompts, profiles, audio, artist/title searches,
+or filenames. Artist IDs and ISRCs are not valid substitutes for recording IDs.
+
+Retained characteristics include estimated BPM, musical key/scale, key strength,
+average loudness, dynamic complexity, and danceability. Zero and unknown are
+distinct; Essentia danceability is **not** a 0–1 probability. Analysis duration,
+extractor versions, recording identity, source URL and submission offset are
+retained. Genre, mood, timbre, and vocal/instrumental classifier outputs retain
+their original labels, class scores and model versions. Uploaded file paths,
+tags, audio hashes, demographic classifiers and spectral arrays are discarded.
+
+These are supplemental characteristics, not newly verified musical-fit labels.
+Predictions are not inserted into trusted genre tags and do not replace CLAP
+checks. The v15 engine now compares supported predictions against intent for
+conservative screening and an independent ranking component (details below).
+A classifier score is not calibrated
+confidence that a request is fulfilled. Different models and submissions can
+disagree; one submission's duration does not prove whole-recording coverage.
+
+Generation enrichment inspects at most 25 new identities per preparation/page
+stage, with an eight-second optional lookup budget across a candidate stream
+(preparation and explicit batch enrichment each have their own deadline). Each HTTP call has a
+four-second timeout. Dispatch is normally at most once per second; provider
+rate headers and error backoff suppress subsequent optional requests. Exact
+batches share in-flight work; per-ID cache entries also work across different
+batches. Cancellation and cache clearing prevent late cache writes. Successful
+empty bulk responses establish missingness; HTTP errors, malformed documents,
+and unresolved or ambiguous identities do not.
+
+Evidence is attached to enriched tracks and generation knowledge snapshots,
+and displayed when an analyzed playlist row is expanded. History replay uses
+the saved snapshot without refreshing it. Old records remain readable with the
+new optional `acoustic` field absent. Local Discogs-only candidates without a
+resolved recording MBID remain uncovered; we do not issue one extra MusicBrainz
+identity search per local candidate just to obtain optional acoustic features.
+
+Validation on 2026-09-09: live low/high bulk requests for recording
+`099b148e-fe99-4b79-be6e-5078e4bb7415` both succeeded (approximately 0.4/0.5 seconds
+in this environment, one request each—not a performance benchmark). The archived
+response included BPM 117.9689, key F minor, and differing genre-classifier
+outputs. This confirms API access, not musical accuracy or catalog coverage.
+The opt-in Go-client smoke test also passed: cold two-endpoint lookup 1.182 s,
+warm per-recording cache lookup 89 µs, with 15 retained classifier outputs. These
+are single-sample timings including the public-provider throttle, not a latency
+distribution. Reproduce with
+`PLAYLISTAI_LIVE_ACOUSTICBRAINZ=1 go test ./internal/enrich/musicbrainz -run '^TestLiveAcousticBrainz$' -count=1 -v`.
+Deterministic tests cover projection, unknowns, identity, batch bounds,
+cache persistence/expiry/clearing, privacy, rate backoff, cancellation and saved
+intent serialization. There is no claim of new held-out recommendation quality.
+The complete `scripts/test.sh` gate passed after this integration: generated
+bindings, frontend typecheck/build, vet, pure-Go compilation, race tests and
+lint (zero issues). The playlist UI passed build/type checks; no rendered-browser
+smoke test was run for the new expanded-row details.
+
+## Intent versus recorded analysis (multichannel/v15)
+
+AcousticBrainz is now a separate input to intent assessment, not just displayed
+metadata. The engine reuses the same structured clauses as CLAP, including
+positive/negative influence, essential/strict flags and journey scope. It does
+not compare prompts with artist/title keywords or average CLAP cosine with
+classifier probabilities.
+
+For each supported classifier, the comparison is the requested class score
+minus the strongest competing class score; negated clauses invert the margin.
+Class distributions must be finite, bounded, approximately sum to one, have
+model versions, and belong to the confidently resolved recording. Model order
+is sorted for reproducibility. Margins of at least +0.5 / at most −0.5 are
+reported as **supporting / opposing predictions**, not verified matches. Opposite
+strong model votes are explicitly **conflicting**, never hidden by their mean.
+
+Only documented class meanings are mapped. Generic `mood_electronic` predictions
+do not establish the electronic genre. The conditional `genre_electronic`
+subgenre model cannot establish ambient membership on its own. Compound genres,
+unmapped instrumentation and phrases such as “microdetail”, “sparkle”, and
+“not sleepy” remain unknown; “relaxing” can compare with `mood_relaxed`.
+This limited mapping is a feature-coverage boundary, not a list of allowed genres.
+See [AcousticBrainz's data and model documentation](https://acousticbrainz.org/data).
+
+Strong opposition or model disagreement screens out an essential/strict
+candidate conservatively, before final selection. It means insufficient
+consistent support, not proof that the prediction is correct. Positive or
+unknown predictions never bypass CLAP, sidecar constraints, recording deduplication,
+or the verified-only policy. Required conflicts return an actionable clarification.
+Journey candidates may fit any stage globally but are checked against the
+specific stage when assigning waypoints. Soft opposition affects ranking,
+not hard eligibility.
+
+The auxiliary ranking weight is 0.15 with the existing request-wide denominator.
+Scores use a fixed clause denominator; missing clauses contribute zero rather
+than boosting tracks with less evidence. Journey stages are alternatives (best
+stage), not simultaneous demands. Both iterative completion and final ranking
+use the current knowledge snapshot. The per-pick `acousticbrainz_intent`
+component exposes this contribution separately from audio/semantic scores.
+
+Expanded playlist rows now show the original clauses beside preview status and
+archived prediction status. CLAP comparisons without a calibrated decision stay
+unverified. Opposing soft predictions or cross-source disagreements make the
+result partial with a review action. Comparisons and model evidence survive
+history serialization; old records load with the new optional fields absent.
+The algorithm version changes to v15 so generation identities do not reuse v14
+ranking as equivalent work.
+
+Limitations: these thresholds and the auxiliary weight are conservative pilot
+rules, not held-out musical-quality measurements. BPM/key remain descriptive
+measurements; this change does not invent tempo limits or acoustic-energy
+constraints from prose. Archived data and previews can both be wrong or cover
+different versions; no full-recording guarantee is made. Downloaded dump archives
+are not automatically queried until an importer/index is implemented.
+
+## Discogs discovery details
 
 Discogs backs up genre candidate discovery and unavailable artist/album
 lookups. A healthy empty or ambiguous MusicBrainz response is not overridden.

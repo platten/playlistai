@@ -196,6 +196,9 @@ func validMetadata(path, namespace string, raw []byte) bool {
 }
 
 func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
+	if data := c.localDataset(); data != nil && data.HasGenre(ctx, name) {
+		return true
+	}
 	graph, err := c.GenreNames(context.WithValue(ctx, cacheOnlyKey{}, true))
 	if err != nil {
 		return false
@@ -212,6 +215,15 @@ func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
 // GenreNames loads identity only. Slow relationship pages must not consume the
 // discovery budget before a counted genre has even been classified.
 func (c *Client) GenreNames(ctx context.Context) (core.GenreGraph, error) {
+	if data := c.localDataset(); data != nil {
+		if graph, err := data.Genres(ctx); err == nil && len(graph.Nodes) > 0 {
+			return graph, nil
+		}
+	}
+	return c.onlineGenreNames(ctx)
+}
+
+func (c *Client) onlineGenreNames(ctx context.Context) (core.GenreGraph, error) {
 	graph := core.GenreGraph{}
 	raw, err := c.knowledgeGet(ctx, "/genres", false)
 	if err != nil {
@@ -262,7 +274,7 @@ func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, er
 	seen := map[string]bool{}
 	for _, name := range names {
 		id := graph.ID(name)
-		if id == core.NormalizeIdentityPart(name) || seen[id] {
+		if id == core.NormalizeIdentityPart(name) || seen[id] || strings.HasPrefix(id, "discogs-dump:") {
 			continue
 		}
 		seen[id] = true
@@ -311,7 +323,11 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	// A cold cache must recognize the same categories as a warm one. Check
 	// provider genre identity before treating a bare category as an artist.
 	if name := rules.BareGenreQuery(intent.OriginalDescription); name != "" && len(intent.EssentialCriteria) == 0 && len(intent.Preferences.Genres) == 0 {
-		if graph, err := c.GenreNames(ctx); err == nil {
+		graph, err := c.GenreNames(ctx)
+		if err == nil && c.localDataset() != nil && graph.ID(name) == core.NormalizeIdentityPart(name) {
+			graph, err = c.onlineGenreNames(ctx)
+		}
+		if err == nil {
 			for _, node := range graph.Nodes {
 				if node.ID == graph.ID(name) {
 					intent = rules.ApplyConfirmedGenre(intent, name)
@@ -370,6 +386,9 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 				continue
 			}
 			seen[key] = true
+			if data := c.localDataset(); data != nil && data.Compatible(resolver.CatalogVersion()) && data.HasGenre(ctx, genre) {
+				continue
+			}
 			p.Report("generation", 0, 0, "Finding artists for the requested genre")
 			pool := c.genreArtists(ctx, genre)
 			snapshot.ArtistPools = append(snapshot.ArtistPools, pool)
@@ -485,6 +504,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		}
 	}
 	sort.Slice(snapshot.Tracks, func(i, j int) bool { return snapshot.Tracks[i].Ref.ID < snapshot.Tracks[j].Ref.ID })
+	c.acousticTracks(ctx, snapshot.Tracks, 25)
 	snapshot.ID = knowledgeHash(snapshot)
 	intent.Knowledge = &snapshot
 	if parent.Err() != nil {
@@ -553,6 +573,7 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 				track := &snapshot.Tracks[i]
 				track.IdentityStatus = core.ResolutionAmbiguous
 				track.Matched = false
+				track.Acoustic = nil
 				if track.OriginalReleaseDate != r.FirstReleaseDate {
 					track.OriginalReleaseDate = ""
 				}

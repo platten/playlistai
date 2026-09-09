@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 )
 
@@ -98,6 +99,9 @@ func (o *Orchestrator) bestEssential(ctx context.Context, candidates []core.Cand
 
 func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIntent) bool {
 	metadata, known := o.knowledgeTrack(track.ID)
+	if !acousticCompatible(acousticComparisons(metadata, audio.Clauses(intent))) {
+		return false
+	}
 	for _, constraint := range intent.HardConstraints {
 		if constraint.Kind == "require_album" {
 			member := false

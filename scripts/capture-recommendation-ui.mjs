@@ -38,12 +38,15 @@ DownloadModel:(id)=>{window.__downloadedModel=id;},
 GetPreviewURL:(id)=>new Promise(resolve=>{window.__previewTrackId=id;window.__resolvePreview=resolve;}),
 GetAnalysisStatus:()=>({available:false,enabled:false,model:'Music CLAP · CPU',detail:'Music CLAP is awaiting a validated model bundle. Catalog recommendations remain available.',storage:{records:0,bytes:16384},downloadBytes:0,memoryBytes:0}),
 GetTasteProfile:()=>({coldStart:true,exposureCount:0}),
-GetMetadataStatus:()=>({discogsConfigured:window.__discogsConfigured,credentialError:false}),
+GetMetadataStatus:()=>({discogsConfigured:window.__discogsConfigured,credentialError:false,datasetDate:'20260901',datasetTracks:12345,datasetError:false}),
+GetMetadataBundleInfo:()=>window.__metadataBundle??({configured:false,installed:false,catalogReady:true}),
+InstallMetadataBundle:()=>new Promise((resolve,reject)=>{window.__finishMetadataInstall=resolve;window.__failMetadataInstall=()=>reject(new Error('Metadata checksum mismatch.'));}),
 SetDiscogsToken:(token)=>{window.__discogsConfigured=Boolean(token);},
 ClearMusicMetadataCache:()=>{window.__metadataClears++;return new Promise((resolve,reject)=>{window.__finishMetadataClear=resolve;window.__failMetadataClear=()=>reject(new Error('Metadata cache could not be cleared.'));});},
 InspectAnalysisBundle:()=>({label:'Reviewed fixture bundle',artifacts:[{size:780000000}],memoryBytes:2000000000,license:'Apache-2.0'}),
 InstallAnalysisBundle:()=>{emit({op:'analysis-model',done:320000000,total:780000000,note:'Downloading music analysis'}); return new Promise((resolve,reject)=>{window.__failDownload=()=>reject(new Error('Download interrupted. Retry to resume.'));});},
 GenerateFromPromptWithContext:(prompt,context)=>new Promise((resolve,reject)=>{
+  window.__lastGenerationPrompt=prompt;
   window.__generationCalls++;active={resolve,id:context.generationId};window.__generationId=active.id;
   window.__failGeneration=()=>reject(new Error('Music lookup timed out while resolving the requested artist.'));
   window.__finishGeneration=(state='fulfilled',empty=false,notices=[])=>resolve({playlist:{generationId:context.generationId,tracks:empty?[]:tracks,intent,notices,seed:'7',mode:'similar',status:{state},outcome:{state,reasons:state==='fulfilled'?[]:notices.length?[{criterion:'Missing Artist',detail:'The requested artist has no usable catalog seed.',action:'Add a specific track or another artist reference.'}]:[{criterion:'instrumental',detail:'Vocal evidence is unknown for available recordings.',action:'Add a known instrumental reference or relax the vocal requirement.'}]},reproducibility:{id:context.generationId}},request:{intent,seed:'7',reproducibility:{id:context.generationId}},name:'Your generated playlist'});
@@ -325,7 +328,24 @@ try {
   await page.setViewportSize({width:1100,height:850});
   await page.screenshot({path:path.join(output,'playlist-wide.png'),fullPage:true});
   assert.equal(await page.evaluate(()=>window.__buildCalls),0,'Opening generated result must not rebuild');
+  const beforeRegenerate=await page.evaluate(()=>window.__generationCalls);
+  const previousGenerationId=await page.evaluate(()=>window.__generationId);
+  await page.getByRole('button',{name:'Regenerate',exact:true}).click();
+  await page.getByRole('heading',{name:'What do you want to hear?',exact:true}).waitFor();
+  assert.equal(await composer.inputValue(),'ambient electronica','Regenerate restores the saved original description, not the playlist heading');
+  await page.getByText('The local model is processing your request…',{exact:true}).waitFor();
+  assert.equal(await page.locator('#generate-playlist').isDisabled(),true,'Automatic resubmission disables Generate while parsing');
+  await page.evaluate(()=>window.__finishParse());
+  await page.waitForFunction(n=>window.__generationCalls===n+1,beforeRegenerate);
+  assert.equal(await page.evaluate(()=>window.__lastGenerationPrompt),'ambient electronica');
+  assert.notEqual(await page.evaluate(()=>window.__generationId),previousGenerationId,'Regenerate starts a new generation operation');
+  await page.evaluate(()=>window.__finishGeneration());
+  await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(()=>window.__buildCalls),0,'Regenerate reuses the result returned by Generate, without a duplicate Playlist build');
   await page.getByRole('button',{name:'Generate',exact:true}).click();
+  await page.waitForTimeout(250);
+  assert.equal(await page.evaluate(()=>window.__generationCalls),beforeRegenerate+1,'Returning to Generate must not repeat a consumed regeneration');
   await composer.fill('Ambient electronic');
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
   await page.evaluate(()=>window.__finishParse());
@@ -377,6 +397,8 @@ try {
   await tokenInput.fill('fixture-token');
   await metadata.getByRole('button',{name:'Save token',exact:true}).click();
   await metadata.getByText('Token saved. Fallback is enabled.',{exact:false}).waitFor();
+  await metadata.getByText('Snapshot 2026-09-01', {exact:false}).waitFor();
+  await metadata.getByRole('link',{name:'Build and install a local dataset'}).waitFor();
   assert.equal(await tokenInput.inputValue(),'','Saved token is not left in the input');
   page.once('dialog',dialog=>dialog.dismiss());
   await metadata.getByRole('button',{name:'Clear metadata cache',exact:true}).click();
@@ -466,6 +488,20 @@ try {
   await page.screenshot({path:path.join(output,"wizard-analysis.png"),fullPage:true});
   await page.getByRole("button", {name:"Continue",exact:true}).click();
   const wizardOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  await page.goto("http://127.0.0.1:9245/?wizard");
+  await page.evaluate(()=>{window.__metadataBundle={configured:true,installed:false,catalogReady:true};});
+  await page.getByRole('button',{name:'Get started',exact:true}).click();
+  await page.getByRole('heading',{name:'Local music knowledge',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Download music metadata',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Continue without download',exact:true}).isDisabled(),true,'Metadata setup cannot advance during extraction');
+  await page.waitForFunction(()=>typeof window.__failMetadataInstall==='function');
+  await page.evaluate(()=>window.__failMetadataInstall());
+  await page.getByText('Metadata checksum mismatch.',{exact:false}).waitFor();
+  await page.getByRole('button',{name:'Download music metadata',exact:true}).click();
+  await page.waitForFunction(()=>typeof window.__finishMetadataInstall==='function');
+  await page.screenshot({path:path.join(output,'wizard-metadata.png'),fullPage:true});
+  await page.evaluate(()=>window.__finishMetadataInstall());
+  await page.getByRole('heading',{name:'Language understanding',exact:true}).waitFor();
   await page.setViewportSize({width:1040,height:800});
   for (const platform of ['darwin','windows','linux']) {
     await page.goto('http://127.0.0.1:9245/?platform='+platform);

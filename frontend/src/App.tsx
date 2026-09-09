@@ -3,7 +3,7 @@ import { System } from "@wailsio/runtime";
 import { useTheme } from "./design/theme";
 import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
-import { GenerateScreen } from "./screens/GenerateScreen";
+import { GenerateScreen, type Regeneration } from "./screens/GenerateScreen";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { ReviewExport } from "./screens/ReviewExport";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -34,6 +34,7 @@ function AppContent() {
   const { choice, cycle } = useTheme();
   const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
+  const [regeneration, setRegeneration] = useState<Regeneration | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [parserBackend, setParserBackend] = useState("rules");
@@ -123,6 +124,8 @@ function AppContent() {
         <main key={screen} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
           {(screen === "generate" || (screen === "playlist" && !playlist) || (screen === "reviewexport" && !review)) && (
             <GenerateScreen
+              regeneration={regeneration}
+              onRegenerationStarted={(id) => setRegeneration((current) => current?.id === id ? null : current)}
               sessionId={sessionId}
               parserBackend={parserBackend}
               onGenerated={openPlaylist}
@@ -136,6 +139,10 @@ function AppContent() {
               initialResult={playlist.initialResult}
               sessionId={playlist.request.sessionId || sessionId}
               onBack={() => setScreen("generate")}
+              onRegenerate={(prompt) => {
+                setRegeneration({ id: newSessionID(), prompt });
+                setScreen("generate");
+              }}
               onReview={openReview}
             />
           )}

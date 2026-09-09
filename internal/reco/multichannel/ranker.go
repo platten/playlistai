@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -20,6 +21,13 @@ func NewRanker(cat ports.Catalog, cfg Config) *TransparentRanker {
 
 func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidate, request ports.RankRequest) ([]core.Candidate, error) {
 	intent := request.Intent.Normalized()
+	clauses := audio.Clauses(intent)
+	metadata := map[string]core.EnrichedTrack{}
+	if intent.Knowledge != nil {
+		for _, track := range intent.Knowledge.Tracks {
+			metadata[track.Ref.ID] = track
+		}
+	}
 	positiveRefs := positiveReferenceVectors(r.cat, intent)
 	negativeRefs := negativeReferenceVectors(r.cat, intent)
 	audioWeight, trackWeight := intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight
@@ -32,6 +40,7 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			}
 		}
 		vectors, ok := r.cat.Vectors(result[index].Track.ID)
+		result[index].Scores.AcousticIntent, result[index].Available.AcousticIntent = acousticIntentScore(acousticComparisons(metadata[result[index].Track.ID], clauses))
 		if !ok {
 			continue
 		}
@@ -104,6 +113,7 @@ func (r *TransparentRanker) exposuresByRecording(exposures map[string]float64) m
 
 type componentAvailability struct {
 	audio, cooccurrence, listener, retrieval, semantic bool
+	acoustic                                           bool
 }
 
 func rankAvailability(candidates []core.Candidate) componentAvailability {
@@ -114,6 +124,7 @@ func rankAvailability(candidates []core.Candidate) componentAvailability {
 		out.listener = out.listener || candidate.Available.ListenerAffinity
 		out.retrieval = out.retrieval || candidate.Available.RetrievalFusion
 		out.semantic = out.semantic || candidate.Available.SemanticMatch
+		out.acoustic = out.acoustic || candidate.Available.AcousticIntent
 	}
 	return out
 }
@@ -135,6 +146,7 @@ func (r *TransparentRanker) total(candidate core.Candidate, intent core.MusicInt
 	add(candidate.Scores.ListenerAffinity, r.cfg.ListenerWeight, availability.listener, candidate.Available.ListenerAffinity)
 	add(candidate.Scores.RetrievalFusion, r.cfg.RetrievalWeight, availability.retrieval, candidate.Available.RetrievalFusion)
 	add(candidate.Scores.SemanticMatch, r.cfg.SemanticWeight, availability.semantic, candidate.Available.SemanticMatch)
+	add(candidate.Scores.AcousticIntent, acousticIntentWeight, availability.acoustic, candidate.Available.AcousticIntent)
 	if weights > 0 {
 		relevance /= weights
 	}

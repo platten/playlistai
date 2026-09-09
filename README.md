@@ -133,7 +133,10 @@ stay local. Network actions are explicit: asset/model download, Deezer preview,
 MusicBrainz metadata, optional Discogs fallback, and Soundiiz handoff. MusicBrainz
 queries reuse a one-week cache; **Settings → Music metadata** can clear it and
 configure the Discogs token. Fallback requests are capped at 25/minute and still
-pass the normal musical-fit checks. See [metadata setup and cache policy](docs/music-metadata.md).
+pass the normal musical-fit checks. An optional [local Discogs dataset](docs/local-metadata-dataset.md)
+uses monthly bulk dumps for indexed genre discovery before online requests.
+For wizard downloads, [build and host a compressed runtime bundle](docs/metadata-distribution.md).
+See [metadata setup and cache policy](docs/music-metadata.md).
 Recommendation exposure is stored
 separately from positive feedback, and a generated or briefly previewed track
 is never treated as a like or dislike.

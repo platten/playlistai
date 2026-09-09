@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/deezerhttp"
+	"github.com/platten/playlistai/internal/metadata"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -32,6 +35,9 @@ const defaultBase = "https://musicbrainz.org"
 
 // Config configures a Client.
 type Config struct {
+	// AcousticBrainzURL enables optional archived acoustic evidence; empty disables.
+	AcousticBrainzURL string
+	DatasetPath       string // optional catalog-matched bulk metadata, separate from API cache
 	// UserAgent identifies the app with a contact URL (MusicBrainz requirement).
 	UserAgent string
 	// CachePath is the SQLite file for cached lookups.
@@ -53,14 +59,20 @@ type Config struct {
 
 // Client implements ports.Enricher.
 type Client struct {
-	base         string
-	ua           string
-	minScore     int
-	interval     time.Duration
-	hc           *http.Client
-	deezerBase   string
-	deezerClient *http.Client
-	discogs      *discogsClient
+	datasetMu       sync.RWMutex
+	datasetPath     string
+	retiredDatasets []*metadata.Store // immutable readers retained until shutdown
+	dataset         *metadata.Store
+	datasetError    bool
+	base            string
+	ua              string
+	minScore        int
+	interval        time.Duration
+	hc              *http.Client
+	deezerBase      string
+	deezerClient    *http.Client
+	discogs         *discogsClient
+	acoustic        *acousticClient
 
 	limiter *requestLimiter
 
@@ -130,6 +142,12 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.AcousticBrainzURL != "" {
+		c.acoustic, err = newAcousticClient(cfg.AcousticBrainzURL)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if cfg.CachePath != "" {
 		db, err := sql.Open("sqlite", "file:"+cfg.CachePath+"?_pragma=busy_timeout(5000)")
@@ -149,6 +167,18 @@ func New(cfg Config) (*Client, error) {
 		}
 	}
 	c.expireDiscogs(context.Background())
+	if cfg.DatasetPath != "" {
+		if filepath.Base(cfg.DatasetPath) == "discogs.sqlite" {
+			cfg.DatasetPath = metadata.ActivePath(filepath.Dir(cfg.DatasetPath))
+		}
+		if _, err := os.Stat(cfg.DatasetPath); err == nil {
+			c.dataset, err = metadata.Open(cfg.DatasetPath)
+			c.datasetPath = cfg.DatasetPath
+			c.datasetError = err != nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			c.datasetError = true
+		}
+	}
 	return c, nil
 }
 
@@ -157,9 +187,44 @@ func (c *Client) Name() string { return "musicbrainz" }
 
 // Close releases the cache handle.
 func (c *Client) Close() error {
-	if c.db != nil {
-		return c.db.Close()
+	c.datasetMu.Lock()
+	defer c.datasetMu.Unlock()
+	var err error
+	if c.dataset != nil {
+		err = c.dataset.Close()
 	}
+	for _, s := range c.retiredDatasets {
+		err = errors.Join(err, s.Close())
+	}
+	if c.db != nil {
+		return errors.Join(err, c.db.Close())
+	}
+	return err
+}
+
+func (c *Client) localDataset() *metadata.Store {
+	c.datasetMu.RLock()
+	defer c.datasetMu.RUnlock()
+	return c.dataset
+}
+
+// ActivateDataset keeps in-flight requests on their immutable previous reader.
+func (c *Client) ActivateDataset(path string) error {
+	s, err := metadata.Open(path)
+	if err != nil {
+		return err
+	}
+	c.datasetMu.Lock()
+	defer c.datasetMu.Unlock()
+	if c.dataset != nil && c.datasetPath == path {
+		return s.Close()
+	}
+	if c.dataset != nil {
+		c.retiredDatasets = append(c.retiredDatasets, c.dataset)
+	}
+	c.dataset = s
+	c.datasetPath = path
+	c.datasetError = false
 	return nil
 }
 
@@ -176,11 +241,18 @@ func (c *Client) Enrich(ctx context.Context, refs []core.TrackRef, p ports.Progr
 		out = append(out, c.one(ctx, ref))
 		p.Report(ProgressOp, int64(i+1), int64(len(refs)), ref.Display())
 	}
-	return out, nil
+	c.acousticTracks(ctx, out, len(out))
+	return out, ctx.Err()
 }
 
 func (c *Client) one(ctx context.Context, ref core.TrackRef) core.EnrichedTrack {
-	return c.query(ctx, ref)
+	track := c.query(ctx, ref)
+	if dataset := c.localDataset(); dataset != nil {
+		if credits, err := dataset.Composers(ctx, ref.ID); err == nil {
+			track.ComposerCredits = credits
+		}
+	}
+	return track
 }
 
 type mbRecording struct {
@@ -309,8 +381,10 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 
 func (c *Client) CachedRecording(ref core.TrackRef) (core.EnrichedTrack, bool) {
 	// Reinterpret cached raw evidence using today's identity policy; never fetch.
-	result := c.query(context.WithValue(context.Background(), cacheOnlyKey{}, true), ref)
-	return result, result.IdentityStatus != ""
+	ctx := context.WithValue(context.Background(), cacheOnlyKey{}, true)
+	tracks := []core.EnrichedTrack{c.query(ctx, ref)}
+	c.acousticTracks(ctx, tracks, 1)
+	return tracks[0], tracks[0].IdentityStatus != ""
 }
 
 var mbEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`)

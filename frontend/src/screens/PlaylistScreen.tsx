@@ -39,6 +39,7 @@ export function PlaylistScreen({
   initialResult,
   sessionId,
   onBack,
+  onRegenerate,
   onReview,
 }: {
   request: BuildPlaylistRequest;
@@ -46,6 +47,7 @@ export function PlaylistScreen({
   initialResult?: PlaylistResult;
   sessionId: string;
   onBack: () => void;
+  onRegenerate: (prompt: string) => void;
   onReview: (trackIds: string[], heading: string, requestId: string, sessionId: string) => void;
 }) {
   const initial = request.intent?.controls;
@@ -74,6 +76,14 @@ export function PlaylistScreen({
   const [error, setError] = useState<string | null>(null);
   const discogsSources = [...new Set((result?.intent ?? request.intent)?.knowledge?.sources ?? [])]
     .filter((source) => /^https:\/\/www\.discogs\.com\/release\/[0-9]+$/.test(source));
+  const acousticByTrack = useMemo(() => new Map(
+    ((result?.intent ?? request.intent)?.knowledge?.tracks ?? [])
+      .filter((track) => track.matched && track.identityStatus === "resolved")
+      .map((track) => [track.ref.id, track.acoustic]),
+  ), [result?.intent, request.intent]);
+  const comparisonsByTrack = useMemo(() => new Map(
+    (result?.assessments ?? []).map((assessment) => [assessment.trackId, assessment.comparisons ?? []]),
+  ), [result?.assessments]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [feedback, setFeedback] = useState<Record<string, string[]>>({});
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -246,7 +256,12 @@ export function PlaylistScreen({
           variant="ghost"
           size="sm"
           iconLeft={<Icon.Refresh size={14} />}
-          onClick={() => setRunSeed(randomSeed())}
+          onClick={() => {
+            window.clearTimeout(debounce.current);
+            buildSequence.current += 1;
+            void activeBuild.current?.cancel("regenerating from description");
+            onRegenerate(result?.intent?.originalDescription || request.intent?.originalDescription || "");
+          }}
         >
           Regenerate
         </Button>
@@ -398,6 +413,8 @@ export function PlaylistScreen({
         ) : (
           tracks.map((t, i) => {
             const recorded = feedback[t.id] ?? [];
+            const acoustic = acousticByTrack.get(t.id);
+            const comparisons = comparisonsByTrack.get(t.id) ?? [];
             return (
               <div key={`${t.id}-${i}`}>
                 <TrackRow
@@ -420,6 +437,42 @@ export function PlaylistScreen({
                     })
                   }
                 />
+                {expanded.has(i) && comparisons.length > 0 && (
+                  <div className="mx-2 mb-3 rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
+                    <p className="font-medium text-text">How this matches your request</p>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {comparisons.map((comparison, n) => (
+                        <li key={n}>
+                          <span className="text-text">{comparison.clause.negative ? "Avoid: " : ""}{comparison.clause.text}</span>
+                          {comparison.clause.scope.startsWith("journey_") && <span className="text-faint"> · {comparison.clause.scope.replace(/_/g, " ")}</span>}
+                          <span className="block text-faint">
+                            Preview: {comparison.previewState === "match" ? "supports the request" : comparison.previewState === "mismatch" ? "opposes the request" : comparison.previewScore != null ? "compared; fit is unverified" : "no usable comparison"}.
+                            {" "}AcousticBrainz: {comparison.acousticState === "unknown" ? "insufficient evidence" : comparison.acousticState}.
+                          </span>
+                          {comparison.conflict && <span className="block text-warn">The evidence disagrees; review this track.</span>}
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-faint">Predictions guide suggestions, not guarantee the full recording’s characteristics.</p>
+                  </div>
+                )}
+                {expanded.has(i) && acoustic && (acoustic.low || Object.keys(acoustic.predictions ?? {}).length > 0) && (
+                  <div className="mx-2 mb-3 rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
+                    <p className="font-medium text-text">Archived acoustic analysis</p>
+                    {acoustic.low && <p className="mt-1">
+                      {[
+                        acoustic.low.bpm != null ? `${Math.round(acoustic.low.bpm)} BPM (estimated)` : null,
+                        acoustic.low.key ? `Key: ${acoustic.low.key} ${acoustic.low.scale ?? ""}` : null,
+                        acoustic.low.analyzedSeconds != null ? `${Math.round(acoustic.low.analyzedSeconds)} seconds analyzed` : null,
+                      ].filter(Boolean).join(" · ")}
+                    </p>}
+                    {Object.entries(acoustic.predictions ?? {}).length > 0 && <p className="mt-1">
+                      Predictions: {Object.entries(acoustic.predictions ?? {}).sort(([a], [b]) => a.localeCompare(b))
+                        .flatMap(([name, prediction]) => prediction ? [`${name.replace(/_/g, " ")}: ${prediction.value.replace(/_/g, " ")}`] : []).join(" · ")}
+                    </p>}
+                    <p className="mt-1 text-faint">AcousticBrainz · One submitted recording analysis, not a guarantee of genre or vocals. These predictions do not override playlist requirements.</p>
+                  </div>
+                )}
                 {expanded.has(i) && (
                   <div className="ml-[64px] flex flex-wrap items-center gap-1 pb-2.5 text-[11.5px] text-faint">
                     <span className="mr-1">Taste feedback</span>

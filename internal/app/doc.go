@@ -7,6 +7,7 @@
 //
 //	FIRST RUN (user initiated)
 //	  catalog archive ───────────────► int8 vectors + SQLite metadata
+//	  optional metadata .zst ────────► verify + decompress + activate local genre index
 //	  optional llama.cpp + GGUF ─────► GPU probe + VRAM-filtered model choices
 //
 //	LOCAL GENERATION

@@ -380,6 +380,21 @@ func (o *Orchestrator) scoreSemanticUnion(ctx context.Context, candidates []core
 }
 
 func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Candidate, criteria []core.MusicalCriterion) ([]core.Candidate, essentialEvidenceReport, error) {
+	clauses := make([]core.AudioClause, len(criteria))
+	for i, c := range criteria {
+		clauses[i] = core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Essential: true}
+	}
+	compatible := make([]core.Candidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return nil, essentialEvidenceReport{}, err
+		}
+		track, _ := o.knowledgeTrack(candidate.Track.ID)
+		if acousticCompatible(acousticComparisons(track, clauses)) {
+			compatible = append(compatible, candidate)
+		}
+	}
+	candidates = compatible
 	if o.bestAvailable {
 		return o.bestEssential(ctx, candidates, criteria)
 	}
@@ -738,7 +753,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	for _, track := range required {
 		if !o.metadataEligible(track, intent) {
-			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_metadata_conflict", Detail: "A required recording conflicts with metadata constraints."}}), nil
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_metadata_conflict", Detail: "A required recording conflicts with metadata constraints or archived analysis opposes an essential requirement.", Criterion: track.Display(), Action: "remove the required track or refine the conflicting requirement"}}), nil
 		}
 	}
 	if o.audioSession != nil {
@@ -887,7 +902,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	candidates, err = o.ranker.Rank(ctx, candidates, ports.RankRequest{Intent: intent, Profile: request.Profile})
+	candidates, err = o.rankCandidates(ctx, candidates, ports.RankRequest{Intent: intent, Profile: request.Profile})
 	if err != nil {
 		return core.Playlist{}, err
 	}
@@ -962,7 +977,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	})
 	if err != nil {
 		if errors.Is(err, core.ErrRequiredTrackConflict) {
-			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_order_conflict", Detail: err.Error(), Action: "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"}}), nil
+			action := "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"
+			if genreArtistDiversity(intent) {
+				action = "change the required tracks or add suitable tracks from other artists to separate them"
+			}
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_order_conflict", Detail: err.Error(), Action: action}}), nil
 		}
 		return core.Playlist{}, err
 	}
@@ -1015,6 +1034,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		playlist.Outcome.State = core.OutcomePartial
 	}
 	o.annotateFit(ctx, &playlist)
+	o.annotateIntentComparisons(&playlist)
 	return playlist, nil
 }
 

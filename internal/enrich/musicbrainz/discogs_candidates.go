@@ -122,7 +122,7 @@ func (s *candidateStream) nextDiscogs(ctx context.Context) (core.TrackRef, error
 		if len(s.pending) == 0 {
 			s.windowReads = 0
 		}
-		if len(f.releases) > 0 && s.windowReads < discoveryWindow {
+		if len(f.releases) > 0 && s.windowReads < s.discoveryWindowSize() {
 			id := f.releases[0]
 			f.releases = f.releases[1:]
 			if f.used[id] {

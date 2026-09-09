@@ -4,8 +4,25 @@ import (
 	"context"
 	"errors"
 
+	"github.com/platten/playlistai/internal/app"
+
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 )
+
+func (a *API) GetMetadataBundleInfo() app.MetadataBundleInfo { return a.app.GetMetadataBundleInfo() }
+
+func (a *API) InstallMetadataBundle(ctx context.Context) error {
+	ctx, _, finish := a.operations.begin(ctx, "metadata-install")
+	defer finish()
+	a.operations.cancel("intent-preview")
+	a.operations.cancel("prompt-generation")
+	a.operations.cancel("playlist-build")
+	err := a.app.InstallMetadataBundle(ctx, NewWailsProgress())
+	if err == nil {
+		a.intentCache.clear()
+	}
+	return err
+}
 
 type metadataService interface {
 	ClearCache(context.Context) error

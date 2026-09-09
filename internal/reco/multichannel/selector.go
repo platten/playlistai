@@ -151,6 +151,15 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 	}
 
 	lambda := 1 - (1-s.cfg.MMRMinimumLambda)*clamp(request.Intent.Controls.ArtistDiversity, 0, 1)
+	artistDiversity := genreArtistDiversity(request.Intent)
+	artistUses := map[string]int{}
+	seenRequired := map[string]bool{}
+	for _, track := range request.Required {
+		if !seenRequired[track.ID] {
+			artistUses[core.NormalizeIdentityPart(track.Artist)]++
+			seenRequired[track.ID] = true
+		}
+	}
 	for len(result.Candidates) < request.Count && len(pool) > 0 {
 		if err := ctx.Err(); err != nil {
 			return ports.SelectionResult{}, err
@@ -163,6 +172,8 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 				left, right := pool[index].candidate, pool[chosen].candidate
 				if request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
 					better = left.MusicalFit == core.EvidenceMatch
+				} else if artistDiversity && pool[index].artistKey != "" && pool[chosen].artistKey != "" && artistUses[pool[index].artistKey] != artistUses[pool[chosen].artistKey] {
+					better = artistUses[pool[index].artistKey] < artistUses[pool[chosen].artistKey]
 				} else {
 					better = betterMMR(left, right)
 				}
@@ -172,6 +183,7 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 			}
 		}
 		selected := pool[chosen]
+		artistUses[selected.artistKey]++
 		result.Candidates = append(result.Candidates, selected.candidate)
 		pool = append(pool[:chosen], pool[chosen+1:]...)
 		added := contextEntry{

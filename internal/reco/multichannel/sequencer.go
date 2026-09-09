@@ -34,6 +34,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
 	}
+	if genreArtistDiversity(request.Intent) {
+		request.Intent.Constraints.NoRepeatArtistBackToBack = true
+	}
 	var items []sequenceItem
 	var hardExhausted bool
 	if len(request.CategoryStages) > 0 {
@@ -58,7 +61,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 			previous = candidate.Track
 		}
 		items = append(items, sequenceItem{track: end, required: true, fixed: true})
-	} else if request.Intent.Mode == core.ModeJourney && len(request.Required) >= 2 {
+	} else if (request.Intent.Mode == core.ModeJourney || genreArtistDiversity(request.Intent)) && len(request.Required) >= 2 {
 		items, hardExhausted = s.journeyWithRequiredAnchors(ctx, request)
 	} else {
 		items, hardExhausted = s.greedyFromPrefix(ctx, request)
@@ -76,6 +79,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	result := ports.SequenceResult{
 		Tracks: make([]core.TrackRef, 0, len(items)), Rationale: make([]core.StepReason, 0, len(items)),
 		Notices: []core.PlaylistNotice{},
+	}
+	if genreArtistDiversity(request.Intent) {
+		result.Notices = append(result.Notices, core.PlaylistNotice{Code: "genre_artist_diversity", Detail: "Genre playlists favor a wider range of eligible artists and never repeat a known artist back to back.", Requested: request.Intent.Count, Actual: len(items)})
 	}
 	softRelaxations := 0
 	gap := s.softArtistGap(request.Intent)
@@ -105,7 +111,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		})
 	}
 	if hardExhausted {
-		code, detail := "hard_artist_spacing_exhausted", "selected candidates could not be fully ordered without violating the hard no-back-to-back artist rule"
+		code, detail := "hard_artist_spacing_exhausted", "Not enough suitable tracks from different artists to avoid consecutive repeats. Try more fitting references or a shorter playlist."
 		if len(request.CategoryStages) > 0 {
 			code, detail = "category_journey_exhausted", "the bounded ordering search could not place all selected tracks while preserving category direction, required order, and hard artist spacing"
 		}
@@ -183,8 +189,12 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 	allowed := make([]int, 0, len(candidates))
 	spaced := make([]int, 0, len(candidates))
 	gap := s.softArtistGap(request.Intent)
+	spacingPrevious := previous
+	if len(items) == 0 && len(request.RecentSelections) == 0 {
+		spacingPrevious = core.TrackRef{} // a reference anchor is not an output track
+	}
 	for index, candidate := range candidates {
-		if request.Intent.Constraints.NoRepeatArtistBackToBack && previous.ID != "" && sameArtist(previous, candidate.Track) {
+		if request.Intent.Constraints.NoRepeatArtistBackToBack && spacingPrevious.ID != "" && sameArtist(spacingPrevious, candidate.Track) {
 			continue
 		}
 		if request.Intent.Constraints.NoRepeatArtistBackToBack && avoidNext.ID != "" && sameArtist(avoidNext, candidate.Track) {
@@ -193,6 +203,49 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 		allowed = append(allowed, index)
 		if gap == 0 || !artistInTail(items, candidate.Track.Artist, gap) {
 			spaced = append(spaced, index)
+		}
+	}
+	// For an unfixed tail, keep enough separators for the most frequent artist.
+	// Prefer a feasible completion over consuming a scarce separator too early.
+	if request.Intent.Constraints.NoRepeatArtistBackToBack && len(request.CategoryStages) == 0 && len(request.Required) < 2 && request.Intent.Destination == nil {
+		counts := map[string]int{}
+		for _, c := range candidates {
+			if key := core.NormalizeIdentityPart(c.Track.Artist); key != "" {
+				counts[key]++
+			}
+		}
+		excesses := map[int]int{}
+		bestExcess := len(candidates) + 1
+		for _, index := range allowed {
+			key := core.NormalizeIdentityPart(candidates[index].Track.Artist)
+			remaining := len(candidates) - 1
+			excess := 0
+			for artist, count := range counts {
+				boundaryBonus := 1
+				if artist == key {
+					count--
+					boundaryBonus = 0
+				}
+				excess = max(excess, 2*count-remaining-boundaryBonus)
+			}
+			excesses[index] = excess
+			bestExcess = min(bestExcess, excess)
+		}
+		if len(allowed) > 0 {
+			filtered := allowed[:0]
+			for _, index := range allowed {
+				if excesses[index] == bestExcess {
+					filtered = append(filtered, index)
+				}
+			}
+			allowed = filtered
+			filtered = spaced[:0]
+			for _, index := range spaced {
+				if excesses[index] == bestExcess {
+					filtered = append(filtered, index)
+				}
+			}
+			spaced = filtered
 		}
 	}
 	pool := spaced
@@ -328,7 +381,10 @@ func (s *GreedySequencer) hardSpacingValid(items []sequenceItem, request ports.S
 	if !request.Intent.Constraints.NoRepeatArtistBackToBack {
 		return true
 	}
-	previous := s.startAnchor(request, nil)
+	previous := core.TrackRef{}
+	if len(request.RecentSelections) > 0 {
+		previous = request.RecentSelections[len(request.RecentSelections)-1]
+	}
 	for _, item := range items {
 		if previous.ID != "" && sameArtist(previous, item.track) {
 			return false
@@ -365,6 +421,7 @@ func (s *GreedySequencer) candidateReason(candidate core.Candidate, request port
 
 func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Config) []core.ComponentEvidence {
 	return []core.ComponentEvidence{
+		{Component: "acousticbrainz_intent", Score: candidate.Scores.AcousticIntent, Weight: acousticIntentWeight, Available: candidate.Available.AcousticIntent, Detail: "signed classifier class margins against intent; unknown concepts contribute zero, predictions do not establish strict eligibility"},
 		{Component: "audio_seed_affinity", Score: candidate.Scores.AudioSeedAffinity, Weight: intent.Controls.AudioWeight, Available: candidate.Available.AudioSeedAffinity},
 		{Component: "cooccurrence_seed_affinity", Score: candidate.Scores.CooccurrenceAffinity, Weight: intent.Controls.CooccurrenceWeight, Available: candidate.Available.CooccurrenceAffinity},
 		{Component: "listener_affinity", Score: candidate.Scores.ListenerAffinity, Weight: cfg.ListenerWeight, Available: candidate.Available.ListenerAffinity},

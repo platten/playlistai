@@ -36,16 +36,32 @@ export function MusicMetadataCard() {
     <section aria-labelledby="music-metadata-heading" className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
       <div>
         <h2 id="music-metadata-heading" className="text-[15px] font-semibold">Music metadata</h2>
-        <p className="mt-1 text-[13px] text-muted">Fewer lookups. A backup when MusicBrainz is unavailable.</p>
+        <p className="mt-1 text-[13px] text-muted">Local discovery first. Online lookups when more information is needed.</p>
+      </div>
+      <div className="rounded-control border border-line bg-inset p-3">
+        <h3 className="text-[13px] font-medium">Local Discogs dataset</h3>
+        <p className="mt-1 text-[12px] text-muted">
+          {status?.datasetDate
+            ? `Snapshot ${status.datasetDate.slice(0, 4)}-${status.datasetDate.slice(4, 6)}-${status.datasetDate.slice(6, 8)} · ${status.datasetTracks.toLocaleString()} catalog tracks indexed. Matching genres use this dataset before online discovery.`
+            : "Optional. A compact index of Discogs monthly dumps can find genre candidates without API requests. Online discovery remains available."}
+          {" "}The index must match your installed catalog; release tags guide discovery, not guarantee a song’s musical fit.
+        </p>
+        {status?.datasetError && <p className="mt-2 text-[12px] text-warn">The local dataset could not be opened. Online lookup is still available; rebuild or reinstall the index, then restart.</p>}
+        <a className="mt-2 inline-block text-[12px] text-accent hover:underline" href="https://github.com/platten/playlistai/blob/main/docs/local-metadata-dataset.md" target="_blank" rel="noreferrer">Build and install a local dataset</a>
       </div>
       <p className="text-[12.5px] text-muted">
         MusicBrainz results are reused for one week, including searches with no matches.
         Older results can help during an outage. Discogs fallback uses a separate six-hour cache.
       </p>
+      <p className="text-[12px] text-muted">
+        AcousticBrainz can add archived tempo, key, loudness, and predicted musical characteristics
+        for confidently identified recordings. Only recording IDs are sent; no audio or prompts.
+        Results are cached for one week. Coverage is incomplete, and predictions do not verify a genre or a “no vocals” requirement.
+      </p>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
-        <p className="text-[12px] text-faint">Saved playlists, taste data, models, and audio analysis are kept.</p>
+        <p className="text-[12px] text-faint">Local datasets, saved playlists, taste data, models, and audio analysis are kept.</p>
         <Button size="sm" variant="ghost" disabled={busy !== null || !status} onClick={() => {
-          if (window.confirm("Clear cached MusicBrainz, Discogs, and Deezer metadata? Active generation will stop. Saved playlists, taste data, and audio analysis are kept.")) {
+          if (window.confirm("Clear cached MusicBrainz, AcousticBrainz, Discogs, and Deezer metadata? Active generation will stop. Saved playlists, taste data, and audio analysis are kept.")) {
             void run("cache", () => API.ClearMusicMetadataCache(), "Metadata cache cleared. New lookups will fetch fresh data.");
           }
         }}>{busy === "cache" ? "Clearing…" : "Clear metadata cache"}</Button>

@@ -116,17 +116,30 @@ func (t *discogsTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 // MetadataStatus reveals configuration, never the credential itself.
 type MetadataStatus struct {
-	DiscogsConfigured bool `json:"discogsConfigured"`
-	CredentialError   bool `json:"credentialError"`
+	DatasetDate       string `json:"datasetDate"`
+	DatasetTracks     int64  `json:"datasetTracks"`
+	DatasetError      bool   `json:"datasetError"`
+	DiscogsConfigured bool   `json:"discogsConfigured"`
+	CredentialError   bool   `json:"credentialError"`
 }
 
 func (c *Client) MetadataStatus() MetadataStatus {
+	c.datasetMu.RLock()
+	status := MetadataStatus{DatasetError: c.datasetError}
+	if c.dataset != nil {
+		info := c.dataset.Info()
+		status.DatasetDate = info.Date
+		status.DatasetTracks = info.Tracks
+	}
+	c.datasetMu.RUnlock()
 	if c.discogs == nil {
-		return MetadataStatus{}
+		return status
 	}
 	c.discogs.mu.RLock()
 	defer c.discogs.mu.RUnlock()
-	return MetadataStatus{DiscogsConfigured: c.discogs.token != "", CredentialError: c.discogs.credentialError}
+	status.DiscogsConfigured = c.discogs.token != ""
+	status.CredentialError = c.discogs.credentialError
+	return status
 }
 
 func validDiscogsToken(token string) bool {

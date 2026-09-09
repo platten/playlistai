@@ -7,8 +7,10 @@ import (
 	"io"
 	"math/rand"
 	"net/url"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/metadata"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -19,6 +21,8 @@ const artistRecordingPages = 5
 const discoveryRecordingPages = 100
 
 type candidateStream struct {
+	localLoaded         bool
+	local               []metadata.Match
 	client              *Client
 	cat                 ports.Catalog
 	resolver            ports.ReferenceResolver
@@ -40,11 +44,17 @@ type candidateStream struct {
 	exactByArtist       map[string]map[string]string
 	recordingReads      int
 	windowReads         int
+	acousticSpent       time.Duration
 }
 
-// Rotate across at most four fresh artists/releases, then consume the buffered
-// tracks round-robin before opening another network window.
+// Keep small requests cheap; larger genre playlists can draw from up to twenty
+// fresh artists/releases before reusing buffered tracks. Response caching and
+// the existing overall page/detail budgets still bound network traffic.
 const discoveryWindow = 4
+
+func (s *candidateStream) discoveryWindowSize() int {
+	return min(20, max(discoveryWindow, max(s.intent.Count, s.intent.Controls.TotalTrackCount)))
+}
 
 func discoveryKey(intent core.MusicIntent, catalog string) string {
 	intent = intent.Normalized()
@@ -68,7 +78,7 @@ func discoveryKey(intent core.MusicIntent, catalog string) string {
 		Temporal    []core.TemporalRequirement
 		Destination *core.IntentReference
 		Policy      core.VerificationPolicy
-	}{"discovery/v2", catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
+	}{"discovery/v3", catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
 		intent.Preferences, intent.EssentialCriteria, constraints, intent.References, intent.RequiredTracks, intent.Mode,
 		intent.Journey, intent.Temporal, intent.Destination, intent.VerificationPolicy})
 }
@@ -164,6 +174,56 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		s.position++
 		return track, nil
 	}
+	if !s.localLoaded {
+		s.localLoaded = true
+		if data := s.client.localDataset(); data != nil && data.Compatible(s.resolver.CatalogVersion()) {
+			var pools [][]metadata.Match
+			for _, genre := range s.genres {
+				matches, err := data.SampleGenre(ctx, genre, 10000, s.rng.Uint32())
+				if err != nil {
+					if ctx.Err() != nil {
+						return core.TrackRef{}, ctx.Err()
+					}
+					continue
+				}
+				pool := make([]metadata.Match, 0, len(matches))
+				for _, i := range s.rng.Perm(len(matches)) {
+					pool = append(pool, matches[i])
+				}
+				pools = append(pools, rotateLocalArtists(s.cat, pool))
+			}
+			info := data.Info()
+			s.snapshot.Sources = append(s.snapshot.Sources, fmt.Sprintf("https://data.discogs.com/?prefix=data%%2F%s%%2Fdiscogs_%s_#%s", info.Date[:4], info.Date, url.QueryEscape(info.Version)))
+			for i := 0; i < 10000; i++ {
+				for _, pool := range pools {
+					if i < len(pool) {
+						s.local = append(s.local, pool[i])
+					}
+				}
+			}
+		}
+	}
+	for len(s.local) > 0 {
+		match := s.local[0]
+		s.local = s.local[1:]
+		meta, ok := s.cat.Meta(match.TrackID)
+		blocked := excludedArtist(meta.Ref.Artist, s.intent.Constraints.ArtistsExclude)
+		for _, name := range match.Artists {
+			blocked = blocked || excludedArtist(name, s.intent.Constraints.ArtistsExclude)
+		}
+		if !ok || blocked {
+			continue
+		}
+		key := core.ProvisionalRecordingKey(meta.Ref)
+		if s.seen[key] {
+			continue
+		}
+		s.seen[key] = true
+		s.recordEvidence(match.TrackID, "discogs_dump", match.Source)
+		s.snapshot.Discovery = append(s.snapshot.Discovery, meta.Ref)
+		s.snapshot.Sources = append(s.snapshot.Sources, match.Source)
+		return meta.Ref, nil
+	}
 	if !s.initialized {
 		s.initialized = true
 		var pools [][]core.GenreArtist
@@ -221,7 +281,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		if len(s.pending) == 0 {
 			s.windowReads = 0
 		}
-		if len(s.artists) > 0 && s.windowReads < discoveryWindow {
+		if len(s.artists) > 0 && s.windowReads < s.discoveryWindowSize() {
 			artist := s.artists[0]
 			s.artists = s.artists[1:]
 			// Avoid online recording pages for artists absent from the local
@@ -320,6 +380,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					}
 				}
 			}
+			s.enrichAcoustic(ctx)
 		} else {
 			tracks = s.pending[0]
 			s.pending = s.pending[1:]
@@ -337,4 +398,56 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		return core.TrackRef{}, s.lastError
 	}
 	return core.TrackRef{}, io.EOF
+}
+
+// Optional metadata has one time budget across the whole stream, not another
+// eight-second allowance for every artist page. Replay never enters this path.
+func (s *candidateStream) enrichAcoustic(ctx context.Context) {
+	remaining := 8*time.Second - s.acousticSpent
+	if remaining <= 0 || s.client.acoustic == nil {
+		return
+	}
+	started := time.Now()
+	defer func() { s.acousticSpent += time.Since(started) }()
+	ctx, cancel := context.WithTimeout(ctx, remaining)
+	defer cancel()
+	s.client.acousticTracks(ctx, s.snapshot.Tracks, 25)
+}
+
+// Rotate the seeded shuffle by normalized catalog artist, so prolific artists
+// do not consume the bounded preview-check budget before other artists appear.
+// Keep every row/provenance; eligibility and recording dedup still run in Next.
+func rotateLocalArtists(cat ports.Catalog, shuffled []metadata.Match) []metadata.Match {
+	var groups [][]metadata.Match
+	indices := map[string]int{}
+	for _, match := range shuffled {
+		meta, ok := cat.Meta(match.TrackID)
+		if !ok {
+			continue
+		}
+		key := core.NormalizeIdentityPart(meta.Ref.Artist)
+		if key == "" {
+			key = "\x00" + match.TrackID
+		}
+		index, ok := indices[key]
+		if !ok {
+			index = len(groups)
+			indices[key] = index
+			groups = append(groups, nil)
+		}
+		groups[index] = append(groups[index], match)
+	}
+	out := make([]metadata.Match, 0, len(shuffled))
+	// Remove exhausted groups to keep this linear even for one prolific artist.
+	for round := 0; len(groups) > 0; round++ {
+		active := groups[:0]
+		for _, group := range groups {
+			out = append(out, group[round])
+			if round+1 < len(group) {
+				active = append(active, group)
+			}
+		}
+		groups = active
+	}
+	return out
 }

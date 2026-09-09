@@ -1,5 +1,29 @@
 # Recommendation Correctness
 
+## Intent-to-analysis comparisons (2026-09-09 UTC)
+
+`multichannel/v15` now compares structured intent clauses with available
+AcousticBrainz classifier distributions, alongside the existing CLAP preview
+comparisons. Strong opposing/conflicting predictions conservatively screen
+essential or strict requirements; positive predictions never grant eligibility.
+Soft comparisons contribute a separate bounded ranking component. Negation,
+unknown vocabulary and journey-stage alternatives remain explicit.
+
+Required conflicts produce clarification rather than silently inserting the
+track. Expanded playlist rows expose per-clause source comparisons; unresolved
+source disagreement is reported as partial, not successful fulfillment.
+Snapshots retain the evidence and optional comparison fields for replay.
+See [the policy, scoring rules and limitations](music-metadata.md#intent-versus-recorded-analysis-multichannelv15).
+
+Focused deterministic regressions cover changed genre ranking, negative
+preferences, unsupported nuance, model disagreement, missing metadata, required
+tracks, maximum discovery/diversity, conflicting taste evidence and deterministic
+replay. They are algorithm tests, not new held-out musical-quality evidence.
+Validation passed: nine focused AcousticBrainz comparison tests (including
+table-driven cases) and the complete `scripts/test.sh` gate: frontend bindings,
+typecheck/build, vet, pure-Go compilation, race tests and lint (zero issues).
+No rendered-browser smoke or new listening benchmark was run for this change.
+
 ## Discovery, ranking and replay review fixes (2026-09-08)
 
 `multichannel/v13` repairs first-N selection: iterative generation gathers
@@ -1325,3 +1349,40 @@ remain uncalibrated, previews do not cover complete recordings, and unavailable
 provider coverage or strict evidence may still yield fewer tracks.
 The full `scripts/test.sh` gate (including race tests, lint, regenerated bindings,
 frontend checks and pure-Go core compilation) and the Linux desktop build passed.
+
+## Genre artist diversity — September 8, 2026
+
+The `multichannel/v14` strategy treats positive genre/style requests as artist
+exploration within the eligible musical category:
+
+- Local Discogs discovery rotates the seeded shuffle across normalized catalog
+  artists, so prolific artists do not monopolize the bounded checking budget.
+- Online discovery windows scale from 4 to at most 20 artists/releases with the
+  requested count. Existing response caches, rate limits and total page budgets
+  remain in force; records are consumed round-robin after that window.
+- Selection prefers less-used artists (including required output tracks) among
+  candidates above the existing relevance floor. Affirmative musical fit still
+  outranks unknown fit; diversity never weakens essential criteria or exclusions.
+- Genre sequencing prohibits adjacent tracks by the same known, normalized
+  artist, even at zero on the diversity slider. For an unfixed tail, lookahead
+  preserves scarce separating artists and maximizes the safely orderable length.
+  Actual recent output counts as previous playback; reference anchors do not.
+- Required output order and category journey direction remain intact. Required
+  tracks are interleaved when possible; impossible conflicts need clarification.
+  Insufficient eligible artist variety produces a structured partial playlist,
+  never consecutive repeats or a mismatched filler track.
+
+Artist-only requests without genre/style criteria retain their existing
+selection behavior. Stored intent/slider values are not rewritten. Generation
+versioning invalidates old cached ranking results; discovery keys advance to
+`discovery/v3`. Saved playlists remain unchanged, while regeneration uses this
+policy. Unkeyed legacy discovery snapshots retain their offline replay behavior.
+
+Regressions cover prolific artists, Unicode/whitespace identity, genre selection
+at zero diversity, required-track concentration, musical-fit priority, relevance
+floors, reference versus recent-playback boundaries, safe partial results,
+fixed-seed replay, and all small three-artist count combinations for unfixed
+ordering. The older `A,A → B,B` category fixture now expects a two-track partial
+result: filling four positions would violate either direction or artist spacing.
+These deterministic fixtures establish algorithm correctness, not listening
+quality; no new real-world musical-quality benchmark is claimed.

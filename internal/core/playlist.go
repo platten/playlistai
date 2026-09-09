@@ -38,6 +38,7 @@ type Candidate struct {
 }
 
 type CandidateScores struct {
+	AcousticIntent        float64 `json:"acousticIntent"`
 	RetrievalFusion       float64 `json:"retrievalFusion"` // max-normalized weighted RRF, not a probability
 	AudioSeedAffinity     float64 `json:"audioSeedAffinity"`
 	CooccurrenceAffinity  float64 `json:"cooccurrenceAffinity"`
@@ -56,6 +57,7 @@ type CandidateScores struct {
 }
 
 type CandidateFeatures struct {
+	AcousticIntent        bool `json:"acousticIntent"`
 	RetrievalFusion       bool `json:"retrievalFusion"`
 	AudioSeedAffinity     bool `json:"audioSeedAffinity"`
 	CooccurrenceAffinity  bool `json:"cooccurrenceAffinity"`

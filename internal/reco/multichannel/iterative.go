@@ -221,7 +221,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 // Do not stop just because enough candidates passed CLAP: the final selector
 // and ordering constraints must also be able to produce the requested count.
 func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) (bool, error) {
-	ranked, err := o.ranker.Rank(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile})
+	ranked, err := o.rankCandidates(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile})
 	if err != nil {
 		return false, err
 	}

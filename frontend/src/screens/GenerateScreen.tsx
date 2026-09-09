@@ -49,11 +49,18 @@ const SURPRISES = [
 ];
 
 /** The prompt entry point: editing is local; submit to parse and generate. */
+export interface Regeneration {
+  id: string;
+  prompt: string;
+}
+
 export function GenerateScreen({
   sessionId,
   parserBackend,
   onGenerated,
   onNeedSetup,
+  regeneration,
+  onRegenerationStarted,
 }: {
   sessionId: string;
   parserBackend: string;
@@ -63,8 +70,12 @@ export function GenerateScreen({
     initialResult?: PlaylistResult,
   ) => void;
   onNeedSetup: () => void;
+  regeneration?: Regeneration | null;
+  onRegenerationStarted?: (id: string) => void;
 }) {
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(regeneration?.prompt ?? "");
+  const regenerationStarted = useRef("");
+  const regenerationPending = Boolean(regeneration?.prompt.trim() && regenerationStarted.current !== regeneration.id);
   const [info, setInfo] = useState<CatalogInfo | null>(null);
   const [preview, setPreview] = useState<IntentPreview | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -303,7 +314,7 @@ export function GenerateScreen({
   );
 
   const generate = useCallback(() => {
-    if (activeGenerationId.current) return;
+    if (activeGenerationId.current || regenerationPending) return;
     setDismissedNotice(null);
     if (source === "saved" && savedRequest) {
       const hit = saved.find((item) => item.id === savedId);
@@ -344,7 +355,22 @@ export function GenerateScreen({
     needsSeed,
     ambiguityNeedsChoice,
     preview,
+    regenerationPending,
   ]);
+
+  // Regenerate is an explicit submission from Playlist, not parsing while
+  // typing. Defer startup so StrictMode cleanup can cancel the first setup;
+  // consume the command only when it actually runs, and never on tab revisits.
+  useEffect(() => {
+    if (!regeneration || !info?.loaded || regenerationStarted.current === regeneration.id) return;
+    const timer = window.setTimeout(() => {
+      regenerationStarted.current = regeneration.id;
+      onRegenerationStarted?.(regeneration.id);
+      setPrompt(regeneration.prompt);
+      if (regeneration.prompt.trim()) runGenerate(regeneration.prompt);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [info?.loaded, onRegenerationStarted, regeneration, runGenerate]);
 
   const surprise = useCallback(() => {
     const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
@@ -484,7 +510,7 @@ export function GenerateScreen({
           id="music-description"
           aria-label="Describe the music you want to hear"
           autoFocus
-          disabled={generating}
+          disabled={generating || regenerationPending}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
@@ -525,7 +551,7 @@ export function GenerateScreen({
             variant="ghost"
             size="sm"
             iconLeft={<Icon.Sparkle size={14} />}
-            disabled={generating}
+            disabled={generating || regenerationPending}
             onClick={surprise}
           >
             Surprise me
@@ -537,7 +563,7 @@ export function GenerateScreen({
             variant="primary"
             size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
-            disabled={generating || prompt.trim() === "" || (source === "saved" && !savedRequest)}
+            disabled={generating || regenerationPending || prompt.trim() === "" || (source === "saved" && !savedRequest)}
             onClick={generate}
           >
             {generating ? "Generating…" : "Generate playlist"}
