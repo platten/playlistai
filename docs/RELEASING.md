@@ -49,6 +49,37 @@ When intentionally adding an application package format, update the explicit
 workflow paths and approved list together. The guard regression tests run in
 CI and `scripts/test.sh` via `bash scripts/test-release-assets.sh`.
 
+### Verify Linux package architecture
+
+The DEB/RPM/Arch packaging tasks must export the target `GOARCH` to nfpm, not
+only to the Go compiler. An unset `${GOARCH}` in `nfpm.yaml` defaults to amd64,
+even on a native ARM64 runner. The tasks explicitly set it from `ARCH`; the
+packaging regression in `build/linux_packaging_test.go` exercises all three
+formats with native, amd64, and arm64 targets using the real Wails task runner.
+It skips when Wails is unavailable or the test host has no POSIX shell.
+
+Before publishing, inspect package metadata as well as filenames. For example,
+`dpkg-deb --field playlist-ai-arm64.deb Version Architecture` must report
+`arm64`, and `.PKGINFO` in the ARM64 Arch archive must declare `aarch64`.
+Confirm the packaged executable's ELF architecture and digest match the portable
+archive. A successful package build alone does not catch a mislabeled header.
+
+For the immutable v0.10.0 tag, which predates the task fix, set `GOARCH` explicitly
+when reproducing packages. Its ARM64 DEB/RPM/Arch assets were repackaged before
+publication from the unchanged CI-built ARM64 executable, using the tagged
+configuration and Wails v3.0.0-beta.16:
+
+```sh
+# In a checkout of v0.10.0, with its CI-built ARM64 binary at bin/playlist-ai:
+wails3 task linux:generate:dotdesktop
+GOARCH=arm64 SOURCE_DATE_EPOCH=1789077963 wails3 tool package \
+  -name playlist-ai -format deb -config build/linux/nfpm/nfpm.yaml -out bin
+# Repeat with -format rpm and -format archlinux, then use the release filenames.
+```
+
+The release notes record this packaging-only correction. Do not rewrite a pushed
+tag or replace its executable with code from a later commit to repair metadata.
+
 ## Cutting a release
 
 Windows packaging requires `scripts/install-clap-toolchain.ps1` (also called by
