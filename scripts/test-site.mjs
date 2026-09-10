@@ -8,12 +8,13 @@ const root = new URL("../", import.meta.url);
 const html = readFileSync(new URL("site/index.html", root), "utf8");
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
 
-test("upcoming 0.8.0 is distinct from the public 0.7.0 download", () => {
-  assert.match(html, /COMING IN VERSION 0\.8\.0/);
+test("upcoming 0.9.0 is distinct from the public 0.7.0 download", () => {
+  assert.match(html, /COMING IN VERSION 0\.9\.0/);
   assert.match(html, /PUBLIC DOWNLOAD \/ 0\.7\.0/);
-  assert.match(html, /Version 0\.8\.0 is awaiting publication/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.8.0/docs/releases/v0.8.0.md"));
-  assert.ok(!links.some(link => link.includes("untagged-") || link.includes("/releases/tag/v0.8.0")));
+  assert.match(html, /Version 0\.9\.0 is awaiting publication/);
+  assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.9.0/docs/releases/v0.9.0.md"));
+  assert.ok(!links.some(link => link.includes("untagged-") || /\/releases\/tag\/v0\.[89]\.0/.test(link)));
+  assert.doesNotMatch(html, /COMING IN VERSION 0\.8\.0|In 0\.8\.0|upgrade to 0\.8\.0/);
 });
 
 test("downloads retain exact published application asset names", () => {
@@ -44,7 +45,7 @@ test("local navigation, accessibility references and files exist", () => {
 
 test("documentation links refer to existing files", () => {
   for (const link of links) {
-    const match = link.match(/\/blob\/(?:v0\.8\.0|main)\/([^#]+)(?:#.*)?$/);
+    const match = link.match(/\/blob\/(?:v0\.[89]\.0|main)\/([^#]+)(?:#.*)?$/);
     if (match) assert.ok(existsSync(new URL(match[1], root)), link);
   }
 });
@@ -62,7 +63,7 @@ test("release measurements retain their evidence and limitations", () => {
 test("development modes stay separate from public release claims", () => {
   const section = html.match(/<section[^>]+id="recommendations"[\s\S]*?<\/section>/)?.[0];
   assert.ok(section, "Recommendation controls section missing");
-  assert.match(section, /DEVELOPMENT PREVIEW \/ NOT IN THE PUBLIC DOWNLOAD/);
+  assert.match(section, /0\.9\.0 PREVIEW \/ NOT IN THE PUBLIC DOWNLOAD/);
   for (const name of ["AcousticBrainz first", "CLAP first", "Deej-AI only"]) {
     assert.ok(section.includes(name), name);
   }
@@ -98,11 +99,22 @@ test("live measurements preserve failure and comparability caveats", () => {
   assert.match(html, /not a controlled speed comparison/);
   assert.match(html, /no selected-track AcousticBrainz comparison scores/);
   assert.match(html, /No held-out listening judgments were used/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/blob/main/docs/three-mode-regression.md"));
+  assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.9.0/docs/three-mode-regression.md"));
   const benchmark = readFileSync(new URL("docs/performance-and-model-evaluation.md", root), "utf8");
   for (const value of ["1.888 s", "0.325 s", "5.8×"]) {
     assert.ok(html.includes(value), value);
     assert.ok(benchmark.includes(value), `Missing benchmark source: ${value}`);
   }
   assert.match(html, /not a whole-app speedup claim/);
+});
+
+test("0.9.0 highlights link to the tagged release evidence", () => {
+  const release = html.match(/<section[^>]+id="new"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(release);
+  for (const text of ["Three ways to recommend", "Less repeated searching", "A better Windows setup", "rough edges visible", "packaged-upgrade checklist"]) {
+    assert.ok(release.includes(text), text);
+  }
+  for (const document of ["recommendation-settings.md", "music-metadata.md", "clap-model-candidates.md", "three-mode-regression.md"]) {
+    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.9.0/docs/${document}`), document);
+  }
 });
