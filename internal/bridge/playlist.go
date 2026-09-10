@@ -9,6 +9,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/reco/deejai"
 )
 
 // ControlOverrides contains only controls explicitly changed after parsing.
@@ -104,6 +105,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	}
 	intent := req.resolvedIntent()
 	intent = applyOverrides(intent, req.Overrides)
+	if intent.Controls.RecommendationMode == "" {
+		intent.Controls.RecommendationMode = a.app.RecommendationMode()
+	}
 	if err := intent.Validate(); err != nil {
 		return PlaylistResult{}, err
 	}
@@ -123,7 +127,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if g := generationFromContext(ctx); g != nil {
 		stop = g.stop
 	}
-	if contextual, ok := a.app.Reco.(ports.ContextualRecommendationEngine); ok {
+	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+		playlist, err = deejai.BuildOnly(ctx, a.app.BaselineReco, intent)
+	} else if contextual, ok := a.app.Reco.(ports.ContextualRecommendationEngine); ok {
 		playlist, err = contextual.BuildRecommendation(ctx, ports.RecommendationRequest{
 			StopChecking: stop, OnChecked: progress.Checked, OnSuggested: progress.Suggested, Progress: progress,
 			Intent: intent, Profile: profile, RecentSelections: recentSelections,
@@ -197,7 +203,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if a.app.Resolver != nil {
 		catalogVersion = a.app.Resolver.CatalogVersion()
 	}
-	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersion(), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
+	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersionFor(intent), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
@@ -268,6 +274,9 @@ func (r BuildPlaylistRequest) resolvedIntent() core.MusicIntent {
 }
 
 func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, intent core.MusicIntent) (core.TasteProfile, error) {
+	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+		return core.TasteProfile{}, nil
+	}
 	identity := req.Reproducibility
 	fingerprint, err := generationIdentity(intent, identity.CatalogVersion, identity.AlgorithmVersion, identity.ProfileVersion, identity.ProfileSnapshot, resolveRecentSelections(a.app.Catalog, req.RecentSelections))
 	if err != nil {
@@ -276,7 +285,7 @@ func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, int
 	if identity.ProfileSnapshot == "" || fingerprint.IntentFingerprint != identity.IntentFingerprint || fingerprint.ContextFingerprint != identity.ContextFingerprint {
 		return a.generationTasteProfile(ctx, req.SessionID, req.RequestID)
 	}
-	if identity.CatalogVersion != a.catalogVersion() || identity.AlgorithmVersion != a.recommendationVersion() {
+	if identity.CatalogVersion != a.catalogVersion() || identity.AlgorithmVersion != a.recommendationVersionFor(intent) {
 		return core.TasteProfile{}, errors.New("saved generation uses a different catalog or recommendation version; regenerate to use the current versions")
 	}
 	if a.app.Profiles == nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/ports"
@@ -268,8 +269,8 @@ func TestDeejAIBaselineCanBeSelected(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	if c.Reco != c.BaselineReco {
-		t.Fatal("deejai strategy did not select the retained baseline engine")
+	if c.RecommendationMode() != core.DeejAIOnly || c.BaselineReco == nil || c.Reco == c.BaselineReco {
+		t.Fatal("legacy strategy must select engine-only by default while wiring both engines for live Settings changes")
 	}
 }
 

@@ -40,7 +40,16 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			}
 		}
 		vectors, ok := r.cat.Vectors(result[index].Track.ID)
-		result[index].Scores.AcousticIntent, result[index].Available.AcousticIntent = acousticIntentScore(acousticComparisons(metadata[result[index].Track.ID], clauses))
+		comparisons := acousticComparisons(metadata[result[index].Track.ID], clauses)
+		if preview, ok := request.PreviewAssessments[result[index].Track.ID]; ok {
+			if intent.Controls.RecommendationMode == core.CLAPFirst {
+				audio.ApplyScores(&result[index], preview)
+				comparisons = preferCLAPRanking(comparisons, preview)
+			} else {
+				preferAcousticRanking(&result[index], comparisons, preview)
+			}
+		}
+		result[index].Scores.AcousticIntent, result[index].Available.AcousticIntent = acousticIntentScore(comparisons)
 		if !ok {
 			continue
 		}
@@ -146,7 +155,7 @@ func (r *TransparentRanker) total(candidate core.Candidate, intent core.MusicInt
 	add(candidate.Scores.ListenerAffinity, r.cfg.ListenerWeight, availability.listener, candidate.Available.ListenerAffinity)
 	add(candidate.Scores.RetrievalFusion, r.cfg.RetrievalWeight, availability.retrieval, candidate.Available.RetrievalFusion)
 	add(candidate.Scores.SemanticMatch, r.cfg.SemanticWeight, availability.semantic, candidate.Available.SemanticMatch)
-	add(candidate.Scores.AcousticIntent, acousticIntentWeight, availability.acoustic, candidate.Available.AcousticIntent)
+	add(candidate.Scores.AcousticIntent, acousticWeight(intent), availability.acoustic, candidate.Available.AcousticIntent)
 	if weights > 0 {
 		relevance /= weights
 	}

@@ -1,0 +1,99 @@
+{
+  "date": "2026-09-09",
+  "baseCommit": "2723f6776807478705567fd83f08382f35a8c772",
+  "environment": {
+    "os": "Linux/amd64 (WSL2)",
+    "cpu": "Intel Core Ultra 9 285H",
+    "logicalCPUs": 16,
+    "go": "go1.27.1",
+    "catalogVersion": "1:956917:1788613313",
+    "catalogTracks": 956917
+  },
+  "scope": "Local ten-track iterative generation from Boards of Canada, best_available policy, seed 42, no LLM, CLAP or provider/network work. Same-binary uncached exact versus request-scoped exact cache; three samples of three measured iterations each. Catalog and engine initialization and full-playlist equivalence checks excluded from timings.",
+  "iterative": {
+    "uncached": [
+      {
+        "nsPerOp": 1888014580,
+        "bytesPerOp": 32392672,
+        "allocsPerOp": 499052
+      },
+      {
+        "nsPerOp": 1914550027,
+        "bytesPerOp": 32387048,
+        "allocsPerOp": 499040
+      },
+      {
+        "nsPerOp": 1711041613,
+        "bytesPerOp": 32387048,
+        "allocsPerOp": 499040
+      }
+    ],
+    "requestCache": [
+      {
+        "nsPerOp": 346845963,
+        "bytesPerOp": 27100216,
+        "allocsPerOp": 394941
+      },
+      {
+        "nsPerOp": 315159599,
+        "bytesPerOp": 27100333,
+        "allocsPerOp": 394943
+      },
+      {
+        "nsPerOp": 325386427,
+        "bytesPerOp": 27100253,
+        "allocsPerOp": 394942
+      }
+    ]
+  },
+  "stopPolling": {
+    "assessments": 200,
+    "benchtime": "300ms",
+    "samples": 3,
+    "fullSnapshot": [
+      {
+        "nsPerOp": 177635,
+        "bytesPerOp": 156178,
+        "allocsPerOp": 10
+      },
+      {
+        "nsPerOp": 180118,
+        "bytesPerOp": 157068,
+        "allocsPerOp": 10
+      },
+      {
+        "nsPerOp": 184776,
+        "bytesPerOp": 156897,
+        "allocsPerOp": 10
+      }
+    ],
+    "statusOnly": [
+      {
+        "nsPerOp": 2.311,
+        "bytesPerOp": 0,
+        "allocsPerOp": 0
+      },
+      {
+        "nsPerOp": 2.296,
+        "bytesPerOp": 0,
+        "allocsPerOp": 0
+      },
+      {
+        "nsPerOp": 2.256,
+        "bytesPerOp": 0,
+        "allocsPerOp": 0
+      }
+    ]
+  },
+  "profiling": {
+    "baselineSearchRangeCumulativePercent": 94.18,
+    "baselineDotProductFlatPercent": 76.92,
+    "note": "Separate CPU-profiled development run; profiling/startup affects timing, so headline results use the unprofiled paired benchmark."
+  },
+  "equivalence": "The real-catalog benchmark compares entire cached and uncached playlists, including scores/evidence/outcomes, before timing. Deterministic fixtures separately cover exclusions, ties, query changes, exhaustion, bounded fallback, cancellation and concurrent independent sessions.",
+  "limitations": [
+    "One host and one real-catalog reference intent; not a held-out music-quality evaluation or universal speed guarantee.",
+    "No complete desktop/LLM/provider/CLAP end-to-end rerun; network and inference latency remain.",
+    "Moving unused selector helpers into test files preserves the historical oracle; Go's linker already discarded unused functions, so no binary-size saving is claimed."
+  ]
+}

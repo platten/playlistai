@@ -71,11 +71,8 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			notices = append(notices, core.PlaylistNotice{Code: "discovery_budget", Detail: "The search time limit was reached, not the end of the catalog. Retry to search further."})
 			break
 		}
-		if o.audioSession != nil {
-			snapshot := o.audioSession.Snapshot()
-			if snapshot.Stopped || snapshot.BudgetExhausted {
-				break
-			}
+		if o.audioSession != nil && o.audioSession.ShouldStop() {
+			break
 		}
 		var candidate core.Candidate
 		if stream != nil {

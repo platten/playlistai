@@ -61,6 +61,7 @@ func (a *API) ParseIntentWithContext(ctx context.Context, prompt string, session
 }
 
 func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput) (IntentPreview, error) {
+	input.SkipMetadata = a.app.RecommendationMode() == core.DeejAIOnly
 	ctx, current, finish := a.operations.begin(ctx, "intent-preview")
 	defer finish()
 	if a.app.IntentParser() == nil {
@@ -170,6 +171,8 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 
 	// Stream intent-parse progress to the Generate screen ("intent" op).
 	prog := generationProgress(ctx)
+	recommendationMode := a.app.RecommendationMode()
+	input.SkipMetadata = recommendationMode == core.DeejAIOnly
 	prog.Report("intent", 0, -1, "understanding your request")
 	parseStarted := time.Now()
 	entry, parsedIntentReused, err := a.parseIntentCached(ctx, input, prog)
@@ -177,6 +180,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		return GenerateResult{}, err
 	}
 	m := entry.intent
+	m.Controls.RecommendationMode = recommendationMode
 	m.VerificationPolicy = core.BestAvailable
 	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
 	m.References = applySelections(m.References, selections)
@@ -184,7 +188,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
 	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
 	resolveStarted := time.Now()
-	if a.app.Knowledge != nil && m.Version >= 8 {
+	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly {
 		if knowledge, ok := a.app.Knowledge.(ports.IterativeMusicKnowledge); ok {
 			m, err = knowledge.PrepareMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
 		} else {
@@ -247,6 +251,9 @@ func applyAnchorSelections(anchors []core.InferredAnchor, selections []Resolutio
 }
 
 func validatePromptStart(backend, requestedBackend string, intent core.MusicIntent) error {
+	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+		return nil // BuildOnly returns an actionable, structured missing-seed outcome.
+	}
 	// A rules fallback while an LLM was requested must preserve the semantic
 	// request and reach the orchestrator's structured unsupported outcome. It
 	// must not silently reinterpret the request as catalog-only artist lookup.

@@ -1,5 +1,48 @@
 # Recommendation Correctness
 
+## User-selectable recommendation policy (2026-09-09)
+
+Settings now offers AcousticBrainz-first, CLAP-first and Deej-AI-only, with live
+application to new generations and local persistence. Requests pin their mode
+for history/rebuilds; Regenerate uses the latest preference. `multichannel/v18`
+implements symmetric ranking-source preference without altering strict checks.
+The engine-only desktop path uses `deejai/v4+engine-only/v1`: no provider lookups,
+analysis or taste ranking, and explicit unsupported/partial outcomes instead of
+claiming verified musical fit. The original evaluation walk remains unchanged.
+See [recommendation settings](recommendation-settings.md) for weights, boundaries,
+migration behavior and validation coverage.
+
+## AcousticBrainz-first characteristic ranking (2026-09-09)
+
+`multichannel/v17` gives identity-grounded AcousticBrainz classifier margins
+weight 0.55, versus the default 0.35 semantic weight. Decisive archive predictions
+take over overlapping preview ranking clauses; CLAP covers unmapped, missing,
+weak or conflicting evidence. Original clause denominators remain fixed, and
+raw preview evidence is preserved for explanations and saved history. Journey
+scope and negative influence remain part of each clause's identity.
+
+This is a ranking preference, **not** permission to bypass essential criteria,
+no-vocals checks, preview eligibility, or required-track conflicts. No default
+LLM/model, intent schema or cache TTL changes. Algorithm versioning invalidates
+old generation identities; saved playlists remain readable. Expanded playlist
+rows explain the source preference without claiming verified full-track fit.
+
+The evaluation runner now enables optional AcousticBrainz with `-online`, reports
+that configuration, and permits `-acousticbrainz=false` for historical baselines.
+One live known-recording lookup succeeded (15 classifiers; 1.174 s cold, 136 µs
+warm). This is availability evidence, not musical-quality or coverage evidence.
+Focused deterministic regressions cover source disagreement, fallback, negation,
+journey scopes, fixed denominators, repeat ranking, request-local evidence and
+required preview conflicts. See [the complete source policy and reproduction
+command](music-metadata.md#exercising-acousticbrainz-in-evaluations).
+
+Validation passed: the 14 AcousticBrainz comparison/priority regression functions
+(including table-driven cases), focused audio and `musiccheck` tests, and the
+complete `scripts/test.sh` gate with race detection, vet, lint, generated bindings,
+frontend typecheck/build and pure-Go checks. No new held-out listening evaluation
+or rendered-browser smoke was performed; the stronger weight is the requested
+source policy, not a measured quality optimum.
+
 ## Intent-to-analysis comparisons (2026-09-09 UTC)
 
 `multichannel/v15` now compares structured intent clauses with available

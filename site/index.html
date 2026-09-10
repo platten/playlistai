@@ -4,13 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Playlist AI — Find the music you have in mind</title>
-  <meta name="description" content="Explore Playlist AI 0.8.0: grounded discovery, local music metadata, composer credits and acoustic checks. Coming soon for Windows, macOS and Linux; 0.7.0 remains the public download." />
+  <meta name="description" content="Find music with Playlist AI. Preview three recommendation modes, local music analysis and honest results from 40 prompts per mode. Development updates are separate from the public 0.7.0 download." />
   <meta name="theme-color" content="#101113" />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <link rel="canonical" href="https://platten.github.io/playlistai/" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Playlist AI — Find the music you have in mind" />
-  <meta property="og:description" content="Your words. Your taste. Your next playlist. Preview what’s coming in 0.8.0: local music knowledge and clearer musical-fit checks." />
+  <meta property="og:description" content="Your words. Your taste. Your next playlist. Explore upcoming recommendation controls and the results—and limits—of 120 live test cases." />
   <meta property="og:image" content="https://platten.github.io/playlistai/og.png" />
   <meta property="og:url" content="https://platten.github.io/playlistai/" />
   <meta name="twitter:card" content="summary_large_image" />
@@ -21,7 +21,7 @@
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header"><div class="wrap nav">
     <a class="brand" href="#top" aria-label="Playlist AI home"><img src="favicon.svg" width="36" height="36" alt="" />Playlist AI</a>
-    <nav id="navigation" aria-label="Main navigation"><a href="#experience">The experience</a><a href="#new">What’s new</a><a href="#privacy">Privacy</a></nav>
+    <nav id="navigation" aria-label="Main navigation"><a href="#experience">The experience</a><a href="#new">What’s new</a><a href="#recommendations">Modes &amp; tests</a><a href="#privacy">Privacy</a></nav>
     <a class="button button-small" href="#download">Get the app <span aria-hidden="true">↗</span></a>
     <button class="menu-toggle" aria-expanded="false" aria-controls="navigation" aria-label="Open navigation"><span></span><span></span></button>
   </div></header>
@@ -62,6 +62,16 @@
         <article><span>04</span><div><h3>Evidence you can inspect</h3><p>Supported AcousticBrainz predictions complement optional CLAP preview checks. Expand a track to see comparisons and disagreements. Unknown characteristics are never passed off as verified.</p></div></article>
       </div>
     </div></section>
+    <section class="section wrap" id="recommendations" aria-labelledby="recommendations-title">
+      <div class="section-heading"><p class="eyebrow">DEVELOPMENT PREVIEW / NOT IN THE PUBLIC DOWNLOAD</p><h2 id="recommendations-title">Your music.<br /><span class="muted">Your way to discover it.</span></h2><p>New in Settings → Recommendations: choose which evidence leads, or explore with the original Deej-AI engine. Your choice is saved locally; use Regenerate to apply it to a fresh playlist.</p></div>
+      <div class="mode-grid">
+        <article class="feature mode-card"><span class="mode-label">01 / DEVELOPMENT DEFAULT</span><h3>AcousticBrainz first</h3><p>Available archived track analysis leads supported characteristics. CLAP preview comparisons fill the gaps.</p><p class="mode-detail">For listeners who prefer recording-level evidence when it’s available.</p></article>
+        <article class="feature mode-card"><span class="mode-label">02 / PREVIEW-LED</span><h3>CLAP first</h3><p>Local audio-to-text comparisons lead supported characteristics. AcousticBrainz fills gaps where previews cannot be scored.</p><p class="mode-detail">For exploring the textures and feel described in your request.</p></article>
+        <article class="feature mode-card"><span class="mode-label">03 / ENGINE-ONLY</span><h3>Deej-AI only</h3><p>Find neighbors in the original audio and playlist embeddings, without metadata discovery, CLAP, AcousticBrainz or taste-profile ranking.</p><p class="mode-detail">Needs a resolved catalog artist or track. It cannot verify genres or moods; unsupported strict requests get an explanation.</p></article>
+      </div>
+      <p class="section-note">Priority changes ranking, not permission to ignore exclusions. Both analysis sources can still check eligibility in enhanced modes. A saved playlist keeps its chosen mode; changing Settings does not rewrite history.</p>
+      <a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/recommendation-settings.md">How the settings work <span aria-hidden="true">↗</span></a>
+    </section>
     <section class="section wrap" aria-labelledby="analysis-title">
       <div class="analysis-panel"><div class="analysis-visual" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="analysis-core">CLAP<span>AUDIO + TEXT</span></div><span class="analysis-coordinate">LOCAL INFERENCE / PAI 0.8</span></div>
         <div class="analysis-copy"><p class="eyebrow">OPTIONAL ANALYSIS / IN 0.8.0</p><h2 id="analysis-title">Hear the intent.<br />Check the evidence.</h2><p>Optional CLAP analysis compares preview audio with your description locally. Available AcousticBrainz predictions add a separate view of supported mood, genre and vocal characteristics. No Python runtime is required by the desktop app.</p><p class="analysis-status"><strong>Supporting evidence, not a whole-song guarantee.</strong> Previews cover only part of a recording, archived classifiers can disagree, and general musical-fit calibration remains incomplete. Unverified results stay clearly marked as partial.</p><a class="text-link" href="https://github.com/platten/playlistai/blob/v0.8.0/docs/music-metadata.md">How evidence is compared <span aria-hidden="true">↗</span></a></div>
@@ -75,6 +85,33 @@
         <article class="feature"><h3>1.182 s → 89 µs</h3><p>One AcousticBrainz lookup, cold versus cached. A single-recording smoke test, not typical playlist generation time.</p></article>
       </div>
       <a class="text-link" href="https://github.com/platten/playlistai/blob/v0.8.0/docs/releases/v0.8.0.md#validation-and-executed-measurements">Measurements, methods &amp; limitations <span aria-hidden="true">↗</span></a>
+    </section>
+    <section class="section wrap regression" id="regression" aria-labelledby="regression-title">
+      <div class="section-heading"><p class="eyebrow">DEVELOPMENT TEST / SEPTEMBER 9, 2026</p><h2 id="regression-title">40 prompts. Three modes.<br /><span class="muted">The results, openly.</span></h2><p>Artists, genres, textures and journeys. Each request asked for ten tracks, with at least five needed to pass the count check. All 120 cases completed.</p></div>
+      <div class="results-panel">
+        <table class="results-table">
+          <caption>Live acceptance results—not listening-quality scores</caption>
+          <thead><tr><th scope="col">Recommendation mode</th><th scope="col">At least five tracks</th><th scope="col">All checks passed</th></tr></thead>
+          <tbody>
+            <tr data-mode="acousticbrainz_first"><th scope="row">AcousticBrainz first</th><td data-result="minimum">39/40</td><td data-result="assertions">38/40</td></tr>
+            <tr data-mode="clap_first"><th scope="row">CLAP first</th><td data-result="minimum">39/40</td><td data-result="assertions">38/40</td></tr>
+            <tr data-mode="deejai_only"><th scope="row">Deej-AI only</th><td data-result="minimum">9/40</td><td data-result="assertions">9/40</td></tr>
+          </tbody>
+        </table>
+        <p class="results-note">Every nonempty playlist contained ten tracks and met its artist-variety requirement. There were no recording-duplicate or back-to-back artist failures. The single-artist request is exempt from artist spacing.</p>
+      </div>
+      <div class="findings-grid">
+        <article><h3>A full list isn’t the same as a fulfilled request.</h3><p>Each enhanced mode reported 12 fulfilled playlists, 27 partial results and one request needing clarification. Deej-AI-only reported nine fulfilled, 26 needing clarification and five unsupported. No mode met the five-track target for every prompt.</p></article>
+        <article><h3>What still needs work.</h3><p>Both enhanced modes placed “sparkle” in the wrong intent field and returned no tracks for the David Bowie → Talking Heads journey. Engine-only lacked usable seeds or support for many richer requests. These failures remain in the report.</p></article>
+      </div>
+      <details class="benchmark-details"><summary>Timing, evidence coverage &amp; test conditions</summary><div>
+        <p>Median per-request time: <strong>42.3 s</strong> for AcousticBrainz-first, <strong>28.3 s</strong> for CLAP-first and <strong>0.584 s</strong> for Deej-AI-only. The slowest strict instrumental request took <strong>11.8 minutes</strong> in the first run.</p>
+        <p>This is not a controlled speed comparison. The first mode parsed fresh; the others reused those interpretations, and CLAP-first benefited from warmer caches. Engine-only skipped auxiliary services and could not fulfill most requests. Startup is excluded.</p>
+        <p>Each enhanced run had analyzed preview evidence for 270 of 390 selected tracks, but no selected-track AcousticBrainz comparison scores. Some archive data was available for candidates. Coverage was insufficient to establish which source priority sounds better.</p>
+        <p>Test host: RTX 5060 Laptop GPU with 8 GB VRAM, Linux/WSL2, local Qwen3.5-9B, CPU CLAP, a 956,917-track catalog and an empty taste profile. No held-out listening judgments were used. The full repository check gate passed separately from these live acceptance failures.</p>
+      </div></details>
+      <a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/three-mode-regression.md">Full results &amp; reproduction steps <span aria-hidden="true">↗</span></a>
+      <aside class="performance-note" aria-labelledby="performance-title"><h3 id="performance-title">Less repeated work. Same exact neighbors.</h3><p>A request-local search cache reduced a reference-based, ten-track benchmark from <strong>1.888 s to 0.325 s</strong>—about 5.8× faster, with identical playlists and scoring evidence. This isolates recommendation work: model parsing, provider calls and CLAP are excluded. It is not a whole-app speedup claim.</p><a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md#iterative-generation-and-unused-code-cleanup-2026-09-09">Benchmark method &amp; raw results <span aria-hidden="true">↗</span></a></aside>
     </section>
     <section class="section privacy-section wrap" id="privacy" aria-labelledby="privacy-title">
       <div class="section-heading"><p class="eyebrow">03 / ON YOUR TERMS</p><h2 id="privacy-title">Personal taste.<br /><em>Personal space.</em></h2><p>Your descriptions, language inference, playlist history and taste profile stay on your device. No cloud model receives your prompt.</p></div>
@@ -91,9 +128,10 @@
     </div></section>
     <section class="section wrap questions" aria-labelledby="questions-title"><div><p class="eyebrow">A FEW GOOD QUESTIONS</p><h2 id="questions-title">Before you<br />press play.</h2></div><div class="faq-list">
       <details><summary>Do I need a language model?</summary><p>It’s optional. A local language model helps interpret richer descriptions and infer starting points. Without one, Generate works with the local catalog and asks for a seed artist or track.</p></details>
+      <details><summary>Is Deej-AI-only the same as turning off the LLM?</summary><p>No. The language model interprets your words; the recommendation mode decides how tracks are retrieved and ranked. In the development version, Deej-AI-only can still use a local LLM to interpret a named reference, but it does not verify musical characteristics with CLAP or AcousticBrainz.</p></details>
       <details><summary>Does everything work offline?</summary><p>Language inference, recommendation processing, history and taste profiles stay local. Setup needs downloads, and metadata discovery, preview lookups and Soundiiz handoff use external services. CSV export uses local track details.</p></details>
       <details><summary>Can I use my own CLAP model?</summary><p>Yes, with compatible paired encoders, tokenizer, preprocessing and reference checks. Different checkpoints keep separate embedding caches. Read the <a href="https://github.com/platten/playlistai/blob/v0.8.0/docs/clap-model-candidates.md">custom-bundle guide</a> for the contract and links to training and export documentation.</p></details>
-      <details><summary>Does CLAP work on every build?</summary><p>Native inference was validated on Linux x64 under WSL2. The standard pure-Go Windows build needs a native-enabled build or a legacy bundle with its own worker. Hardened macOS builds still need a signing strategy for downloaded runtimes. See the <a href="https://github.com/platten/playlistai/blob/v0.8.0/docs/clap-model-candidates.md">documented limitations</a> before installing analysis models.</p></details>
+      <details><summary>Does CLAP work on every build?</summary><p>Native inference was validated on Linux x64 under WSL2 and on Windows x64 through the documented development checks. Current native-enabled builds include the worker; setup downloads its compatible model and runtime. Older pure-Go builds may need an upgrade. Windows ARM64 inference, clean Windows runtime prerequisites and hardened macOS signing still need validation. See the <a href="https://github.com/platten/playlistai/blob/main/docs/clap-model-candidates.md">build-specific evidence and limitations</a> before installing analysis models.</p></details>
       <details><summary>How do I upgrade to 0.8.0?</summary><p>Once it is published, install the matching package from <a href="https://github.com/platten/playlistai/releases">GitHub Releases</a>. Existing 0.7.0 binaries do not have the new updater. Version 0.8.0 introduces verified update downloads for supported installations; packaged cross-platform upgrade checks are still pending.</p></details>
       <details><summary>Why might I get fewer tracks than requested?</summary><p>Not every description or recording has enough supporting evidence. Playlist AI explains partial results rather than filling the list with tracks that fail essential requirements. You can refine your description or choose another reference.</p></details>
       <details><summary>Can I build it myself?</summary><p>Absolutely. Playlist AI is GPL-3.0 software built with Go, Wails and React. The <a href="https://github.com/platten/playlistai#readme">repository setup instructions</a> cover the desktop toolchain. Python is not a desktop runtime requirement.</p></details>

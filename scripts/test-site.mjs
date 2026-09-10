@@ -42,9 +42,9 @@ test("local navigation, accessibility references and files exist", () => {
   }
 });
 
-test("versioned documentation links refer to existing files", () => {
+test("documentation links refer to existing files", () => {
   for (const link of links) {
-    const match = link.match(/\/blob\/v0\.8\.0\/([^#]+)(?:#.*)?$/);
+    const match = link.match(/\/blob\/(?:v0\.8\.0|main)\/([^#]+)(?:#.*)?$/);
     if (match) assert.ok(existsSync(new URL(match[1], root)), link);
   }
 });
@@ -57,4 +57,52 @@ test("release measurements retain their evidence and limitations", () => {
   }
   assert.match(html, /not proof of musical fit/);
   assert.match(html, /not typical playlist generation time/);
+});
+
+test("development modes stay separate from public release claims", () => {
+  const section = html.match(/<section[^>]+id="recommendations"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(section, "Recommendation controls section missing");
+  assert.match(section, /DEVELOPMENT PREVIEW \/ NOT IN THE PUBLIC DOWNLOAD/);
+  for (const name of ["AcousticBrainz first", "CLAP first", "Deej-AI only"]) {
+    assert.ok(section.includes(name), name);
+  }
+  assert.match(section, /Needs a resolved catalog artist or track/);
+  assert.match(section, /Priority changes ranking, not permission to ignore exclusions/);
+  assert.match(section, /changing Settings does not rewrite history/);
+});
+
+test("live counts agree with all three recorded regression runs", () => {
+  const report = JSON.parse(readFileSync(new URL("docs/data/three-mode-regression-2026-09-09.json", root)));
+  assert.equal(report.results.length, 120);
+  assert.equal(report.summaries.length, 3);
+  const rows = [...html.matchAll(/<tr data-mode="([^"]+)">([\s\S]*?)<\/tr>/g)];
+  assert.equal(rows.length, 3);
+  assert.equal(new Set(rows.map(row => row[1])).size, 3);
+  for (const [, mode, row] of rows) {
+    const summary = report.summaries.find(item => item.mode === mode);
+    assert.ok(summary, mode);
+    const cases = report.results.filter(item => item.mode === mode);
+    assert.equal(cases.length, summary.cases);
+    assert.equal(cases.filter(item => item.tracks.length >= 5).length, summary.atLeastFive);
+    assert.equal(cases.filter(item => item.errors.length === 0).length, summary.assertionPasses);
+    assert.ok(row.includes(`data-result="minimum">${summary.atLeastFive}/${summary.cases}</td>`), mode);
+    assert.ok(row.includes(`data-result="assertions">${summary.assertionPasses}/${summary.cases}</td>`), mode);
+  }
+});
+
+test("live measurements preserve failure and comparability caveats", () => {
+  assert.match(html, /not listening-quality scores/);
+  assert.match(html, /No mode met the five-track target for every prompt/);
+  assert.match(html, /12 fulfilled playlists, 27 partial results/);
+  assert.match(html, /David Bowie → Talking Heads/);
+  assert.match(html, /not a controlled speed comparison/);
+  assert.match(html, /no selected-track AcousticBrainz comparison scores/);
+  assert.match(html, /No held-out listening judgments were used/);
+  assert.ok(links.includes("https://github.com/platten/playlistai/blob/main/docs/three-mode-regression.md"));
+  const benchmark = readFileSync(new URL("docs/performance-and-model-evaluation.md", root), "utf8");
+  for (const value of ["1.888 s", "0.325 s", "5.8×"]) {
+    assert.ok(html.includes(value), value);
+    assert.ok(benchmark.includes(value), `Missing benchmark source: ${value}`);
+  }
+  assert.match(html, /not a whole-app speedup claim/);
 });

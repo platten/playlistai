@@ -37,6 +37,7 @@ try {
   if (await page.locator('h1').count() !== 1) throw Error('Expected one main heading');
   await page.keyboard.press('Tab');
   if (await page.evaluate(() => document.activeElement.textContent) !== 'Skip to content') throw Error('Skip link not first keyboard target');
+  await page.evaluate(() => document.activeElement.blur());
   if (await page.locator('.studio-screenshot[alt]').count() !== 1) throw Error('Hero screenshot missing alt text');
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
@@ -45,6 +46,8 @@ try {
   if (!(await page.locator('.release-link').innerText()).includes('COMING IN VERSION 0.8.0')) throw Error('Draft release incorrectly advertised');
   if (!(await page.locator('.version-label').innerText()).includes('PUBLIC DOWNLOAD / 0.7.0')) throw Error('Public download version unclear');
   if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
+  if (await page.locator('#recommendations .mode-card').count() !== 3) throw Error('Recommendation modes missing');
+  if (await page.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing');
   await page.getByRole('link', {name:'Read the 0.8.0 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
@@ -53,6 +56,11 @@ try {
     const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(e).position !== 'absolute').map(e => e.className));
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error(`Horizontal overflow at ${width}: ${overflow}`);
     await page.screenshot({path:path.join(output,`site-${width}.png`),fullPage:true});
+    if (width === 1440 || width === 390) {
+      const style = '.site-header,.skip-link{visibility:hidden!important}';
+      await page.locator('#recommendations').screenshot({path:path.join(output,`modes-${width}.png`),style});
+      await page.locator('#regression').screenshot({path:path.join(output,`regression-${width}.png`),style});
+    }
   }
   await page.getByRole('button', {name:'Open navigation'}).click();
   await page.getByRole('link', {name:'The experience',exact:true}).waitFor();
@@ -65,6 +73,9 @@ try {
   if (await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior) !== 'auto') throw Error('Reduced motion ignored');
   await page.getByText('Does CLAP work on every build?', {exact:true}).click();
   await page.getByText('Native inference was validated', {exact:false}).waitFor();
+  await page.getByText('Timing, evidence coverage & test conditions', {exact:true}).click();
+  if (await page.locator('.benchmark-details').getAttribute('open') === null) throw Error('Benchmark details did not open');
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded benchmark overflow');
   await page.getByText('Packages & portable downloads', {exact:true}).click();
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded download overflow');
   await page.screenshot({path:path.join(output,'site-mobile-expanded.png'),fullPage:true});
@@ -73,6 +84,8 @@ try {
   await noJS.getByRole('link', {name:'Download for Windows',exact:false}).waitFor();
   if (await noJS.locator('.experience-grid .feature').count() !== 4) throw Error('Content missing without JavaScript');
   if (await noJS.locator('.measurement-grid article').count() !== 3) throw Error('Measurements missing without JavaScript');
+  if (await noJS.locator('#recommendations .mode-card').count() !== 3) throw Error('Modes missing without JavaScript');
+  if (await noJS.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing without JavaScript');
   await noJS.close();
   if (process.argv.includes('--social')) {
     await page.setViewportSize({width:1200,height:630});

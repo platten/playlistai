@@ -9,6 +9,7 @@ import {
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
+import { RecommendationSettings } from "../components/RecommendationSettings";
 
 /** ggml-org's official llama.cpp installer landing page. */
 const LLAMA_INSTALLER_URL = "https://llama.app";
@@ -94,6 +95,8 @@ export function SettingsScreen() {
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 py-8 sm:px-8">
       <h1 className="text-[16px] font-semibold">Settings</h1>
+
+      <RecommendationSettings />
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">

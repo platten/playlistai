@@ -11,9 +11,36 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// This bounded auxiliary weight is deliberately independent of CLAP cosine.
-// It is a transparent pilot default, not tuned on held-out listener judgments.
-const acousticIntentWeight = .15
+// Archived classifier margins lead descriptive ranking, ahead of the default
+// .35 semantic weight. This is an explicit source preference, not a calibrated
+// probability or a default tuned on held-out listener judgments.
+const acousticIntentWeight = .55
+
+func acousticWeight(intent core.MusicIntent) float64 {
+	if intent.Controls.RecommendationMode == core.CLAPFirst {
+		return .15
+	}
+	return acousticIntentWeight
+}
+
+// Scored CLAP clauses lead in CLAP-first mode, including uncalibrated soft
+// comparisons. Suppress only overlapping archive ranking contributions, never
+// the original evidence used for strict screening and disagreement reporting.
+func preferCLAPRanking(comparisons []core.IntentComparison, preview core.AudioAssessment) []core.IntentComparison {
+	covered := map[core.AudioClause]bool{}
+	for _, a := range preview.Clauses {
+		if a.ScoreAvailable {
+			covered[a.Clause] = true
+		}
+	}
+	out := append([]core.IntentComparison(nil), comparisons...)
+	for i := range out {
+		if covered[out[i].Clause] {
+			out[i].AcousticScore = nil
+		}
+	}
+	return out
+}
 
 // Map only class meanings supported by the source ontology. In particular,
 // mood_electronic is not a genre and genre_electronic is a conditional subgenre
@@ -171,7 +198,71 @@ func acousticCompatible(comparisons []core.IntentComparison) bool {
 // request-owned evidence snapshot, never stale preparation-only metadata.
 func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Candidate, request ports.RankRequest) ([]core.Candidate, error) {
 	request.Intent.Knowledge = o.knowledge
+	if o.audioSession != nil {
+		request.PreviewAssessments = make(map[string]core.AudioAssessment, len(candidates))
+		for _, candidate := range candidates {
+			if a, ok := o.audioSession.Assessment(candidate.Track.ID); ok {
+				request.PreviewAssessments[candidate.Track.ID] = a
+			}
+		}
+	}
 	return o.ranker.Rank(ctx, candidates, request)
+}
+
+// Prefer decisive, identity-grounded archived predictions for overlapping
+// concepts. Preview evidence is retained for explanations and strict checks;
+// only its duplicate ranking contribution is removed. Missing/weak/conflicting
+// archive evidence leaves CLAP in charge of that clause. Original clause counts
+// remain denominators, so suppressing a clause never boosts the remaining ones.
+func preferAcousticRanking(candidate *core.Candidate, comparisons []core.IntentComparison, preview core.AudioAssessment) {
+	covered := map[core.AudioClause]bool{}
+	for _, c := range comparisons {
+		if c.AcousticState == "supporting" || c.AcousticState == "opposing" {
+			covered[c.Clause] = true
+		}
+	}
+	if len(covered) == 0 {
+		return
+	}
+	var positive, negative float64
+	var positives, negatives int
+	positiveAvailable, negativeAvailable := false, false
+	stages := map[string]float64{}
+	stageCounts := map[string]int{}
+	for _, a := range preview.Clauses {
+		score := 0.0
+		if a.ScoreAvailable && !covered[a.Clause] {
+			score = a.Score
+		}
+		if a.Clause.Negative {
+			negatives++
+			negative += score
+			negativeAvailable = negativeAvailable || a.ScoreAvailable
+		} else {
+			positiveAvailable = positiveAvailable || a.ScoreAvailable
+			if strings.HasPrefix(a.Clause.Scope, "journey_") {
+				stages[a.Clause.Scope] += score
+				stageCounts[a.Clause.Scope]++
+			} else {
+				positives++
+				positive += score
+			}
+		}
+	}
+	if len(stages) > 0 {
+		best := -1.0
+		for scope, score := range stages {
+			best = max(best, score/float64(stageCounts[scope]))
+		}
+		positive += best
+		positives++
+	}
+	if positiveAvailable {
+		candidate.Scores.SemanticMatch = positive / float64(max(1, positives))
+	}
+	if negativeAvailable {
+		candidate.Scores.SemanticNegativeMatch = negative / float64(max(1, negatives))
+	}
 }
 
 func mergePreviewComparisons(comparisons []core.IntentComparison, preview []core.AudioClauseAssessment) {

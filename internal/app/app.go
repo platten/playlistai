@@ -64,15 +64,16 @@ type Container struct {
 	// model is ready; preview provider from Settings/the first-run wizard), so
 	// they sit behind accessor methods rather than bare fields. Every field
 	// below the mutex is guarded by it.
-	mu          sync.Mutex
-	parser      ports.IntentParser
-	rulesParser ports.IntentParser
-	llama       *llama.Parser // active managed llama parser, if any
-	modelPath   string
-	modelID     string
-	preview     ports.PreviewProvider
-	previewName string
-	closers     []func() error
+	mu                 sync.Mutex
+	parser             ports.IntentParser
+	rulesParser        ports.IntentParser
+	llama              *llama.Parser // active managed llama parser, if any
+	modelPath          string
+	modelID            string
+	preview            ports.PreviewProvider
+	previewName        string
+	recommendationMode core.RecommendationMode
+	closers            []func() error
 }
 
 // New validates config, ensures the data directory exists, wires the intent
@@ -100,6 +101,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 
 	c := &Container{cfg: cfg, log: log}
+	c.recommendationMode = core.RecommendationMode(prefs.RecommendationMode)
 	if hs, err := history.Open(cfg.DataDir); err != nil {
 		log.Warn("playlist history unavailable; continuing without it", "err", err)
 	} else {
@@ -221,6 +223,8 @@ func (c *Container) SetPreviewProvider(provider string) error {
 	}
 	c.wirePreview(provider)
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	prefs := config.LoadPrefs(c.cfg.DataDir)
 	prefs.PreviewProvider = provider
 	if err := prefs.Save(c.cfg.DataDir); err != nil {
@@ -233,11 +237,15 @@ func (c *Container) SetPreviewProvider(provider string) error {
 // Onboarded reports whether the first-run wizard has been completed (or
 // explicitly skipped).
 func (c *Container) Onboarded() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return config.LoadPrefs(c.cfg.DataDir).OnboardingDone
 }
 
 // SetOnboarded marks the first-run wizard done, persisting the flag.
 func (c *Container) SetOnboarded() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	prefs := config.LoadPrefs(c.cfg.DataDir)
 	prefs.OnboardingDone = true
 	return prefs.Save(c.cfg.DataDir)
@@ -418,9 +426,9 @@ func (c *Container) LoadCatalog() error {
 	c.RegisterCloser(cat.Close)
 	c.Sim = brute.New(cat)
 	c.BaselineReco = deejai.New(cat, c.Sim, cat)
-	if c.cfg.Recommendation.Strategy == config.RecommendationDeejAI {
-		c.Reco = c.BaselineReco
-	} else {
+	{
+		// Wire both engines once. Settings choose a request-local engine without
+		// swapping shared services while a generation is running.
 		rc := c.cfg.Recommendation
 		mc := multichannel.DefaultConfig()
 		mc.SeedAudioBudget = rc.SeedAudioBudget

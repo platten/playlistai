@@ -177,6 +177,8 @@ func (c *Container) SetModel(ctx context.Context, modelPath, modelID string) err
 	}
 
 	c.setLlama(p, modelPath, modelID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	prefs := config.LoadPrefs(c.cfg.DataDir)
 	prefs.ModelPath, prefs.ModelID = modelPath, modelID
 	if serr := prefs.Save(c.cfg.DataDir); serr != nil {
@@ -204,6 +206,8 @@ func (c *Container) DownloadModel(ctx context.Context, id string, p ports.Progre
 // ClearModel stops llama-server and reverts to the rules parser.
 func (c *Container) ClearModel() error {
 	c.setLlama(nil, "", "")
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	prefs := config.LoadPrefs(c.cfg.DataDir)
 	prefs.ModelPath, prefs.ModelID = "", ""
 	if serr := prefs.Save(c.cfg.DataDir); serr != nil {

@@ -198,6 +198,7 @@ func (a *API) recordExposures(ctx context.Context, request BuildPlaylistRequest,
 		return
 	}
 	versions := a.feedbackVersions()
+	versions.Recommendation = a.recommendationVersionFor(result.Intent)
 	events := make([]core.FeedbackEvent, 0, len(result.Tracks))
 	for position, track := range result.Tracks {
 		requestID := request.RequestID

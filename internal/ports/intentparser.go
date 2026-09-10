@@ -10,6 +10,7 @@ import (
 // context. No catalog data is ever passed in — the parser must not see track
 // lists or embeddings.
 type IntentInput struct {
+	SkipMetadata bool // desktop engine-only policy; not a model-generated field
 	GenerationID string
 	Prompt       string
 	SessionID    string

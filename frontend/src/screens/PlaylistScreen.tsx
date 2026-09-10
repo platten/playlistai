@@ -72,6 +72,8 @@ export function PlaylistScreen({
     initialResultMatches ? initialResult : null,
   );
   const [busy, setBusy] = useState(!initialResultMatches);
+  const recommendationMode = result?.intent.controls.recommendationMode || initial?.recommendationMode || "acousticbrainz_first";
+  const engineOnly = recommendationMode === "deejai_only";
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const discogsSources = [...new Set((result?.intent ?? request.intent)?.knowledge?.sources ?? [])]
@@ -248,6 +250,7 @@ export function PlaylistScreen({
           <h1 className="truncate text-[15px] font-semibold">{heading}</h1>
           <p className="text-[12px] text-faint">
             {isJourney ? "journey" : "similarity walk"} · {tracks.length} tracks
+            {` · ${engineOnly ? "Deej-AI only" : recommendationMode === "clap_first" ? "CLAP first" : "AcousticBrainz first"}`}
             {result ? ` · seed ${result.seed}` : ""}
           </p>
         </div>
@@ -331,7 +334,7 @@ export function PlaylistScreen({
         />
         <Slider
           label="Discovery"
-          help="How far the playlist explores beyond the closest matches. Higher values introduce more exploratory candidates and give more weight to unfamiliar music when listening history is available. Lower values stay closer to familiar territory. Your exclusions still apply."
+          help={engineOnly ? "Adds seeded noise to the original embedding walk. Higher values wander farther from your references. No listening-history personalization is used." : "How far the playlist explores beyond the closest matches. Higher values introduce more exploratory candidates and give more weight to unfamiliar music when listening history is available. Lower values stay closer to familiar territory. Your exclusions still apply."}
           value={discovery}
           onValueChange={setDiscovery}
           format={(v) => v.toFixed(2)}
@@ -340,7 +343,7 @@ export function PlaylistScreen({
         />
         <Slider
           label="Transition smoothness"
-          help="How much similarity between neighboring songs influences their order. Higher values favor gentler changes from one song to the next; lower values allow sharper changes. This adjusts the playlist order, not playback crossfading."
+          help={engineOnly ? "Controls how many recent selections the original embedding walk considers when choosing its next track. This is not playback crossfading." : "How much similarity between neighboring songs influences their order. Higher values favor gentler changes from one song to the next; lower values allow sharper changes. This adjusts the playlist order, not playback crossfading."}
           value={transitionSmoothness}
           onValueChange={setTransitionSmoothness}
           format={(v) => v.toFixed(2)}
@@ -349,7 +352,8 @@ export function PlaylistScreen({
         />
         <Slider
           label="Artist diversity"
-          help="How strongly the playlist favors a wider mix of artists and spaces out repeat appearances. Higher values encourage more variety; lower values allow more concentration on the same artists. Available matches and your explicit repeat rules still constrain the result."
+          disabled={engineOnly}
+          help={engineOnly ? "Not used by the original Deej-AI walk. Explicit no-back-to-back artist requirements still apply." : "How strongly the playlist favors a wider mix of artists and spaces out repeat appearances. Higher values encourage more variety; lower values allow more concentration on the same artists. Available matches and your explicit repeat rules still constrain the result."}
           value={artistDiversity}
           onValueChange={setArtistDiversity}
           format={(v) => v.toFixed(2)}
@@ -446,14 +450,14 @@ export function PlaylistScreen({
                           <span className="text-text">{comparison.clause.negative ? "Avoid: " : ""}{comparison.clause.text}</span>
                           {comparison.clause.scope.startsWith("journey_") && <span className="text-faint"> · {comparison.clause.scope.replace(/_/g, " ")}</span>}
                           <span className="block text-faint">
-                            Preview: {comparison.previewState === "match" ? "supports the request" : comparison.previewState === "mismatch" ? "opposes the request" : comparison.previewScore != null ? "compared; fit is unverified" : "no usable comparison"}.
-                            {" "}AcousticBrainz: {comparison.acousticState === "unknown" ? "insufficient evidence" : comparison.acousticState}.
+                            AcousticBrainz: {comparison.acousticState === "unknown" ? "insufficient evidence" : comparison.acousticState}.
+                            {" "}Preview: {comparison.previewState === "match" ? "supports the request" : comparison.previewState === "mismatch" ? "opposes the request" : comparison.previewScore != null ? "compared; fit is unverified" : "no usable comparison"}.
                           </span>
                           {comparison.conflict && <span className="block text-warn">The evidence disagrees; review this track.</span>}
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-faint">Predictions guide suggestions, not guarantee the full recording’s characteristics.</p>
+                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
                   </div>
                 )}
                 {expanded.has(i) && acoustic && (acoustic.low || Object.keys(acoustic.predictions ?? {}).length > 0) && (

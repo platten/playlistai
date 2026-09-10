@@ -30,3 +30,11 @@ type SimilarityEngine interface {
 	// Len is the number of indexed tracks.
 	Len() int
 }
+
+// SimilaritySessionProvider optionally supplies a request-owned search engine.
+// Sessions retain no state between generations and need not support concurrent
+// callers. Creating independent sessions on the shared provider must be safe.
+// Implementations must preserve Search scores, ordering, and exclusions.
+type SimilaritySessionProvider interface {
+	NewSearchSession() SimilarityEngine
+}

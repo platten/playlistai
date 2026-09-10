@@ -546,6 +546,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if err := ctx.Err(); err != nil {
 		return core.Playlist{}, err
 	}
+	if o.candidateSource != nil {
+		if retriever, ok := o.retriever.(*Retriever); ok {
+			o.retriever = retriever.withSearchSession()
+		}
+	}
 	intent := request.Intent.Normalized()
 	o.bestAvailable = intent.VerificationPolicy == core.BestAvailable
 	o.knowledge = intent.Knowledge

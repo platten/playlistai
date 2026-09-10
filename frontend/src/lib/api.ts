@@ -6,6 +6,7 @@ export { API } from "../../bindings/github.com/platten/playlistai/internal/bridg
 export {
   FeedbackScope,
   FeedbackType,
+  RecommendationMode,
 } from "../../bindings/github.com/platten/playlistai/internal/core";
 export type {
   BuildPlaylistRequest,

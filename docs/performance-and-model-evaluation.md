@@ -1,5 +1,67 @@
 # Retrieval and Local Intent Model Evaluation
 
+## Iterative generation and unused-code cleanup (2026-09-09)
+
+CPU profiling of the desktop's reference-based iterative generation path put
+94.2% of sampled CPU time in exact similarity scans (76.9% directly in dot
+products). Each accepted track caused another retrieval, repeatedly scanning
+the same catalog for unchanged reference and recent-continuation queries.
+
+The exact backend now offers a **request-owned search session**. It caches an
+unexcluded, score-ordered prefix for each vector/weight query and reapplies the
+current exclusions on every call. Enough surviving matches yield exactly the
+same top-K; otherwise the prefix expands or falls back to uncached exact search.
+The cache never substitutes approximate neighbors or changes eligibility,
+ranking, artist diversity, exploration sampling, or journey order.
+
+Keys own the exact vector/weight bits and dimensions. Each session belongs to
+one immutable catalog engine and one generation; no cached search survives a
+rebuild or leaks between requests. An LRU bounds storage to 64 queries and
+4,096 matches per query (at most about 8 MiB of match records, plus keys and
+temporary search allocations). Large exclusion sets retain the exact fallback.
+Other similarity backends are unchanged unless they implement the optional
+session factory. No algorithm/history version change is needed for equivalent
+output, and no ANN backend or new model was added.
+
+Measured with Go 1.27.1, Linux/amd64 under WSL2, Core Ultra 9 285H, 16 logical
+CPUs, and the installed 956,917-track catalog. The benchmark generates ten
+tracks from Boards of Canada with seed `42` using the iterative path. It
+compares the **entire playlist and scoring evidence** between implementations
+before timing. Each row summarizes three samples of three iterations.
+
+| Same-binary implementation | Median | Range | Median allocated bytes/op | Median allocations/op |
+| --- | ---: | ---: | ---: | ---: |
+| Uncached exact retrieval | 1.888 s | 1.711–1.915 s | 32,387,048 | 499,040 |
+| Request-scoped exact cache | 0.325 s | 0.315–0.347 s | 27,100,253 | 394,942 |
+
+This fixture is approximately **5.8× faster**, with 16% fewer allocated bytes
+and 21% fewer allocations. Catalog opening, engine initialization, LLM parsing,
+provider access, and CLAP inference are excluded. These measurements do not
+claim the same speedup for a complete desktop request or improved musical
+quality. Raw observations are [saved here](data/retrieval-session-2026-09-09.json).
+
+The audio candidate loop also stops creating and hashing a complete evidence
+snapshot just to inspect stop/budget flags. With 200 synthetic assessments,
+median polling cost changed from 180 microseconds and 156,897 allocated bytes
+to a zero-allocation status check. Evidence snapshots are still generated for
+history, with unchanged identifiers and cancellation/budget semantics.
+
+Four historical non-incremental MMR helpers (`maxRedundancy`,
+`artistConcentration`, `albumConcentration`, `diversityPenalty`) were used only
+by tests. They now live in `selector_oracle_test.go`, preserving the independent
+equivalence oracle without keeping obsolete selection code in production
+source. The linker already discarded unused functions; this is source cleanup,
+not a claimed executable-size improvement.
+
+```sh
+PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test ./internal/reco/multichannel \
+  -run '^$' -bench '^BenchmarkCatalogIterativeGeneration$' \
+  -benchtime=3x -count=3 -benchmem
+go test ./internal/audio -run '^$' -bench '^BenchmarkSessionStopPolling$' \
+  -benchtime=300ms -count=3 -benchmem
+go test -race ./internal/similarity/brute ./internal/reco/multichannel ./internal/audio
+```
+
 ## Artist discovery lookup (2026-09-08)
 
 The review follow-up measured `ArtistRecordings` on the installed 956,917-track

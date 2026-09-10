@@ -10,6 +10,7 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/intent/schema"
@@ -17,6 +18,18 @@ import (
 	"github.com/platten/playlistai/internal/reco/multichannel"
 	"github.com/platten/playlistai/internal/resolution"
 )
+
+func TestMetadataConfigAcousticBrainzParity(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		cfg := metadataConfig("cache.sqlite", "metadata.sqlite", enabled)
+		if (cfg.AcousticBrainzURL == musicbrainz.AcousticBrainzURL) != enabled || cfg.CachePath != "cache.sqlite" || cfg.DatasetPath != "metadata.sqlite" {
+			t.Fatalf("incorrect runner configuration: %+v", cfg)
+		}
+		if !enabled && cfg.AcousticBrainzURL != "" {
+			t.Fatal("historical baseline unexpectedly enabled archive lookups")
+		}
+	}
+}
 
 // These tests exercise reviewed interpretation contracts through real parsing,
 // resolution and generation with synthetic recordings. The musiccheck command

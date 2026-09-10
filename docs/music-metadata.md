@@ -148,6 +148,11 @@ smoke test was run for the new expanded-row details.
 
 ## Intent versus recorded analysis (multichannel/v15)
 
+**Current controls:** [Settings → Recommendations](recommendation-settings.md)
+can prefer AcousticBrainz, prefer CLAP, or use the original embedding walk alone.
+The policy below describes the AcousticBrainz-first default; v18 adds the
+explicit CLAP-first override and an engine-only desktop path.
+
 AcousticBrainz is now a separate input to intent assessment, not just displayed
 metadata. The engine reuses the same structured clauses as CLAP, including
 positive/negative influence, essential/strict flags and journey scope. It does
@@ -179,7 +184,16 @@ Journey candidates may fit any stage globally but are checked against the
 specific stage when assigning waypoints. Soft opposition affects ranking,
 not hard eligibility.
 
-The auxiliary ranking weight is 0.15 with the existing request-wide denominator.
+As of `multichannel/v17`, the AcousticBrainz ranking weight is **0.55** (previously
+0.15), ahead of the default semantic/CLAP weight of **0.35**, with the existing
+request-wide denominator. This implements an explicit source preference, not
+a claim that classifier margins and CLAP cosine are calibrated equivalents.
+For clauses with decisive supporting/opposing archived predictions, the same
+clause's preview contribution is zeroed **for ranking only**. Its original
+evidence remains available for eligibility, disagreement reporting and replay.
+Weak, missing, identity-mismatched or internally conflicting archived evidence
+does not suppress CLAP. Uncovered concepts retain their preview contribution;
+removing overlapping contributions does not amplify the remaining clauses.
 Scores use a fixed clause denominator; missing clauses contribute zero rather
 than boosting tracks with less evidence. Journey stages are alternatives (best
 stage), not simultaneous demands. Both iterative completion and final ranking
@@ -191,15 +205,44 @@ archived prediction status. CLAP comparisons without a calibrated decision stay
 unverified. Opposing soft predictions or cross-source disagreements make the
 result partial with a review action. Comparisons and model evidence survive
 history serialization; old records load with the new optional fields absent.
-The algorithm version changes to v15 so generation identities do not reuse v14
-ranking as equivalent work.
+The initial comparison contract used v15; source-priority ranking uses v17, so
+generation identities do not reuse earlier ranking as equivalent work. Intent
+and saved-history schemas are unchanged; old playlists still load as saved,
+while regenerating them uses the new ranking version.
 
-Limitations: these thresholds and the auxiliary weight are conservative pilot
+Limitations: these thresholds and the source weights are explicit pilot
 rules, not held-out musical-quality measurements. BPM/key remain descriptive
 measurements; this change does not invent tempo limits or acoustic-energy
 constraints from prose. Archived data and previews can both be wrong or cover
 different versions; no full-recording guarantee is made. Downloaded dump archives
 are not automatically queried until an importer/index is implemented.
+
+This changes reliance in **ranking**, not preview authorization or strict-check
+requirements. It does not skip all CLAP inference/downloads or remove the model
+setup requirement for requests that need it. Neither archive absence nor an
+unmapped genre excludes a genre from the application: other evidence paths
+remain available, subject to the request's verification policy.
+
+### Exercising AcousticBrainz in evaluations
+
+`cmd/musiccheck -online` now enables the same optional AcousticBrainz endpoint
+as the desktop. Add `-acousticbrainz=false` to reproduce the older runner's
+disabled-archive configuration. Reports include `acousticBrainzEnabled`; this
+records lookup configuration, not a promise that every selected track has data.
+Replay can retain previously saved evidence even when fresh lookups are disabled.
+Normal seven-day caching and bounded outage fallback remain unchanged.
+
+Live availability smoke test, 2026-09-09: one known recording returned 15
+classifiers and duration evidence in **1.174 s** for the two-endpoint cold
+lookup; its warm per-recording lookup took **136 µs**. Reproduce with:
+
+```sh
+PLAYLISTAI_LIVE_ACOUSTICBRAINZ=1 go test ./internal/enrich/musicbrainz -run '^TestLiveAcousticBrainz$' -count=1 -v
+```
+
+This single-recording observation is not a coverage survey, throughput benchmark,
+or held-out quality evaluation. The earlier 40-prompt measurements did not
+enable this endpoint and must not be cited as validation of v17's source weights.
 
 ## Discogs discovery details
 

@@ -86,10 +86,18 @@ func (s *Session) Close() {
 
 func (s *Session) Calibrated() bool { return s.service.Policy.Valid() }
 
-func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
+// ShouldStop checks cancellation and the existing budget flags without copying,
+// sorting or hashing every assessment. Poll this in candidate loops; materialize
+// a full Snapshot only when returning evidence to the caller/history.
+func (s *Session) ShouldStop() bool {
 	if s.ctx != nil {
 		s.stopped()
 	}
+	return s.snapshot.Stopped || s.snapshot.BudgetExhausted
+}
+
+func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
+	s.ShouldStop()
 	s.snapshot.ElapsedMilliseconds = time.Since(s.started).Milliseconds()
 	out := s.snapshot
 	// Execution timings and cache hits do not change the evidence's identity.
@@ -315,6 +323,13 @@ func segmentSimilarity(query []float32, segments []core.AudioSegment, negative b
 		return best
 	}
 	return total / float64(len(segments))
+}
+
+// Assessment returns request-local evidence for read-only scoring. Callers must
+// not mutate its slices; the session owns the evidence until generation ends.
+func (s *Session) Assessment(trackID string) (core.AudioAssessment, bool) {
+	a, ok := s.checked[trackID]
+	return a, ok
 }
 
 func (s *Session) Criterion(trackID string, criterion core.MusicalCriterion) core.EvidenceState {

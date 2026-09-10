@@ -421,7 +421,7 @@ func (s *GreedySequencer) candidateReason(candidate core.Candidate, request port
 
 func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Config) []core.ComponentEvidence {
 	return []core.ComponentEvidence{
-		{Component: "acousticbrainz_intent", Score: candidate.Scores.AcousticIntent, Weight: acousticIntentWeight, Available: candidate.Available.AcousticIntent, Detail: "signed classifier class margins against intent; unknown concepts contribute zero, predictions do not establish strict eligibility"},
+		{Component: "acousticbrainz_intent", Score: candidate.Scores.AcousticIntent, Weight: acousticWeight(intent), Available: candidate.Available.AcousticIntent, Detail: "signed classifier margins; ranking overlap follows the saved source priority, predictions do not establish strict eligibility"},
 		{Component: "audio_seed_affinity", Score: candidate.Scores.AudioSeedAffinity, Weight: intent.Controls.AudioWeight, Available: candidate.Available.AudioSeedAffinity},
 		{Component: "cooccurrence_seed_affinity", Score: candidate.Scores.CooccurrenceAffinity, Weight: intent.Controls.CooccurrenceWeight, Available: candidate.Available.CooccurrenceAffinity},
 		{Component: "listener_affinity", Score: candidate.Scores.ListenerAffinity, Weight: cfg.ListenerWeight, Available: candidate.Available.ListenerAffinity},
@@ -429,7 +429,7 @@ func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Conf
 		{Component: "recent_exposure", Score: candidate.Scores.RecentExposure, Weight: -cfg.ExposurePenalty, Available: candidate.Available.RecentExposure},
 		{Component: "listener_novelty", Score: candidate.Scores.Novelty, Weight: cfg.NoveltyWeight * intent.Controls.Discovery, Available: candidate.Available.Novelty},
 		{Component: "reciprocal_rank_fusion", Score: candidate.Scores.RetrievalFusion, Weight: cfg.RetrievalWeight, Available: candidate.Available.RetrievalFusion},
-		{Component: "semantic_text_match", Score: candidate.Scores.SemanticMatch, Weight: cfg.SemanticWeight, Available: candidate.Available.SemanticMatch, Detail: "text comparison with sidecar descriptions or analyzed preview audio; see generation evidence for source and coverage"},
+		{Component: "semantic_text_match", Score: candidate.Scores.SemanticMatch, Weight: cfg.SemanticWeight, Available: candidate.Available.SemanticMatch, Detail: "sidecar or preview comparison; ranking overlap follows the saved source priority; raw evidence remains available"},
 		{Component: "semantic_negative_match", Score: candidate.Scores.SemanticNegativeMatch, Weight: -cfg.SemanticNegativePenalty, Available: candidate.Available.SemanticNegativeMatch, Detail: "negative semantic preference"},
 	}
 }

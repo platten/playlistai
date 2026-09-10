@@ -358,7 +358,7 @@
     "other": "Focused rules/schema/audio/recommendation/bridge/preview/musiccheck tests passed; git diff --check passed."
   },
   "limitations": [
-    "The desktop enables optional AcousticBrainz enrichment, but musiccheck omitted AcousticBrainzURL. These runs did not exercise its lookup or scoring contribution; this runner parity gap remains follow-up work.",
+    "The desktop enables optional AcousticBrainz enrichment, but musiccheck omitted AcousticBrainzURL in these historical runs. They did not exercise its lookup or scoring contribution. The current runner enables it with -online, but these results are not measurements of the later v17 source-priority policy.",
     "40/40 is a result for these cases and installed assets, not a guarantee for every prompt, seed, provider state or catalog.",
     "27 outcomes remain partial because CLAP similarity is uncalibrated and only preview segments were assessed; 13 reference-only outcomes are fulfilled.",
     "No held-out human listening assessment, calibrated genre accuracy, exact tempo or measured perceptual-energy trajectory was established.",

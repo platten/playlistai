@@ -21,6 +21,7 @@ import (
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
+	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/reco/multichannel"
 	"github.com/platten/playlistai/internal/resolution"
 	"github.com/platten/playlistai/internal/similarity/brute"
@@ -48,22 +49,34 @@ type promptCase struct {
 	OnlyArtist      string   `json:"onlyArtist"`
 }
 type result struct {
-	Algorithm       string           `json:"algorithmVersion"`
-	Catalog         string           `json:"catalogVersion"`
-	Parser          ports.ParserInfo `json:"parser"`
-	ParseOnly       bool             `json:"parseOnly,omitempty"`
-	ParserFallback  string           `json:"parserFallback,omitempty"`
-	ParserIssues    []string         `json:"parserIssues,omitempty"`
-	Prompt          string           `json:"prompt"`
-	Errors          []string         `json:"errors"`
-	Milliseconds    int64            `json:"milliseconds"`
-	Replayed        bool             `json:"replayed,omitempty"`
-	CachedAudioOnly bool             `json:"cachedAudioOnly,omitempty"`
-	Playlist        core.Playlist    `json:"playlist"`
-	Intent          core.MusicIntent `json:"intent"`
+	RecommendationMode    core.RecommendationMode `json:"recommendationMode"`
+	ParsedIntent          core.MusicIntent        `json:"parsedIntent"`
+	ReplayedParsedIntent  bool                    `json:"replayedParsedIntent,omitempty"`
+	Algorithm             string                  `json:"algorithmVersion"`
+	Catalog               string                  `json:"catalogVersion"`
+	Parser                ports.ParserInfo        `json:"parser"`
+	ParseOnly             bool                    `json:"parseOnly,omitempty"`
+	ParserFallback        string                  `json:"parserFallback,omitempty"`
+	ParserIssues          []string                `json:"parserIssues,omitempty"`
+	Prompt                string                  `json:"prompt"`
+	Errors                []string                `json:"errors"`
+	Milliseconds          int64                   `json:"milliseconds"`
+	Replayed              bool                    `json:"replayed,omitempty"`
+	CachedAudioOnly       bool                    `json:"cachedAudioOnly,omitempty"`
+	AcousticBrainzEnabled bool                    `json:"acousticBrainzEnabled"`
+	Playlist              core.Playlist           `json:"playlist"`
+	Intent                core.MusicIntent        `json:"intent"`
 }
 
 type cachedPreviewsOnly struct{}
+
+func metadataConfig(cachePath, datasetPath string, acousticBrainz bool) musicbrainz.Config {
+	cfg := musicbrainz.Config{UserAgent: "PlaylistAI/0.8 (https://github.com/platten/playlistai)", CachePath: cachePath, DatasetPath: datasetPath}
+	if acousticBrainz {
+		cfg.AcousticBrainzURL = musicbrainz.AcousticBrainzURL
+	}
+	return cfg
+}
 
 func (cachedPreviewsOnly) ResolveAudioPreview(context.Context, core.TrackRef, core.EnrichedTrack) (core.ResolvedAudioPreview, error) {
 	return core.ResolvedAudioPreview{}, core.ErrUnavailable
@@ -85,6 +98,8 @@ func main() {
 func run() error {
 	model := flag.String("model", "", "GGUF path")
 	runtime := flag.String("runtime", "", "llama-server path")
+	serverURL := flag.String("server-url", "", "reuse an already-running local llama server without managing its process")
+	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: acousticbrainz_first, clap_first, or deejai_only")
 	parseOnly := flag.Bool("parse-only", false, "evaluate interpretation only; not a playlist acceptance run")
 	catalogDir := flag.String("catalog", "", "catalog directory")
 	fixture := flag.String("prompts", "internal/evaluation/testdata/music-prompts-v8.json", "prompt expectations JSON")
@@ -94,13 +109,19 @@ func run() error {
 	minimum := flag.Int("min-tracks", 1, "minimum eligible output tracks required to pass each case")
 	minArtists := flag.Int("min-artists", 0, "minimum distinct artists for non-artist-only requests")
 	online := flag.Bool("online", false, "allow extracted music-term metadata lookups")
+	acousticBrainz := flag.Bool("acousticbrainz", true, "include optional archived AcousticBrainz evidence with -online; disable for historical baselines")
 	single := flag.String("case", "", "optional exact prompt")
 	bundle := flag.String("bundle", "", "optional parity-validated CLAP bundle; permits Deezer preview analysis")
 	analysisDir := flag.String("analysis-dir", "/tmp/musiccheck-analysis", "persistent derived-feature directory (no audio files)")
 	count := flag.Int("count", 0, "override track count for every evaluated prompt")
 	replay := flag.String("replay", "", "reuse LLM intents and metadata from an earlier musiccheck report")
+	replayParsed := flag.Bool("replay-parsed", false, "with -replay, use raw parsed intents rather than discovered metadata for a paired mode comparison")
 	cacheOnly := flag.Bool("cached-audio-only", false, "check reusable CLAP features without retrieving new previews")
 	flag.Parse()
+	mode := core.RecommendationMode(*modeFlag)
+	if mode == "" || !mode.Valid() || *replayParsed && *replay == "" {
+		return fmt.Errorf("invalid mode or replay-parsed requires replay")
+	}
 	if *count < 0 || *minimum < 1 || *minArtists < 0 || (*count > 0 && *minimum > *count) || *cacheOnly && *bundle == "" {
 		return fmt.Errorf("count must be nonnegative and at least min-tracks; min-tracks must be positive; cached-audio-only requires a bundle")
 	}
@@ -111,6 +132,7 @@ func run() error {
 	var parser *llama.Parser
 	var err error
 	prior := map[string]core.MusicIntent{}
+	priorReports := map[string]result{}
 	if *replay != "" {
 		raw, e := os.ReadFile(*replay)
 		if e != nil {
@@ -121,13 +143,27 @@ func run() error {
 			return e
 		}
 		for _, r := range results {
-			if len(r.Playlist.Tracks) > 0 {
+			priorReports[r.Prompt] = r
+			if *replayParsed {
+				if r.ParsedIntent.Version == 0 {
+					return fmt.Errorf("replay report has no raw parsed intent for %q", r.Prompt)
+				}
+				prior[r.Prompt] = r.ParsedIntent
+			} else if len(r.Playlist.Tracks) > 0 {
 				prior[r.Prompt] = r.Playlist.Intent
 			} else {
 				prior[r.Prompt] = r.Intent
 			}
 		}
-	} else {
+	}
+	if *serverURL != "" {
+		client := llama.NewClient(*serverURL)
+		if !client.Healthy(ctx) {
+			return fmt.Errorf("local llama server is not healthy")
+		}
+		parser = llama.NewWithClient(client)
+		defer parser.Close()
+	} else if *replay == "" {
 		parser, err = llama.New(ctx, llama.Options{BinaryPath: *runtime, ModelPath: *model, NCtx: 8192, GPULayers: 0, StartTimeout: 3 * time.Minute})
 		if err != nil {
 			return err
@@ -144,18 +180,18 @@ func run() error {
 		engine.WithAnchorProposer(parser.ProposeAnchors)
 	}
 	var mb *musicbrainz.Client
-	if *dataset != "" && !*online {
+	if *dataset != "" && !*online && mode != core.DeejAIOnly {
 		return fmt.Errorf("metadata discovery requires -online to permit provider fallback, as in the desktop")
 	}
-	if *online {
-		mb, err = musicbrainz.New(musicbrainz.Config{UserAgent: "PlaylistAI/0.8 (https://github.com/platten/playlistai)", CachePath: *cache, DatasetPath: *dataset})
+	if *online && mode != core.DeejAIOnly {
+		mb, err = musicbrainz.New(metadataConfig(*cache, *dataset, *acousticBrainz))
 		if err != nil {
 			return err
 		}
 		defer mb.Close()
 		engine.WithCandidateSource(mb)
 	}
-	if *bundle != "" {
+	if *bundle != "" && mode != core.DeejAIOnly {
 		manifest, e := audio.ReadRuntimeBundle(*bundle)
 		if e != nil {
 			return e
@@ -199,12 +235,17 @@ func run() error {
 		started := time.Now()
 		fmt.Printf("Checking: %s\n", c.Prompt)
 		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly, ParseOnly: *parseOnly, Algorithm: engine.AlgorithmVersion(), Catalog: cat.CatalogVersion()}
+		r.RecommendationMode, r.ReplayedParsedIntent = mode, *replayParsed
+		if mode == core.DeejAIOnly {
+			r.Algorithm = deejai.OnlyAlgorithmVersion
+		}
+		r.AcousticBrainzEnabled = mb != nil && *acousticBrainz && !*parseOnly
 		if parser != nil {
 			r.Parser = parser.Info()
 		}
 		var intent core.MusicIntent
 		var parseErr error
-		if parser != nil {
+		if *replay == "" && parser != nil {
 			intent, parseErr = parser.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
 			if parseErr != nil && ctx.Err() == nil && !*parseOnly {
 				// Match the desktop fallback, while retaining the model failure
@@ -220,7 +261,10 @@ func run() error {
 			if !ok {
 				parseErr = fmt.Errorf("prompt missing from replay report")
 			}
+			r.Parser = priorReports[c.Prompt].Parser
+			r.ParserFallback = priorReports[c.Prompt].ParserFallback
 		}
+		r.ParsedIntent = intent
 		fmt.Printf("  Parsed in %s\n", time.Since(started).Round(time.Millisecond))
 		if parseErr != nil {
 			r.Errors = append(r.Errors, parseErr.Error())
@@ -229,6 +273,7 @@ func run() error {
 			r.Errors = append(r.Errors, checkIntent(c, intent)...)
 		} else {
 			intent.VerificationPolicy = core.BestAvailable
+			intent.Controls.RecommendationMode = mode
 			r.ParserIssues = checkIntent(c, intent)
 			expected := c
 			if *count > 0 {
@@ -257,13 +302,17 @@ func run() error {
 					lastNote, lastDone = note, done
 				}
 			})
-			r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress})
+			if mode == core.DeejAIOnly {
+				r.Playlist, err = deejai.BuildOnly(ctx, deejai.New(cat, brute.New(cat), cat), intent)
+			} else {
+				r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress})
+			}
 			if err != nil {
 				r.Errors = append(r.Errors, err.Error())
 			}
 			r.Errors = append(r.Errors, checkPlaylist(r.Playlist, *minimum, intent.Controls.TotalTrackCount)...)
 			r.Errors = append(r.Errors, checkVariety(r.Playlist, c, *minArtists)...)
-			if *bundle != "" && len(audio.Clauses(intent)) > 0 && len(r.Playlist.Tracks) > 0 {
+			if *bundle != "" && mode != core.DeejAIOnly && len(audio.Clauses(intent)) > 0 && len(r.Playlist.Tracks) > 0 {
 				if r.Playlist.AudioEvidence == nil {
 					r.Errors = append(r.Errors, "CLAP evidence missing")
 				} else {

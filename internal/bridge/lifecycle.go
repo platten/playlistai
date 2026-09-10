@@ -168,7 +168,7 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 		return parsedIntentEntry{}, false, err
 	}
 	name := rules.BareGenreQuery(input.Prompt)
-	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && outcome.Backend == "rules" && name != "" && cached.IsCachedGenre(ctx, name) {
+	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && !input.SkipMetadata && outcome.Backend == "rules" && name != "" && cached.IsCachedGenre(ctx, name) {
 		outcome.Intent.OriginalDescription = input.Prompt
 		outcome.Intent = rules.ApplyConfirmedGenre(outcome.Intent, name)
 	}
@@ -181,6 +181,9 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 // Explicitly submitted parsing can check provider genre identity before the UI
 // offers misleading artist alternatives. Legacy preview calls remain offline.
 func (a *API) confirmSubmittedGenre(ctx context.Context, input ports.IntentInput, intent core.MusicIntent, backend string) core.MusicIntent {
+	if input.SkipMetadata {
+		return intent
+	}
 	name := rules.BareGenreQuery(input.Prompt)
 	provider, ok := a.app.Knowledge.(ports.GenreNameKnowledge)
 	if !ok || backend != "rules" || input.GenerationID == "" || name == "" || len(intent.EssentialCriteria) > 0 || len(intent.Preferences.Genres) > 0 {
@@ -207,6 +210,7 @@ func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {
 
 func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVersion int) (string, error) {
 	payload := struct {
+		SkipMetadata   bool            `json:"skipMetadata"`
 		Prompt         string          `json:"prompt"`
 		SessionID      string          `json:"sessionId"`
 		ParserIdentity string          `json:"parserIdentity"`
@@ -214,7 +218,7 @@ func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVe
 		NowPlaying     *core.TrackRef  `json:"nowPlaying"`
 		RecentTracks   []core.TrackRef `json:"recentTracks"`
 		Locale         string          `json:"locale"`
-	}{input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale}
+	}{input.SkipMetadata, input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err

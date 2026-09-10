@@ -169,12 +169,13 @@ type UnsupportedRequirement struct {
 }
 
 type IntentControls struct {
-	TotalTrackCount      int     `json:"totalTrackCount"`
-	AudioWeight          float64 `json:"audioWeight"`
-	CooccurrenceWeight   float64 `json:"cooccurrenceWeight"`
-	Discovery            float64 `json:"discovery"`
-	ArtistDiversity      float64 `json:"artistDiversity"`
-	TransitionSmoothness float64 `json:"transitionSmoothness"`
+	RecommendationMode   RecommendationMode `json:"recommendationMode,omitempty"`
+	TotalTrackCount      int                `json:"totalTrackCount"`
+	AudioWeight          float64            `json:"audioWeight"`
+	CooccurrenceWeight   float64            `json:"cooccurrenceWeight"`
+	Discovery            float64            `json:"discovery"`
+	ArtistDiversity      float64            `json:"artistDiversity"`
+	TransitionSmoothness float64            `json:"transitionSmoothness"`
 }
 
 type EnergyPoint struct {
@@ -418,6 +419,9 @@ func (m MusicIntent) Validate() error {
 		}
 	}
 	c := m.Controls
+	if !c.RecommendationMode.Valid() {
+		return fmt.Errorf("intent: unknown recommendation mode %q", c.RecommendationMode)
+	}
 	for name, value := range map[string]float64{
 		"audio weight": c.AudioWeight, "cooccurrence weight": c.CooccurrenceWeight,
 		"discovery": c.Discovery, "artist diversity": c.ArtistDiversity,
@@ -481,6 +485,7 @@ func migrateLegacy(m MusicIntent) MusicIntent {
 		m.HardConstraints = append(m.HardConstraints, HardConstraint{Kind: "no_back_to_back_artist", Value: "true", Supported: true})
 	}
 	m.Controls = IntentControls{
+		RecommendationMode:   m.Controls.RecommendationMode,
 		TotalTrackCount:      m.Count,
 		AudioWeight:          m.Creativity,
 		CooccurrenceWeight:   1 - m.Creativity,

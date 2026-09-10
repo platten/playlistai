@@ -36,6 +36,14 @@ func NewSemanticRetriever(cat ports.Catalog, sim ports.SimilarityEngine, semanti
 	return &Retriever{cat: cat, sim: sim, semantic: semantic, cfg: cfg.normalized()}
 }
 
+func (r *Retriever) withSearchSession() *Retriever {
+	local := *r
+	if provider, ok := r.sim.(ports.SimilaritySessionProvider); ok {
+		local.sim = provider.NewSearchSession()
+	}
+	return &local
+}
+
 type explorationOption struct {
 	match   ports.Match
 	queryID string

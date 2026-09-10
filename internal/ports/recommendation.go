@@ -62,6 +62,9 @@ type CandidateRetriever interface {
 type RankRequest struct {
 	Intent  core.MusicIntent
 	Profile core.TasteProfile
+	// Request-local preview evidence permits clause-level source preference;
+	// this is not a new saved-intent field or a substitute for eligibility.
+	PreviewAssessments map[string]core.AudioAssessment
 }
 
 type Ranker interface {
