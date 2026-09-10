@@ -16,6 +16,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/intent/schema"
+	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -143,11 +144,15 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
+	started := time.Now()
+	logging.Diagnostic(ctx, "api.call", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "parse_intent", "tokenBudget": tokenBudget, "corrected": correction != ""})
 	resp, err := c.hc.Do(req)
 	if err != nil {
+		logging.Diagnostic(ctx, "api.response", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "parse_intent", "elapsedMilliseconds": time.Since(started).Milliseconds(), "error": err.Error()})
 		return core.MusicIntent{}, completionResult{}, fmt.Errorf("llama: %w", err)
 	}
 	defer resp.Body.Close()
+	logging.Diagnostic(ctx, "api.response", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "parse_intent", "status": resp.StatusCode, "contentLength": resp.ContentLength, "elapsedMilliseconds": time.Since(started).Milliseconds()})
 
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -166,6 +171,7 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 	if strings.TrimSpace(result.Content) == "" {
 		return core.MusicIntent{}, result, fmt.Errorf("llama: empty completion (finish_reason=%q)", result.FinishReason)
 	}
+	logging.Diagnostic(ctx, "llm.response", map[string]any{"operation": "parse_intent", "content": result.Content, "finishReason": result.FinishReason})
 	intent, err := schema.ParseForPrompt([]byte(result.Content), in.Prompt)
 	return intent, result, err
 }
@@ -277,16 +283,29 @@ func (c *Client) complete(ctx context.Context, system, user string, maxTokens in
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	started := time.Now()
+	logging.Diagnostic(ctx, "api.call", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "completion", "systemPrompt": system, "userPrompt": user, "tokenBudget": maxTokens, "grammar": grammar != ""})
 	resp, err := c.hc.Do(req)
 	if err != nil {
+		logging.Diagnostic(ctx, "api.response", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "completion", "elapsedMilliseconds": time.Since(started).Milliseconds(), "error": err.Error()})
 		return "", fmt.Errorf("llama: %w", err)
 	}
 	defer resp.Body.Close()
+	logging.Diagnostic(ctx, "api.response", map[string]any{"provider": "llama.cpp", "method": http.MethodPost, "url": req.URL.String(), "operation": "completion", "status": resp.StatusCode, "contentLength": resp.ContentLength, "elapsedMilliseconds": time.Since(started).Milliseconds()})
 	if resp.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return "", fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
-	return readWhole(resp.Body, nil)
+	out, err := readWhole(resp.Body, nil)
+	logging.Diagnostic(ctx, "llm.response", map[string]any{"operation": "completion", "content": out, "error": errorString(err)})
+	return out, err
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // Healthy reports whether the server answers /health with 200.

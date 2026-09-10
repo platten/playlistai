@@ -15,6 +15,8 @@ import (
 type Prefs struct {
 	RecommendationMode string `json:"recommendationMode,omitempty"`
 	AnalysisEnabled    bool   `json:"analysisEnabled"`
+	// DebugLogging opts into potentially sensitive, memory-only diagnostics.
+	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.
 	ModelPath string `json:"modelPath"`
 	// ModelID is the catalog id when the model came from the built-in catalog.

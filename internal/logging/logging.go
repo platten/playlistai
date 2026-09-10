@@ -4,9 +4,13 @@ package logging
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 )
 
 // Entry is one formatted application log record.
@@ -18,12 +22,20 @@ type Entry struct {
 
 // Store keeps the most recent records; it never writes logs to disk.
 type Store struct {
-	mu      sync.Mutex
-	entries []Entry
-	next    uint64
+	mu            sync.Mutex
+	entries       []Entry
+	next          uint64
+	retainedBytes int
+	debug         bool
 }
 
-const capacity = 2000
+const (
+	capacity                   = 2000
+	standardEntryLimit         = 8 << 10
+	diagnosticEntryLimit       = 64 << 10
+	diagnosticRetentionLimit   = 16 << 20
+	diagnosticTruncationSuffix = "… [truncated]"
+)
 
 // Read returns a detached snapshot newer than after.
 func (s *Store) Read(after uint64) []Entry {
@@ -38,18 +50,99 @@ func (s *Store) Read(after uint64) []Entry {
 	return result
 }
 
-func (s *Store) append(level, text string) {
-	if len(text) > 8192 {
-		text = string([]rune(text[:8192])) + "… [truncated]"
-	}
+// DebugEnabled reports whether opt-in, potentially sensitive diagnostics are
+// retained for the current session.
+func (s *Store) DebugEnabled() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.debug
+}
+
+// SetDebug enables detailed diagnostics. Disabling it immediately removes
+// retained debug entries so prompts and provider lookup terms do not linger.
+func (s *Store) SetDebug(enabled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.debug = enabled
+	if enabled {
+		return
+	}
+	kept := s.entries[:0]
+	s.retainedBytes = 0
+	for _, entry := range s.entries {
+		if entry.Level != slog.LevelDebug.String() {
+			kept = append(kept, entry)
+			s.retainedBytes += len(entry.Text)
+		}
+	}
+	s.entries = kept
+}
+
+func (s *Store) append(level, text string) {
+	text = truncate(text, standardEntryLimit)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.appendLocked(level, text)
+}
+
+func (s *Store) appendDiagnostic(event string, payload any) {
+	if !s.DebugEnabled() {
+		return
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte(fmt.Sprintf(`{"marshalError":%q}`, err.Error()))
+	}
+	text := fmt.Sprintf("time=%s level=DEBUG event=%q data=%s", time.Now().Format(time.RFC3339Nano), event, raw)
+	text = truncate(text, diagnosticEntryLimit)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.debug {
+		return
+	}
+	s.appendLocked(slog.LevelDebug.String(), text)
+}
+
+func (s *Store) appendLocked(level, text string) {
 	s.next++
-	if len(s.entries) == capacity {
+	for len(s.entries) > 0 && (len(s.entries) >= capacity || s.retainedBytes+len(text) > diagnosticRetentionLimit) {
+		s.retainedBytes -= len(s.entries[0].Text)
 		copy(s.entries, s.entries[1:])
-		s.entries = s.entries[:capacity-1]
+		s.entries = s.entries[:len(s.entries)-1]
 	}
 	s.entries = append(s.entries, Entry{ID: s.next, Level: level, Text: text})
+	s.retainedBytes += len(text)
+}
+
+func truncate(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	limit -= len(diagnosticTruncationSuffix)
+	for limit > 0 && !utf8.ValidString(text[:limit]) {
+		limit--
+	}
+	return text[:limit] + diagnosticTruncationSuffix
+}
+
+type diagnosticStoreKey struct{}
+
+// WithDiagnostics makes the session's opt-in diagnostic sink available to
+// request-scoped parsers, provider clients, and recommendation stages.
+func WithDiagnostics(ctx context.Context, store *Store) context.Context {
+	if store == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, diagnosticStoreKey{}, store)
+}
+
+// Diagnostic records structured request data only while the user-controlled
+// debug preference is enabled. It never writes to the process logger or disk.
+func Diagnostic(ctx context.Context, event string, payload any) {
+	store, _ := ctx.Value(diagnosticStoreKey{}).(*Store)
+	if store != nil {
+		store.appendDiagnostic(event, payload)
+	}
 }
 
 type operation struct {

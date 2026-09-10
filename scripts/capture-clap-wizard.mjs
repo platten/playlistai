@@ -23,8 +23,8 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     let installed=false; let attempts=0;
     export const FeedbackScope={}; export const FeedbackType={};
-    const bundle={label:'CLAP Music + Speech · full precision',artifacts:[{size:793130000}],memoryBytes:2147483648,license:'Apache-2.0'};
-    const emit=note=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'analysis-model',done:123450000,total:793130000,note}}));
+    const bundle={label:'CLAP Music · full precision',artifacts:[{size:788130000}],memoryBytes:2147483648,license:'Apache-2.0'};
+    const emit=note=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'analysis-model',done:123450000,total:788130000,note}}));
     const download=()=>{
       attempts++; emit('Downloading music analysis');
       let rejectCall;
@@ -35,7 +35,7 @@ try {
       GetCatalogInfo:()=>({loaded:true}),GetModelStatus:()=>({backend:'llama',modelId:'qwen9'}),GetLlamaRuntime:()=>({available:true,builds:['cpu']}),GetInstalledModels:()=>[],
       GetModelRecommendations:()=>({models:[{id:'qwen3',label:'Qwen2.5 3B',params:'3B',sizeApprox:1929903264,ramGb:4,recommended:true,installed:true}],hardware:{gpuAvailable:false}}),
       GetRecommendedAnalysisBundle:()=>{window.__recommendationCalls=(window.__recommendationCalls||0)+1;return bundle;},
-      GetAnalysisStatus:()=>({recommendedAvailable:!window.__unsupported,recommendedDetail:window.__unsupported?'This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker.':'',installed,available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:window.__unsupported?'Optional music analysis is unavailable in this build. Catalog recommendations remain available.':installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:793130000,memoryBytes:2147483648}),
+      GetAnalysisStatus:()=>({recommendedAvailable:!window.__unsupported,recommendedInstalled:installed,recommendedDetail:window.__unsupported?'This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker.':'',installed,available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:window.__unsupported?'Optional music analysis is unavailable in this build. Catalog recommendations remain available.':installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:788130000,memoryBytes:2147483648}),
       InspectAnalysisBundle:()=>({...bundle,label:'Custom CLAP fixture'}),
       RemoveAnalysisModel:()=>{installed=false;},
       InstallRecommendedAnalysisBundle:download,InstallAnalysisBundle:download,

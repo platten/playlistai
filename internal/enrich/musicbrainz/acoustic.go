@@ -18,6 +18,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/httpretry"
+	"github.com/platten/playlistai/internal/logging"
 )
 
 const AcousticBrainzURL = "https://acousticbrainz.org"
@@ -90,7 +91,18 @@ func (t *acousticTransport) RoundTrip(req *http.Request) (*http.Response, error)
 		return nil, err
 	}
 	t.state.next = time.Now().Add(t.interval)
+	started := time.Now()
+	logging.Diagnostic(req.Context(), "api.call", map[string]any{"provider": "acousticbrainz", "method": req.Method, "url": req.URL.String(), "attempt": 1})
 	resp, err := t.base.RoundTrip(req)
+	status, contentLength := 0, int64(-1)
+	if resp != nil {
+		status, contentLength = resp.StatusCode, resp.ContentLength
+	}
+	errorDetail := ""
+	if err != nil {
+		errorDetail = err.Error()
+	}
+	logging.Diagnostic(req.Context(), "api.response", map[string]any{"provider": "acousticbrainz", "method": req.Method, "url": req.URL.String(), "status": status, "contentLength": contentLength, "elapsedMilliseconds": time.Since(started).Milliseconds(), "error": errorDetail})
 	if err != nil && req.Context().Err() == nil || resp != nil && resp.StatusCode != http.StatusOK {
 		t.state.next = time.Now().Add(time.Minute)
 	}

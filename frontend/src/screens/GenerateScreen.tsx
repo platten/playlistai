@@ -24,6 +24,15 @@ const INTENT_PLACEHOLDER =
   "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone";
 const CATALOG_PLACEHOLDER =
   'Name a genre, artist or track, e.g. "Classical 10 tracks" or "like Bonobo, 20 tracks"';
+const DEEJAI_PLACEHOLDER =
+  'Name a catalog artist or track, e.g. "Bonobo, 10 tracks" or "Justice to Boards of Canada, 15 tracks"';
+
+const DEEJAI_SAMPLES = [
+  "Bonobo, 10 tracks",
+  "Daft Punk, 20 tracks",
+  "A journey from Justice to Boards of Canada, 15 tracks",
+  "A journey from Radiohead to Sigur Rós, 12 tracks",
+];
 
 const resolutionIssueKey = (kind: string, query: string) => `${kind}\u0000${query}`;
 
@@ -91,6 +100,7 @@ export function GenerateScreen({
   const checkingProgress = useProgress("generation", generationId);
   const [checkedTracks, setCheckedTracks] = useState<{ id: string; artist: string; title: string; suggested?: boolean }[]>([]);
   const [outcome, setOutcome] = useState<PlaylistResult | null>(null);
+  const [recommendationMode, setRecommendationMode] = useState("");
   useEffect(() => {
     const off = Events.On(PROGRESS_EVENT, (event: { data: unknown }) => {
       const data = (Array.isArray(event.data) ? event.data[0] : event.data) as Progress;
@@ -154,6 +164,20 @@ export function GenerateScreen({
       .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false }));
   }, []);
 
+  useEffect(() => {
+    let current = true;
+    const call = API.GetRecommendationMode();
+    call.then((mode) => {
+      if (current) setRecommendationMode(mode);
+    }).catch(() => {
+      if (current) setRecommendationMode("");
+    });
+    return () => {
+      current = false;
+      void call.cancel("generate screen unmounted");
+    };
+  }, []);
+
   const pickSaved = (id: string) => {
     setSavedId(id);
     const hit = saved.find((s) => s.id === id);
@@ -196,7 +220,11 @@ export function GenerateScreen({
   // Both parsers can preserve category requests for online seed discovery.
   // Ask for a named reference only when no usable musical intent was parsed.
   const activeBackend = preview?.parser?.requestedBackend || preview?.backend || parserBackend;
-  const catalogOnly = activeBackend !== "llama";
+  const deejAIOnly = recommendationMode === "deejai_only";
+  const catalogOnly = deejAIOnly || activeBackend !== "llama";
+  const visibleSamples = deejAIOnly
+    ? DEEJAI_SAMPLES.map((example) => ({ prompt: example }))
+    : generateSamples;
   const energyPoints = preview?.intent.journey?.energyTrajectory ?? [];
   const requestedEnergy = energyPoints.length < 2 ? "" : energyPoints.length > 2 ? "changes through the journey" :
     energyPoints[0].energy < energyPoints[energyPoints.length - 1].energy ? "build toward the end" :
@@ -204,12 +232,11 @@ export function GenerateScreen({
   const instrumentalRequest = (preview?.intent.hardConstraints ?? []).some((c) => c.kind === "exclude_vocals" || c.kind === "require_instrumental") ||
     (preview?.intent.preferences.vocalPreference?.influence !== "negative" && ["instrumental", "no vocals"].includes(preview?.intent.preferences.vocalPreference?.value.toLowerCase() ?? "")) ||
     (preview?.intent.preferences.instrumentation ?? []).some((p) => p.influence !== "negative" && p.value.toLowerCase() === "instrumental");
-  const needsSeed =
-    source === "fresh" &&
-    catalogOnly &&
-    !instrumentalRequest &&
-    (preview === null ||
-      ((preview.seeds ?? []).length === 0 && (preview.requiredTracks ?? []).length === 0 && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0));
+  const hasResolvedSeed = (preview?.seeds ?? []).length > 0 || (preview?.requiredTracks ?? []).length > 0;
+  const needsSeed = source === "fresh" && (deejAIOnly
+    ? preview === null || !hasResolvedSeed
+    : catalogOnly && !instrumentalRequest &&
+      (preview === null || (!hasResolvedSeed && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0)));
   const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred);
   const inferredIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.inferred);
   const ambiguousIssues = explicitIssues.filter((issue) => issue.status === "ambiguous");
@@ -240,7 +267,9 @@ export function GenerateScreen({
             : issue.kind === "artist"
             ? `Artist “${issue.query}” was not found under that name in the local catalog. Generate playlist will search MusicBrainz and Deezer for the artist, then try popular tracks in order until a catalog seed is found. If those do not match, it will check additional recordings within the lookup limit.`
             : `No catalog match was found for the ${issue.kind} “${issue.query}”. Check the spelling, include the artist with an album or track title, or use another reference.`),
-          ...(needsSeed && preview && !parsing ? ["Catalog-only mode could not find an artist, track, or cached genre to start from. Add a named reference, or set up a local language model in Settings to interpret descriptions."] : []),
+          ...(needsSeed && preview && !parsing ? [deejAIOnly
+            ? "Deej-AI-only mode could not resolve a catalog artist or track to start from. Add or correct a named artist or track."
+            : "Catalog-only mode could not find an artist, track, or cached genre to start from. Add a named reference, or set up a local language model in Settings to interpret descriptions."] : []),
         ]
         : [];
   const noticeKey = JSON.stringify(noticeDetails);
@@ -373,13 +402,14 @@ export function GenerateScreen({
   }, [info?.loaded, onRegenerationStarted, regeneration, runGenerate]);
 
   const surprise = useCallback(() => {
-    const pick = SURPRISES[Math.floor(Math.random() * SURPRISES.length)];
+    const choices = deejAIOnly ? DEEJAI_SAMPLES : SURPRISES;
+    const pick = choices[Math.floor(Math.random() * choices.length)];
     setPrompt(pick);
     setSource("fresh");
     setSavedId("");
     setSavedRequest(null);
     setSavedResult(null);
-  }, []);
+  }, [deejAIOnly]);
 
   useEffect(
     () => () => {
@@ -415,7 +445,9 @@ export function GenerateScreen({
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
         <p className="text-[14px] text-muted">
-          {catalogOnly
+          {deejAIOnly
+            ? "Name a catalog artist or track, or request a transition between two artists. Include the number of tracks you want."
+            : catalogOnly
             ? "Describe genres, artists, tracks, or a journey. Generation can look up starting tracks when needed."
             : "Describe what you want to hear. The local model can infer a catalog starting point, so naming an artist or track is optional."}
         </p>
@@ -500,7 +532,7 @@ export function GenerateScreen({
       )}
 
       <div className="flex w-full flex-wrap gap-2" aria-label="Description examples">
-        {generateSamples.map(({ prompt: example }) => (
+        {visibleSamples.map(({ prompt: example }) => (
           <button type="button" key={example} disabled={generating} onClick={() => { setSource("fresh"); setPrompt(example); }} className="rounded-pill border border-line bg-surface px-3 py-1.5 text-left text-[12px] text-muted hover:text-text">{example}</button>
         ))}
       </div>
@@ -520,7 +552,7 @@ export function GenerateScreen({
             }
           }}
           rows={5}
-          placeholder={catalogOnly ? CATALOG_PLACEHOLDER : INTENT_PLACEHOLDER}
+          placeholder={deejAIOnly ? DEEJAI_PLACEHOLDER : catalogOnly ? CATALOG_PLACEHOLDER : INTENT_PLACEHOLDER}
           className="w-full resize-none bg-transparent px-4 py-3.5 text-[15.5px] leading-relaxed text-text outline-none placeholder:text-faint"
         />
         {(parsing || generating) && (
@@ -540,12 +572,14 @@ export function GenerateScreen({
         )}
         <div className="flex flex-wrap items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
           <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
-            {catalogOnly
+            {deejAIOnly
+              ? "Catalog artist or track required · include a track count"
+              : catalogOnly
               ? "Genres, artists, tracks or a journey · Enter to generate"
               : "Artist or track optional in local-model mode · Enter to generate"}
           </span>
           <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
-            {catalogOnly ? "basic interpretation" : "local model"}
+            {deejAIOnly ? "Deej-AI only" : catalogOnly ? "basic interpretation" : "local model"}
           </span>
           <Button
             variant="ghost"

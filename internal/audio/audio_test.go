@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/logging"
 )
 
 type testResolver struct {
@@ -77,7 +78,9 @@ func audioIntent() core.MusicIntent {
 
 func TestVerticalSliceReusesFeaturesAndClearsAudio(t *testing.T) {
 	s, a, r, dir := testService(t)
-	ctx := context.Background()
+	diagnostics := &logging.Store{}
+	diagnostics.SetDebug(true)
+	ctx := logging.WithDiagnostics(context.Background(), diagnostics)
 	track := core.TrackRef{ID: "1", Artist: "Synthetic", Title: "Silence"}
 	first, err := s.Begin(ctx, audioIntent(), "catalog", nil)
 	if err != nil {
@@ -117,6 +120,13 @@ func TestVerticalSliceReusesFeaturesAndClearsAudio(t *testing.T) {
 	}
 	if second.Snapshot().CacheHits != 1 {
 		t.Fatal("cache reuse not reported")
+	}
+	joined := ""
+	for _, entry := range diagnostics.Read(0) {
+		joined += entry.Text
+	}
+	if !strings.Contains(joined, `event="analysis.clap_audio_embedding"`) || !strings.Contains(joined, `"embedding":[1,0]`) {
+		t.Fatalf("CLAP audio embedding missing from diagnostics: %s", joined)
 	}
 	if err := s.Store.Clear(ctx); err != nil {
 		t.Fatal(err)

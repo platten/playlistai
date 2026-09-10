@@ -58,11 +58,12 @@ export function MusicAnalysisCard() {
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => API.RemoveAnalysisModel())}>Remove analysis model</Button>
         </>
       )}
-      {!status?.installed && !status?.available && recommended && (
+      {recommended && (!status?.installed || !status.recommendedInstalled) && (
         <div className="flex flex-col gap-2 rounded-control border border-accent/30 p-3">
-          <h3 className="text-[13px] font-medium">{recommended.label} <span className="text-accent">· Recommended</span></h3>
+          <h3 className="text-[13px] font-medium">{recommended.label} <span className="text-accent">· {status?.installed ? "Recommended update" : "Recommended"}</span></h3>
           <p className="text-[12px] text-muted">Full-precision audio and text encoders · {size((recommended.artifacts ?? []).reduce((n, a) => n + a.size, 0))} download · {size(recommended.memoryBytes)} memory budget</p>
-          <p className="text-[12px] text-muted">Downloads from Hugging Face and Microsoft. Installation checks file integrity, embedding compatibility, and local inference before activating the model.</p>
+          <p className="text-[12px] text-muted">Downloads model files from GitHub and Hugging Face, and the runtime from Microsoft. Installation checks file integrity, embedding compatibility, and local inference before activating the model.</p>
+          {status?.installed && <p className="text-[12px] text-muted">Your current model stays active unless this download and its local health check both succeed. Existing analysis remains stored under its original model identity.</p>}
           <p className="text-[12px] text-muted">No-vocals requests automatically use the installed CLAP model to screen every candidate preview. Vocal or uncertain previews are excluded. Unheard parts of a song may still contain vocals. Preview similarities help rank other descriptions; categorical musical-fit judgments require a reviewed calibration policy.</p>
           <Button size="sm" variant="primary" disabled={busy} onClick={() => void install(false)}>{installKind === "recommended" ? "Downloading and validating…" : error ? "Retry recommended CLAP download" : "Download and validate CLAP"}</Button>
         </div>

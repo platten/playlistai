@@ -23,8 +23,11 @@ func TestRecommendedBundleAndCustomEmbeddingIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Version != 2 || m.Policy.Valid() || m.Model.Dimension != 512 || m.DownloadBytes() < 783262861 {
+	if m.Version != 2 || m.ID != "clap-music-fp32-v1" || m.Label != "CLAP Music · full precision" || m.Policy.Valid() || m.Model.Dimension != 512 || m.DownloadBytes() < 778209534 {
 		t.Fatalf("invalid recommendation: %+v", m)
+	}
+	if m.Model.Model != "laion/larger_clap_music" || m.Model.Revision != publicCLAPRevision || m.TextUnpadded || m.ONNXOutputNames[0] != "embedding" || m.ONNXOutputNames[1] != "embedding" {
+		t.Fatalf("wrong music-only encoder contract: %+v", m)
 	}
 	if (&Service{Policy: m.Policy}).Ready() {
 		t.Fatal("runtime validation promoted to musical calibration")

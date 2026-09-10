@@ -29,6 +29,7 @@ type analysisState struct {
 
 type AnalysisStatus struct {
 	RecommendedAvailable bool                      `json:"recommendedAvailable"`
+	RecommendedInstalled bool                      `json:"recommendedInstalled"`
 	RecommendedDetail    string                    `json:"recommendedDetail"`
 	Installed            bool                      `json:"installed"`
 	Available            bool                      `json:"available"`
@@ -137,8 +138,9 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
-	_, recommendedErr := audio.RecommendedBundle()
+	recommended, recommendedErr := audio.RecommendedBundle()
 	status.RecommendedAvailable = recommendedErr == nil
+	status.RecommendedInstalled = recommendedErr == nil && s.manifest != nil && s.manifest.Model == recommended.Model
 	if recommendedErr != nil {
 		status.RecommendedDetail = "No recommended music analysis bundle is available for this platform. Choose a compatible custom bundle, or continue without analysis."
 		if !audio.NativeInferenceAvailable() {

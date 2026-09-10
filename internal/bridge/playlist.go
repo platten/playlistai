@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/reco/deejai"
 )
@@ -83,11 +84,15 @@ type PlaylistNotice struct {
 }
 
 func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
+	ctx = a.diagnosticContext(ctx)
 	ctx, current, finish := a.operations.begin(ctx, "playlist-build")
 	defer finish()
 	ctx, finishGeneration := a.beginGeneration(ctx, req.GenerationID)
 	defer finishGeneration()
 	result, err := a.runBuild(ctx, req)
+	if err != nil {
+		logging.Diagnostic(ctx, "generation.error", err.Error())
+	}
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			return PlaylistResult{}, contextErr
@@ -112,6 +117,10 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	intent = intent.Normalized()
+	logging.Diagnostic(ctx, "recommendation.request", intent)
+	if len(req.RecentSelections) > 0 {
+		logging.Diagnostic(ctx, "recommendation.recent_selections", req.RecentSelections)
+	}
 
 	profileStarted := time.Now()
 	profile, err := a.profileForBuild(ctx, req, intent)
@@ -208,10 +217,35 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	withEvidenceIdentity(&out.Reproducibility, out.AudioEvidence)
+	logRecommendationDiagnostics(ctx, out)
 	a.recordExposures(ctx, req, out)
 	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
 		"profile_ms", profileTiming.Milliseconds, "recommend_ms", out.Status.Timings[1].Milliseconds)
 	return out, nil
+}
+
+func logRecommendationDiagnostics(ctx context.Context, result PlaylistResult) {
+	logging.Diagnostic(ctx, "recommendation.result", result.Outcome)
+	logging.Diagnostic(ctx, "recommendation.reproducibility", result.Reproducibility)
+	for _, track := range result.Tracks {
+		logging.Diagnostic(ctx, "recommendation.pick", track)
+	}
+	for _, assessment := range result.Assessments {
+		logging.Diagnostic(ctx, "analysis.acousticbrainz_comparison", assessment)
+	}
+	if result.Intent.Knowledge != nil {
+		for _, track := range result.Intent.Knowledge.Tracks {
+			if track.Acoustic != nil {
+				logging.Diagnostic(ctx, "analysis.acousticbrainz_features", track)
+			}
+		}
+	}
+	if result.AudioEvidence != nil {
+		for _, assessment := range result.AudioEvidence.Assessments {
+			logging.Diagnostic(ctx, "analysis.clap", assessment)
+		}
+		logging.Diagnostic(ctx, "analysis.clap_summary", result.AudioEvidence)
+	}
 }
 
 func resolveRecentSelections(catalog ports.Catalog, tracks []core.TrackRef) []core.TrackRef {

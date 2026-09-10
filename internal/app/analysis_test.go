@@ -23,9 +23,27 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 	if err != nil || status.Enabled || status.Available || c.AudioService() != nil {
 		t.Fatalf("uninstalled analysis active: %+v %v", status, err)
 	}
-	_, recommendationErr := audio.RecommendedBundle()
+	recommended, recommendationErr := audio.RecommendedBundle()
 	if status.RecommendedAvailable != (recommendationErr == nil) {
 		t.Fatal("wizard capability disagrees with build support")
+	}
+	if status.RecommendedInstalled {
+		t.Fatal("uninstalled recommended model reported as installed")
+	}
+	if recommendationErr == nil {
+		legacy := recommended
+		legacy.Model.Model = "laion/larger_clap_music_and_speech"
+		c.analysis.manifest = &legacy
+		status, err = c.GetAnalysisStatus(ctx)
+		if err != nil || status.RecommendedInstalled {
+			t.Fatalf("legacy model hid recommended update: %+v %v", status, err)
+		}
+		c.analysis.manifest = &recommended
+		status, err = c.GetAnalysisStatus(ctx)
+		if err != nil || !status.RecommendedInstalled {
+			t.Fatalf("recommended model not recognized: %+v %v", status, err)
+		}
+		c.analysis.manifest = nil
 	}
 	if !status.RecommendedAvailable && !strings.Contains(status.RecommendedDetail, "continue without analysis") {
 		t.Fatal("unsupported build lacks actionable guidance")

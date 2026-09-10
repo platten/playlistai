@@ -1,6 +1,6 @@
 # CLAP candidates and compatible custom bundles
 
-Reviewed 2026-09-07. This is a practical survey of publicly documented CLAP
+Reviewed 2026-09-10. This is a practical survey of publicly documented CLAP
 families and deployment candidates, not an exhaustive list of every fine-tune.
 CLAP is a paired audio/text model. A training dataset or a file of previously
 computed embeddings cannot replace its encoders.
@@ -9,10 +9,10 @@ computed embeddings cannot replace its encoders.
 
 | Candidate | Focus and available format | Compatibility and deployment assessment |
 | --- | --- | --- |
-| [LAION larger CLAP music](https://huggingface.co/laion/larger_clap_music) | Music-focused checkpoint; PyTorch; about 776 MB weights | Original development reference. 512-dimensional paired encoders. An ONNX export and matching reference tests are needed. |
+| [LAION larger CLAP music](https://huggingface.co/laion/larger_clap_music) | Music-focused checkpoint; PyTorch; about 776 MB weights | **Wizard default:** project-hosted FP32 audio/text ONNX exports total 778,209,534 bytes. The paired export passes the repository's tokenizer, preprocessing, and numerical parity gate and uses a distinct cache identity. |
 | [LAION larger CLAP music and speech](https://huggingface.co/laion/larger_clap_music_and_speech) | Music and speech checkpoint; PyTorch; about 776 MB weights | Same large architecture as the music checkpoint, but a different embedding space. Public paired ONNX export available below. |
 | [LAION larger CLAP general](https://huggingface.co/laion/larger_clap_general) | General audio, music and speech; PyTorch | Another checkpoint in the large 512-dimensional family. Requires its own matching audio/text weights and validation. |
-| [Xenova larger CLAP music and speech](https://huggingface.co/Xenova/larger_clap_music_and_speech/tree/e9fd5ac1dbf3280936a7fc3ec8a020453ff184db/onnx) | FP32, FP16 and quantized ONNX; separate audio/text encoders | **Wizard default candidate:** FP32 encoders total 783,262,861 bytes. No Python is needed for desktop inference. Uses its own versioned cache identity. |
+| [Xenova larger CLAP music and speech](https://huggingface.co/Xenova/larger_clap_music_and_speech/tree/e9fd5ac1dbf3280936a7fc3ec8a020453ff184db/onnx) | FP32, FP16 and quantized ONNX; separate audio/text encoders | Previous wizard default. Existing installations remain readable, but new recommended installs use the music-only checkpoint. |
 | [Xenova larger CLAP general](https://huggingface.co/Xenova/larger_clap_general) | Paired ONNX conversion of the general checkpoint | Same architecture class; alternative requiring independent reference validation. No assumption of shared embeddings with music/speech. |
 | [LAION CLAP HTSAT unfused](https://huggingface.co/laion/clap-htsat-unfused) | General audio/text retrieval; non-fusion processing | Smaller architecture class. A paired export can use the custom bundle contract if its exact preprocessing passes validation. |
 | [Xenova CLAP HTSAT unfused](https://huggingface.co/Xenova/clap-htsat-unfused) | Public ONNX export of the unfused checkpoint | Smaller deployment candidate; validate its own audio/text pair and cache it separately. |
@@ -24,18 +24,25 @@ computed embeddings cannot replace its encoders.
 | [CLAP-MusicGen](https://huggingface.co/yuhuacheng/clap-musicgen) | Music model trained using synthetic music-caption pairs | Research alternative with a different training distribution; not validated against this application's worker contract. Its model-card size is not evidence of better playlist fit. |
 | [LAION CLAPv2 scaling project](https://github.com/LAION-AI/open-clap-scaling/blob/main/WP1_CLAPv2.md) | Documented next-generation research plan | A plan is not a downloadable, validated checkpoint. Reassess when paired weights and an inference contract are released. |
 
-The selection is the largest precision variant in the supported, publicly
-deployable LAION large family. The large checkpoints have the same architecture;
-music-and-speech is chosen for music coverage and an available paired ONNX export.
-This does not claim it is the largest audio model on the internet, or that bigger
-weights imply better musical judgment. The wizard downloads just the two FP32
-encoders, tokenizer and native CPU runtime; it does not download all precision
-variants or duplicate combined graphs.
+The selected checkpoint is the full-precision, music-trained LAION large model.
+The project exports both encoders from pinned source weights and publishes the
+validated graphs as release assets because the upstream checkpoint is PyTorch-only.
+The wizard downloads just those two FP32 encoders, tokenizer, and native CPU
+runtime; it does not download all precision variants or duplicate combined graphs.
+The previous Music + Speech bundle remains loadable, but its cached embeddings
+cannot be mixed with the new model.
 
 The [LAION project](https://github.com/LAION-AI/CLAP#pretrained-models) reports
 different music benchmark results for the large checkpoints despite their shared
 architecture. A playlist listening evaluation is still necessary to compare
 their usefulness for this application.
+
+The 2026-09-10 export smoke check also found very high cosine similarity
+(`0.998960`–`0.999329`) between the music-only checkpoint's text embeddings for
+four unrelated music prompts. Numerical export parity does not make that a
+musical-quality result. Until a held-out listening/retrieval evaluation supports
+general thresholds, this bundle keeps the existing uncalibrated-policy behavior:
+it may contribute best-available evidence but cannot claim strict musical fit.
 
 ## What compatible embeddings means
 

@@ -22,70 +22,70 @@
       "cosine": 1.0000001192092896,
       "kind": "synthetic_audio",
       "toneHz": 220,
-      "milliseconds": 143.17251699958433
+      "milliseconds": 145.51821800000653
     },
     {
       "maximumAbsoluteError": 7.450580596923828e-08,
       "cosine": 1.0000001192092896,
       "kind": "synthetic_audio",
       "toneHz": 440,
-      "milliseconds": 166.71980999944935
+      "milliseconds": 143.26656000002913
     },
     {
       "maximumAbsoluteError": 7.450580596923828e-08,
       "cosine": 1.0,
       "kind": "synthetic_audio",
       "toneHz": 880,
-      "milliseconds": 159.3957909999517
+      "milliseconds": 154.31978499987054
     },
     {
       "maximumAbsoluteError": 8.940696716308594e-08,
       "cosine": 1.0,
       "kind": "text",
       "text": "ambient electronica",
-      "milliseconds": 55.949459999283135
+      "milliseconds": 58.64289300006931
     },
     {
       "maximumAbsoluteError": 1.0244548320770264e-07,
       "cosine": 1.0000001192092896,
       "kind": "text",
       "text": "relaxing but not sleepy",
-      "milliseconds": 57.55039400082751
+      "milliseconds": 65.19216900005631
     },
     {
       "maximumAbsoluteError": 8.940696716308594e-08,
       "cosine": 1.0000001192092896,
       "kind": "text",
       "text": "instrumental, no vocals",
-      "milliseconds": 54.968526999800815
+      "milliseconds": 56.07868900005997
     },
     {
       "maximumAbsoluteError": 1.043081283569336e-07,
       "cosine": 1.0000001192092896,
       "kind": "text",
       "text": "\u5b87\u591a\u7530\u30d2\u30ab\u30eb\u306e\u97f3\u697d",
-      "milliseconds": 54.49012200006109
+      "milliseconds": 54.32533800012607
     },
     {
       "maximumAbsoluteError": 8.195638656616211e-08,
       "cosine": 1.0,
       "kind": "text",
       "text": "Bj\u00f6rk's shimmering textures",
-      "milliseconds": 55.14476799999102
+      "milliseconds": 62.40359699995679
     },
     {
       "maximumAbsoluteError": 9.033828973770142e-08,
       "cosine": 1.0000001192092896,
       "kind": "text",
       "text": "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645",
-      "milliseconds": 57.07123100000899
+      "milliseconds": 66.36946599996918
     },
     {
       "maximumAbsoluteError": 8.009374141693115e-08,
       "cosine": 1.0,
       "kind": "text",
       "text": " don't  stop\n the music!",
-      "milliseconds": 57.26716699973622
+      "milliseconds": 59.115262999966944
     }
   ],
   "musicalQualityEvaluated": false,

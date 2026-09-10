@@ -526,9 +526,10 @@ wails3 build
 
 Run the live command a second time to check zero-download cache reuse. The
 `-authorized` flag records an actual provider agreement, not a way to establish
-permission. Packaging defaults to unpublished placeholder URLs and never
-activates or publishes a bundle. Future distribution must supply pinned HTTPS
-artifact URLs after platform validation.
+permission. The recommended music-only FP32 graphs are checksummed release
+assets; the wizard downloads them only when the user installs music analysis.
+Packaging never embeds or activates a model. Custom bundles must still supply
+pinned HTTPS artifact URLs after platform validation.
 
 With the Vite development server on port 9245 and Playwright/Chromium installed:
 

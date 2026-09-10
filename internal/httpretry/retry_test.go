@@ -9,6 +9,8 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"github.com/platten/playlistai/internal/logging"
 )
 
 type trackedBody struct {
@@ -209,5 +211,29 @@ func TestTransientStatusCoverage(t *testing.T) {
 			}
 			_ = resp.Body.Close()
 		})
+	}
+}
+
+func TestDiagnosticsDescribeCallsWithoutCredentials(t *testing.T) {
+	store := &logging.Store{}
+	store.SetDebug(true)
+	ctx := logging.WithDiagnostics(context.Background(), store)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.example/search?q=ambient&token=secret&api_key=hidden", nil)
+	resp, err := RoundTrip(req, func(*http.Request) (*http.Response, error) {
+		r, _ := response(http.StatusOK)
+		r.ContentLength = 7
+		return r, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	records := store.Read(0)
+	if len(records) != 2 || !strings.Contains(records[0].Text, "api.call") || !strings.Contains(records[1].Text, "api.response") || !strings.Contains(records[1].Text, `"status":200`) {
+		t.Fatalf("missing HTTP diagnostics: %+v", records)
+	}
+	joined := records[0].Text + records[1].Text
+	if strings.Contains(joined, "secret") || strings.Contains(joined, "hidden") || !strings.Contains(joined, "%5Bredacted%5D") {
+		t.Fatalf("credential query was not redacted: %s", joined)
 	}
 }

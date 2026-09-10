@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sync"
@@ -17,7 +18,34 @@ var logWindowMu sync.Mutex
 func NewWithLogs(a *app.Container, log *slog.Logger, logs *logging.Store) *API {
 	api := New(a, log)
 	api.logs = logs
+	if logs != nil {
+		logs.SetDebug(a.DebugLogging())
+	}
 	return api
+}
+
+func (a *API) diagnosticContext(ctx context.Context) context.Context {
+	return logging.WithDiagnostics(ctx, a.logs)
+}
+
+// GetDebugLogging reports the persisted opt-in diagnostic setting.
+func (a *API) GetDebugLogging() bool {
+	if a.logs != nil {
+		return a.logs.DebugEnabled()
+	}
+	return a.app.DebugLogging()
+}
+
+// SetDebugLogging persists and applies detailed session diagnostics. Turning
+// it off also clears detailed records already retained in memory.
+func (a *API) SetDebugLogging(enabled bool) error {
+	if err := a.app.SetDebugLogging(enabled); err != nil {
+		return err
+	}
+	if a.logs != nil {
+		a.logs.SetDebug(enabled)
+	}
+	return nil
 }
 
 // GetLogs returns retained session records newer than the given cursor.

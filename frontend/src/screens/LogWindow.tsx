@@ -11,6 +11,7 @@ export default function LogWindow() {
   const [pollError, setPollError] = useState<string | null>(null);
   const [dismissedPollError, setDismissedPollError] = useState<string | null>(null);
   const [follow, setFollow] = useState(true);
+  const [debugEnabled, setDebugEnabled] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -19,13 +20,18 @@ export default function LogWindow() {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        const next = (await API.GetLogs(cursor)) ?? [];
+        const [records, detailed] = await Promise.all([API.GetLogs(cursor), API.GetDebugLogging()]);
+        const next = records ?? [];
         if (disposed) return;
+        setDebugEnabled(detailed);
         setPollError(null);
         setDismissedPollError(null);
+        if (!detailed) {
+          setEntries((previous) => previous.filter((entry) => !entry.level.startsWith("DEBUG")));
+        }
         if (next.length) {
           cursor = next[next.length - 1].id;
-          setEntries((previous) => [...previous, ...next].slice(-2000));
+          setEntries((previous) => [...previous, ...next.filter((entry) => detailed || !entry.level.startsWith("DEBUG"))].slice(-2000));
         }
       } catch (e) {
         if (!disposed) setPollError(String(e));
@@ -51,7 +57,8 @@ export default function LogWindow() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Application logs</h1>
-          <p className="mt-1 text-xs text-muted">Live session · latest 2,000 records · kept in memory until the app closes</p>
+          <p className="mt-1 text-xs text-muted">Live session · up to 2,000 records / 16 MiB · kept in memory until the app closes</p>
+          {debugEnabled && <p className="mt-1 text-xs text-warn">Detailed diagnostics are enabled and may contain prompts and listening interests.</p>}
         </div>
         <Button variant="ghost" size="sm" onClick={close}>Close logs</Button>
       </header>
@@ -78,6 +85,7 @@ export default function LogWindow() {
             <span className={"w-12 shrink-0 font-semibold " + (
               entry.level.startsWith("ERROR") ? "text-bad" :
               entry.level.startsWith("WARN") ? "text-warn" :
+              entry.level.startsWith("DEBUG") ? "text-accent" :
               entry.level.startsWith("INFO") ? "text-accent" : "text-muted"
             )}>{entry.level}</span>
             <span className="min-w-0 whitespace-pre-wrap break-words">{entry.text}</span>

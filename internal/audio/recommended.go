@@ -17,8 +17,9 @@ import (
 //go:embed resources/*
 var recommendedResources embed.FS
 
-const publicCLAPRevision = "e9fd5ac1dbf3280936a7fc3ec8a020453ff184db"
-const publicCLAPSource = "https://huggingface.co/Xenova/larger_clap_music_and_speech/resolve/" + publicCLAPRevision + "/"
+const publicCLAPRevision = "a0b4534a14f58e20944452dff00a22a06ce629d1"
+const publicCLAPSource = "https://huggingface.co/laion/larger_clap_music/resolve/" + publicCLAPRevision + "/"
+const publicCLAPExport = "https://github.com/platten/playlistai/releases/download/v0.9.0/"
 
 // NativeInferenceAvailable reports compiled worker support, not installed models
 // or successful runtime health. Pure-Go builds can still use legacy workers.
@@ -36,13 +37,13 @@ func RecommendedBundle() (BundleManifest, error) {
 		return BundleManifest{}, fmt.Errorf("no recommended CLAP runtime is published for %s; choose a compatible custom bundle", platform)
 	}
 	m := BundleManifest{
-		Version: 2, ID: "clap-music-speech-fp32-v1", Label: "CLAP Music + Speech · full precision",
+		Version: 2, ID: "clap-music-fp32-v1", Label: "CLAP Music · full precision",
 		Platform: platform, MemoryBytes: 2 << 30, License: "Apache-2.0 model; MIT ONNX Runtime; GPL-3.0 application worker",
-		SourceURL: "https://huggingface.co/Xenova/larger_clap_music_and_speech", ONNXOutputNames: []string{"audio_embeds", "text_embeds"}, TextUnpadded: true,
-		Model: core.AudioModelIdentity{Model: "laion/larger_clap_music_and_speech", Revision: "195c3a3e68faebb3e2088b9a79e79b43ddbda76b", Preprocessing: PreprocessingVersion, Runtime: "onnxruntime/1.26.0/cpu", Dimension: 512},
+		SourceURL: "https://huggingface.co/laion/larger_clap_music", ONNXOutputNames: []string{"embedding", "embedding"}, TextUnpadded: false,
+		Model: core.AudioModelIdentity{Model: "laion/larger_clap_music", Revision: publicCLAPRevision, Preprocessing: PreprocessingVersion, Runtime: "onnxruntime/1.26.0/cpu", Dimension: 512},
 		Artifacts: []BundleArtifact{
-			{Role: "audio_model", Name: "audio.onnx", URL: publicCLAPSource + "onnx/audio_model.onnx", Size: 281749092, SHA256: "3ecc72d27740e2a09ced20cf22fd6244122e5e506008763a0f368b3b4ff6eac8"},
-			{Role: "text_model", Name: "text.onnx", URL: publicCLAPSource + "onnx/text_model.onnx", Size: 501513769, SHA256: "96c0f248bfaabe5d467958245beb0243e387ed628251e3b407b856848379e89c"},
+			{Role: "audio_model", Name: "audio.onnx", URL: publicCLAPExport + "audio.onnx", Size: 277309194, SHA256: "7131b29d5b39ead85411813af31fd6220749201517cc634e33c00cef5758ec85"},
+			{Role: "text_model", Name: "text.onnx", URL: publicCLAPExport + "text.onnx", Size: 500900340, SHA256: "5b89901693b1c9554e02749cead92db619d700334c67abf247e531e78081084b"},
 			{Role: "vocabulary", Name: "vocab.json", URL: publicCLAPSource + "vocab.json", Size: 798293, SHA256: "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"},
 			{Role: "merges", Name: "merges.txt", URL: publicCLAPSource + "merges.txt", Size: 456318, SHA256: "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"},
 			ort,

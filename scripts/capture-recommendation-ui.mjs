@@ -32,6 +32,7 @@ window.__discogsConfigured=false;
 const emit = (data) => window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:data}));
 const methods = {
 GetOnboarded:()=> !window.location.search.includes('wizard'), GetStatus:()=>({parserBackend:'llama'}), GetCatalogInfo:()=>({loaded:true}), ListSavedPlaylists:()=>[],
+GetRecommendationMode:()=>window.location.search.includes('deejai')?'deejai_only':'acousticbrainz_first',
 ParseIntentWithContext:()=>new Promise((resolve,reject)=>{window.__finishParse=(issues=[],instrumental=false,overrides={})=>resolve({...preview,...(instrumental?{backend:'rules',parser:{requestedBackend:'rules'},intent:{...intent,originalDescription:'Instrumental, no vocals',essentialCriteria:[],hardConstraints:[{kind:'exclude_vocals'}],preferences:{...intent.preferences,genres:[],vocalPreference:{value:'no vocals',influence:'positive'}}}}:{}),...overrides,resolutionIssues:issues});window.__failParse=()=>reject(new Error('Local model unavailable'));}), GetPreviewProviderName:()=> 'deezer', GetModelStatus:()=>({backend:'llama',modelLabel:'Local language model'}),GetLlamaRuntime:()=>window.__llamaRuntime??({available:true,builds:['cpu']}),GetModelCatalog:()=>window.__modelCatalog??[],GetModelRecommendations:()=>window.__modelRecommendations??({models:[],hardware:{}}),GetInstalledModels:()=>[],
 BuildPlaylist:()=>{window.__buildCalls++;throw new Error('Unexpected duplicate build');},
 DownloadModel:(id)=>{window.__downloadedModel=id;},
@@ -80,6 +81,22 @@ try {
     assert.equal(await composer.inputValue(), sample.prompt, 'Each shared sample fills the exact generation request');
     assert.equal(await page.evaluate(() => window.__generationCalls), 0, 'Choosing a sample waits for submission');
   }
+  const deejPage = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  await deejPage.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, (route) => route.fulfill({ contentType: "application/javascript", body: api }));
+  await deejPage.route(/.*@wailsio_runtime\.js.*/, (route) => route.fulfill({ contentType: "application/javascript", body: runtime }));
+  await deejPage.goto("http://127.0.0.1:9245/?deejai");
+  const deejExamples = [
+    "Bonobo, 10 tracks",
+    "Daft Punk, 20 tracks",
+    "A journey from Justice to Boards of Canada, 15 tracks",
+    "A journey from Radiohead to Sigur Rós, 12 tracks",
+  ];
+  const deejButtons = deejPage.getByLabel("Description examples").getByRole("button");
+  assert.equal(await deejButtons.count(), 4, "Deej-AI-only mode exposes exactly four examples");
+  assert.deepEqual(await deejButtons.allTextContents(), deejExamples, "Deej-AI examples use only artist seeds or artist transitions with counts");
+  await deejPage.getByText("Catalog artist or track required · include a track count", { exact: true }).waitFor();
+  await deejPage.screenshot({ path: path.join(output, "generate-deejai-examples.png"), fullPage: true });
+  await deejPage.close();
   await composer.fill("Classical 10 tracks");
   await page.waitForTimeout(350);
   assert.equal(await page.evaluate(() => typeof window.__finishParse), 'undefined', 'Counted genre typing must stay local');

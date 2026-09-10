@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/platten/playlistai/internal/logging"
 )
 
 const MaxAttempts = 4
@@ -64,7 +66,20 @@ func RoundTrip(req *http.Request, next func(*http.Request) (*http.Response, erro
 				return nil, err
 			}
 		}
+		started := time.Now()
+		logging.Diagnostic(req.Context(), "api.call", map[string]any{
+			"method": req.Method, "url": diagnosticURL(req), "attempt": attempt + 1,
+		})
 		resp, err := next(req.Clone(req.Context()))
+		status, contentLength := 0, int64(-1)
+		if resp != nil {
+			status, contentLength = resp.StatusCode, resp.ContentLength
+		}
+		logging.Diagnostic(req.Context(), "api.response", map[string]any{
+			"method": req.Method, "url": diagnosticURL(req), "attempt": attempt + 1,
+			"status": status, "contentLength": contentLength,
+			"elapsedMilliseconds": time.Since(started).Milliseconds(), "error": errorText(err),
+		})
 		if ctxErr := req.Context().Err(); ctxErr != nil {
 			closeResponse(resp)
 			return nil, ctxErr
@@ -92,6 +107,26 @@ func RoundTrip(req *http.Request, next func(*http.Request) (*http.Response, erro
 		}
 	}
 	panic("unreachable retry loop")
+}
+
+func diagnosticURL(req *http.Request) string {
+	u := *req.URL
+	query := u.Query()
+	for key := range query {
+		normalized := strings.ToLower(key)
+		if strings.Contains(normalized, "token") || strings.Contains(normalized, "key") || strings.Contains(normalized, "secret") || strings.Contains(normalized, "auth") {
+			query.Set(key, "[redacted]")
+		}
+	}
+	u.RawQuery = query.Encode()
+	return u.String()
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func closeResponse(resp *http.Response) {

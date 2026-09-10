@@ -1047,3 +1047,60 @@ repository gate and CI/release actionlint passed. Windows installer validation
 used a temporary PNPM_HOME and restored the previous user environment. A hosted
 GitHub Actions rerun and full native Windows application packaging were not run
 as part of this local repair.
+
+## Music-only CLAP default — 2026-09-10
+
+Changed new wizard installations from LAION Larger CLAP Music + Speech to the
+full-precision `laion/larger_clap_music` checkpoint. Both FP32 encoders were
+exported from pinned revision `a0b4534a14f58e20944452dff00a22a06ce629d1`,
+published as checksummed release assets, and assigned a new bundle and embedding
+cache identity. Existing Music + Speech bundles and their cached analyses remain
+readable; they are never mixed with music-only embeddings. The desktop binary
+still contains no model weights or Python runtime.
+
+The export passed 10/10 numerical parity fixtures (maximum absolute error
+`1.0430813e-7`, minimum cosine `1.0`), 7/7 tokenizer cases, 3/3 preprocessing
+cases, and the native install/health test. A separate four-prompt text smoke
+check found cosine similarities of `0.998960`–`0.999329`; therefore the model
+remains uncalibrated for strict musical-fit claims pending held-out retrieval and
+listening evaluation.
+
+## Opt-in recommendation diagnostics — 2026-09-10
+
+Settings now provides a detailed-diagnostics checkbox beside the application-log
+viewer. When enabled, the in-memory session log records the submitted prompt,
+resolved intent and parser fallback status; redacted provider request URLs and
+response status/timing; metadata resolution; AcousticBrainz comparisons; CLAP
+assessments and full preview-segment audio embeddings; generation outcome and
+reproducibility data; and each selected track's ranking evidence and explanation.
+AcousticBrainz records include every extracted low-level measurement and
+high-level prediction used by the application, with upstream versions and
+provenance. This makes parser, evidence-coverage and selection failures
+inspectable without changing recommendation behavior.
+
+Detailed records are disabled by default, never written to the process logger or
+disk, and removed from the retained log as soon as the checkbox is cleared. The
+preference itself persists. HTTP bodies and headers are not logged, and query
+parameters whose names indicate credentials are redacted. Full prompts and model
+responses can contain private listening interests, so the Settings control and
+log window both show a warning while collection is active. Individual diagnostic
+records may use up to 64 KiB so complete CLAP vectors survive serialization; the
+whole session log remains bounded to 16 MiB and 2,000 records.
+
+Focused tests cover opt-in retention and clearing, preference persistence,
+credential redaction, and the presence of selection, AcousticBrainz and CLAP
+events. Audio tests assert that newly computed and cached CLAP embeddings reach
+the diagnostic sink without truncation. Generated Wails bindings and frontend
+typechecking also pass.
+
+## Deej-AI-only generation examples — 2026-09-10
+
+The Generate screen now reads the selected recommendation mode independently of
+the active parser. In Deej-AI-only mode it shows exactly four compatible request
+examples: two artist-and-count requests and two counted artist-to-artist
+journeys. Its placeholder, helper text, mode badge and Surprise action use the
+same catalog-reference contract. Genre- or mood-only examples remain available
+in evidence-aware modes, where those properties can be evaluated.
+
+The rendered UI regression asserts the four exact examples and the visible
+catalog-seed requirement. Frontend typechecking and the production build pass.

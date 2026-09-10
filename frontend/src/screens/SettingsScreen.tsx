@@ -22,7 +22,6 @@ function fmtGB(bytes: number): string {
 const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "deezer", label: "Deezer" },
   { id: "spotify", label: "Spotify" },
-  { id: "off", label: "Off" },
 ];
 
 /** Local models, playback, metadata providers, and user data controls. */
@@ -37,6 +36,7 @@ export function SettingsScreen() {
   const installProgress = useProgress("llama-install");
   const [previewProvider, setPreviewProviderState] = useState<string | null>(null);
   const [tasteProfile, setTasteProfile] = useState<TasteProfileSummary | null>(null);
+  const [debugLogging, setDebugLogging] = useState(false);
 
   const refresh = useCallback(() => {
     API.GetModelStatus()
@@ -51,6 +51,9 @@ export function SettingsScreen() {
     API.GetTasteProfile("", "")
       .then((profile) => setTasteProfile(profile ?? null))
       .catch(() => setTasteProfile(null));
+    API.GetDebugLogging()
+      .then(setDebugLogging)
+      .catch(() => setDebugLogging(false));
   }, []);
 
   useEffect(() => {
@@ -323,8 +326,8 @@ export function SettingsScreen() {
           ))}
         </div>
         <p className="text-[11.5px] text-faint">
-          Deezer looks up a 30s preview per track (no account needed). "Spotify" uses just the
-          preview link shipped with the catalog, no network calls. "Off" disables playback.
+          Deezer looks up a 30s preview per track (no account needed). Spotify uses just the
+          preview link shipped with the catalog, with no network calls.
         </p>
       </section>
 
@@ -334,6 +337,29 @@ export function SettingsScreen() {
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Application logs</h2>
         <p className="text-[12px] text-muted">View live session logs in a separate window. Settings stays open.</p>
+        <label className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 accent-accent"
+            checked={debugLogging}
+            disabled={busy !== null}
+            onChange={(event) => {
+              const enabled = event.target.checked;
+              setDebugLogging(enabled);
+              void run("debug-logs", () => API.SetDebugLogging(enabled));
+            }}
+          />
+          <span className="min-w-0">
+            <span className="block text-[13.5px] font-medium">Show detailed recommendation diagnostics</span>
+            <span className="mt-1 block text-[11.5px] text-faint">
+              Includes full prompts, parsed intent, provider request URLs and response summaries,
+              full CLAP audio embedding vectors, AcousticBrainz measurements and predictions,
+              assessments, and the evidence behind every selected track.
+              These details may reveal listening interests. They stay in memory only and are removed
+              from the log viewer when you turn this off.
+            </span>
+          </span>
+        </label>
         <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => void run("logs", () => API.OpenLogWindow())}>
           Open logs
         </Button>

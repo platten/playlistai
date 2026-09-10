@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/logging"
 )
 
 const AnalysisBudget = 120 * time.Second
@@ -236,6 +237,10 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	} else {
 		s.snapshot.CacheHits++
 	}
+	// The complete derived CLAP record includes every preview-segment audio
+	// embedding. Diagnostic writes remain opt-in and memory-only; logging at this
+	// point avoids an extra database read for both cached and new analyses.
+	logging.Diagnostic(s.ctx, "analysis.clap_audio_embedding", record)
 	out.AnalysisID = record.ID
 	out.Identity = record.Identity
 	out.Detail = "Checked against the available preview only; the rest of the recording is unassessed."

@@ -1,4 +1,4 @@
-Music-and-speech CLAP model: Apache-2.0 per https://huggingface.co/laion/larger_clap_music_and_speech
+Music-only CLAP model: Apache-2.0 per https://huggingface.co/laion/larger_clap_music
 
 Copyright 2018- The Hugging Face team. All rights reserved.
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
 	intentresolution "github.com/platten/playlistai/internal/resolution"
 )
@@ -61,6 +62,8 @@ func (a *API) ParseIntentWithContext(ctx context.Context, prompt string, session
 }
 
 func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput) (IntentPreview, error) {
+	ctx = a.diagnosticContext(ctx)
+	logging.Diagnostic(ctx, "generation.prompt", input)
 	input.SkipMetadata = a.app.RecommendationMode() == core.DeejAIOnly
 	ctx, current, finish := a.operations.begin(ctx, "intent-preview")
 	defer finish()
@@ -72,9 +75,12 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 	started := time.Now()
 	entry, reused, err := a.parseIntentCached(ctx, input, nil)
 	if err != nil {
+		logging.Diagnostic(ctx, "intent.error", err.Error())
 		return IntentPreview{}, err
 	}
 	m, backend := entry.intent, entry.outcome.Backend
+	logging.Diagnostic(ctx, "intent.parsed", m)
+	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	var issues []intentresolution.Issue
 	if a.app.Resolver != nil {
 		m, issues = intentresolution.Apply(a.app.Resolver, m)
@@ -147,12 +153,17 @@ func (a *API) GenerateFromPromptResolvedWithContext(ctx context.Context, prompt 
 }
 
 func (a *API) generateFromPromptOperation(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
+	ctx = a.diagnosticContext(ctx)
+	logging.Diagnostic(ctx, "generation.prompt", input)
 	a.operations.cancel("intent-preview")
 	ctx, current, finish := a.operations.begin(ctx, "prompt-generation")
 	defer finish()
 	ctx, finishGeneration := a.beginGeneration(ctx, input.GenerationID)
 	defer finishGeneration()
 	result, err := a.generateFromPrompt(ctx, input, selections)
+	if err != nil {
+		logging.Diagnostic(ctx, "generation.error", err.Error())
+	}
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			return GenerateResult{}, contextErr
@@ -180,6 +191,8 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		return GenerateResult{}, err
 	}
 	m := entry.intent
+	logging.Diagnostic(ctx, "intent.parsed", m)
+	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	m.Controls.RecommendationMode = recommendationMode
 	m.VerificationPolicy = core.BestAvailable
 	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
@@ -197,6 +210,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		if err != nil {
 			return GenerateResult{}, err
 		}
+		logKnowledgeDiagnostics(ctx, m.Knowledge)
 	}
 	m, _ = intentresolution.Apply(a.app.Resolver, m)
 	timings = append(timings, StageTiming{Stage: "resolve", Milliseconds: time.Since(resolveStarted).Milliseconds()})
@@ -239,6 +253,20 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		"parse_ms", timings[0].Milliseconds, "resolve_ms", timings[1].Milliseconds)
 
 	return GenerateResult{Playlist: pl, Request: req, Notes: m.NotesForUser, Name: name, Status: status}, nil
+}
+
+func logKnowledgeDiagnostics(ctx context.Context, knowledge *core.KnowledgeSnapshot) {
+	if knowledge == nil {
+		logging.Diagnostic(ctx, "metadata.knowledge_summary", "unavailable")
+		return
+	}
+	logging.Diagnostic(ctx, "metadata.knowledge_summary", knowledge)
+	for _, pool := range knowledge.ArtistPools {
+		logging.Diagnostic(ctx, "metadata.artist_pool", pool)
+	}
+	for _, track := range knowledge.Tracks {
+		logging.Diagnostic(ctx, "metadata.track", track)
+	}
 }
 
 func applyAnchorSelections(anchors []core.InferredAnchor, selections []ResolutionSelection) []core.InferredAnchor {
