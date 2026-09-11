@@ -8,13 +8,14 @@ const root = new URL("../", import.meta.url);
 const html = readFileSync(new URL("site/index.html", root), "utf8");
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
 
-test("published 0.11.0 replaces stale preview and download messaging", () => {
-  assert.match(html, /NOW AVAILABLE \/ VERSION 0\.11\.0/);
-  assert.match(html, /LATEST RELEASE \/ 0\.11\.0/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/releases/tag/v0.11.0"));
+test("published 0.11.1 replaces stale preview and download messaging", () => {
+  assert.match(html, /NOW AVAILABLE \/ VERSION 0\.11\.1/);
+  assert.match(html, /LATEST RELEASE \/ 0\.11\.1/);
+  assert.ok(links.includes("https://github.com/platten/playlistai/releases/tag/v0.11.1"));
   assert.ok(!links.some(link => link.includes("untagged-")));
-  assert.doesNotMatch(html, /COMING IN VERSION|awaiting publication|NOT IN THE PUBLIC DOWNLOAD|0\.7\.0/);
-  assert.match(html, /not rerun for 0\.11\.0/);
+  assert.doesNotMatch(html, /COMING IN VERSION|awaiting publication|NOT IN THE PUBLIC DOWNLOAD|IN DEVELOPMENT|These unreleased changes|0\.11\.0/);
+  assert.match(html, /AVAILABLE IN 0\.11\.1/);
+  assert.match(html, /not rerun for 0\.11\.1/);
 });
 
 test("downloads retain exact published application asset names", () => {
@@ -23,7 +24,7 @@ test("downloads retain exact published application asset names", () => {
   assert.equal(downloads.length, 13);
   assert.equal(new Set(downloads).size, downloads.length);
   for (const link of downloads) {
-    assert.ok(link.startsWith("https://github.com/platten/playlistai/releases/download/v0.11.0/"));
+    assert.ok(link.startsWith("https://github.com/platten/playlistai/releases/download/v0.11.1/"));
     assert.ok(approved.has(link.split("/").at(-1)), link);
   }
 });
@@ -125,15 +126,18 @@ test("development replay retains incomplete denominators and coverage limits", (
   assert.match(section, /neither had selected-track AcousticBrainz comparison scores/);
 });
 
-test("0.11.0 highlights link to evidence without overstating coverage", () => {
+test("0.11.1 highlights link to evidence without overstating coverage", () => {
   const release = html.match(/<section[^>]+id="new"[\s\S]*?<\/section>/)?.[0];
   assert.ok(release);
-  for (const text of ["A wider shortlist, checked down", "Playlist messages that add up", "Useful logs, under your control", "Small details, easier listening"]) {
+  for (const text of ["Genre evidence for every track", "Stop when the playlist is ready", "A workspace that stays with you", "Safer settings and local data"]) {
     assert.ok(release.includes(text), text);
   }
   for (const document of ["recommendation-settings.md", "music-metadata.md", "clap-model-candidates.md", "application-logs.md", "test-coverage.md"]) {
-    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.11.0/docs/${document}`), document);
+    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.11.1/docs/${document}`), document);
   }
-  assert.match(html, /78\.52% backend statements and 6\.81% frontend lines, not the requested 95%/);
-  assert.match(html, /no new held-out listening study was run for 0\.11\.0/);
+  assert.match(html, /150 passing behavioral tests/);
+  assert.match(html, /83\.8749% backend statements, 99\.17% frontend lines and 91\.01% frontend branches/);
+  assert.match(html, /not a release-tree coverage measurement/);
+  assert.match(html, /95% target remains unmet/);
+  assert.match(html, /no new held-out listening study was run for 0\.11\.1/);
 });

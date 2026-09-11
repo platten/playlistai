@@ -42,13 +42,13 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.11.0/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.11.0')) throw Error('Latest release missing');
-  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.11.0')) throw Error('Public download version unclear');
+  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.11.1/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.11.1')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.11.1')) throw Error('Public download version unclear');
   if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
   if (await page.locator('#recommendations .mode-card').count() !== 3) throw Error('Recommendation modes missing');
   if (await page.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing');
-  if (!(await page.locator('#development').innerText()).includes('NOT IN 0.11.0')) throw Error('Unreleased genre checks must be labeled');
+  if (!(await page.locator('#development').innerText()).includes('AVAILABLE IN 0.11.1')) throw Error('Released genre checks must be labeled');
   if (await page.locator('#development tbody tr').count() !== 3 || !(await page.locator('#development .results-note').innerText()).includes('105 of 120 planned cases completed')) throw Error('Bounded replay completion counts missing');
   const replay = JSON.parse(await readFile('docs/data/three-mode-regression-2026-09-11.json', 'utf8'));
   for (const [index, result] of replay.summaries.entries()) {
@@ -57,7 +57,7 @@ try {
   }
   const performance = await page.locator('.performance-note').innerText();
   if (!performance.includes('60.4 ms') || !performance.includes('62.8 ms') || !performance.includes('no cache speed advantage')) throw Error('Current benchmark results or caveat missing');
-  await page.getByRole('link', {name:'Read the 0.11.0 release notes'}).waitFor();
+  await page.getByRole('link', {name:'Read the 0.11.1 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); window.scrollTo(0,0); });
