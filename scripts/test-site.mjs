@@ -101,11 +101,28 @@ test("live measurements preserve failure and comparability caveats", () => {
   assert.match(html, /No held-out listening judgments were used/);
   assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.9.0/docs/three-mode-regression.md"));
   const benchmark = readFileSync(new URL("docs/performance-and-model-evaluation.md", root), "utf8");
-  for (const value of ["1.888 s", "0.325 s", "5.8×"]) {
-    assert.ok(html.includes(value), value);
-    assert.ok(benchmark.includes(value), `Missing benchmark source: ${value}`);
+  for (const [display, source] of [["60.4 ms", "60.350 ms"], ["62.8 ms", "62.773 ms"]]) {
+    assert.ok(html.includes(display), display);
+    assert.ok(benchmark.includes(source), `Missing benchmark source: ${source}`);
   }
-  assert.match(html, /not a whole-app speedup claim/);
+  assert.match(html, /no cache speed advantage/);
+  assert.match(html, /neither a whole-app latency measurement nor a musical-quality score/);
+});
+
+test("development replay retains incomplete denominators and coverage limits", () => {
+  const report = JSON.parse(readFileSync(new URL("docs/data/three-mode-regression-2026-09-11.json", root)));
+  const section = html.match(/<section[^>]+id="development"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(section);
+  const rows = [...section.matchAll(/<tr><th scope="row">[^<]+<\/th><td>(\d+)\/40<\/td><td>(\d+) \/ (\d+)<\/td><\/tr>/g)];
+  assert.equal(rows.length, report.summaries.length);
+  report.summaries.forEach((summary, index) => {
+    assert.equal(summary.completed + summary.interrupted + summary.unattempted, 40);
+    assert.deepEqual(rows[index].slice(1).map(Number), [summary.completed, summary.atLeastFive, summary.assertionPasses]);
+  });
+  assert.match(section, /105 of 120 planned cases completed/);
+  assert.match(section, /Four remained interrupted and eleven were unattempted/);
+  assert.match(section, /No fresh LLM parsing or preview downloads/);
+  assert.match(section, /neither had selected-track AcousticBrainz comparison scores/);
 });
 
 test("0.11.0 highlights link to evidence without overstating coverage", () => {
