@@ -1,5 +1,25 @@
 # Recommendation Correctness
 
+## Stop analysis at the requested count (2026-09-11)
+
+`multichannel/v20` removes the metadata-stream accepted-track oversampling
+target: a ten-track request previously analyzed twenty passing candidates even
+when ten could already form a valid playlist. Both metadata and recommendation
+paths now test completion at N minus required tracks. The selector/sequencer
+still verifies count, diversity and journey placement before stopping, and
+rejected tracks still require replacements. Recommendation retrieval can prepare
+2N candidates without analyzing all of them. Best-available mode no longer keeps
+searching solely for a third artist after a valid full-count sequence exists;
+soft diversity preferences still guide selection from the available pool.
+No model or saved-intent migration
+is needed; regeneration uses the new algorithm identity.
+
+Focused synthetic regressions count provider pulls, audio assessments and accepted
+callbacks in both source-priority modes, with required tracks and rejected
+candidates, plus the default best-available policy with two alternating artists.
+Prior oversampling-specific expectations intentionally change to
+first-complete-playlist behavior; no musical-quality improvement is claimed.
+
 ## Playlist count versus fulfillment messages (2026-09-10)
 
 The playlist screen no longer calls every non-fulfilled result a “verified

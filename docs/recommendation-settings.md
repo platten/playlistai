@@ -51,8 +51,12 @@ original references and incorporating accepted tracks as continuation context.
 Missing evidence, hard exclusions and recording deduplication are never bypassed
 to fill the count. Existing analysis/time limits can produce a smaller playlist
 with a structured explanation. Pure artist/reference requests without descriptive
-clauses skip preview analysis. Deej-AI-only remains analysis-free; direct metadata
-genre discovery retains its separate bounded discovery/oversampling policy.
+clauses skip preview analysis. Deej-AI-only remains analysis-free. Direct metadata
+genre discovery also stops when selection and sequencing can fill the requested
+count; it no longer analyzes surplus tracks just to improve ranking. Preparing
+a larger recommendation shortlist does not require analyzing every entry.
+Soft preferences for more distinct artists do not prolong checking once a valid
+full-length sequence exists; hard artist-spacing and journey rules still apply.
 
 ## Understanding playlist messages
 
@@ -98,7 +102,7 @@ mode pinned in an existing request or interrupt a running generation.
 The LLM does not choose this setting. The desktop applies it after parsing, and
 generation fingerprints include it. Engine-only parsing has a separate cache
 key and skips even provider genre-name confirmation. New requests use
-`multichannel/v19` or `deejai/v4+engine-only/v1`. The retained `deejai/v4`
+`multichannel/v20` or `deejai/v4+engine-only/v1`. The retained `deejai/v4`
 evaluation baseline remains unchanged. Engine-only generation has no profile
 snapshot; exposure logging remains separate from ranking and positive feedback.
 

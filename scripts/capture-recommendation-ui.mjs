@@ -237,6 +237,9 @@ try {
   await page.waitForFunction(()=>window.__generationCalls===3);
   await page.evaluate(()=>window.__finishGeneration('needs_clarification',true));
   await page.getByRole('heading',{name:'Refine your request'}).waitFor();
+  await page.getByRole('heading',{name:'Your request',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:/edit description/i}).count(),0,'Neither request summary nor clarification shows an Edit description button');
+  assert.equal(await composer.isEnabled(),true,'Description remains directly editable after clarification');
   await page.getByRole('alert').getByText(/Vocal evidence is unknown.*Add a known instrumental reference/).waitFor();
   await page.screenshot({path:path.join(output,'clarification.png'),fullPage:true,animations:"disabled"});
   await composer.fill('Instrumental, no vocals');

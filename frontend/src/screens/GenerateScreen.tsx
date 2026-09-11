@@ -472,7 +472,6 @@ export function GenerateScreen({
               </select>
             </label>
           ))}
-          <Button className="mt-3" variant="ghost" size="sm" onClick={() => document.getElementById("music-description")?.focus()}>Edit description</Button>
         </div>
       )}
 
@@ -639,7 +638,7 @@ export function GenerateScreen({
 
       {preview && (
         <div className="w-full">
-          <div className="mb-2 flex items-center justify-between"><h2 className="text-[14px] font-semibold">Your request</h2><Button variant="ghost" size="sm" onClick={() => document.getElementById("music-description")?.focus()}>Edit description</Button></div>
+          <h2 className="mb-2 text-[14px] font-semibold">Your request</h2>
           <div className="rounded-card border border-line bg-surface p-3 text-[13px] leading-relaxed">
             <p>{preview.count} tracks{preview.mode === "journey" ? " · a musical journey" : ""}</p>
             {(preview.intent.references ?? []).map((ref, index) => <p key={index}>{ref.kind.charAt(0).toUpperCase() + ref.kind.slice(1)}: {ref.query}{ref.influence === "negative" ? " (excluded)" : ""}</p>)}

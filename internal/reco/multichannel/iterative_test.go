@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -37,6 +38,40 @@ func (s *fixtureDiscovery) Next(ctx context.Context) (core.TrackRef, error) {
 }
 func (s *fixtureDiscovery) Snapshot() *core.KnowledgeSnapshot { return &s.snapshot }
 
+func TestMetadataDiscoveryStopsWhenFinalPlaylistCanBeFilled(t *testing.T) {
+	for _, mode := range []core.RecommendationMode{core.AcousticBrainzFirst, core.CLAPFirst} {
+		for _, required := range []int{0, 2} {
+			for _, rejected := range []int{0, 3} {
+				t.Run(fmt.Sprintf("%s/required=%d/rejected=%d", mode, required, rejected), func(t *testing.T) {
+					cat, service, retriever := recommendationPoolFixture(t, 40, rejected)
+					source := &fixtureDiscovery{}
+					for _, candidate := range retriever.candidates {
+						source.tracks = append(source.tracks, candidate.Track)
+					}
+					intent := poolIntent(10)
+					intent.Controls.RecommendationMode = mode
+					for i := 0; i < required; i++ {
+						intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, TrackID: fmt.Sprintf("p%03d", 39-i)})
+					}
+					engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
+					engine.retriever = retriever
+					checked := 0
+					got, err := engine.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent, OnChecked: func(core.TrackRef) { checked++ }})
+					if err != nil || len(got.Tracks) != 10 || got.Outcome.State != core.OutcomeFulfilled {
+						t.Fatalf("tracks=%d outcome=%+v err=%v", len(got.Tracks), got.Outcome, err)
+					}
+					if source.pulls != 10-required+rejected || checked != 10-required || len(retriever.calls) != 0 {
+						t.Fatalf("unnecessary work: pulls=%d checked=%d retrievals=%d", source.pulls, checked, len(retriever.calls))
+					}
+					if got.AudioEvidence == nil || len(got.AudioEvidence.Assessments) != 10+rejected {
+						t.Fatalf("unexpected audio work: %+v", got.AudioEvidence)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestIterativeDiscoveryRejectsAndAdvancesUntilCount(t *testing.T) {
 	cat := testCatalog()
 	service, fetch := cachedAudioService(t, cat)
@@ -46,16 +81,52 @@ func TestIterativeDiscoveryRejectsAndAdvancesUntilCount(t *testing.T) {
 	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_artist", Value: "Blocked Artist"}}
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
 	result, err := engine.Build(context.Background(), intent)
-	// Ranking now compares all eligible alternatives instead of returning the
-	// first passing preview. "last" has higher combined seed/semantic affinity.
-	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "last" || source.pulls != 4 {
+	// Stop at the first valid complete playlist: do not analyze "last" solely
+	// to improve ranking after the requested count is already satisfied.
+	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "audio" || source.pulls != 3 {
 		t.Fatalf("result=%+v pulls=%d err=%v", result, source.pulls, err)
 	}
 	if fetch.calls != 0 {
 		t.Fatal("cached features were downloaded again")
 	}
-	if len(result.Intent.Knowledge.Discovery) != 4 {
+	if len(result.Intent.Knowledge.Discovery) != 3 {
 		t.Fatal("rejected attempts were not saved")
+	}
+}
+
+func TestBestAvailableDiscoveryDoesNotExtendForSoftArtistDiversity(t *testing.T) {
+	for _, mode := range []core.RecommendationMode{core.AcousticBrainzFirst, core.CLAPFirst} {
+		t.Run(string(mode), func(t *testing.T) {
+			var artists []string
+			for i := range 20 {
+				artists = append(artists, fmt.Sprintf("Artist %d", i%2))
+			}
+			cat, service, retriever := recommendationPoolFixture(t, 20, 0, artists...)
+			source := &fixtureDiscovery{}
+			for _, candidate := range retriever.candidates {
+				source.tracks = append(source.tracks, candidate.Track)
+			}
+			intent := poolIntent(10)
+			intent.VerificationPolicy = core.BestAvailable
+			intent.References = nil
+			intent.Seeds = core.IntentSeeds{}
+			intent.Controls.RecommendationMode = mode
+			intent.Controls.ArtistDiversity = 1
+			engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
+			engine.retriever = retriever
+			got, err := engine.Build(context.Background(), intent)
+			if err != nil || len(got.Tracks) != 10 || source.pulls != 10 || len(retriever.calls) != 0 {
+				t.Fatalf("tracks=%d pulls=%d retrievals=%d err=%v", len(got.Tracks), source.pulls, len(retriever.calls), err)
+			}
+			if got.AudioEvidence == nil || len(got.AudioEvidence.Assessments) != 10 {
+				t.Fatalf("surplus analysis: %+v", got.AudioEvidence)
+			}
+			for i := 1; i < len(got.Tracks); i++ {
+				if got.Tracks[i].Artist == got.Tracks[i-1].Artist {
+					t.Fatal("artist adjacency bypassed")
+				}
+			}
+		})
 	}
 }
 

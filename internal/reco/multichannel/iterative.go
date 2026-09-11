@@ -46,10 +46,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			outNotices = append(outNotices, core.PlaylistNotice{Code: "discovery_stopped", Detail: "Discovery stopped; only eligible tracks were retained."})
 		}
 	}()
-	// Metadata discovery retains its bounded oversampling policy. Recommendation
-	// continuation instead prepares a 2N shortlist BEFORE expensive analysis,
-	// consumes it in recommendation order, and stops once selection can fill N.
-	target := max(2*(intent.Count-len(required)), intent.Count-len(required)+8)
+	// Retrieval may prepare a 2N shortlist, but neither discovery nor recommendation
+	// should analyze surplus tracks once selection and sequencing can fill N.
+	target := intent.Count - len(required)
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
 	}
@@ -122,7 +121,6 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				candidate.Sources = source.Evidence(track.ID)
 			}
 		} else {
-			target = intent.Count - len(required)
 			if len(queue) == 0 {
 				before := len(attempted)
 				if err := refill(); err != nil {
@@ -289,18 +287,7 @@ func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.
 			return false, err
 		}
 	}
-	if o.bestAvailable && genreArtistDiversity(intent) {
-		artists := map[string]bool{}
-		for _, track := range sequence.Tracks {
-			if key := core.NormalizeIdentityPart(track.Artist); key != "" {
-				artists[key] = true
-			}
-		}
-		// Keep looking within the same bounded, eligible pool before settling
-		// for a two-artist alternation. Exhaustion still returns safe partials.
-		if len(artists) < min(3, intent.Count) {
-			return false, err
-		}
-	}
+	// Soft diversity preferences rank the available pool; they must not prolong
+	// analysis after sequencing has produced the requested valid track count.
 	return len(sequence.Tracks) == intent.Count, err
 }

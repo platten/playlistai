@@ -1,5 +1,14 @@
 # Recommendation Milestones
 
+## Stop after a complete requested playlist (2026-09-11)
+
+`multichannel/v20` stops metadata discovery and musical analysis once the
+requested count can satisfy final selection and sequencing. Required tracks
+reduce remaining slots; rejected candidates do not count. This supersedes the
+metadata oversampling policy noted below without changing recommendation 2N
+shortlist preparation, hard exclusions, journey checks, or evidence priorities.
+Saved results remain readable; new generations carry the updated strategy version.
+
 ## Recommendation shortlist before analysis (2026-09-10)
 
 Implemented `multichannel/v19`: recommendation-based builds prepare up to 2N

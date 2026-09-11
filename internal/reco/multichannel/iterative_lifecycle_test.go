@@ -64,7 +64,7 @@ func (r forbiddenRetriever) Retrieve(context.Context, ports.RetrievalRequest) ([
 	return nil, nil
 }
 
-func TestDiscoveryOversamplesBeforeRankingWithoutEagerRetrieval(t *testing.T) {
+func TestDiscoveryStopsWithoutSpeculativeRankingOrEagerRetrieval(t *testing.T) {
 	var tracks []fakes.CatalogTrack
 	for i, id := range []string{"a", "b", "c", "d", "e", "f", "g", "h", "i"} {
 		tracks = append(tracks, fakes.CatalogTrack{ID: id, Display: id + " - Song", Audio: []float32{float32(i + 1), 1}, Track: []float32{1, 0}})
@@ -76,10 +76,11 @@ func TestDiscoveryOversamplesBeforeRankingWithoutEagerRetrieval(t *testing.T) {
 	intent := testIntent(1)
 	intent.References = nil
 	intent.Seeds = core.IntentSeeds{}
-	// Positive taste favors the last candidate, not the first streamed one.
+	// Historical taste must not cause extra discovery once a valid playlist
+	// meets the count. Rank the accepted set, not speculative unseen tracks.
 	profile := core.TasteProfile{RequestPositive: core.EmbeddingAffinity{Audio: []float32{9, 1}, Cooccurrence: []float32{1, 0}}}
 	result, err := engine.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent, Profile: profile})
-	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "i" || source.pulls != 9 {
-		t.Fatalf("ranking had no alternatives: %+v pulls=%d err=%v", result.Tracks, source.pulls, err)
+	if err != nil || len(result.Tracks) != 1 || result.Tracks[0].ID != "a" || source.pulls != 1 {
+		t.Fatalf("discovery continued past requested count: %+v pulls=%d err=%v", result.Tracks, source.pulls, err)
 	}
 }
