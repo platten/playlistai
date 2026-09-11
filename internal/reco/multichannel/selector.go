@@ -109,6 +109,17 @@ func (p *poolEntry) score(cfg Config, lambda float64) float64 {
 }
 
 func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, request ports.SelectionRequest) (ports.SelectionResult, error) {
+	return s.selectCandidates(ctx, candidates, request, true)
+}
+
+// shortlist orders provisional candidates for analysis. Missing preview scores
+// cannot yet justify rejecting a candidate at the final relevance floor. MMR
+// still uses that floor to favor relevance, and final Select enforces it.
+func (s *MMRSelector) shortlist(ctx context.Context, candidates []core.Candidate, request ports.SelectionRequest) (ports.SelectionResult, error) {
+	return s.selectCandidates(ctx, candidates, request, false)
+}
+
+func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Candidate, request ports.SelectionRequest, enforceFloor bool) (ports.SelectionResult, error) {
 	if request.Count <= 0 {
 		return ports.SelectionResult{Candidates: []core.Candidate{}, Notices: []core.PlaylistNotice{}}, nil
 	}
@@ -122,7 +133,7 @@ func (s *MMRSelector) Select(ctx context.Context, candidates []core.Candidate, r
 	floor := math.Max(s.cfg.SelectionMinimumRelevance, best-s.cfg.SelectionRelevanceWindow)
 	pool := make([]poolEntry, 0, len(candidates))
 	for _, candidate := range candidates {
-		if candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
+		if enforceFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
 			continue
 		}
 		entry := poolEntry{

@@ -1,16 +1,73 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/logging"
 )
+
+func TestConcurrentDebugPreferencesKeepPersistenceAndCaptureConsistent(t *testing.T) {
+	c := newTestContainer(t)
+	store := &logging.Store{}
+	api := NewWithLogs(c, nil, store)
+	for range 20 {
+		var writers sync.WaitGroup
+		for writer := range 8 {
+			writers.Add(1)
+			go func() {
+				defer writers.Done()
+				if err := api.SetDebugLogging(writer%2 == 0); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		writers.Wait()
+		if saved, active := c.DebugLogging(), api.GetDebugLogging(); saved != active {
+			t.Fatalf("saved debug preference %v differs from active capture %v", saved, active)
+		}
+	}
+	if err := api.SetDebugLogging(false); err != nil {
+		t.Fatal(err)
+	}
+	if c.DebugLogging() || store.DebugEnabled() {
+		t.Fatal("the final opt-out was not applied everywhere")
+	}
+}
+
+func TestDebugPreferenceEnablesOrdinaryGoLogsOnlyInViewer(t *testing.T) {
+	c := newTestContainer(t)
+	store := &logging.Store{}
+	var output bytes.Buffer
+	log := slog.New(logging.NewHandler(slog.NewTextHandler(&output, nil), store))
+	api := NewWithLogs(c, log, store)
+	log.Debug("before opt-in")
+	if err := api.SetDebugLogging(true); err != nil {
+		t.Fatal(err)
+	}
+	log.Debug("runtime detail", "attempt", 1)
+	records := api.GetLogs(0)
+	if len(records) != 1 || records[0].Level != "DEBUG" || !strings.Contains(records[0].Text, "attempt=1") {
+		t.Fatalf("Go DEBUG entry missing from log viewer: %+v", records)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("opt-in DEBUG leaked to process output: %s", output.String())
+	}
+	if err := api.SetDebugLogging(false); err != nil {
+		t.Fatal(err)
+	}
+	log.Debug("after opt-out")
+	if len(api.GetLogs(0)) != 0 || api.GetDebugLogging() {
+		t.Fatal("opt-out did not stop and clear Go DEBUG entries")
+	}
+}
 
 func TestDebugLoggingPreferenceAndRecommendationDetails(t *testing.T) {
 	c := newTestContainer(t)

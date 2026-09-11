@@ -51,9 +51,6 @@ export function SettingsScreen() {
     API.GetTasteProfile("", "")
       .then((profile) => setTasteProfile(profile ?? null))
       .catch(() => setTasteProfile(null));
-    API.GetDebugLogging()
-      .then(setDebugLogging)
-      .catch(() => setDebugLogging(false));
   }, []);
 
   useEffect(() => {
@@ -62,6 +59,22 @@ export function SettingsScreen() {
       .then((p) => setPreviewProviderState(p || "deezer"))
       .catch(() => setPreviewProviderState("deezer"));
   }, [refresh]);
+
+  useEffect(() => {
+    let disposed = false;
+    let revision = 0;
+    const syncDebugLogging = () => {
+      if (busy === "debug-logs") return;
+      const current = ++revision;
+      void API.GetDebugLogging().then((enabled) => {
+        if (!disposed && current === revision) setDebugLogging(enabled);
+      }).catch(() => undefined);
+    };
+    // The log window can now change this preference while Settings stays open.
+    syncDebugLogging();
+    window.addEventListener("focus", syncDebugLogging);
+    return () => { disposed = true; window.removeEventListener("focus", syncDebugLogging); };
+  }, [busy]);
 
   const choosePreview = (id: string) => {
     setPreviewProviderState(id);
@@ -97,7 +110,10 @@ export function SettingsScreen() {
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 py-8 sm:px-8">
-      <h1 className="text-[16px] font-semibold">Settings</h1>
+      <div>
+        <h1 className="text-[26px] font-semibold tracking-[-0.02em]">Settings</h1>
+        <p className="mt-2 text-[14px] text-muted">Tune your recommendations, playback, and local tools.</p>
+      </div>
 
       <RecommendationSettings />
 
@@ -107,11 +123,11 @@ export function SettingsScreen() {
         </h2>
 
         {/* llama.cpp runtime — required before any model can be used */}
-        <div className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5">
+        <div className="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5">
           <span
             className={"size-2 flex-none rounded-pill " + (runtimeReady ? "bg-good" : "bg-warn")}
           />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 basis-[180px]">
             <div className="text-[13.5px] font-medium">
               {runtimeReady ? "llama.cpp installed" : "llama.cpp not installed"}
               {runtimeReady && (runtime?.builds?.length ?? 0) > 0 && (
@@ -227,10 +243,10 @@ export function SettingsScreen() {
             catalog.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center gap-3 border-b border-line px-4 py-3 last:border-b-0"
+                className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3 last:border-b-0"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-[13.5px] font-medium">
+                <div className="min-w-0 flex-1 basis-[220px]">
+                  <div className="flex flex-wrap items-center gap-2 text-[13.5px] font-medium break-words">
                     {m.label}
                     {m.recommended && (
                       <span className="rounded-pill bg-accent-quiet px-1.5 py-px text-[10.5px] text-accent">
@@ -278,13 +294,14 @@ export function SettingsScreen() {
         </div>
 
         <div className="flex flex-col gap-2">
-          <div className="text-[12px] text-muted">Or use a GGUF file you already have</div>
+          <label htmlFor="local-model-path" className="text-[12px] text-muted">Or use a GGUF file you already have</label>
           <div className="flex gap-2">
             <input
+              id="local-model-path"
               value={filePath}
               onChange={(e) => setFilePath(e.target.value)}
               placeholder="/path/to/model.gguf"
-              className="h-9 flex-1 rounded-control border border-line bg-bg px-3 font-mono text-[12.5px] text-text outline-none placeholder:text-faint focus:border-accent"
+              className="h-9 min-w-0 flex-1 rounded-control border border-line bg-bg px-3 font-mono text-[12.5px] text-text placeholder:text-faint focus:border-accent"
             />
             <Button
               variant="ghost"
@@ -313,6 +330,7 @@ export function SettingsScreen() {
             <button
               key={o.id}
               type="button"
+              aria-pressed={previewProvider === o.id}
               onClick={() => choosePreview(o.id)}
               className={
                 "h-8 rounded-control border px-3 text-[12.5px] transition-colors " +
@@ -345,7 +363,6 @@ export function SettingsScreen() {
             disabled={busy !== null}
             onChange={(event) => {
               const enabled = event.target.checked;
-              setDebugLogging(enabled);
               void run("debug-logs", () => API.SetDebugLogging(enabled));
             }}
           />
@@ -375,8 +392,8 @@ export function SettingsScreen() {
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
           Local taste profile
         </h2>
-        <div className="flex items-center gap-4 rounded-card border border-line bg-surface px-4 py-3.5">
-          <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-4 rounded-card border border-line bg-surface px-4 py-3.5">
+          <div className="min-w-0 flex-1 basis-[200px]">
             <div className="text-[13.5px] font-medium">
               {tasteProfile?.coldStart
                 ? "No explicit taste evidence yet"

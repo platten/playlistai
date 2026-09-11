@@ -20,6 +20,9 @@ Soundiiz.
 Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
 and Linux, with a React/TypeScript interface.
 
+The header's theme button cycles through **System** (computer), **Light** (sun),
+and **Dark** (moon). Hover for the current mode; your choice is saved locally.
+
 ## How generation works
 
 ```mermaid
@@ -140,6 +143,11 @@ See [metadata setup and cache policy](docs/music-metadata.md).
 Recommendation exposure is stored
 separately from positive feedback, and a generated or briefly previewed track
 is never treated as a like or dislike.
+
+**Settings → Application logs → Open logs** provides a minimum-level selector:
+DEBUG, INFO, WARN, or ERROR. DEBUG opts into potentially sensitive, memory-only
+diagnostics; choosing a higher level stops and clears debug collection. See
+[application logs](docs/application-logs.md) for filtering, privacy, and retention.
 
 ## Develop
 

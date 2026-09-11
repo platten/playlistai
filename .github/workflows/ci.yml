@@ -58,6 +58,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm run typecheck
+          pnpm test
           pnpm run build
 
       - name: go vet

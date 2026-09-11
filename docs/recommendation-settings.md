@@ -26,6 +26,47 @@ exists. Missing clauses retain fixed denominators; raw evidence is never edited.
 These are interpretable policy settings, not calibrated probabilities or a
 listening-benchmark claim that either source is always better.
 
+## Recommendation shortlist and analysis
+
+For recommendation-based generation, a request for **10 tracks starts with a
+20-candidate shortlist** (or fewer if retrieval cannot supply enough candidates).
+The engine chooses and orders that shortlist using recommendation relevance and
+the existing diversity selector before checking musical fit. Request-local
+channel budgets expand as needed, within the configured candidate cap. Preparation
+tops up partially excluded or duplicate-heavy pages before analysis, subject to
+the request's cancellation/time budget and a bounded number of retrieval calls.
+Required tracks count once toward both the shortlist and final playlist: two
+required tracks leave 18 optional candidates and eight output slots.
+
+Available AcousticBrainz evidence screens conflicting characteristics; CLAP
+checks previews against the description when analysis is enabled and needed.
+The selected source-priority policy still governs final ranking. Checks stop
+when enough eligible tracks can satisfy selection, diversity and journey order,
+not merely after counting passing previews. Provisional ordering cannot discard
+tracks at the final relevance floor before their preview scores are available;
+final selection still enforces that floor. If necessary, the engine consumes
+the remaining shortlist and refills with untried recommendations, keeping the
+original references and incorporating accepted tracks as continuation context.
+
+Missing evidence, hard exclusions and recording deduplication are never bypassed
+to fill the count. Existing analysis/time limits can produce a smaller playlist
+with a structured explanation. Pure artist/reference requests without descriptive
+clauses skip preview analysis. Deej-AI-only remains analysis-free; direct metadata
+genre discovery retains its separate bounded discovery/oversampling policy.
+
+## Understanding playlist messages
+
+Track count and musical fulfillment are separate. A ten-track result for a
+ten-track request says **“Playlist created with 10 tracks”** if some request
+details remain uncertain; the reasons stay visible below that heading. A genuine
+shortfall says **“Created 6 of 10 requested tracks.”** Neither message claims
+that unverified tracks are verified. Fully fulfilled results have no partial
+warning. Clarification and unsupported-request messages remain distinct.
+
+Older saved results use the same presentation: generic notices that incorrectly
+claimed a track shortfall are corrected when displayed. Saved fulfillment status,
+musical-fit evidence and history data are not rewritten.
+
 ## Engine-only limitations
 
 Descriptions are still interpreted by the selected local parser. The walk needs
@@ -57,7 +98,7 @@ mode pinned in an existing request or interrupt a running generation.
 The LLM does not choose this setting. The desktop applies it after parsing, and
 generation fingerprints include it. Engine-only parsing has a separate cache
 key and skips even provider genre-name confirmation. New requests use
-`multichannel/v18` or `deejai/v4+engine-only/v1`. The retained `deejai/v4`
+`multichannel/v19` or `deejai/v4+engine-only/v1`. The retained `deejai/v4`
 evaluation baseline remains unchanged. Engine-only generation has no profile
 snapshot; exposure logging remains separate from ranking and positive feedback.
 

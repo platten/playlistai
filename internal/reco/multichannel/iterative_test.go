@@ -98,12 +98,14 @@ func TestIterativeReferenceOnlySkipsAudioAndRetainsAnchor(t *testing.T) {
 	if err != nil || len(result.Tracks) != 2 || result.AudioEvidence != nil {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
-	if len(retriever.calls) < 2 || len(retriever.calls[1].RecentSelections) != 1 || retriever.calls[1].RecentSelections[0].ID != "audio" {
-		t.Fatal("accepted track did not seed continuation")
+	// Both candidates are now prepared before analysis/selection. Preparation
+	// must not misrepresent unaccepted candidates as listening/continuation data.
+	if len(retriever.calls) != 3 {
+		t.Fatal("shortlist was not prepared through catalog exhaustion")
 	}
 	for _, request := range retriever.calls {
-		if request.Intent.References[0].TrackID != "seed" {
-			t.Fatal("original anchor changed")
+		if request.Intent.References[0].TrackID != "seed" || len(request.RecentSelections) != 0 {
+			t.Fatal("preparation changed original anchor or added unaccepted context")
 		}
 	}
 }

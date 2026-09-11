@@ -9,16 +9,20 @@
 # fresh clone it does not, which is the order .github/workflows/ci.yml already
 # uses for the same reason.
 #
-# There is no separate frontend unit-test runner — `tsc --noEmit` plus a real
-# production build is the frontend gate (matches .github/workflows/ci.yml).
-#
-# Usage: scripts/test.sh [--no-race]
+# Usage: scripts/test.sh [--no-race] [--coverage]
 
 # shellcheck source=scripts/_common.sh
 source "$(dirname "$0")/_common.sh"
 
 RACE=1
-[ "${1:-}" = "--no-race" ] && RACE=0
+COVERAGE=0
+for argument in "$@"; do
+  case "$argument" in
+    --no-race) RACE=0 ;;
+    --coverage) COVERAGE=1 ;;
+    *) err "Unknown option: $argument"; exit 1 ;;
+  esac
+done
 
 need go "install Go 1.27+ (https://go.dev/dl/)"
 
@@ -50,6 +54,7 @@ if has pnpm && has node; then
   fi
   step "pnpm install"       bash -c 'cd frontend && pnpm install --frozen-lockfile'
   step "frontend typecheck" bash -c 'cd frontend && pnpm run typecheck'
+  step "frontend tests"     bash -c 'cd frontend && pnpm test'
   step "frontend build"     bash -c 'cd frontend && pnpm run build'
 else
   warn "node/pnpm not found — skipping frontend checks (needed for a full pass)"
@@ -86,6 +91,9 @@ else
 fi
 
 # ---------------------------------------------------------------- Summary
+if [ "$COVERAGE" = 1 ]; then
+  step "95% application coverage" bash scripts/coverage.sh
+fi
 echo
 if [ ${#FAILED[@]} -eq 0 ]; then
   ok "all checks passed"

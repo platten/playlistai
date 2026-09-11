@@ -37,7 +37,7 @@ try {
   await page.route(/.*@wailsio_runtime\.js.*/, (route) => route.fulfill({ contentType: "application/javascript", body: runtime }));
   await page.goto("http://127.0.0.1:9245");
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
-  const composer = page.getByRole("textbox", { name: "Describe the music you want to hear" });
+  const composer = page.getByRole("textbox", { name: "Your description" });
   await composer.fill("Ambient electronica, relaxing but not sleepy");
   await page.getByRole("heading", { name: "Your request" }).waitFor();
   await page.waitForTimeout(150);

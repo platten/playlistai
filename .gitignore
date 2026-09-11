@@ -5,6 +5,8 @@
 *.test
 *.out
 coverage.txt
+/coverage/
+/frontend/coverage/
 
 # Wails v3 / Taskfile
 .task

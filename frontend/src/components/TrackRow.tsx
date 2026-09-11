@@ -1,6 +1,6 @@
 import { cn } from "./cn";
 import { ErrorState } from "./ErrorState";
-import { Pause, Play, Refresh } from "./icons";
+import { ArrowRight, Pause, Play, Refresh } from "./icons";
 
 export type Provenance = "seed" | "nearest" | "noise-jump" | "interp" | "fallback";
 
@@ -10,14 +10,6 @@ const PROVENANCE_LABEL: Record<Provenance, string> = {
   "noise-jump": "noise jump",
   interp: "interp",
   fallback: "fallback",
-};
-
-const PROVENANCE_CLASS: Record<Provenance, string> = {
-  seed: "text-accent",
-  nearest: "text-faint",
-  "noise-jump": "text-warn",
-  interp: "text-faint",
-  fallback: "text-bad",
 };
 
 export interface TrackRowProps {
@@ -33,6 +25,7 @@ export interface TrackRowProps {
   previewError?: string | null;
   onDismissPreviewError?: () => void;
   onClick?: () => void;
+  expanded?: boolean;
   /** Rationale text; when present a caption row renders under the track. */
   reason?: string;
   className?: string;
@@ -59,6 +52,7 @@ export function TrackRow({
   previewError,
   onDismissPreviewError,
   onClick,
+  expanded = false,
   reason,
   className,
 }: TrackRowProps) {
@@ -67,33 +61,39 @@ export function TrackRow({
       <div
         className={cn(
           "group grid min-h-[62px] items-center gap-2 rounded-lg px-2 py-2",
-          "grid-cols-[22px_minmax(0,1fr)_auto] sm:grid-cols-[26px_minmax(0,1fr)_80px_auto]",
-          "hover:bg-white/[0.035]",
+          "grid-cols-[22px_minmax(0,1fr)_auto] sm:grid-cols-[26px_minmax(0,1fr)_auto]",
+          "transition-colors hover:bg-hover focus-within:bg-hover",
           active && "bg-accent-quiet shadow-[inset_0_0_0_1px_var(--pai-accent-quiet)]",
-          onClick && "cursor-pointer",
         )}
-        onClick={onClick}
       >
         <span className="text-right font-mono text-[12px] text-faint">{index ?? ""}</span>
-        <span className="min-w-0">
-          <span className="block truncate font-medium text-text">{title}</span>
-          <span className="block truncate text-[12.5px] text-muted">{artist}</span>
-        </span>
-        <span
-          className={cn(
-            "hidden truncate text-[12px] sm:block",
-            provenance ? PROVENANCE_CLASS[provenance] : "text-faint",
-          )}
-        >
-          {provenance ? PROVENANCE_LABEL[provenance] : ""}
-        </span>
+        {onClick ? (
+          <button
+            type="button"
+            onClick={onClick}
+            aria-expanded={expanded}
+            aria-label={`Track details: ${artist} — ${title}`}
+            className="flex min-w-0 items-center gap-3 rounded-control py-1 text-left"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-text" title={title}>{title}</span>
+              <span className="block truncate text-[12.5px] text-muted" title={artist}>{artist}</span>
+            </span>
+            <ArrowRight size={13} className={cn("mr-1 shrink-0 text-faint transition-transform", expanded && "rotate-90 text-accent")} />
+          </button>
+        ) : (
+          <span className="min-w-0">
+            <span className="block truncate font-medium text-text" title={title}>{title}</span>
+            <span className="block truncate text-[12.5px] text-muted" title={artist}>{artist}</span>
+          </span>
+        )}
         <div className="flex items-center gap-2">
           {durationSec != null && <span className="hidden text-right font-mono text-[12px] text-faint sm:block">{fmtDuration(durationSec)}</span>}
           {onPlay && <button
             type="button"
             disabled={previewStatus === "loading"}
             onClick={(e) => { e.stopPropagation(); onPlay(); }}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-control border border-accent/25 bg-accent-quiet px-2.5 text-[12px] text-accent hover:border-accent disabled:opacity-60"
+            className={cn("inline-flex min-h-9 items-center gap-1.5 rounded-control border px-2.5 text-[12px] transition-colors hover:border-accent hover:text-accent disabled:opacity-60", active ? "border-accent/25 bg-accent-quiet text-accent" : "border-line bg-surface text-muted")}
             aria-label={`${previewStatus === "playing" ? "Pause" : previewStatus === "loading" ? "Loading" : previewStatus === "error" ? "Retry" : "Play"} preview: ${artist} — ${title}`}
           >
             {previewStatus === "loading" ? <Refresh size={14} className="animate-spin" /> : previewStatus === "playing" ? <Pause size={14} /> : <Play size={14} />}
@@ -103,8 +103,8 @@ export function TrackRow({
       </div>
       {previewError && onDismissPreviewError && <ErrorState variant="inline" message={previewError} onDismiss={onDismissPreviewError} className="mx-2 mb-2" />}
       {reason && (
-        <p className="ml-[64px] flex items-center gap-2 pt-0.5 pb-2.5 text-[12px] text-accent/80">
-          <span className="rounded-pill bg-accent-quiet px-1.5 py-px text-[11px] text-accent">
+        <p className="ml-[38px] mr-2 flex items-start gap-2 pt-0.5 pb-2.5 text-[12px] break-words text-muted sm:ml-[42px]">
+          <span className="shrink-0 rounded-pill bg-accent-quiet px-1.5 py-px text-[11px] text-accent">
             {provenance ? PROVENANCE_LABEL[provenance] : "why"}
           </span>
           {reason}

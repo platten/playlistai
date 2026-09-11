@@ -44,6 +44,19 @@ func (r *Retriever) withSearchSession() *Retriever {
 	return &local
 }
 
+// Prepare enough alternatives for a 2N shortlist even when individual channels
+// overlap completely. This request-local copy preserves configured upper bounds
+// and never increases exploration beyond its existing relevance/budget policy.
+func (r *Retriever) withRecommendationPool(size int) *Retriever {
+	local := *r
+	size = min(size, r.cfg.MaxCandidates)
+	local.cfg.SeedAudioBudget = max(r.cfg.SeedAudioBudget, size)
+	local.cfg.SeedCooccurrenceBudget = max(r.cfg.SeedCooccurrenceBudget, size)
+	local.cfg.TasteClusterBudget = max(r.cfg.TasteClusterBudget, size)
+	local.cfg.SemanticBudget = max(r.cfg.SemanticBudget, size)
+	return &local
+}
+
 type explorationOption struct {
 	match   ports.Match
 	queryID string

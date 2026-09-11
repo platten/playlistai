@@ -441,15 +441,15 @@ export function GenerateScreen({
   }
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[820px] flex-col items-center gap-6 px-4 py-8 sm:px-8">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-[26px] font-semibold tracking-[-0.01em]">What do you want to hear?</h1>
-        <p className="text-[14px] text-muted">
+    <div className="mx-auto flex min-h-full w-full max-w-[820px] flex-col items-center gap-6 px-4 py-8 sm:px-8 sm:py-12">
+      <div className="flex w-full flex-col gap-3">
+        <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em] sm:text-[32px]">What do you want to hear?</h1>
+        <p className="max-w-[62ch] text-[14px] leading-relaxed text-muted">
           {deejAIOnly
             ? "Name a catalog artist or track, or request a transition between two artists. Include the number of tracks you want."
             : catalogOnly
-            ? "Describe genres, artists, tracks, or a journey. Generation can look up starting tracks when needed."
-            : "Describe what you want to hear. The local model can infer a catalog starting point, so naming an artist or track is optional."}
+            ? "Start with genres, artists, tracks, or a journey between sounds."
+            : "Set the mood, name an artist, or describe a journey between sounds. An artist or track is optional."}
         </p>
       </div>
 
@@ -513,10 +513,11 @@ export function GenerateScreen({
           </label>
           {source === "saved" && (
             <select
+              aria-label="Previous playlist"
               value={savedId}
               disabled={generating}
               onChange={(e) => pickSaved(e.target.value)}
-              className="min-w-0 max-w-[340px] flex-1 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text outline-none focus:border-line-strong"
+              className="min-w-0 max-w-[340px] flex-1 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text focus:border-accent"
             >
               <option value="" disabled>
                 Pick a previous playlist…
@@ -531,16 +532,17 @@ export function GenerateScreen({
         </div>
       )}
 
-      <div className="flex w-full flex-wrap gap-2" aria-label="Description examples">
-        {visibleSamples.map(({ prompt: example }) => (
-          <button type="button" key={example} disabled={generating} onClick={() => { setSource("fresh"); setPrompt(example); }} className="rounded-pill border border-line bg-surface px-3 py-1.5 text-left text-[12px] text-muted hover:text-text">{example}</button>
-        ))}
-      </div>
-
-      <div className="w-full shrink-0 overflow-hidden rounded-card border border-line-strong bg-surface shadow-[var(--pai-elev)]">
+      <div className="w-full shrink-0 overflow-hidden rounded-card border border-line-strong bg-surface shadow-[var(--pai-elev)] transition-colors focus-within:border-accent">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">
+          <label htmlFor="music-description" className="text-[13px] font-medium">Your description</label>
+          <span className="inline-flex items-center gap-1.5 rounded-pill border border-line bg-inset px-2 py-0.5 text-[11px] text-muted">
+            <Icon.Lock size={11} />
+            {deejAIOnly ? "Deej-AI only" : catalogOnly ? "basic interpretation" : "local model"}
+          </span>
+        </div>
         <textarea
           id="music-description"
-          aria-label="Describe the music you want to hear"
+          aria-describedby="description-help"
           autoFocus
           disabled={generating || regenerationPending}
           value={prompt}
@@ -553,7 +555,7 @@ export function GenerateScreen({
           }}
           rows={5}
           placeholder={deejAIOnly ? DEEJAI_PLACEHOLDER : catalogOnly ? CATALOG_PLACEHOLDER : INTENT_PLACEHOLDER}
-          className="w-full resize-none bg-transparent px-4 py-3.5 text-[15.5px] leading-relaxed text-text outline-none placeholder:text-faint"
+          className="block w-full resize-none bg-transparent px-4 py-4 text-[16px] leading-relaxed text-text outline-none placeholder:text-faint focus-visible:-outline-offset-4 sm:px-5"
         />
         {(parsing || generating) && (
           <div className="border-t border-line bg-accent-quiet px-4 py-3">
@@ -570,20 +572,16 @@ export function GenerateScreen({
             </div>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-2 border-t border-line bg-white/[0.015] px-3 py-2.5">
-          <span className="min-w-0 flex-1 truncate text-[11.5px] text-faint">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-inset/50 px-4 py-3 sm:px-5">
+          <span id="description-help" className="w-full text-[12px] leading-relaxed text-muted">
             {deejAIOnly
               ? "Catalog artist or track required · include a track count"
               : catalogOnly
               ? "Genres, artists, tracks or a journey · Enter to generate"
               : "Artist or track optional in local-model mode · Enter to generate"}
           </span>
-          <span className="shrink-0 rounded-pill border border-line px-2 py-0.5 text-[11px] text-muted">
-            {deejAIOnly ? "Deej-AI only" : catalogOnly ? "basic interpretation" : "local model"}
-          </span>
           <Button
-            variant="ghost"
-            size="sm"
+            variant="subtle"
             iconLeft={<Icon.Sparkle size={14} />}
             disabled={generating || regenerationPending}
             onClick={surprise}
@@ -595,7 +593,6 @@ export function GenerateScreen({
             aria-busy={generating}
             className="disabled:bg-panel disabled:text-faint disabled:opacity-100"
             variant="primary"
-            size="sm"
             iconRight={<Icon.ArrowRight size={14} />}
             disabled={generating || regenerationPending || prompt.trim() === "" || (source === "saved" && !savedRequest)}
             onClick={generate}
@@ -604,6 +601,26 @@ export function GenerateScreen({
           </Button>
         </div>
       </div>
+
+      {!preview && !generating && (
+        <section className="w-full" aria-label="Description examples">
+          <h2 className="mb-3 text-[12px] font-medium text-muted">Try a starting point</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {visibleSamples.map(({ prompt: example }) => (
+              <button
+                type="button"
+                key={example}
+                disabled={regenerationPending}
+                onClick={() => { setSource("fresh"); setPrompt(example); document.getElementById("music-description")?.focus(); }}
+                className="group flex min-h-14 items-center justify-between gap-3 rounded-control border border-line bg-surface px-4 py-3 text-left text-[13px] leading-relaxed text-muted transition-colors hover:border-line-strong hover:bg-hover hover:text-text disabled:pointer-events-none disabled:opacity-50"
+              >
+                <span>{example}</span>
+                <Icon.ArrowRight size={14} className="shrink-0 text-faint group-hover:text-accent" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {generating && (
         <section className="flex w-full flex-col gap-3" aria-label="Generation progress">
@@ -720,10 +737,10 @@ function Chip({ children, accent }: { children: React.ReactNode; accent?: boolea
   return (
     <span
       className={
-        "inline-flex h-[30px] items-center gap-1.5 rounded-lg border px-2.5 text-[12.5px] " +
+        "inline-flex min-h-[30px] max-w-full items-center gap-1.5 rounded-control border px-2.5 py-1 text-[12.5px] break-words " +
         (accent
           ? "border-accent/35 bg-accent-quiet text-accent"
-          : "border-line bg-white/[0.04] text-text")
+          : "border-line bg-surface text-text")
       }
     >
       {children}

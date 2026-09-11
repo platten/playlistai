@@ -546,7 +546,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if err := ctx.Err(); err != nil {
 		return core.Playlist{}, err
 	}
-	if o.candidateSource != nil {
+	if o.candidateSource != nil || o.audioProvider != nil {
 		if retriever, ok := o.retriever.(*Retriever); ok {
 			o.retriever = retriever.withSearchSession()
 		}
@@ -746,6 +746,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if intent.Count < len(required) {
 		return core.Playlist{}, fmt.Errorf("%w: requested %d tracks but %d are required", core.ErrCountBelowRequired, intent.Count, len(required))
 	}
+	if o.candidateSource != nil || o.audioSession != nil {
+		if retriever, ok := o.retriever.(*Retriever); ok {
+			o.retriever = retriever.withRecommendationPool(recommendationPoolSize(intent.Count, len(required)))
+		}
+	}
 	if stages := journeyCriteria(intent.EssentialCriteria); intent.Mode == core.ModeJourney && intent.Count < len(stages) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "journey_count_too_short", Detail: "The requested count cannot represent every journey stage.", Action: "increase the track count or remove a stage"}}), nil
 	}
@@ -818,57 +823,13 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_constraint_conflict", Detail: err.Error(), Action: "remove the required track or relax the conflicting exclusion"}}), nil
 		}
 	}
-	if o.candidateSource != nil {
+	if o.candidateSource != nil || o.audioSession != nil {
 		var notices []core.PlaylistNotice
 		candidates, notices, err = o.collectIteratively(ctx, candidates, discovery, intent, request, eligible, references, required, waypoints, seedValue)
 		if err != nil {
 			return core.Playlist{}, err
 		}
 		semanticNotices = append(semanticNotices, notices...)
-		semanticMatched = hasSemanticCandidates(candidates)
-	} else if o.audioSession != nil {
-		checked := make([]core.Candidate, 0, len(candidates))
-		stages := journeyStageCriteria(intent)
-		for i, candidate := range candidates {
-			if request.Progress != nil {
-				request.Progress.Report("generation", int64(i), int64(len(candidates)), "Checking musical fit")
-			}
-			assessment, err := o.audioSession.Check(ctx, candidate.Track, false)
-			if err != nil {
-				return core.Playlist{}, err
-			}
-			if !assessment.Eligible {
-				continue
-			}
-			if len(intent.EssentialCriteria) > 0 {
-				fit, _, err := o.filterEssential(ctx, []core.Candidate{candidate}, intent.EssentialCriteria)
-				if err != nil {
-					return core.Playlist{}, err
-				}
-				if len(fit) == 0 {
-					continue
-				}
-			}
-			if intent.Mode == core.ModeJourney && len(stages) > 0 {
-				placeable := false
-				for _, stage := range stages {
-					fit, _, err := o.filterJourneyStage(ctx, []core.Candidate{candidate}, stage, intent)
-					if err != nil {
-						return core.Playlist{}, err
-					}
-					placeable = placeable || len(fit) > 0
-				}
-				if !placeable {
-					continue
-				}
-			}
-			audio.ApplyScores(&candidate, assessment)
-			checked = append(checked, candidate)
-			if request.OnChecked != nil {
-				request.OnChecked(candidate.Track)
-			}
-		}
-		candidates = checked
 		semanticMatched = hasSemanticCandidates(candidates)
 	}
 	if len(intent.EssentialCriteria) > 0 {

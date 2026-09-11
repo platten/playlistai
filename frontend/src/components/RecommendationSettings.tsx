@@ -51,7 +51,7 @@ export function RecommendationSettings() {
       <fieldset disabled={saving || mode === null} className="flex flex-col gap-2" aria-busy={saving}>
         <legend className="mb-3 text-[12px] text-muted">Choose which evidence leads recommendation ranking.</legend>
         {options.map((option) => (
-          <label key={option.mode} className={`flex cursor-pointer items-start gap-3 rounded-card border px-4 py-3.5 transition-colors ${mode === option.mode ? "border-accent bg-inset" : "border-line bg-surface"} ${saving ? "opacity-60" : ""}`}>
+          <label key={option.mode} className={`flex cursor-pointer items-start gap-3 rounded-card border px-4 py-3.5 transition-colors ${mode === option.mode ? "border-accent/60 bg-accent-quiet" : "border-line bg-surface hover:border-line-strong hover:bg-hover"} ${saving ? "opacity-60" : ""}`}>
             <input type="radio" name="recommendation-mode" className="mt-1 accent-[var(--pai-accent)]" value={option.mode} checked={mode === option.mode} onChange={() => void choose(option.mode)} />
             <span>
               <span className="block text-[13.5px] font-medium">{option.title}</span>

@@ -1,5 +1,65 @@
 # Recommendation Correctness
 
+## Playlist count versus fulfillment messages (2026-09-10)
+
+The playlist screen no longer calls every non-fulfilled result a “verified
+partial playlist.” Full-length results show their actual track count while
+retaining reasons for unverified characteristics, source disagreements or unmet
+journey requirements. Actual shortfalls show the returned/requested counts.
+Fulfilled results show no warning; unsupported and clarification states keep
+their own messages. Counts come from the displayed result, not pending controls.
+
+The bridge's fallback notice now distinguishes a count shortfall from incomplete
+request fulfillment. The same presentation corrects legacy generic shortfall
+notices in saved full-length results. This is a wording/presentation correction:
+no eligibility, ranking, outcome status, model, schema or stored evidence changes.
+
+Validation passed: focused bridge regressions for full/short/empty/fulfilled
+results and saved-notice presentation; rendered Chromium checks for full-count
+uncertainty, shortfalls, reasonless legacy results, fulfilled results, dismissal
+and initial-result reuse. Light/dark and 390-pixel layouts were inspected.
+The Linux `scripts/test.sh` gate passed, including race tests, vet, lint (zero
+issues), bindings, frontend typecheck/build and pure-Go core compilation.
+`git diff --check` passed. This is fixture/UI validation, not a musical-quality
+benchmark or native Windows/macOS execution.
+
+## Recommendation shortlist before analysis (2026-09-10)
+
+`multichannel/v19` prepares a recommendation-ranked 2N shortlist before preview
+analysis instead of repeatedly retrieving after each accepted track and trying
+to collect more than 2N already-approved tracks. Required recordings occupy one
+slot each; the stored intent remains N. Request-local channel budgets expand
+within the configured candidate cap. Provisional MMR ordering gives artist
+diversity a choice before early stopping without prematurely enforcing the final
+relevance floor. Candidate checks retain metadata and
+AcousticBrainz opposition screening, semantic/CLAP checks, hard exclusions and
+recording deduplication. Preparation tops up both partially and entirely excluded
+pages before analysis; later refills occur only after the shortlist is consumed.
+Provisional candidates do not become continuation anchors or listening feedback.
+
+The same collector now handles local preview-analysis builds without an online
+discovery source. Stopping requires the existing selector and sequencer to
+produce N tracks, preserving required/journey order and artist-spacing rules.
+Missing journey stages and incomplete category order prevent early stopping,
+even when an intermediate sequence already contains N tracks.
+All work remains subject to cancellation and existing analysis/search budgets;
+exhaustion returns honest partial results. Direct genre-discovery streams retain
+their previous bounded oversampling behavior; Deej-AI-only is unchanged.
+
+No intent/history migration, model download or source-priority change is needed.
+The algorithm-version change invalidates old generation identities; saved
+playlists remain readable and explicit rebuilds use the new strategy. Synthetic
+regressions cover 20-to-10 shortlists, early stop, refills, archived opposition,
+both source-priority modes, required waypoints, replay and excluded pages. These
+are control-flow checks, not held-out musical-quality measurements. See
+[recommendation settings](recommendation-settings.md#recommendation-shortlist-and-analysis).
+
+Validation: all 11 new regression functions and the full multichannel suite pass.
+The final Linux `scripts/test.sh` run passes binding generation, frontend
+typecheck/build, vet, pure-Go compilation, race-enabled tests and lint with zero
+issues. `git diff --check` passes. No live-provider or musical-quality benchmark
+was run for this change.
+
 ## User-selectable recommendation policy (2026-09-09)
 
 Settings now offers AcousticBrainz-first, CLAP-first and Deej-AI-only, with live

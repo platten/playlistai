@@ -171,7 +171,6 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 			out.Notices = append(out.Notices, PlaylistNotice{Code: fmt.Sprintf("music_lookup_%d", i), Detail: detail})
 		}
 	}
-	a.presentPlaylistNotices(&out)
 	for index, ref := range playlist.Tracks {
 		track := PlaylistTrack{
 			ID: ref.ID, Artist: ref.Artist, Title: ref.Title,
@@ -185,6 +184,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
+	a.presentPlaylistNotices(&out)
 	if out.Outcome.State == "" {
 		out.Outcome.State = core.OutcomeFulfilled
 		if len(out.Tracks) < out.Intent.Count {
@@ -200,10 +200,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if out.Outcome.State == core.OutcomePartial {
 		out.Status.PartialReasons = append(out.Status.PartialReasons, out.Notices...)
 		if len(out.Status.PartialReasons) == 0 {
-			reason := PlaylistNotice{
-				Code: "partial_result", Detail: "generation ended before the requested total was reached",
-				Requested: out.Intent.Count, Actual: len(out.Tracks),
-			}
+			reason := partialResultNotice(out)
 			out.Notices = append(out.Notices, reason)
 			out.Status.PartialReasons = append(out.Status.PartialReasons, reason)
 		}

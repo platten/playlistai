@@ -14,6 +14,15 @@ import (
 const iterativeBudget = 15 * time.Minute
 const iterativeAttempts = 1000
 
+// Required recordings occupy one slot each in the 2N pool, just as they do in
+// the final playlist. The saved intent/count always remains N.
+func recommendationPoolSize(count, required int) int {
+	if count <= required {
+		return 0
+	}
+	return 2*count - required
+}
+
 // collectIteratively keeps discovery and recommendation continuation separate
 // from the user's references. Every newly pulled candidate passes the same
 // semantic, hard-eligibility and preview checks before it can seed continuation.
@@ -37,8 +46,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			outNotices = append(outNotices, core.PlaylistNotice{Code: "discovery_stopped", Detail: "Discovery stopped; only eligible tracks were retained."})
 		}
 	}()
-	// Give ranking and MMR actual alternatives instead of stopping at the first
-	// N acceptable records. The existing time/attempt budgets still bound work.
+	// Metadata discovery retains its bounded oversampling policy. Recommendation
+	// continuation instead prepares a 2N shortlist BEFORE expensive analysis,
+	// consumes it in recommendation order, and stops once selection can fill N.
 	target := max(2*(intent.Count-len(required)), intent.Count-len(required)+8)
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
@@ -46,13 +56,32 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	attempted := map[string]struct{}{}
 	recordings := map[string]bool{}
 	recent := append([]core.TrackRef(nil), request.RecentSelections...)
-	queue := append([]core.Candidate(nil), initial...)
+	var queue []core.Candidate
 	refill := func() error {
-		batch, err := o.retriever.Retrieve(ctx, ports.RetrievalRequest{Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted})
+		batch, err := o.prepareRecommendationPool(ctx, initial, ports.RetrievalRequest{
+			Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted,
+		}, eligible, recordings, recommendationPoolSize(intent.Count, len(required)))
+		initial = nil
 		if err != nil {
 			return err
 		}
-		queue = batch
+		batch, err = o.rankCandidates(ctx, batch, ports.RankRequest{Intent: intent, Profile: request.Profile})
+		if err != nil {
+			return err
+		}
+		// Give MMR alternatives before early stopping: taking only the first N
+		// passing relevance-ranked tracks would leave artist diversity no choice.
+		selection, err := NewSelector(o.cat, o.cfg).shortlist(ctx, batch, ports.SelectionRequest{
+			Intent: intent, Required: required, Waypoints: waypoints, RecentSelections: recent,
+			Count: recommendationPoolSize(intent.Count, len(required)),
+		})
+		if err != nil {
+			return err
+		}
+		queue = selection.Candidates
+		if request.Progress != nil {
+			request.Progress.Report("generation", int64(len(queue)+len(required)), int64(2*intent.Count), "Prepared recommendation shortlist; checking musical fit")
+		}
 		return nil
 	}
 	if len(required) == intent.Count {
@@ -93,7 +122,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				candidate.Sources = source.Evidence(track.ID)
 			}
 		} else {
+			target = intent.Count - len(required)
 			if len(queue) == 0 {
+				before := len(attempted)
 				if err := refill(); err != nil {
 					if parent.Err() != nil {
 						return nil, notices, parent.Err()
@@ -101,6 +132,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 					return accepted, append(notices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Candidate retrieval stopped before the requested count was reached."}), nil
 				}
 				if len(queue) == 0 {
+					if len(attempted) > before {
+						continue // an entirely excluded page is not catalog exhaustion
+					}
 					break
 				}
 			}
@@ -192,15 +226,8 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				return accepted, notices, nil
 			}
 		}
-		if stream == nil {
-			if err := refill(); err != nil {
-				if parent.Err() != nil {
-					return nil, notices, parent.Err()
-				}
-				notices = append(notices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Recommendation continuation was interrupted."})
-				break
-			}
-		}
+		// Keep the rest of the shortlist: refilling after every passing track
+		// discards the 2N pool and needlessly repeats similarity queries.
 	}
 	if len(accepted)+len(required) >= intent.Count {
 		complete, err := o.iterativeComplete(parent, accepted, intent, request, references, required, waypoints, seed)
@@ -222,9 +249,12 @@ func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.
 	if err != nil {
 		return false, err
 	}
-	reserved, remaining, _, err := o.reserveJourneyStages(ctx, ranked, required, intent)
+	reserved, remaining, reasons, err := o.reserveJourneyStages(ctx, ranked, required, intent)
 	if err != nil {
 		return false, err
+	}
+	if len(reasons) > 0 {
+		return false, nil // a full-count first stage is still an incomplete journey
 	}
 	fixed := append([]core.TrackRef(nil), required...)
 	for _, c := range reserved {
@@ -253,6 +283,11 @@ func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.
 	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints, ReferenceAnchors: references, RecentSelections: request.RecentSelections, Seed: seed, CategoryStages: membership, Trajectory: trajectory})
 	if errors.Is(err, core.ErrRequiredTrackConflict) {
 		return false, nil
+	}
+	for _, notice := range sequence.Notices {
+		if notice.Code == "category_journey_exhausted" {
+			return false, err
+		}
 	}
 	if o.bestAvailable && genreArtistDiversity(intent) {
 		artists := map[string]bool{}

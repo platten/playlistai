@@ -1,7 +1,7 @@
 # Run the same Go, lint, binding, typecheck, and frontend build gate as test.sh.
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$NoRace)
+param([switch]$NoRace, [switch]$Coverage)
 
 . (Join-Path $PSScriptRoot "_common.ps1")
 Assert-Command "go" "run scripts/setup.ps1"
@@ -45,6 +45,7 @@ if ((Test-Command "node") -and (Test-Command "pnpm")) {
     try {
         Invoke-TestStep "pnpm install" { & pnpm install --frozen-lockfile }
         Invoke-TestStep "frontend typecheck" { & pnpm run typecheck }
+        Invoke-TestStep "frontend tests" { & pnpm test }
         Invoke-TestStep "frontend build" { & pnpm run build }
     } finally {
         Pop-Location
@@ -80,6 +81,10 @@ if (Test-Command "golangci-lint") {
     Invoke-TestStep "golangci-lint" { & golangci-lint run ./... }
 } else {
     Write-Skip "golangci-lint not installed - run scripts/setup.ps1"
+}
+
+if ($Coverage) {
+    Invoke-TestStep "95% application coverage" { & (Join-Path $PSScriptRoot "coverage.ps1") }
 }
 
 Write-Host ""

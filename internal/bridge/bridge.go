@@ -6,6 +6,7 @@ package bridge
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -29,6 +30,7 @@ func init() {
 type API struct {
 	updates     *updater.Manager
 	logs        *logging.Store
+	debugMu     sync.Mutex
 	live        liveGenerations
 	app         *app.Container
 	log         *slog.Logger

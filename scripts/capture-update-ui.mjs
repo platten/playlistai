@@ -74,7 +74,7 @@ try {
   assert.equal(await page.evaluate(()=>window.__openedRelease),true);
   await page.screenshot({path:path.join(output,'update-readonly.png')});
   await page.goto('http://127.0.0.1:9245?update=offline');
-  await page.getByRole('textbox',{name:'Describe the music you want to hear'}).waitFor();
+  await page.getByRole('textbox',{name:'Your description'}).waitFor();
   assert.equal(await page.getByRole('dialog').count(),0);
   assert.deepEqual(errors,[]);
   console.log('Startup update UI passed: themes, keyboard, narrow/reduced motion, progress, cancellation, retry, errors, read-only and offline startup.');

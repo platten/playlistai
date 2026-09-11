@@ -18,6 +18,7 @@ import {
   usePreviewPlayer,
   type Provenance,
 } from "../components";
+import { playlistOutcomeMessage } from "../lib/playlistOutcome";
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
@@ -205,6 +206,7 @@ export function PlaylistScreen({
   const tracks = result?.tracks ?? [];
   const outcomeState = result?.outcome?.state ?? result?.status?.state;
   const outcomeReasons = result?.outcome?.reasons ?? result?.status?.reasons ?? [];
+  const outcomeMessage = result ? playlistOutcomeMessage(result, count) : null;
   const isJourney = (result?.mode ?? request.intent?.mode ?? request.mode) === "journey";
   const requiredCount =
     (request.intent?.requiredTracks ?? []).length ||
@@ -236,19 +238,19 @@ export function PlaylistScreen({
   };
 
   return (
-    <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col px-4 py-6 sm:px-6">
-      <div className="flex flex-wrap items-center gap-3 pb-4">
+    <div className="mx-auto flex min-h-full w-full max-w-[880px] flex-col px-4 py-8 sm:px-6">
+      <div className="flex flex-wrap items-center gap-3 pb-6">
         <button
           type="button"
           onClick={onBack}
-          className="grid size-7 place-items-center rounded-md text-muted hover:bg-white/[0.05] hover:text-text"
+          className="grid size-9 shrink-0 place-items-center rounded-control border border-line text-muted transition-colors hover:bg-hover hover:text-text"
           aria-label="Back"
         >
           <Icon.ArrowLeft size={16} />
         </button>
-        <div className="min-w-0">
-          <h1 className="truncate text-[15px] font-semibold">{heading}</h1>
-          <p className="text-[12px] text-faint">
+        <div className="min-w-0 flex-1 basis-[240px]">
+          <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] break-words">{heading}</h1>
+          <p className="mt-1.5 text-[12px] text-muted">
             {isJourney ? "journey" : "similarity walk"} · {tracks.length} tracks
             {` · ${engineOnly ? "Deej-AI only" : recommendationMode === "clap_first" ? "CLAP first" : "AcousticBrainz first"}`}
             {result ? ` · seed ${result.seed}` : ""}
@@ -289,18 +291,17 @@ export function PlaylistScreen({
         </Button>
       </div>
 
-      {result && result !== dismissedOutcome && outcomeState && outcomeState !== "fulfilled" && (
+      {result && result !== dismissedOutcome && outcomeMessage && (
         <div className="relative mb-3 rounded-card border border-accent/30 bg-accent-quiet py-3 pl-4 pr-12">
           <button type="button" aria-label="Dismiss playlist message" onClick={() => setDismissedOutcome(result)} className="absolute right-2 top-2 grid size-8 place-items-center rounded-control text-muted hover:bg-inset hover:text-text">
             <Icon.X size={16} />
           </button>
           <p className="text-[12.5px] font-semibold text-text">
-            {outcomeState === "needs_clarification"
-              ? "This request needs clarification"
-              : outcomeState === "unsupported"
-                ? "The musical request could not be verified"
-                : "A verified partial playlist was generated"}
+            {outcomeMessage}
           </p>
+          {outcomeState === "partial" && outcomeReasons.length === 0 && (
+            <p className="mt-1 text-[12px] text-muted">Some request details could not be fully satisfied or verified. Review the playlist and any notices below.</p>
+          )}
           {outcomeReasons.map((reason) => (
             <p key={`${reason.code}-${reason.criterion}`} className="mt-1 text-[12px] text-muted">
               {reason.detail}
@@ -404,7 +405,7 @@ export function PlaylistScreen({
       {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} className="mt-3" />}
 
       <p className="mt-4 text-[12px] text-muted">Listen to a short preview of each song. Availability depends on your preview provider.</p>
-      <div className="mt-2 rounded-card border border-line bg-surface p-2">
+      <div className="mt-2 divide-y divide-line rounded-card border border-line bg-surface p-2">
         {error ? (
           <ErrorState message={error} onDismiss={() => setError(null)} onRetry={build} />
         ) : busy && tracks.length === 0 ? (
@@ -428,6 +429,7 @@ export function PlaylistScreen({
                   provenance={KIND_TO_PROVENANCE[t.kind]}
                   reason={expanded.has(i) ? t.detail : undefined}
                   active={player.track?.id === t.id}
+                  expanded={expanded.has(i)}
                   previewStatus={player.track?.id === t.id ? player.status : "idle"}
                   previewError={player.track?.id === t.id ? player.error : null}
                   onDismissPreviewError={player.stop}
@@ -478,7 +480,7 @@ export function PlaylistScreen({
                   </div>
                 )}
                 {expanded.has(i) && (
-                  <div className="ml-[64px] flex flex-wrap items-center gap-1 pb-2.5 text-[11.5px] text-faint">
+                  <div className="ml-[38px] flex flex-wrap items-center gap-1 pb-2.5 text-[11.5px] text-faint sm:ml-[42px]">
                     <span className="mr-1">Taste feedback</span>
                     <FeedbackButton
                       label="Like"

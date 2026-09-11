@@ -30,6 +30,8 @@ func (a *API) diagnosticContext(ctx context.Context) context.Context {
 
 // GetDebugLogging reports the persisted opt-in diagnostic setting.
 func (a *API) GetDebugLogging() bool {
+	a.debugMu.Lock()
+	defer a.debugMu.Unlock()
 	if a.logs != nil {
 		return a.logs.DebugEnabled()
 	}
@@ -39,6 +41,10 @@ func (a *API) GetDebugLogging() bool {
 // SetDebugLogging persists and applies detailed session diagnostics. Turning
 // it off also clears detailed records already retained in memory.
 func (a *API) SetDebugLogging(enabled bool) error {
+	// Settings and the separate viewer may submit changes concurrently. Persist
+	// and apply in the same order so a completed opt-out cannot leave capture on.
+	a.debugMu.Lock()
+	defer a.debugMu.Unlock()
 	if err := a.app.SetDebugLogging(enabled); err != nil {
 		return err
 	}

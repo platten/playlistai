@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { System } from "@wailsio/runtime";
 import { useTheme } from "./design/theme";
-import { AppIcon, Button, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
+import { AppIcon, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
 import { GenerateScreen, type Regeneration } from "./screens/GenerateScreen";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
@@ -11,6 +11,8 @@ import { FirstRunWizard } from "./screens/FirstRunWizard";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 
 type Screen = "generate" | "playlist" | "reviewexport" | "settings";
+
+const THEME_ICONS = { system: Icon.Computer, light: Icon.Sun, dark: Icon.Moon };
 
 interface PlaylistState {
   request: BuildPlaylistRequest;
@@ -32,6 +34,7 @@ export default function App() {
 function AppContent() {
   const sessionId = useRef(newSessionID()).current;
   const { choice, cycle } = useTheme();
+  const ThemeIcon = THEME_ICONS[choice];
   const [screen, setScreen] = useState<Screen>("generate");
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
   const [regeneration, setRegeneration] = useState<Regeneration | null>(null);
@@ -83,7 +86,7 @@ function AppContent() {
         }>
           <AppIcon size={20} className="shrink-0 rounded-[5px]" />
           <span className="shrink-0 font-semibold tracking-[0.01em]">Playlist AI</span>
-          <nav className="order-last flex w-full shrink-0 items-center gap-0.5 rounded-lg bg-bg p-1 sm:order-none sm:ml-3 sm:w-auto">
+          <nav aria-label="Main navigation" className="order-last flex w-full shrink-0 items-center gap-1 rounded-control border border-line bg-inset p-1 sm:order-none sm:ml-3 sm:w-auto">
             <NavButton active={screen === "generate"} onClick={() => setScreen("generate")}>
               Generate
             </NavButton>
@@ -103,18 +106,25 @@ function AppContent() {
             </NavButton>
           </nav>
           <div className="flex-1" />
-          <Button size="sm" variant="ghost" onClick={cycle}>
-            {choice.charAt(0).toUpperCase() + choice.slice(1)}
-          </Button>
+          <button
+            type="button"
+            onClick={cycle}
+            aria-label={`Theme: ${choice}. Change theme`}
+            title={`Theme: ${choice}. Change theme`}
+            className="grid size-8 shrink-0 place-items-center rounded-control text-muted transition-colors hover:bg-hover hover:text-text"
+          >
+            <ThemeIcon size={16} />
+          </button>
           <button
             type="button"
             onClick={() => setScreen("settings")}
             aria-label="Settings"
+            aria-current={screen === "settings" ? "page" : undefined}
             className={
-              "grid size-8 place-items-center rounded-md " +
+              "grid size-8 place-items-center rounded-control transition-colors " +
               (screen === "settings"
                 ? "bg-accent-quiet text-accent"
-                : "text-muted hover:bg-white/[0.05] hover:text-text")
+                : "text-muted hover:bg-hover hover:text-text")
             }
           >
             <Icon.Gear size={16} />
@@ -188,10 +198,10 @@ function NavButton({
       disabled={disabled}
       aria-current={active ? "page" : undefined}
       className={
-        "h-7 shrink-0 whitespace-nowrap rounded-md px-3 text-[12.5px] font-medium transition-colors disabled:opacity-40 " +
+        "h-8 flex-1 whitespace-nowrap rounded-md px-4 text-[12.5px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-40 sm:flex-none " +
         (active
-          ? "bg-accent/20 text-accent"
-          : "text-text/75 hover:text-text")
+          ? "bg-accent-quiet text-accent shadow-sm"
+          : "text-muted hover:bg-hover hover:text-text")
       }
     >
       {children}

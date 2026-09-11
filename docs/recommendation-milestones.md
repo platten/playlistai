@@ -1,5 +1,28 @@
 # Recommendation Milestones
 
+## Recommendation shortlist before analysis (2026-09-10)
+
+Implemented `multichannel/v19`: recommendation-based builds prepare up to 2N
+candidates before musical-fit checks, then stop when selection and sequencing
+can fill the requested N tracks. Required tracks count once. Refills retain the
+original intent/seed and accepted continuation tracks without repeating retrieval
+after every accepted candidate. Request-local retrieval expansion supports larger
+counts; provisional MMR ordering preserves diversity before early stopping.
+Missing journey stages keep the search active even when count is met.
+AcousticBrainz/CLAP priority, hard eligibility, journey order, cancellation,
+bounded partial results and Deej-AI-only isolation
+remain intact. Local analysis builds share this collector; direct metadata
+discovery retains its separate oversampling policy.
+
+All 11 new regression functions pass, including 20-to-10 selection, rejected-pool
+refills, both analysis modes, required-waypoint counts, replay, partially/entirely
+excluded retrieval pages and accepted-only continuation. The full Linux
+`scripts/test.sh` gate passes: bindings, frontend typecheck/build, vet, pure-Go
+core compile, race-enabled tests and lint (zero issues). `git diff --check` passes.
+No new live-provider or listening-quality measurement is claimed.
+Next dependency: measure rejection rates and latency on
+representative real requests. See [behavior and compatibility details](recommendation-settings.md#recommendation-shortlist-and-analysis).
+
 ## Review follow-up — Discovery and replay (2026-09-08)
 
 Implemented `multichannel/v13`: bounded overcomplete candidate selection,
@@ -1104,3 +1127,29 @@ in evidence-aware modes, where those properties can be evaluated.
 
 The rendered UI regression asserts the four exact examples and the visible
 catalog-seed requirement. Frontend typechecking and the production build pass.
+
+## Log-window severity controls — 2026-09-10
+
+The log window now offers DEBUG, INFO, WARN, and ERROR minimum levels. DEBUG
+enables the existing persisted diagnostic opt-in; higher levels stop collection
+and purge debug records while retaining ordinary records for later filtering.
+The viewer distinguishes shown/retained counts and filtered-empty states.
+Settings refreshes its checkbox on focus after another window changes the value.
+
+Ordinary Go DEBUG records now reach the in-memory store independently of the
+console's INFO threshold, without enabling debug console/file output. Custom
+slog levels are handled numerically. Opt-out is rechecked during insertion;
+preference persistence and runtime activation are serialized across windows.
+Stale local polls cannot undo a selection, and delayed record batches check
+consent after retrieval before being displayed. No intent, ranking, or saved
+playlist behavior changed. See [application logs](application-logs.md).
+
+Validation: focused logging/bridge race tests and the full `scripts/test.sh`
+gate passed, including generated bindings, frontend typecheck/build, pure-Go
+compilation, vet, and zero lint issues. The rendered Chromium fixture passed
+level filtering, debug persistence, pending/failed saves, concurrent-window
+ordering, external opt-out, actual Settings checkbox/focus behavior, polling
+failures, scrolling, and empty states. Light/dark and 420-pixel layouts were
+captured and inspected using existing temporary browser dependencies. This is
+Linux browser/fixture validation, not a native Windows/macOS desktop run or a
+musical-quality benchmark.

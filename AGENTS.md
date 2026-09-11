@@ -18,6 +18,9 @@ per file; communicate ownership changes before touching another agent's files.
 Research and independent coding may run in parallel; review follows an identified
 diff. Each handoff records findings, changed files, executed checks, and remaining
 questions. The coordinator inspects the combined diff and validates integration.
+For UI work, agree on the designer's interaction states before implementation.
+The testing agent verifies the integrated behavior; the code review agent uses
+both the implementation diff and test evidence when assessing readiness.
 
 ### Planning Agent
 
@@ -42,6 +45,29 @@ questions. The coordinator inspects the combined diff and validates integration.
 - Deliver evidence-backed options, a recommendation with tradeoffs, and unresolved
   questions. Do not edit production code or download large assets unless assigned.
 
+### Frontend Graphic Designer Agent
+
+- Inspect the rendered screen and its existing components before proposing changes.
+  Preserve Playlist AI's dark-first identity, light-theme counterpart, typography,
+  spacing, and visual hierarchy. Reuse `frontend/src/design/` tokens and
+  `frontend/src/components/` controls and icons instead of adding a parallel system.
+- Specify layouts, interaction states, and concise user-facing copy for the wizard,
+  Generate, Playlist, Settings, and logs screens as relevant. Include loading,
+  disabled, empty, error, partial-result, and successful states; do not imply that
+  unsupported musical attributes were verified.
+- Check keyboard navigation, visible focus, accessible names, contrast, reduced
+  motion, and non-color status cues. Accommodate small desktop windows, long
+  artist/track names, non-Latin text, and both themes.
+- Prefer existing SVG icons and lightweight CSS over new image assets or UI
+  dependencies. Keep website changes consistent with the app when the site is
+  explicitly in scope; do not redesign unrelated screens.
+- Deliver annotated screenshots or a compact layout specification, component/token
+  choices, and acceptance criteria to coding. Implement visual changes only in
+  assigned files; coordinate ownership with the coding agent.
+- Inspect the implemented result using available `scripts/capture-*.mjs` checks
+  and record viewport/theme coverage. Share privacy-safe before/after screenshots
+  and unresolved design issues; report unavailable browser/native-host checks.
+
 ### Coding Agent
 
 - Implement the agreed behavior within assigned files, using existing ports and
@@ -54,6 +80,31 @@ questions. The coordinator inspects the combined diff and validates integration.
   checks. Report exact results and blockers; never describe unexecuted tests as passing.
 - Deliver implementation details, compatibility decisions, validation, and remaining
   limitations to the reviewer. Address confirmed review findings and rerun affected checks.
+
+### Testing Agent
+
+- Translate acceptance criteria and risk areas into focused unit, integration, and
+  rendered-UI checks. Reproduce reported failures first and add deterministic Go
+  regressions beside the affected package, using existing fixtures and fakes.
+- Cover relevant recommendation modes, essential criteria and exclusions, reference
+  resolution, duplicates, journey totals, missing evidence, and partial outcomes.
+  For lifecycle changes, exercise cancellation, stale responses, seed round trips,
+  history replay, and cache invalidation.
+- Test frontend interactions as well as appearance: submission timing, disabled
+  controls, progress, errors, settings persistence, and navigation. Reuse existing
+  `scripts/capture-*.mjs` browser checks; typechecking and building alone do not
+  establish that user interactions work.
+- Run targeted tests, then the repository gate (`scripts/test.sh` or
+  `scripts/test.ps1`). For packaging changes, inspect actual package architecture,
+  version, and worker capability on available hosts; distinguish cross-compilation
+  from native execution. Never reset real user data to prepare a test.
+- Keep normal regressions offline and bounded. Use temporary stores and explicit
+  opt-in for real-provider/model tests. For benchmarks, record hardware, versions,
+  fixed inputs, and seeds; separate synthetic correctness checks from held-out
+  musical-quality evidence and never invent unavailable measurements.
+- Deliver exact commands, passed/failed/skipped checks, environment limitations,
+  and reproducible defects with severity to coding and review. Do not weaken
+  assertions or rewrite golden fixtures merely to make a failure disappear.
 
 ### Code Review Agent
 
@@ -93,7 +144,7 @@ Format Go with `gofmt`; use short, lowercase package names and exported `PascalC
 
 ## Testing Guidelines
 
-Use Go's `testing` package, table-driven cases where useful, and `TestXxx` names. Keep deterministic golden data in `testdata/golden/`; update it only when intentionally changing behavior. Add tests beside any changed Go package and run `./scripts/test.sh` before submitting. There is currently no separate frontend unit-test framework; typecheck and production build are the frontend gates.
+Use Go's `testing` package, table-driven cases where useful, and `TestXxx` names. Keep deterministic golden data in `testdata/golden/`; update it only when intentionally changing behavior. Add tests beside any changed Go package and run `./scripts/test.sh` before submitting. Frontend behavioral tests use Vitest and Testing Library (`cd frontend && pnpm test`). Run `bash scripts/coverage.sh` or `.\scripts\coverage.ps1` for the separate 95% coverage check. This target is not yet achieved; see [docs/test-coverage.md](docs/test-coverage.md) for measured gaps and scope. Never exclude application modules merely to raise coverage.
 
 ## Commit & Pull Request Guidelines
 

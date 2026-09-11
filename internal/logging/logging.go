@@ -70,7 +70,9 @@ func (s *Store) SetDebug(enabled bool) {
 	kept := s.entries[:0]
 	s.retainedBytes = 0
 	for _, entry := range s.entries {
-		if entry.Level != slog.LevelDebug.String() {
+		var level slog.Level
+		_ = level.UnmarshalText([]byte(entry.Level))
+		if level >= slog.LevelInfo {
 			kept = append(kept, entry)
 			s.retainedBytes += len(entry.Text)
 		}
@@ -78,11 +80,20 @@ func (s *Store) SetDebug(enabled bool) {
 	s.entries = kept
 }
 
-func (s *Store) append(level, text string) {
+func (s *Store) enabled(level slog.Level) bool {
+	return level >= slog.LevelInfo || (level >= slog.LevelDebug && s.DebugEnabled())
+}
+
+func (s *Store) append(level slog.Level, text string) {
 	text = truncate(text, standardEntryLimit)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.appendLocked(level, text)
+	// Recheck under the same lock as SetDebug: a record formatted before an
+	// opt-out must not reintroduce private details after the store was cleared.
+	if level < slog.LevelInfo && !s.debug {
+		return
+	}
+	s.appendLocked(level.String(), text)
 }
 
 func (s *Store) appendDiagnostic(event string, payload any) {
@@ -155,14 +166,27 @@ type handler struct {
 	operations []operation
 }
 
-// NewHandler mirrors enabled records to the session store and the original handler.
+// NewHandler retains INFO+ and opt-in DEBUG records in memory, independently of
+// the output handler's threshold. Enabling session diagnostics never lowers the
+// console/file output threshold.
 func NewHandler(output slog.Handler, store *Store) slog.Handler {
 	return &handler{output: output, store: store}
 }
 func (h *handler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.output.Enabled(ctx, level)
+	return h.store.enabled(level) || h.output.Enabled(ctx, level)
 }
 func (h *handler) Handle(ctx context.Context, r slog.Record) error {
+	if h.store.enabled(r.Level) {
+		if err := h.retain(ctx, r); err != nil {
+			return err
+		}
+	}
+	if h.output.Enabled(ctx, r.Level) {
+		return h.output.Handle(ctx, r)
+	}
+	return nil
+}
+func (h *handler) retain(ctx context.Context, r slog.Record) error {
 	var b bytes.Buffer
 	var formatter slog.Handler = slog.NewTextHandler(&b, &slog.HandlerOptions{Level: slog.LevelDebug})
 	for _, op := range h.operations {
@@ -175,8 +199,8 @@ func (h *handler) Handle(ctx context.Context, r slog.Record) error {
 	if err := formatter.Handle(ctx, r); err != nil {
 		return err
 	}
-	h.store.append(r.Level.String(), strings.TrimSuffix(b.String(), "\n"))
-	return h.output.Handle(ctx, r)
+	h.store.append(r.Level, strings.TrimSuffix(b.String(), "\n"))
+	return nil
 }
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	clone := *h
