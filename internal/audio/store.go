@@ -44,7 +44,12 @@ CREATE TABLE IF NOT EXISTS analysis (
 CREATE INDEX IF NOT EXISTS analysis_lookup ON analysis(catalog, track, track_key, model);
 CREATE TABLE IF NOT EXISTS assessment (
  analysis_id TEXT NOT NULL, intent TEXT NOT NULL, policy TEXT NOT NULL, data TEXT NOT NULL,
- PRIMARY KEY(analysis_id, intent, policy));`)
+ PRIMARY KEY(analysis_id, intent, policy));
+CREATE TABLE IF NOT EXISTS audio_representation (
+ id TEXT PRIMARY KEY, catalog TEXT NOT NULL, track TEXT NOT NULL, track_key TEXT NOT NULL,
+ model TEXT NOT NULL, data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS audio_representation_lookup
+ ON audio_representation(catalog, track, track_key, model);`)
 	if err != nil {
 		_ = db.Close()
 		return nil, err

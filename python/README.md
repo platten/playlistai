@@ -12,6 +12,7 @@ Bundle assembly has been ported to `go run ./cmd/audiopack`; it requires no Pyth
 
 | script | purpose |
 |---|---|
+| `fetch_enhanced_audio.py` | Standard-library-only pinned MERT/reference and existing catalog acquisition; resumes partial transfers, verifies SHA-256, preserves sources and emits an inventory. See [enhanced audio preparation](../docs/enhanced-audio-data-preparation.md). No model execution or audio download. |
 | `catalogfmt.py` | Shared on-disk catalog format: `vectors.i8` header + writer, the SQLite schema, and `normalize_search()` (reproduced byte-for-byte in `internal/catalog/search.go`). Both scripts below go through it. |
 | `fetch_pickles.py` | Download Deej-AI's four pickles from Google Drive (by the file IDs `deej-ai.online-app/scripts/download.py` uses) and sanity-check each one. See `docs/CATALOG.md`. |
 | `convert_pickles.py` | Convert `spotifytovec.p` / `tracktovec.p` / `spotify_tracks.p` / `spotify_urls.p` into `vectors.i8` + `catalog.sqlite` + `catalog-manifest.json`. |

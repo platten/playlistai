@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "path": "sources/catalog/catalog.tar.zst",
+      "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/catalog.tar.zst",
+      "size": 219618902,
+      "sha256": "f1198694f6c63bcb891e3a8461d3da97acf66d998ecd8a2998c8b23ea9f6a7e6",
+      "license": "GPL-3.0; see repository NOTICE and docs/CATALOG.md",
+      "purpose": "Existing Deej-AI catalog identities and audio/co-occurrence vectors; no retraining",
+      "revision": "repository catalog pin at c2b0ea3326e015298587d7ef3027193635c0472a"
+    },
+    {
+      "path": "sources/MERT-v1-95M/pytorch_model.bin",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/pytorch_model.bin",
+      "size": 377552987,
+      "sha256": "a2b8b747f72c06e0595aeae41ae5473f4364938c6b39b2c58be38c48e6bd3fcd",
+      "license": "CC-BY-NC-4.0",
+      "purpose": "Maintainer-only pretrained source for M3 ONNX export and parity; not an installable runtime graph",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "path": "sources/MERT-v1-95M/README.md",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/README.md",
+      "size": 6756,
+      "sha256": "4bd95e900185d8b393785c0038aa662355a904e5a98ec692003b8011c802455d",
+      "license": "Upstream model card; declares CC-BY-NC-4.0 model license",
+      "purpose": "Model provenance and attribution",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "path": "sources/MERT-v1-95M/config.json",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/config.json",
+      "size": 1817,
+      "sha256": "ea2627c4c7825cd66f3c944b6b966331604c35928174e0100cd4a82829424e32",
+      "license": "Upstream MERT distribution; see model card and source headers",
+      "purpose": "Pinned model configuration",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "path": "sources/MERT-v1-95M/configuration_MERT.py",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/configuration_MERT.py",
+      "size": 5340,
+      "sha256": "ae0ec2bab8f59c724ba9878a7c20b67210189536ea62d34a56775968e9decb03",
+      "license": "Retain upstream source headers; separate from application GPL-3.0",
+      "purpose": "Maintainer reference code; downloaded but not executed by acquisition tool",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "path": "sources/MERT-v1-95M/modeling_MERT.py",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/modeling_MERT.py",
+      "size": 18033,
+      "sha256": "6c3ee73cef6f0c30ef494f88d96f891fa6925ffe663fa391b512f4b57abecc6c",
+      "license": "Retain upstream source headers; separate from application GPL-3.0",
+      "purpose": "Maintainer reference code; downloaded but not executed by acquisition tool",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    },
+    {
+      "path": "sources/MERT-v1-95M/preprocessor_config.json",
+      "url": "https://huggingface.co/m-a-p/MERT-v1-95M/resolve/12af15fef9d0ac838c3f475bfbbf26d2060dd4f5/preprocessor_config.json",
+      "size": 211,
+      "sha256": "cc5a5e4a5d3b1a758a5ed984b2eaa15bb0522d811d44a9eed82bfca4baa0dc8f",
+      "license": "Upstream MERT distribution; see model card and source headers",
+      "purpose": "24 kHz Wav2Vec2 normalization and padding configuration",
+      "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+    }
+  ]
+}
