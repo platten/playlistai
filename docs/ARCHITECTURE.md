@@ -13,6 +13,13 @@ build.
 > measured improvements, and outstanding validation. Preview-derived analysis is
 > optional; this is not a local music-library scanner.
 
+The staged [enhanced audio milestones](enhanced-audio-milestones.md) add an
+audio-only representation contract beside paired CLAP analysis. M1 stores derived
+segment/pooled vectors in an additive table in the existing analysis database;
+no generation path consumes these records yet. See the
+[source preparation guide](enhanced-audio-data-preparation.md) for retained,
+verified maintainer assets and the subsequent native-runtime validation gate.
+
 ---
 
 ## 1. Principles
