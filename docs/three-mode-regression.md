@@ -1,5 +1,10 @@
 # Three-mode, forty-prompt regression
 
+Historical results. See the [September 11 development rerun](three-mode-rerun-2026-09-11.md)
+for measurements after single-genre verification. Its cached-feature protocol
+differs from this original live-preview run; the results are not a controlled
+before/after quality or latency comparison.
+
 Executed on September 9, 2026 (America/New_York), against the working tree based
 on `d8660c16f2a863ae02bc541b62f86dac7198d839`. This is the public
 [forty-prompt suite](forty-sample-prompts.md): ten requested tracks per prompt,

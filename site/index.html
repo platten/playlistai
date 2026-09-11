@@ -86,6 +86,32 @@
       </div>
       <a class="text-link" href="https://github.com/platten/playlistai/blob/v0.8.0/docs/releases/v0.8.0.md#validation-and-executed-measurements">Measurements, methods &amp; limitations <span aria-hidden="true">↗</span></a>
     </section>
+    <section class="section wrap" id="development" aria-labelledby="development-title">
+      <div class="section-heading"><p class="eyebrow">IN DEVELOPMENT / NOT IN 0.11.0</p><h2 id="development-title">One genre.<br /><span class="muted">Checked track by track.</span></h2><p>The latest working build checks every recommendation when you request one genre, including required tracks. Missing or mismatching genre evidence means a track is left out—not added just to fill the playlist.</p></div>
+      <div class="findings-grid">
+        <article><h3>Fit comes before a full list.</h3><p>Established aliases and subgenres can match: techno can support an electronic request, but a broad electronic tag does not establish techno. Artist and title words are not proof. Too little evidence means a shorter result or an explanation of why the request could not be fulfilled.</p></article>
+        <article><h3>Your journey stays yours.</h3><p>Deliberate multi-genre journeys keep their transitions. Deej-AI-only remains embedding-only and asks you to choose an analysis-enabled mode for single-genre verification. Preview evidence still describes only the part of the recording that was analyzed.</p></article>
+      </div>
+      <div class="results-panel">
+        <table class="results-table">
+          <caption>September 11 bounded replay · saved interpretations, cached audio features only</caption>
+          <thead><tr><th scope="col">Recommendation mode</th><th scope="col">Completed</th><th scope="col">At least five tracks / all checks passed</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">AcousticBrainz first</th><td>38/40</td><td>11 / 11</td></tr>
+            <tr><th scope="row">CLAP first</th><td>27/40</td><td>7 / 7</td></tr>
+            <tr><th scope="row">Deej-AI only</th><td>40/40</td><td>9 / 9</td></tr>
+          </tbody>
+        </table>
+        <p class="results-note">105 of 120 planned cases completed. Four remained interrupted and eleven were unattempted. Pass counts refer only to completed cases; no mode demonstrated success on all forty prompts. Every request asked for ten tracks.</p>
+      </div>
+      <details class="benchmark-details"><summary>Why this is not a listening-quality comparison</summary><div>
+        <p>No fresh LLM parsing or preview downloads were performed. Each enhanced mode had analyzed evidence for only <strong>two selected tracks</strong>, and neither had selected-track AcousticBrainz comparison scores. Sparse or incompatible cached features do not establish which priority sounds better.</p>
+        <p>Completed-case median times were <strong>10.7 s</strong> for AcousticBrainz-first, <strong>2.67 s</strong> for CLAP-first and <strong>0.625 s</strong> for Deej-AI-only. These exclude startup and interrupted attempts. Runs used different warm caches and partly overlapped; the medians are not a controlled speed comparison.</p>
+        <p>Punk stalled in catalog track resolution, a journey was interrupted, and a drum &amp; bass request reached the time limit during final candidate checks. Classical and Electronic returned no tracks when affirmative genre evidence was missing. The earlier live-preview study below used a different protocol.</p>
+      </div></details>
+      <a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/three-mode-rerun-2026-09-11.md">Current results, interruptions &amp; reproduction steps <span aria-hidden="true">↗</span></a>
+      <a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/single-genre-verification.md">Genre-check behavior &amp; limitations <span aria-hidden="true">↗</span></a>
+    </section>
     <section class="section wrap regression" id="regression" aria-labelledby="regression-title">
       <div class="section-heading"><p class="eyebrow">HISTORICAL TEST / SEPTEMBER 9, 2026</p><h2 id="regression-title">40 prompts. Three modes.<br /><span class="muted">The results, openly.</span></h2><p>Artists, genres, textures and journeys. Each request asked for ten tracks, with at least five needed to pass the count check. All 120 cases completed in this earlier study; it was not rerun for 0.11.0.</p></div>
       <div class="results-panel">
@@ -111,7 +137,7 @@
         <p>Test host: RTX 5060 Laptop GPU with 8 GB VRAM, Linux/WSL2, local Qwen3.5-9B, CPU CLAP, a 956,917-track catalog and an empty taste profile. No held-out listening judgments were used. The full repository check gate passed separately from these live acceptance failures.</p>
       </div></details>
       <a class="text-link" href="https://github.com/platten/playlistai/blob/v0.9.0/docs/three-mode-regression.md">Full results &amp; reproduction steps <span aria-hidden="true">↗</span></a>
-      <aside class="performance-note" aria-labelledby="performance-title"><h3 id="performance-title">Less repeated work. Same exact neighbors.</h3><p>A request-local search cache reduced a reference-based, ten-track benchmark from <strong>1.888 s to 0.325 s</strong>—about 5.8× faster, with identical playlists and scoring evidence. This isolates recommendation work: model parsing, provider calls and CLAP are excluded. It is not a whole-app speedup claim.</p><a class="text-link" href="https://github.com/platten/playlistai/blob/v0.9.0/docs/performance-and-model-evaluation.md#iterative-generation-and-unused-code-cleanup-2026-09-09">Benchmark method &amp; raw results <span aria-hidden="true">↗</span></a></aside>
+      <aside class="performance-note" aria-labelledby="performance-title"><h3 id="performance-title">Remeasured, not assumed.</h3><p>September 11 development build: a ten-track Boards of Canada request took <strong>60.4 ms</strong> with uncached exact retrieval and <strong>62.8 ms</strong> with the request cache. Five samples on the 956,917-track catalog produced identical playlists and scoring evidence. This short request showed no cache speed advantage; the earlier 5.8× result does not describe the current path.</p><p>Recommendation work only: parsing, network calls and audio analysis are excluded. This is neither a whole-app latency measurement nor a musical-quality score. These unreleased changes are not included in the 0.11.0 downloads above.</p><a class="text-link" href="https://github.com/platten/playlistai/blob/main/docs/performance-and-model-evaluation.md#current-worktree-rerun-2026-09-11">Benchmark method &amp; raw results <span aria-hidden="true">↗</span></a></aside>
     </section>
     <section class="section privacy-section wrap" id="privacy" aria-labelledby="privacy-title">
       <div class="section-heading"><p class="eyebrow">03 / ON YOUR TERMS</p><h2 id="privacy-title">Personal taste.<br /><em>Personal space.</em></h2><p>Your descriptions, language inference, playlist history and taste profile stay on your device. No cloud model receives your prompt.</p></div>

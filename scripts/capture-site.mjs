@@ -48,6 +48,15 @@ try {
   if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
   if (await page.locator('#recommendations .mode-card').count() !== 3) throw Error('Recommendation modes missing');
   if (await page.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing');
+  if (!(await page.locator('#development').innerText()).includes('NOT IN 0.11.0')) throw Error('Unreleased genre checks must be labeled');
+  if (await page.locator('#development tbody tr').count() !== 3 || !(await page.locator('#development .results-note').innerText()).includes('105 of 120 planned cases completed')) throw Error('Bounded replay completion counts missing');
+  const replay = JSON.parse(await readFile('docs/data/three-mode-regression-2026-09-11.json', 'utf8'));
+  for (const [index, result] of replay.summaries.entries()) {
+    const cells = await page.locator('#development tbody tr').nth(index).locator('td').allTextContents();
+    if (cells[0] !== `${result.completed}/40` || cells[1] !== `${result.atLeastFive} / ${result.assertionPasses}`) throw Error(`Website replay results differ from recorded evidence: ${result.mode}`);
+  }
+  const performance = await page.locator('.performance-note').innerText();
+  if (!performance.includes('60.4 ms') || !performance.includes('62.8 ms') || !performance.includes('no cache speed advantage')) throw Error('Current benchmark results or caveat missing');
   await page.getByRole('link', {name:'Read the 0.11.0 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
@@ -59,6 +68,7 @@ try {
     if (width === 1440 || width === 390) {
       const style = '.site-header,.skip-link{visibility:hidden!important}';
       await page.locator('#recommendations').screenshot({path:path.join(output,`modes-${width}.png`),style});
+      await page.locator('#development').screenshot({path:path.join(output,`development-${width}.png`),style});
       await page.locator('#regression').screenshot({path:path.join(output,`regression-${width}.png`),style});
     }
   }
@@ -74,7 +84,9 @@ try {
   await page.getByText('Does CLAP work on every build?', {exact:true}).click();
   await page.getByText('Native inference was validated', {exact:false}).waitFor();
   await page.getByText('Timing, evidence coverage & test conditions', {exact:true}).click();
-  if (await page.locator('.benchmark-details').getAttribute('open') === null) throw Error('Benchmark details did not open');
+  if (await page.locator('#regression .benchmark-details').getAttribute('open') === null) throw Error('Benchmark details did not open');
+  await page.getByText('Why this is not a listening-quality comparison', {exact:true}).click();
+  if (await page.locator('#development .benchmark-details').getAttribute('open') === null) throw Error('Current replay limitations did not open');
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded benchmark overflow');
   await page.getByText('Packages & portable downloads', {exact:true}).click();
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded download overflow');

@@ -1,5 +1,44 @@
 # Retrieval and Local Intent Model Evaluation
 
+## Current-worktree rerun (2026-09-11)
+
+Reran the production-catalog iterative benchmark after the early-stop/refactor
+and single-genre verification changes. Source: `b79c0317a92fa8d5d3cfc8ecb202300c05a85d40`
+plus the uncommitted working tree, `multichannel/v22+iterative/v1` (not a published release).
+Go 1.27.1, Linux/amd64, WSL2 6.18.33.2, Intel Core Ultra 9 285H,
+16 logical CPUs; catalog `1:956917:1788613313`, 956,917 tracks. GPU unused.
+
+The fixed request is Boards of Canada, ten tracks, seed `42`, no taste profile,
+and the controls in `iterative_benchmark_test.go`. This isolates retrieval,
+selection and sequencing: no parsing, providers, CLAP or genre-verification
+work. Each variant checks complete playlist/evidence equality before timing.
+Five samples, one-second target per sample; 18–21 iterations per sample.
+
+| Same-binary variant | Median | Range | Median B/op | Median allocs/op |
+| --- | ---: | ---: | ---: | ---: |
+| Uncached exact | 60.350 ms | 59.344–62.052 ms | 4,948,846 | 60,476 |
+| Request cache | 62.773 ms | 61.998–64.975 ms | 6,287,819 | 78,749 |
+
+The current short request shows **no cache speed advantage** (about 4% slower
+and 27% more allocated bytes here). The historical 5.8× cache improvement below
+must not be presented as a current universal speedup. Early stopping and other
+intervening changes mean these runs are not an isolated before/after experiment;
+do not attribute the difference from September 9 to a single optimization.
+An initial three-iteration smoke run favored the cache slightly, reinforcing
+the need not to generalize from small samples. The host was not dedicated to
+benchmarking; preparation of the separate mode replay could overlap. No ranking
+defaults were changed.
+
+```sh
+PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test ./internal/reco/multichannel \
+  -run '^$' -bench BenchmarkCatalogIterativeGeneration \
+  -benchtime=1s -count=5 -benchmem
+```
+
+Raw `ns/op` samples (uncached): 59344281, 59602663, 60601503, 62052128,
+60349586. Cached: 63074661, 61997726, 62772539, 62660482, 64975014.
+All benchmark assertions passed. These are timings, not musical-quality scores.
+
 ## Iterative generation and unused-code cleanup (2026-09-09)
 
 CPU profiling of the desktop's reference-based iterative generation path put
