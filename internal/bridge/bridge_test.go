@@ -9,7 +9,14 @@ import (
 
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/ports"
 )
+
+func useRecommendationEngine(api *API, engine ports.RecommendationEngine) {
+	snapshot := api.runtime()
+	snapshot.Reco = engine
+	api.runtime = func() app.RuntimeSnapshot { return snapshot }
+}
 
 func newTestContainer(t *testing.T) *app.Container {
 	t.Helper()

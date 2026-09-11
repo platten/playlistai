@@ -27,12 +27,21 @@ type ExportTrackDTO struct {
 // PrepareExport reads local track details without enrichment or network access.
 // Preserve playlist order and duplicates; unknown IDs are skipped.
 func (a *API) PrepareExport(trackIDs []string) ([]ExportTrackDTO, error) {
-	if a.app.Catalog == nil {
+	ctx, release := a.app.OperationContext(a.context())
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	catalog := a.runtime().Catalog
+	if catalog == nil {
 		return nil, errors.New("catalog not loaded")
 	}
 	out := make([]ExportTrackDTO, 0, len(trackIDs))
 	for _, id := range trackIDs {
-		if m, ok := a.app.Catalog.Meta(id); ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if m, ok := catalog.Meta(id); ok {
 			out = append(out, ExportTrackDTO{ID: m.Ref.ID, Artist: m.Ref.Artist, Title: m.Ref.Title, Album: m.Album})
 		}
 	}

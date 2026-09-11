@@ -33,8 +33,8 @@ func TestStaleBuildCannotReturnAfterNewerResult(t *testing.T) {
 		firstStarted: make(chan struct{}),
 		releaseFirst: make(chan struct{}),
 	}
-	c.Reco = recommender
 	api := New(c, nil)
+	useRecommendationEngine(api, recommender)
 	req := BuildPlaylistRequest{
 		Version: core.CurrentIntentVersion,
 		Intent: core.MusicIntent{
@@ -252,8 +252,8 @@ func TestPartialGenerationHasStructuredReasons(t *testing.T) {
 	t.Parallel()
 	c := newLoadedContainer(t)
 	artists := map[string]struct{}{}
-	for row := 0; row < c.Catalog.Len(); row++ {
-		if meta, ok := c.Catalog.Meta(c.Catalog.ID(row)); ok {
+	for row := 0; row < c.Runtime().Catalog.Len(); row++ {
+		if meta, ok := c.Runtime().Catalog.Meta(c.Runtime().Catalog.ID(row)); ok {
 			artists[meta.Ref.Artist] = struct{}{}
 		}
 	}

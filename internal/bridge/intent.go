@@ -62,6 +62,11 @@ func (a *API) ParseIntentWithContext(ctx context.Context, prompt string, session
 }
 
 func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput) (IntentPreview, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return IntentPreview{}, err
+	}
 	ctx = a.diagnosticContext(ctx)
 	logging.Diagnostic(ctx, "generation.prompt", input)
 	input.SkipMetadata = a.app.RecommendationMode() == core.DeejAIOnly
@@ -82,8 +87,8 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 	logging.Diagnostic(ctx, "intent.parsed", m)
 	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	var issues []intentresolution.Issue
-	if a.app.Resolver != nil {
-		m, issues = intentresolution.Apply(a.app.Resolver, m)
+	if a.runtime().Resolver != nil {
+		m, issues = intentresolution.Apply(a.runtime().Resolver, m)
 	}
 	preview := IntentPreview{
 		Intent:             m,
@@ -126,8 +131,8 @@ type GenerateResult struct {
 	Status GenerationStatus `json:"status"`
 }
 
-// GenerateFromPrompt parses a prompt, resolves its seed phrases against the
-// catalog, and runs the walk.
+// GenerateFromPrompt preserves the parsed intent through reference resolution
+// and the selected recommendation policy. Building alone is not exposure.
 func (a *API) GenerateFromPrompt(ctx context.Context, prompt string) (GenerateResult, error) {
 	return a.generateFromPromptOperation(ctx, ports.IntentInput{Prompt: prompt}, nil)
 }
@@ -153,10 +158,12 @@ func (a *API) GenerateFromPromptResolvedWithContext(ctx context.Context, prompt 
 }
 
 func (a *API) generateFromPromptOperation(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
 	ctx = a.diagnosticContext(ctx)
 	logging.Diagnostic(ctx, "generation.prompt", input)
 	a.operations.cancel("intent-preview")
-	ctx, current, finish := a.operations.begin(ctx, "prompt-generation")
+	ctx, current, finish := a.operations.begin(ctx, generationOperation)
 	defer finish()
 	ctx, finishGeneration := a.beginGeneration(ctx, input.GenerationID)
 	defer finishGeneration()
@@ -171,12 +178,13 @@ func (a *API) generateFromPromptOperation(ctx context.Context, input ports.Inten
 		if !current() {
 			return GenerateResult{}, context.Canceled
 		}
+		a.preparePresentation(result.Request, &result.Playlist)
 	}
 	return result, err
 }
 
 func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
-	if a.app.IntentParser() == nil || a.app.Reco == nil || a.app.Catalog == nil || a.app.Resolver == nil {
+	if a.app.IntentParser() == nil || a.runtime().Reco == nil || a.runtime().Catalog == nil || a.runtime().Resolver == nil {
 		return GenerateResult{}, errors.New("not ready — download the catalog first")
 	}
 
@@ -203,16 +211,16 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	resolveStarted := time.Now()
 	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly {
 		if knowledge, ok := a.app.Knowledge.(ports.IterativeMusicKnowledge); ok {
-			m, err = knowledge.PrepareMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+			m, err = knowledge.PrepareMusic(ctx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
 		} else {
-			m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.app.Catalog, a.app.Resolver, prog)
+			m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
 		}
 		if err != nil {
 			return GenerateResult{}, err
 		}
 		logKnowledgeDiagnostics(ctx, m.Knowledge)
 	}
-	m, _ = intentresolution.Apply(a.app.Resolver, m)
+	m, _ = intentresolution.Apply(a.runtime().Resolver, m)
 	timings = append(timings, StageTiming{Stage: "resolve", Milliseconds: time.Since(resolveStarted).Milliseconds()})
 	if err := ctx.Err(); err != nil {
 		return GenerateResult{}, err

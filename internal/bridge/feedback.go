@@ -50,17 +50,22 @@ type FeedbackBatchReceipt struct {
 }
 
 func (a *API) RecordFeedback(ctx context.Context, request RecordFeedbackRequest) (FeedbackReceipt, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return FeedbackReceipt{}, err
+	}
 	if a.app.Feedback == nil {
 		return FeedbackReceipt{}, errors.New("local feedback storage is unavailable")
 	}
-	if a.app.Catalog == nil {
+	if a.runtime().Catalog == nil {
 		return FeedbackReceipt{}, errors.New("catalog not loaded")
 	}
-	if _, ok := a.app.Catalog.Meta(request.TrackID); !ok {
+	if _, ok := a.runtime().Catalog.Meta(request.TrackID); !ok {
 		return FeedbackReceipt{}, fmt.Errorf("feedback: unknown catalog track %q", request.TrackID)
 	}
 	if request.Type == core.FeedbackExposure {
-		return FeedbackReceipt{}, errors.New("feedback: exposures are recorded only by playlist generation")
+		return FeedbackReceipt{}, errors.New("feedback: exposures are recorded only after acknowledging a displayed playlist")
 	}
 	if request.Scope == "" {
 		request.Scope = defaultFeedbackScope(request.Type)
@@ -92,10 +97,15 @@ func defaultFeedbackScope(kind core.FeedbackType) core.FeedbackScope {
 // RecordTrackAcceptance records only tracks included when the user explicitly
 // confirms an export. Opening or generating a playlist never calls this API.
 func (a *API) RecordTrackAcceptance(ctx context.Context, request RecordAcceptanceRequest) (FeedbackBatchReceipt, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return FeedbackBatchReceipt{}, err
+	}
 	if a.app.Feedback == nil {
 		return FeedbackBatchReceipt{}, errors.New("local feedback storage is unavailable")
 	}
-	if a.app.Catalog == nil {
+	if a.runtime().Catalog == nil {
 		return FeedbackBatchReceipt{}, errors.New("catalog not loaded")
 	}
 	seen := make(map[string]struct{}, len(request.TrackIDs))
@@ -106,7 +116,7 @@ func (a *API) RecordTrackAcceptance(ctx context.Context, request RecordAcceptanc
 			continue
 		}
 		seen[trackID] = struct{}{}
-		if _, ok := a.app.Catalog.Meta(trackID); !ok {
+		if _, ok := a.runtime().Catalog.Meta(trackID); !ok {
 			return FeedbackBatchReceipt{}, fmt.Errorf("feedback: unknown catalog track %q", trackID)
 		}
 		events = append(events, core.FeedbackEvent{
@@ -134,6 +144,14 @@ func (a *API) GetTasteProfile(ctx context.Context, sessionID, requestID string) 
 }
 
 func (a *API) ClearTasteData(ctx context.Context) error {
+	a.cancelRecommendationWork()
+	// Serialize clearing with acknowledgments so a delayed display callback
+	// cannot recreate exposure immediately after the user clears local taste.
+	a.presentations.mu.Lock()
+	defer a.presentations.mu.Unlock()
+	a.tasteEpoch++
+	a.presentations.entries = nil
+	a.presentations.order = nil
 	if a.app.Feedback != nil {
 		if err := a.app.Feedback.ClearFeedback(ctx); err != nil {
 			return err
@@ -152,6 +170,14 @@ func (a *API) tasteProfile(ctx context.Context, sessionID, requestID string) (co
 }
 
 func (a *API) buildTasteProfile(ctx context.Context, sessionID, requestID string, includeAllExposures bool) (core.TasteProfile, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return core.TasteProfile{}, err
+	}
+	a.presentations.mu.Lock()
+	epoch := a.tasteEpoch
+	a.presentations.mu.Unlock()
 	var events []core.FeedbackEvent
 	if a.app.Feedback != nil {
 		var err error
@@ -162,11 +188,21 @@ func (a *API) buildTasteProfile(ctx context.Context, sessionID, requestID string
 			return core.TasteProfile{}, err
 		}
 	}
-	profile, err := taste.BuildProfile(ctx, a.app.Catalog, events, taste.ProfileOptions{
+	profile, err := taste.BuildProfile(ctx, a.runtime().Catalog, events, taste.ProfileOptions{
 		RequestID: requestID, SessionID: sessionID, IncludeAllExposures: includeAllExposures,
 	})
 	if err != nil {
 		return core.TasteProfile{}, err
+	}
+	// The expensive projection runs outside the lock. Clear serializes with
+	// publication, not computation, so old feedback cannot resurrect a profile.
+	a.presentations.mu.Lock()
+	defer a.presentations.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return core.TasteProfile{}, err
+	}
+	if epoch != a.tasteEpoch {
+		return core.TasteProfile{}, context.Canceled
 	}
 	if a.app.Profiles != nil {
 		if err := a.app.Profiles.SaveProfile(ctx, profile); err != nil {
@@ -188,15 +224,12 @@ func (a *API) generationTasteProfile(ctx context.Context, sessionID, requestID s
 		return core.TasteProfile{}, contextErr
 	}
 	a.log.Warn("taste profile unavailable for generation", "err", err)
-	return taste.BuildProfile(ctx, a.app.Catalog, nil, taste.ProfileOptions{
+	return taste.BuildProfile(ctx, a.runtime().Catalog, nil, taste.ProfileOptions{
 		RequestID: requestID, SessionID: sessionID,
 	})
 }
 
-func (a *API) recordExposures(ctx context.Context, request BuildPlaylistRequest, result PlaylistResult) {
-	if a.app.Feedback == nil || len(result.Tracks) == 0 || ctx.Err() != nil {
-		return
-	}
+func (a *API) exposureEvents(request BuildPlaylistRequest, result PlaylistResult) []core.FeedbackEvent {
 	versions := a.feedbackVersions()
 	versions.Recommendation = a.recommendationVersionFor(result.Intent)
 	events := make([]core.FeedbackEvent, 0, len(result.Tracks))
@@ -209,14 +242,12 @@ func (a *API) recordExposures(ctx context.Context, request BuildPlaylistRequest,
 			Type: core.FeedbackExposure, Scope: core.FeedbackScopeRequest, TrackID: track.ID,
 			RequestID: requestID, SessionID: request.SessionID,
 			Context: core.FeedbackContext{
-				Surface: "generation", Position: position, RationaleKind: track.Kind,
+				Surface: "playlist", Position: position, RationaleKind: track.Kind,
 			},
 			Versions: versions,
 		})
 	}
-	if err := a.app.Feedback.RecordFeedbackBatch(ctx, events); err != nil {
-		a.log.Warn("could not persist recommendation exposures", "err", err, "count", len(events))
-	}
+	return events
 }
 
 func (a *API) feedbackVersions() core.FeedbackVersions {
@@ -227,14 +258,14 @@ func (a *API) feedbackVersions() core.FeedbackVersions {
 }
 
 func (a *API) catalogVersion() string {
-	if a.app.Resolver == nil {
+	if a.runtime().Resolver == nil {
 		return "unknown"
 	}
-	return a.app.Resolver.CatalogVersion()
+	return a.runtime().Resolver.CatalogVersion()
 }
 
 func (a *API) recommendationVersion() string {
-	if versioned, ok := a.app.Reco.(ports.VersionedRecommendationEngine); ok {
+	if versioned, ok := a.runtime().Reco.(ports.VersionedRecommendationEngine); ok {
 		return versioned.AlgorithmVersion()
 	}
 	return defaultRecommendationAlgorithmVersion

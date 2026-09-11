@@ -16,7 +16,7 @@ import (
 
 const searchK = 4096
 
-const AlgorithmVersion = "deejai/v4"
+const AlgorithmVersion = "deejai/v5"
 
 type Engine struct {
 	cat      ports.Catalog
@@ -100,6 +100,13 @@ func (e *Engine) Build(ctx context.Context, intent core.MusicIntent) (core.Playl
 	}
 	if err != nil {
 		return core.Playlist{}, err
+	}
+	if f.noBackToBack {
+		for index := 1; index < len(steps); index++ {
+			if sameKnownArtist(steps[index-1].ref, steps[index].ref) {
+				return core.Playlist{}, fmt.Errorf("%w: required ordering violates no-back-to-back artist", core.ErrRequiredTrackConflict)
+			}
+		}
 	}
 
 	pl := core.Playlist{Mode: intent.Mode, Seed: seed, Intent: intent}
@@ -209,7 +216,25 @@ func (e *Engine) similar(
 	if len(history) == 0 {
 		history = append(history, required...)
 	}
-	for _, ref := range required {
+	for index, ref := range required {
+		if f.noBackToBack && len(steps) > 0 && sameKnownArtist(steps[len(steps)-1].ref, ref) {
+			if len(steps)+len(required)-index >= intent.Count {
+				return nil, fmt.Errorf("%w: requested count leaves no room to separate required tracks by the same artist", core.ErrRequiredTrackConflict)
+			}
+			window := history[maxInt(0, len(history)-intent.Lookback):]
+			audioSum, trackSum := e.vectorSums(window, referenceWeights)
+			applyNoise(audioSum, trackSum, intent.Noise, rng)
+			chosen, _, _, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, core.NormalizeIdentityPart(ref.Artist), "")
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				return nil, fmt.Errorf("%w: no eligible recording separates required tracks by the same artist", core.ErrRequiredTrackConflict)
+			}
+			steps = append(steps, step{ref: chosen, kind: "nearest", detail: "embedding-similar separator preserves hard artist spacing between required tracks"})
+			f.markUsed(chosen)
+			history = append(history, chosen)
+		}
 		steps = append(steps, step{ref: ref, kind: "required", detail: "required track"})
 		f.markUsed(ref)
 		if !containsID(history, ref.ID) {
@@ -228,10 +253,8 @@ func (e *Engine) similar(
 		prevArtist := ""
 		if len(steps) > 0 {
 			prevArtist = core.NormalizeIdentityPart(steps[len(steps)-1].ref.Artist)
-		} else if len(history) > 0 {
-			prevArtist = core.NormalizeIdentityPart(history[len(history)-1].Artist)
 		}
-		chosen, rank, searched, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
+		chosen, rank, searched, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist, "")
 		if err != nil {
 			return nil, err
 		}
@@ -282,6 +305,23 @@ func (e *Engine) journey(
 		intermediateSlots = intent.Count - len(required)
 	}
 	perSegment := distribute(intermediateSlots, len(anchors)-1)
+	if emitWaypoints && f.noBackToBack {
+		minimum := make([]int, len(anchors)-1)
+		needed := 0
+		for segment := range minimum {
+			if sameKnownArtist(anchors[segment], anchors[segment+1]) {
+				minimum[segment] = 1
+				needed++
+			}
+		}
+		if needed > intermediateSlots {
+			return nil, fmt.Errorf("%w: requested count leaves no room to separate required journey artists", core.ErrRequiredTrackConflict)
+		}
+		perSegment = distribute(intermediateSlots-needed, len(anchors)-1)
+		for segment := range perSegment {
+			perSegment[segment] += minimum[segment]
+		}
+	}
 
 	for segment := 0; segment < len(anchors)-1; segment++ {
 		if err := ctx.Err(); err != nil {
@@ -307,11 +347,15 @@ func (e *Engine) journey(
 			trackSum := interpolate(st, et, t)
 			applyNoise(audioSum, trackSum, intent.Noise, rng)
 
-			prevArtist := core.NormalizeIdentityPart(start.Artist)
+			prevArtist := ""
 			if len(steps) > 0 {
 				prevArtist = core.NormalizeIdentityPart(steps[len(steps)-1].ref.Artist)
 			}
-			chosen, rank, _, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist)
+			nextArtist := ""
+			if emitWaypoints && i == slots-1 {
+				nextArtist = core.NormalizeIdentityPart(end.Artist)
+			}
+			chosen, rank, _, ok, err := e.pickExpanded(ctx, audioSum, trackSum, weights, f, prevArtist, nextArtist)
 			if err != nil {
 				return nil, err
 			}
@@ -339,7 +383,7 @@ func (e *Engine) pickExpanded(
 	audioSum, trackSum []float32,
 	weights [2]float32,
 	f *filter,
-	prevArtist string,
+	prevArtist, nextArtist string,
 ) (core.TrackRef, int, int, bool, error) {
 	limit := e.sim.Len()
 	if limit <= 0 {
@@ -357,7 +401,7 @@ func (e *Engine) pickExpanded(
 		if err != nil {
 			return core.TrackRef{}, 0, 0, false, err
 		}
-		chosen, rank, ok, err := f.pick(ctx, e.cat, matches, prevArtist)
+		chosen, rank, ok, err := f.pick(ctx, e.cat, matches, prevArtist, nextArtist)
 		if err != nil {
 			return core.TrackRef{}, 0, 0, false, err
 		}
@@ -369,6 +413,11 @@ func (e *Engine) pickExpanded(
 		}
 		k = minInt(k*2, limit)
 	}
+}
+
+func sameKnownArtist(left, right core.TrackRef) bool {
+	artist := core.NormalizeIdentityPart(left.Artist)
+	return artist != "" && artist == core.NormalizeIdentityPart(right.Artist)
 }
 
 func (e *Engine) vectorSums(refs []core.TrackRef, weights map[string]float32) ([]float32, []float32) {

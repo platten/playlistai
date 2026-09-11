@@ -26,7 +26,7 @@ func TestEngineOnlyPreservesBaselineAndReportsUnverifiedFit(t *testing.T) {
 	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "electronic", Scope: "playlist"}}
 	intent.VerificationPolicy = core.BestAvailable
 	got, err = deejai.BuildOnly(context.Background(), engine, intent)
-	if err != nil || len(got.Tracks) == 0 || got.Outcome.State != core.OutcomePartial || len(got.Outcome.Reasons) == 0 || got.AudioEvidence != nil {
+	if err != nil || len(got.Tracks) != 0 || got.Outcome.State != core.OutcomeUnsupported || len(got.Outcome.Reasons) == 0 || got.AudioEvidence != nil {
 		t.Fatalf("unchecked fit reported as fulfilled: %+v %v", got, err)
 	}
 	intent.VerificationPolicy = core.VerifiedOnly

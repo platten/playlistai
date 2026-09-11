@@ -7,25 +7,28 @@ hand the result to a streaming service via Soundiiz. Go + [Wails v3] backend
 (GTK4 / WebKitGTK 6.0 on Linux), React + TypeScript frontend, pnpm + Taskfile
 build.
 
-> **Status:** recommendation milestones 1–10 are implemented. This document
-> tracks the design as built; measured limitations remain called out explicitly.
-> An earlier revision described a local-audio-analysis app (ONNX encoder, library
-> scanning); that approach was dropped — see [§8](#8-relationship-to-deej-ai).
+> **Status:** the desktop foundation and recommendation milestones are implemented;
+> semantic/audio coverage and native-runtime validation remain bounded. See the
+> [correctness/maintainability review](codebase-review.md) for the current refactor,
+> measured improvements, and outstanding validation. Preview-derived analysis is
+> optional; this is not a local music-library scanner.
 
 ---
 
 ## 1. Principles
 
-- **Local-first core.** `prompt → MusicIntent → playlist` runs entirely on the
-  user's machine: an optional local llama.cpp model or built-in rules parser
+- **Local-first core.** An optional local llama.cpp model or built-in rules parser
   interprets the prompt, and compiled Go resolves, retrieves, ranks, selects,
-  and sequences catalog tracks. The only network calls are
-  optional and user-initiated (first-launch asset downloads, MusicBrainz
-  enrichment, Soundiiz export, preview playback).
+  and sequences catalog tracks. Enabled metadata discovery and audio-analysis
+  policies can use cached MusicBrainz/Discogs/AcousticBrainz results and download
+  previews during generation. Large assets are installed through setup; export
+  and playback are separate user actions. Deej-AI-only generation needs neither
+  online musical evidence nor a semantic model.
 - **The LLM is a translator, not a recommender.** Its entire job is
-  `natural language → MusicIntent` (a small JSON struct). It never sees the
-  catalog and never names or ranks output tracks. All selection is deterministic
-  Go.
+  `natural language → MusicIntent`. It may propose bounded retrieval anchors,
+  but those are distinct from explicit references and required output tracks.
+  Catalog resolution establishes identity, not musical suitability; grounded
+  evidence and deterministic Go selection establish the result.
 - **Swappable backends.** Every hard dependency sits behind an interface in
   `internal/ports` with an in-memory fake in `internal/fakes`. Implementations
   never import each other; they are wired only in `internal/app`.
@@ -46,14 +49,17 @@ flowchart LR
     Resolver --> Retrieve[Independent retrieval channels]
     Profile[Local feedback<br/>taste-profile snapshot] --> Retrieve
     Features[Optional grounded<br/>semantic sidecar] --> Retrieve
-    Retrieve --> Eligible[Hard eligibility<br/>exclusions + recording dedup]
+    Retrieve --> Assess[Whole-union semantic scoring<br/>optional iterative audio checks]
+    Assess --> Eligible[Hard eligibility<br/>exclusions + recording dedup]
     Eligible --> Rank[Transparent personalized ranking]
     Rank --> Select[MMR diversity selection]
     Select --> Sequence[Waypoint + transition sequencing]
     Sequence --> Result[Playlist + evidence<br/>status + reproducibility]
     Controls[Explicit slider overrides] --> Intent
     Result --> History[(Local history)]
-    Result -- exposure or explicit action --> Feedback[(Local feedback/events)]
+    Result --> Display[Accepted result displayed]
+    Display -- idempotent acknowledgment --> Feedback[(Local feedback/events)]
+    Display -- explicit like/dislike --> Feedback
 ```
 
 Retrieval queries each positive reference independently in audio and playlist-
@@ -62,6 +68,12 @@ optional grounded semantic channel. Candidate provenance survives unioning.
 Hard exclusions and provisional recording deduplication happen before ranking;
 MMR then balances relevance with embedding, artist, and reliable-album
 redundancy. Sequencing preserves required tracks and waypoint order.
+
+Iterative checking stops when the shared assembly operation can produce the
+requested playlist. Completed assembly is reused for the final result only when
+all selection inputs match, including resolved intent, canonical recent tracks,
+profile, RNG seed, configuration and evidence. Short pools and session-budget
+exhaustion preserve checked candidates; parent cancellation discards stale work.
 
 ```mermaid
 flowchart LR
@@ -97,14 +109,14 @@ Supporting:
 |---|---|
 | `Catalog` | Read-only dataset: real track metadata plus audio and playlist-co-occurrence embeddings. |
 | `ReferenceResolver` | Typed artist/track matching, evidence, ambiguity, aliases, and weighted artist representatives. |
-| `FeedbackStore` / `ProfileStore` | Versioned explicit events and reproducible recency-weighted local taste snapshots. Explicit feedback is kept indefinitely; generation-emitted exposures are windowed and pruned so profile cost stays flat as playlist history grows. |
+| `FeedbackStore` / `ProfileStore` | Versioned explicit events and reproducible recency-weighted local taste snapshots. Exposures are acknowledged after display, never inferred likes; exposure history is windowed and pruned. |
 | `FeatureStore` | Optional grounded semantic facets, provenance, missingness, and compatible query vectors. |
 | `Enricher` | `[]TrackRef → []EnrichedTrack` (ISRC + metadata) via MusicBrainz. Never fails the batch for one miss. |
 | `Exporter` | Send a playlist out — `soundiiz-handoff` (tokenless POST to `soundiiz.com/go/import-playlist`, open the returned `shareUrl`) or `csv` (always available, no network). |
 | `PreviewProvider` | Resolve a ~30s preview URL, no API key. `deezer` then `spotifycdn`. |
 | `Progress` | Coarse progress updates for any operation that can exceed ~5s. |
 
-Every port has a deterministic in-memory implementation in `internal/fakes`.
+Tests use deterministic fakes and package-local fixtures for these boundaries.
 
 ---
 
@@ -135,11 +147,18 @@ Those meanings are preserved with source evidence, but are not presented as
 enforced. Live controls re-run `Build` with the complete resolved intent plus
 explicit overrides; they never reconstruct intent from a knob-only DTO.
 
-The current version 6 contract also stores catalog resolution on each typed reference: the selected
+The current version 8 contract also stores catalog resolution on each typed reference: the selected
 artist or track, match confidence/evidence, ranked alternatives, catalog
 version, and weighted real-track representatives. Prompt generation and direct
 recommendation share one resolver port. Ambiguity remains explicit until the
 user chooses an alternative.
+
+`Normalized()` is the compatibility façade over separate migration, normalization
+and capability helpers; `Validate()` checks the resulting domain contract.
+Normalization does not mutate caller-owned preferences or trust saved runtime
+capability claims. `ReconcileOutcome` preserves the engine's musical verdict;
+neither history loading nor bridge status can promote an unverified result solely
+because its track count is full.
 
 ---
 
@@ -159,7 +178,7 @@ internal/
   fakes/      in-memory implementations for tests
   config/     TOML load + validate → immutable Config
   app/        composition root: Container, New, Close; doc.go pipeline diagram
-  bridge/     Wails v3 Service (API) + WailsProgress event emitter (thin; no logic)
+  bridge/     Wails v3 Service (API), lifecycle/DTO/history adapters and progress
   catalog/    Open(dir): mmap vectors.i8 + read-only catalog.sqlite (modernc, pure Go);
               ports.Catalog + shared typed resolver; exact Unicode/accent-aware
               artist/track matching, aliases, ambiguity, and representative medoids
@@ -199,9 +218,9 @@ frontend/     Vite + React + TS + @wailsio/runtime; pnpm; Tailwind v4 + Radix
                   ErrorState, Slider, Stepper, TrackRow, Button, icons,
                   (catalog download+unpack lives in the first-run wizard's
                   a blocking popup before the app renders, if one is present)
-  src/screens/    GenerateScreen (always available; catalog-only rules mode
-                  requires a seed artist/track, local-model mode may infer one;
-                  prompt → parsed-intent chips → playlist),
+  src/screens/    GenerateScreen (explicit submission; Deej-AI-only examples use
+                  artists, while evidence-enabled policies support descriptions;
+                  saved-history loading is keyed to the selected record),
                   PlaylistScreen (resolved intent + explicit count/discovery/
                   diversity/transition overrides, feedback, evidence, Regenerate),
                   SettingsScreen (AI-model panel: catalog download / use-a-file /
@@ -226,9 +245,16 @@ runs before the app starts. Key sections: `[catalog]` (`dir`; `archive_url` +
 `manifest_url` and `bundle_path` alternatives), `[ai]` (model id/path, n_ctx,
 threads), `[enrich]`
 (MusicBrainz user-agent — required — cache path, min match score), `[preview]`
-(`deezer` | `spotify` | `off`), and optional `[semantic]` (`sidecar_path` only).
-The semantic model and Python builder are not runtime configuration. Export
+(`deezer` | `spotify`; legacy `off` values still load), and optional `[semantic]`
+(`sidecar_path`). Music-analysis bundles and recommendation policies have their
+own settings; Python sidecar builders remain offline tooling. Export
 needs no configuration — the Soundiiz handoff is tokenless.
+
+An explicit TOML `data_dir` rebases implicit `catalog.dir` and
+`enrich.cache_path` defaults into that directory. Explicit per-store paths,
+including an empty cache path, retain their configured meaning. Earlier builds
+left those two implicit paths in the OS default data directory; to keep using
+existing assets there, set their paths explicitly. No user files are moved.
 
 ---
 
@@ -267,7 +293,7 @@ The original recommendation baseline comes from [teticio/Deej-AI] and its web ba
   similarity walk over two 100-dimensional embedding spaces (`spotifytovec.p`,
   audio-content; `tracktovec.p`, Spotify-playlist co-occurrence), blended by a
   `creativity` weight, with additive Gaussian "noise" and artist/id dedup.
-- The current `multichannel/v4` strategy uses the same two embedding spaces but
+- The current `multichannel/v21` strategy uses the same two embedding spaces but
   replaces Gaussian exploration with bounded exploration, independently queries
   every reference and taste cluster, and separates hard eligibility, ranking,
   diversity selection, and sequencing.
@@ -281,11 +307,39 @@ an operator who hosts and distributes the converted catalog takes on the
 written offer of source for the data and `python/convert_pickles.py` that
 implies.
 
+## Runtime and UI ownership
+
+```mermaid
+flowchart TD
+    Load[Serialized catalog load] --> Snapshot[Publish complete immutable runtime]
+    Snapshot --> Lease[Generation / parse / profile / catalog-reader lease]
+    Close[Container.Close] --> Cancel[Cancel lifetime and model startup]
+    Cancel --> Wait[Wait for active leases and catalog load]
+    Wait --> Release[Close models, mapped vectors and stores]
+    UI[App-owned playlist workspace] --> Draft[Accepted result + controls + seed + export draft]
+    Draft --> Nav[Screen navigation preserves workspace]
+    Change[New generation or settings change] --> Supersede[Cancel shared generation group]
+```
+
+Only the current operation may update UI state. The app retains the accepted
+playlist and control draft above screen mounts; leaving Playlist cancels a
+pending rebuild. Reopening unchanged saved text displays the stored result;
+editing it creates a fresh request with current settings, without changing the
+original record. Backend-issued presentation IDs make exposure acknowledgment
+idempotent within a bounded registry; history reopens receive new IDs without
+changing the recorded generation identity.
+
+Model downloads and startups have revision guards: a slow replacement cannot
+undo a later selection or clear. Preferences are atomically persisted before a
+replacement becomes active. Clearing taste data invalidates pending display
+tokens and profile-save epochs so old work cannot restore erased data.
+
 ---
 
 ## 9. Foundational milestones
 
-This historical list covers the initial desktop foundation. Recommendation
+This historical list covers the initial desktop foundation, not the current
+UI copy or complete runtime capabilities. Recommendation
 correctness, intent, resolution, lifecycle, personalization, multi-channel
 ranking, sequencing, semantics, evaluation, performance, and subsequent
 runtime/onboarding hardening are recorded in
@@ -351,7 +405,8 @@ runtime/onboarding hardening are recorded in
    `MiniPlayerBar` (play/pause, scrub, close) wired into `TrackRow.onPlay` on
    the Playlist screen. The wizard offers Deezer and Spotify; an existing off
    preference defaults to Deezer there and the chosen provider is saved on
-   Continue. Settings retains its independent off control. *(done)*
+   Continue. Settings now offers Deezer and Spotify only; legacy `off` values
+   remain readable for compatibility. *(done)*
 9. **Polish & ship** — model integrity hashes pinned (size + SHA-256 in
    `models-manifest.json`, verified against a fresh download of each file;
    surfaced as a "verified" badge in Settings); `.github/workflows/release.yml`

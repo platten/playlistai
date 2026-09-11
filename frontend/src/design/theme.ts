@@ -64,8 +64,10 @@ function subscribe(onChange: () => void) {
   };
 }
 
-function getChoiceSnapshot(): ThemeChoice {
-  return currentChoice;
+function getChoiceSnapshot(): string {
+  // A system change must change the snapshot even when the preference stays
+  // "system"; React ignores external-store notifications with equal snapshots.
+  return `${currentChoice}:${resolveTheme(currentChoice)}`;
 }
 
 function setChoiceInternal(choice: ThemeChoice) {
@@ -99,7 +101,8 @@ export interface ThemeApi {
 }
 
 export function useTheme(): ThemeApi {
-  const choice = useSyncExternalStore(subscribe, getChoiceSnapshot, () => "system" as ThemeChoice);
+  const snapshot = useSyncExternalStore(subscribe, getChoiceSnapshot, () => "system:light");
+  const [choice, resolved] = snapshot.split(":") as [ThemeChoice, ResolvedTheme];
 
   const setChoice = useCallback((next: ThemeChoice) => setChoiceInternal(next), []);
   const cycle = useCallback(() => {
@@ -112,5 +115,5 @@ export function useTheme(): ThemeApi {
     applyTheme(choice);
   }, [choice]);
 
-  return { choice, resolved: resolveTheme(choice), setChoice, cycle };
+  return { choice, resolved, setChoice, cycle };
 }

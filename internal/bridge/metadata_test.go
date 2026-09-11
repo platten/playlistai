@@ -29,7 +29,7 @@ func TestMetadataSettingsClearInvalidatesActiveAndLateWork(t *testing.T) {
 	m := &metadataFixture{token: "kept"}
 	a := New(&app.Container{Knowledge: m}, nil)
 	var contexts []context.Context
-	for _, group := range []string{"intent-preview", "prompt-generation", "playlist-build"} {
+	for _, group := range []string{"intent-preview", generationOperation} {
 		ctx, _, finish := a.operations.begin(context.Background(), group)
 		defer finish()
 		contexts = append(contexts, ctx)

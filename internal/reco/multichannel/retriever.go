@@ -119,7 +119,7 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 		for _, hint := range intent.GenreExpansions {
 			queries := append([]string{hint.Characteristics}, hint.RelatedGenres...)
 			for _, query := range queries {
-				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4))
+				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4), exclude)
 				if err != nil {
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
@@ -135,7 +135,7 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	var exploration []explorationOption
 	positiveSemantic, _ := semanticQueryText(intent)
 	if positiveSemantic != "" && r.semantic != nil {
-		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget)
+		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget, exclude)
 		if err != nil {
 			if len(references) == 0 {
 				return nil, fmt.Errorf("semantic seed retrieval: %w", err)

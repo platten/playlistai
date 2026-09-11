@@ -9,7 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const OnlyAlgorithmVersion = AlgorithmVersion + "+engine-only/v1"
+const OnlyAlgorithmVersion = AlgorithmVersion + "+engine-only/v2"
 
 // BuildOnly adds honest capability reporting around the unchanged evaluation
 // baseline. It performs no metadata lookup, preview analysis or personalization.
@@ -22,6 +22,10 @@ func BuildOnly(ctx context.Context, engine ports.RecommendationEngine, intent co
 		return core.Playlist{}, err
 	}
 	out := core.Playlist{Intent: intent, Mode: intent.Mode, Seed: intent.Seed}
+	if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre {
+		out.Outcome = core.GenerationOutcome{State: core.OutcomeUnsupported, Reasons: []core.OutcomeReason{{Code: "single_genre_check_unavailable", Criterion: genre.Value, Detail: "Deej-AI-only cannot verify each track's genre.", Action: "Choose AcousticBrainz-first or CLAP-first in Settings to check musical fit."}}}
+		return out, nil
+	}
 	clauses := audio.Clauses(intent)
 	for _, clause := range clauses {
 		if clause.Strict {

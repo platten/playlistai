@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -16,10 +17,16 @@ import (
 func main() {
 	dir := flag.String("tokenizer", "", "reference tokenizer directory")
 	flag.Parse()
-	tokenizer, err := audio.LoadTokenizer(filepath.Join(*dir, "vocab.json"), filepath.Join(*dir, "merges.txt"))
-	if err != nil {
+	if err := run(*dir, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+func run(dir string, output io.Writer) error {
+	tokenizer, err := audio.LoadTokenizer(filepath.Join(dir, "vocab.json"), filepath.Join(dir, "merges.txt"))
+	if err != nil {
+		return err
 	}
 	type tokenCase struct {
 		Text string  `json:"text"`
@@ -37,8 +44,7 @@ func main() {
 	for _, text := range []string{"ambient electronica", "relaxing but not sleepy", "instrumental, no vocals", "宇多田ヒカルの音楽", "Bj\u00f6rk's shimmering textures", "مرحبا بالعالم", " don't  stop\n the music!"} {
 		ids, _, err := tokenizer.Encode(text)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return err
 		}
 		report.Tokens = append(report.Tokens, tokenCase{Text: text, IDs: ids})
 	}
@@ -50,12 +56,9 @@ func main() {
 		mel, err := audio.LogMel(pcm)
 		clear(pcm)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return err
 		}
 		report.Mels = append(report.Mels, melCase{ToneHz: hz, Features: mel})
 	}
-	if err := json.NewEncoder(os.Stdout).Encode(report); err != nil {
-		os.Exit(1)
-	}
+	return json.NewEncoder(output).Encode(report)
 }

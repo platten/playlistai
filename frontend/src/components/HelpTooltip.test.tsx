@@ -1,0 +1,45 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { HelpTooltip } from "./HelpTooltip";
+afterEach(() => { cleanup(); vi.useRealTimers(); });
+it("opens accessible help on focus/click and closes on Escape, outside click and layout changes", () => {
+  render(<HelpTooltip label="Discovery" description="Explore unfamiliar songs" />);
+  const button = screen.getByRole("button");
+  fireEvent.focus(button);
+  expect(button.getAttribute("aria-describedby")).toBe(screen.getByRole("tooltip").id);
+  fireEvent.keyDown(window, { key: "Enter" });
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.mouseEnter(button);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.mouseMove(button);
+  fireEvent.pointerDown(screen.getByRole("tooltip"));
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  fireEvent.pointerDown(document.body);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(button);
+  fireEvent.resize(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.click(button);
+  fireEvent.scroll(window);
+  expect(screen.queryByRole("tooltip")).toBeNull();
+});
+it("lets the pointer cross into help before closing and cancels timers on unmount", () => {
+  vi.useFakeTimers();
+  const { unmount } = render(<HelpTooltip label="Count" description="Total tracks" />);
+  const button = screen.getByRole("button");
+  fireEvent.mouseMove(button);
+  fireEvent.mouseLeave(button);
+  fireEvent.mouseEnter(screen.getByRole("tooltip"));
+  act(() => vi.advanceTimersByTime(200));
+  expect(screen.getByRole("tooltip")).toBeTruthy();
+  fireEvent.mouseLeave(screen.getByRole("tooltip"));
+  act(() => vi.advanceTimersByTime(200));
+  expect(screen.queryByRole("tooltip")).toBeNull();
+  fireEvent.focus(button);
+  fireEvent.blur(button);
+  unmount();
+  expect(vi.getTimerCount()).toBe(0);
+});

@@ -8,7 +8,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-func TestGenerationRecordsExposuresWithoutPositiveFeedback(t *testing.T) {
+func TestDisplayedPlaylistRecordsExposuresWithoutPositiveFeedback(t *testing.T) {
 	t.Parallel()
 	c := newLoadedContainer(t)
 	api := New(c, nil)
@@ -17,6 +17,18 @@ func TestGenerationRecordsExposuresWithoutPositiveFeedback(t *testing.T) {
 		t.Fatal(err)
 	}
 	events, err := c.Feedback.ListFeedback(context.Background(), ports.FeedbackQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 0 {
+		t.Fatal("building an unseen playlist recorded exposure")
+	}
+	for range 2 {
+		if err := api.AcknowledgePlaylistDisplayed(context.Background(), generated.Playlist.PresentationID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err = c.Feedback.ListFeedback(context.Background(), ports.FeedbackQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}

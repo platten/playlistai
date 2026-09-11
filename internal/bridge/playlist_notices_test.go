@@ -68,8 +68,8 @@ func TestPartialNoticeSeparatesTrackCountFromFulfillment(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := newLoadedContainer(t)
-			c.Reco = partialOutcomeEngine{actual: tt.actual, state: tt.state}
 			api := New(c, nil)
+			useRecommendationEngine(api, partialOutcomeEngine{actual: tt.actual, state: tt.state})
 			result, err := api.BuildPlaylist(context.Background(), BuildPlaylistRequest{Version: core.CurrentIntentVersion, Intent: core.MusicIntent{
 				Version: core.CurrentIntentVersion, References: []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "seed0001", Influence: core.InfluencePositive}},
 				Controls: core.IntentControls{TotalTrackCount: 2, AudioWeight: .5, CooccurrenceWeight: .5}, Seed: "7",

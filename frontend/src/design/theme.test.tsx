@@ -21,6 +21,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("updates resolved system theme when the operating system changes", async () => {
+  let dark = false;
+  const listeners = new Set<() => void>();
+  vi.mocked(window.matchMedia).mockImplementation(() => ({
+    matches: dark,
+    addEventListener: (_event: string, listener: () => void) => listeners.add(listener),
+    removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
+  } as unknown as MediaQueryList));
+  const { useTheme } = await import("./theme");
+  const { result, unmount } = renderHook(useTheme);
+  expect(result.current.resolved).toBe("light");
+  act(() => { dark = true; listeners.forEach((listener) => listener()); });
+  expect(result.current.choice).toBe("system");
+  expect(result.current.resolved).toBe("dark");
+  act(() => result.current.setChoice("light"));
+  act(() => { dark = false; listeners.forEach((listener) => listener()); });
+  expect(result.current.resolved).toBe("light");
+  unmount();
+  expect(listeners.size).toBe(0);
+});
+
 it.each(["light", "dark", "system", "invalid"])("initializes stored theme %s", async (stored) => {
   localStorage.setItem("playlistai:theme", stored);
   const { initTheme } = await import("./theme");

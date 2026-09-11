@@ -15,8 +15,11 @@ func TestRebuildPinsProfileButChangedControlsUseCurrentTaste(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := api.AcknowledgePlaylistDisplayed(ctx, generated.Playlist.PresentationID); err != nil {
+		t.Fatal(err)
+	}
 	req := generated.Request
-	// Generation itself adds exposures, so a newly built profile differs even
+	// Display adds exposures, so a newly built profile differs even
 	// without an explicit like/dislike. Exact replay must use the saved one.
 	replayed, err := api.BuildPlaylist(ctx, req)
 	if err != nil {

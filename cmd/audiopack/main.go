@@ -28,6 +28,7 @@ type options struct {
 }
 
 func main() {
+	flag := flag.NewFlagSet("audiopack", flag.ExitOnError)
 	var o options
 	flag.StringVar(&o.export, "export", "", "directory containing exported ONNX graphs and parity report")
 	flag.StringVar(&o.source, "source", "", "directory containing vocabulary and merges")
@@ -45,7 +46,7 @@ func main() {
 	flag.BoolVar(&o.textUnpadded, "text-unpadded", false, "text graph accepts variable-length input_ids without attention_mask")
 	flag.StringVar(&o.sourceURL, "model-source-url", "", "custom model provenance URL (defaults to its Hugging Face model ID)")
 	flag.StringVar(&o.modelLicense, "model-license", "", "custom model license attribution (full notices are still required)")
-	flag.Parse()
+	_ = flag.Parse(os.Args[1:])
 	if err := assemble(o); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

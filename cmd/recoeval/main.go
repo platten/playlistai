@@ -18,12 +18,13 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, "recoeval:", err)
 		os.Exit(1)
 	}
 }
 func run() error {
+	flag := flag.NewFlagSet("recoeval", flag.ContinueOnError)
 	var datasetPath, catalogDir, configPath, outputPath, markdownPath, blindPath, keyPath, left, right, blindSeed string
 	var k int
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
@@ -37,7 +38,9 @@ func run() error {
 	flag.StringVar(&left, "left", "blended_walk", "first blind comparison variant")
 	flag.StringVar(&right, "right", "diversity_sequencing", "second blind comparison variant")
 	flag.StringVar(&blindSeed, "blind-seed", "1", "deterministic blind randomization seed")
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
 	}

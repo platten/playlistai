@@ -10,9 +10,16 @@ import (
 )
 
 func main() {
-	dir := flag.String("bundle", "", "verified model bundle directory")
-	flag.Parse()
-	if err := audioruntime.Run(*dir); err != nil {
+	if err := run(os.Args[1:], audioruntime.Run); err != nil && err != flag.ErrHelp {
 		os.Exit(1)
 	}
+}
+
+func run(args []string, worker func(string) error) error {
+	flag := flag.NewFlagSet("audioworker", flag.ContinueOnError)
+	dir := flag.String("bundle", "", "verified model bundle directory")
+	if err := flag.Parse(args); err != nil {
+		return err
+	}
+	return worker(*dir)
 }

@@ -1,6 +1,7 @@
 // Deterministic browser fixtures; no metadata or export services are contacted.
 // Usage: node scripts/capture-export-ui.mjs <playwright-module> <chromium> [output]
 import { mkdir } from "node:fs/promises";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 import { pathToFileURL } from "node:url";
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4] || "/tmp/playlist-ai-export-ui";
@@ -25,7 +26,7 @@ try {
     export const System={IsMac:()=>false};
   ` }));
   await page.route("**/src/lib/api.ts", route => route.fulfill({ contentType: "application/javascript", body: `
-    export const FeedbackScope={}; export const FeedbackType={};
+    ${bridgeEnums}
     const rows=[{id:'one',artist:'Local artist',title:'First track',album:'Local album'},{id:'two',artist:'Second artist',title:'Second track',album:''}];
     let failed=false;
     const methods={

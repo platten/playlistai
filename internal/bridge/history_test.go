@@ -92,7 +92,7 @@ func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
 		Controls:   core.IntentControls{TotalTrackCount: 1, AudioWeight: .5, CooccurrenceWeight: .5},
 		Seed:       maxSeed,
 	}.Normalized()
-	reproducibility, err := generationIdentity(intent, c.Resolver.CatalogVersion(), "test-reco/v1", "taste-profile/v2", "snapshot")
+	reproducibility, err := generationIdentity(intent, c.Runtime().Resolver.CatalogVersion(), "test-reco/v1", "taste-profile/v2", "snapshot")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +102,7 @@ func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
 	}
 	result := PlaylistResult{
 		Seed: maxSeed, Intent: intent, Reproducibility: reproducibility,
+		Tracks: []PlaylistTrack{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}},
 		Status: GenerationStatus{State: "complete", PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
 	}
 	requestJSON, err := json.Marshal(request)

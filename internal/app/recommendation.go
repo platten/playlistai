@@ -25,7 +25,10 @@ func (c *Container) SetRecommendationMode(mode core.RecommendationMode) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		return err
+	}
 	prefs.RecommendationMode = string(mode)
 	if err := prefs.Save(c.cfg.DataDir); err != nil {
 		return fmt.Errorf("save recommendation setting: %w", err)

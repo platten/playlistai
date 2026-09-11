@@ -104,7 +104,7 @@ func TestPrepareExportWithoutEnrichment(t *testing.T) {
 		t.Fatalf("local preparation failed: %v %v", rows, err)
 	}
 	for i, id := range []string{"seed0003", "seed0001", "seed0003"} {
-		meta, _ := c.Catalog.Meta(id)
+		meta, _ := c.Runtime().Catalog.Meta(id)
 		if rows[i] != (ExportTrackDTO{ID: id, Artist: meta.Ref.Artist, Title: meta.Ref.Title, Album: meta.Album}) {
 			t.Fatalf("local metadata/order changed: %+v", rows[i])
 		}

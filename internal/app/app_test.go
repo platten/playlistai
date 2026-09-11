@@ -234,25 +234,25 @@ func TestLoadCatalogFromFixture(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 
-	if c.Catalog == nil {
+	if c.runtime.Catalog == nil {
 		t.Fatal("catalog should have loaded from the fixture dir")
 	}
-	if c.Catalog.Len() != 256 {
-		t.Fatalf("catalog Len = %d, want 256", c.Catalog.Len())
+	if c.runtime.Catalog.Len() != 256 {
+		t.Fatalf("catalog Len = %d, want 256", c.runtime.Catalog.Len())
 	}
-	if c.Sim == nil || c.Sim.Len() != 256 {
+	if c.runtime.Sim == nil || c.runtime.Sim.Len() != 256 {
 		t.Fatalf("similarity engine not wired to the loaded catalog")
 	}
-	if c.Reco == nil {
+	if c.runtime.Reco == nil {
 		t.Fatal("recommendation engine not wired to the loaded catalog")
 	}
-	active, ok := c.Reco.(ports.VersionedRecommendationEngine)
+	active, ok := c.runtime.Reco.(ports.VersionedRecommendationEngine)
 	if !ok || active.AlgorithmVersion() != multichannel.AlgorithmVersion+"+iterative/v1" {
-		t.Fatalf("active recommendation version = %T/%v", c.Reco, ok)
+		t.Fatalf("active recommendation version = %T/%v", c.runtime.Reco, ok)
 	}
-	baseline, ok := c.BaselineReco.(ports.VersionedRecommendationEngine)
+	baseline, ok := c.runtime.BaselineReco.(ports.VersionedRecommendationEngine)
 	if !ok || baseline.AlgorithmVersion() != deejai.AlgorithmVersion {
-		t.Fatalf("baseline recommendation version = %T/%v", c.BaselineReco, ok)
+		t.Fatalf("baseline recommendation version = %T/%v", c.runtime.BaselineReco, ok)
 	}
 	if !c.Ready() {
 		t.Fatal("Ready() should be true once catalog + sim + reco are wired")
@@ -269,7 +269,7 @@ func TestDeejAIBaselineCanBeSelected(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	if c.RecommendationMode() != core.DeejAIOnly || c.BaselineReco == nil || c.Reco == c.BaselineReco {
+	if c.RecommendationMode() != core.DeejAIOnly || c.runtime.BaselineReco == nil || c.runtime.Reco == c.runtime.BaselineReco {
 		t.Fatal("legacy strategy must select engine-only by default while wiring both engines for live Settings changes")
 	}
 }

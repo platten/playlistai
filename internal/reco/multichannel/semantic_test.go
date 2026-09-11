@@ -23,14 +23,27 @@ func (s *semanticFixture) Features(_ context.Context, id string) (core.TrackFeat
 	value, ok := s.features[id]
 	return value, ok, nil
 }
-func (s *semanticFixture) Search(_ context.Context, text string, _ int) ([]core.SemanticHit, error) {
-	if strings.Contains(strings.ToLower(text), "sleepy") && !strings.Contains(strings.ToLower(text), "relaxing") {
-		return append([]core.SemanticHit(nil), s.negative...), nil
+func (s *semanticFixture) Search(ctx context.Context, text string, limit int, exclude map[string]struct{}) ([]core.SemanticHit, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
-	return append([]core.SemanticHit(nil), s.positive...), nil
+	hits := s.positive
+	if strings.Contains(strings.ToLower(text), "sleepy") && !strings.Contains(strings.ToLower(text), "relaxing") {
+		hits = s.negative
+	}
+	var out []core.SemanticHit
+	for _, hit := range hits {
+		if len(out) >= limit {
+			break
+		}
+		if _, excluded := exclude[hit.TrackID]; !excluded {
+			out = append(out, hit)
+		}
+	}
+	return out, nil
 }
 func (s *semanticFixture) Score(_ context.Context, text string, ids []string) (core.QueryCoverage, []core.SemanticScore, error) {
-	hits, _ := s.Search(context.Background(), text, len(ids))
+	hits, _ := s.Search(context.Background(), text, len(s.positive)+len(s.negative), nil)
 	byID := map[string]float64{}
 	for _, hit := range hits {
 		byID[hit.TrackID] = hit.Score

@@ -9,12 +9,12 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-func TestBestAvailableReturnsSuggestionsWithoutPromotingUnknown(t *testing.T) {
+func TestBestAvailableReturnsMoodSuggestionsWithoutPromotingUnknown(t *testing.T) {
 	cat := testCatalog()
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
 	intent := testIntent(3)
 	intent.VerificationPolicy = core.BestAvailable
-	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "previously unseen genre", Scope: "playlist"}}
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "mood", Value: "previously unseen mood", Scope: "playlist"}}
 	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_artist", Value: "Blocked Artist"}}
 	pl, err := engine.Build(context.Background(), intent)
 	if err != nil || len(pl.Tracks) == 0 || pl.Outcome.State != core.OutcomePartial {

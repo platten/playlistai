@@ -34,7 +34,7 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 					graph = o.knowledge.Graph
 				}
 				for _, v := range append(append([]core.FeatureValue(nil), features.Styles...), features.Tags...) {
-					if core.ReliableFeature(v) && graph.Matches(c.Value, v.Value) {
+					if core.ReliableFeature(v) && (core.StyleMatches(c.Value, v.Value) || graph.Matches(c.Value, v.Value)) {
 						return core.EvidenceMatch
 					}
 				}
@@ -42,14 +42,28 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 					return core.EvidenceMismatch
 				}
 			} else {
-				return core.CriterionEvidence(features, c)
+				if state := core.CriterionEvidence(features, c); state != core.EvidenceUnknown && state != core.EvidenceUnsupported {
+					return state
+				}
 			}
 		}
 	}
 	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved && (c.Kind == "genre" || c.Kind == "style") {
 		for _, tag := range track.GenreTags {
-			if tag.Votes > 0 && o.knowledge.Graph.Matches(c.Value, tag.Name) {
+			if tag.Votes > 0 && tag.Source != "" && (core.StyleMatches(c.Value, tag.Name) || o.knowledge.Graph.Matches(c.Value, tag.Name)) {
 				return core.EvidenceMatch
+			}
+		}
+	}
+	// A compatible grounded-description index is also musical evidence. Score
+	// this ID explicitly: absence from retrieval top-K does not imply mismatch.
+	if o.scorer != nil && (c.Kind == "genre" || c.Kind == "style") {
+		coverage, scores, err := o.scorer.Score(ctx, c.Value, []string{id})
+		if err == nil && coverage.Complete {
+			for _, score := range scores {
+				if score.TrackID == id && score.State == core.EvidenceMatch && score.Score >= o.cfg.SemanticMinimumScore {
+					return core.EvidenceMatch
+				}
 			}
 		}
 	}

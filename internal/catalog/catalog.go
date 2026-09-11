@@ -15,6 +15,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 // File names inside a catalog directory.
@@ -53,7 +54,11 @@ func Open(dir string) (*Catalog, error) {
 		return nil, err
 	}
 
-	dsn := "file:" + filepath.ToSlash(filepath.Join(dir, DBFile)) + "?mode=ro&immutable=1"
+	dsn, err := sqliteuri.ReadOnly(filepath.Join(dir, DBFile), true)
+	if err != nil {
+		_ = vec.close()
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		_ = vec.close()
@@ -290,18 +295,6 @@ func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
 	}
 	defer rows.Close()
 
-	var out []core.TrackRef
-	for rows.Next() {
-		var ref core.TrackRef
-		if err := rows.Scan(&ref.ID, &ref.Artist, &ref.Title); err != nil {
-			break
-		}
-		out = append(out, ref)
-	}
-	if len(out) <= 1 {
-		return out
-	}
-
 	// Stable 4-tier re-rank (row order kept within each tier), then trim to
 	// the caller's max:
 	//   1. full display or title is exact
@@ -324,16 +317,26 @@ func (c *Catalog) resolveTokens(tokens []string, max int) []core.TrackRef {
 		}
 		return 2
 	}
-	ranked := make([]core.TrackRef, 0, len(out))
-	for want := 0; want <= 3; want++ {
-		for _, r := range out {
-			if tier(r) == want {
-				ranked = append(ranked, r)
-			}
+	// Keep only the first max entries of each stable tier. Late exact
+	// matches still outrank early broad matches without retaining the full scan.
+	var buckets [4][]core.TrackRef
+	for rows.Next() {
+		var ref core.TrackRef
+		if err := rows.Scan(&ref.ID, &ref.Artist, &ref.Title); err != nil {
+			return nil
+		}
+		index := tier(ref)
+		if len(buckets[index]) < max {
+			buckets[index] = append(buckets[index], ref)
 		}
 	}
-	if len(ranked) > max {
-		ranked = ranked[:max]
+	if rows.Err() != nil {
+		return nil
+	}
+	var ranked []core.TrackRef
+	for _, bucket := range buckets {
+		remaining := max - len(ranked)
+		ranked = append(ranked, bucket[:min(remaining, len(bucket))]...)
 	}
 	return ranked
 }

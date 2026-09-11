@@ -4,9 +4,10 @@
 // Requires the frontend Vite dev server running on port 9245 (`cd frontend && npx vite`).
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
-const output = path.resolve("site/app-screenshot.png");
+const output = path.resolve(process.argv[4] || "site/app-screenshot.png");
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true, args: ["--no-sandbox"] });
 
 const runtime = `
@@ -14,10 +15,10 @@ export const Events = { On(name, fn) { const handler = (e) => fn({data:e.detail}
 export const Clipboard = { SetText: async()=>{} };
 export const Call = { ByID:()=>Promise.resolve(null) };
 export const CancellablePromise = Promise;
+export const System = { IsMac:()=>false };
 `;
 const api = `
-export const FeedbackScope = {Session:'session',Request:'request',Global:'global'};
-export const FeedbackType = {Like:'like',Dislike:'dislike'};
+${bridgeEnums}
 const intent = {version:8,verificationPolicy:'best_available',originalDescription:'ambient electronica, relaxing but not sleepy',mode:'similar',essentialCriteria:[],preferences:{genres:[{value:'ambient electronica',influence:'positive'}],styles:[],moods:[{value:'relaxing',influence:'positive'},{value:'sleepy',influence:'negative'}],textureDescriptions:[]},hardConstraints:[],unsupportedRequirements:[],capabilities:[],inferredAnchors:[],requiredTracks:[]};
 const preview = {intent,seeds:[],requiredTracks:[],mode:'similar',count:25,creativity:.5,noise:.1,lookback:3,artistsExclude:[],resolutionIssues:[],backend:'llama',parser:{requestedBackend:'llama'},notes:''};
 const methods = {
@@ -33,16 +34,17 @@ try {
   const page = await browser.newPage({ viewport: { width: 1220, height: 900 }, deviceScaleFactor: 2 });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.route("**/src/lib/api.ts", (route) => route.fulfill({ contentType: "application/javascript", body: api }));
+  await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, (route) => route.fulfill({ contentType: "application/javascript", body: api }));
   await page.route(/.*@wailsio_runtime\.js.*/, (route) => route.fulfill({ contentType: "application/javascript", body: runtime }));
   await page.goto("http://127.0.0.1:9245");
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
   const composer = page.getByRole("textbox", { name: "Your description" });
   await composer.fill("Ambient electronica, relaxing but not sleepy");
-  await page.getByRole("heading", { name: "Your request" }).waitFor();
-  await page.waitForTimeout(150);
+  // Editing is intentionally local. Capture the filled composer without
+  // assuming that typing submits a generation or creates an interpretation.
+  await page.getByRole("button", { name: "Generate playlist" }).waitFor();
   if (errors.length) throw new Error("Page errors: " + errors.join("; "));
-  const bottom = await page.locator("details", { hasText: "Interpretation details" }).evaluate((el) => el.getBoundingClientRect().bottom);
+  const bottom = await page.locator('#generate-playlist').evaluate((el) => el.getBoundingClientRect().bottom);
   await page.screenshot({ path: output, clip: { x: 0, y: 0, width: 1220, height: Math.ceil(bottom) + 28 } });
   console.log("Saved", output, "— run pngquant --quality=70-92 --speed 1 --strip --ext .png --force on it to keep it small.");
 } finally {

@@ -17,7 +17,7 @@ import (
 
 // Set PLAYLISTAI_TEST_CATALOG to repeat this check against an installed catalog.
 // Synthetic neighbors exercise retrieval, not assertions of real musical fit.
-func TestClassicalArtistPromptBuildsPlaylist(t *testing.T) {
+func TestClassicalArtistPromptRequiresTrackGenreEvidence(t *testing.T) {
 	fake := fakes.NewCatalog(2,
 		fakes.CatalogTrack{ID: "reference", Display: "Arvo Pärt - Reference", Audio: []float32{1, 0}, Track: []float32{1, 0}},
 		fakes.CatalogTrack{ID: "one", Display: "Fixture A - One", Audio: []float32{.99, .01}, Track: []float32{.99, .01}},
@@ -56,8 +56,8 @@ func TestClassicalArtistPromptBuildsPlaylist(t *testing.T) {
 			intent.Controls.TotalTrackCount = count
 			intent.Seed = "42"
 			playlist, err := New(cat, brute.New(cat), resolver, DefaultConfig()).Build(context.Background(), intent)
-			if err != nil || len(playlist.Tracks) != count {
-				t.Fatalf("prompt should generate: tracks=%d outcome=%+v err=%v", len(playlist.Tracks), playlist.Outcome, err)
+			if err != nil || len(playlist.Tracks) != 0 {
+				t.Fatalf("artist identity cannot establish each neighbor's genre: tracks=%d outcome=%+v err=%v", len(playlist.Tracks), playlist.Outcome, err)
 			}
 			if len(playlist.Intent.References) != 1 || playlist.Intent.References[0].Resolution == nil || playlist.Intent.References[0].Resolution.Selected == nil || playlist.Intent.References[0].Resolution.Selected.Artist != "Arvo Pärt" || playlist.Intent.OriginalDescription != prompt || len(playlist.Intent.EssentialCriteria) != 1 || playlist.Intent.EssentialCriteria[0].Value != "classical" {
 				t.Fatalf("explicit reference or original description lost: %+v", playlist.Intent)

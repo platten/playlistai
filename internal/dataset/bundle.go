@@ -33,13 +33,16 @@ const manifestEntryName = "catalog-manifest.json"
 // BundleOp as bytes downloaded. Skips the download entirely when target is
 // already present and valid.
 func DownloadArchive(ctx context.Context, url, target string, size int64, sha256hex string, p ports.Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p == nil {
 		p = ports.NopProgress{}
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	if verifyFile(target, size, sha256hex) == nil {
+	if verifyFileContext(ctx, target, size, sha256hex) == nil {
 		if size > 0 {
 			p.Report(BundleOp, size, size, "have catalog archive")
 		}
@@ -85,6 +88,9 @@ func FindBundledArchive(explicit string) (string, bool) {
 // the same approximation Fetch makes for downloads (proportional, not exact,
 // but monotonic and cheap).
 func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p == nil {
 		p = ports.NopProgress{}
 	}
@@ -94,9 +100,12 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 
 	// Already unpacked? If dir holds a catalog whose files match a
 	// catalog-manifest.json sitting next to it, there is nothing to do.
-	if m, err := LoadManifest(ctx, filepath.Join(dir, manifestEntryName)); err == nil && allPresent(dir, m) {
+	if m, err := LoadManifest(ctx, filepath.Join(dir, manifestEntryName)); err == nil && allPresentContext(ctx, dir, m) {
 		p.Report(BundleOp, 1, 1, "ready")
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	fi, err := os.Stat(archivePath)
@@ -194,7 +203,7 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 		if !ok {
 			return fmt.Errorf("unpack: archive's manifest lists %s but the archive had no such entry", want.Name)
 		}
-		if err := verifyFile(part, want.Size, want.SHA256); err != nil {
+		if err := verifyFileContext(ctx, part, want.Size, want.SHA256); err != nil {
 			return fmt.Errorf("unpack: %s: %w", want.Name, err)
 		}
 	}
@@ -221,12 +230,12 @@ func (m *Manifest) has(name string) bool {
 
 // allPresent reports whether every file m lists already exists in dir with the
 // right size + SHA-256.
-func allPresent(dir string, m *Manifest) bool {
+func allPresentContext(ctx context.Context, dir string, m *Manifest) bool {
 	if m == nil || len(m.Files) == 0 {
 		return false
 	}
 	for _, f := range m.Files {
-		if verifyFile(filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
+		if verifyFileContext(ctx, filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
 			return false
 		}
 	}

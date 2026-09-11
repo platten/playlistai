@@ -12,9 +12,10 @@ import (
 )
 
 func main() {
+	flag := flag.NewFlagSet("audioeval", flag.ExitOnError)
 	input := flag.String("input", "", "reviewed audio evaluation JSON")
 	output := flag.String("output", "", "report JSON path")
-	flag.Parse()
+	_ = flag.Parse(os.Args[1:])
 	if err := run(*input, *output); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

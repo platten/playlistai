@@ -15,6 +15,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 const FileName = "taste.sqlite"
@@ -44,7 +45,10 @@ type Store struct {
 }
 
 func Open(dataDir string) (*Store, error) {
-	dsn := "file:" + filepath.Join(dataDir, FileName) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	dsn, err := sqliteuri.Writable(filepath.Join(dataDir, FileName))
+	if err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

@@ -15,7 +15,10 @@ func (c *Container) DebugLogging() bool {
 func (c *Container) SetDebugLogging(enabled bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		return err
+	}
 	prefs.DebugLogging = enabled
 	return prefs.Save(c.cfg.DataDir)
 }

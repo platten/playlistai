@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 const DBFile = "semantic.sqlite"
@@ -35,7 +35,10 @@ type Store struct {
 }
 
 func Open(path, catalogVersion string, catalog ports.Catalog) (*Store, error) {
-	dsn := "file:" + filepath.ToSlash(path) + "?mode=ro&immutable=1"
+	dsn, err := sqliteuri.ReadOnly(path, true)
+	if err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -205,7 +208,7 @@ func validateFeature(feature core.TrackFeatures) error {
 	return nil
 }
 
-func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.SemanticHit, error) {
+func (s *Store) Search(ctx context.Context, text string, limit int, exclude map[string]struct{}) ([]core.SemanticHit, error) {
 	if strings.TrimSpace(text) == "" || limit <= 0 {
 		return []core.SemanticHit{}, nil
 	}
@@ -234,6 +237,9 @@ func (s *Store) Search(ctx context.Context, text string, limit int) ([]core.Sema
 		var blob []byte
 		if err := rows.Scan(&id, &blob); err != nil {
 			return nil, err
+		}
+		if _, excluded := exclude[id]; excluded {
+			continue
 		}
 		if s.catalog != nil {
 			if _, ok := s.catalog.RowOf(id); !ok {

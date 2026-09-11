@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Button } from "./Button";
 import { Stepper } from "./Stepper";
 import { ProgressBar } from "./ProgressBar";
+import { TrackRow } from "./TrackRow";
+import { Slider } from "./Slider";
 
 afterEach(cleanup);
 
@@ -45,5 +47,39 @@ describe("playlist controls", () => {
     rerender(<ProgressBar total={10} note="Verifying" size={8} />);
     expect(screen.getByRole("progressbar").getAttribute("aria-valuetext")).toBe("Verifying");
     expect(screen.getByRole("progressbar").style.height).toBe("8px");
+  });
+
+  it("supports keyboard slider changes and commits with accessible help", () => {
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const change = vi.fn(), commit = vi.fn();
+    render(<Slider label="Discovery" value={0.5} onValueChange={change} onValueCommit={commit} help="Explore more tracks" />);
+    fireEvent.keyDown(screen.getByRole("slider"), { key: "ArrowRight" });
+    expect(change).toHaveBeenCalledWith(0.51);
+    expect(commit).toHaveBeenCalledWith(0.51);
+    expect(screen.getByRole("slider").hasAttribute("aria-describedby")).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it.each(["idle", "playing", "loading", "error"] as const)("keeps %s track preview controls separate from details", (status) => {
+    const details = vi.fn(), play = vi.fn(), dismiss = vi.fn();
+    render(<TrackRow title="A long title" artist="国際的なアーティスト" durationSec={185} reason="Reference similarity" provenance="nearest"
+      onClick={details} onPlay={play} previewStatus={status} previewError={status === "error" ? "Preview unavailable" : null} onDismissPreviewError={dismiss} />);
+    expect(screen.getByText("3:05")).toBeTruthy();
+    const button = screen.getByRole("button", { name: /preview:/ });
+    fireEvent.click(button);
+    expect(play).toHaveBeenCalledTimes(status === "loading" ? 0 : 1);
+    expect(details).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /Track details:/ }));
+    expect(details).toHaveBeenCalledOnce();
+    if (status === "error") {
+      fireEvent.click(screen.getByLabelText("Dismiss error"));
+      expect(dismiss).toHaveBeenCalledOnce();
+    }
+  });
+  it("renders tracks without actions and omits invalid durations", () => {
+    render(<TrackRow title="Song" artist="Artist" durationSec={-1} reason="Explanation" />);
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.getByText("why")).toBeTruthy();
+    expect(screen.queryByText(/-1:/)).toBeNull();
   });
 });

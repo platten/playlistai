@@ -205,8 +205,19 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("read config %s: %w", path, err)
 	}
-	if err := toml.Unmarshal(b, &cfg); err != nil {
+	metadata, err := toml.Decode(string(b), &cfg)
+	if err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	// These defaults are relative to data_dir, not permanently tied to the
+	// process user's default directory. Preserve explicit per-store overrides.
+	if metadata.IsDefined("data_dir") {
+		if !metadata.IsDefined("catalog", "dir") {
+			cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
+		}
+		if !metadata.IsDefined("enrich", "cache_path") {
+			cfg.Enrich.CachePath = filepath.Join(cfg.DataDir, "musicbrainz-cache.sqlite")
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err

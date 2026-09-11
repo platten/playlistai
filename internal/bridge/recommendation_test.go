@@ -28,9 +28,9 @@ func (forbiddenRecommendationService) IsCachedGenre(context.Context, string) boo
 
 func TestEngineOnlySettingsGenerateAndHistoryReplay(t *testing.T) {
 	c := newLoadedContainer(t)
-	c.Reco = forbiddenRecommendationService{}
 	c.Knowledge = forbiddenRecommendationService{}
 	a := New(c, nil)
+	useRecommendationEngine(a, forbiddenRecommendationService{})
 	if err := a.SetRecommendationMode(core.DeejAIOnly); err != nil {
 		t.Fatal(err)
 	}

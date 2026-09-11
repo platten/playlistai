@@ -98,7 +98,7 @@ func VocalEvidence(features TrackFeatures, want string) EvidenceState {
 func CriterionEvidence(features TrackFeatures, criterion MusicalCriterion) EvidenceState {
 	matches := func(value string) bool { return NormalizeIdentityPart(value) == NormalizeIdentityPart(criterion.Value) }
 	switch criterion.Kind {
-	case "style":
+	case "style", "genre":
 		return StyleEvidence(features, criterion.Value)
 	case "mood":
 		return facetEvidence(matches, FacetComplete(features, "moods"), features.Moods, features.Tags)

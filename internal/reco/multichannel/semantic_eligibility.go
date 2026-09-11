@@ -75,7 +75,7 @@ func activeSemanticConstraints(info core.FeatureStoreInfo, constraints []core.Ha
 
 func criterionSupported(info core.FeatureStoreInfo, criterion core.MusicalCriterion) bool {
 	switch criterion.Kind {
-	case "style":
+	case "style", "genre":
 		return supportsAnyFacet(info, "styles", "tags")
 	case "mood":
 		return supportsAnyFacet(info, "moods", "tags")
@@ -114,7 +114,7 @@ func criterionState(features core.TrackFeatures, criterion core.MusicalCriterion
 
 func criterionValues(features core.TrackFeatures, criterion core.MusicalCriterion) []core.FeatureValue {
 	switch criterion.Kind {
-	case "style":
+	case "style", "genre":
 		return append(append([]core.FeatureValue(nil), features.Styles...), features.Tags...)
 	case "mood":
 		return append(append([]core.FeatureValue(nil), features.Moods...), features.Tags...)
@@ -149,7 +149,7 @@ func criterionProvenance(features core.TrackFeatures, criterion core.MusicalCrit
 
 func criterionValueMatches(criterion core.MusicalCriterion, value core.FeatureValue) bool {
 	switch criterion.Kind {
-	case "style":
+	case "style", "genre":
 		return styleMatches(canonicalStyle(criterion.Value), canonicalStyle(value.Value))
 	case "vocal":
 		actual, want := strings.ToLower(value.Value), strings.ToLower(criterion.Value)

@@ -12,49 +12,39 @@ import (
 	"sync"
 	"time"
 
-	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
-	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/export/soundiizcsv"
 	"github.com/platten/playlistai/internal/export/soundiizhandoff"
 	"github.com/platten/playlistai/internal/history"
 	"github.com/platten/playlistai/internal/intent/llama"
+	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
-	"github.com/platten/playlistai/internal/reco/deejai"
-	"github.com/platten/playlistai/internal/reco/multichannel"
-	"github.com/platten/playlistai/internal/semantic"
-	"github.com/platten/playlistai/internal/similarity/brute"
 	"github.com/platten/playlistai/internal/taste"
 )
 
-// Container holds the wired application. Fields are ports (interfaces); a field
-// is nil until the milestone that provides its implementation lands. The bridge
-// layer must tolerate nil ports and report "not ready" to the UI.
+// Container owns application services and their lifetime. Optional stores may
+// be nil after a recoverable startup failure; catalog-dependent services are
+// published together by Runtime. The bridge reports those capabilities to UI.
 type Container struct {
+	catalogLoadMu     sync.Mutex
 	metadataInstallMu sync.Mutex
 	analysis          analysisState
 	cfg               config.Config
 	log               *slog.Logger
 
-	Catalog      ports.Catalog
-	Resolver     ports.ReferenceResolver
-	Sim          ports.SimilarityEngine
-	Reco         ports.RecommendationEngine
-	BaselineReco ports.RecommendationEngine
-	Enrich       ports.Enricher
-	Knowledge    ports.MusicKnowledge
+	Enrich    ports.Enricher
+	Knowledge ports.MusicKnowledge
 
 	// History persists generated playlists for the Generate screen's
 	// "start from a past playlist" option. nil if the DB could not be opened.
 	History  *history.Store
 	Feedback ports.FeedbackStore
 	Profiles ports.ProfileStore
-	Features ports.FeatureStore
 
 	// exporters are the wired ports.Exporter implementations, looked up by
 	// Name() via Exporter(). Order is display order.
@@ -65,9 +55,20 @@ type Container struct {
 	// they sit behind accessor methods rather than bare fields. Every field
 	// below the mutex is guarded by it.
 	mu                 sync.Mutex
+	runtime            RuntimeSnapshot
+	closed             bool
+	lifetime           context.Context
+	stopLifetime       context.CancelFunc
+	work               sync.WaitGroup
+	closeDone          chan struct{}
+	closeErr           error
 	parser             ports.IntentParser
 	rulesParser        ports.IntentParser
-	llama              *llama.Parser // active managed llama parser, if any
+	llama              managedParser // active managed parser, if any
+	modelRevision      uint64
+	modelCancel        context.CancelFunc
+	modelFactory       func(context.Context, llama.Options) (managedParser, error)
+	modelDownloader    func(context.Context, modelmgr.Model, string, ports.Progress) (string, error)
 	modelPath          string
 	modelID            string
 	preview            ports.PreviewProvider
@@ -91,7 +92,10 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 
 	// Runtime prefs (from Settings or the first-run wizard) override the TOML
 	// config.
-	prefs := config.LoadPrefs(cfg.DataDir)
+	prefs, prefsErr := config.LoadPrefsChecked(cfg.DataDir)
+	if prefsErr != nil {
+		log.Warn("preferences unavailable; original file preserved", "err", prefsErr)
+	}
 	if prefs.ModelPath != "" {
 		cfg.AI.ModelPath = prefs.ModelPath
 		cfg.AI.ModelID = prefs.ModelID
@@ -101,6 +105,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 
 	c := &Container{cfg: cfg, log: log}
+	c.lifetime, c.stopLifetime = context.WithCancel(ctx)
 	c.recommendationMode = core.RecommendationMode(prefs.RecommendationMode)
 	if hs, err := history.Open(cfg.DataDir); err != nil {
 		log.Warn("playlist history unavailable; continuing without it", "err", err)
@@ -185,6 +190,13 @@ func isValidPreviewProvider(s string) bool {
 // (or anything unrecognized) leaves the provider nil and the UI disables
 // playback.
 func (c *Container) wirePreview(provider string) {
+	p, name := previewFor(provider)
+	c.mu.Lock()
+	c.preview, c.previewName = p, name
+	c.mu.Unlock()
+}
+
+func previewFor(provider string) (ports.PreviewProvider, string) {
 	var p ports.PreviewProvider
 	switch provider {
 	case config.PreviewDeezer:
@@ -195,9 +207,7 @@ func (c *Container) wirePreview(provider string) {
 		provider = config.PreviewOff
 	}
 
-	c.mu.Lock()
-	c.preview, c.previewName = p, provider
-	c.mu.Unlock()
+	return p, provider
 }
 
 // PreviewProvider returns the active preview backend, or nil if previews are
@@ -221,15 +231,21 @@ func (c *Container) SetPreviewProvider(provider string) error {
 	if !isValidPreviewProvider(provider) {
 		return fmt.Errorf("app: unknown preview provider %q", provider)
 	}
-	c.wirePreview(provider)
-
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		c.mu.Unlock()
+		return err
+	}
 	prefs.PreviewProvider = provider
 	if err := prefs.Save(c.cfg.DataDir); err != nil {
-		c.log.Warn("could not persist preview provider", "err", err)
+		c.mu.Unlock()
+		return fmt.Errorf("save preview provider: %w", err)
 	}
+	// Constructing these providers does not perform I/O. Publish the same
+	// setting that was just persisted while still owning the settings lock.
+	c.preview, c.previewName = previewFor(provider)
+	c.mu.Unlock()
 	c.log.Info("preview provider set", "provider", provider)
 	return nil
 }
@@ -246,7 +262,10 @@ func (c *Container) Onboarded() bool {
 func (c *Container) SetOnboarded() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		return err
+	}
 	prefs.OnboardingDone = true
 	return prefs.Save(c.cfg.DataDir)
 }
@@ -254,7 +273,7 @@ func (c *Container) SetOnboarded() error {
 // chooseParser installs the rules parser immediately, then — if a model is
 // configured — spins up llama-server in the background and swaps it in once it
 // is healthy. Startup is never blocked on the model.
-func (c *Container) chooseParser(_ context.Context) {
+func (c *Container) chooseParser(ctx context.Context) {
 	r := rules.New()
 	c.mu.Lock()
 	c.rulesParser = r
@@ -266,26 +285,16 @@ func (c *Container) chooseParser(_ context.Context) {
 		return
 	}
 
+	startCtx, revision, finish := c.beginModelChange(ctx)
 	go func() {
-		startCtx, cancel := context.WithTimeout(context.Background(), modelStartTimeout)
-		defer cancel()
-
-		p, err := llama.New(startCtx, llama.Options{
-			BinaryPath:   c.cfg.AI.LlamaServerPath,
-			Runtimes:     c.LlamaRuntimes(),
-			ModelPath:    modelPath,
-			NCtx:         c.cfg.AI.NCtx,
-			NThreads:     c.cfg.AI.NThreads,
-			GPULayers:    c.cfg.AI.GPULayers,
-			StartTimeout: runtimeStartTimeout,
-			Logger:       c.log,
-		})
-		if err != nil {
-			c.log.Warn("llama parser unavailable; staying on rules", "err", err)
-			return
+		defer finish()
+		p, err := c.startModel(startCtx, modelPath)
+		if err == nil {
+			err = c.commitModel(startCtx, revision, p, modelPath, modelID, false)
 		}
-		c.setLlama(p, modelPath, modelID)
-		c.log.Info("llama parser ready", "model", modelPath)
+		if err != nil && startCtx.Err() == nil {
+			c.log.Warn("llama parser unavailable; staying on rules", "err", err)
+		}
 	}()
 }
 
@@ -410,153 +419,6 @@ func (c *Container) SuggestTitle(ctx context.Context, prompt string, timeout tim
 	return lp.Title(tctx, prompt)
 }
 
-// LoadCatalog opens the catalog in the configured directory and wires the
-// similarity + recommendation engines. No-op if already loaded; returns an
-// error without mutating the container if the directory has no valid catalog.
-func (c *Container) LoadCatalog() error {
-	if c.Catalog != nil {
-		return nil
-	}
-	cat, err := catalog.Open(c.cfg.Catalog.Dir)
-	if err != nil {
-		return err
-	}
-	c.Catalog = cat
-	c.Resolver = cat
-	c.RegisterCloser(cat.Close)
-	c.Sim = brute.New(cat)
-	c.BaselineReco = deejai.New(cat, c.Sim, cat)
-	{
-		// Wire both engines once. Settings choose a request-local engine without
-		// swapping shared services while a generation is running.
-		rc := c.cfg.Recommendation
-		mc := multichannel.DefaultConfig()
-		mc.SeedAudioBudget = rc.SeedAudioBudget
-		mc.SeedCooccurrenceBudget = rc.SeedCooccurrenceBudget
-		mc.TasteClusterBudget = rc.TasteClusterBudget
-		mc.MaxTasteClusters = rc.MaxTasteClusters
-		mc.ExplorationPool = rc.ExplorationPool
-		mc.ExplorationBudget = rc.ExplorationBudget
-		mc.ExplorationMinScore = rc.ExplorationMinScore
-		mc.MaxCandidates = rc.MaxCandidates
-		mc.RetrievalWeight = rc.RetrievalWeight
-		mc.ListenerWeight = rc.ListenerWeight
-		mc.NegativePenalty = rc.NegativePenalty
-		mc.ExposurePenalty = rc.ExposurePenalty
-		mc.NoveltyWeight = rc.NoveltyWeight
-		mc.ExplorationChance = rc.ExplorationChance
-		mc.ContinuationBudget = rc.ContinuationBudget
-		mc.MMRMinimumLambda = rc.MMRMinimumLambda
-		mc.SelectionMinimumRelevance = rc.SelectionMinimumRelevance
-		mc.SelectionRelevanceWindow = rc.SelectionRelevanceWindow
-		mc.EmbeddingRedundancyWeight = rc.EmbeddingRedundancyWeight
-		mc.ArtistConcentrationWeight = rc.ArtistConcentrationWeight
-		mc.AlbumConcentrationWeight = rc.AlbumConcentrationWeight
-		mc.SoftArtistSpacingMax = rc.SoftArtistSpacingMax
-		mc.TransitionRelevanceWeight = rc.TransitionRelevanceWeight
-		mc.LocalImprovementPasses = rc.LocalImprovementPasses
-		mc.LocalImprovementWindow = rc.LocalImprovementWindow
-		mc.SemanticBudget = rc.SemanticBudget
-		mc.SemanticMinimumScore = rc.SemanticMinimumScore
-		mc.SemanticWeight = rc.SemanticWeight
-		mc.SemanticNegativePenalty = rc.SemanticNegativePenalty
-		var semanticSearch ports.SemanticSearcher
-		if semanticCfg := c.cfg.Semantic; semanticCfg.SidecarPath != "" {
-			store, openErr := semantic.Open(semanticCfg.SidecarPath, cat.CatalogVersion(), cat)
-			if openErr != nil {
-				c.log.Warn("semantic sidecar unavailable; continuing without semantic matching", "err", openErr)
-			} else {
-				c.Features = store
-				if store.SearchReady() {
-					semanticSearch = store
-				}
-				c.RegisterCloser(store.Close)
-				info := store.Info()
-				c.log.Info("semantic sidecar loaded", "tracks", info.TrackCount, "feature_version", info.FeatureVersion, "model", info.TextModel, "query_encoder", info.QueryEncoder)
-			}
-		}
-		if c.Features != nil {
-			// Feature-only sidecars still enforce grounded constraints even when
-			// they do not contain a compatible query encoder.
-			c.Reco = multichannel.NewWithSemantic(cat, c.Sim, cat, c.Features, semanticSearch, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
-		} else {
-			c.Reco = multichannel.New(cat, c.Sim, cat, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
-		}
-		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
-			c.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
-		}
-	}
-	c.log.Info("catalog loaded", "tracks", cat.Len(), "dim", cat.Dim())
-	return nil
-}
-
-// EnsureCatalog gets the catalog onto disk and loads it, if it is not already
-// present. In order:
-//
-//  1. a pre-packaged catalog.tar.zst staged next to the app (bundle_path or
-//     beside the executable) — decompress it, no network;
-//  2. cfg.Catalog.ArchiveURL — download the compressed archive (resumable,
-//     checksummed), then decompress it;
-//  3. cfg.Catalog.ManifestURL — download the two raw files.
-//
-// Progress is reported via p under the "catalog" op throughout, so the caller
-// (the first-run gate) doesn't need to know which path ran.
-func (c *Container) EnsureCatalog(ctx context.Context, p ports.Progress) error {
-	if c.Catalog != nil {
-		return nil
-	}
-	// Already unpacked on disk from a previous run? Load it — no download,
-	// no decompress.
-	if err := c.LoadCatalog(); err == nil {
-		return nil
-	}
-	cat := c.cfg.Catalog
-
-	if archive, ok := dataset.FindBundledArchive(cat.BundlePath); ok {
-		if err := dataset.Unpack(ctx, archive, cat.Dir, p); err != nil {
-			return fmt.Errorf("app: unpack bundled catalog: %w", err)
-		}
-		return c.LoadCatalog()
-	}
-
-	if cat.ArchiveURL != "" {
-		archive := filepath.Join(c.cfg.DataDir, "catalog.tar.zst")
-		if err := dataset.DownloadArchive(ctx, cat.ArchiveURL, archive, cat.ArchiveSize, cat.ArchiveSHA256, p); err != nil {
-			return fmt.Errorf("app: download catalog: %w", err)
-		}
-		if err := dataset.Unpack(ctx, archive, cat.Dir, p); err != nil {
-			return fmt.Errorf("app: unpack catalog: %w", err)
-		}
-		if err := c.LoadCatalog(); err != nil {
-			return err
-		}
-		_ = os.Remove(archive) // decompressed copy is what we use from here
-		return nil
-	}
-
-	if cat.ManifestURL == "" {
-		return fmt.Errorf("app: no catalog source configured (set catalog.archive_url, catalog.manifest_url, or catalog.dir)")
-	}
-	m, err := dataset.LoadManifest(ctx, cat.ManifestURL)
-	if err != nil {
-		return err
-	}
-	if err := dataset.Fetch(ctx, cat.Dir, m, p); err != nil {
-		return err
-	}
-	return c.LoadCatalog()
-}
-
-// CatalogBundled reports whether a pre-packaged, compressed catalog is staged
-// next to the app and ready to be unpacked by EnsureCatalog — used by the
-// bridge to tell the frontend whether "get the catalog" means an instant
-// local decompression (auto-run, no user action) or a network download
-// (user-initiated, per cfg.Catalog.ManifestURL).
-func (c *Container) CatalogBundled() bool {
-	_, ok := dataset.FindBundledArchive(c.cfg.Catalog.BundlePath)
-	return ok
-}
-
 // Config returns the immutable configuration snapshot.
 func (c *Container) Config() config.Config { return c.cfg }
 
@@ -566,12 +428,26 @@ func (c *Container) Logger() *slog.Logger { return c.log }
 // Ready reports whether the core recommendation path (catalog + similarity +
 // engine) is fully wired.
 func (c *Container) Ready() bool {
-	return c.Catalog != nil && c.Sim != nil && c.Reco != nil
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return false
+	}
+	snapshot := c.runtime
+	return snapshot.Catalog != nil && snapshot.Sim != nil && snapshot.Reco != nil
 }
 
 // RegisterCloser adds a cleanup function to run on Close.
 func (c *Container) RegisterCloser(fn func() error) {
+	if fn == nil {
+		return
+	}
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		_ = fn()
+		return
+	}
 	c.closers = append(c.closers, fn)
 	c.mu.Unlock()
 }
@@ -579,6 +455,27 @@ func (c *Container) RegisterCloser(fn func() error) {
 // Close stops the managed llama-server (if any) and releases every registered
 // resource in reverse order of registration.
 func (c *Container) Close() error {
+	c.mu.Lock()
+	if c.closeDone != nil {
+		done := c.closeDone
+		c.mu.Unlock()
+		<-done
+		return c.closeErr
+	}
+	c.closed = true
+	c.closeDone = make(chan struct{})
+	if c.stopLifetime != nil {
+		c.stopLifetime()
+	}
+	if c.modelCancel != nil {
+		c.modelCancel()
+	}
+	c.mu.Unlock()
+	// Cancellation precedes waiting: generation must release its runtime lease
+	// before mapped vectors or model workers can be closed.
+	c.work.Wait()
+	c.catalogLoadMu.Lock()
+	defer c.catalogLoadMu.Unlock()
 	c.mu.Lock()
 	closers := c.closers
 	lm := c.llama
@@ -596,5 +493,9 @@ func (c *Container) Close() error {
 			firstErr = err
 		}
 	}
+	c.mu.Lock()
+	c.closeErr = firstErr
+	close(c.closeDone)
+	c.mu.Unlock()
 	return firstErr
 }

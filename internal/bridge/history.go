@@ -107,8 +107,7 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	result := PlaylistResult{
 		Tracks: orEmptyTracks(tracks), Mode: string(request.Intent.Mode), Seed: request.Intent.Seed,
 		Intent: request.Intent, Reproducibility: request.Reproducibility,
-		Outcome: core.GenerationOutcome{State: core.OutcomeFulfilled, Reasons: []core.OutcomeReason{}},
-		Status:  GenerationStatus{State: string(core.OutcomeFulfilled), Reasons: []core.OutcomeReason{}, PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
+		Status: GenerationStatus{Reasons: []core.OutcomeReason{}, PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
 	}
 	if len(result.Tracks) < request.Intent.Count {
 		result.Status.State = string(core.OutcomePartial)
@@ -127,6 +126,7 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 	}
 	result = migrateLoadedResult(result)
 	a.presentPlaylistNotices(&result)
+	a.preparePresentation(request, &result)
 	return SavedPlaylist{
 		Summary: SavedPlaylistSummary{
 			ID: record.ID, Name: record.Name, Prompt: record.Prompt, Notes: record.Notes,
@@ -140,24 +140,17 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 
 func migrateLoadedResult(result PlaylistResult) PlaylistResult {
 	result.Tracks = orEmptyTracks(result.Tracks)
-	if result.Status.State == "complete" {
-		result.Status.State = string(core.OutcomeFulfilled)
-	}
 	if result.Outcome.State == "" {
-		result.Outcome.State = core.GenerationOutcomeState(result.Status.State)
-		if result.Outcome.State == "" {
-			result.Outcome.State = core.OutcomeFulfilled
+		// Older count-only "complete" status is not proof of musical fit.
+		// Preserve explicit negative verdicts, infer missing verdicts honestly.
+		switch core.GenerationOutcomeState(result.Status.State) {
+		case core.OutcomePartial, core.OutcomeUnsupported, core.OutcomeNeedsClarification:
+			result.Outcome = core.GenerationOutcome{State: core.GenerationOutcomeState(result.Status.State), Reasons: result.Status.Reasons}
 		}
 	}
-	if result.Status.State == "" {
-		result.Status.State = string(result.Outcome.State)
-	}
-	if result.Outcome.Reasons == nil {
-		result.Outcome.Reasons = []core.OutcomeReason{}
-	}
-	if result.Status.Reasons == nil {
-		result.Status.Reasons = append([]core.OutcomeReason(nil), result.Outcome.Reasons...)
-	}
+	result.Outcome = core.ReconcileOutcome(result.Outcome, result.Intent, len(result.Tracks))
+	result.Status.State = string(result.Outcome.State)
+	result.Status.Reasons = append([]core.OutcomeReason{}, result.Outcome.Reasons...)
 	if result.Status.PartialReasons == nil {
 		result.Status.PartialReasons = []PlaylistNotice{}
 	}
@@ -187,10 +180,15 @@ func (a *API) saveGenerated(ctx context.Context, name, prompt string, m core.Mus
 
 	m = m.Normalized()
 	req = req.normalized()
-	intentJSON, _ := json.Marshal(m)
-	reqJSON, _ := json.Marshal(req)
-	tracksJSON, _ := json.Marshal(pl.Tracks)
-	resultJSON, _ := json.Marshal(pl)
+	encoded := make([][]byte, 0, 4)
+	for _, value := range []any{m, req, pl.Tracks, pl} {
+		blob, err := json.Marshal(value)
+		if err != nil {
+			a.log.Warn("could not encode generated playlist; history left unchanged", "err", err)
+			return
+		}
+		encoded = append(encoded, blob)
+	}
 
 	if _, err := a.app.History.Save(ctx, history.Record{
 		Name:        name,
@@ -198,10 +196,10 @@ func (a *API) saveGenerated(ctx context.Context, name, prompt string, m core.Mus
 		Notes:       m.NotesForUser,
 		Mode:        pl.Mode,
 		TrackCount:  len(pl.Tracks),
-		IntentJSON:  intentJSON,
-		RequestJSON: reqJSON,
-		TracksJSON:  tracksJSON,
-		ResultJSON:  resultJSON,
+		IntentJSON:  encoded[0],
+		RequestJSON: encoded[1],
+		TracksJSON:  encoded[2],
+		ResultJSON:  encoded[3],
 	}); err != nil {
 		a.log.Warn("could not save generated playlist to history", "err", err)
 	}

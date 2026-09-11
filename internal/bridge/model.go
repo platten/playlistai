@@ -234,15 +234,18 @@ func (a *API) GetModelStatus() ModelStatus {
 // DownloadModel fetches a catalog model (progress under op "model") and switches
 // to it. Blocks until the model is downloaded and llama-server is healthy.
 func (a *API) DownloadModel(id string) error {
+	a.cancelRecommendationWork()
 	return a.app.DownloadModel(a.context(), id, NewWailsProgress())
 }
 
 // UseModelFile points the local parser at a GGUF the user already has.
 func (a *API) UseModelFile(path string) error {
+	a.cancelRecommendationWork()
 	return a.app.SetModel(a.context(), path, "")
 }
 
 // ClearModel stops the local model and reverts to the rules parser.
 func (a *API) ClearModel() error {
+	a.cancelRecommendationWork()
 	return a.app.ClearModel()
 }

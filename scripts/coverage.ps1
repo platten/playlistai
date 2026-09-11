@@ -7,7 +7,7 @@ Push-Location (Split-Path $PSScriptRoot -Parent)
 try {
     New-Item -ItemType Directory -Force coverage | Out-Null
     $failed = $false
-    & go test -count=1 -covermode=atomic -coverprofile=coverage/backend.out ./internal/...
+    & go test -count=1 '-coverpkg=./...' -covermode=atomic -coverprofile=coverage/backend.out ./...
     if ($LASTEXITCODE -ne 0) { $failed = $true }
     & go tool cover -html=coverage/backend.out -o coverage/backend.html
     if ($LASTEXITCODE -ne 0) { $failed = $true }

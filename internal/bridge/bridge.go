@@ -28,15 +28,20 @@ func init() {
 // API is registered with application.NewService; every exported method becomes
 // callable from TypeScript via the generated bindings.
 type API struct {
-	updates     *updater.Manager
-	logs        *logging.Store
-	debugMu     sync.Mutex
-	live        liveGenerations
-	app         *app.Container
-	log         *slog.Logger
-	ctx         context.Context
-	intentCache intentCache
-	operations  operationSet
+	updates       *updater.Manager
+	logs          *logging.Store
+	debugMu       sync.Mutex
+	live          liveGenerations
+	app           *app.Container
+	log           *slog.Logger
+	ctx           context.Context
+	intentCache   intentCache
+	operations    operationSet
+	presentations presentationStore
+	tasteEpoch    uint64 // guarded by presentations.mu; clear invalidates in-flight projections
+	// runtime supplies the atomically published catalog services. Tests can
+	// substitute a complete snapshot without mutating a running container.
+	runtime func() app.RuntimeSnapshot
 }
 
 // New creates the service.
@@ -44,7 +49,7 @@ func New(a *app.Container, log *slog.Logger) *API {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &API{app: a, log: log, ctx: context.Background(), updates: updater.New(Version)}
+	return &API{app: a, runtime: a.Runtime, log: log, ctx: context.Background(), updates: updater.New(Version)}
 }
 
 // ServiceName implements application.ServiceName.
@@ -66,7 +71,10 @@ func (a *API) context() context.Context {
 }
 
 // ServiceShutdown implements application.ServiceShutdown.
-func (a *API) ServiceShutdown() error { return nil }
+func (a *API) ServiceShutdown() error {
+	a.operations.cancelAll()
+	return nil
+}
 
 // Status is the snapshot the frontend requests on load and after long tasks.
 type Status struct {
@@ -104,7 +112,7 @@ func (a *API) GetStatus() Status {
 	return Status{
 		CoreReady:         coreReady,
 		LLMReady:          llmReady,
-		CatalogLoaded:     a.app.Catalog != nil,
+		CatalogLoaded:     a.runtime().Catalog != nil,
 		ParserBackend:     parser,
 		ParserReady:       parserReady,
 		PreviewMode:       a.app.PreviewProviderName(),

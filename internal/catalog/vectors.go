@@ -64,14 +64,16 @@ func openVectors(path string) (*vectorStore, error) {
 		_ = mm.Unmap()
 		return nil, fmt.Errorf("%s: unknown quantization %d", path, quant)
 	}
-	if dim <= 0 || spaces <= 0 || count < 0 {
+	if dim <= 0 || spaces != 2 || count < 0 {
 		_ = mm.Unmap()
 		return nil, fmt.Errorf("%s: bad header (count=%d dim=%d spaces=%d)", path, count, dim, spaces)
 	}
-	want := vecHeaderSize + count*spaces*dim
-	if len(mm) != want {
+	// Divide the actual payload bound before multiplication: hostile uint32
+	// dimensions must not overflow native int arithmetic into a valid size.
+	payloadSize := len(mm) - vecHeaderSize
+	if count > payloadSize/spaces/dim || count*spaces*dim != payloadSize {
 		_ = mm.Unmap()
-		return nil, fmt.Errorf("%s: size %d, expected %d", path, len(mm), want)
+		return nil, fmt.Errorf("%s: size %d does not match vector shape", path, len(mm))
 	}
 
 	payload := mm[vecHeaderSize:]

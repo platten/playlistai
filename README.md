@@ -57,6 +57,13 @@ snapshot, session context, and full-width RNG seed needed for replay. Slider
 changes apply explicit overrides to that resolved intent, so they do not erase
 the rest of the prompt.
 
+Generation starts on submission, and its returned playlist is displayed without
+an extra rebuild. Navigating away and back preserves accepted controls, the seed,
+and export choices; stale work cannot replace that result. Editing a saved
+description creates a new request with current settings, leaving history intact.
+Only a displayed result records recommendation exposure, not unseen background
+work. See the [correctness and maintainability review](docs/codebase-review.md).
+
 ## Local models and hardware selection
 
 The optional first-run model setup installs llama.cpp through its official
@@ -111,6 +118,13 @@ tested local models met the documented correctness gate. See
 [performance and model evaluation](docs/performance-and-model-evaluation.md)
 and the [evaluation workflow](docs/evaluation.md) for results, limitations, and
 reproduction commands.
+
+The September 11 refactor separately measured the synthetic 100-track category
+journey at **23.0–23.7 ms**, down from **72.7–73.8 ms**; allocation volume fell from
+58.8 MB to 1.27 MB per operation. A 240-case deterministic comparison preserved
+the prior sequencer's results. These are isolated algorithm measurements, not a
+new production-catalog or musical-quality benchmark. Commands and conditions are
+recorded in the [review report](docs/codebase-review.md).
 
 ## Catalog, semantics, and privacy
 
@@ -178,6 +192,8 @@ benchmark wrappers for all three operating systems.
 Detailed references:
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Refactor findings and validation](docs/codebase-review.md)
+- [Coverage target and measured gaps](docs/test-coverage.md)
 - [CLAP model candidates and custom bundles](docs/clap-model-candidates.md)
 - [Recommendation milestone log](docs/recommendation-milestones.md)
 - [Catalog construction and hosting](docs/CATALOG.md)

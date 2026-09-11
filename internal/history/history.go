@@ -16,6 +16,8 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
+
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 // FileName is the database file, created under the app data dir.
@@ -44,7 +46,10 @@ type Record struct {
 
 // Open opens (creating if needed) the history database under dataDir.
 func Open(dataDir string) (*Store, error) {
-	dsn := "file:" + filepath.Join(dataDir, FileName) + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
+	dsn, err := sqliteuri.Writable(filepath.Join(dataDir, FileName))
+	if err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

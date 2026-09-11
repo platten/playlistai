@@ -19,6 +19,7 @@ import {
   type Provenance,
 } from "../components";
 import { playlistOutcomeMessage } from "../lib/playlistOutcome";
+import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
@@ -38,42 +39,58 @@ export function PlaylistScreen({
   request,
   heading,
   initialResult,
+  savedPresentationId,
   sessionId,
   onBack,
   onRegenerate,
   onReview,
+  initialDraft,
+  onDraft,
+  onDisplayed,
 }: {
   request: BuildPlaylistRequest;
   heading: string;
   initialResult?: PlaylistResult;
+  savedPresentationId?: string;
+  initialDraft?: PlaylistDraft;
+  onDraft?: (draft: PlaylistDraft) => void;
+  onDisplayed?: (presentationId: string) => Promise<void>;
   sessionId: string;
   onBack: () => void;
   onRegenerate: (prompt: string) => void;
   onReview: (trackIds: string[], heading: string, requestId: string, sessionId: string) => void;
 }) {
   const initial = request.intent?.controls;
-  const [audioWeight, setAudioWeight] = useState(initial?.audioWeight ?? request.creativity ?? 0.5);
-  const [cooccurrenceWeight, setCooccurrenceWeight] = useState(initial?.cooccurrenceWeight ?? 0.5);
-  const [discovery, setDiscovery] = useState(initial?.discovery ?? request.noise ?? 0.1);
-  const [artistDiversity, setArtistDiversity] = useState(initial?.artistDiversity ?? 0.7);
+  const restored = useRef(initialDraft).current;
+  const [audioWeight, setAudioWeight] = useState(restored?.controls.audioWeight ?? initial?.audioWeight ?? request.creativity ?? 0.5);
+  const [cooccurrenceWeight, setCooccurrenceWeight] = useState(restored?.controls.cooccurrenceWeight ?? initial?.cooccurrenceWeight ?? 0.5);
+  const [discovery, setDiscovery] = useState(restored?.controls.discovery ?? initial?.discovery ?? request.noise ?? 0.1);
+  const [artistDiversity, setArtistDiversity] = useState(restored?.controls.artistDiversity ?? initial?.artistDiversity ?? 0.7);
   const [transitionSmoothness, setTransitionSmoothness] = useState(
-    initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9,
+    restored?.controls.transitionSmoothness ?? initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9,
   );
-  const [count, setCount] = useState(initial?.totalTrackCount ?? request.count ?? 25);
+  const [count, setCount] = useState(restored?.controls.count ?? initial?.totalTrackCount ?? request.count ?? 25);
   const [excludeSeedArtists, setExcludeSeedArtists] = useState(
-    request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist,
+    restored?.controls.excludeSeedArtists ?? request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist,
   );
-  const [runSeed, setRunSeed] = useState<string>(request.intent?.seed ?? request.seed ?? "1");
+  const [runSeed] = useState<string>(restored?.controls.runSeed ?? request.intent?.seed ?? request.seed ?? "1");
+  const controls = useMemo(() => ({ audioWeight, cooccurrenceWeight, discovery, artistDiversity,
+    transitionSmoothness, count, excludeSeedArtists, runSeed }), [audioWeight, cooccurrenceWeight,
+    discovery, artistDiversity, transitionSmoothness, count, excludeSeedArtists, runSeed]);
 
   const initialResultMatches =
     initialResult !== undefined &&
-    initialResult.reproducibility?.id !== "" &&
-    initialResult.reproducibility?.id === request.reproducibility?.id;
+    // History loads return an atomic request/result pair with a fresh display
+    // token, even when the original generation predates reproducibility IDs.
+    ((Boolean(savedPresentationId) && savedPresentationId === initialResult.presentationId) ||
+      (Boolean(initialResult.reproducibility?.id) &&
+        initialResult.reproducibility?.id === request.reproducibility?.id));
   const [result, setResult] = useState<PlaylistResult | null>(
-    initialResultMatches ? initialResult : null,
+    restored?.accepted?.result ?? (initialResultMatches ? initialResult : null),
   );
+  const accepted = useRef<PlaylistDraft["accepted"]>(restored?.accepted ?? (initialResultMatches && initialResult ? { controls, result: initialResult } : undefined));
   const [busy, setBusy] = useState(!initialResultMatches);
-  const recommendationMode = result?.intent.controls.recommendationMode || initial?.recommendationMode || "acousticbrainz_first";
+  const recommendationMode = result?.intent?.controls?.recommendationMode || initial?.recommendationMode || "acousticbrainz_first";
   const engineOnly = recommendationMode === "deejai_only";
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -109,23 +126,14 @@ export function PlaylistScreen({
       `request-${sessionId}-${randomSeed()}`,
     [initialResult?.reproducibility?.id, request.requestId, requestKey, sessionId],
   );
+  useEffect(() => { onDraft?.({ controls, accepted: accepted.current }); }, [controls, result, onDraft]);
   useEffect(() => {
-    const controls = request.intent?.controls;
-    setAudioWeight(controls?.audioWeight ?? request.creativity ?? 0.5);
-    setCooccurrenceWeight(controls?.cooccurrenceWeight ?? 0.5);
-    setDiscovery(controls?.discovery ?? request.noise ?? 0.1);
-    setArtistDiversity(controls?.artistDiversity ?? 0.7);
-    setTransitionSmoothness(controls?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9);
-    setCount(controls?.totalTrackCount ?? request.count ?? 25);
-    setExcludeSeedArtists(request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist);
-    setRunSeed(request.intent?.seed ?? request.seed ?? "1");
-    setResult(initialResultMatches ? initialResult : null);
-    setBusy(!initialResultMatches);
-    setExpanded(new Set());
-    setFeedback({});
-    setFeedbackError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialResult, initialResultMatches, request.reproducibility?.id, requestKey]);
+    let current = true;
+    if (result?.presentationId) void onDisplayed?.(result.presentationId).catch((error: unknown) => {
+      if (current) setFeedbackError(`Playlist displayed, but listening-history storage could not be updated: ${String(error)}`);
+    });
+    return () => { current = false; };
+  }, [result, onDisplayed]);
 
   const initialInputsUnchanged =
     initialResultMatches &&
@@ -143,7 +151,14 @@ export function PlaylistScreen({
   const build = useCallback(() => {
     void activeBuild.current?.cancel("superseded playlist build");
     const sequence = ++buildSequence.current;
+    if (accepted.current && sameControls(controls, accepted.current.controls)) {
+      setResult(accepted.current.result);
+      setBusy(false);
+      setError(null);
+      return;
+    }
     if (initialInputsUnchanged && initialResult) {
+      accepted.current = { controls, result: initialResult };
       setResult(initialResult);
       setBusy(false);
       setError(null);
@@ -169,7 +184,10 @@ export function PlaylistScreen({
     activeBuild.current = call;
     call
       .then((r) => {
-        if (sequence === buildSequence.current) setResult(r ?? null);
+        if (sequence === buildSequence.current) {
+          if (r) accepted.current = { controls, result: r };
+          setResult(r ?? null);
+        }
       })
       .catch((e) => {
         if (sequence === buildSequence.current) setError(String(e));
@@ -191,10 +209,12 @@ export function PlaylistScreen({
     excludeSeedArtists,
     initialInputsUnchanged,
     initialResult,
+    controls,
   ]);
 
   useEffect(() => {
     window.clearTimeout(debounce.current);
+    setBusy(!accepted.current || !sameControls(controls, accepted.current.controls));
     debounce.current = window.setTimeout(build, 160);
     return () => {
       buildSequence.current += 1;

@@ -25,12 +25,13 @@ func main() {
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if err := run(); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 func run() error {
+	flag := flag.NewFlagSet("audiopreview", flag.ContinueOnError)
 	bundle := flag.String("bundle", "", "local parity-validated runtime bundle")
 	artist := flag.String("artist", "", "exact catalog artist")
 	title := flag.String("title", "", "exact catalog title/version")
@@ -39,7 +40,9 @@ func run() error {
 	directory := flag.String("data-dir", "", "local derived-feature store")
 	authorized := flag.Bool("authorized", false, "provider agreement covers analysis, permanent derivatives, and desktop distribution")
 	screenVocals := flag.Bool("screen-vocals", false, "also run preview-only CLAP instrumental/vocal screening")
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 	if !*authorized || *artist == "" || *title == "" || *id == "" || *catalog == "" || *directory == "" {
 		return fmt.Errorf("explicit provider authorization, exact recording, catalog version, and data directory are required")
 	}

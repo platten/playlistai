@@ -163,6 +163,42 @@ jobs:
         shell: pwsh
         run: .\scripts\build.ps1 -Architecture arm64
 
+      # Measure the host build separately. Cross-compiling an installer does not
+      # exercise its native code, and these reports are not a claim of 95%.
+      - name: Host Go coverage (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p coverage
+          go env GOOS GOARCH CGO_ENABLED CC > coverage/build-environment.txt
+          go test -count=1 -coverpkg=./... -covermode=atomic -coverprofile=coverage/backend.out ./...
+          go tool cover -func=coverage/backend.out > coverage/backend-summary.txt
+          go test -count=1 -tags production -coverprofile=coverage/production-build.out ./build
+
+      - name: Host Go coverage (Windows amd64)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:GOARCH = 'amd64'
+          $env:CGO_ENABLED = '1'
+          $env:CC = & .\scripts\install-clap-toolchain.ps1 -Architecture amd64 -CheckOnly
+          New-Item -ItemType Directory -Force coverage | Out-Null
+          go env GOOS GOARCH CGO_ENABLED CC | Set-Content coverage/build-environment.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 '-coverpkg=./...' -covermode=atomic '-coverprofile=coverage/backend.out' ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go tool cover '-func=coverage/backend.out' | Set-Content coverage/backend-summary.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go test -count=1 -tags production '-coverprofile=coverage/production-build.out' ./build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: go-coverage-${{ matrix.os }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
       - uses: actions/upload-artifact@v6
         with:
           name: playlist-ai-${{ matrix.os }}

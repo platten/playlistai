@@ -28,7 +28,7 @@ func TestDefaultWizardMetadataIsConfiguredWithoutNetwork(t *testing.T) {
 	if !info.Configured || info.Installed || info.CatalogReady {
 		t.Fatal(info)
 	}
-	c.Resolver = fakes.NewCatalog(2, fakes.CatalogTrack{ID: "a", Display: "Artist - Song"})
+	c.runtime.Resolver = fakes.NewCatalog(2, fakes.CatalogTrack{ID: "a", Display: "Artist - Song"})
 	if info := c.GetMetadataBundleInfo(); !info.Configured || !info.CatalogReady || info.Installed {
 		t.Fatal(info)
 	}
@@ -66,8 +66,8 @@ func TestWizardMetadataInstallAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.Resolver = cat
-	c.Catalog = cat
+	c.runtime.Resolver = cat
+	c.runtime.Catalog = cat
 	if !c.GetMetadataBundleInfo().Configured || c.GetMetadataBundleInfo().Installed {
 		t.Fatal("setup status")
 	}
@@ -94,8 +94,8 @@ func TestWizardMetadataInstallAndRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	c.Resolver = cat
-	c.Catalog = cat
+	c.runtime.Resolver = cat
+	c.runtime.Catalog = cat
 	if !c.GetMetadataBundleInfo().Installed || !c.Knowledge.(*musicbrainz.Client).IsCachedGenre(context.Background(), "Electronic") {
 		t.Fatal("restart did not load offline active index")
 	}

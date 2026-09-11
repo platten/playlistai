@@ -17,10 +17,10 @@ import (
 
 func TestGenerateGenreJourneyUsesStageLookupsAndReplays(t *testing.T) {
 	c := newLoadedContainer(t)
-	first, _ := c.Catalog.Meta(c.Catalog.ID(0))
+	first, _ := c.Runtime().Catalog.Meta(c.Runtime().Catalog.ID(0))
 	var last core.TrackRef
-	for row := 1; row < c.Catalog.Len(); row++ {
-		meta, _ := c.Catalog.Meta(c.Catalog.ID(row))
+	for row := 1; row < c.Runtime().Catalog.Len(); row++ {
+		meta, _ := c.Runtime().Catalog.Meta(c.Runtime().Catalog.ID(row))
 		if meta.Ref.Artist != first.Ref.Artist {
 			last = meta.Ref
 			break
@@ -60,8 +60,8 @@ func TestGenerateGenreJourneyUsesStageLookupsAndReplays(t *testing.T) {
 	// iterative desktop path requires preview analysis for musical clauses and
 	// has separate synthetic CLAP/stream acceptance tests.
 	c.Knowledge = struct{ ports.MusicKnowledge }{client}
-	c.Reco = multichannel.New(c.Catalog, c.Sim, c.Resolver, multichannel.DefaultConfig())
 	api := New(c, nil)
+	useRecommendationEngine(api, multichannel.New(c.Runtime().Catalog, c.Runtime().Sim, c.Runtime().Resolver, multichannel.DefaultConfig()))
 	const prompt = "A journey from ambient to energetic electronic"
 	preview, err := api.ParseIntent(context.Background(), prompt)
 	if err != nil || len(preview.ResolutionIssues) != 0 || len(preview.Seeds) != 0 || len(requests) != 0 {

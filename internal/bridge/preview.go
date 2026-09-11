@@ -18,13 +18,19 @@ type PreviewResult struct {
 // error) whenever preview is off, the catalog isn't loaded, or the id is
 // unknown — the UI just hides the play control in that case.
 func (a *API) GetPreviewURL(ctx context.Context, id string) (PreviewResult, error) {
+	ctx, release := a.app.OperationContext(ctx)
+	defer release()
 	ctx, _, finish := a.operations.begin(ctx, "preview-playback")
 	defer finish()
+	if err := ctx.Err(); err != nil {
+		return PreviewResult{}, err
+	}
 	provider := a.app.PreviewProvider()
-	if provider == nil || a.app.Catalog == nil {
+	catalog := a.runtime().Catalog
+	if provider == nil || catalog == nil {
 		return PreviewResult{}, nil
 	}
-	meta, ok := a.app.Catalog.Meta(id)
+	meta, ok := catalog.Meta(id)
 	if !ok {
 		return PreviewResult{}, nil
 	}

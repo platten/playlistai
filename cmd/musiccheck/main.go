@@ -90,12 +90,13 @@ func main() {
 		}
 		return
 	}
-	if err := run(); err != nil {
+	if err := run(); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 func run() error {
+	flag := flag.NewFlagSet("musiccheck", flag.ContinueOnError)
 	model := flag.String("model", "", "GGUF path")
 	runtime := flag.String("runtime", "", "llama-server path")
 	serverURL := flag.String("server-url", "", "reuse an already-running local llama server without managing its process")
@@ -117,7 +118,9 @@ func run() error {
 	replay := flag.String("replay", "", "reuse LLM intents and metadata from an earlier musiccheck report")
 	replayParsed := flag.Bool("replay-parsed", false, "with -replay, use raw parsed intents rather than discovered metadata for a paired mode comparison")
 	cacheOnly := flag.Bool("cached-audio-only", false, "check reusable CLAP features without retrieving new previews")
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 	mode := core.RecommendationMode(*modeFlag)
 	if mode == "" || !mode.Valid() || *replayParsed && *replay == "" {
 		return fmt.Errorf("invalid mode or replay-parsed requires replay")

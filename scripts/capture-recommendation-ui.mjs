@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4] || "/tmp/playlist-ai-recommendation-ui";
@@ -17,9 +18,7 @@ export const CancellablePromise = Promise;
 export const System = { IsMac:()=>new URLSearchParams(window.location.search).get('platform')==='darwin' };
 `;
 const api = `
-export const RecommendationMode = {AcousticBrainzFirst:'acousticbrainz_first',CLAPFirst:'clap_first',DeejAIOnly:'deejai_only'};
-export const FeedbackScope = {FeedbackScopeSession:'session',FeedbackScopeRequest:'request',FeedbackScopeDurable:'durable'};
-export const FeedbackType = {FeedbackLike:'like',FeedbackDislike:'dislike',FeedbackMore:'more',FeedbackLess:'less'};
+${bridgeEnums}
 const cancellable = (value) => { const p=Promise.resolve(value); p.cancel=async()=>{}; return p; };
 const intent = {version:8,controls:{recommendationMode:'acousticbrainz_first'},verificationPolicy:'best_available',originalDescription:'ambient electronica',mode:'similar',essentialCriteria:[{kind:'genre',value:'ambient electronica',scope:'playlist'}],preferences:{genres:[{value:'ambient electronica',influence:'positive'}],styles:[],moods:[{value:'relaxing',influence:'positive'},{value:'sleepy',influence:'negative'}],textureDescriptions:[]},hardConstraints:[],unsupportedRequirements:[],capabilities:[],inferredAnchors:[],requiredTracks:[]};
 const preview = {intent,seeds:[],requiredTracks:[],mode:'similar',count:20,creativity:.5,noise:.1,lookback:3,artistsExclude:[],resolutionIssues:[],backend:'llama',parser:{requestedBackend:'llama'},notes:''};

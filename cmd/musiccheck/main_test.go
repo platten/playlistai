@@ -106,6 +106,16 @@ func TestRequestedPromptContractsGenerate(t *testing.T) {
 				t.Fatal(issues)
 			}
 			intent, _ = resolution.Apply(cat, intent)
+			if c.Genre != "" {
+				// Explicit synthetic ground truth for this contract fixture;
+				// catalog/artist identity alone must not verify track genres.
+				intent.Knowledge = &core.KnowledgeSnapshot{ID: "synthetic-contract-genres"}
+				for _, id := range []string{"one", "two", "three", "end", "blocked"} {
+					meta, _ := cat.Meta(id)
+					intent.Knowledge.Tracks = append(intent.Knowledge.Tracks, core.EnrichedTrack{Ref: meta.Ref, Matched: true, IdentityStatus: core.ResolutionResolved,
+						GenreTags: []core.AttributedGenreTag{{Name: c.Genre, Votes: 3, Source: "synthetic-contract-fixture"}}})
+				}
+			}
 			engine := multichannel.New(cat, fakes.NewSimilarityEngine(cat), cat, multichannel.DefaultConfig())
 			if core.WantsInstrumental(intent) {
 				service := fixtureVocalService(t, cat)

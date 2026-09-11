@@ -20,12 +20,13 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 func run() error {
+	flag := flag.NewFlagSet("metadatapack", flag.ContinueOnError)
 	defaults := config.Default()
 	catalogDir := flag.String("catalog", defaults.Catalog.Dir, "recommendation catalog directory")
 	out := flag.String("output", filepath.Join(defaults.DataDir, "metadata", "discogs.sqlite"), "consolidated SQLite output path")
@@ -47,7 +48,9 @@ func run() error {
 	bundleDir := flag.String("bundle-dir", "", "new output directory for compressed index and hosting manifest")
 	compression := flag.String("compression-benchmark", "", "compare gzip/zstd sizes and time on an existing runtime SQLite index")
 	verifyBundle := flag.String("verify-bundle", "", "verify an upload directory with the actual wizard decompressor; does not activate")
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 	workerCount, err := metadata.ImportWorkers(*workers)
 	if err != nil {
 		return err

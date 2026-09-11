@@ -61,7 +61,7 @@ func (f *filter) markUsed(ref core.TrackRef) {
 func (f *filter) excludeIDs() map[string]struct{} { return f.exclude }
 
 // pick returns the first match that survives every hard exclusion and dedup rule.
-func (f *filter) pick(ctx context.Context, cat ports.Catalog, matches []ports.Match, prevArtist string) (core.TrackRef, int, bool, error) {
+func (f *filter) pick(ctx context.Context, cat ports.Catalog, matches []ports.Match, prevArtist, nextArtist string) (core.TrackRef, int, bool, error) {
 	for rank, match := range matches {
 		if rank&1023 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -79,7 +79,8 @@ func (f *filter) pick(ctx context.Context, cat ports.Catalog, matches []ports.Ma
 		if f.hardExcluded(ref) {
 			continue
 		}
-		if f.noBackToBack && core.NormalizeIdentityPart(ref.Artist) == prevArtist {
+		artist := core.NormalizeIdentityPart(ref.Artist)
+		if f.noBackToBack && artist != "" && (artist == prevArtist || artist == nextArtist) {
 			continue
 		}
 		return ref, rank, true, nil

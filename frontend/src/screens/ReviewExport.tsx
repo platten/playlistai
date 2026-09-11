@@ -21,6 +21,13 @@ type Saved =
   | { kind: "csv"; path: string; count: number }
   | { kind: "csv-canceled" };
 
+export interface ExportDraft {
+  rows: Row[] | null;
+  name: string;
+  saved: Saved | null;
+  accepted: boolean;
+}
+
 /** Review local playlist details, then hand off to Soundiiz or download a CSV. */
 export function ReviewExport({
   trackIds,
@@ -28,21 +35,26 @@ export function ReviewExport({
   requestId,
   sessionId,
   onBack,
+  initialDraft,
+  onDraft,
 }: {
   trackIds: string[];
   heading: string;
   requestId: string;
   sessionId: string;
   onBack: () => void;
+  initialDraft?: ExportDraft;
+  onDraft?: (draft: ExportDraft) => void;
 }) {
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const restored = useRef(initialDraft).current;
+  const [rows, setRows] = useState<Row[] | null>(restored?.rows ?? null);
+  const [loading, setLoading] = useState(!restored?.rows);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [name, setName] = useState(heading);
+  const [name, setName] = useState(restored?.name ?? heading);
   const [exporting, setExporting] = useState<null | "handoff" | "csv">(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<Saved | null>(null);
+  const [saved, setSaved] = useState<Saved | null>(restored?.saved ?? null);
   const [copied, setCopied] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
@@ -56,7 +68,10 @@ export function ReviewExport({
   };
 
   const exportProgress = useProgress("export");
-  const acceptanceRecorded = useRef(false);
+  const acceptanceRecorded = useRef(restored?.accepted ?? false);
+  useEffect(() => {
+    onDraft?.({ rows, name, saved, accepted: acceptanceRecorded.current });
+  }, [rows, name, saved, exporting, onDraft]);
 
   const loadSequence = useRef(0);
   const loadTracks = useCallback(() => {
@@ -80,10 +95,9 @@ export function ReviewExport({
   }, [trackIds]);
 
   useEffect(() => {
-    acceptanceRecorded.current = false;
-    loadTracks();
+    if (!restored?.rows) loadTracks();
     return () => { loadSequence.current++; };
-  }, [loadTracks]);
+  }, [loadTracks, restored]);
 
   const includedTracks = useMemo<ExportTrackDTO[]>(
     () =>

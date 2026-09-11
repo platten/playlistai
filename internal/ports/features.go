@@ -13,7 +13,9 @@ type FeatureStore interface {
 
 type SemanticSearcher interface {
 	Info() core.FeatureStoreInfo
-	Search(ctx context.Context, text string, limit int) ([]core.SemanticHit, error)
+	// Exclusions are applied before top-K selection so continuation can reach
+	// deeper matches without changing the query or weakening its score floor.
+	Search(ctx context.Context, text string, limit int, exclude map[string]struct{}) ([]core.SemanticHit, error)
 }
 
 // SemanticScorer evaluates an arbitrary candidate union with the same query

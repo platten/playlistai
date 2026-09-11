@@ -1,6 +1,7 @@
 // Render startup-update states using deterministic bridge responses.
 // Usage: node scripts/capture-update-ui.mjs <playwright-module> <chromium> [output-dir]
 import { mkdir } from 'node:fs/promises';
+import { bridgeEnums } from './browser-fixture-contract.mjs';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -14,7 +15,7 @@ export const System={IsMac:()=>false}; export const Clipboard={SetText:async()=>
 export const Call={ByID:async()=>null};export const CancellablePromise=Promise;
 `;
 const api = `
-export const FeedbackScope={}; export const FeedbackType={};
+${bridgeEnums}
 const mode=new URLSearchParams(location.search).get('update');
 const methods={
 GetOnboarded:()=>true,GetStatus:()=>({parserBackend:'rules'}),ListSavedPlaylists:()=>[],GetCatalogInfo:()=>({loaded:true}),

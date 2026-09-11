@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import generateSamples from "../lib/generateSamples.json";
+import { useSavedPlaylist } from "../lib/useSavedPlaylist";
 import { PROGRESS_EVENT, type Progress } from "../components/useProgress";
 import {
   API,
@@ -77,6 +78,7 @@ export function GenerateScreen({
     request: BuildPlaylistRequest,
     heading: string,
     initialResult?: PlaylistResult,
+    savedPresentationId?: string,
   ) => void;
   onNeedSetup: () => void;
   regeneration?: Regeneration | null;
@@ -131,13 +133,14 @@ export function GenerateScreen({
   // Optional "start from a past playlist" source, gated behind a radio button.
   const [saved, setSaved] = useState<SavedPlaylistSummary[]>([]);
   const [source, setSource] = useState<"fresh" | "saved">("fresh");
-  const [savedId, setSavedId] = useState<string>("");
-  const [savedRequest, setSavedRequest] = useState<BuildPlaylistRequest | null>(null);
-  const [savedResult, setSavedResult] = useState<PlaylistResult | null>(null);
-  const activeSaved = useRef<ReturnType<typeof API.LoadSavedPlaylist> | null>(null);
+  const { selection: savedSelection, select: selectSaved, clear: clearSaved } = useSavedPlaylist();
+  const savedId = savedSelection.id;
+  const savedRequest = savedSelection.state === "ready" ? savedSelection.playlist.request : null;
+  const savedResult = savedSelection.state === "ready" ? savedSelection.playlist.result : null;
+  const savedPrompt = saved.find((item) => item.id === savedId)?.prompt ?? "";
+  const replaySaved = source === "saved" && prompt.trim() === savedPrompt.trim();
   const activeParse = useRef<ReturnType<typeof API.ParseIntent> | null>(null);
   const activeGeneration = useRef<ReturnType<typeof API.GenerateFromPrompt> | null>(null);
-  const savedSequence = useRef(0);
   const generationSequence = useRef(0);
 
   useEffect(() => {
@@ -179,24 +182,9 @@ export function GenerateScreen({
   }, []);
 
   const pickSaved = (id: string) => {
-    setSavedId(id);
     const hit = saved.find((s) => s.id === id);
     if (hit) setPrompt(hit.prompt);
-    const sequence = ++savedSequence.current;
-    void activeSaved.current?.cancel("superseded saved playlist load");
-    const call = API.LoadSavedPlaylist(id);
-    activeSaved.current = call;
-    call
-      .then((playlist) => {
-        if (sequence !== savedSequence.current) return;
-        setSavedRequest(playlist?.request ?? null);
-        setSavedResult(playlist?.result ?? null);
-      })
-      .catch(() => {
-        if (sequence !== savedSequence.current) return;
-        setSavedRequest(null);
-        setSavedResult(null);
-      });
+    selectSaved(id);
   };
 
   useEffect(() => {
@@ -233,7 +221,7 @@ export function GenerateScreen({
     (preview?.intent.preferences.vocalPreference?.influence !== "negative" && ["instrumental", "no vocals"].includes(preview?.intent.preferences.vocalPreference?.value.toLowerCase() ?? "")) ||
     (preview?.intent.preferences.instrumentation ?? []).some((p) => p.influence !== "negative" && p.value.toLowerCase() === "instrumental");
   const hasResolvedSeed = (preview?.seeds ?? []).length > 0 || (preview?.requiredTracks ?? []).length > 0;
-  const needsSeed = source === "fresh" && (deejAIOnly
+  const needsSeed = !replaySaved && (deejAIOnly
     ? preview === null || !hasResolvedSeed
     : catalogOnly && !instrumentalRequest &&
       (preview === null || (!hasResolvedSeed && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0)));
@@ -259,7 +247,7 @@ export function GenerateScreen({
       ? outcomeReasons.length > 0
         ? [...outcomeReasons.map((reason) => `${reason.criterion ? `${reason.criterion}: ` : ""}${reason.detail}${reason.action ? ` Next: ${reason.action}` : ""}`), ...lookupNotices]
         : [...lookupNotices, "No tracks were returned for this request. The available evidence did not establish a playlist that meets it. Add an artist or track reference, or relax a requirement, then try again."]
-      : !generating && source === "fresh"
+      : !generating && !replaySaved
         ? [
           ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
           ...unresolvedIssues.map((issue) => issue.influence === "negative"
@@ -344,8 +332,9 @@ export function GenerateScreen({
 
   const generate = useCallback(() => {
     if (activeGenerationId.current || regenerationPending) return;
+    if (source === "saved" && savedSelection.state !== "ready") return;
     setDismissedNotice(null);
-    if (source === "saved" && savedRequest) {
+    if (replaySaved && savedRequest) {
       const hit = saved.find((item) => item.id === savedId);
       generationSequence.current += 1;
       void activeParse.current?.cancel("saved playlist selected");
@@ -355,6 +344,7 @@ export function GenerateScreen({
         { ...savedRequest, sessionId, requestId: newRequestID() },
         hit?.name || prompt,
         savedResult ?? undefined,
+        savedResult?.presentationId,
       );
       return;
     }
@@ -379,6 +369,8 @@ export function GenerateScreen({
     savedId,
     savedRequest,
     savedResult,
+    savedSelection.state,
+    replaySaved,
     sessionId,
     source,
     needsSeed,
@@ -406,17 +398,13 @@ export function GenerateScreen({
     const pick = choices[Math.floor(Math.random() * choices.length)];
     setPrompt(pick);
     setSource("fresh");
-    setSavedId("");
-    setSavedRequest(null);
-    setSavedResult(null);
-  }, [deejAIOnly]);
+    clearSaved();
+  }, [deejAIOnly, clearSaved]);
 
   useEffect(
     () => () => {
-      savedSequence.current += 1;
       generationSequence.current += 1;
       activeGenerationId.current = "";
-      void activeSaved.current?.cancel("generate screen unmounted");
       void activeParse.current?.cancel("generate screen unmounted");
       void activeGeneration.current?.cancel("generate screen unmounted");
     },
@@ -486,12 +474,8 @@ export function GenerateScreen({
               checked={source === "fresh"}
               disabled={generating}
               onChange={() => {
-                savedSequence.current += 1;
-                void activeSaved.current?.cancel("saved playlist load abandoned");
                 setSource("fresh");
-                setSavedId("");
-                setSavedRequest(null);
-                setSavedResult(null);
+                clearSaved();
               }}
             />
             a fresh idea
@@ -516,7 +500,7 @@ export function GenerateScreen({
               value={savedId}
               disabled={generating}
               onChange={(e) => pickSaved(e.target.value)}
-              className="min-w-0 max-w-[340px] flex-1 rounded-control border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text focus:border-accent"
+              className="min-w-0 basis-full rounded-control border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-text focus:border-accent sm:max-w-[340px] sm:flex-1"
             >
               <option value="" disabled>
                 Pick a previous playlist…
@@ -530,6 +514,10 @@ export function GenerateScreen({
           )}
         </div>
       )}
+
+      {source === "saved" && savedSelection.state === "loading" && <p role="status" className="text-[12px] text-muted">Loading saved playlist…</p>}
+      {source === "saved" && savedSelection.state === "error" && <p role="alert" className="text-[12px] text-warn">Could not load saved playlist: {savedSelection.error}</p>}
+      {source === "saved" && savedSelection.state === "ready" && !replaySaved && <p role="status" className="text-[12px] text-muted">Your edited description will generate a new playlist using current settings. The saved playlist is kept.</p>}
 
       <div className="w-full shrink-0 overflow-hidden rounded-card border border-line-strong bg-surface shadow-[var(--pai-elev)] transition-colors focus-within:border-accent">
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 sm:px-5">

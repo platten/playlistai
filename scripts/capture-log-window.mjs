@@ -3,6 +3,7 @@
 import { mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4] || "/tmp/playlist-ai-log-window";
 await mkdir(output, { recursive: true });
@@ -14,8 +15,7 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({
     contentType: "application/javascript",
     body: `
-      export const FeedbackScope = {}; export const FeedbackType = {};
-      export const RecommendationMode = {AcousticBrainzFirst:"acousticbrainz_first",CLAPFirst:"clap_first",DeejAIOnly:"deejai_only"};
+      ${bridgeEnums}
       window.__debug = sessionStorage.getItem("fixture:debug") === "true";
       window.__setCalls = [];
       let nextID = 150;

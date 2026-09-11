@@ -59,9 +59,11 @@ func (c *Catalog) artistRecordingQuery(ctx context.Context, query string, args .
 }
 
 const (
-	maxAlternatives       = 5
-	maxRepresentatives    = 4
-	representativePoolMax = 128
+	resolutionCacheLimit    = 1024
+	resolutionCacheKeyLimit = 2048
+	maxAlternatives         = 5
+	maxRepresentatives      = 4
+	representativePoolMax   = 128
 )
 
 type indexedTrack struct {
@@ -109,7 +111,14 @@ func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResol
 	}
 	result.CatalogVersion = c.version
 	c.resolutionMu.Lock()
-	c.resolutionCache[key] = cloneResolution(result)
+	if len(key) <= resolutionCacheKeyLimit {
+		// Flush at capacity: deterministic bounded retention without storing
+		// an additional access queue. Resolution itself remains unchanged.
+		if len(c.resolutionCache) >= resolutionCacheLimit {
+			clear(c.resolutionCache)
+		}
+		c.resolutionCache[key] = cloneResolution(result)
+	}
 	c.resolutionMu.Unlock()
 	return result
 }
@@ -434,7 +443,12 @@ func (c *Catalog) artistRepresentatives(artist string) []core.WeightedTrack {
 		representatives = c.medoidRepresentatives(rows, maxRepresentatives)
 	}
 	c.resolutionMu.Lock()
-	c.representativeCache[key] = append([]core.WeightedTrack(nil), representatives...)
+	if len(key) <= resolutionCacheKeyLimit {
+		if len(c.representativeCache) >= resolutionCacheLimit {
+			clear(c.representativeCache)
+		}
+		c.representativeCache[key] = append([]core.WeightedTrack(nil), representatives...)
+	}
 	c.resolutionMu.Unlock()
 	return representatives
 }

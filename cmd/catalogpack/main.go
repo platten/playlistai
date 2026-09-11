@@ -46,9 +46,10 @@ type manifest struct {
 }
 
 func main() {
+	flag := flag.NewFlagSet("catalogpack", flag.ExitOnError)
 	in := flag.String("in", "build/catalog", "directory holding vectors.i8, catalog.sqlite, catalog-manifest.json")
 	out := flag.String("out", "build/catalog-dist/catalog.tar.zst", "output archive path (git-ignored; upload to catalog.archive_url's host)")
-	flag.Parse()
+	_ = flag.Parse(os.Args[1:])
 
 	if err := run(*in, *out); err != nil {
 		log.Fatal(err)
@@ -78,13 +79,16 @@ func run(inDir, outPath string) error {
 		return err
 	}
 	defer os.Remove(tmp) //nolint:errcheck // no-op once the rename below succeeds
+	defer f.Close()
 
 	zw, err := zstd.NewWriter(f, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
 	if err != nil {
 		f.Close() //nolint:errcheck,gosec
 		return err
 	}
+	defer zw.Close()
 	tw := tar.NewWriter(zw)
+	defer tw.Close()
 
 	if err := writeTarEntry(tw, "catalog-manifest.json", raw); err != nil {
 		return fmt.Errorf("write manifest entry: %w", err)

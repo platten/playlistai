@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	defaultRecommendationAlgorithmVersion = "deejai/v4"
+	defaultRecommendationAlgorithmVersion = "unversioned"
+	generationOperation                   = "generation"
 	maxParsedIntentCacheEntries           = 64
 )
 
@@ -118,6 +119,22 @@ func (s *operationSet) cancel(group string) {
 		operation.cancel()
 		delete(s.active, group)
 	}
+}
+
+func (s *operationSet) cancelAll() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for group, operation := range s.active {
+		operation.cancel()
+		delete(s.active, group)
+	}
+}
+
+// Settings that replace evidence or parser resources invalidate both the
+// preview interpretation and the one shared prompt/rebuild operation.
+func (a *API) cancelRecommendationWork() {
+	a.operations.cancel("intent-preview")
+	a.operations.cancel(generationOperation)
 }
 
 func (c *intentCache) get(key string) (parsedIntentEntry, bool) {

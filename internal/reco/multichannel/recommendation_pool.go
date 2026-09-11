@@ -30,7 +30,12 @@ func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []
 			var err error
 			raw, err = o.retriever.Retrieve(ctx, request)
 			if err != nil {
-				return nil, err
+				// A later page failure must not erase already prepared candidates.
+				// The caller can still assess them, unless cancellation forbids work.
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				return pool, err
 			}
 		}
 		before := len(request.AttemptedIDs)

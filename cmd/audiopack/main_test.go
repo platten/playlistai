@@ -5,10 +5,47 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 
 	"github.com/platten/playlistai/internal/audio"
 )
+
+func TestAssemblyCommandUsesFlags(t *testing.T) {
+	o := fixtureOptions(t)
+	old := os.Args
+	t.Cleanup(func() { os.Args = old })
+	os.Args = []string{"audiopack", "-export", o.export, "-source", o.source, "-worker", o.worker, "-runtime", o.runtime, "-licenses", o.licenses, "-platform", o.platform, "-artifact-base-url", o.baseURL, "-output", o.output, "-memory-bytes", strconv.FormatInt(o.memory, 10)}
+	main()
+	if _, err := audio.ReadRuntimeBundle(o.output); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArtifactCopyErrorsAndIdentity(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "source")
+	if err := os.WriteFile(source, []byte("preserve"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if copyArtifact(filepath.Join(dir, "missing"), source) == nil || copyArtifact(dir, source) == nil {
+		t.Fatal("invalid source accepted")
+	}
+	if copyArtifact(source, filepath.Join(source, "child")) == nil {
+		t.Fatal("invalid destination accepted")
+	}
+	if err := copyArtifact(source, source); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil || string(raw) != "preserve" {
+		t.Fatal("same-file copy altered source")
+	}
+	var value any
+	if readJSON(filepath.Join(dir, "missing"), &value) == nil || readJSON(source, &value) == nil {
+		t.Fatal("invalid JSON accepted")
+	}
+}
 
 func fixtureOptions(t *testing.T) options {
 	t.Helper()

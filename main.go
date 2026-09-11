@@ -9,6 +9,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -35,38 +36,42 @@ func init() {
 }
 
 func main() {
-	// Packaging gate: no GUI, network, models or user-data access required.
-	if len(os.Args) == 2 && os.Args[1] == "--check-audio-worker" {
-		if _, err := audio.RecommendedBundle(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Fprintln(os.Stdout, bridge.Version)
-		return
-	}
-	if len(os.Args) == 3 && os.Args[1] == "--app-update-worker" {
-		if err := updater.RunWorker(os.Args[2]); err != nil {
-			os.Exit(1)
-		}
-		return
-	}
-	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
-		if err := audioruntime.Run(os.Args[2]); err != nil {
-			os.Exit(1)
-		}
-		return
-	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	if err := run(log); err != nil {
+	if err := dispatch(os.Args[1:], os.Stdout, log); err != nil {
 		log.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
+// dispatch keeps headless worker/packaging commands ahead of desktop startup.
+// Returning errors here makes exit policy explicit without terminating callers
+// that exercise command validation in tests.
+func dispatch(args []string, out io.Writer, log *slog.Logger) error {
+	// Packaging gate: no GUI, network, models or user-data access required.
+	if len(args) == 1 && args[0] == "--check-audio-worker" {
+		_, err := audio.RecommendedBundle()
+		return err
+	}
+	if len(args) == 1 && args[0] == "--version" {
+		_, err := fmt.Fprintln(out, bridge.Version)
+		return err
+	}
+	if len(args) == 2 && args[0] == "--app-update-worker" {
+		return updater.RunWorker(args[1])
+	}
+	if len(args) == 2 && args[0] == "--audio-worker" {
+		return audioruntime.Run(args[1])
+	}
+	return run(log)
+}
+
 func run(log *slog.Logger) error {
+	return runWithHost(log, launchDesktop)
+}
+
+// runWithHost owns non-GUI initialization and teardown. The native host is the
+// sole boundary replaced by tests; real stores/configuration are still used.
+func runWithHost(log *slog.Logger, host func(*app.Container, *slog.Logger, *logging.Store) error) error {
 	logs := &logging.Store{}
 	log = slog.New(logging.NewHandler(log.Handler(), logs))
 	cfg := config.Default()
@@ -83,7 +88,10 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	defer func() { _ = container.Close() }()
+	return host(container, log, logs)
+}
 
+func launchDesktop(container *app.Container, log *slog.Logger, logs *logging.Store) error {
 	wapp := application.New(application.Options{
 		Name:        "Playlist AI",
 		Description: "Local-first playlist recommendations over the Deej-AI embedding catalog.",

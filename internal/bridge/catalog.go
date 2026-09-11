@@ -30,7 +30,7 @@ func (a *API) GetCatalogInfo() CatalogInfo {
 	hasArchive := cat.ArchiveURL != ""
 	autoSetup := bundled || hasArchive
 
-	if a.app.Catalog == nil {
+	if a.runtime().Catalog == nil {
 		return CatalogInfo{
 			Configured: autoSetup || cat.ManifestURL != "",
 			Bundled:    bundled,
@@ -39,8 +39,8 @@ func (a *API) GetCatalogInfo() CatalogInfo {
 	}
 	return CatalogInfo{
 		Loaded:     true,
-		TrackCount: a.app.Catalog.Len(),
-		Dim:        a.app.Catalog.Dim(),
+		TrackCount: a.runtime().Catalog.Len(),
+		Dim:        a.runtime().Catalog.Dim(),
 		Configured: true,
 		Bundled:    bundled,
 		AutoSetup:  autoSetup,
@@ -53,7 +53,7 @@ func (a *API) GetCatalogInfo() CatalogInfo {
 // configured (bundled archive → catalog.archive_url download → manifest_url);
 // see app.Container.EnsureCatalog. Returns a descriptive error if none is set.
 func (a *API) DownloadCatalog() error {
-	if a.app.Catalog != nil {
+	if a.runtime().Catalog != nil {
 		return nil
 	}
 	return a.app.EnsureCatalog(a.context(), NewWailsProgress())

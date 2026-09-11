@@ -7,10 +7,10 @@ Passing unit tests, browser smoke checks, typechecking, and production builds
 do not establish that target. This change adds repeatable measurement, a strict
 opt-in threshold check, and behavioral tests without hiding untested modules.
 
-The normal contributor gate and CI now run frontend unit tests. Coverage is a
+The normal contributor gate and CI run frontend unit tests. Coverage is a
 separate check while the coverage backlog remains; CI does not currently enforce
-95%. No existing musical-quality fixtures or application behavior were changed
-to increase coverage.
+95%. The refactor adds behavioral fixes and coverage together; baseline musical-
+quality fixtures were not weakened to increase the reported percentage.
 
 ## Reproduce
 
@@ -40,10 +40,10 @@ Frontend reports: `frontend/coverage/index.html`, `lcov.info`, and
 
 ## Scope and interpretation
 
-- Backend: Go statement coverage across every package in `./internal/...`,
-  including untested packages and test helpers. Root desktop bootstrap, offline
-  command-line tools under `cmd/`, and packaging code under `build/` are outside
-  this application-service metric. The normal gate still tests those packages.
+- Backend: Go statement coverage across **every package in `./...`**, including
+  root desktop bootstrap, `cmd/`, `build/`, untested packages and test helpers.
+  `-coverpkg=./...` counts calls exercised by other packages' tests. The threshold
+  checker unions repeated source blocks rather than double-counting them.
   Build-tagged Windows/macOS/native variants need measurement on their own hosts;
   a Linux result is not cross-platform coverage proof.
 - Frontend: Vitest V8 lines, statements, functions, and branches, each with a 95%
@@ -56,7 +56,14 @@ Frontend reports: `frontend/coverage/index.html`, `lcov.info`, and
   production entry point. Framework configuration follows the
   [Vitest coverage documentation](https://vitest.dev/config/coverage).
 
-## Executed measurements (2026-09-10)
+CI's host build matrix additionally uploads backend profiles, production-tag
+packaging coverage and `GOOS`/`GOARCH`/`CGO_ENABLED`/`CC` provenance. A Windows arm64
+cross-build is not an arm64 test run, and worker preflight tests do not execute
+valid-model inference. These new hosted reports have not run for the unpushed
+refactor. `scripts/coverage.sh` and `.ps1` still enforce the full 95% target when
+invoked; they do not hide this backlog behind a passing threshold.
+
+## Earlier measurements (2026-09-10; narrower backend scope)
 
 Measured on Linux, current dirty `main` worktree, using Go 1.27 and Vitest 4.1.11.
 These are deterministic test-coverage measurements, not musical-quality scores.
@@ -87,7 +94,43 @@ accessibility, and theme persistence/cycling/storage failures. Backend additions
 cover intent validation and normalization, semantic evidence, feedback contracts,
 lossless seed errors, resolver caching and ambiguity, and diagnostic privacy.
 
-The largest remaining gaps are complete frontend screen/lifecycle interactions,
-native inference/runtime loading, updater failure paths, and application startup.
-Add deterministic dependency fakes and meaningful assertions for these behaviors;
-do not replace assertions with execution-only tests or exclude those modules.
+## Refactor measurements (2026-09-11)
+
+The new denominator deliberately includes command-line and startup code. Before
+the refactor it measured 76.2% across all Go packages with cross-package
+instrumentation; it is not directly comparable with the earlier internal-only
+78.5187% figure. The final complete inclusive Go run measured **83.8749%**
+(14,351/17,110 statements). All tests passed; the 95% threshold correctly failed.
+
+Frontend coverage now exceeds 95% for lines, statements and functions; branches
+remain below 95%. The final frontend suite has 150 passing tests:
+
+| Metric | Covered / total | Coverage |
+| --- | ---: | ---: |
+| Lines | 1,329 / 1,340 | 99.17% |
+| Statements | 1,584 / 1,628 | 97.29% |
+| Functions | 543 / 558 | 97.31% |
+| Branches | 1,519 / 1,669 | 91.01% |
+
+No application source files, native wrappers or error paths are excluded to
+improve these numbers.
+
+Focused package measurements (not the whole-application aggregate) include
+Deej-AI 96.4%, semantic 96.7%, brute similarity 95.6%, multichannel 91.1%, audio
+89.7%, app 75.5%, bridge 82.3%, and llama 70.0%. Production-tag `build` tests and
+the non-CGO analysis fallback each measured 100% in separate runs. Their scope
+is small and does not establish 95% overall or native inference coverage.
+
+New behavioral coverage includes saved-selection races, unchanged versus edited
+history, retained controls/export state, display-only exposure and retry
+idempotence, atomic preferences, model revision races, shutdown leases, profile
+clear epochs, required spacing, candidate refill, analysis budget exhaustion,
+input immutability, URI migration detection, CLI failures and startup teardown.
+Seven rendered Chromium workflows are additional integration evidence, not V8
+coverage. See [the review report](codebase-review.md).
+
+The remaining work is substantial: backend installer/native-host/device and
+worker paths, service failures, metadata/anchor edge cases, and frontend screen
+conditional branches. Native inference, GUI launch and Windows/macOS execution
+need their actual hosts/assets; other gaps can still be closed with bounded
+behavioral tests. Do not present the 95% requirement as completed.

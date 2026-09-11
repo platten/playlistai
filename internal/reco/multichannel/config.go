@@ -2,7 +2,7 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v20"
+const AlgorithmVersion = "multichannel/v22"
 
 type Config struct {
 	SeedAudioBudget        int

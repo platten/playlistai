@@ -1,6 +1,7 @@
 // Vite fixture checks for wizard downloads; real native inference is tested in Go.
 // Usage: node scripts/capture-clap-wizard.mjs <playwright-module> <chromium> [output]
 import { mkdir } from "node:fs/promises";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 import { pathToFileURL } from "node:url";
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4] || "/tmp/playlist-ai-clap-wizard-ui";
@@ -10,7 +11,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 950 } });
   const errors = [];
   page.on("pageerror", e => { errors.push(e.message); console.error(e.message); });
-  await page.route("**/src/main.tsx", route => route.fulfill({ contentType: "application/javascript", body: `
+  await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     import React from '/node_modules/.vite/deps/react.js'; import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
     import {FirstRunWizard} from '/src/screens/FirstRunWizard.tsx';
     import '/src/design/tokens.css';
@@ -19,10 +20,11 @@ try {
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: `
     export const Events={On(name,fn){ const handler=e=>fn({data:e.detail});window.addEventListener(name,handler);return ()=>window.removeEventListener(name,handler);}};
     export const Clipboard={}; export const Call={}; export const CancellablePromise=Promise;
+    export const System={IsMac:()=>false};
   ` }));
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     let installed=false; let attempts=0;
-    export const FeedbackScope={}; export const FeedbackType={};
+    ${bridgeEnums}
     const bundle={label:'CLAP Music · full precision',artifacts:[{size:788130000}],memoryBytes:2147483648,license:'Apache-2.0'};
     const emit=note=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'analysis-model',done:123450000,total:788130000,note}}));
     const download=()=>{
@@ -54,8 +56,8 @@ try {
   }
   await page.getByRole("button",{name:"Download and validate CLAP",exact:true}).click();
   await page.getByText("Downloading music analysis",{exact:true}).waitFor();
-  await page.getByText("123.5 MB / 793.1 MB",{exact:true}).waitFor();
-  if(await page.getByRole('progressbar',{name:'Downloading music analysis'}).getAttribute('aria-valuetext') !== '123.5 MB / 793.1 MB') throw Error('CLAP download bytes are not accessible in MB');
+  await page.getByText("123.5 MB / 788.1 MB",{exact:true}).waitFor();
+  if(await page.getByRole('progressbar',{name:'Downloading music analysis'}).getAttribute('aria-valuetext') !== '123.5 MB / 788.1 MB') throw Error('CLAP download bytes are not accessible in MB');
   await page.setViewportSize({width:390,height:850});
   await page.getByRole('progressbar',{name:'Downloading music analysis'}).scrollIntoViewIfNeeded();
   await page.screenshot({path:output+'/download-mb-narrow.png',fullPage:true});
@@ -73,7 +75,7 @@ try {
   await page.getByRole("textbox",{name:"Bundle manifest path"}).fill("/custom/bundle.json");
   await page.getByRole("button",{name:"Check bundle",exact:true}).click();
   await page.getByRole("button",{name:"Download and validate custom bundle",exact:true}).click();
-  await page.getByText("123.5 MB / 793.1 MB",{exact:true}).waitFor();
+  await page.getByText("123.5 MB / 788.1 MB",{exact:true}).waitFor();
   await page.getByRole("button",{name:"Stop download",exact:true}).click();
   await page.getByText("Error: Download stopped",{exact:true}).waitFor();
   if(await page.getByRole("link",{name:"Export a model to ONNX"}).getAttribute("href") !== "https://huggingface.co/docs/optimum-onnx/onnx/usage_guides/export_a_model") throw Error("Missing export documentation");

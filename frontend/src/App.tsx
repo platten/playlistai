@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { System } from "@wailsio/runtime";
 import { useTheme } from "./design/theme";
 import { AppIcon, Icon, MiniPlayerBar, PreviewPlayerProvider } from "./components";
 import { API, type BuildPlaylistRequest, type PlaylistResult } from "./lib/api";
 import { GenerateScreen, type Regeneration } from "./screens/GenerateScreen";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
-import { ReviewExport } from "./screens/ReviewExport";
+import { ReviewExport, type ExportDraft } from "./screens/ReviewExport";
+import type { PlaylistDraft } from "./lib/playlistDraft";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FirstRunWizard } from "./screens/FirstRunWizard";
 import { UpdatePrompt } from "./components/UpdatePrompt";
@@ -18,6 +19,8 @@ interface PlaylistState {
   request: BuildPlaylistRequest;
   heading: string;
   initialResult?: PlaylistResult;
+  savedPresentationId?: string;
+  draft?: PlaylistDraft;
 }
 
 interface ReviewState {
@@ -25,6 +28,7 @@ interface ReviewState {
   heading: string;
   requestId: string;
   sessionId: string;
+  draft?: ExportDraft;
 }
 
 export default function App() {
@@ -41,29 +45,63 @@ function AppContent() {
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [parserBackend, setParserBackend] = useState("rules");
+  const presentations = useRef(new Map<string, Promise<void>>());
+  const displayed = useCallback((id: string) => {
+    const existing = presentations.current.get(id);
+    if (existing) return existing;
+    const call = API.AcknowledgePlaylistDisplayed(id).catch((error: unknown) => {
+      // The backend also deduplicates acknowledgments. Allow a later display
+      // to retry a failed transport without counting a render as exposure.
+      presentations.current.delete(id);
+      throw error;
+    });
+    presentations.current.set(id, call);
+    return call;
+  }, []);
+  const savePlaylistDraft = useCallback((draft: PlaylistDraft) => {
+    setPlaylist((current) => current ? { ...current, draft } : current);
+  }, []);
+  const saveExportDraft = useCallback((draft: ExportDraft) => {
+    setReview((current) => current ? { ...current, draft } : current);
+  }, []);
+  useEffect(() => {
+    // Only these two results can be redisplayed without a new backend
+    // presentation: the original request and its latest accepted adjustment.
+    const retained = new Set([playlist?.initialResult?.presentationId, playlist?.draft?.accepted?.result.presentationId]);
+    for (const id of presentations.current.keys()) {
+      if (!retained.has(id)) presentations.current.delete(id);
+    }
+  }, [playlist?.initialResult?.presentationId, playlist?.draft?.accepted?.result.presentationId]);
 
   useEffect(() => {
+    let active = true;
     API.GetOnboarded()
-      .then((v) => setOnboarded(Boolean(v)))
-      .catch(() => setOnboarded(true)); // fail open — never trap the user behind a broken check
+      .then((v) => { if (active) setOnboarded(Boolean(v)); })
+      .catch(() => { if (active) setOnboarded(true); }); // fail open — never trap the user behind a broken check
+    return () => { active = false; };
   }, []);
 
   // Re-check on every screen change so Generate immediately reflects model
   // changes made in Settings. Generate itself is always available.
   useEffect(() => {
     if (onboarded !== true) return;
+    let active = true;
     API.GetStatus()
-      .then((s) => setParserBackend(s?.parserBackend || "rules"))
-      .catch(() => setParserBackend("rules"));
+      .then((s) => { if (active) setParserBackend(s?.parserBackend || "rules"); })
+      .catch(() => { if (active) setParserBackend("rules"); });
+    return () => { active = false; };
   }, [onboarded, screen]);
 
-  const openPlaylist = (request: BuildPlaylistRequest, heading: string, initialResult?: PlaylistResult) => {
-    setPlaylist({ request, heading, initialResult });
+  const openPlaylist = (request: BuildPlaylistRequest, heading: string, initialResult?: PlaylistResult, savedPresentationId?: string) => {
+    setPlaylist({ request, heading, initialResult, savedPresentationId });
+    setReview(null);
     setScreen("playlist");
   };
 
   const openReview = (trackIds: string[], heading: string, requestId: string, sourceSessionId: string) => {
-    setReview({ trackIds, heading, requestId, sessionId: sourceSessionId || sessionId });
+    setReview((current) => current?.requestId === requestId &&
+      current.trackIds.length === trackIds.length && current.trackIds.every((id, index) => id === trackIds[index])
+      ? current : { trackIds, heading, requestId, sessionId: sourceSessionId || sessionId });
     setScreen("reviewexport");
   };
 
@@ -144,9 +182,14 @@ function AppContent() {
           )}
           {screen === "playlist" && playlist && (
             <PlaylistScreen
+              key={playlist.request.requestId}
               request={playlist.request}
               heading={playlist.heading}
               initialResult={playlist.initialResult}
+              savedPresentationId={playlist.savedPresentationId}
+              initialDraft={playlist.draft}
+              onDraft={savePlaylistDraft}
+              onDisplayed={displayed}
               sessionId={playlist.request.sessionId || sessionId}
               onBack={() => setScreen("generate")}
               onRegenerate={(prompt) => {
@@ -162,6 +205,8 @@ function AppContent() {
               heading={review.heading}
               requestId={review.requestId}
               sessionId={review.sessionId}
+              initialDraft={review.draft}
+              onDraft={saveExportDraft}
               onBack={() => setScreen("playlist")}
             />
           )}

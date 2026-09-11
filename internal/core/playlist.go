@@ -100,8 +100,8 @@ type OutcomeReason struct {
 }
 
 // GenerationOutcome reports fulfillment independently of requested count.
-// A full-length playlist with unverified essential criteria is unsupported,
-// never fulfilled.
+// A full-length playlist with unverified essential criteria is not fulfilled;
+// a best-available suggestion remains partial, or the request is unsupported.
 type GenerationOutcome struct {
 	State   GenerationOutcomeState `json:"state"`
 	Reasons []OutcomeReason        `json:"reasons"`

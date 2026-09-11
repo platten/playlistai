@@ -56,13 +56,18 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	recordings := map[string]bool{}
 	recent := append([]core.TrackRef(nil), request.RecentSelections...)
 	var queue []core.Candidate
+	retrievalInterrupted := false
 	refill := func() error {
 		batch, err := o.prepareRecommendationPool(ctx, initial, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted,
 		}, eligible, recordings, recommendationPoolSize(intent.Count, len(required)))
 		initial = nil
 		if err != nil {
-			return err
+			if ctx.Err() != nil || len(batch) == 0 {
+				return err
+			}
+			retrievalInterrupted = true
+			notices = append(notices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Candidate retrieval was interrupted; retained candidates were still checked without relaxing requirements."})
 		}
 		batch, err = o.rankCandidates(ctx, batch, ports.RankRequest{Intent: intent, Profile: request.Profile})
 		if err != nil {
@@ -122,6 +127,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			}
 		} else {
 			if len(queue) == 0 {
+				if retrievalInterrupted {
+					break // assess the retained pool once; do not repeat the failing read
+				}
 				before := len(attempted)
 				if err := refill(); err != nil {
 					if parent.Err() != nil {
@@ -243,51 +251,11 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 // Do not stop just because enough candidates passed CLAP: the final selector
 // and ordering constraints must also be able to produce the requested count.
 func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) (bool, error) {
-	ranked, err := o.rankCandidates(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile})
-	if err != nil {
-		return false, err
-	}
-	reserved, remaining, reasons, err := o.reserveJourneyStages(ctx, ranked, required, intent)
-	if err != nil {
-		return false, err
-	}
-	if len(reasons) > 0 {
-		return false, nil // a full-count first stage is still an incomplete journey
-	}
-	fixed := append([]core.TrackRef(nil), required...)
-	for _, c := range reserved {
-		fixed = append(fixed, c.Track)
-	}
-	selection, err := o.selector.Select(ctx, remaining, ports.SelectionRequest{Intent: intent, Required: fixed, Waypoints: waypoints, RecentSelections: request.RecentSelections, Count: intent.Count - len(fixed)})
-	if err != nil {
-		return false, err
-	}
-	selection.Candidates = append(reserved, selection.Candidates...)
-	if len(selection.Candidates)+len(required) < intent.Count {
-		return false, nil
-	}
-	membership, err := o.categoryMembership(ctx, append(candidatesForTracks(required), selection.Candidates...), intent)
-	if err != nil {
-		return false, err
-	}
-	trajectoryWaypoints := waypoints
-	if len(trajectoryWaypoints) < 2 && len(required) >= 2 {
-		trajectoryWaypoints = required
-	}
-	var trajectory ports.Trajectory
-	if (intent.Mode == core.ModeJourney || o.bestAvailable) && len(trajectoryWaypoints) >= 2 {
-		trajectory = NewWaypointTrajectory(o.cat, trajectoryWaypoints)
-	}
-	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints, ReferenceAnchors: references, RecentSelections: request.RecentSelections, Seed: seed, CategoryStages: membership, Trajectory: trajectory})
+	assembly, err := o.assembleCandidates(ctx, candidates, intent, request, references, required, waypoints, seed)
 	if errors.Is(err, core.ErrRequiredTrackConflict) {
 		return false, nil
 	}
-	for _, notice := range sequence.Notices {
-		if notice.Code == "category_journey_exhausted" {
-			return false, err
-		}
-	}
 	// Soft diversity preferences rank the available pool; they must not prolong
 	// analysis after sequencing has produced the requested valid track count.
-	return len(sequence.Tracks) == intent.Count, err
+	return assembly.complete(intent.Count), err
 }

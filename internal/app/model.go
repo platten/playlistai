@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"time"
@@ -158,34 +159,13 @@ func (c *Container) SetModel(ctx context.Context, modelPath, modelID string) err
 	if err := modelmgr.ValidateGGUF(modelPath); err != nil {
 		return err
 	}
-
-	sctx, cancel := context.WithTimeout(ctx, modelStartTimeout)
-	defer cancel()
-
-	p, err := llama.New(sctx, llama.Options{
-		BinaryPath:   c.cfg.AI.LlamaServerPath,
-		Runtimes:     c.LlamaRuntimes(),
-		ModelPath:    modelPath,
-		NCtx:         c.cfg.AI.NCtx,
-		NThreads:     c.cfg.AI.NThreads,
-		GPULayers:    c.cfg.AI.GPULayers,
-		StartTimeout: runtimeStartTimeout,
-		Logger:       c.log,
-	})
+	ctx, revision, finish := c.beginModelChange(ctx)
+	defer finish()
+	p, err := c.startModel(ctx, modelPath)
 	if err != nil {
 		return err
 	}
-
-	c.setLlama(p, modelPath, modelID)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
-	prefs.ModelPath, prefs.ModelID = modelPath, modelID
-	if serr := prefs.Save(c.cfg.DataDir); serr != nil {
-		c.log.Warn("could not persist model choice", "err", serr)
-	}
-	c.log.Info("model set", "path", modelPath, "id", modelID)
-	return nil
+	return c.commitModel(ctx, revision, p, modelPath, modelID, true)
 }
 
 // DownloadModel fetches a catalog model and switches to it. Progress is reported
@@ -195,43 +175,149 @@ func (c *Container) DownloadModel(ctx context.Context, id string, p ports.Progre
 	if !ok {
 		return fmt.Errorf("app: unknown model %q", id)
 	}
+	// The user's selection starts at download, not at process startup. A slow
+	// download must not acquire a newer revision after a later clear/swap.
+	ctx, revision, finish := c.beginModelChange(ctx)
+	defer finish()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dir := filepath.Join(c.cfg.DataDir, "models")
-	path, err := modelmgr.Download(ctx, m, dir, p)
+	downloader := c.modelDownloader
+	if downloader == nil {
+		downloader = modelmgr.Download
+	}
+	path, err := downloader(ctx, m, dir, p)
 	if err != nil {
 		return err
 	}
-	return c.SetModel(ctx, path, id)
+	parser, err := c.startModel(ctx, path)
+	if err != nil {
+		return err
+	}
+	return c.commitModel(ctx, revision, parser, path, id, true)
 }
 
 // ClearModel stops llama-server and reverts to the rules parser.
 func (c *Container) ClearModel() error {
-	c.setLlama(nil, "", "")
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	prefs := config.LoadPrefs(c.cfg.DataDir)
+	if c.closed {
+		c.mu.Unlock()
+		return errors.New("application is closed")
+	}
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		c.mu.Unlock()
+		return err
+	}
 	prefs.ModelPath, prefs.ModelID = "", ""
-	if serr := prefs.Save(c.cfg.DataDir); serr != nil {
-		c.log.Warn("could not persist model choice", "err", serr)
+	if err := prefs.Save(c.cfg.DataDir); err != nil {
+		c.mu.Unlock()
+		return err
+	}
+	c.modelRevision++
+	if c.modelCancel != nil {
+		c.modelCancel()
+		c.modelCancel = nil
+	}
+	old := c.llama
+	c.llama, c.parser = nil, c.rulesParser
+	c.modelPath, c.modelID = "", ""
+	c.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
 	}
 	c.log.Info("model cleared; using rules parser")
 	return nil
 }
 
-// setLlama swaps the active parser and closes any previously-running
-// llama-server. Passing nil reverts to the rules parser.
-func (c *Container) setLlama(p *llama.Parser, modelPath, modelID string) {
-	c.mu.Lock()
-	old := c.llama
-	c.llama = p
-	c.modelPath, c.modelID = modelPath, modelID
-	if p != nil {
-		c.parser = p
-	} else {
-		c.parser = c.rulesParser
-	}
-	c.mu.Unlock()
+// managedParser keeps process ownership separate from parsing capabilities.
+// Production uses llama.Parser; tests can exercise swaps without a model/GPU.
+type managedParser interface {
+	ports.IntentParser
+	Close() error
+}
 
+func (c *Container) beginModelChange(parent context.Context) (context.Context, uint64, func()) {
+	leased, release := c.OperationContext(parent)
+	ctx, cancel := context.WithCancel(leased)
+	c.mu.Lock()
+	if c.modelCancel != nil {
+		c.modelCancel()
+	}
+	c.modelRevision++
+	revision := c.modelRevision
+	c.modelCancel = cancel
+	c.mu.Unlock()
+	return ctx, revision, func() {
+		c.mu.Lock()
+		if c.modelRevision == revision {
+			c.modelCancel = nil
+		}
+		c.mu.Unlock()
+		cancel()
+		release()
+	}
+}
+
+func (c *Container) startModel(ctx context.Context, modelPath string) (managedParser, error) {
+	ctx, cancel := context.WithTimeout(ctx, modelStartTimeout)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	options := llama.Options{
+		BinaryPath: c.cfg.AI.LlamaServerPath, Runtimes: c.LlamaRuntimes(),
+		ModelPath: modelPath, NCtx: c.cfg.AI.NCtx, NThreads: c.cfg.AI.NThreads,
+		GPULayers: c.cfg.AI.GPULayers, StartTimeout: runtimeStartTimeout, Logger: c.log,
+	}
+	var parser managedParser
+	var err error
+	if c.modelFactory != nil {
+		parser, err = c.modelFactory(ctx, options)
+	} else {
+		parser, err = llama.New(ctx, options)
+	}
+	if err == nil && ctx.Err() != nil {
+		if parser != nil {
+			_ = parser.Close()
+		}
+		return nil, ctx.Err()
+	}
+	return parser, err
+}
+
+// commitModel is the only publication point for a started parser. Starting a
+// replacement is expensive and happens outside the settings lock; the revision
+// guard prevents a slow startup from undoing a later clear/swap or shutdown.
+func (c *Container) commitModel(ctx context.Context, revision uint64, p managedParser, modelPath, modelID string, persist bool) error {
+	c.mu.Lock()
+	err := ctx.Err()
+	if err == nil && (c.closed || c.modelRevision != revision) {
+		err = context.Canceled
+	}
+	if err == nil && persist {
+		var prefs config.Prefs
+		prefs, err = config.LoadPrefsChecked(c.cfg.DataDir)
+		if err == nil {
+			prefs.ModelPath, prefs.ModelID = modelPath, modelID
+			err = prefs.Save(c.cfg.DataDir)
+		}
+	}
+	if err != nil {
+		c.mu.Unlock()
+		if p != nil {
+			_ = p.Close()
+		}
+		return err
+	}
+	old := c.llama
+	c.llama, c.parser = p, p
+	c.modelPath, c.modelID = modelPath, modelID
+	c.mu.Unlock()
 	if old != nil {
 		_ = old.Close()
 	}
+	c.log.Info("model ready", "id", modelID)
+	return nil
 }

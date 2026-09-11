@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   API,
   type LlamaRuntimeInfo,
@@ -35,6 +35,9 @@ export function SettingsScreen() {
   const progress = useProgress("model");
   const installProgress = useProgress("llama-install");
   const [previewProvider, setPreviewProviderState] = useState<string | null>(null);
+  const previewPending = useRef(false);
+  const [previewSaving, setPreviewSaving] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [tasteProfile, setTasteProfile] = useState<TasteProfileSummary | null>(null);
   const [debugLogging, setDebugLogging] = useState(false);
 
@@ -76,9 +79,20 @@ export function SettingsScreen() {
     return () => { disposed = true; window.removeEventListener("focus", syncDebugLogging); };
   }, [busy]);
 
-  const choosePreview = (id: string) => {
-    setPreviewProviderState(id);
-    API.SetPreviewProvider(id).catch(() => undefined);
+  const choosePreview = async (id: string) => {
+    if (previewPending.current || id === previewProvider) return;
+    previewPending.current = true;
+    setPreviewSaving(true);
+    setPreviewError(null);
+    try {
+      await API.SetPreviewProvider(id);
+      setPreviewProviderState(id);
+    } catch (e) {
+      setPreviewError(`Could not save preview provider: ${String(e)}`);
+    } finally {
+      previewPending.current = false;
+      setPreviewSaving(false);
+    }
   };
 
   const clearTaste = () => {
@@ -331,7 +345,8 @@ export function SettingsScreen() {
               key={o.id}
               type="button"
               aria-pressed={previewProvider === o.id}
-              onClick={() => choosePreview(o.id)}
+              disabled={previewSaving || previewProvider === null}
+              onClick={() => void choosePreview(o.id)}
               className={
                 "h-8 rounded-control border px-3 text-[12.5px] transition-colors " +
                 (previewProvider === o.id
@@ -347,6 +362,8 @@ export function SettingsScreen() {
           Deezer looks up a 30s preview per track (no account needed). Spotify uses just the
           preview link shipped with the catalog, with no network calls.
         </p>
+        {previewSaving && <p role="status" className="text-[12px] text-muted">Saving preview provider…</p>}
+        {previewError && <ErrorState variant="inline" message={previewError} onDismiss={() => setPreviewError(null)} />}
       </section>
 
       <MusicAnalysisCard />

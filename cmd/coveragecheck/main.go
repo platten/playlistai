@@ -17,16 +17,16 @@ func coverage(r io.Reader) (covered, total uint64, err error) {
 	if !s.Scan() || (s.Text() != "mode: set" && s.Text() != "mode: count" && s.Text() != "mode: atomic") {
 		return 0, 0, fmt.Errorf("missing or invalid coverage mode")
 	}
-	seen := map[string]bool{}
+	type block struct {
+		statements uint64
+		covered    bool
+	}
+	seen := map[string]block{}
 	for s.Scan() {
 		fields := strings.Fields(s.Text())
 		if len(fields) != 3 {
 			return 0, 0, fmt.Errorf("invalid coverage record %q", s.Text())
 		}
-		if seen[fields[0]] {
-			return 0, 0, fmt.Errorf("duplicate coverage block %q", fields[0])
-		}
-		seen[fields[0]] = true
 		n, e := strconv.ParseUint(fields[1], 10, 64)
 		if e != nil {
 			return 0, 0, e
@@ -35,6 +35,20 @@ func coverage(r io.Reader) (covered, total uint64, err error) {
 		if e != nil {
 			return 0, 0, e
 		}
+		// -coverpkg=./... emits the same source block from several test
+		// binaries. Count each statement once and union actual execution.
+		if previous, exists := seen[fields[0]]; exists {
+			if previous.statements != n {
+				return 0, 0, fmt.Errorf("inconsistent coverage block %q", fields[0])
+			}
+			if !previous.covered && count > 0 {
+				covered += n
+				previous.covered = true
+				seen[fields[0]] = previous
+			}
+			continue
+		}
+		seen[fields[0]] = block{statements: n, covered: count > 0}
 		if n > math.MaxUint64-total {
 			return 0, 0, fmt.Errorf("statement count overflow")
 		}

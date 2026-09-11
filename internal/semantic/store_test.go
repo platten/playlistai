@@ -54,14 +54,14 @@ func TestStoreSearchRunsWithoutPythonAndSkipsUnknownCatalogIDs(t *testing.T) {
 	if feature.ReleaseDates.OriginalEdition.Value != "1998" || feature.ReleaseDates.ReleaseEdition.Missingness != core.FeatureUnknown || feature.Preview.CoveredSeconds != 30 {
 		t.Fatalf("release or segment coverage semantics drifted: %+v", feature)
 	}
-	hits, err := store.Search(context.Background(), "relaxing", 2)
+	hits, err := store.Search(context.Background(), "relaxing", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hits) != 2 || hits[0].TrackID != "grounded" {
 		t.Fatalf("search returned ungrounded or misranked IDs: %+v", hits)
 	}
-	if _, err := store.Search(context.Background(), "not-in-vocabulary", 2); !errors.Is(err, core.ErrUnavailable) {
+	if _, err := store.Search(context.Background(), "not-in-vocabulary", 2, nil); !errors.Is(err, core.ErrUnavailable) {
 		t.Fatalf("unknown query error = %v, want ErrUnavailable", err)
 	}
 }
@@ -94,11 +94,11 @@ func TestStorePrefersExactPhraseAndComposesKnownTerms(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	hits, err := store.Search(context.Background(), "deep groove", 1)
+	hits, err := store.Search(context.Background(), "deep groove", 1, nil)
 	if err != nil || len(hits) != 1 || hits[0].TrackID != "deep" {
 		t.Fatalf("exact phrase search = %+v, %v", hits, err)
 	}
-	hits, err = store.Search(context.Background(), "relaxing unknown", 1)
+	hits, err = store.Search(context.Background(), "relaxing unknown", 1, nil)
 	if err != nil || len(hits) != 1 || hits[0].TrackID != "relaxing" {
 		t.Fatalf("composed fallback search = %+v, %v", hits, err)
 	}
@@ -161,7 +161,7 @@ func TestSchemaOneSidecarRemainsAvailableForFeaturesOnly(t *testing.T) {
 	if _, ok, err := store.Features(context.Background(), "one"); err != nil || !ok {
 		t.Fatalf("legacy features: ok=%v err=%v", ok, err)
 	}
-	if _, err := store.Search(context.Background(), "relaxing", 1); !errors.Is(err, core.ErrUnavailable) {
+	if _, err := store.Search(context.Background(), "relaxing", 1, nil); !errors.Is(err, core.ErrUnavailable) {
 		t.Fatalf("legacy search error = %v, want ErrUnavailable", err)
 	}
 }

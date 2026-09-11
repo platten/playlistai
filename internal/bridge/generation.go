@@ -49,8 +49,9 @@ func generationFromContext(ctx context.Context) *liveGeneration {
 	return g
 }
 
-// StopAndKeepCheckedTracks stops only audio analysis. Ranking and sequencing
-// finish over checked tracks; ordinary cancellation still discards the result.
+// StopAndKeepCheckedTracks stops candidate discovery and audio analysis.
+// Ranking and sequencing finish over checked tracks; ordinary cancellation
+// still discards the result.
 func (a *API) StopAndKeepCheckedTracks(generationID string) {
 	a.live.mu.Lock()
 	defer a.live.mu.Unlock()

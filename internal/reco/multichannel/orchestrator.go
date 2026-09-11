@@ -22,7 +22,8 @@ type Orchestrator struct {
 	knowledge       *core.KnowledgeSnapshot
 	anchorProposer  func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)
 	audioProvider   func() *audio.Service
-	audioSession    *audio.Session // set only on the request-local orchestrator copy
+	audioSession    *audio.Session     // set only on the request-local orchestrator copy
+	assemblyCache   *completedAssembly // request-local; never shared across generations
 	cat             ports.Catalog
 	resolver        ports.ReferenceResolver
 	retriever       ports.CandidateRetriever
@@ -171,6 +172,9 @@ func (o *Orchestrator) unsupportedEssentialReasons(intent core.MusicIntent) []co
 	var reasons []core.OutcomeReason
 	for _, criterion := range intent.EssentialCriteria {
 		supported := o.scorer != nil
+		if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && o.knowledge != nil && len(o.knowledge.Tracks) > 0 && (criterion.Kind == "genre" || criterion.Kind == "style") {
+			supported = true
+		}
 		if o.features != nil && criterionSupported(o.features.Info(), criterion) {
 			supported = true
 		}
@@ -190,6 +194,9 @@ func (o *Orchestrator) uncoveredEssentialReasons(ctx context.Context, intent cor
 	}
 	var reasons []core.OutcomeReason
 	for _, criterion := range intent.EssentialCriteria {
+		if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && o.knowledge != nil && len(o.knowledge.Tracks) > 0 && (criterion.Kind == "genre" || criterion.Kind == "style") {
+			continue
+		}
 		if o.features != nil && criterionSupported(o.features.Info(), criterion) {
 			continue
 		}
@@ -385,6 +392,7 @@ func (o *Orchestrator) scoreSemanticUnion(ctx context.Context, candidates []core
 }
 
 func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Candidate, criteria []core.MusicalCriterion) ([]core.Candidate, essentialEvidenceReport, error) {
+	genre, singleGenre := core.SinglePlaylistGenre(core.MusicIntent{EssentialCriteria: criteria})
 	clauses := make([]core.AudioClause, len(criteria))
 	for i, c := range criteria {
 		clauses[i] = core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Essential: true}
@@ -395,6 +403,17 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 			return nil, essentialEvidenceReport{}, err
 		}
 		track, _ := o.knowledgeTrack(candidate.Track.ID)
+		// Best-available may suggest unknown mood/texture, but never fill a
+		// single-genre playlist with recordings lacking category evidence.
+		if singleGenre {
+			state := o.bestCriterion(ctx, candidate.Track.ID, genre)
+			if err := ctx.Err(); err != nil {
+				return nil, essentialEvidenceReport{}, err
+			}
+			if state != core.EvidenceMatch {
+				continue
+			}
+		}
 		if acousticCompatible(acousticComparisons(track, clauses)) {
 			compatible = append(compatible, candidate)
 		}
@@ -414,7 +433,13 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 	states := make([]map[string]core.EvidenceState, len(criteria))
 	for criterionIndex, criterion := range criteria {
 		states[criterionIndex] = map[string]core.EvidenceState{}
-		if o.audioSession != nil {
+		if singleGenre && (criterion.Kind == "genre" || criterion.Kind == "style") {
+			// The same category was already checked above using all supported
+			// evidence sources. Do not overwrite a match with a sparse facet.
+			for _, id := range ids {
+				states[criterionIndex][id] = core.EvidenceMatch
+			}
+		} else if o.audioSession != nil {
 			for _, id := range ids {
 				states[criterionIndex][id] = o.audioSession.Criterion(id, criterion)
 			}
@@ -543,6 +568,7 @@ func (o *Orchestrator) BuildWithProfile(ctx context.Context, intent core.MusicIn
 func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.RecommendationRequest) (result core.Playlist, buildErr error) {
 	local := *o
 	o = &local
+	o.assemblyCache = &completedAssembly{}
 	if err := ctx.Err(); err != nil {
 		return core.Playlist{}, err
 	}
@@ -720,6 +746,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		required = orderRequiredByWaypoints(required, waypoints)
 	}
 	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
+	request.RecentSelections = recentSelections
 	positiveSemantic, _ := semanticQueryText(intent)
 	semanticSeeded := discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
@@ -838,7 +865,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		if err != nil {
 			return core.Playlist{}, err
 		}
-		if !o.bestAvailable && (len(report.Unsupported) > 0 || (!positiveCoverage.Complete && o.features == nil && o.audioSession == nil)) {
+		if !o.bestAvailable && (len(report.Unsupported) > 0 || (!positiveCoverage.Complete && o.features == nil && o.audioSession == nil && o.knowledge == nil)) {
 			reasons := report.Unsupported
 			if len(reasons) == 0 {
 				reasons = []core.OutcomeReason{{Code: "essential_query_uncovered", Detail: "the semantic query encoder did not preserve every defining concept", Criterion: essentialSummary(intent.EssentialCriteria), Action: "choose a fitting reference track or install a sidecar whose vocabulary covers the requested category"}}
@@ -867,13 +894,59 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	candidates, err = o.rankCandidates(ctx, candidates, ports.RankRequest{Intent: intent, Profile: request.Profile})
-	if err != nil {
-		return core.Playlist{}, err
-	}
 	if request.Progress != nil {
 		request.Progress.Report("generation", 0, 0, "Ordering your playlist")
 	}
+	if stages := journeyCriteria(intent.EssentialCriteria); intent.Mode == core.ModeJourney && len(stages) > 0 && intent.Count < len(stages) {
+		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
+			Code: "journey_count_too_short", Detail: fmt.Sprintf("%d tracks cannot represent %d requested journey stages", intent.Count, len(stages)),
+			Criterion: essentialSummary(stages), Action: fmt.Sprintf("request at least %d tracks or remove a journey stage", len(stages)),
+		}}), nil
+	}
+	assembly, err := o.assembleCandidates(ctx, candidates, intent, request, references, required, waypoints, seedValue)
+	if assembly.countConflict {
+		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
+			Code: "journey_count_too_short", Detail: "the requested count cannot represent every evidence-backed journey stage",
+			Criterion: essentialSummary(intent.EssentialCriteria), Action: "increase the track count or remove a journey stage",
+		}}), nil
+	}
+
+	if err != nil {
+		if errors.Is(err, core.ErrRequiredTrackConflict) {
+			action := "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"
+			if genreArtistDiversity(intent) {
+				action = "change the required tracks or add suitable tracks from other artists to separate them"
+			}
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_order_conflict", Detail: err.Error(), Action: action}}), nil
+		}
+		return core.Playlist{}, err
+	}
+	selection, sequence := assembly.selection, assembly.sequence
+	if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre {
+		// Defense at the output boundary: required tracks and every sequencing
+		// path must satisfy the same check as retrieved/exploration candidates.
+		checked, report, checkErr := o.filterEssential(ctx, candidatesForTracks(sequence.Tracks), intent.EssentialCriteria)
+		if checkErr != nil {
+			return core.Playlist{}, checkErr
+		}
+		if !requiredTracksEligible(required, report.Eligible) {
+			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_essential_conflict", Detail: "A required track did not pass the final genre check.", Action: "Remove the conflicting required track or provide reliable genre evidence."}}), nil
+		}
+		sequence.Tracks = nil
+		for _, candidate := range checked {
+			sequence.Tracks = append(sequence.Tracks, candidate.Track)
+		}
+		kept := sequence.Rationale[:0]
+		for _, reason := range sequence.Rationale {
+			if report.Eligible[reason.TrackID] {
+				kept = append(kept, reason)
+			}
+		}
+		sequence.Rationale = kept
+	}
+	stageMembership, reserveReasons := assembly.stageMembership, assembly.reserveReasons
+	// Presentation annotations do not change selection inputs. Add them only
+	// after assembly so a just-completed immutable result can be reused exactly.
 	setSemanticCapability(&intent, semanticMatched, len(semanticNotices) > 0)
 	for index := range intent.HardConstraints {
 		if intent.HardConstraints[index].Kind == "require_album" || intent.HardConstraints[index].Kind == "require_artist" {
@@ -894,62 +967,6 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	if stages := journeyCriteria(intent.EssentialCriteria); intent.Mode == core.ModeJourney && len(stages) > 0 && intent.Count < len(stages) {
-		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
-			Code: "journey_count_too_short", Detail: fmt.Sprintf("%d tracks cannot represent %d requested journey stages", intent.Count, len(stages)),
-			Criterion: essentialSummary(stages), Action: fmt.Sprintf("request at least %d tracks or remove a journey stage", len(stages)),
-		}}), nil
-	}
-	reserved, remaining, reserveReasons, err := o.reserveJourneyStages(ctx, candidates, required, intent)
-	if err != nil {
-		return core.Playlist{}, err
-	}
-	if len(reserveReasons) > 0 && len(required)+len(reserved) >= intent.Count {
-		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
-			Code: "journey_count_too_short", Detail: "the requested count cannot represent every evidence-backed journey stage",
-			Criterion: essentialSummary(intent.EssentialCriteria), Action: "increase the track count or remove a journey stage",
-		}}), nil
-	}
-
-	selectionContext := append([]core.TrackRef(nil), required...)
-	for _, candidate := range reserved {
-		selectionContext = append(selectionContext, candidate.Track)
-	}
-	selection, err := o.selector.Select(ctx, remaining, ports.SelectionRequest{
-		Intent: intent, Required: selectionContext, Waypoints: waypoints,
-		RecentSelections: recentSelections, Count: intent.Count - len(required) - len(reserved),
-	})
-	if err != nil {
-		return core.Playlist{}, err
-	}
-	selection.Candidates = append(reserved, selection.Candidates...)
-	trajectoryWaypoints := waypoints
-	if len(trajectoryWaypoints) < 2 && len(required) >= 2 {
-		trajectoryWaypoints = required
-	}
-	var trajectory ports.Trajectory
-	if (intent.Mode == core.ModeJourney || o.bestAvailable) && len(trajectoryWaypoints) >= 2 {
-		trajectory = NewWaypointTrajectory(o.cat, trajectoryWaypoints)
-	}
-	stageMembership, err := o.categoryMembership(ctx, append(candidatesForTracks(required), selection.Candidates...), intent)
-	if err != nil {
-		return core.Playlist{}, err
-	}
-	sequence, err := o.sequencer.Sequence(ctx, ports.SequenceRequest{
-		Intent: intent, Candidates: selection.Candidates, Required: required, Waypoints: waypoints,
-		ReferenceAnchors: references, RecentSelections: recentSelections,
-		Trajectory: trajectory, Seed: seedValue, CategoryStages: stageMembership,
-	})
-	if err != nil {
-		if errors.Is(err, core.ErrRequiredTrackConflict) {
-			action := "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"
-			if genreArtistDiversity(intent) {
-				action = "change the required tracks or add suitable tracks from other artists to separate them"
-			}
-			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_order_conflict", Detail: err.Error(), Action: action}}), nil
-		}
-		return core.Playlist{}, err
-	}
 	playlist := core.Playlist{
 		Tracks: sequence.Tracks, Rationale: sequence.Rationale, Mode: intent.Mode, Seed: seed, Intent: intent,
 		Notices: append(append(append([]core.PlaylistNotice{}, semanticNotices...), selection.Notices...), sequence.Notices...),
@@ -959,6 +976,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "semantic_fallback", Detail: "semantic intent was preserved but no compatible grounded semantic matches were available; seeded embedding retrieval remained active", Requested: intent.Count, Actual: len(playlist.Tracks)})
 	}
 	if len(playlist.Tracks) < intent.Count {
+		if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre {
+			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "single_genre_evidence_exhausted", Criterion: genre.Value, Detail: "Only tracks with affirmative evidence for the requested genre were retained; unknown or mismatching tracks were excluded.", Action: "Try a smaller playlist or add more tracks with verified genre metadata."})
+		}
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{
 			Code:      "eligible_tracks_exhausted",
 			Detail:    "eligible sufficiently relevant candidates were exhausted without relaxing hard exclusions or recording deduplication",

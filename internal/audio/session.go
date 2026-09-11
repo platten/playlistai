@@ -212,6 +212,13 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	}
 	record, hit, err := s.service.Store.Find(s.ctx, s.catalog, track.ID, core.ProvisionalRecordingKey(track), s.service.Analyzer.Identity())
 	if err != nil {
+		if parentErr := ctx.Err(); parentErr != nil {
+			return out, parentErr
+		}
+		if s.stopped() {
+			out.Detail = "Analysis stopped before this track could be checked."
+			return out, nil
+		}
 		return out, err
 	}
 	if !hit {
@@ -300,7 +307,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		out.Eligible = false
 		out.Detail = "No musical clauses were available to assess against the description."
 	}
-	if !scored && !s.service.Policy.Valid() {
+	if !scored {
 		out.Eligible = false
 		out.Detail = "The preview was analyzed, but no usable description comparison was available."
 	}

@@ -24,13 +24,14 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, "intenteval:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
+	flag := flag.NewFlagSet("intenteval", flag.ContinueOnError)
 	var datasetPath, modelPath, modelID, runtimePath, outputPath, markdownPath, caseID, backend, device string
 	var repeat, nctx, threads, gpuLayers int
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
@@ -46,7 +47,9 @@ func run() error {
 	flag.IntVar(&threads, "threads", 0, "llama CPU threads; zero lets the runtime decide")
 	flag.IntVar(&gpuLayers, "gpu-layers", -1, "GPU layers; negative forces CPU for comparable runs")
 	flag.StringVar(&device, "device", "", "optional llama.cpp device ID to benchmark, for example CUDA0")
-	flag.Parse()
+	if err := flag.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
 	}

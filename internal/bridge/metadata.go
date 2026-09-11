@@ -14,9 +14,7 @@ func (a *API) GetMetadataBundleInfo() app.MetadataBundleInfo { return a.app.GetM
 func (a *API) InstallMetadataBundle(ctx context.Context) error {
 	ctx, _, finish := a.operations.begin(ctx, "metadata-install")
 	defer finish()
-	a.operations.cancel("intent-preview")
-	a.operations.cancel("prompt-generation")
-	a.operations.cancel("playlist-build")
+	a.cancelRecommendationWork()
 	err := a.app.InstallMetadataBundle(ctx, NewWailsProgress())
 	if err == nil {
 		a.intentCache.clear()
@@ -53,9 +51,7 @@ func (a *API) ClearMusicMetadataCache(ctx context.Context) error {
 	if !ok {
 		return errors.New("music metadata service unavailable")
 	}
-	a.operations.cancel("intent-preview")
-	a.operations.cancel("prompt-generation")
-	a.operations.cancel("playlist-build")
+	a.cancelRecommendationWork()
 	if err := service.ClearCache(ctx); err != nil {
 		return err
 	}

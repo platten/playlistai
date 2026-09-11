@@ -39,6 +39,9 @@ func Status(dir string, m *Manifest) (complete bool, missing []string) {
 // atomic rename. Progress is reported in bytes across all files under ProgressOp.
 // Files already present and valid are skipped.
 func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p == nil {
 		p = ports.NopProgress{}
 	}
@@ -52,7 +55,7 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 	for _, f := range m.Files {
 		target := filepath.Join(dir, f.Name)
 
-		if verifyFile(target, f.Size, f.SHA256) == nil {
+		if verifyFileContext(ctx, target, f.Size, f.SHA256) == nil {
 			done += f.Size
 			p.Report(ProgressOp, done, total, "have "+f.Name)
 			continue
@@ -69,6 +72,9 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	p.Report(ProgressOp, total, total, "ready")
 	return nil
 }
@@ -79,6 +85,9 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 // with (bytesDone, expectedTotal); expectedTotal is size, or -1 when unknown.
 // Returns the total size of the file on success.
 func Download(ctx context.Context, url, target string, size int64, sha256hex string, onProgress func(done, total int64)) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return 0, err
 	}
@@ -92,7 +101,7 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 		if oerr != nil {
 			return 0, oerr
 		}
-		have, oerr = io.Copy(h, existing)
+		have, oerr = io.Copy(h, contextReader{ctx, existing})
 		existing.Close()
 		if oerr != nil {
 			return 0, oerr
@@ -231,6 +240,13 @@ func copyHashed(dst io.Writer, h hash.Hash, src io.Reader, startAt int64, onProg
 }
 
 func verifyFile(path string, size int64, wantHex string) error {
+	return verifyFileContext(context.Background(), path, size, wantHex)
+}
+
+func verifyFileContext(ctx context.Context, path string, size int64, wantHex string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -247,11 +263,27 @@ func verifyFile(path string, size int64, wantHex string) error {
 	}
 	defer fp.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, fp); err != nil {
+	if _, err := io.Copy(h, contextReader{ctx, fp}); err != nil {
 		return err
 	}
 	if sum := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(sum, wantHex) {
 		return fmt.Errorf("sha256 mismatch")
 	}
 	return nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.reader.Read(p)
+	if canceled := r.ctx.Err(); canceled != nil {
+		return n, canceled
+	}
+	return n, err
 }

@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -32,15 +33,25 @@ func prefsPath(dataDir string) string { return filepath.Join(dataDir, "prefs.jso
 
 // LoadPrefs reads prefs.json, returning a zero value on any error.
 func LoadPrefs(dataDir string) Prefs {
+	p, _ := LoadPrefsChecked(dataDir)
+	return p
+}
+
+// LoadPrefsChecked distinguishes first launch from unreadable or corrupt
+// preferences so callers can avoid overwriting settings they could not load.
+func LoadPrefsChecked(dataDir string) (Prefs, error) {
 	b, err := os.ReadFile(prefsPath(dataDir))
+	if os.IsNotExist(err) {
+		return Prefs{}, nil
+	}
 	if err != nil {
-		return Prefs{}
+		return Prefs{}, fmt.Errorf("read preferences: %w", err)
 	}
 	var p Prefs
-	if json.Unmarshal(b, &p) != nil {
-		return Prefs{}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return Prefs{}, fmt.Errorf("decode preferences: %w", err)
 	}
-	return p
+	return p, nil
 }
 
 // Save writes prefs.json (best-effort; creates the dir if needed).
@@ -52,5 +63,20 @@ func (p Prefs) Save(dataDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(prefsPath(dataDir), append(b, '\n'), 0o644)
+	f, err := os.CreateTemp(dataDir, ".prefs-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+	if _, err := f.Write(append(b, '\n')); err != nil {
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), prefsPath(dataDir))
 }
