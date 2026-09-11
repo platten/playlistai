@@ -42,13 +42,13 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.7.0/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('COMING IN VERSION 0.9.0')) throw Error('Draft release incorrectly advertised');
-  if (!(await page.locator('.version-label').innerText()).includes('PUBLIC DOWNLOAD / 0.7.0')) throw Error('Public download version unclear');
+  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.11.0/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.11.0')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.11.0')) throw Error('Public download version unclear');
   if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
   if (await page.locator('#recommendations .mode-card').count() !== 3) throw Error('Recommendation modes missing');
   if (await page.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing');
-  await page.getByRole('link', {name:'Read the 0.9.0 release notes'}).waitFor();
+  await page.getByRole('link', {name:'Read the 0.11.0 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); window.scrollTo(0,0); });

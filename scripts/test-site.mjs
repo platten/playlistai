@@ -8,13 +8,13 @@ const root = new URL("../", import.meta.url);
 const html = readFileSync(new URL("site/index.html", root), "utf8");
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
 
-test("upcoming 0.9.0 is distinct from the public 0.7.0 download", () => {
-  assert.match(html, /COMING IN VERSION 0\.9\.0/);
-  assert.match(html, /PUBLIC DOWNLOAD \/ 0\.7\.0/);
-  assert.match(html, /Version 0\.9\.0 is awaiting publication/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.9.0/docs/releases/v0.9.0.md"));
-  assert.ok(!links.some(link => link.includes("untagged-") || /\/releases\/tag\/v0\.[89]\.0/.test(link)));
-  assert.doesNotMatch(html, /COMING IN VERSION 0\.8\.0|In 0\.8\.0|upgrade to 0\.8\.0/);
+test("published 0.11.0 replaces stale preview and download messaging", () => {
+  assert.match(html, /NOW AVAILABLE \/ VERSION 0\.11\.0/);
+  assert.match(html, /LATEST RELEASE \/ 0\.11\.0/);
+  assert.ok(links.includes("https://github.com/platten/playlistai/releases/tag/v0.11.0"));
+  assert.ok(!links.some(link => link.includes("untagged-")));
+  assert.doesNotMatch(html, /COMING IN VERSION|awaiting publication|NOT IN THE PUBLIC DOWNLOAD|0\.7\.0/);
+  assert.match(html, /not rerun for 0\.11\.0/);
 });
 
 test("downloads retain exact published application asset names", () => {
@@ -23,7 +23,7 @@ test("downloads retain exact published application asset names", () => {
   assert.equal(downloads.length, 13);
   assert.equal(new Set(downloads).size, downloads.length);
   for (const link of downloads) {
-    assert.ok(link.startsWith("https://github.com/platten/playlistai/releases/download/v0.7.0/"));
+    assert.ok(link.startsWith("https://github.com/platten/playlistai/releases/download/v0.11.0/"));
     assert.ok(approved.has(link.split("/").at(-1)), link);
   }
 });
@@ -45,7 +45,7 @@ test("local navigation, accessibility references and files exist", () => {
 
 test("documentation links refer to existing files", () => {
   for (const link of links) {
-    const match = link.match(/\/blob\/(?:v0\.[89]\.0|main)\/([^#]+)(?:#.*)?$/);
+    const match = link.match(/\/blob\/(?:v\d+\.\d+\.\d+|main)\/([^#]+)(?:#.*)?$/);
     if (match) assert.ok(existsSync(new URL(match[1], root)), link);
   }
 });
@@ -60,10 +60,10 @@ test("release measurements retain their evidence and limitations", () => {
   assert.match(html, /not typical playlist generation time/);
 });
 
-test("development modes stay separate from public release claims", () => {
+test("published modes preserve their evidence boundaries", () => {
   const section = html.match(/<section[^>]+id="recommendations"[\s\S]*?<\/section>/)?.[0];
   assert.ok(section, "Recommendation controls section missing");
-  assert.match(section, /0\.9\.0 PREVIEW \/ NOT IN THE PUBLIC DOWNLOAD/);
+  assert.match(section, /THREE MODES \/ AVAILABLE NOW/);
   for (const name of ["AcousticBrainz first", "CLAP first", "Deej-AI only"]) {
     assert.ok(section.includes(name), name);
   }
@@ -108,13 +108,15 @@ test("live measurements preserve failure and comparability caveats", () => {
   assert.match(html, /not a whole-app speedup claim/);
 });
 
-test("0.9.0 highlights link to the tagged release evidence", () => {
+test("0.11.0 highlights link to evidence without overstating coverage", () => {
   const release = html.match(/<section[^>]+id="new"[\s\S]*?<\/section>/)?.[0];
   assert.ok(release);
-  for (const text of ["Three ways to recommend", "Less repeated searching", "A better Windows setup", "rough edges visible", "packaged-upgrade checklist"]) {
+  for (const text of ["A wider shortlist, checked down", "Playlist messages that add up", "Useful logs, under your control", "Small details, easier listening"]) {
     assert.ok(release.includes(text), text);
   }
-  for (const document of ["recommendation-settings.md", "music-metadata.md", "clap-model-candidates.md", "three-mode-regression.md"]) {
-    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.9.0/docs/${document}`), document);
+  for (const document of ["recommendation-settings.md", "music-metadata.md", "clap-model-candidates.md", "application-logs.md", "test-coverage.md"]) {
+    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.11.0/docs/${document}`), document);
   }
+  assert.match(html, /78\.52% backend statements and 6\.81% frontend lines, not the requested 95%/);
+  assert.match(html, /no new held-out listening study was run for 0\.11\.0/);
 });
