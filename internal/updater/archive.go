@@ -66,13 +66,19 @@ func unpack(ctx context.Context, archive, dir string, i installation) (string, e
 			return fmt.Errorf("unexpected executable archive entry")
 		}
 		target := filepath.Join(root, filepath.FromSlash(name))
-		if mode.IsDir() {
-			return os.MkdirAll(target, 0755)
+		cleanRoot := filepath.Clean(root)
+		cleanTarget := filepath.Clean(target)
+		rel, err := filepath.Rel(cleanRoot, cleanTarget)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("unsafe update archive path")
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		if mode.IsDir() {
+			return os.MkdirAll(cleanTarget, 0755)
+		}
+		if err := os.MkdirAll(filepath.Dir(cleanTarget), 0755); err != nil {
 			return err
 		}
-		f, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0755|0600)
+		f, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0755|0600)
 		if err != nil {
 			return err
 		}
