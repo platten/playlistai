@@ -38,6 +38,18 @@ func TestApplyResolvesAllReferenceRoles(t *testing.T) {
 	}
 }
 
+func TestJourneyEndpointsAreRequiredResolvedReferences(t *testing.T) {
+	r := &testResolver{result: core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: "catalog-v2"}}
+	m := core.MusicIntent{Version: core.CurrentIntentVersion, Start: &core.IntentReference{Kind: core.ReferenceArtist, Query: "Start artist"}, Destination: &core.IntentReference{Kind: core.ReferenceArtist, Query: "End artist"}}
+	got, issues := Apply(r, m)
+	if r.calls != 2 || len(issues) != 2 || !issues[0].Required || !issues[1].Required || !errors.Is(BlockingError(issues), core.ErrRequiredTrackConflict) {
+		t.Fatalf("missing required endpoint blocked incorrectly: %+v", issues)
+	}
+	if got.Start.Resolution == nil || got.Destination.Resolution == nil || m.Start.Resolution != nil || m.Destination.Resolution != nil {
+		t.Fatal("endpoint resolution missing or mutated source")
+	}
+}
+
 func TestResolutionCacheAndRepresentative(t *testing.T) {
 	selected := &core.ResolutionCandidate{Representatives: []core.WeightedTrack{{TrackID: "real-track", Weight: 1}}}
 	for _, tc := range []struct {

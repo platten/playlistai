@@ -13,12 +13,16 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
 )
 
 func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
 	for _, genre := range []string{"Classical", "Gqom", "未知ジャンル", "Salsa"} {
 		t.Run(genre, func(t *testing.T) {
+			// Reviewed dictionary categories have a stable canonical spelling;
+			// unknown categories retain the original provider/user wording.
+			expectedGenre := musicconcepts.Canonical("genre", genre)
 			artistLookups := 0
 			firstSearch := ""
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +35,7 @@ func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
 				case "/genre/g1", "/genre/g1/aliases":
 					_, _ = w.Write([]byte(`<html></html>`))
 				case "/ws/2/artist":
-					if r.URL.Query().Get("query") != `tag:"`+genre+`"` {
+					if r.URL.Query().Get("query") != `tag:"`+expectedGenre+`"` {
 						artistLookups++
 					}
 					_, _ = w.Write([]byte(`{"count":0,"artists":[]}`))
@@ -52,7 +56,7 @@ func TestCountedGenreUsesProviderEvidenceOnColdAndWarmCache(t *testing.T) {
 				for _, prompt := range []string{genre + " 10 tracks", "Make a 10-song " + genre + " playlist."} {
 					intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
 					got, err := client.ResolveMusic(context.Background(), intent, cat, cat, nil)
-					if err != nil || got.Controls.TotalTrackCount != 10 || len(got.References) != 0 || len(got.EssentialCriteria) != 1 || got.EssentialCriteria[0].Value != genre || len(got.Knowledge.Candidates) != 1 {
+					if err != nil || got.Controls.TotalTrackCount != 10 || len(got.References) != 0 || len(got.EssentialCriteria) != 1 || got.EssentialCriteria[0].Value != expectedGenre || len(got.Knowledge.Candidates) != 1 {
 						t.Fatalf("counted genre failed: %+v, %v", got, err)
 					}
 				}

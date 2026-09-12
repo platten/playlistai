@@ -86,6 +86,11 @@ func preserveCategoryJourney(w *Wire, prompt string) {
 			}
 		}
 	}
+	for _, c := range w.EssentialCriteria {
+		if c.Kind == "genre" || c.Kind == "style" {
+			categories = append(categories, c.Value)
+		}
+	}
 	criteria, trajectory := rules.CategoryJourney(prompt, categories)
 	if len(criteria) == 0 {
 		return

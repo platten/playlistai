@@ -30,11 +30,13 @@ type ComponentEvidence struct {
 // score has an availability bit so missing profile features are not confused
 // with a measured zero.
 type Candidate struct {
-	MusicalFit EvidenceState       `json:"musicalFit,omitempty"`
-	Track      TrackRef            `json:"track"`
-	Sources    []RetrievalEvidence `json:"sources"`
-	Scores     CandidateScores     `json:"scores"`
-	Available  CandidateFeatures   `json:"available"`
+	FitTier     string              `json:"fitTier,omitempty"`
+	MatchDetail string              `json:"matchDetail,omitempty"`
+	MusicalFit  EvidenceState       `json:"musicalFit,omitempty"`
+	Track       TrackRef            `json:"track"`
+	Sources     []RetrievalEvidence `json:"sources"`
+	Scores      CandidateScores     `json:"scores"`
+	Available   CandidateFeatures   `json:"available"`
 }
 
 type CandidateScores struct {

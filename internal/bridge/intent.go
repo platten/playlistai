@@ -208,6 +208,14 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	m.InferredAnchors = applyAnchorSelections(m.InferredAnchors, selections)
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
 	m.RequiredTracks = applySelections(m.RequiredTracks, selections)
+	if m.Start != nil {
+		refs := applySelections([]core.IntentReference{*m.Start}, selections)
+		m.Start = &refs[0]
+	}
+	if m.Destination != nil {
+		refs := applySelections([]core.IntentReference{*m.Destination}, selections)
+		m.Destination = &refs[0]
+	}
 	resolveStarted := time.Now()
 	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly {
 		if knowledge, ok := a.app.Knowledge.(ports.IterativeMusicKnowledge); ok {

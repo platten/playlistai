@@ -33,6 +33,14 @@ func main() {
 	healthyAt := time.Now().Add(300 * time.Millisecond)
 
 	mux := http.NewServeMux()
+	// Deterministic tokenization stubs exercise the manager's real budgeting
+	// protocol; these token IDs do not emulate any production model tokenizer.
+	mux.HandleFunc("/apply-template", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"prompt":"fake template"}`)
+	})
+	mux.HandleFunc("/tokenize", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"tokens": make([]int, 1024)})
+	})
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		if time.Now().Before(healthyAt) {
 			w.WriteHeader(http.StatusServiceUnavailable)

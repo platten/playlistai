@@ -8,6 +8,7 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -53,6 +54,14 @@ var acousticClasses = map[string]map[string]string{
 }
 
 func acousticClass(kind, text, model string) string {
+	// Only exact reviewed aliases enter classifier vocabularies. Conditional
+	// electronic subgenre models still require a separate applicability policy.
+	if concept, ok := musicconcepts.Find(kind, text); ok && model != "genre_electronic" {
+		if label := concept.Providers.AcousticBrainz[model]; label != "" {
+			return label
+		}
+		text = concept.Value
+	}
 	text = core.NormalizeIdentityPart(text)
 	if kind == "genre" || kind == "style" {
 		return acousticClasses[model][text]
@@ -194,6 +203,28 @@ func acousticCompatible(comparisons []core.IntentComparison) bool {
 	return len(stages) == 0
 }
 
+func acousticCompatibleFor(intent core.MusicIntent, comparisons []core.IntentComparison) bool {
+	if intent.Controls.RecommendationMode != core.EnhancedHybrid || intent.VerificationPolicy != core.BestAvailable {
+		return acousticCompatible(comparisons)
+	}
+	// An uncalibrated archive disagreement is a visible close-match warning,
+	// not a veto of a defining/soft request before fresh audio can be heard.
+	// Explicit strict clauses retain exactly the conservative screening rule.
+	checks := append([]core.IntentComparison(nil), comparisons...)
+	for i := range checks {
+		if !checks[i].Clause.Strict {
+			checks[i].Clause.Essential = strings.HasPrefix(checks[i].Clause.Scope, "journey_")
+			checks[i].AcousticState = "unknown"
+		}
+		if checks[i].Clause.Group != "" {
+			// Required OR groups are proved collectively by essential checking;
+			// opposition to one alternative does not oppose the entire group.
+			checks[i].Clause.Strict, checks[i].Clause.Essential = false, false
+		}
+	}
+	return acousticCompatible(checks)
+}
+
 // Both iterative stopping decisions and final selection use the newest
 // request-owned evidence snapshot, never stale preparation-only metadata.
 func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Candidate, request ports.RankRequest) ([]core.Candidate, error) {
@@ -206,7 +237,16 @@ func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Can
 			}
 		}
 	}
-	return o.ranker.Rank(ctx, candidates, request)
+	ranked, err := o.ranker.Rank(ctx, candidates, request)
+	if err != nil {
+		return nil, err
+	}
+	if o.enhanced && o.bestAvailable {
+		for i := range ranked {
+			ranked[i].FitTier, ranked[i].MatchDetail = o.enhancedTier(ctx, ranked[i], request.Intent)
+		}
+	}
+	return ranked, nil
 }
 
 // Prefer decisive, identity-grounded archived predictions for overlapping

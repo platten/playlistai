@@ -101,7 +101,9 @@ func TestEnhancedStagesShareOneBudgetAndPrepareNegativeReferences(t *testing.T) 
 
 func TestEnhancedRulesPromptReachesDSPRanking(t *testing.T) {
 	cat, input := enhancedFixture(t)
-	for _, prompt := range []string{"Make a playlist with deep bass", "Make a percussive playlist with sharp attacks"} {
+	// Bass amount maps to band energy. Deep pitch alone now stays descriptive
+	// rather than being incorrectly promoted to a bass-energy preference.
+	for _, prompt := range []string{"Make a playlist with bass-heavy sound", "Make a percussive playlist with sharp attacks"} {
 		intent, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
 		if err != nil {
 			t.Fatal(err)

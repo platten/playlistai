@@ -322,7 +322,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	p.Report("generation", 0, 0, "Resolving music references")
 	// A cold cache must recognize the same categories as a warm one. Check
 	// provider genre identity before treating a bare category as an artist.
-	if name := rules.BareGenreQuery(intent.OriginalDescription); name != "" && len(intent.EssentialCriteria) == 0 && len(intent.Preferences.Genres) == 0 {
+	if name := rules.BareGenreQuery(intent.OriginalDescription); name != "" && len(intent.EssentialCriteria) == 0 && len(intent.Preferences.Genres) == 0 && len(intent.Preferences.Styles) == 0 {
 		graph, err := c.GenreNames(ctx)
 		if err == nil && c.localDataset() != nil && graph.ID(name) == core.NormalizeIdentityPart(name) {
 			graph, err = c.onlineGenreNames(ctx)
@@ -366,17 +366,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		}
 		intent.Destination = &d
 	}
-	var genres []string
-	for _, g := range intent.Preferences.Genres {
-		if g.Influence != core.InfluenceNegative {
-			genres = append(genres, g.Value)
-		}
-	}
-	for _, criterion := range intent.EssentialCriteria {
-		if criterion.Kind == "genre" || criterion.Kind == "style" {
-			genres = append(genres, criterion.Value)
-		}
-	}
+	genres := discoveryGenres(intent)
 	iterative, _ := ctx.Value(iterativeKnowledgeKey{}).(bool)
 	if iterative {
 		seen := map[string]bool{}

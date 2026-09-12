@@ -8,6 +8,12 @@ import (
 
 // Validate checks semantic invariants that JSON decoding and GBNF cannot.
 func (m MusicIntent) Validate() error {
+	if m.DurationSeconds < 0 || m.DurationSeconds > 24*60*60 {
+		return fmt.Errorf("intent: duration must be between zero and 24 hours")
+	}
+	if m.Start != nil && (m.Start.Influence == InfluenceNegative || (m.Start.Kind != ReferenceArtist && m.Start.Kind != ReferenceAlbum && m.Start.Kind != ReferenceTrack) || strings.TrimSpace(m.Start.Query) == "" && m.Start.TrackID == "") {
+		return fmt.Errorf("intent: invalid starting endpoint")
+	}
 	if m.VerificationPolicy != "" && m.VerificationPolicy != BestAvailable && m.VerificationPolicy != VerifiedOnly {
 		return fmt.Errorf("intent: invalid verification policy")
 	}
@@ -68,6 +74,9 @@ func (m MusicIntent) Validate() error {
 		}
 	}
 	for _, criterion := range m.EssentialCriteria {
+		if err := validateStrength(criterion.Strength); err != nil {
+			return err
+		}
 		switch criterion.Kind {
 		case "genre", "style", "texture", "mood", "instrumentation", "vocal":
 		default:
@@ -103,9 +112,13 @@ func (m MusicIntent) Validate() error {
 	preferenceGroups := [][]IntentPreference{
 		m.Preferences.Genres, m.Preferences.Styles, m.Preferences.Moods,
 		m.Preferences.Instrumentation, m.Preferences.TextureDescriptions,
+		m.Preferences.VocalPreferences,
 	}
 	for _, group := range preferenceGroups {
 		for _, preference := range group {
+			if err := validatePreferenceScope(preference); err != nil {
+				return err
+			}
 			if strings.TrimSpace(preference.Value) == "" ||
 				(preference.Influence != InfluencePositive && preference.Influence != InfluenceNegative) {
 				return fmt.Errorf("intent: invalid semantic preference")
@@ -116,6 +129,11 @@ func (m MusicIntent) Validate() error {
 		(strings.TrimSpace(vocal.Value) == "" ||
 			(vocal.Influence != InfluencePositive && vocal.Influence != InfluenceNegative)) {
 		return fmt.Errorf("intent: invalid vocal preference")
+	}
+	if m.Preferences.VocalPreference != nil {
+		if err := validatePreferenceScope(*m.Preferences.VocalPreference); err != nil {
+			return err
+		}
 	}
 	for _, constraint := range m.HardConstraints {
 		if strings.TrimSpace(constraint.Kind) == "" || strings.TrimSpace(constraint.Value) == "" {

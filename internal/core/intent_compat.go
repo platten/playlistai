@@ -34,7 +34,8 @@ func legacyAdapterOnly(m MusicIntent) bool {
 		len(m.EssentialCriteria) > 0 || len(m.Journey.Waypoints) > 0 || len(m.HardConstraints) > 0 ||
 		len(m.Preferences.Genres) > 0 || len(m.Preferences.Styles) > 0 || len(m.Preferences.Moods) > 0 ||
 		len(m.Preferences.Instrumentation) > 0 || m.Preferences.VocalPreference != nil ||
-		len(m.Preferences.TextureDescriptions) > 0
+		len(m.Preferences.TextureDescriptions) > 0 || len(m.Preferences.VocalPreferences) > 0 ||
+		m.Translation != nil || m.Start != nil || m.Destination != nil || m.DurationSeconds > 0
 	if typed {
 		return false
 	}
@@ -130,6 +131,21 @@ func (m *MusicIntent) backfillEngineAdapter() {
 		switch constraint.Kind {
 		case "exclude_artist":
 			m.Constraints.ArtistsExclude = appendUnique(m.Constraints.ArtistsExclude, constraint.Value)
+			// Keep the user's literal exclusion, and supplement it with the
+			// selected catalog identity of that same negative artist reference.
+			// A spelling correction must not let the excluded artist re-enter
+			// candidate filtering or become a required journey endpoint.
+			for _, reference := range m.References {
+				if reference.Kind != ReferenceArtist || reference.Influence != InfluenceNegative ||
+					NormalizeIdentityPart(reference.Query) != NormalizeIdentityPart(constraint.Value) ||
+					reference.Resolution == nil || reference.Resolution.Status != ResolutionResolved ||
+					reference.Resolution.Selected == nil || reference.Resolution.Selected.Kind != ReferenceArtist {
+					continue
+				}
+				if artist := reference.Resolution.Selected.Artist; NormalizeIdentityPart(artist) != "" {
+					m.Constraints.ArtistsExclude = appendUnique(m.Constraints.ArtistsExclude, artist)
+				}
+			}
 		case "exclude_reference_artists":
 			m.Constraints.ExcludeSeedArtists = true
 		case "no_back_to_back_artist":

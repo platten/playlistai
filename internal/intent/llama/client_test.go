@@ -105,7 +105,7 @@ func TestClientRepairsInvalidMeaningOnceWithoutMidConversationSystemMessage(t *t
 		if requests == 1 {
 			return 200, completion(explicitArtistCompletion("Invented", 5))
 		}
-		if !strings.Contains(request.Messages[0].Content, "previous interpretation was invalid") {
+		if request.Messages[0].Content != schema.SystemPrompt || !strings.Contains(request.Messages[len(request.Messages)-1].Content, "previous interpretation was invalid") {
 			t.Fatal("repair did not identify semantic validation error")
 		}
 		return 200, completion(explicitArtistCompletion("Justice", 5))

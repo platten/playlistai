@@ -19,6 +19,9 @@ type referenceVectors struct {
 }
 
 func hasExplicitRetrievalReference(cat ports.Catalog, intent core.MusicIntent) bool {
+	if intent.Start != nil && len(referenceRepresentatives(cat, *intent.Start)) > 0 {
+		return true
+	}
 	for _, group := range [][]core.IntentReference{intent.References, intent.Journey.Waypoints} {
 		for _, ref := range group {
 			// A requested endpoint alone does not seed the starting category.
@@ -44,6 +47,9 @@ func negativeReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []refe
 
 func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influence core.Influence) []referenceVectors {
 	references := append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...)
+	if intent.Start != nil {
+		references = append(references, *intent.Start)
+	}
 	if influence == core.InfluencePositive && (intent.VerificationPolicy != core.BestAvailable || !hasExplicitRetrievalReference(cat, intent)) {
 		for _, anchor := range intent.InferredAnchors {
 			if anchor.Suitability.State == core.EvidenceMatch || intent.VerificationPolicy == core.BestAvailable && anchor.Suitability.State != core.EvidenceMismatch {

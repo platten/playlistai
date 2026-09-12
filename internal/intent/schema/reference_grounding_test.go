@@ -42,7 +42,7 @@ func TestQualifiedReferenceExpandsTitleOnlySpanFromActualRequest(t *testing.T) {
 	w := Wire{Genres: []WirePreference{}, References: []WireReference{{Kind: "track", Value: "Fixture Title by Björk", Explicit: true, Span: "Fixture Title", Influence: "positive"}}, Mode: "similar", TotalCount: 6}
 	raw, _ := json.Marshal(w)
 	intent, err := ParseForPrompt(raw, prompt)
-	if err != nil || len(intent.References) != 1 || intent.References[0].Evidence[0].Text != prompt {
+	if err != nil || len(intent.References) != 1 || intent.References[0].Evidence[0].Text != "Bjork's track Fixture Title" || intent.References[0].Evidence[0].Start != 16 {
 		t.Fatalf("%+v %v", intent.References, err)
 	}
 	w.References[0].Span = "Not in the request"

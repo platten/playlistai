@@ -29,7 +29,7 @@ func TestDescriptiveRequestCannotLoseDefiningElectronicCategory(t *testing.T) {
 }
 
 func TestCategoryRepairPreservesArtistNamesCompoundsAndSoftInfluence(t *testing.T) {
-	for _, prompt := range []string{"10 tracks like the artist Electronic", "10 tracks of post-rock", "10 songs with some rock influence"} {
+	for _, prompt := range []string{"10 tracks like the artist Electronic", "10 tracks of unrecognized-post-rock", "10 songs with some rock influence"} {
 		w := Wire{Genres: []WirePreference{}, Mode: "similar", TotalCount: 10}
 		if prompt == "10 tracks like the artist Electronic" {
 			w.References = []WireReference{{Kind: "artist", Value: "Electronic", Span: "Electronic", Influence: "positive", Explicit: true}}
@@ -38,6 +38,11 @@ func TestCategoryRepairPreservesArtistNamesCompoundsAndSoftInfluence(t *testing.
 		if len(w.Genres) != 0 || len(w.EssentialCriteria) != 0 {
 			t.Fatalf("fallback invented a category for %q: %+v", prompt, w)
 		}
+	}
+	wCompound := Wire{Genres: []WirePreference{}, Mode: "similar", TotalCount: 10}
+	preserveDefiningCategory(&wCompound, "10 tracks of post-rock")
+	if len(wCompound.Genres) != 1 || wCompound.Genres[0].Value != "post-rock" {
+		t.Fatalf("reviewed compound broadened to its parent: %+v", wCompound)
 	}
 	w := Wire{Genres: []WirePreference{{Value: "未知ジャンル", Span: "未知ジャンル", Influence: "positive", Explicit: true}}}
 	preserveDefiningCategory(&w, "未知ジャンル, 10 songs")

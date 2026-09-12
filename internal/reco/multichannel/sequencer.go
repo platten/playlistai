@@ -67,7 +67,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 			previous = candidate.Track
 		}
 		items = append(items, sequenceItem{track: end, required: true, fixed: true})
-	} else if (request.Intent.Mode == core.ModeJourney || genreArtistDiversity(request.Intent)) && len(request.Required) >= 2 {
+	} else if (request.Intent.Mode == core.ModeJourney || request.Intent.Destination != nil || genreArtistDiversity(request.Intent)) && len(request.Required) >= 2 {
 		items, hardExhausted = s.journeyWithRequiredAnchors(ctx, request)
 	} else {
 		items, hardExhausted = s.greedyFromPrefix(ctx, request)
@@ -258,6 +258,24 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 	if len(pool) == 0 {
 		pool = allowed // only a soft preference is relaxed here
 	}
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && request.Intent.Mode != core.ModeJourney {
+		var strong, spacedStrong []int
+		for _, index := range allowed {
+			if candidates[index].FitTier == fitStrong {
+				strong = append(strong, index)
+			}
+		}
+		for _, index := range spaced {
+			if candidates[index].FitTier == fitStrong {
+				spacedStrong = append(spacedStrong, index)
+			}
+		}
+		if len(spacedStrong) > 0 {
+			pool = spacedStrong
+		} else if len(strong) > 0 {
+			pool = strong
+		}
+	}
 	if len(pool) == 0 {
 		return core.Candidate{}, candidates, false
 	}
@@ -321,6 +339,9 @@ func (s *GreedySequencer) improve(items []sequenceItem, request ports.SequenceRe
 			for right := left + 1; right < limit; right++ {
 				if items[right].fixed {
 					continue
+				}
+				if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && request.Intent.Mode != core.ModeJourney && items[left].candidate != nil && items[right].candidate != nil && items[left].candidate.FitTier != items[right].candidate.FitTier {
+					continue // transition improvement cannot interleave fit tiers
 				}
 				items[left], items[right] = items[right], items[left]
 				objective := s.sequenceObjective(items, request)

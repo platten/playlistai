@@ -106,6 +106,9 @@ export function PlaylistScreen({
   const comparisonsByTrack = useMemo(() => new Map(
     (result?.assessments ?? []).map((assessment) => [assessment.trackId, assessment.comparisons ?? []]),
   ), [result?.assessments]);
+  const fitByTrack = useMemo(() => new Map(
+    (result?.assessments ?? []).map((assessment) => [assessment.trackId, assessment]),
+  ), [result?.assessments]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [feedback, setFeedback] = useState<Record<string, string[]>>({});
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -443,6 +446,7 @@ export function PlaylistScreen({
             const recorded = feedback[t.id] ?? [];
             const acoustic = acousticByTrack.get(t.id);
             const comparisons = comparisonsByTrack.get(t.id) ?? [];
+            const fit = fitByTrack.get(t.id);
             return (
               <div key={`${t.id}-${i}`}>
                 <TrackRow
@@ -451,6 +455,8 @@ export function PlaylistScreen({
                   artist={t.artist}
                   provenance={KIND_TO_PROVENANCE[t.kind]}
                   reason={expanded.has(i) ? t.detail : undefined}
+                  fitTier={fit?.fitTier}
+                  matchDetail={fit?.matchDetail}
                   active={player.track?.id === t.id}
                   expanded={expanded.has(i)}
                   previewStatus={player.track?.id === t.id ? player.status : "idle"}
@@ -483,7 +489,7 @@ export function PlaylistScreen({
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
+                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "enhanced_hybrid" ? "Audio and metadata evidence are compared for each requested characteristic. Close matches identify remaining gaps." : result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
                   </div>
                 )}
                 {expanded.has(i) && acoustic && (acoustic.low || Object.keys(acoustic.predictions ?? {}).length > 0) && (

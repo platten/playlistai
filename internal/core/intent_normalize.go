@@ -16,6 +16,19 @@ func (m MusicIntent) Normalized() MusicIntent {
 }
 
 func normalizeIntent(out MusicIntent) MusicIntent {
+	out.Translation = cloneTranslation(out.Translation)
+	if out.Start != nil {
+		refs := cleanReferences([]IntentReference{*out.Start}, false)
+		if len(refs) > 0 {
+			out.Start = &refs[0]
+		}
+	}
+	if out.Destination != nil {
+		refs := cleanReferences([]IntentReference{*out.Destination}, false)
+		if len(refs) > 0 {
+			out.Destination = &refs[0]
+		}
+	}
 	out.References = cleanReferences(out.References, false)
 	out.InferredAnchors = cleanInferredAnchors(out.InferredAnchors)
 	out.RequiredTracks = cleanReferences(out.RequiredTracks, true)
@@ -104,7 +117,8 @@ func cleanCriteria(in []MusicalCriterion) []MusicalCriterion {
 		if criterion.Kind == "" || criterion.Value == "" {
 			continue
 		}
-		key := criterion.Scope + "\x00" + criterion.Kind + "\x00" + strings.ToLower(criterion.Value)
+		criterion.Evidence = append([]SourceEvidence(nil), criterion.Evidence...)
+		key := criterion.Scope + "\x00" + criterion.Kind + "\x00" + strings.ToLower(criterion.Value) + "\x00" + criterion.Group + "\x00" + criterion.Strength
 		if _, duplicate := seen[key]; duplicate {
 			continue
 		}
@@ -118,6 +132,7 @@ func cleanReferences(in []IntentReference, required bool) []IntentReference {
 	var out []IntentReference
 	seen := map[string]struct{}{}
 	for _, ref := range in {
+		ref.Evidence = append([]SourceEvidence(nil), ref.Evidence...)
 		ref.Query = strings.TrimSpace(ref.Query)
 		ref.TrackID = strings.TrimSpace(ref.TrackID)
 		ref.Resolution = cleanResolution(ref.Resolution)
@@ -160,6 +175,7 @@ func cleanResolution(in *ReferenceResolution) *ReferenceResolution {
 }
 
 func cleanPreferences(p SemanticPreferences) SemanticPreferences {
+	p.VocalPreferences = cleanPreferenceList(p.VocalPreferences)
 	p.Genres = cleanPreferenceList(p.Genres)
 	p.Styles = cleanPreferenceList(p.Styles)
 	p.Moods = cleanPreferenceList(p.Moods)
@@ -167,6 +183,7 @@ func cleanPreferences(p SemanticPreferences) SemanticPreferences {
 	p.TextureDescriptions = cleanPreferenceList(p.TextureDescriptions)
 	if p.VocalPreference != nil {
 		preference := *p.VocalPreference
+		preference.Evidence = append([]SourceEvidence(nil), preference.Evidence...)
 		p.VocalPreference = &preference // normalization must not edit the caller/cache
 		p.VocalPreference.Value = strings.TrimSpace(p.VocalPreference.Value)
 		if p.VocalPreference.Influence == "" {
@@ -182,6 +199,7 @@ func cleanPreferences(p SemanticPreferences) SemanticPreferences {
 func cleanPreferenceList(in []IntentPreference) []IntentPreference {
 	var out []IntentPreference
 	for _, preference := range in {
+		preference.Evidence = append([]SourceEvidence(nil), preference.Evidence...)
 		preference.Value = strings.TrimSpace(preference.Value)
 		if preference.Value == "" {
 			continue

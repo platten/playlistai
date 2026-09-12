@@ -8,7 +8,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 8
+	CurrentIntentVersion = 9
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -95,10 +95,13 @@ type IntentReference struct {
 // hard constraint: a simple genre request is essential, while descriptive
 // adjectives remain preferences unless the user makes them strict.
 type MusicalCriterion struct {
-	Kind     string           `json:"kind"` // style | mood | instrumentation | vocal
-	Value    string           `json:"value"`
-	Scope    string           `json:"scope"` // playlist | journey_start | journey_end | journey_via
-	Evidence []SourceEvidence `json:"evidence"`
+	ConceptID string           `json:"conceptId,omitempty"`
+	Strength  string           `json:"strength,omitempty"`
+	Group     string           `json:"group,omitempty"`
+	Kind      string           `json:"kind"` // style | mood | instrumentation | vocal
+	Value     string           `json:"value"`
+	Scope     string           `json:"scope"` // playlist | journey_start | journey_end | journey_via
+	Evidence  []SourceEvidence `json:"evidence"`
 }
 
 type EvidenceState string
@@ -131,6 +134,11 @@ type InferredAnchor struct {
 }
 
 type IntentPreference struct {
+	ConceptID string           `json:"conceptId,omitempty"`
+	Scope     string           `json:"scope,omitempty"`
+	Strength  string           `json:"strength,omitempty"`
+	Degree    string           `json:"degree,omitempty"`
+	Group     string           `json:"group,omitempty"`
 	Value     string           `json:"value"`
 	Influence Influence        `json:"influence"`
 	Explicit  bool             `json:"explicit"`
@@ -138,6 +146,9 @@ type IntentPreference struct {
 }
 
 type SemanticPreferences struct {
+	// VocalPreferences preserves multiple stage-specific or alternative vocal
+	// requests. VocalPreference remains the compatibility view for older data.
+	VocalPreferences    []IntentPreference `json:"vocalPreferences,omitempty"`
 	Genres              []IntentPreference `json:"genres"`
 	Styles              []IntentPreference `json:"styles"`
 	Moods               []IntentPreference `json:"moods"`
@@ -202,6 +213,9 @@ type IntentConstraints struct {
 }
 
 type MusicIntent struct {
+	Translation         *IntentTranslation       `json:"translation,omitempty"`
+	Start               *IntentReference         `json:"start,omitempty"`
+	DurationSeconds     int                      `json:"durationSeconds,omitempty"`
 	VerificationPolicy  VerificationPolicy       `json:"verificationPolicy"`
 	Temporal            []TemporalRequirement    `json:"temporal"`
 	Destination         *IntentReference         `json:"destination,omitempty"`

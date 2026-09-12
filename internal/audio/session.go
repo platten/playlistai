@@ -10,10 +10,12 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/logging"
+	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
 const AnalysisBudget = 120 * time.Second
 const SimilarityPolicyVersion = "clap-preview-similarity/v1"
+const ScopedClausePolicyVersion = "scoped-clause-ranking/v1"
 
 func CandidateAnalysisLimit(count int) int { return min(200, max(40, 4*count)) }
 
@@ -66,7 +68,10 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 	if x.typedQueries() {
 		x.snapshot.PolicyVersion += "+" + QueryPolicyVersion
 	}
-	if core.WantsInstrumental(intent) {
+	if structuredClauses(x.clauses) {
+		x.snapshot.PolicyVersion += "+" + ScopedClausePolicyVersion
+	}
+	if core.WantsInstrumental(intent) || requiredInstrumentalScreen(x.clauses) {
 		if x.snapshot.PolicyVersion != "" {
 			x.snapshot.PolicyVersion += "+"
 		}
@@ -121,7 +126,7 @@ func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
 func Clauses(intent core.MusicIntent) []core.AudioClause {
 	var out []core.AudioClause
 	for _, c := range intent.EssentialCriteria {
-		out = append(out, core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Essential: true})
+		out = append(out, core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Essential: c.Strength != "preferred", Strict: c.Strength == "required", Strength: c.Strength, Group: c.Group, ConceptID: c.ConceptID})
 	}
 	add := func(kind string, preferences []core.IntentPreference) {
 		for _, p := range preferences {
@@ -130,12 +135,20 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 			duplicate := false
 			for _, c := range intent.EssentialCriteria {
 				sameKind := c.Kind == kind || (c.Kind == "genre" || c.Kind == "style") && (kind == "genre" || kind == "style")
-				duplicate = duplicate || sameKind && strings.EqualFold(c.Value, p.Value) && p.Influence != core.InfluenceNegative
+				sameScope := p.Scope == "" || c.Scope == p.Scope
+				sameValue := strings.EqualFold(musicconcepts.Canonical(c.Kind, c.Value), musicconcepts.Canonical(kind, p.Value))
+				coversStrength := (p.Strength != "required" || c.Strength == "required") && (p.Strength != "essential" || c.Strength != "preferred")
+				duplicate = duplicate || sameKind && sameScope && sameValue && coversStrength && c.Group == p.Group && p.Influence != core.InfluenceNegative && p.Degree != "mostly" && p.Degree != "reduced"
 			}
 			if duplicate {
 				continue
 			}
-			out = append(out, core.AudioClause{Kind: kind, Text: p.Value, Scope: "playlist", Negative: p.Influence == core.InfluenceNegative})
+			scope := p.Scope
+			if scope == "" {
+				scope = "playlist"
+			}
+			out = append(out, core.AudioClause{Kind: kind, Text: p.Value, Scope: scope, Negative: p.Influence == core.InfluenceNegative,
+				Essential: p.Strength == "essential" || p.Strength == "required", Strict: p.Strength == "required", Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group})
 		}
 	}
 	add("genre", intent.Preferences.Genres)
@@ -143,9 +156,7 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 	add("mood", intent.Preferences.Moods)
 	add("instrumentation", intent.Preferences.Instrumentation)
 	add("texture", intent.Preferences.TextureDescriptions)
-	if p := intent.Preferences.VocalPreference; p != nil {
-		add("vocal", []core.IntentPreference{*p})
-	}
+	add("vocal", intent.Preferences.VocalRequests())
 	for _, c := range intent.HardConstraints {
 		if core.HardConstraintSupported(c.Kind) || c.Kind == "require_album" || c.Kind == "require_artist" {
 			continue
@@ -156,6 +167,9 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 		switch kind {
 		case "exclude_style", "require_style":
 			kind = "style"
+		case "exclude_vocal":
+			kind = "vocal"
+			text = musicconcepts.Canonical("vocal", text)
 		case "exclude_vocals", "require_instrumental":
 			kind = "vocal"
 			text = "vocals"
@@ -164,7 +178,14 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 			kind = "vocal"
 			text = "vocals"
 		}
-		out = append(out, core.AudioClause{Kind: kind, Text: text, Scope: "playlist", Strict: true, Negative: negative})
+		clause := core.AudioClause{Kind: kind, Text: text, Scope: "playlist", Strict: true, Negative: negative}
+		if c.Kind == "exclude_vocal" {
+			clause.Strength = "required"
+			if concept, ok := musicconcepts.Find("vocal", text); ok {
+				clause.ConceptID = concept.ID
+			}
+		}
+		out = append(out, clause)
 	}
 	if core.WantsInstrumental(intent) {
 		// Vocal preferences must not become optional ranking hints.
@@ -176,7 +197,7 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 			out = append(out, core.AudioClause{Kind: "vocal", Text: "vocals", Scope: "playlist", Strict: true, Negative: true})
 		}
 	}
-	if len(out) == 0 && len(intent.References) == 0 && len(intent.RequiredTracks) == 0 && len(intent.Seeds.TrackIDs) == 0 && len(intent.Seeds.Queries) == 0 && strings.TrimSpace(intent.OriginalDescription) != "" {
+	if len(out) == 0 && len(intent.References) == 0 && len(intent.RequiredTracks) == 0 && intent.Start == nil && intent.Destination == nil && len(intent.Seeds.TrackIDs) == 0 && len(intent.Seeds.Queries) == 0 && strings.TrimSpace(intent.OriginalDescription) != "" {
 		out = append(out, core.AudioClause{Kind: "description", Text: intent.OriginalDescription, Scope: "playlist"})
 	}
 	return out
@@ -227,6 +248,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		}
 		return out, err
 	}
+	completed := false
 	if !hit {
 		if !anchor && s.newCandidates >= s.limit {
 			s.snapshot.BudgetExhausted = true
@@ -238,18 +260,52 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		}
 		s.snapshot.NewAnalyses++
 		var bytes int64
-		record, bytes, err = s.service.AnalyzePreview(s.ctx, track, s.catalog)
+		var comparisonErr error
+		record, bytes, err = s.service.analyzePreview(s.ctx, track, s.catalog, func(record core.AudioAnalysis) error {
+			out = s.assess(record, out)
+			if comparisonErr = ctx.Err(); comparisonErr == nil {
+				comparisonErr = s.service.Store.PutAssessment(ctx, out)
+			}
+			completed = comparisonErr == nil
+			return comparisonErr
+		})
 		s.snapshot.BytesFetched += bytes
+		if comparisonErr != nil {
+			return out, comparisonErr
+		}
 		if err != nil {
 			out.Identity = record.Identity
 			if ctx.Err() != nil {
 				return out, ctx.Err()
+			}
+			// Optional work may exhaust the session after every CLAP clause
+			// was assessed and saved. Keep that completed current-generation
+			// result while stopping further acquisition on the expired budget.
+			if completed {
+				s.stopped()
 			}
 			return out, nil
 		}
 	} else {
 		s.snapshot.CacheHits++
 	}
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+	if completed {
+		return out, nil
+	}
+	out = s.assess(record, out)
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+	if err := s.service.Store.PutAssessment(ctx, out); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+func (s *Session) assess(record core.AudioAnalysis, out core.AudioAssessment) core.AudioAssessment {
 	// The complete derived CLAP record includes every preview-segment audio
 	// embedding. Diagnostic writes remain opt-in and memory-only; logging at this
 	// point avoids an extra database read for both cached and new analyses.
@@ -259,18 +315,18 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	out.Detail = "Checked against the available preview only; the rest of the recording is unassessed."
 	out.Eligible = true
 	vocalState, vocalScore := core.EvidenceUnknown, 0.0
-	if core.WantsInstrumental(s.intent) {
+	needsVocalScreen := core.WantsInstrumental(s.intent) || requiredInstrumentalScreen(s.clauses)
+	if needsVocalScreen {
 		vocalState, vocalScore = s.instrumentalEvidence(record)
 		out.Detail = "CLAP vocal screening compared instrumental, singing, speech and non-musical descriptions for every sampled preview segment. This is a preview-only zero-shot assessment, not a guarantee about the complete recording."
 	}
-	journeySeen, journeyMatched := false, false
 	scored := false
 	for _, clause := range s.clauses {
 		assessment := core.AudioClauseAssessment{Clause: clause, State: core.EvidenceUnknown}
 		// A contrastive similarity cannot prove strict absence, particularly
 		// outside the preview. Unsupported hard clauses also remain unknown.
 		supported := clause.Kind == "genre" || clause.Kind == "style" || clause.Kind == "mood" || clause.Kind == "instrumentation" || clause.Kind == "texture" || clause.Kind == "vocal" || clause.Kind == "description"
-		if core.WantsInstrumental(s.intent) && instrumentalClause(clause) {
+		if needsVocalScreen && instrumentalClause(clause) {
 			assessment.State, assessment.Score = vocalState, vocalScore
 			assessment.ScoreAvailable = vocalState != core.EvidenceUnknown
 			if !clause.Negative && len(s.queries[instrumentalPrompts[0]]) > 0 {
@@ -291,16 +347,8 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		}
 		out.Clauses = append(out.Clauses, assessment)
 		scored = scored || assessment.ScoreAvailable
-		if clause.Essential && strings.HasPrefix(clause.Scope, "journey_") && (s.service.Policy.Valid() || instrumentalClause(clause)) {
-			journeySeen = true
-			journeyMatched = journeyMatched || assessment.State == core.EvidenceMatch
-		} else if (clause.Strict || clause.Essential && (s.service.Policy.Valid() || instrumentalClause(clause))) && assessment.State != core.EvidenceMatch {
-			out.Eligible = false
-		}
 	}
-	if journeySeen && !journeyMatched {
-		out.Eligible = false
-	}
+	out.Eligible = clausesEligible(out.Clauses, s.service.Policy.Valid())
 	if len(s.clauses) == 0 {
 		out.Eligible = false
 		out.Detail = "No musical clauses were available to assess against the description."
@@ -309,13 +357,56 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 		out.Eligible = false
 		out.Detail = "The preview was analyzed, but no usable description comparison was available."
 	}
-	if err := ctx.Err(); err != nil {
-		return out, err
+	return out
+}
+
+// A recording may fit any journey stage before sequencing, but must meet every
+// independent requirement of that stage. Explicit OR alternatives share a group.
+// Playlist requirements always apply; unknown required evidence never passes.
+func clausesEligible(clauses []core.AudioClauseAssessment, calibrated bool) bool {
+	type groupState struct {
+		scope   string
+		matched bool
 	}
-	if err := s.service.Store.PutAssessment(ctx, out); err != nil {
-		return out, err
+	groups := map[string]groupState{}
+	stages := map[string]bool{}
+	for i, a := range clauses {
+		c := a.Clause
+		scope := c.Scope
+		if scope == "" {
+			scope = "playlist"
+		}
+		if strings.HasPrefix(scope, "journey_") {
+			stages[scope] = true
+		}
+		if !c.Strict && (!c.Essential || !calibrated && !instrumentalClause(c)) {
+			continue
+		}
+		group := c.Group
+		if group == "" {
+			group = fmt.Sprintf("\x00%d", i)
+		}
+		key := scope + "\x00" + group
+		g := groups[key]
+		g.scope, g.matched = scope, g.matched || a.State == core.EvidenceMatch
+		groups[key] = g
 	}
-	return out, nil
+	for _, group := range groups {
+		if strings.HasPrefix(group.scope, "journey_") {
+			stages[group.scope] = stages[group.scope] && group.matched
+		} else if !group.matched {
+			return false
+		}
+	}
+	if len(stages) == 0 {
+		return true
+	}
+	for _, matched := range stages {
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 func segmentSimilarity(query []float32, segments []core.AudioSegment, negative bool) float64 {
@@ -363,6 +454,10 @@ func (s *Session) StageSimilarity(trackID string, criterion core.MusicalCriterio
 }
 
 func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
+	if strings.Contains(a.PolicyVersion, QueryPolicyVersion) || strings.Contains(a.PolicyVersion, ScopedClausePolicyVersion) {
+		applyTypedScores(candidate, a)
+		return
+	}
 	var positives, negatives int
 	var positive, negative float64
 	stageScores := map[string]float64{}
@@ -400,7 +495,7 @@ func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
 			facets[key] = f
 		}
 	}
-	if strings.Contains(a.PolicyVersion, QueryPolicyVersion) {
+	if strings.Contains(a.PolicyVersion, "typed-clause-ensemble/v1") {
 		// Multiple genre aliases must not outvote a single requested mood.
 		// Equal facet weighting is a ranking policy, not calibrated confidence.
 		positive, positives = 0, 0
@@ -439,4 +534,13 @@ func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
 		candidate.Scores.SemanticNegativeMatch = negative / float64(negatives)
 		candidate.Available.SemanticNegativeMatch = true
 	}
+}
+
+func structuredClauses(clauses []core.AudioClause) bool {
+	for _, c := range clauses {
+		if c.Strength != "" || c.Degree != "" || c.Group != "" {
+			return true
+		}
+	}
+	return false
 }

@@ -28,13 +28,17 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 	}
 	if o.features != nil {
 		if features, ok, err := o.features.Features(ctx, id); err == nil && ok {
-			if c.Kind == "genre" {
+			if c.Kind == "genre" || o.enhanced && c.Kind == "style" {
 				graph := core.GenreGraph{}
 				if o.knowledge != nil {
 					graph = o.knowledge.Graph
 				}
 				for _, v := range append(append([]core.FeatureValue(nil), features.Styles...), features.Tags...) {
-					if core.ReliableFeature(v) && (core.StyleMatches(c.Value, v.Value) || graph.Matches(c.Value, v.Value)) {
+					matches := core.StyleMatches(c.Value, v.Value) || graph.Matches(c.Value, v.Value)
+					if o.enhanced {
+						matches = enhancedCategoryMatches(c.Value, v.Value, graph)
+					}
+					if core.ReliableFeature(v) && matches {
 						return core.EvidenceMatch
 					}
 				}
@@ -42,7 +46,20 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 					return core.EvidenceMismatch
 				}
 			} else {
-				if state := core.CriterionEvidence(features, c); state != core.EvidenceUnknown && state != core.EvidenceUnsupported {
+				criterion := c
+				if o.enhanced && c.Kind == "vocal" {
+					// The sidecar vocal facet has only vocal/mixed/instrumental.
+					// Its absence of "harsh vocals" cannot prove no harsh singing.
+					switch strings.ToLower(strings.TrimSpace(c.Value)) {
+					case "vocal", "vocals", "voice", "singing":
+						criterion.Value = "vocal"
+					case "instrumental", "no vocals":
+						criterion.Value = "instrumental"
+					default:
+						return core.EvidenceUnknown
+					}
+				}
+				if state := core.CriterionEvidence(features, criterion); state != core.EvidenceUnknown && state != core.EvidenceUnsupported {
 					return state
 				}
 			}
@@ -50,7 +67,11 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 	}
 	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved && (c.Kind == "genre" || c.Kind == "style") {
 		for _, tag := range track.GenreTags {
-			if tag.Votes > 0 && tag.Source != "" && (core.StyleMatches(c.Value, tag.Name) || o.knowledge.Graph.Matches(c.Value, tag.Name)) {
+			matches := core.StyleMatches(c.Value, tag.Name) || o.knowledge.Graph.Matches(c.Value, tag.Name)
+			if o.enhanced {
+				matches = enhancedCategoryMatches(c.Value, tag.Name, o.knowledge.Graph)
+			}
+			if tag.Votes > 0 && tag.Source != "" && matches {
 				return core.EvidenceMatch
 			}
 		}
@@ -116,7 +137,7 @@ func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIn
 		return false
 	}
 	metadata, known := o.knowledgeTrack(track.ID)
-	if !acousticCompatible(acousticComparisons(metadata, audio.Clauses(intent))) {
+	if !acousticCompatibleFor(intent, acousticComparisons(metadata, audio.Clauses(intent))) {
 		return false
 	}
 	for _, constraint := range intent.HardConstraints {
@@ -212,7 +233,7 @@ func (o *Orchestrator) annotateFit(ctx context.Context, playlist *core.Playlist)
 			assessment.State = core.EvidenceUnknown
 			assessment.Reasons = append(assessment.Reasons, "Suggested journey placement; genre evidence is incomplete.")
 		}
-		if len(playlist.Intent.Temporal) > 0 || len(playlist.Intent.Preferences.Moods) > 0 || len(playlist.Intent.Preferences.TextureDescriptions) > 0 || playlist.Intent.Preferences.VocalPreference != nil || len(playlist.Intent.Preferences.Instrumentation) > 0 {
+		if len(playlist.Intent.Temporal) > 0 || len(playlist.Intent.Preferences.Moods) > 0 || len(playlist.Intent.Preferences.TextureDescriptions) > 0 || len(playlist.Intent.Preferences.VocalRequests()) > 0 || len(playlist.Intent.Preferences.Instrumentation) > 0 {
 			assessment.State = core.EvidenceUnknown
 			assessment.Reasons = append(assessment.Reasons, "Era and descriptive qualities may be approximate; no full-recording guarantee.")
 		}
@@ -264,6 +285,34 @@ func hasStagePeriods(intent core.MusicIntent) bool {
 
 func journeyStageCriteria(intent core.MusicIntent) []core.MusicalCriterion {
 	criteria := journeyCriteria(intent.EssentialCriteria)
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		var grouped []core.MusicalCriterion
+		seen := map[string]bool{}
+		for _, c := range criteria {
+			if c.Group != "" {
+				key := c.Scope + "\x00" + c.Group
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				c.Kind = "" // this stage is assessed against its whole OR group
+			}
+			grouped = append(grouped, c)
+		}
+		criteria = grouped
+		for _, clause := range audio.Clauses(intent) {
+			if !strings.HasPrefix(clause.Scope, "journey_") {
+				continue
+			}
+			found := false
+			for _, c := range criteria {
+				found = found || c.Scope == clause.Scope
+			}
+			if !found {
+				criteria = append(criteria, core.MusicalCriterion{Scope: clause.Scope, Value: clause.Scope})
+			}
+		}
+	}
 	if hasStagePeriods(intent) {
 		// Even a date-only start needs a following stage, and conversely an end
 		// restriction must not accidentally apply to the entire playlist.
@@ -288,7 +337,13 @@ func journeyStageCriteria(intent core.MusicIntent) []core.MusicalCriterion {
 
 func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core.Candidate, criterion core.MusicalCriterion, intent core.MusicIntent) ([]core.Candidate, essentialEvidenceReport, error) {
 	var criteria []core.MusicalCriterion
-	if criterion.Kind != "" {
+	if o.enhanced && criterion.Group != "" {
+		for _, c := range intent.EssentialCriteria {
+			if c.Scope == criterion.Scope && c.Group == criterion.Group {
+				criteria = append(criteria, c)
+			}
+		}
+	} else if criterion.Kind != "" {
 		criteria = []core.MusicalCriterion{criterion}
 	}
 	eligible, report, err := o.filterEssential(ctx, candidates, criteria)
@@ -300,8 +355,8 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 		fits := true
 		// Incomplete tags do not mean a known destination track also belongs
 		// at the start. Prefer its affirmative stage evidence to an unknown fit.
-		if o.bestAvailable && criterion.Kind != "" && o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceUnknown {
-			for _, other := range journeyCriteria(intent.EssentialCriteria) {
+		if o.bestAvailable && (criterion.Kind == "" || o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceUnknown) {
+			for _, other := range journeyStageCriteria(intent) {
 				if other.Scope != criterion.Scope && o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMatch {
 					fits = false
 					break
@@ -311,12 +366,12 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 			// description is closer in CLAP space. This is approximate placement;
 			// bestCriterion stays unknown and final coverage still reports it.
 			if fits && o.audioSession != nil {
-				if score, ok := o.audioSession.StageSimilarity(candidate.Track.ID, criterion); ok {
-					for _, other := range journeyCriteria(intent.EssentialCriteria) {
+				if score, ok := o.stageSimilarity(candidate.Track.ID, criterion); ok {
+					for _, other := range journeyStageCriteria(intent) {
 						if other.Scope == criterion.Scope || !o.stageDateEligible(candidate.Track.ID, other.Scope, intent) || o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMismatch {
 							continue
 						}
-						if otherScore, available := o.audioSession.StageSimilarity(candidate.Track.ID, other); available && otherScore > score+1e-6 {
+						if otherScore, available := o.stageSimilarity(candidate.Track.ID, other); available && otherScore > score+1e-6 {
 							fits = false
 							break
 						}
@@ -324,11 +379,33 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 				}
 			}
 		}
-		if fits && o.stageDateEligible(candidate.Track.ID, criterion.Scope, intent) {
+		if fits && o.stageDateEligible(candidate.Track.ID, criterion.Scope, intent) && o.enhancedStageConstraints(ctx, candidate.Track.ID, criterion.Scope, intent) {
 			result = append(result, candidate)
 		} else {
 			delete(report.Eligible, candidate.Track.ID)
 		}
 	}
 	return result, report, nil
+}
+
+func (o *Orchestrator) stageSimilarity(id string, criterion core.MusicalCriterion) (float64, bool) {
+	if o.audioSession == nil {
+		return 0, false
+	}
+	if !o.enhanced {
+		return o.audioSession.StageSimilarity(id, criterion)
+	}
+	assessment, ok := o.audioSession.Assessment(id)
+	if !ok {
+		return 0, false
+	}
+	stage := core.AudioAssessment{PolicyVersion: assessment.PolicyVersion}
+	for _, clause := range assessment.Clauses {
+		if clause.Clause.Scope == criterion.Scope {
+			stage.Clauses = append(stage.Clauses, clause)
+		}
+	}
+	var candidate core.Candidate
+	audio.ApplyScores(&candidate, stage)
+	return candidate.Scores.SemanticMatch - candidate.Scores.SemanticNegativeMatch, candidate.Available.SemanticMatch || candidate.Available.SemanticNegativeMatch
 }

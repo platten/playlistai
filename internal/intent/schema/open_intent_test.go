@@ -20,7 +20,7 @@ func TestExplicitNamesSurviveAccentNormalization(t *testing.T) {
 				References: []WireReference{{Kind: "artist", Value: test.canonical, Explicit: true, Span: test.typed, Influence: "positive"}}}
 			raw, _ := json.Marshal(w)
 			m, err := ParseForPrompt(raw, prompt)
-			if err != nil || len(m.References) != 1 || m.References[0].Query != test.canonical {
+			if err != nil || len(m.References) != 1 || m.References[0].Query != test.typed || m.References[0].Evidence[0].Text != test.typed {
 				t.Fatalf("explicit reference was discarded or rejected: references=%+v err=%v", m.References, err)
 			}
 			if m.OriginalDescription != prompt || len(m.Preferences.Genres) != 1 || m.Preferences.Genres[0].Value != "classical" || len(m.Temporal) != 0 {
@@ -69,8 +69,8 @@ func TestOpenIntentSeparatesEntityNamespacesAndExclusions(t *testing.T) {
 func TestOpenIntentRejectsFabricatedSourceAndUnqualifiedTrack(t *testing.T) {
 	w := Wire{Genres: []WirePreference{}, Mode: "similar", TotalCount: 5, Moods: []WirePreference{{Value: "energetic", Explicit: true, Span: "unmentioned"}}}
 	raw, _ := json.Marshal(w)
-	if _, err := ParseForPrompt(raw, "lively music"); err == nil {
-		t.Fatal("invented source span accepted")
+	if m, err := ParseForPrompt(raw, "lively music"); err != nil || len(m.Preferences.Moods) != 0 || len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "lively" || m.Translation == nil || len(m.Translation.Repairs) < 2 {
+		t.Fatalf("ungrounded suggestion was not removed while preserving the unknown source term: %+v %v", m, err)
 	}
 	w.Moods = nil
 	w.InferredAnchors = []WireAnchor{{Kind: "track", Value: "Ambiguous title", Role: "retrieval", Reason: "possible fit"}}

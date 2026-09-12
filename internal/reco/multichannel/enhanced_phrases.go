@@ -6,6 +6,7 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
 var enhancedPhrasePattern = regexp.MustCompile(`\b(strong sub-bass|strong subbass|bass-heavy|bass heavy|deep bass|more bass|strong bass|lots of transients|sharp attacks|percussive|big dynamic swings|wide dynamics|compressed dynamics|bright sound|dark sound|darker)\b`)
@@ -19,6 +20,9 @@ var enhancedAdditivePattern = regexp.MustCompile(`\bnot (?:only|just|merely)\s*$
 func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 	clauses := audio.Clauses(intent)
 	description := strings.ToLower(intent.OriginalDescription)
+	if intent.Translation != nil {
+		description = "" // reconciled occurrence-aware extraction owns new requests
+	}
 	// Raw language does not carry reliable stage boundaries. Preserve scoped
 	// intent by using only its explicitly global texture clauses in journeys.
 	if intent.Mode == core.ModeJourney {
@@ -61,6 +65,29 @@ func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 			continue
 		}
 		text := strings.ToLower(strings.TrimSpace(clause.Text))
+		if concept, ok := musicconcepts.Find(clause.Kind, clause.Text); ok && (intent.Translation != nil || clause.ConceptID != "") {
+			if len(concept.Providers.DSP) != 1 {
+				continue
+			}
+			axis, direction, _ := strings.Cut(concept.Providers.DSP[0], ":")
+			switch axis {
+			case "bass_energy_ratio":
+				text = "bass heavy"
+			case "subbass_energy_ratio":
+				text = "strong sub-bass"
+			case "spectral_centroid_hz":
+				text = "bright"
+			case "short_window_rms_spread_db":
+				text = "dynamic"
+			case "transients":
+				text = "percussive"
+			default:
+				continue
+			}
+			if direction == "negative" {
+				clause.Negative = !clause.Negative
+			}
+		}
 		switch text {
 		case "deep bass", "more bass", "strong bass", "bass-heavy", "bass heavy":
 			text = "bass heavy"
@@ -81,7 +108,7 @@ func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 		default:
 			continue
 		}
-		clause = core.AudioClause{Kind: "texture", Text: text, Negative: clause.Negative, Scope: "playlist"}
+		clause = core.AudioClause{Kind: "texture", Text: text, Negative: clause.Negative, Scope: "playlist", Degree: clause.Degree}
 		if !seen[clause] {
 			seen[clause] = true
 			result = append(result, clause)

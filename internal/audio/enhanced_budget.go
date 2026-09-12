@@ -19,6 +19,7 @@ type EnhancedBudget struct {
 	tracks   map[string]bool
 	limit    int
 	deadline time.Time
+	duration time.Duration
 }
 
 // WithEnhancedBudget preserves an existing budget so helper layers cannot
@@ -30,6 +31,25 @@ func WithEnhancedBudget(ctx context.Context, maxTracks int, duration time.Durati
 	maxTracks = max(0, min(maxTracks, EnhancedTrackLimit))
 	duration = max(time.Duration(0), min(duration, EnhancedTimeLimit))
 	return context.WithValue(ctx, enhancedBudgetKey{}, &EnhancedBudget{tracks: map[string]bool{}, limit: maxTracks, deadline: time.Now().Add(duration)})
+}
+
+// WithLazyEnhancedBudget excludes discovery and interpretation from optional
+// inference time. The first admission/context starts the deadline once; the
+// enclosing request still owns its independent deadline and cancellation.
+func WithLazyEnhancedBudget(ctx context.Context, maxTracks int, duration time.Duration) context.Context {
+	if EnhancedBudgetFor(ctx) != nil {
+		return ctx
+	}
+	return context.WithValue(ctx, enhancedBudgetKey{}, &EnhancedBudget{
+		tracks: map[string]bool{}, limit: max(0, min(maxTracks, EnhancedTrackLimit)),
+		duration: max(time.Duration(0), min(duration, EnhancedTimeLimit)),
+	})
+}
+
+func (b *EnhancedBudget) startLocked() {
+	if b.deadline.IsZero() {
+		b.deadline = time.Now().Add(b.duration)
+	}
 }
 
 func EnhancedBudgetFor(ctx context.Context) *EnhancedBudget {
@@ -46,6 +66,7 @@ func (b *EnhancedBudget) Allow(trackID string) bool {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.startLocked()
 	if trackID == "" || !time.Now().Before(b.deadline) {
 		return false
 	}
@@ -65,7 +86,11 @@ func (b *EnhancedBudget) Context(ctx context.Context) (context.Context, context.
 	if b == nil {
 		return context.WithCancel(ctx)
 	}
-	return context.WithDeadline(ctx, b.deadline)
+	b.mu.Lock()
+	b.startLocked()
+	deadline := b.deadline
+	b.mu.Unlock()
+	return context.WithDeadline(ctx, deadline)
 }
 
 func (b *EnhancedBudget) Used() int {

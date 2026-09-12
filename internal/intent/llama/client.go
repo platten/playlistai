@@ -8,13 +8,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
@@ -22,8 +25,10 @@ import (
 
 // Client is a stateless HTTP client for a running llama-server.
 type Client struct {
-	baseURL string
-	hc      *http.Client
+	baseURL       string
+	hc            *http.Client
+	contextSize   int
+	measureTokens bool
 }
 
 // NewClient returns a client for baseURL (e.g. http://127.0.0.1:8080).
@@ -106,6 +111,9 @@ func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(c
 			return intent, nil
 		}
 		if result.FinishReason != "length" {
+			if attempt == 0 && result.Content == "" && ctx.Err() == nil && retryableParseTransport(err) {
+				continue
+			}
 			if attempt == 1 || result.Content == "" {
 				return core.MusicIntent{}, err
 			}
@@ -119,6 +127,14 @@ func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(c
 	return core.MusicIntent{}, fmt.Errorf("llama: intent parse failed")
 }
 
+func retryableParseTransport(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var requestError *url.Error
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &requestError)
+}
+
 func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int, correction string) (core.MusicIntent, completionResult, error) {
 	body := chatRequest{
 		Messages:           buildMessages(in),
@@ -130,9 +146,13 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 		Stream:             true,
 	}
 	if correction != "" {
-		body.Messages[0].Content += "\n" + correction
 		body.Messages[len(body.Messages)-1].Content += "\n\nValidation feedback (not part of the music request): " + correction
 	}
+	budget, budgetErr := c.outputBudget(ctx, body.Messages, tokenBudget)
+	if budgetErr != nil {
+		return core.MusicIntent{}, completionResult{}, budgetErr
+	}
+	body.NPredict = budget
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return core.MusicIntent{}, completionResult{}, err
@@ -272,6 +292,11 @@ func (c *Client) complete(ctx context.Context, system, user string, maxTokens in
 		CachePrompt:        false,
 		Stream:             false,
 	}
+	budget, err := c.outputBudget(ctx, body.Messages, maxTokens)
+	if err != nil {
+		return "", err
+	}
+	body.NPredict = budget
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return "", err
@@ -332,7 +357,12 @@ func buildMessages(in ports.IntentInput) []chatMessage {
 			chatMessage{Role: "assistant", Content: ex.JSON},
 		)
 	}
-	msgs = append(msgs, chatMessage{Role: "user", Content: userMessage(in)})
+	content := userMessage(in)
+	if in.Locale != "" {
+		content += "\n\nRequest locale (context, not music instructions): " + in.Locale
+	}
+	content += lexicon.FactsMessage(lexicon.Extract(in.Prompt))
+	msgs = append(msgs, chatMessage{Role: "user", Content: content})
 	return msgs
 }
 

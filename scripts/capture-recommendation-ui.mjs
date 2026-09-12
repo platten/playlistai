@@ -53,8 +53,8 @@ GenerateFromPromptWithContext:(prompt,context)=>new Promise((resolve,reject)=>{
   window.__failGeneration=()=>reject(new Error('Music lookup timed out while resolving the requested artist.'));
   window.__finishGeneration=(state='fulfilled',empty=false,notices=[],options={})=>{
     const requestedCount=options.requestedCount??tracks.length;
-    const resultIntent={...intent,count:requestedCount,controls:{...intent.controls,totalTrackCount:requestedCount}};
-    resolve({playlist:{generationId:context.generationId,tracks:empty?[]:tracks.slice(0,options.actualCount??tracks.length),intent:resultIntent,notices,seed:'7',mode:'similar',status:{state},outcome:{state,reasons:state==='fulfilled'||options.noReasons?[]:notices.length?[{criterion:'Missing Artist',detail:'The requested artist has no usable catalog seed.',action:'Add a specific track or another artist reference.'}]:[{criterion:'instrumental',detail:'Vocal evidence is unknown for available recordings.',action:'Add a known instrumental reference or relax the vocal requirement.'}]},reproducibility:{id:context.generationId}},request:{intent:resultIntent,seed:'7',reproducibility:{id:context.generationId}},name:window.__playlistHeading || 'Your generated playlist'});
+    const resultIntent={...intent,count:requestedCount,controls:{...intent.controls,totalTrackCount:requestedCount,...(options.matchTiers?{recommendationMode:'enhanced_hybrid'}:{})}};
+    resolve({playlist:{generationId:context.generationId,assessments:options.matchTiers?tracks.map((track,i)=>({trackId:track.id,fitTier:i<20?'strong':'close',matchDetail:i<20?'Requested mood and style have supporting evidence.':'Similar preview sound; requested instrumentation remains unknown.'})):[],tracks:empty?[]:tracks.slice(0,options.actualCount??tracks.length),intent:resultIntent,notices,seed:'7',mode:'similar',status:{state},outcome:{state,reasons:state==='fulfilled'||options.noReasons?[]:notices.length?[{criterion:'Missing Artist',detail:'The requested artist has no usable catalog seed.',action:'Add a specific track or another artist reference.'}]:[{criterion:'instrumental',detail:'Vocal evidence is unknown for available recordings.',action:'Add a known instrumental reference or relax the vocal requirement.'}]},reproducibility:{id:context.generationId}},request:{intent:resultIntent,seed:'7',reproducibility:{id:context.generationId}},name:window.__playlistHeading || 'Your generated playlist'});
   };
   window.__advanceGeneration=()=>{emit({op:'generation',generationId:active.id,note:'Checking musical fit',done:1,total:40});emit({op:'generation',generationId:active.id,note:'Checking musical fit',checkedTrack:{id:'one',artist:'Fixture Artist',title:'Checked track'}});};
 }),
@@ -252,11 +252,13 @@ try {
   await page.getByText('CLAP screened every selected preview for vocals.',{exact:false}).waitFor();
   await page.screenshot({path:path.join(output,'instrumental-playlist.png'),fullPage:true,animations:"disabled"});
   await page.getByRole('button',{name:'Generate',exact:true}).click();
-  await composer.fill('A journey from ambient to energetic electronic');
+  await composer.fill('A journey from ambient or classical to energetic electronic, mostly instrumental at the start');
   const journeyCalls=await page.evaluate(()=>window.__generationCalls);
   await page.getByRole('button',{name:'Generate playlist',exact:true}).click();
-  await page.evaluate(()=>window.__finishParse([],false,{backend:'rules',parser:{requestedBackend:'rules'},mode:'journey',count:6,intent:{version:8,mode:'journey',references:[],essentialCriteria:[{kind:'style',value:'ambient',scope:'journey_start'},{kind:'style',value:'electronic',scope:'journey_end'}],preferences:{styles:[],genres:[],moods:[{value:'energetic',influence:'positive'}]},hardConstraints:[],journey:{energyTrajectory:[{position:0,energy:.5},{position:1,energy:.8}]}}}));
-  await page.getByText('Essential: ambient (start), electronic (end)',{exact:true}).waitFor();
+  await page.evaluate(()=>window.__finishParse([],false,{backend:'rules',parser:{requestedBackend:'rules'},mode:'journey',count:6,intent:{version:9,mode:'journey',references:[],essentialCriteria:[{kind:'style',value:'ambient',scope:'journey_start',group:'start-choice'},{kind:'style',value:'classical',scope:'journey_start',group:'start-choice'},{kind:'style',value:'electronic',scope:'journey_end'}],preferences:{styles:[],genres:[{value:'ambient',scope:'journey_start',group:'start-choice'},{value:'classical',scope:'journey_start',group:'start-choice'}],moods:[{value:'energetic',influence:'positive'}],vocalPreferences:[{value:'instrumental',influence:'positive',degree:'mostly',strength:'preferred',scope:'journey_start'}]},hardConstraints:[],journey:{energyTrajectory:[{position:0,energy:.5},{position:1,energy:.8}]}}}));
+  await page.getByText('Essential: ambient (start) or classical (start), electronic (end)',{exact:true}).waitFor();
+  await page.getByText('Alternatives: ambient at the start or classical at the start',{exact:true}).waitFor();
+  await page.getByText('Vocals: mostly instrumental at the start',{exact:true}).waitFor();
   await page.getByText('Requested energy: build toward the end',{exact:true}).waitFor();
   assert.equal(await page.getByText('Catalog-only mode requires a seed artist or track from the catalog.',{exact:false}).count(),0,'Genre journeys must not display a mandatory artist-seed instruction');
   for(const theme of ['light','dark']) {
@@ -285,8 +287,11 @@ try {
   await page.evaluate(()=>window.__finishParse());
   await page.waitForFunction(()=>window.__selections?.length>0);
   assert.equal(await page.evaluate(()=>window.__selections[0].trackId),'b');
-  await page.evaluate(()=>window.__finishGeneration());
+  await page.evaluate(()=>window.__finishGeneration('partial',false,[],{matchTiers:true}));
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
+  assert.equal(await page.getByText('Strong match',{exact:true}).count(),20);
+  assert.equal(await page.getByText('Close match',{exact:true}).count(),10);
+  assert.equal(await page.getByText('Similar preview sound; requested instrumentation remains unknown.',{exact:false}).count(),10);
   assert.equal(await page.getByRole('button',{name:'Playlist',exact:true}).getAttribute('aria-current'),'page');
   assert.equal(await page.getByRole('button',{name:/^Play preview:/}).count(),30,'Every song has a preview control');
   const details = page.getByRole('button',{name:'Track details: Fixture Artist 1 — Playlist track 1',exact:true});
@@ -413,6 +418,10 @@ try {
     await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
     await page.mouse.move(20,20);
     await page.screenshot({path:path.join(output,'playlist-'+theme+'.png'),fullPage:true,animations:"disabled"});
+    await page.getByText('Close match',{exact:true}).first().scrollIntoViewIfNeeded();
+    assert.equal(await page.getByText('Close match',{exact:true}).first().isVisible(),true);
+    await page.screenshot({path:path.join(output,'playlist-close-'+theme+'.png'),fullPage:true,animations:"disabled"});
+    await page.locator('main').evaluate(el=>el.scrollTop=0);
     const scroll=await page.locator('main').evaluate(el=>({right:el.getBoundingClientRect().right,width:window.innerWidth,overflow:el.scrollHeight>el.clientHeight,track:getComputedStyle(el,'::-webkit-scrollbar-track').backgroundColor,thumb:getComputedStyle(el,'::-webkit-scrollbar-thumb').backgroundColor,corner:getComputedStyle(el,'::-webkit-scrollbar-corner').backgroundColor,scheme:getComputedStyle(el).colorScheme}));
     assert.equal(scroll.right,scroll.width,'Scrollbar container reaches right window edge');
     assert.equal(scroll.overflow,true);
@@ -438,8 +447,11 @@ try {
   await page.waitForFunction(n=>window.__generationCalls===n+1,beforeRegenerate);
   assert.equal(await page.evaluate(()=>window.__lastGenerationPrompt),'ambient electronica');
   assert.notEqual(await page.evaluate(()=>window.__generationId),previousGenerationId,'Regenerate starts a new generation operation');
-  await page.evaluate(()=>window.__finishGeneration());
+  await page.evaluate(()=>window.__finishGeneration('partial',false,[],{matchTiers:true}));
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
+  assert.equal(await page.getByText('Strong match',{exact:true}).count(),20);
+  assert.equal(await page.getByText('Close match',{exact:true}).count(),10);
+  assert.equal(await page.getByText('Similar preview sound; requested instrumentation remains unknown.',{exact:false}).count(),10);
   await page.waitForTimeout(250);
   assert.equal(await page.evaluate(()=>window.__buildCalls),0,'Regenerate reuses the result returned by Generate, without a duplicate Playlist build');
   await page.getByRole('button',{name:'Generate',exact:true}).click();
@@ -498,8 +510,11 @@ try {
   await page.evaluate(()=>window.__staleFinish());
   await page.getByRole('button',{name:'Generating…',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Generate',exact:true}).getAttribute('aria-current'),'page','Cancelled result cannot navigate over newer work');
-  await page.evaluate(()=>window.__finishGeneration());
+  await page.evaluate(()=>window.__finishGeneration('partial',false,[],{matchTiers:true}));
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
+  assert.equal(await page.getByText('Strong match',{exact:true}).count(),20);
+  assert.equal(await page.getByText('Close match',{exact:true}).count(),10);
+  assert.equal(await page.getByText('Similar preview sound; requested instrumentation remains unknown.',{exact:false}).count(),10);
   await page.setViewportSize({width:560,height:800});
   await page.getByRole('button',{name:'Generate',exact:true}).click();
   await composer.fill('music like Missing Artist');

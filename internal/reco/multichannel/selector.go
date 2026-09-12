@@ -131,8 +131,21 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		best = math.Max(best, candidate.Scores.Total)
 	}
 	floor := math.Max(s.cfg.SelectionMinimumRelevance, best-s.cfg.SelectionRelevanceWindow)
+	requestFloor := s.cfg.SelectionMinimumRelevance
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		for _, candidate := range candidates {
+			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); ok {
+				requestFloor = max(requestFloor, relevance-s.cfg.SelectionRelevanceWindow)
+			}
+		}
+	}
 	pool := make([]poolEntry, 0, len(candidates))
 	for _, candidate := range candidates {
+		if enforceFloor && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && candidate.FitTier == fitClose && candidate.MusicalFit != core.EvidenceMatch {
+			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); !ok || relevance < requestFloor {
+				continue
+			}
+		}
 		if enforceFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
 			continue
 		}
@@ -181,7 +194,9 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			better := chosen < 0
 			if chosen >= 0 {
 				left, right := pool[index].candidate, pool[chosen].candidate
-				if request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
+				if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && (left.FitTier == fitStrong) != (right.FitTier == fitStrong) {
+					better = left.FitTier == fitStrong
+				} else if request.Intent.Controls.RecommendationMode != core.EnhancedHybrid && request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
 					better = left.MusicalFit == core.EvidenceMatch
 				} else if artistDiversity && pool[index].artistKey != "" && pool[chosen].artistKey != "" && artistUses[pool[index].artistKey] != artistUses[pool[chosen].artistKey] {
 					better = artistUses[pool[index].artistKey] < artistUses[pool[chosen].artistKey]

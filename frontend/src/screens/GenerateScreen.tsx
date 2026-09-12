@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@wailsio/runtime";
 import generateSamples from "../lib/generateSamples.json";
 import { useSavedPlaylist } from "../lib/useSavedPlaylist";
+import { IntentTraits } from "../components/IntentTraits";
 import { PROGRESS_EVENT, type Progress } from "../components/useProgress";
 import {
   API,
@@ -217,9 +218,16 @@ export function GenerateScreen({
   const requestedEnergy = energyPoints.length < 2 ? "" : energyPoints.length > 2 ? "changes through the journey" :
     energyPoints[0].energy < energyPoints[energyPoints.length - 1].energy ? "build toward the end" :
     energyPoints[0].energy > energyPoints[energyPoints.length - 1].energy ? "wind down toward the end" : "stay steady overall";
+  const globalInstrumental = (p: NonNullable<IntentPreview["intent"]["preferences"]["vocalPreference"]>) =>
+    p.strength !== "preferred" && p.degree !== "mostly" && p.degree !== "reduced" && !p.group &&
+    (!p.scope || p.scope === "playlist") && p.influence !== "negative" && ["instrumental", "no vocals"].includes(p.value.toLowerCase());
+  const vocalPreference = preview?.intent.preferences.vocalPreference;
+  const vocalPreferences = (preview?.intent.preferences.vocalPreferences ?? []).length > 0
+    ? preview!.intent.preferences.vocalPreferences!
+    : vocalPreference ? [vocalPreference] : [];
   const instrumentalRequest = (preview?.intent.hardConstraints ?? []).some((c) => c.kind === "exclude_vocals" || c.kind === "require_instrumental") ||
-    (preview?.intent.preferences.vocalPreference?.influence !== "negative" && ["instrumental", "no vocals"].includes(preview?.intent.preferences.vocalPreference?.value.toLowerCase() ?? "")) ||
-    (preview?.intent.preferences.instrumentation ?? []).some((p) => p.influence !== "negative" && p.value.toLowerCase() === "instrumental");
+    vocalPreferences.some(globalInstrumental) ||
+    (preview?.intent.preferences.instrumentation ?? []).some(globalInstrumental);
   const hasResolvedSeed = (preview?.seeds ?? []).length > 0 || (preview?.requiredTracks ?? []).length > 0;
   const needsSeed = !replaySaved && (deejAIOnly
     ? preview === null || !hasResolvedSeed
@@ -630,14 +638,12 @@ export function GenerateScreen({
           <div className="rounded-card border border-line bg-surface p-3 text-[13px] leading-relaxed">
             <p>{preview.count} tracks{preview.mode === "journey" ? " · a musical journey" : ""}</p>
             {(preview.intent.references ?? []).map((ref, index) => <p key={index}>{ref.kind.charAt(0).toUpperCase() + ref.kind.slice(1)}: {ref.query}{ref.influence === "negative" ? " (excluded)" : ""}</p>)}
-            {(preview.intent.preferences.genres ?? []).length > 0 && <p>Genres: {(preview.intent.preferences.genres ?? []).map((genre) => (genre.influence === "negative" ? "avoid " : "") + genre.value).join(" · ")}</p>}
-            {preview.intent.preferences.vocalPreference && <p>Vocals: {preview.intent.preferences.vocalPreference.influence === "negative" ? "avoid " : ""}{preview.intent.preferences.vocalPreference.value}</p>}
-            {(preview.intent.preferences.instrumentation ?? []).length > 0 && <p>Instrumentation: {(preview.intent.preferences.instrumentation ?? []).map((preference) => preference.value).join(" · ")}</p>}
+            <IntentTraits preferences={preview.intent.preferences} criteria={preview.intent.essentialCriteria ?? []} />
             {(preview.intent.temporal ?? []).map((period, index) => <p key={index}>{period.basis === "composition" ? "Composed" : "Originally released"}: {period.startYear}–{period.endYear}{period.scope === "journey_start" ? " (starting stage)" : period.scope === "journey_end" ? " (ending stage)" : ""}</p>)}
+            {preview.intent.start && <p>Start with {preview.intent.start.query}</p>}
             {preview.intent.destination && <p>Finish with {preview.intent.destination.query}</p>}
+            {!!preview.intent.durationSeconds && <p>Requested duration: {Math.round(preview.intent.durationSeconds / 60)} minutes</p>}
             {requestedEnergy && <p>Requested energy: {requestedEnergy}</p>}
-            {(preview.intent.essentialCriteria ?? []).length > 0 && <p>Essential: {(preview.intent.essentialCriteria ?? []).map((criterion) => `${criterion.value}${criterion.scope.startsWith("journey_") ? ` (${criterion.scope.replace("journey_", "")})` : ""}`).join(", ")}</p>}
-            <p>{[...(preview.intent.preferences.styles ?? []), ...(preview.intent.preferences.moods ?? []), ...(preview.intent.preferences.textureDescriptions ?? [])].map((p) => `${p.influence === "negative" ? "avoid " : ""}${p.value}`).join(" · ")}</p>
             {(preview.intent.hardConstraints ?? []).filter((c) => c.kind !== "no_back_to_back_artist").map((c) => <p key={`${c.kind}-${c.value}`}>Required rule: {c.kind.replace(/_/g, " ")} {c.value}</p>)}
             {(preview.seeds ?? []).length > 0 && <p>References: {(preview.seeds ?? []).join(", ")}</p>}
             {(preview.requiredTracks ?? []).length > 0 && <p>Must include: {(preview.requiredTracks ?? []).join(", ")}</p>}
