@@ -1,11 +1,23 @@
 # Run the same Go, lint, binding, typecheck, and frontend build gate as test.sh.
 #Requires -Version 5.1
 [CmdletBinding()]
-param([switch]$NoRace, [switch]$Coverage)
+param(
+    [switch]$NoRace,
+    [switch]$Coverage,
+    [string]$TestReportDirectory = "",
+    [switch]$HostCoverage,
+    [ValidateRange(0, 32)][int]$PackageParallelism = 0
+)
 
 . (Join-Path $PSScriptRoot "_common.ps1")
 Assert-Command "go" "run scripts/setup.ps1"
 Assert-GoVersion
+if ($TestReportDirectory) {
+    Assert-Command "node" "Node is required for JSON test timing reports"
+    $TestReportDirectory = [IO.Path]::GetFullPath($TestReportDirectory)
+    [void][IO.Directory]::CreateDirectory($TestReportDirectory)
+}
+if ($HostCoverage -and -not $TestReportDirectory) { throw "HostCoverage requires TestReportDirectory" }
 
 $failed = [Collections.Generic.List[string]]::new()
 function Invoke-TestStep([string]$Label, [scriptblock]$Action) {
@@ -36,6 +48,7 @@ Invoke-TestStep "pnpm installer failure handling" { & (Join-Path $PSScriptRoot "
 Invoke-TestStep "CLAP compiler installer" { & (Join-Path $PSScriptRoot "test-clap-toolchain.ps1") }
 
 if ((Test-Command "node") -and (Test-Command "pnpm")) {
+    Invoke-TestStep "CI timing helper" { & node (Join-Path $PSScriptRoot "go-test.test.mjs") }
     if (Test-Command "wails3") {
         Invoke-TestStep "wails3 generate bindings" { & wails3 generate bindings -clean=true -ts -i }
     } else {
@@ -46,7 +59,8 @@ if ((Test-Command "node") -and (Test-Command "pnpm")) {
         Invoke-TestStep "pnpm install" { & pnpm install --frozen-lockfile }
         Invoke-TestStep "frontend typecheck" { & pnpm run typecheck }
         Invoke-TestStep "frontend tests" { & pnpm test }
-        Invoke-TestStep "frontend build" { & pnpm run build }
+        # typecheck already ran; standalone pnpm build still includes tsc.
+        Invoke-TestStep "frontend build" { & pnpm run build:bundle }
     } finally {
         Pop-Location
     }
@@ -71,10 +85,19 @@ Invoke-TestStep "pure-Go core compile" {
     }
 }
 
-if ($NoRace) {
-    Invoke-TestStep "go test" { & go test -count=1 ./... }
-} else {
-    Invoke-TestStep "go test -race" { & go test -race -count=1 ./... }
+$goTestArgs = @('-count=1')
+if (-not $NoRace) { $goTestArgs += '-race' }
+if ($PackageParallelism -gt 0) { $goTestArgs += @('-p', "$PackageParallelism") }
+if ($HostCoverage) {
+    $goTestArgs += @('-coverpkg=./...', '-covermode=atomic', "-coverprofile=$(Join-Path $TestReportDirectory 'backend.out')")
+}
+$goTestArgs += './...'
+Invoke-TestStep "go test $($goTestArgs -join ' ')" {
+    if ($TestReportDirectory) {
+        & node (Join-Path $PSScriptRoot 'go-test.mjs') (Join-Path $TestReportDirectory 'race-tests') @goTestArgs
+    } else {
+        & go test @goTestArgs
+    }
 }
 
 if (Test-Command "golangci-lint") {

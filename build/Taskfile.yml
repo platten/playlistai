@@ -80,8 +80,19 @@ tasks:
     run: once
     dir: frontend
     sources:
-      - "**/*"
-      - exclude: node_modules/**/*
+      - src/**/*
+      - bindings/**/*
+      - public/**/*
+      - index.html
+      - package.json
+      - pnpm-lock.yaml
+      - package-lock.json
+      - yarn.lock
+      - bun.lock*
+      - tsconfig*.json
+      - vite.config.*
+      - .env
+      - .env.*
     generates:
       - dist/**/*
     deps:

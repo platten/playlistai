@@ -48,6 +48,7 @@ __pycache__/
 /build/catalog-dist/
 
 # Local dev
+/.pnpm-store/
 *.log
 .DS_Store
 .env

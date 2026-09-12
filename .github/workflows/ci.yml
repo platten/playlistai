@@ -2,10 +2,30 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      windows_benchmark:
+        description: Run only the Windows job for a controlled timing experiment
+        type: boolean
+        default: false
+      windows_package_parallelism:
+        description: Package concurrency for the Windows experiment
+        type: choice
+        options: [default, '1', '2', '4']
+        default: default
+      windows_test_mode:
+        description: Separate or combined race and coverage for the Windows experiment
+        type: choice
+        options: [separate, combined]
+        default: separate
+      windows_cache:
+        description: Cache strategy for the Windows experiment
+        type: choice
+        options: [standard, refreshed]
+        default: standard
 
 permissions:
   contents: read
@@ -13,17 +33,19 @@ permissions:
 env:
   GO_VERSION: "1.27"
   NODE_VERSION: "22"
-  PNPM_VERSION: "9"
+  PNPM_VERSION: "9.15.9"
   WAILS3_VERSION: v3.0.0-beta.16
   GOLANGCI_LINT_VERSION: v2.13.2
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Manual benchmarks must not cancel an authoritative PR/main run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{ inputs.windows_package_parallelism }}-${{ inputs.windows_test_mode }}-${{ inputs.windows_cache }}
   cancel-in-progress: true
 
 jobs:
   lint-test:
     name: Lint & test (linux)
+    if: ${{ !inputs.windows_benchmark }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -60,7 +82,10 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run typecheck
           pnpm test
-          pnpm run build
+          pnpm run build:bundle
+
+      - name: CI timing helper
+        run: node --test scripts/go-test.test.mjs
 
       - name: go vet
         run: go vet ./...
@@ -81,23 +106,57 @@ jobs:
           "$(go env GOPATH)/bin/golangci-lint" run ./...
 
       - name: go test
-        run: go test -race -count=1 ./...
+        run: node scripts/go-test.mjs coverage/race-tests -race -count=1 ./...
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: go-timings-linux-lint
+          path: coverage/
+          retention-days: 14
 
   wails-build:
     name: Wails build (${{ matrix.os }})
-    needs: lint-test
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        os: ${{ fromJSON(inputs.windows_benchmark && '["windows-latest"]' || '["ubuntu-latest","ubuntu-24.04-arm","macos-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
+    env:
+      CI_WINDOWS_TEST_MODE: ${{ inputs.windows_benchmark && inputs.windows_test_mode || 'separate' }}
+      CI_WINDOWS_PACKAGE_PARALLELISM: ${{ inputs.windows_benchmark && inputs.windows_package_parallelism || 'default' }}
     steps:
       - uses: actions/checkout@v5
 
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache: ${{ runner.os != 'Windows' || !inputs.windows_benchmark || inputs.windows_cache != 'refreshed' }}
+
+      - name: Windows experiment cache identity
+        if: runner.os == 'Windows' && inputs.windows_benchmark && inputs.windows_cache == 'refreshed'
+        id: windows-cache
+        shell: pwsh
+        run: |
+          $goVersion = go env GOVERSION
+          $compilerHash = (Get-FileHash scripts/install-clap-toolchain.ps1 -Algorithm SHA256).Hash.ToLowerInvariant()
+          $depsHash = (Get-FileHash go.sum -Algorithm SHA256).Hash.ToLowerInvariant()
+          $prefix = "windows-go-v1-$env:ImageOS-$env:ImageVersion-$env:RUNNER_ARCH-$goVersion-$compilerHash-$depsHash-"
+          "prefix=$prefix" >> $env:GITHUB_OUTPUT
+          # At most one new snapshot per compatible configuration per day.
+          "key=$prefix$([DateTime]::UtcNow.ToString('yyyy-MM-dd'))" >> $env:GITHUB_OUTPUT
+          "build=$(go env GOCACHE)" >> $env:GITHUB_OUTPUT
+          "modules=$(go env GOMODCACHE)" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/cache/restore@v4
+        if: steps.windows-cache.outputs.key != ''
+        id: windows-cache-restore
+        with:
+          path: |
+            ${{ steps.windows-cache.outputs.build }}
+            ${{ steps.windows-cache.outputs.modules }}
+          key: ${{ steps.windows-cache.outputs.key }}
+          restore-keys: ${{ steps.windows-cache.outputs.prefix }}
 
       - uses: pnpm/action-setup@v5
         if: runner.os != 'Windows'
@@ -148,7 +207,8 @@ jobs:
         run: |
           $env:CGO_ENABLED = '1'
           $env:CC = & .\scripts\install-clap-toolchain.ps1 -Architecture amd64 -CheckOnly
-          .\scripts\test.ps1
+          $packageParallelism = if ($env:CI_WINDOWS_PACKAGE_PARALLELISM -eq 'default') { 0 } else { [int]$env:CI_WINDOWS_PACKAGE_PARALLELISM }
+          .\scripts\test.ps1 -TestReportDirectory coverage -HostCoverage:($env:CI_WINDOWS_TEST_MODE -eq 'combined') -PackageParallelism $packageParallelism
 
       - name: Build
         if: runner.os != 'Windows'
@@ -174,7 +234,7 @@ jobs:
         run: |
           mkdir -p coverage
           go env GOOS GOARCH CGO_ENABLED CC > coverage/build-environment.txt
-          go test -count=1 -coverpkg=./... -covermode=atomic -coverprofile=coverage/backend.out ./...
+          node scripts/go-test.mjs coverage/coverage-tests -count=1 -coverpkg=./... -covermode=atomic -coverprofile=coverage/backend.out ./...
           go tool cover -func=coverage/backend.out > coverage/backend-summary.txt
           go test -count=1 -tags production -coverprofile=coverage/production-build.out ./build
 
@@ -188,12 +248,35 @@ jobs:
           New-Item -ItemType Directory -Force coverage | Out-Null
           go env GOOS GOARCH CGO_ENABLED CC | Set-Content coverage/build-environment.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          go test -count=1 '-coverpkg=./...' -covermode=atomic '-coverprofile=coverage/backend.out' ./...
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:CI_WINDOWS_TEST_MODE -ne 'combined') {
+            $testArgs = @('-count=1', '-coverpkg=./...', '-covermode=atomic', '-coverprofile=coverage/backend.out')
+            if ($env:CI_WINDOWS_PACKAGE_PARALLELISM -ne 'default') { $testArgs += @('-p', $env:CI_WINDOWS_PACKAGE_PARALLELISM) }
+            node scripts/go-test.mjs coverage/coverage-tests @testArgs ./...
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           go tool cover '-func=coverage/backend.out' | Set-Content coverage/backend-summary.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go test -count=1 -tags production '-coverprofile=coverage/production-build.out' ./build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Windows experiment cache inventory
+        if: always() && steps.windows-cache.outputs.key != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force coverage | Out-Null
+          $inventory = foreach ($cachePath in @((go env GOCACHE), (go env GOMODCACHE))) {
+            $files = Get-ChildItem -LiteralPath $cachePath -Recurse -File -ErrorAction Stop | Measure-Object -Property Length -Sum
+            @{ path = $cachePath; files = $files.Count; bytes = $files.Sum }
+          }
+          $inventory | ConvertTo-Json | Set-Content coverage/cache-inventory.json
+
+      - uses: actions/cache/save@v4
+        if: success() && steps.windows-cache.outputs.key != '' && steps.windows-cache-restore.outputs.cache-hit != 'true'
+        with:
+          path: |
+            ${{ steps.windows-cache.outputs.build }}
+            ${{ steps.windows-cache.outputs.modules }}
+          key: ${{ steps.windows-cache.outputs.key }}
 
       - uses: actions/upload-artifact@v6
         if: always()
@@ -214,3 +297,21 @@ jobs:
             bin/playlist-ai-arm64-installer.exe
           if-no-files-found: error
           retention-days: 7
+
+  ci-complete:
+    name: CI complete
+    if: always()
+    needs: [lint-test, wails-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation job
+        env:
+          LINT_RESULT: ${{ needs.lint-test.result }}
+          PLATFORM_RESULT: ${{ needs.wails-build.result }}
+          WINDOWS_BENCHMARK: ${{ inputs.windows_benchmark && 'true' || 'false' }}
+        run: |
+          if [[ "$WINDOWS_BENCHMARK" == "true" ]]; then
+            [[ "$LINT_RESULT" == "skipped" && "$PLATFORM_RESULT" == "success" ]]
+          else
+            [[ "$LINT_RESULT" == "success" && "$PLATFORM_RESULT" == "success" ]]
+          fi
