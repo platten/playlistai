@@ -1,9 +1,15 @@
 package audio
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -56,25 +62,53 @@ func TestExpiredEnhancedBudgetPreservesCLAP(t *testing.T) {
 	}
 }
 
-type budgetExpiryAnalyzer struct{ mertFake }
+type budgetExpiryAnalyzer struct {
+	mertFake
+	err                   error
+	enteredBeforeDeadline bool
+}
 
 func (f *budgetExpiryAnalyzer) EmbedAudio(ctx context.Context, _ []float32) ([]float32, error) {
 	f.calls++
+	f.enteredBeforeDeadline = ctx.Err() == nil
 	<-ctx.Done()
-	return nil, ctx.Err()
+	f.err = ctx.Err()
+	return nil, f.err
 }
+
+type enhancedDeadlineTransport struct{}
+
+func (enhancedDeadlineTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(syntheticMP3())), Request: req}, nil
+}
+
 func TestEnhancedDeadlineDuringInferenceDoesNotCancelCLAP(t *testing.T) {
-	preview, _, _, _ := testService(t)
-	store := preview.Store.(*Store)
-	fake := &budgetExpiryAnalyzer{mertFake: mertFake{model: mertTestModel()}}
-	preview.MERT = &MERTService{Preview: preview, Analyzer: fake, Store: store.Representations(), ParityValidated: true}
-	ctx := WithEnhancedBudget(context.Background(), 24, time.Second)
-	r, _, err := preview.AnalyzePreview(ctx, core.TrackRef{ID: "123", Artist: "Synthetic", Title: "Silence"}, "catalog")
-	if err != nil || r.ID == "" || fake.calls != 1 {
-		t.Fatal("optional inference deadline canceled CLAP", err)
-	}
-	usage, err := store.Representations().Usage(context.Background())
-	if err != nil || usage.Records != 0 {
-		t.Fatal("canceled MERT cached", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		// Keep timers, database lifecycle and preview transport inside the bubble.
+		// No socket or worker can let real scheduling delays consume the budget.
+		store, err := OpenStore(t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = store.Close() }()
+		clap := &testAnalyzer{model: core.AudioModelIdentity{Model: "fixture", Revision: "1", Preprocessing: PreprocessingVersion, Runtime: "fixture", Dimension: 2}}
+		preview := &Service{Resolver: &testResolver{url: "https://fixture.invalid/preview"}, Analyzer: clap, Store: store, Authorized: true, ParityValidated: true,
+			HTTPClient: &http.Client{Transport: enhancedDeadlineTransport{}}, AllowPreviewURL: func(u *url.URL) bool { return u.Hostname() == "fixture.invalid" }}
+		fake := &budgetExpiryAnalyzer{mertFake: mertFake{model: mertTestModel()}}
+		preview.MERT = &MERTService{Preview: preview, Analyzer: fake, Store: store.Representations(), ParityValidated: true}
+		parent, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		ctx := WithEnhancedBudget(parent, 24, time.Second)
+		r, _, err := preview.AnalyzePreview(ctx, core.TrackRef{ID: "123", Artist: "Synthetic", Title: "Silence"}, "catalog")
+		if err != nil || r.ID == "" || fake.calls != 1 || clap.calls != 1 {
+			t.Fatal("optional inference deadline canceled CLAP", err)
+		}
+		if !fake.enteredBeforeDeadline || !errors.Is(fake.err, context.DeadlineExceeded) || parent.Err() != nil || ctx.Err() != nil {
+			t.Fatalf("deadline did not remain local to enhanced inference: inference=%v parent=%v request=%v", fake.err, parent.Err(), ctx.Err())
+		}
+		usage, err := store.Representations().Usage(context.Background())
+		if err != nil || usage.Records != 0 {
+			t.Fatal("canceled MERT cached", err)
+		}
+	})
 }

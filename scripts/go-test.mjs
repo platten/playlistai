@@ -27,7 +27,7 @@ export function timingCollector() {
   };
 }
 
-export async function runTests({ report, args, command = "go", prefix = [] }) {
+export async function runTests({ report, args, command = "go", prefix = [], writeLog = text => process.stdout.write(text) }) {
   mkdirSync(dirname(report), { recursive: true });
   const output = createWriteStream(`${report}.jsonl`);
   // Prevent an unhandled stream error; disk-full failures still fail the run.
@@ -53,7 +53,7 @@ export async function runTests({ report, args, command = "go", prefix = [] }) {
         await once(output, "drain").catch(error => { outputError = error; });
       }
       let event;
-      try { event = JSON.parse(line); } catch { console.log(line); continue; }
+      try { event = JSON.parse(line); } catch { writeLog(`${line}\n`); continue; }
       collector.accept(event);
       if (event.Action === "output") {
         const lines = recent.get(event.Package) ?? [];
@@ -61,9 +61,11 @@ export async function runTests({ report, args, command = "go", prefix = [] }) {
         if (lines.length > 200) lines.shift();
         recent.set(event.Package, lines);
       }
+      // Print a failing test immediately: later successful tests may otherwise
+      // evict its assertion from the bounded package-output buffer.
+      if (event.Action === "fail") writeLog((recent.get(event.Package) ?? []).join(""));
       if (["pass", "fail", "skip"].includes(event.Action) && !event.Test) {
-        if (event.Action === "fail") process.stdout.write((recent.get(event.Package) ?? []).join(""));
-        console.log(`${event.Action}\t${event.Package}\t${event.Elapsed ?? 0}s`);
+        writeLog(`${event.Action}\t${event.Package}\t${event.Elapsed ?? 0}s\n`);
         recent.delete(event.Package);
       }
     }
@@ -81,8 +83,8 @@ export async function runTests({ report, args, command = "go", prefix = [] }) {
       go: goEnvironment, ...collector.result(),
     };
     writeFileSync(`${report}.summary.json`, `${JSON.stringify(summary, null, 2)}\n`);
-    console.log(`Go tests: ${summary.seconds.toFixed(2)}s, exit ${exitCode}; timings: ${report}.summary.json`);
-    for (const test of summary.tests.slice(0, 10)) console.log(`  ${test.seconds.toFixed(3)}s ${test.package}/${test.test}`);
+    writeLog(`Go tests: ${summary.seconds.toFixed(2)}s, exit ${exitCode}; timings: ${report}.summary.json\n`);
+    for (const test of summary.tests.slice(0, 10)) writeLog(`  ${test.seconds.toFixed(3)}s ${test.package}/${test.test}\n`);
     return exitCode;
   } finally {
     process.off("SIGINT", interrupt);
