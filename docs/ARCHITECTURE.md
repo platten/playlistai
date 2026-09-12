@@ -16,7 +16,10 @@ build.
 The staged [enhanced audio milestones](enhanced-audio-milestones.md) add an
 audio-only representation contract beside paired CLAP analysis. M1 stores derived
 segment/pooled vectors in an additive table in the existing analysis database;
-no generation path consumes these records yet. See the
+no generation path consumes these records yet. M2 adds a separate deterministic
+DSP cache and original-channel decoder branch, with model-free explicit analysis
+and opt-in shared CLAP decoding. Its ten [measurements](dsp-measurements.md) remain
+outside recommendation scoring until the Enhanced Hybrid milestone. See the
 [source preparation guide](enhanced-audio-data-preparation.md) for retained,
 verified maintainer assets and the subsequent native-runtime validation gate.
 

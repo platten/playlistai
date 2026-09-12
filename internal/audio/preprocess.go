@@ -22,27 +22,87 @@ const (
 // DecodeMP3 returns owned mono PCM. The caller clears it after use. The decoder
 // and its internal state become unreachable on return; no files are created.
 func DecodeMP3(ctx context.Context, encoded []byte) ([]float32, error) {
-	if len(encoded) == 0 || len(encoded) > MaxEncodedBytes {
-		return nil, fmt.Errorf("audio: preview size out of bounds")
-	}
-	decoder, err := mp3.NewDecoder(&contextReader{ctx: ctx, reader: bytes.NewReader(encoded)})
-	if err != nil {
-		return nil, fmt.Errorf("audio: MP3 decode failed")
-	}
-	rate := decoder.SampleRate()
-	if rate < 8000 || rate > 96000 {
-		return nil, fmt.Errorf("audio: unsupported sample rate")
-	}
-	maxBytes := rate * MaxPreviewSeconds * 4
-	pcm, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: decoder}, int64(maxBytes)+1))
+	pcm, rate, err := decodeMP3PCM16(ctx, encoded)
 	defer clear(pcm)
 	if err != nil {
 		return nil, err
 	}
-	if len(pcm) == 0 || len(pcm) > maxBytes || len(pcm)%4 != 0 {
-		return nil, fmt.Errorf("audio: decoded duration out of bounds")
+	mono := func(i int) float64 {
+		left := int16(binary.LittleEndian.Uint16(pcm[i*4:]))    //nolint:gosec // signed PCM bit pattern
+		right := int16(binary.LittleEndian.Uint16(pcm[i*4+2:])) //nolint:gosec
+		return (float64(left) + float64(right)) / (2 * 32768)
 	}
-	frames := len(pcm) / 4
+	return clapResample(ctx, len(pcm)/4, rate, mono)
+}
+
+// DecodedPCM is borrowed interleaved full-scale-normalized PCM at the source
+// rate. Owners clear Samples immediately after use; it must never be persisted.
+type DecodedPCM struct {
+	Samples    []float32
+	SampleRate int
+	Channels   int
+}
+
+// DecodeOriginalMP3 retains channel power before any model-specific conversion.
+// go-mp3 always returns stereo int16 output (mono sources are duplicated).
+func DecodeOriginalMP3(ctx context.Context, encoded []byte) (DecodedPCM, error) {
+	raw, rate, err := decodeMP3PCM16(ctx, encoded)
+	defer clear(raw)
+	if err != nil {
+		return DecodedPCM{}, err
+	}
+	out := DecodedPCM{Samples: make([]float32, len(raw)/2), SampleRate: rate, Channels: 2}
+	for i := range out.Samples {
+		if i%8192 == 0 {
+			if err := ctx.Err(); err != nil {
+				clear(out.Samples)
+				return DecodedPCM{}, err
+			}
+		}
+		value := int16(binary.LittleEndian.Uint16(raw[i*2:])) //nolint:gosec // signed PCM bit pattern
+		out.Samples[i] = float32(value) / 32768
+	}
+	return out, nil
+}
+
+func decodeMP3PCM16(ctx context.Context, encoded []byte) ([]byte, int, error) {
+	if len(encoded) == 0 || len(encoded) > MaxEncodedBytes {
+		return nil, 0, fmt.Errorf("audio: preview size out of bounds")
+	}
+	decoder, err := mp3.NewDecoder(&contextReader{ctx: ctx, reader: bytes.NewReader(encoded)})
+	if err != nil {
+		return nil, 0, fmt.Errorf("audio: MP3 decode failed")
+	}
+	rate := decoder.SampleRate()
+	if rate < 8000 || rate > 96000 {
+		return nil, 0, fmt.Errorf("audio: unsupported sample rate")
+	}
+	maxBytes := rate * MaxPreviewSeconds * 4
+	pcm, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: decoder}, int64(maxBytes)+1))
+	if err != nil {
+		clear(pcm)
+		return nil, 0, err
+	}
+	if len(pcm) == 0 || len(pcm) > maxBytes || len(pcm)%4 != 0 {
+		clear(pcm)
+		return nil, 0, fmt.Errorf("audio: decoded duration out of bounds")
+	}
+	return pcm, rate, nil
+}
+
+// clapFromOriginal preserves the legacy arithmetic for decoded int16 samples.
+// It is deliberately not an anti-aliased resampler for MERT or a DSP input path.
+func clapFromOriginal(ctx context.Context, pcm DecodedPCM) ([]float32, error) {
+	return clapResample(ctx, len(pcm.Samples)/pcm.Channels, pcm.SampleRate, func(i int) float64 {
+		var sum float64
+		for c := range pcm.Channels {
+			sum += float64(pcm.Samples[i*pcm.Channels+c])
+		}
+		return sum / float64(pcm.Channels)
+	})
+}
+
+func clapResample(ctx context.Context, frames, rate int, mono func(int) float64) ([]float32, error) {
 	out := make([]float32, frames*SampleRate/rate)
 	ok := false
 	defer func() {
@@ -50,11 +110,6 @@ func DecodeMP3(ctx context.Context, encoded []byte) ([]float32, error) {
 			clear(out)
 		}
 	}()
-	mono := func(i int) float64 {
-		left := int16(binary.LittleEndian.Uint16(pcm[i*4:]))    //nolint:gosec // signed PCM bit pattern
-		right := int16(binary.LittleEndian.Uint16(pcm[i*4+2:])) //nolint:gosec
-		return (float64(left) + float64(right)) / (2 * 32768)
-	}
 	for i := range out {
 		if i%4096 == 0 {
 			if err := ctx.Err(); err != nil {

@@ -28,9 +28,11 @@ func (p Policy) Valid() bool {
 }
 
 type Service struct {
-	Resolver   ports.AudioPreviewResolver
-	Analyzer   ports.AudioAnalyzer
-	Store      ports.AnalysisStore
+	Resolver ports.AudioPreviewResolver
+	Analyzer ports.AudioAnalyzer
+	Store    ports.AnalysisStore
+	// DSPStore is separately opt-in. Nil preserves the existing CLAP-only path.
+	DSPStore   ports.DSPStore
 	Recordings ports.CachedRecordingReader
 	Policy     Policy
 	// Authorized is a distribution-level provider permission gate, independent
@@ -80,9 +82,10 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		return core.AudioAnalysis{}, int64(len(encoded)), err
 	}
 	hash := sha256.Sum256(encoded)
-	samples, err := DecodeMP3(ctx, encoded)
+	samples, original, err := decodeForAnalysis(ctx, encoded, s.DSPStore != nil)
 	clear(encoded)
 	defer clear(samples)
+	defer clear(original.Samples)
 	if err != nil {
 		return core.AudioAnalysis{}, int64(len(encoded)), err
 	}
@@ -93,6 +96,12 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		Model: s.Analyzer.Identity(), AudioSHA256: hex.EncodeToString(hash[:]), AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Sampling: &core.AudioSampling{Policy: PreviewSamplingVersion, AvailableSeconds: float64(len(samples)) / SampleRate},
 		Coverage: core.PreviewCoverage{Available: true, StartSeconds: offset, EndSeconds: float64(last) / SampleRate, CoveredSeconds: float64(last-first) / SampleRate, Source: "deezer"},
+	}
+	if s.DSPStore != nil {
+		if _, err := s.storeDSPInterval(ctx, ref, catalog, preview.Identity, record.AudioSHA256, original, first, last); err != nil {
+			return core.AudioAnalysis{}, int64(len(encoded)), err
+		}
+		clear(original.Samples)
 	}
 	err = forEachSegment(ctx, samples[first:last], func(segment []float32, start, end float64) error {
 		vector, err := s.Analyzer.EmbedAudio(ctx, segment)

@@ -120,4 +120,84 @@ No MERT ONNX graph, MERT parity result, runtime install command, music-quality
 evaluation or performance benchmark is claimed in M1. No macOS/Linux package
 execution was performed locally. Existing opt-in real-provider/model tests need
 their documented environment/assets and are not evidence of MERT validation.
-The next dependent implementation is M2, after M1 approval and merge.
+M1 was merged as [PR #22](https://github.com/platten/playlistai/pull/22), commit
+`bf915c4aa8fab35e2838c785770753c6f01b297c`, after the user reported approval/merge.
+
+## M2 implementation note and delivery evidence
+
+Base: `origin/main` at `bf915c4aa8fab35e2838c785770753c6f01b297c`;
+branch `codex/enhanced-audio-m2-dsp`, initially clean. Baseline `go test ./...`
+passed. The existing decoder, CLAP preprocessing arithmetic, analysis store,
+preview authorization, interval sampling and service were inspected before edits.
+
+The original int16 decoder is shared. Legacy `DecodeMP3` preserves its existing
+mono/linear-resampling/quantization arithmetic; a separate original-channel
+float32 branch retains power for DSP. `Service.DSPStore` is opt-in and defaults
+to nil; no app composition, recommendation mode, scoring or UI behavior changes.
+When enabled with CLAP, a single fetch/decode supplies both paths and all PCM is
+cleared after use. Explicit `AnalyzeDSPPreview` works without an installed model
+and reuses cache before provider resolution. Neither path persists audio.
+
+The ten [versioned measurements](dsp-measurements.md) distinguish finite known
+values from unknown values with reasons. `DSPAnalysis` records source format,
+verified preview identity/hash, version and observed source-frame coverage.
+The additive `dsp_analysis` table/index shares `audio-analysis.sqlite`; its
+find/put/usage/clear adapter is isolated from CLAP and audio representations.
+Changing DSP extraction, decoding or sampling invalidates DSP independently.
+CLAP/MERT model and ranking changes do not enter the DSP version.
+
+The shared service rounds selected CLAP-frame interval boundaries inward to whole
+original frames. Cached DSP retains its own coverage even if a later CLAP call
+chooses another interval. Once preview bytes have been fetched for CLAP, matching
+DSP version, complete preview identity and audio hash reuse the existing DSP row.
+Changed audio/identity causes new measurement; no timestamp-only duplicate is
+written on a compatible CLAP reanalysis. This policy was tightened after an
+independent review finding and regression-tested.
+
+Focused checks passed: audio/core/ports package tests, targeted race tests, and
+CLAP comparison against frozen pre-M2 arithmetic across nine source rates and
+edge/random int16 PCM. Regressions cover original-channel anti-phase power,
+single-fetch combined analysis, model-free cached DSP, legacy database migration,
+all cache identity fields, corruption, zero/missing distinction, clear isolation,
+and cancellation while waiting for the sole database connection. Synthetic
+extractor tests additionally cover signal directions, silence, low sample rates,
+partial durations, deterministic repetition and cancellation during FFT work.
+
+No new dataset, model weight, Python environment, native library or application
+dependency is needed for DSP. M1's retained source assets remain in Downloads.
+There is no held-out musical-quality evaluation or MERT inference claim in M2.
+DSP is not yet exposed through the UI; M4 connects Enhanced Hybrid and M6 adds
+user controls/evidence. M3 is gated on M2 approval and merge.
+
+The final Windows gate (`scripts/test.ps1`, CGO enabled with the existing verified
+LLVM-MinGW compiler) passed: Wails bindings, frontend typecheck, 150 frontend
+tests, production build, vet, pure-Go core compilation, race-enabled full Go suite
+and lint (zero issues). Independent review verified the cache fix and found no
+remaining actionable findings. Opt-in real-model/provider tests were not activated.
+The following package cross-compilations also passed with `CGO_ENABLED=0`:
+
+```text
+GOOS=linux  GOARCH=amd64 go test -c ./internal/audio -o <temporary-output>
+GOOS=darwin GOARCH=arm64 go test -c ./internal/audio -o <temporary-output>
+```
+
+These are compile checks, not native execution, installer inspection or full
+application packaging on those hosts. Other target architectures were not
+independently cross-compiled locally in this milestone.
+
+DSP benchmark, executed 2026-09-11 on Windows/amd64, Intel Core Ultra 9 285H,
+Go 1.27.0, default GOMAXPROCS 16 but one sequential extraction at a time:
+
+```text
+go test ./internal/audio -run '^$' -bench '^BenchmarkMeasureDSP$' -benchtime=3x -count=3 -benchmem
+190183900 ns/op   291536 B/op   17 allocs/op
+189793500 ns/op   291536 B/op   17 allocs/op
+191865667 ns/op   291536 B/op   17 allocs/op
+```
+
+Input is a synthetic 30-second 48 kHz stereo, 1 kHz sine at amplitude 0.5 with
+opposed channels; no random seed/model/runtime is involved. Algorithm identity is
+`audio.DSPVersion` in this M2 diff. Allocation totals exclude the prebuilt input
+and are not measured peak RAM. Decode, cache I/O, model inference, cold/warm start,
+and full playlist performance were not measured by this isolated extraction
+benchmark. These numbers are not musical-quality evidence.

@@ -1,6 +1,10 @@
 # Enhanced audio: retained sources and maintainer preparation
 
 This guide accompanies [the milestone PR gates](enhanced-audio-milestones.md).
+M2's deterministic DSP runs directly in Go over transient original-rate PCM;
+it needs no data-preparation script, trained asset or additional download. Its
+synthetic regressions and measurement definitions are in the
+[DSP guide](dsp-measurements.md).
 M1 acquires and verifies the existing catalog and pinned MERT reference source.
 It does **not** export or enable MERT yet. M3 must implement and execute the
 reference export/parity harness before any MERT scoring can become available.
