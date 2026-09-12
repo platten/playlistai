@@ -93,20 +93,23 @@ separately licensed model; no such permission is established here.
 & $mertPython -m unittest discover -s python -p test_export_mert.py
 ```
 
-Use a new output directory for each validated export; an existing installable
+Use a new output directory for each validated export; an existing intermediate
 manifest is never overwritten. The exporter refuses output directories inside
 Git. It checks ONNX graph validity, runs the **actual** upstream PyTorch model
 and CPU ONNX inference on silence, tones, short input, an impulse, seeded noise,
 an amplitude envelope and minimum input, and checks duration-weighted pooling of
 two segments. Maximum embedding error must be at most `1e-4` and cosine at least
-`0.99999`; failures stop before the installable manifest is written. Reference
+`0.99999`; failures stop before the intermediate manifest is written. Reference
 PyTorch embeddings use the upstream Wav2Vec2 normalizer. Application normalization
 must agree at absolute/relative tolerances `1e-6`/`1e-6` before inference.
 
 Outputs include `mert-audio.onnx`, the native runtime library, `LICENSES.txt`,
 `health.json`, `mert-bundle.json`, `parity-report.json`, and
-`preprocessing-reference.json`. The manifest pins each installed artifact's size
-and SHA-256. The Go importer runs native health checks before activation. A report
+`preprocessing-reference.json`. The manifest pins each exported artifact's size
+and SHA-256. A raw Windows export is an intermediate, **not an installable pack**:
+it lacks the required app-local Microsoft CRT dependencies. Assemble the final
+`packs-v2` distribution below before importing or running native Go parity.
+The Go importer runs native health checks before activation. A report
 alone is not permission to skip those checks. Reports and fixtures describe
 synthetic signals; they contain no private audio or listening data.
 
@@ -130,10 +133,33 @@ includes that archive's complete runtime notices. The source pins in
 [`mert-runtime-sources.json`](../python/mert-runtime-sources.json) match the
 application's `recommendedRuntimes` registry; a regression checks this agreement.
 
+Windows additionally needs Microsoft's app-local C++ runtime DLLs. The retained
+official, signed Visual C++ v14 14.51.36247.0 redistributable EXEs are pinned in
+the same lock file, including their immutable Microsoft download URLs. A
+maintainer-only helper extracts the pinned CAB payloads without running either
+installer. It needs 7-Zip only on the preparation machine:
+
+```powershell
+python python/prepare_windows_mert_crt.py `
+  --source "$assetRoot\derived-mert\crt-sources" `
+  --seven-zip 'C:/Users/pawel/scoop/shims/7z.exe'
+```
+
+The helper copies the checked-in, hash-verified `MICROSOFT-CRT-NOTICES.txt` beside
+the retained original archives and verifies the complete notices before distribution. The
+final pack includes their full text in `LICENSES.txt`. The x86-64 pack carries
+`msvcp140.dll`, `msvcp140_1.dll`, `vcruntime140.dll` and `vcruntime140_1.dll`;
+ARM64 carries the first three. The builder verifies every file's hash and PE
+architecture and checks the recursive MSVC import closure. Windows itself
+provides its supported Universal CRT API sets; no separate VC++ redistributable
+installation is needed for MERT.
+
 ```powershell
 python python/prepare_mert_packs.py `
   --export "$assetRoot\derived-mert\windows-amd64-v1" `
-  --out "$assetRoot\derived-mert\packs-v1" --zip
+  --crt-source "$assetRoot\derived-mert\crt-sources" `
+  --runtime-sources "$assetRoot\derived-mert\packs-v1\runtime-sources" `
+  --out "$assetRoot\derived-mert\packs-v2" --zip
 python -m unittest discover -s python -p test_prepare_mert_packs.py
 ```
 
@@ -143,7 +169,7 @@ The retained layout contains `runtime-sources/` with five original archives,
 `mert-linux-arm64/`, `mert-darwin-arm64/`, five compressed ZIPs, and
 `pack-inventory.json` with source URLs, bytes and hashes. Existing verified source
 archives are reused. Completed bundles are preserved: choose a new output root
-for rebuilding, optionally copy the verified `runtime-sources/` there first.
+for rebuilding and point `--runtime-sources` at the retained archive directory.
 An interrupted runtime download restarts its bounded `.part` file. No downloaded
 models, archives or packs belong in Git.
 
@@ -154,12 +180,20 @@ the selected target pack without Python. Do not bundle the Windows library into
 another OS package or copy the PyPI library implicitly: official release archives
 can differ from the wheel build despite the same ONNX Runtime version.
 
+The isolated MERT worker loads ONNX Runtime from the verified pack with
+[`LoadLibraryEx`'s DLL-directory and System32 search flags](https://learn.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexw).
+It then verifies that every MSVC module actually loaded from that pack, rejecting
+accidental reliance on machine-wide CRT files. This does not modify global PATH
+or CLAP's loader. The earlier Windows `packs-v1` output is retained as historical
+measurement provenance but is superseded for distribution and rejected by the
+new app-local dependency validation.
+
 Execute the native Go command on each target (a working C compiler is needed
 only to build the maintainer command):
 
 ```powershell
 $env:CGO_ENABLED = '1'
-go run ./cmd/mertparity "$assetRoot\derived-mert\packs-v1\mert-windows-amd64"
+go run ./cmd/mertparity "$assetRoot\derived-mert\packs-v2\mert-windows-amd64"
 $env:PLAYLISTAI_MERT_PREPROCESSING_REFERENCE = "$assetRoot\derived-mert\windows-amd64-v1\preprocessing-reference.json"
 go test ./internal/audio -run TestMERTPreparedPreprocessingReference -count=1
 Remove-Item Env:PLAYLISTAI_MERT_PREPROCESSING_REFERENCE
@@ -192,7 +226,7 @@ considering compression or quantization, and rerun numerical and musical checks
 for any changed graph.
 
 The report measures Python reference/ONNX parity; native Go parity is a separate
-gate. The official Windows x86-64 runtime pack also passed native Go health,
+gate. The historical `packs-v1` Windows x86-64 runtime pack passed native Go health,
 in-flight cancellation (1 ms deadline), and successful reload health. One run
 measured cold health 2497 ms, warm health 1924 ms and post-cancellation reload
 health 2819 ms; health executes three reference inputs, so these are not
@@ -212,6 +246,26 @@ The synthetic fixtures establish numerical behavior only. For musical evaluation
 use only accessible source PCM or authorized exact-recording Deezer previews
 under the [data eligibility rules](enhanced-audio-data-preparation.md). Do not
 download feature-only corpora expecting to derive new audio embeddings from them.
+
+The corrected `packs-v2` distribution retains the same graph and model-space
+identity and adds the pinned app-local Microsoft CRT files and notices. Original
+Microsoft archives add **30,602,672 bytes** of retained source downloads. The
+five v2 ZIPs total **1,195,419,380 bytes**: Windows x86-64 is **237,348,586 bytes**
+(347,548 more than v1), and Windows ARM64 is **237,463,845 bytes** (539,141 more).
+The three non-Windows ZIP sizes are unchanged. The v2 `pack-inventory.json` and
+`package-inspection.json` record the current archive hashes, exact ZIP allowlists,
+every artifact hash, all PE/ELF/Mach-O architectures, and the complete static
+MSVC dependency closure. No installer was executed to obtain the CRT files.
+
+A fresh Windows worker using v2 passed native health, cancellation and reload
+with observed times **2,532 / 1,814 / 2,361 ms**. Its loader verified that all four
+MSVC modules actually came from the pack, so the test did not rely on the
+machine-wide VC++ redistributable. A rebuilt desktop executable using the new
+loader passed the framed native MERT health probe in **3.14 seconds**. A separate
+v2 cold/warm/cancel/reload observation measured **525,746,176 bytes** peak working
+set across the two native worker processes, sampled every 50 ms. This excludes
+parent application memory and does not certify a fresh-OS installer or native
+execution on ARM64, Linux or macOS.
 
 ## Exact native install, status and removal commands
 
@@ -234,7 +288,7 @@ $env:CGO_ENABLED = '1'
 go build -o "$env:TEMP/mertpack.exe" ./cmd/mertpack
 
 $mertDirectory = 'C:/Users/pawel/AppData/Roaming/playlist-ai/mert-analysis'
-$mertSource = 'C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v1/mert-windows-amd64'
+$mertSource = 'C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v2/mert-windows-amd64'
 
 & "$env:TEMP/mertpack.exe" status --directory $mertDirectory
 & "$env:TEMP/mertpack.exe" install-local --directory $mertDirectory --source $mertSource

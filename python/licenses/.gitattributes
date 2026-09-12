@@ -1,0 +1,3 @@
+# Runtime-source pins identify these exact UTF-8 bytes across operating systems.
+# Preserve upstream CRLF and trailing spaces rather than rewriting pinned notices.
+*.txt -text whitespace=cr-at-eol,-blank-at-eol

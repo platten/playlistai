@@ -57,8 +57,12 @@ func (m MERTBundleManifest) validateRuntime() error {
 		if !safeName(a.Name) || names[a.Name] || roles[a.Role] || a.Size <= 0 || !representationHash(a.SHA256) || a.URL != "" && !strings.HasPrefix(a.URL, "https://") {
 			return fmt.Errorf("audio: invalid MERT artifact")
 		}
-		if a.Role != "audio_model" && a.Role != "runtime" && a.Role != "license" && a.Role != "health" {
+		dependency := MERTWindowsRuntimeDependencies(m.Platform)[a.Role]
+		if a.Role != "audio_model" && a.Role != "runtime" && a.Role != "license" && a.Role != "health" && dependency == "" {
 			return fmt.Errorf("audio: unknown MERT artifact role")
+		}
+		if dependency != "" && (a.Name != dependency || a.ArchiveMember != "" || a.Size > 16<<20) {
+			return fmt.Errorf("audio: invalid app-local MERT runtime dependency")
 		}
 		if len(a.Data) > 0 && (len(a.Data) > 1<<20 || a.Role != "license" && a.Role != "health") {
 			return fmt.Errorf("audio: invalid MERT inline artifact")
@@ -81,7 +85,25 @@ func (m MERTBundleManifest) validateRuntime() error {
 			return fmt.Errorf("audio: missing MERT %s", role)
 		}
 	}
+	for role := range MERTWindowsRuntimeDependencies(m.Platform) {
+		if !roles[role] {
+			return fmt.Errorf("audio: missing app-local MERT %s", role)
+		}
+	}
 	return nil
+}
+
+// MERTWindowsRuntimeDependencies are app-local MSVC libraries, not a machine-
+// wide redistributable prerequisite. Windows supplies the Universal CRT itself.
+func MERTWindowsRuntimeDependencies(platform string) map[string]string {
+	if platform != "windows/amd64" && platform != "windows/arm64" {
+		return nil
+	}
+	deps := map[string]string{"runtime_dependency_msvcp140": "msvcp140.dll", "runtime_dependency_msvcp140_1": "msvcp140_1.dll", "runtime_dependency_vcruntime140": "vcruntime140.dll"}
+	if platform == "windows/amd64" {
+		deps["runtime_dependency_vcruntime140_1"] = "vcruntime140_1.dll"
+	}
+	return deps
 }
 func (m MERTBundleManifest) File(dir, role string) string {
 	return (BundleManifest{Artifacts: m.Artifacts}).File(dir, role)

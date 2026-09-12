@@ -6,7 +6,11 @@ All Windows, Linux and macOS jobs use GitHub-hosted runners. See
 Optional MERT model packs are prepared separately for every shipped target with
 `python/prepare_mert_packs.py`; see [the pinned export and packaging guide](mert-model-preparation.md).
 They contain the same FP32 graph, the verified target ONNX Runtime library and
-separate upstream notices. They require no Python at installation or inference.
+separate upstream notices. Windows packs also include the pinned app-local
+Microsoft Visual C++ runtime DLLs and their separate terms; the isolated worker
+verifies that these dependencies loaded from the pack. A preinstalled Visual C++
+redistributable is not used as the packaging solution. Packs require no Python
+at installation or inference.
 Retain the application-only release allowlist; model packs may be distributed
 alongside the application as separately licensed optional assets. Validate each
 pack on its native host with the compiled `mertparity` command before publishing.

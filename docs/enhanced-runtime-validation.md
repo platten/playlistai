@@ -62,6 +62,10 @@ neural inference. See [M2 evidence](enhanced-audio-milestones.md).
 
 ## Real native model validation
 
+The initial timings in this section used `packs-v1` on the development host.
+Use the corrected `packs-v2` command below for reproduction. Final app-local CRT
+validation is recorded separately at the end of this report.
+
 The official Windows asset pack's compiled Go worker passed three pinned
 PyTorch-reference health fixtures, then canceled an actual inference call and
 passed health again after worker restart:
@@ -81,7 +85,7 @@ The acceptance tolerance is maximum coordinate difference 1e-4 and cosine at
 least 0.9999, with normalized finite outputs required.
 
 ```powershell
-go run ./cmd/mertparity C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v1/mert-windows-amd64
+go run ./cmd/mertparity C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v2/mert-windows-amd64
 ```
 
 Five Python/Go preprocessing reference cases passed, covering 8, 24, 44.1, 48 and
@@ -121,3 +125,25 @@ compilation must remain separate from actual native inference/package evidence.
 Full-application startup, full-playlist peak RAM, representative hardware latency
 and large independent musical evaluation remain distinct measurements; the
 component data above does not fill those gaps.
+
+## Final Windows app-local CRT validation
+
+The final `packs-v2` artifacts include Microsoft Visual C++ Runtime 14.51.36247
+dependencies and their separate terms. Original `packs-v1` Windows packs are
+retained but superseded. The isolated worker loads ONNX Runtime using its
+verified directory and System32 search flags, then verifies each required CRT
+module's actual loaded path is the checked pack path. This prevents the developer
+machine's installed CRT from masking an incomplete distribution.
+
+On the same Windows amd64 host, a fresh run with v2 measured cold/warm/reload
+health at **2,532 / 1,814 / 2,361 ms**, with successful cancellation. A second run
+measured **2,454 / 2,042 / 2,617 ms** while observing a worker peak working set of
+**525,746,176 bytes**. These are individual three-fixture health batches, not
+latency distributions or all-platform bounds. No unrelated benchmarks were rerun.
+
+A freshly compiled desktop binary also passed framed MERT worker health with
+v2, including verification of all four loaded CRT paths, in 3.14 seconds. All
+five ZIPs were reread: exact manifest/file membership, artifact hashes and native
+architectures passed. Windows recursive imports require four bundled CRT DLLs
+for amd64 and three for arm64, with no further non-OS DLL dependency. Windows
+ARM64 native execution and other native inference hosts remain untested locally.

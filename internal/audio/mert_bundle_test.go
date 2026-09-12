@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -26,6 +27,16 @@ func fixtureMERTBundle(t *testing.T, dir string) MERTBundleManifest {
 		m.Artifacts = append(m.Artifacts, a)
 		if dir != "" {
 			if err := os.WriteFile(filepath.Join(dir, a.Name), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for role, name := range MERTWindowsRuntimeDependencies(m.Platform) {
+		data := []byte("synthetic " + role)
+		hash := sha256.Sum256(data)
+		m.Artifacts = append(m.Artifacts, BundleArtifact{Role: role, Name: name, Size: int64(len(data)), SHA256: hex.EncodeToString(hash[:])})
+		if dir != "" {
+			if err := os.WriteFile(filepath.Join(dir, name), data, 0600); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -100,5 +111,27 @@ func TestMERTLocalInstallHealthAndIntegrity(t *testing.T) {
 func TestMERTNoCGOGate(t *testing.T) {
 	if !nativeInferenceAvailable && fixtureMERTBundle(t, "").Validate() == nil {
 		t.Fatal("no-CGO install accepted")
+	}
+}
+
+func TestWindowsMERTBundleRequiresEveryAppLocalDependency(t *testing.T) {
+	for platform, count := range map[string]int{"windows/amd64": 4, "windows/arm64": 3, "linux/amd64": 0} {
+		if got := len(MERTWindowsRuntimeDependencies(platform)); got != count {
+			t.Fatalf("%s dependency count%d", platform, got)
+		}
+	}
+	if runtime.GOOS != "windows" {
+		return
+	}
+	m := fixtureMERTBundle(t, "")
+	for i, a := range m.Artifacts {
+		if strings.HasPrefix(a.Role, "runtime_dependency_") {
+			broken := m
+			broken.Artifacts = append([]BundleArtifact(nil), m.Artifacts[:i]...)
+			broken.Artifacts = append(broken.Artifacts, m.Artifacts[i+1:]...)
+			if broken.validateRuntime() == nil {
+				t.Fatal("missing app-local CRT accepted", a.Role)
+			}
+		}
 	}
 }
