@@ -12,7 +12,9 @@ import (
 // model completion has already discarded a literal name or instruction.
 func reconcileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) {
 	discardUngroundedProposals(w, snapshot, prompt)
-	m := lexicon.Reconcile(w.ToCore(), *snapshot)
+	source := w.ToCore()
+	source.OriginalDescription = prompt
+	m := lexicon.Reconcile(source, *snapshot)
 	span := func(e []core.SourceEvidence) string {
 		if len(e) > 0 {
 			return e[0].Text

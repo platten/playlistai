@@ -43,6 +43,14 @@ visible when the available evidence cannot verify them. See
 [dictionary preparation](docs/intent-dictionary-preparation.md) for the optional
 offline Python workflow; the desktop dictionary runs entirely in Go.
 
+Enhanced hybrid also retrieves cached artist and album context from MusicBrainz
+and identity-checked Wikidata/Wikipedia links. This can supply genre hints and
+better representative recordings, including early-career seeds. Public context
+guides retrieval; recording evidence still determines musical fit. The native
+pre-parser protects compound durations, negation and journey roles before and
+after the LLM step. See [implementation and validation](docs/music-context-implementation-results.md)
+and the [larger-model evaluation guide](docs/music-context-and-preparser-plan.md).
+
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
 
@@ -170,7 +178,10 @@ included in desktop or analysis downloads.
 
 Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
-MusicBrainz metadata, optional Discogs fallback, and Soundiiz handoff. MusicBrainz
+MusicBrainz metadata, linked Wikidata/Wikipedia context in Enhanced hybrid,
+optional Discogs fallback, and Soundiiz handoff. Context requests contain public
+entity names, identifiers and catalog recording titles; they do not send the full
+prompt or listening history. MusicBrainz
 queries reuse a one-week cache; **Settings → Music metadata** can clear it and
 configure the Discogs token. Fallback requests are capped at 25/minute and still
 pass the normal musical-fit checks. An optional [local Discogs dataset](docs/local-metadata-dataset.md)

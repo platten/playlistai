@@ -74,6 +74,9 @@ func (g GenreGraph) Matches(want, actual string) bool {
 }
 
 type KnowledgeSnapshot struct {
+	// ContextPlans are immutable, source-attributed retrieval proposals. They
+	// never supply recording-level genre tags or proof of musical suitability.
+	ContextPlans []ContextSeedPlan `json:"contextPlans,omitempty"`
 	// Discovery records the ordered pull stream, including rejected candidates,
 	// so history replay does not consult a changing external artist search.
 	Discovery         []TrackRef                     `json:"discovery,omitempty"`

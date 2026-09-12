@@ -46,6 +46,9 @@ type Config struct {
 	MirrorURL string
 	// DeezerURL overrides the public artist/top-track endpoint for tests.
 	DeezerURL string
+	// WikidataURL and WikipediaURL override context endpoints for loopback tests.
+	WikidataURL  string
+	WikipediaURL string
 	// DiscogsURL overrides the fallback endpoint for local tests only.
 	DiscogsURL string
 	// CredentialPath holds the optional Discogs personal token (not ordinary preferences).
@@ -73,6 +76,9 @@ type Client struct {
 	deezerClient    *http.Client
 	discogs         *discogsClient
 	acoustic        *acousticClient
+	wikidataBase    string
+	wikipediaBase   string
+	contextClient   *http.Client
 
 	limiter *requestLimiter
 
@@ -133,6 +139,9 @@ func New(cfg Config) (*Client, error) {
 	limiter, _ := applicationLimiters.LoadOrStore(limiterKey, &requestLimiter{gate: make(chan struct{}, 1)})
 	c.limiter = limiter.(*requestLimiter)
 	c.hc.Transport = &limitedTransport{client: c, base: http.DefaultTransport}
+	if err := c.configureContext(cfg); err != nil {
+		return nil, err
+	}
 	c.deezerBase = strings.TrimRight(cfg.DeezerURL, "/")
 	if c.deezerBase == "" {
 		c.deezerBase = "https://api.deezer.com"
@@ -274,7 +283,8 @@ type mbTag struct {
 type mbArtistCredit struct {
 	Name   string `json:"name"`
 	Artist struct {
-		ID string `json:"id"`
+		ID   string `json:"id"`
+		Name string `json:"name"`
 	} `json:"artist"`
 }
 

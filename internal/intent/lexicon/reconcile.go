@@ -76,9 +76,17 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 		}
 	}
 	intent.Unsupported = unsupported
-	// Calendar requirements must have source evidence. Model-suggested eras are
-	// not inferred retrieval hints and must never silently filter the catalog.
-	intent.Temporal = nil
+	// Calendar requirements must have source evidence. A model may understand
+	// a literal date phrase beyond the dictionary, but cannot invent an era.
+	periods := make([]core.TemporalRequirement, 0, len(intent.Temporal))
+	for _, p := range intent.Temporal {
+		if !Owned("", p.Evidence, extracted.Atoms) {
+			if grounded, ok := groundedModelPeriod(p, intent.OriginalDescription, extracted.Atoms); ok {
+				periods = append(periods, grounded)
+			}
+		}
+	}
+	intent.Temporal = periods
 	intent.DurationSeconds = 0
 	hasCount, hasDuration := false, false
 	for _, a := range extracted.Atoms {
@@ -88,6 +96,9 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			hasCount = true
 		case "duration":
 			intent.DurationSeconds, _ = strconv.Atoi(a.Value)
+			hasDuration = true
+		case "duration_range":
+			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Value, Reason: "A duration range is preserved, but the current playlist duration control requires one target duration.", Evidence: a.Evidence})
 			hasDuration = true
 		case "temporal":
 			var basis string
@@ -99,10 +110,31 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 				last, _ = strconv.Atoi(parts[2])
 				intent.Temporal = append(intent.Temporal, core.TemporalRequirement{Basis: basis, StartYear: first, EndYear: last, Scope: a.Scope, Evidence: a.Evidence})
 			}
+		case "temporal_exclusion":
+			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The requested period exclusion is preserved; the current calendar filter supports positive intervals only.", Evidence: a.Evidence})
 		case "reference_era":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative artist era is preserved; a supported career-period reference is needed before it can constrain retrieval.", Evidence: a.Evidence})
 		case "required_track":
 			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence})
+		case "entity_mention":
+			keptReferences := intent.References[:0]
+			for _, r := range intent.References {
+				if !negativeCandidateOwnsReference(intent.OriginalDescription, a, r) {
+					keptReferences = append(keptReferences, r)
+				}
+			}
+			intent.References = keptReferences
+			if !hasCandidateInterpretation(intent, a) {
+				kept := intent.References[:0]
+				for _, r := range intent.References {
+					if r.Influence != core.Influence(a.Polarity) || !wordsContain(a.Value, r.Query) {
+						kept = append(kept, r)
+					}
+				}
+				intent.References = kept
+				intent.References = append(intent.References, candidateReference(a))
+			}
+			applyCandidateRole(&intent, a)
 		case "artist", "track", "album", "start", "destination":
 			kind := core.ReferenceKind(a.Kind)
 			if a.Kind == "start" || a.Kind == "destination" {
@@ -213,7 +245,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 // overlap; an unrelated unknown phrase with a broad source span survives.
 func Owned(value string, evidence []core.SourceEvidence, atoms []core.IntentAtom) bool {
 	for _, a := range atoms {
-		if a.Kind == "count" {
+		if a.Kind == "count" || a.Kind == "entity_mention" {
 			continue
 		}
 		matchedValue := wordsContain(value, a.Value) || wordsContain(a.Value, value)
@@ -276,6 +308,10 @@ func FactsMessage(x core.IntentTranslation) string {
 	var b strings.Builder
 	b.WriteString("\n\nProtected source facts. Copy span only from the quoted source text, never from a label or normalized value. A similarity reference does not require that artist in the output.\n")
 	for _, a := range x.Atoms {
+		if a.Kind == "entity_mention" {
+			fmt.Fprintf(&b, "Possible whole artist mention, not a locked identity or list: value=%q; source=%q. Its %s %s role is %s. Preserve the full name unless the request clearly lists separate artists.\n", a.Value, a.Evidence[0].Text, a.Polarity, a.Scope, a.Strength)
+			continue
+		}
 		if a.Kind == "count" {
 			fmt.Fprintf(&b, "Track count: %s; source=%q\n", a.Value, a.Evidence[0].Text)
 			continue

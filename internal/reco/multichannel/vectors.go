@@ -69,6 +69,11 @@ func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influenc
 		}
 		seen[key] = struct{}{}
 		reps := referenceRepresentatives(cat, reference)
+		if influence == core.InfluencePositive {
+			if contextual := contextualReferenceVectors(cat, intent, reference); len(contextual) > 0 {
+				reps = contextual
+			}
+		}
 		if len(reps) > 0 {
 			result = append(result, referenceVectors{id: referenceID(reference, index), reps: reps})
 		}
@@ -84,6 +89,10 @@ func referenceRepresentatives(cat ports.Catalog, reference core.IntentReference)
 	if len(tracks) == 0 && reference.TrackID != "" {
 		tracks = []core.WeightedTrack{{TrackID: reference.TrackID, Weight: 1}}
 	}
+	return trackVectors(cat, tracks)
+}
+
+func trackVectors(cat ports.Catalog, tracks []core.WeightedTrack) []weightedVectors {
 	out := make([]weightedVectors, 0, len(tracks))
 	for _, track := range tracks {
 		vectors, ok := cat.Vectors(track.TrackID)
