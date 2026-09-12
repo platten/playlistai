@@ -38,6 +38,11 @@ func unpack(ctx context.Context, archive, dir string, i installation) (string, e
 	if err := os.Mkdir(root, 0700); err != nil {
 		return "", err
 	}
+	extractionRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return "", err
+	}
+	defer extractionRoot.Close()
 	var total int64
 	count := 0
 	write := func(name string, size int64, mode os.FileMode, r io.Reader) error {
@@ -65,20 +70,17 @@ func unpack(ctx context.Context, archive, dir string, i installation) (string, e
 		} else if name != "playlist-ai" && name != "playlist-ai.exe" {
 			return fmt.Errorf("unexpected executable archive entry")
 		}
-		target := filepath.Join(root, filepath.FromSlash(name))
-		cleanRoot := filepath.Clean(root)
-		cleanTarget := filepath.Clean(target)
-		rel, err := filepath.Rel(cleanRoot, cleanTarget)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		target := filepath.FromSlash(name)
+		if !filepath.IsLocal(target) {
 			return fmt.Errorf("unsafe update archive path")
 		}
 		if mode.IsDir() {
-			return os.MkdirAll(cleanTarget, 0755)
+			return extractionRoot.MkdirAll(target, 0755)
 		}
-		if err := os.MkdirAll(filepath.Dir(cleanTarget), 0755); err != nil {
+		if err := extractionRoot.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return err
 		}
-		f, err := os.OpenFile(cleanTarget, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0755|0600)
+		f, err := extractionRoot.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0755|0600)
 		if err != nil {
 			return err
 		}

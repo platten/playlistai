@@ -207,6 +207,52 @@ func TestArchiveTraversalLinksAndExpansion(t *testing.T) {
 	}
 }
 
+func TestArchiveBundleExtraction(t *testing.T) {
+	for _, entry := range []string{
+		"playlist-ai.app/Contents/MacOS/playlist-ai",
+		"playlist-ai.app/../../escape",
+		"playlist-ai.app/Contents/../../../escape",
+	} {
+		t.Run(entry, func(t *testing.T) {
+			dir := t.TempDir()
+			archive := filepath.Join(dir, "update.zip")
+			f, err := os.Create(archive)
+			if err != nil {
+				t.Fatal(err)
+			}
+			z := zip.NewWriter(f)
+			w, err := z.Create(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := w.Write([]byte("fixture")); err != nil {
+				t.Fatal(err)
+			}
+			if err := z.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatal(err)
+			}
+			payload, err := unpack(context.Background(), archive, dir, installation{Kind: "darwin"})
+			if entry == "playlist-ai.app/Contents/MacOS/playlist-ai" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				data, err := os.ReadFile(payloadExecutable(payload, "darwin"))
+				if err != nil || string(data) != "fixture" {
+					t.Fatalf("extracted payload = %q, %v", data, err)
+				}
+			} else if err == nil {
+				t.Fatal("bundle traversal accepted")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "escape")); !os.IsNotExist(err) {
+				t.Fatalf("unexpected outside file: %v", err)
+			}
+		})
+	}
+}
+
 func makeJob(t *testing.T) (job, string) {
 	t.Helper()
 	parent := t.TempDir()
