@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import time
 import unicodedata
 
 from prepare_intent_nlu_data import digest, write_json
@@ -179,6 +180,40 @@ def candidate_metadata(hashes: dict, report: dict) -> dict:
     return {"version": 1, **hashes, "reviewed": False, "threshold": report["suggestedThreshold"], "validationExamples": report["validationExamples"], "note": "Threshold suggestion from reviewed calibration labels only; no human approval or activation. Independent semantic evaluation and review are still required."}
 
 
+def infer_cases(rows: list[dict], exported: Path, head: dict, threads: int) -> tuple[list[dict], dict]:
+    """Shared fixed-model inference; callers control label review and reporting."""
+    if threads < 1:
+        raise ValueError("threads must be positive")
+    import numpy as np
+    import onnxruntime as ort
+    from transformers import BertTokenizerFast
+
+    tokenizer = BertTokenizerFast(vocab_file=str(exported / "vocab.txt"), do_lower_case=False, strip_accents=False, tokenize_chinese_chars=True)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = 1
+    start = time.perf_counter()
+    session = ort.InferenceSession(str(exported / "model.onnx"), sess_options=options, providers=["CPUExecutionProvider"])
+    load_ms = (time.perf_counter() - start) * 1000
+    if {item.name for item in session.get_inputs()} != {"input_ids", "attention_mask"}:
+        raise ValueError("Unexpected ONNX input contract")
+    cases, timings = [], []
+    for row in rows:
+        start = time.perf_counter()
+        encoded = tokenizer(row["prompt"], return_offsets_mapping=True, return_special_tokens_mask=True, truncation=False)
+        if len(encoded["input_ids"]) > head["maxTokens"]:
+            raise ValueError(f"{row['id']}: model input limit; do not truncate calibration prompts")
+        boundaries = byte_boundaries(row["prompt"])
+        tokens = [{"start": boundaries[left], "end": boundaries[right], "special": bool(special)} for (left, right), special in zip(encoded["offset_mapping"], encoded["special_tokens_mask"])]
+        values = {name: np.asarray([encoded[name]], dtype=np.int64) for name in ("input_ids", "attention_mask")}
+        logits = session.run([head["outputName"]], values)[0]
+        timings.append((time.perf_counter() - start) * 1000)
+        if logits.shape != (1, len(tokens), len(head["labels"])) or not np.isfinite(logits).all():
+            raise ValueError("Unexpected/nonfinite ONNX logits")
+        cases.append({"id": row["id"], "text": row["prompt"], "gold": row["spans"], "tokens": tokens, "logits": logits[0].tolist()})
+    return cases, {"runtime": ort.__version__, "threads": threads, "modelLoadMs": load_ms, "tokenizeAndInferMs": timings, "nativeExecution": False}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
@@ -199,33 +234,9 @@ def main():
         parser.error("Use a fresh output directory")
     head, hashes = validate_head(args.exported)
     rows, provenance = load_calibration(args.data, args.training, args.exported)
-    import numpy as np
-    import onnxruntime as ort
-    from transformers import BertTokenizerFast
-
-    # Native uses a fixed cased BERT normalizer and verified vocab.txt. Do not
-    # silently use an unhashed tokenizer.json with potentially different rules.
-    tokenizer = BertTokenizerFast(vocab_file=str(args.exported / "vocab.txt"), do_lower_case=False, strip_accents=False, tokenize_chinese_chars=True)
-    options = ort.SessionOptions()
-    options.intra_op_num_threads = args.threads
-    options.inter_op_num_threads = 1
-    session = ort.InferenceSession(str(args.exported / "model.onnx"), sess_options=options, providers=["CPUExecutionProvider"])
-    if {item.name for item in session.get_inputs()} != {"input_ids", "attention_mask"}:
-        raise ValueError("Unexpected ONNX input contract")
-    cases = []
-    for row in rows:
-        encoded = tokenizer(row["prompt"], return_offsets_mapping=True, return_special_tokens_mask=True, truncation=False)
-        if len(encoded["input_ids"]) > head["maxTokens"]:
-            raise ValueError(f"{row['id']}: model input limit; do not truncate calibration prompts")
-        boundaries = byte_boundaries(row["prompt"])
-        tokens = [{"start": boundaries[start], "end": boundaries[end], "special": bool(special)} for (start, end), special in zip(encoded["offset_mapping"], encoded["special_tokens_mask"])]
-        values = {name: np.asarray([encoded[name]], dtype=np.int64) for name in ("input_ids", "attention_mask")}
-        logits = session.run([head["outputName"]], values)[0]
-        if logits.shape != (1, len(tokens), len(head["labels"])) or not np.isfinite(logits).all():
-            raise ValueError("Unexpected/nonfinite ONNX logits")
-        cases.append({"id": row["id"], "text": row["prompt"], "gold": row["spans"], "tokens": tokens, "logits": logits[0].tolist()})
+    cases, execution = infer_cases(rows, args.exported, head, args.threads)
     report = scan_thresholds(cases, head["labels"], thresholds, args.target_precision, args.minimum_accepted)
-    report.update({"hashes": hashes, "provenance": provenance, "runtime": ort.__version__, "nativeExecution": False, "calibrationLabelReview": "approved input records", "calibrationApproval": "pending"})
+    report.update({"hashes": hashes, "provenance": provenance, **execution, "calibrationLabelReview": "approved input records", "calibrationApproval": "pending"})
     args.output.mkdir(parents=True, exist_ok=False)
     write_json(args.output / "calibration-report.json", report)
     candidate = candidate_metadata(hashes, report)

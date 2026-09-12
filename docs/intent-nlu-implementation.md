@@ -1,5 +1,9 @@
 # Compact intent models: implementation and preparation
 
+The [expanded calibration diagnostic](intent-nlu-expanded-calibration-results.md)
+found no additional useful extraction from the current trained DistilBERT pilot;
+it remains inactive. More reviewed training data is needed before reconsidering it.
+
 This extends the single consolidated PR. The deterministic compiler is active;
 MiniLM dictionary assistance is optional. A pretrained DistilBERT encoder alone
 is **not** a trained playlist intent extractor.
