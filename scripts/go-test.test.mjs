@@ -62,3 +62,23 @@ test("cancellation terminates the child and cannot report success", { timeout: 1
   }
   assert.equal(JSON.parse(readFileSync(`${report}.summary.json`, "utf8")).signal, "SIGTERM");
 });
+
+test("an early failure remains visible after a package produces many later events", async t => {
+  const dir = mkdtempSync(join(tmpdir(), "playlist-ci-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const helper = join(dir, "failing-go.cjs");
+  writeFileSync(helper, `
+    const emit = event => console.log(JSON.stringify({Package:"fixture", ...event}));
+    emit({Action:"output",Test:"TestEarly",Output:"assertion details\\n"});
+    emit({Action:"fail",Test:"TestEarly",Elapsed:0.01});
+    for(let i=0;i<250;i++) emit({Action:"output",Test:"TestLater",Output:"later output\\n"});
+    emit({Action:"pass",Test:"TestLater",Elapsed:0.01});
+    emit({Action:"fail",Elapsed:0.02});
+    process.exitCode=1;
+  `);
+  let visible = "";
+  const report = join(dir, "timings");
+  assert.equal(await runTests({ report, args: ["./..."], command: process.execPath, prefix: [helper], writeLog: text => { visible += text; } }), 1);
+  assert.match(visible, /assertion details/);
+  assert.match(readFileSync(`${report}.jsonl`, "utf8"), /assertion details/);
+});

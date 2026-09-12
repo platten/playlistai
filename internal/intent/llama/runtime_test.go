@@ -121,7 +121,7 @@ Available devices:
 }
 
 func TestNewFallsBackToNextRuntime(t *testing.T) {
-	t.Parallel()
+	// Keep external-helper startup isolated from the other lifecycle tests.
 	fakeServerBin := fakeServerBinary(t)
 
 	broken := filepath.Join(t.TempDir(), "not-a-binary")
@@ -136,6 +136,7 @@ func TestNewFallsBackToNextRuntime(t *testing.T) {
 		},
 		ModelPath:    dummyModel(t),
 		StartTimeout: 15 * time.Second,
+		Logger:       fakeServerLogger(t),
 	})
 	if err != nil {
 		t.Fatalf("New should have fallen back to the fakeserver: %v", err)

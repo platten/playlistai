@@ -3,6 +3,7 @@ package llama
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +15,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// The helper is shared by parallel lifecycle tests, but compile-only and
+// The helper is shared by lifecycle tests, but compile-only and
 // unrelated test selections never need to build it.
 var fakeServerBuild struct {
 	once sync.Once
@@ -72,11 +73,25 @@ func dummyModel(t *testing.T) string {
 	return p
 }
 
+type serverTestLog struct{ t *testing.T }
+
+func (w serverTestLog) Write(p []byte) (int, error) {
+	w.t.Log(string(p))
+	return len(p), nil
+}
+
+func fakeServerLogger(t *testing.T) *slog.Logger {
+	t.Helper()
+	return slog.New(slog.NewTextHandler(serverTestLog{t}, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
 func TestServerLifecycle(t *testing.T) {
-	t.Parallel()
+	// External-helper lifecycle tests run serially: the server hands off a
+	// temporarily reserved port to its child, so unrelated simultaneous
+	// launches are not an isolation guarantee. Concurrency is not asserted here.
 	fakeServerBin := fakeServerBinary(t)
 
-	srv := newServer(ServerOptions{BinaryPath: fakeServerBin, ModelPath: dummyModel(t), NCtx: 2048})
+	srv := newServer(ServerOptions{BinaryPath: fakeServerBin, ModelPath: dummyModel(t), NCtx: 2048, Logger: fakeServerLogger(t)})
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
@@ -100,7 +115,6 @@ func TestServerLifecycle(t *testing.T) {
 }
 
 func TestServerAcceptsExplicitBenchmarkDevice(t *testing.T) {
-	t.Parallel()
 	fakeServerBin := fakeServerBinary(t)
 
 	srv := newServer(ServerOptions{
@@ -108,6 +122,7 @@ func TestServerAcceptsExplicitBenchmarkDevice(t *testing.T) {
 		ModelPath:  dummyModel(t),
 		GPULayers:  0,
 		Device:     "CUDA0",
+		Logger:     fakeServerLogger(t),
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -129,7 +144,6 @@ func TestServerStartFailsOnMissingBinary(t *testing.T) {
 }
 
 func TestParserEndToEndWithFakeServer(t *testing.T) {
-	t.Parallel()
 	fakeServerBin := fakeServerBinary(t)
 
 	p, err := New(context.Background(), Options{
@@ -137,6 +151,7 @@ func TestParserEndToEndWithFakeServer(t *testing.T) {
 		ModelPath:    dummyModel(t),
 		Device:       "CUDA0",
 		StartTimeout: 15 * time.Second,
+		Logger:       fakeServerLogger(t),
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)

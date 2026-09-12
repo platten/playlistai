@@ -14,7 +14,7 @@ Implemented changes:
   outcomes and fails on missing, skipped, failed or cancelled required jobs.
 - Save raw Go JSON events, package and individual-test timings, exit status,
   runner hardware/image and Go build environment with every instrumented run.
-  The wrapper propagates failure and cancellation; five focused Node tests
+  The wrapper propagates failure and cancellation; six focused Node tests
   verify collection and process handling.
 - Populate large catalog and semantic SQLite fixtures transactionally, retaining
   all records, assertions, file access and reopen behavior.
@@ -63,7 +63,7 @@ Local validation completed with Go 1.27.0 on Windows amd64, Intel Core Ultra 9
 | MusicBrainz targeted policy tests | 44.686s baseline to 0.530s; full package 3.319s |
 | Llama race/shuffle, three repetitions | Passed; 5.228s |
 | Compiled llama tests with empty PATH and no selected tests | Passed, proving no helper compilation was needed |
-| Timing helper | Five tests passed, including child failures and cancellation |
+| Timing helper | Six tests passed, including child failures and cancellation |
 | actionlint v1.7.12 | Modified CI/release workflows passed; shellcheck disabled in this Windows invocation |
 
 An initial sandboxed gate could not access the installed compiler and caches;
@@ -95,3 +95,42 @@ those fixtures use concrete validated stores, and bridge tests deliberately
 verify full-container wiring. Replacing them with mocks would require new
 production seams or reduce integration coverage. Further work should be driven
 by the new per-test timings rather than a blanket conversion.
+
+Additional hosted comparisons (Windows job duration; successful runs only):
+
+| Mode | Duration | Run |
+| --- | --- | --- |
+| Default package concurrency, separate passes | 12m42s / 11m39s | 34695314573 / 34696038553 |
+| Two concurrent packages, separate passes | 13m15s | 34695340224 |
+| One package, separate passes | 19m54s | 34695339095 |
+| Default concurrency, combined pass | 10m37s / 10m34s | 34695341525 / 34696037391 |
+| Refreshed cache, cold, separate passes | 13m57s | 34695342670 |
+| Refreshed cache, warm, separate passes | 10m56s | 34696055340 |
+
+The runner actually executed up to four packages concurrently. Lowering package
+concurrency did not improve total latency, so the default remains unchanged.
+The refreshed cache saved a roughly 2.44 GB expanded module/build tree; its cold
+save took 21s and its warm restore took 76s. One cold/warm pair is insufficient
+to adopt it, particularly without a combined-pass comparison. It remains opt-in.
+
+Two trials exposed intermittent test failures and are excluded from the timing
+table. Run 34696024622 exhausted a real one-second audio budget before reaching
+inference. That regression now uses virtual time and a synchronous synthetic
+preview transport, preserving the actual deadline, decode/resample, MERT and CLAP
+paths. It asserts inference entry, DeadlineExceeded, exactly one call per model,
+parent/request survival and no cached MERT result. Twenty shuffled repetitions
+with race and full atomic coverage passed in 10.950s.
+
+Run 34696039644 encountered an external fake-server startup failure. Its cause
+remains unconfirmed: 60 parallel race repetitions did not reproduce it. The four
+external-process lifecycle tests now run in isolation and retain child debug
+logs on failure. Assertions, lazy helper compilation and cleanup are preserved.
+Twenty shuffled combined race/coverage repetitions passed in 44.328s; the full
+package race suite and compile-only check also passed.
+
+The timing wrapper now prints failing-test diagnostics immediately, before later
+package output can evict them from the bounded console buffer. A regression
+emits 250 later events and verifies that the original assertion remains visible;
+raw JSON output is also retained. The full local combined contributor gate passed
+with 53 Go packages, all 154 frontend tests and zero lint issues. Final-head
+hosted results are recorded in the PR validation section.
