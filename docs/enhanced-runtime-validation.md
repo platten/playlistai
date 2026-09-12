@@ -118,9 +118,9 @@ The same eight complete cases were compared in all four embedding methods.
 Three unresolved recordings had no audio download. There were no held-out
 adjacency labels; no retrieval-accuracy or quality superiority result is claimed.
 
-Native MERT inference and pack behavior were executed on Windows/amd64 only.
-Prepared packs for Linux, macOS and ARM architectures are not proof of native
-execution on those hosts. Cross-compilation, checksummed assets and hosted CI
+Initial MERT inference and pack measurements used Windows/amd64; the subsequent
+Linux amd64 WSL2 check is recorded below. Prepared packs for other architectures
+are not proof of native execution on those hosts. Cross-compilation, checksummed assets and hosted CI
 compilation must remain separate from actual native inference/package evidence.
 Full-application startup, full-playlist peak RAM, representative hardware latency
 and large independent musical evaluation remain distinct measurements; the
@@ -146,4 +146,29 @@ v2, including verification of all four loaded CRT paths, in 3.14 seconds. All
 five ZIPs were reread: exact manifest/file membership, artifact hashes and native
 architectures passed. Windows recursive imports require four bundled CRT DLLs
 for amd64 and three for arm64, with no further non-OS DLL dependency. Windows
-ARM64 native execution and other native inference hosts remain untested locally.
+ARM64, Linux ARM64 and macOS native inference remain untested locally.
+
+## Native Linux amd64 worker in WSL2
+
+An additional native Linux worker check passed in Ubuntu 24.04.4 LTS, kernel
+`6.18.33.2-microsoft-standard-WSL2`, on the same x86-64 host. It used Go 1.27.0,
+GCC 13.3.0, glibc 2.39 and libstdc++/libgcc 14.2. All ELF dependencies resolved.
+The actual Linux ONNX worker passed reference health, cancellation and reload:
+**4,672 / 1,549 / 4,654 ms** for cold/warm/reload health. The v2 graph hash is
+unchanged. These are individual health batches, not independent hardware
+measurements or evidence of Linux GUI/installer behavior.
+
+Reproduce with Go 1.27.0 and GCC available in Ubuntu WSL:
+
+```sh
+cd /mnt/c/Users/pawel/Documents/GitHub/playlistai
+CGO_ENABLED=1 CC=/usr/bin/gcc go run ./cmd/mertparity /mnt/c/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v2/mert-linux-amd64
+```
+
+The executed run used a verified official Go SDK extracted in a unique `/tmp`
+directory, with an isolated build cache; it changed no system installation or
+shell configuration. Its exact command and environment are retained in
+`derived-mert/packs-v2/linux-wsl-validation.json` under Downloads. The original
+70,523,269-byte SDK archive and `tools/go-linux-sdk-source.json` are retained;
+SHA-256 is `675c26c449cbb18fc24b74650de1eabbae6e16f64326fd85a283fb3b58280685`.
+Native macOS and ARM inference remain unverified.
