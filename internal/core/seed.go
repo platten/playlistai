@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -42,7 +43,13 @@ func (s RNGSeed) Int64() (int64, error) {
 		return 0, err
 	}
 	value, err := strconv.ParseUint(string(canonical), 10, 64)
-	return int64(value), err
+	if err != nil {
+		return 0, err
+	}
+	if value > uint64(math.MaxInt64) {
+		return 0, fmt.Errorf("RNG seed %q exceeds int64 range", canonical)
+	}
+	return int64(value), nil
 }
 
 func (s RNGSeed) MarshalText() ([]byte, error) {
