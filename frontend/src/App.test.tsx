@@ -163,6 +163,23 @@ describe("active playlist navigation", () => {
     expect(bridge.AcknowledgePlaylistDisplayed).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps duration-only rebuilds flexible until track count is explicitly enabled", async () => {
+    const value = fixture("Duration", 2);
+    Object.assign(value.request.intent, { durationSeconds: 4500, durationToleranceSeconds: 60, translation: { atoms: [] } });
+    bridge.BuildPlaylist.mockImplementation(() => completed(value.playlist));
+    render(<PreviewPlayerProvider><PlaylistScreen request={value.request as unknown as BuildPlaylistRequest} heading="Duration" sessionId="duration-test"
+      onBack={vi.fn()} onRegenerate={vi.fn()} onReview={vi.fn()} /></PreviewPlayerProvider>);
+    await screen.findByText("Duration song 1");
+    expect(bridge.BuildPlaylist.mock.calls[0][0].overrides.totalTrackCount).toBeUndefined();
+    fireEvent.click(screen.getByText("Adjust playlist"));
+    fireEvent.keyDown(screen.getByRole("slider", { name: "Artist diversity" }), { key: "ArrowRight" });
+    await waitFor(() => expect(bridge.BuildPlaylist).toHaveBeenCalledTimes(2));
+    expect(bridge.BuildPlaylist.mock.calls[1][0].overrides.totalTrackCount).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "Set a track count" }));
+    await waitFor(() => expect(bridge.BuildPlaylist).toHaveBeenCalledTimes(3));
+    expect(bridge.BuildPlaylist.mock.calls[2][0].overrides.totalTrackCount).toBe(2);
+  });
+
   it("cancels a departed rebuild, rejects its late result and rebuilds the pending draft on return", async () => {
     const stale = deferred();
     bridge.BuildPlaylist.mockReturnValueOnce(stale.promise);

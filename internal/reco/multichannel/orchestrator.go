@@ -818,18 +818,18 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if len(intent.RequiredTracks) > 0 && len(required) == 0 {
 		return core.Playlist{}, fmt.Errorf("%w: none of the required tracks resolved", core.ErrRequiredTrackConflict)
 	}
-	if intent.Count < len(required) {
+	if len(required) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(required) {
 		return core.Playlist{}, fmt.Errorf("%w: requested %d tracks but %d are required", core.ErrCountBelowRequired, intent.Count, len(required))
 	}
 	if o.candidateSource != nil || o.audioSession != nil {
 		if retriever, ok := o.retriever.(*Retriever); ok {
-			o.retriever = retriever.withRecommendationPool(recommendationPoolSize(intent.Count, len(required)))
+			o.retriever = retriever.withRecommendationPool(recommendationPoolSize(recommendationBatchCount(intent, len(required)), len(required)))
 		}
 	}
 	if len(cachedAudio) > 0 {
 		o.retriever = &cachedAudioRetriever{base: o.retriever, candidates: cachedAudio}
 	}
-	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && intent.Count < len(stages) {
+	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && (len(stages) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(stages)) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "journey_count_too_short", Detail: "The requested count cannot represent every journey stage.", Action: "increase the track count or remove a stage"}}), nil
 	}
 
@@ -948,7 +948,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if request.Progress != nil {
 		request.Progress.Report("generation", 0, 0, "Ordering your playlist")
 	}
-	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && len(stages) > 0 && intent.Count < len(stages) {
+	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && len(stages) > 0 && (len(stages) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(stages)) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
 			Code: "journey_count_too_short", Detail: fmt.Sprintf("%d tracks cannot represent %d requested journey stages", intent.Count, len(stages)),
 			Criterion: essentialSummary(stages), Action: fmt.Sprintf("request at least %d tracks or remove a journey stage", len(stages)),
@@ -1026,7 +1026,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if positiveSemantic != "" && !semanticMatched {
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "semantic_fallback", Detail: "semantic intent was preserved but no compatible grounded semantic matches were available; seeded embedding retrieval remained active", Requested: intent.Count, Actual: len(playlist.Tracks)})
 	}
-	if len(playlist.Tracks) < intent.Count {
+	if len(playlist.Tracks) < intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
 		if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && !o.enhanced {
 			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "single_genre_evidence_exhausted", Criterion: genre.Value, Detail: "Only tracks with affirmative evidence for the requested genre were retained; unknown or mismatching tracks were excluded.", Action: "Try a smaller playlist or add more tracks with verified genre metadata."})
 		}
@@ -1084,10 +1084,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if o.enhanced {
 		o.annotateEnhancedFit(ctx, &playlist)
 	}
-	if intent.DurationSeconds > 0 {
-		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "duration_unsupported", Detail: "The requested listening duration is preserved, but reliable full-recording durations are unavailable; the track count does not verify the requested duration."})
-		playlist.Outcome.State = core.OutcomePartial
-	}
+	o.annotateDuration(&playlist)
 	return playlist, nil
 }
 

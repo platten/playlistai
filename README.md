@@ -58,6 +58,11 @@ instructions remain authoritative. The generic DistilBERT encoder does not yet
 extract playlist intent. See [native setup and packaging](docs/intent-nlu-implementation.md)
 and [annotation review and offline training](docs/intent-nlu-review.md).
 
+Artist spelling suggestions ask for confirmation before changing the selected
+artist. Duration-only requests allow a variable track count and use full-recording
+metadata to seek the target within 60 seconds; missing duration evidence stays
+unverified. See [approved interpretations and pilot results](docs/intent-nlu-approved-review.md).
+
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
 

@@ -41,6 +41,8 @@ def read_records(path: Path) -> list[dict]:
 
 
 def validate_record(record: dict, require_reviewed: bool = False) -> None:
+    if require_reviewed and record.get("review", {}).get("status") != "approved":
+        raise ValueError(f"{record.get('id', '?')}: actual reviewed approval required before preparation/training")
     for name in ("id", "prompt", "group", "interpretation"):
         if not isinstance(record.get(name), str) or not record[name].strip():
             raise ValueError(f"Missing {name}")
@@ -71,6 +73,10 @@ def validate_record(record: dict, require_reviewed: bool = False) -> None:
             raise ValueError(f"{record['id']}: invalid polarity")
         if span["strength"] not in {"required", "preferred", "allowed", "none"}:
             raise ValueError(f"{record['id']}: invalid strength")
+        if span["kind"] == "operator" and (require_reviewed or record.get("review", {}).get("status") == "approved"):
+            before, after = raw[:start].decode("utf-8"), raw[end:].decode("utf-8")
+            if (before and before[-1].isalnum() and actual[0].isalnum()) or (after and after[0].isalnum() and actual[-1].isalnum()):
+                raise ValueError(f"{record['id']}: operator annotation is inside another word")
     for relation in record.get("relations", []):
         if relation.get("from") not in identifiers or relation.get("to") not in identifiers or not relation.get("kind"):
             raise ValueError(f"{record['id']}: dangling relation")
@@ -121,6 +127,10 @@ def grouped_splits(records: list[dict], seed: str) -> tuple[dict, dict]:
             if span["kind"] in IDENTITY_KINDS:
                 # Canonical review values may unify aliases; raw spelling remains unchanged.
                 keys.append("identity:" + span.get("canonical", span["text"]).casefold())
+                # A proposed correction is a leakage link, never an approved
+                # runtime identity. Keep it with its possible artist's examples.
+                if span.get("candidateCanonical"):
+                    keys.append("identity:" + span["candidateCanonical"].casefold())
         for key in keys:
             if key in owners:
                 parents[find(index)] = find(owners[key])

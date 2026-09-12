@@ -18,7 +18,8 @@ import {
   usePreviewPlayer,
   type Provenance,
 } from "../components";
-import { playlistOutcomeMessage } from "../lib/playlistOutcome";
+import { hasFixedTrackCount, playlistOutcomeMessage } from "../lib/playlistOutcome";
+import { PlaylistDuration } from "../components/PlaylistDuration";
 import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { EnhancedAudioEvidence } from "../components/EnhancedAudioEvidence";
@@ -72,13 +73,14 @@ export function PlaylistScreen({
     restored?.controls.transitionSmoothness ?? initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9,
   );
   const [count, setCount] = useState(restored?.controls.count ?? initial?.totalTrackCount ?? request.count ?? 25);
+  const [countExplicit, setCountExplicit] = useState(restored?.controls.countExplicit ?? hasFixedTrackCount(request.intent));
   const [excludeSeedArtists, setExcludeSeedArtists] = useState(
     restored?.controls.excludeSeedArtists ?? request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist,
   );
   const [runSeed] = useState<string>(restored?.controls.runSeed ?? request.intent?.seed ?? request.seed ?? "1");
   const controls = useMemo(() => ({ audioWeight, cooccurrenceWeight, discovery, artistDiversity,
-    transitionSmoothness, count, excludeSeedArtists, runSeed }), [audioWeight, cooccurrenceWeight,
-    discovery, artistDiversity, transitionSmoothness, count, excludeSeedArtists, runSeed]);
+    transitionSmoothness, count, countExplicit, excludeSeedArtists, runSeed }), [audioWeight, cooccurrenceWeight,
+    discovery, artistDiversity, transitionSmoothness, count, countExplicit, excludeSeedArtists, runSeed]);
 
   const initialResultMatches =
     initialResult !== undefined &&
@@ -149,6 +151,7 @@ export function PlaylistScreen({
     transitionSmoothness ===
       (initial?.transitionSmoothness ?? ((request.lookback || 3) - 1) / 9) &&
     count === (initial?.totalTrackCount ?? request.count ?? 25) &&
+    countExplicit === hasFixedTrackCount(request.intent) &&
     excludeSeedArtists ===
       (request.intent?.constraints?.excludeSeedArtists ?? request.excludeSeedArtist) &&
     runSeed === (request.intent?.seed ?? request.seed ?? "1");
@@ -177,7 +180,7 @@ export function PlaylistScreen({
       requestId: feedbackRequestId,
       sessionId,
       overrides: {
-        totalTrackCount: count,
+        totalTrackCount: countExplicit ? count : undefined,
         audioWeight,
         cooccurrenceWeight,
         discovery,
@@ -211,6 +214,7 @@ export function PlaylistScreen({
     artistDiversity,
     transitionSmoothness,
     count,
+    countExplicit,
     runSeed,
     excludeSeedArtists,
     initialInputsUnchanged,
@@ -281,6 +285,7 @@ export function PlaylistScreen({
             {` · ${engineOnly ? "Deej-AI only" : recommendationMode === "clap_first" ? "CLAP first" : "AcousticBrainz first"}`}
             {result ? ` · seed ${result.seed}` : ""}
           </p>
+          <PlaylistDuration duration={result?.duration} />
         </div>
         <Button
           className="ml-auto"
@@ -387,13 +392,16 @@ export function PlaylistScreen({
           leftHint="more repeats"
           rightHint="more variety"
         />
-        <Stepper
+        {countExplicit ? <Stepper
           label="Total tracks"
           value={count}
           onChange={setCount}
           min={Math.max(1, requiredCount)}
           max={100}
-        />
+        /> : <div className="flex flex-col gap-2 text-[12px] text-muted">
+          <span>Track count follows the requested duration.</span>
+          <Button size="sm" variant="ghost" onClick={() => setCountExplicit(true)}>Set a track count</Button>
+        </div>}
         <label className="col-span-2 flex items-center gap-2 text-[12.5px] text-muted">
           <input
             type="checkbox"

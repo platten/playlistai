@@ -23,6 +23,16 @@ func recommendationPoolSize(count, required int) int {
 	return 2*count - required
 }
 
+// A duration-only request can need additions after mandatory recordings fill
+// the parser's default count. Keep this bounded working batch separate from
+// the saved count and leave room for at least one additional recording.
+func recommendationBatchCount(intent core.MusicIntent, required int) int {
+	if intent.DurationSeconds > 0 && !intent.HasExplicitTrackCount() {
+		return min(core.MaxCount, max(intent.Count, required+1))
+	}
+	return intent.Count
+}
+
 // collectIteratively keeps discovery and recommendation continuation separate
 // from the user's references. Every newly pulled candidate passes the same
 // semantic, hard-eligibility and preview checks before it can seed continuation.
@@ -49,10 +59,11 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	// Descriptive requests need scored alternatives: an uncalibrated preview
 	// comparison makes a track rankable, not necessarily a good sound match.
 	// Keep the output count separate from the bounded comparison pool.
-	target := intent.Count - len(required)
+	batchCount := recommendationBatchCount(intent, len(required))
+	target := max(0, batchCount-len(required))
 	comparisonTarget := target
 	if o.audioSession != nil && soundComparisonRequested(intent) {
-		comparisonTarget = max(target, min(o.cfg.MaxCandidates, recommendationPoolSize(intent.Count, len(required))))
+		comparisonTarget = max(target, min(o.cfg.MaxCandidates, recommendationPoolSize(batchCount, len(required))))
 	}
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil && !o.enhanced {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
@@ -65,7 +76,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	refill := func() error {
 		batch, err := o.prepareRecommendationPool(ctx, initial, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted,
-		}, eligible, recordings, recommendationPoolSize(intent.Count, len(required)))
+		}, eligible, recordings, recommendationPoolSize(batchCount, len(required)))
 		initial = nil
 		if err != nil {
 			if ctx.Err() != nil || len(batch) == 0 {
@@ -82,14 +93,14 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		// passing relevance-ranked tracks would leave artist diversity no choice.
 		selection, err := NewSelector(o.cat, o.cfg).shortlist(ctx, batch, ports.SelectionRequest{
 			Intent: intent, Required: required, Waypoints: waypoints, RecentSelections: recent,
-			Count: recommendationPoolSize(intent.Count, len(required)),
+			Count: recommendationPoolSize(batchCount, len(required)),
 		})
 		if err != nil {
 			return err
 		}
 		queue = selection.Candidates
 		if request.Progress != nil {
-			request.Progress.Report("generation", int64(len(queue)+len(required)), int64(2*intent.Count), "Prepared recommendation shortlist; checking musical fit")
+			request.Progress.Report("generation", int64(len(queue)+len(required)), int64(2*batchCount), "Prepared recommendation shortlist; checking musical fit")
 		}
 		return nil
 	}
@@ -98,7 +109,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		queue = append([]core.Candidate(nil), initial...)
 		initial = nil
 	}
-	if len(required) == intent.Count {
+	if len(required) == intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
 		return accepted, notices, nil // required tracks were already validated
 	}
 	for attempts := 0; attempts < iterativeAttempts; attempts++ {
@@ -235,7 +246,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		if request.OnChecked != nil && o.audioSession != nil {
 			request.OnChecked(candidate.Track)
 		}
-		if len(accepted) >= comparisonTarget {
+		if len(accepted) >= comparisonTarget || o.durationReadyToCheck(accepted, required, intent) {
 			complete, err := o.iterativeComplete(ctx, accepted, intent, request, references, required, waypoints, seed)
 			if err != nil {
 				return nil, notices, err
@@ -244,10 +255,13 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				return accepted, notices, nil
 			}
 		}
+		if intent.DurationSeconds > 0 && len(accepted)+len(required) >= o.cfg.MaxCandidates {
+			break // keep duration alternatives inside the configured candidate budget
+		}
 		// Keep the rest of the shortlist: refilling after every passing track
 		// discards the 2N pool and needlessly repeats similarity queries.
 	}
-	if len(accepted)+len(required) >= intent.Count {
+	if len(accepted)+len(required) >= intent.Count || intent.DurationSeconds > 0 && !intent.HasExplicitTrackCount() {
 		complete, err := o.iterativeComplete(parent, accepted, intent, request, references, required, waypoints, seed)
 		if err != nil {
 			return nil, notices, err

@@ -3,6 +3,7 @@ import { Events } from "@wailsio/runtime";
 import generateSamples from "../lib/generateSamples.json";
 import { useSavedPlaylist } from "../lib/useSavedPlaylist";
 import { IntentTraits } from "../components/IntentTraits";
+import { ArtistSpellingDialog } from "../components/ArtistSpellingDialog";
 import { PROGRESS_EVENT, type Progress } from "../components/useProgress";
 import {
   API,
@@ -36,7 +37,16 @@ const DEEJAI_SAMPLES = [
   "A journey from Radiohead to Sigur Rós, 12 tracks",
 ];
 
-const resolutionIssueKey = (kind: string, query: string) => `${kind}\u0000${query}`;
+const resolutionIssueKey = (kind: string, query: string) => `${kind.toLowerCase()}\u0000${query.toLowerCase()}`;
+
+interface SpellingConfirmation {
+  prompt: string;
+  source: "fresh" | "saved";
+  sequence: number;
+  query: string;
+  artist: string;
+  trackId: string;
+}
 
 // Prompts for the "Surprise me" button. Each names a well-known seed artist so
 // it resolves against the catalog, and varies mode/knobs/mood for variety.
@@ -143,6 +153,49 @@ export function GenerateScreen({
   const activeParse = useRef<ReturnType<typeof API.ParseIntent> | null>(null);
   const activeGeneration = useRef<ReturnType<typeof API.GenerateFromPrompt> | null>(null);
   const generationSequence = useRef(0);
+  const [spellingConfirmation, setSpellingConfirmation] = useState<SpellingConfirmation | null>(null);
+  const pendingSpelling = useRef<(SpellingConfirmation & { resolve: (selection: ResolutionSelection | null) => void }) | null>(null);
+  const spellingDecisions = useRef<{ prompt: string; source: typeof source; selections: ResolutionSelection[] }>({ prompt, source, selections: [] });
+
+  const cancelGeneration = useCallback(() => {
+    generationSequence.current += 1;
+    activeGenerationId.current = "";
+    void activeParse.current?.cancel("generation cancelled");
+    void activeGeneration.current?.cancel("generation cancelled");
+    pendingSpelling.current?.resolve(null);
+    pendingSpelling.current = null;
+    setSpellingConfirmation(null);
+    setParsing(false);
+    setGenerating(false);
+    setCheckedTracks([]);
+  }, []);
+
+  const chooseSpelling = (accept: boolean) => {
+    const pending = pendingSpelling.current;
+    if (!pending || pending.sequence !== generationSequence.current) return;
+    pendingSpelling.current = null;
+    setSpellingConfirmation(null);
+    if (pending.prompt !== prompt || pending.source !== source) {
+      pending.resolve(null);
+      return;
+    }
+    const selection = {
+      kind: "artist", query: pending.query,
+      trackId: accept ? pending.trackId : "",
+      ...(!accept ? { rejectSpelling: true } : {}),
+    } as ResolutionSelection;
+    spellingDecisions.current.selections = [
+      ...spellingDecisions.current.selections.filter((choice) => resolutionIssueKey(choice.kind, choice.query) !== resolutionIssueKey(selection.kind, selection.query)), selection,
+    ];
+    pending.resolve(selection);
+  };
+
+  useEffect(() => {
+    if (spellingDecisions.current.prompt !== prompt || spellingDecisions.current.source !== source) {
+      spellingDecisions.current = { prompt, source, selections: [] };
+    }
+    if (pendingSpelling.current && (pendingSpelling.current.prompt !== prompt || pendingSpelling.current.source !== source)) cancelGeneration();
+  }, [prompt, source, cancelGeneration]);
 
   useEffect(() => {
     setProcessingSeconds(0);
@@ -235,8 +288,9 @@ export function GenerateScreen({
       (preview === null || (!hasResolvedSeed && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0)));
   const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred);
   const inferredIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.inferred);
-  const ambiguousIssues = explicitIssues.filter((issue) => issue.status === "ambiguous");
-  const unresolvedIssues = explicitIssues.filter((issue) => issue.status === "unresolved");
+  const ambiguousIssues = explicitIssues.filter((issue) => issue.status === "ambiguous" && !issue.spellingSuggestion);
+  const unresolvedIssues = explicitIssues.filter((issue) => issue.status === "unresolved" && !spellingDecisions.current.selections.some(
+    (choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query) && choice.trackId));
   const ambiguityNeedsChoice = ambiguousIssues.some(
     (issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)],
   );
@@ -258,7 +312,9 @@ export function GenerateScreen({
       : !generating && !replaySaved
         ? [
           ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
-          ...unresolvedIssues.map((issue) => issue.influence === "negative"
+          ...unresolvedIssues.map((issue) => spellingDecisions.current.selections.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query) && choice.rejectSpelling)
+            ? `You kept “${issue.query}”. No artist match has been confirmed for that name. Correct the spelling or choose another artist if the request cannot be fulfilled.`
+            : issue.influence === "negative"
             ? `The excluded ${issue.kind} “${issue.query}” has no local catalog match. Its exclusion is preserved; it will not be used for a seed lookup.`
             : issue.kind === "artist"
             ? `Artist “${issue.query}” was not found under that name in the local catalog. Generate playlist will search MusicBrainz and Deezer for the artist, then try popular tracks in order until a catalog seed is found. If those do not match, it will check additional recordings within the lookup limit.`
@@ -284,6 +340,11 @@ export function GenerateScreen({
     (text: string, selections: ResolutionSelection[] = []) => {
       const q = text.trim();
       if (q === "" || activeGenerationId.current) return;
+      if (spellingDecisions.current.prompt !== text || spellingDecisions.current.source !== source) {
+        spellingDecisions.current = { prompt: text, source, selections: [] };
+      }
+      const selected = Array.from(new Map([...spellingDecisions.current.selections, ...selections]
+        .map((choice) => [resolutionIssueKey(choice.kind, choice.query), choice])).values());
       const id = newRequestID();
       activeGenerationId.current = id;
       setGenerationId(id);
@@ -304,12 +365,24 @@ export function GenerateScreen({
           if (sequence !== generationSequence.current) return;
           setParsing(false);
           setPreview(summary ?? null);
+          for (const issue of summary?.resolutionIssues ?? []) {
+            const candidate = issue.spellingSuggestion;
+            const trackId = candidate?.representatives?.[0]?.trackId;
+            if (issue.inferred || issue.kind !== "artist" || !candidate?.artist || !trackId || selected.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query))) continue;
+            const confirmation = { prompt: text, source, sequence, query: issue.query, artist: candidate.artist, trackId };
+            const choice = await new Promise<ResolutionSelection | null>((resolve) => {
+              pendingSpelling.current = { ...confirmation, resolve };
+              setSpellingConfirmation(confirmation);
+            });
+            if (!choice || sequence !== generationSequence.current) return;
+            selected.push(choice);
+          }
           // Only genuine identity ambiguity pauses a submitted request.
           const unresolvedChoices = (summary?.resolutionIssues ?? []).some((issue) =>
-            !issue.inferred && issue.status === "ambiguous" && !selections.some((choice) => choice.kind === issue.kind && choice.query === issue.query));
+            !issue.inferred && issue.status === "ambiguous" && !selected.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query)));
           if (unresolvedChoices) return;
-          const request = selections.length > 0
-            ? API.GenerateFromPromptResolvedWithContext(q, selections, context)
+          const request = selected.length > 0
+            ? API.GenerateFromPromptResolvedWithContext(q, selected, context)
             : API.GenerateFromPromptWithContext(q, context);
           activeGeneration.current = request;
           return await request;
@@ -335,7 +408,7 @@ export function GenerateScreen({
           }
         });
     },
-    [intentContext, onGenerated],
+    [intentContext, onGenerated, source],
   );
 
   const generate = useCallback(() => {
@@ -415,6 +488,8 @@ export function GenerateScreen({
       activeGenerationId.current = "";
       void activeParse.current?.cancel("generate screen unmounted");
       void activeGeneration.current?.cancel("generate screen unmounted");
+      pendingSpelling.current?.resolve(null);
+      pendingSpelling.current = null;
     },
     [],
   );
@@ -438,6 +513,12 @@ export function GenerateScreen({
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[820px] flex-col items-center gap-6 px-4 py-8 sm:px-8 sm:py-12">
+      {spellingConfirmation && <ArtistSpellingDialog
+        key={resolutionIssueKey("artist", spellingConfirmation.query)}
+        query={spellingConfirmation.query} artist={spellingConfirmation.artist}
+        onAccept={() => chooseSpelling(true)} onKeep={() => chooseSpelling(false)}
+        onCancel={() => { cancelGeneration(); window.requestAnimationFrame(() => document.getElementById("music-description")?.focus()); }}
+      />}
       <div className="flex w-full flex-col gap-3">
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em] sm:text-[32px]">What do you want to hear?</h1>
         <p className="max-w-[62ch] text-[14px] leading-relaxed text-muted">
@@ -621,7 +702,7 @@ export function GenerateScreen({
         <section className="flex w-full flex-col gap-3" aria-label="Generation progress">
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" disabled={!checkedTracks.some((track) => !track.suggested)} onClick={() => API.StopAndKeepCheckedTracks(generationId)}>Stop and keep checked tracks</Button>
-            <Button variant="ghost" size="sm" onClick={() => { generationSequence.current += 1; activeGenerationId.current = ""; void activeParse.current?.cancel("generation cancelled"); void activeGeneration.current?.cancel("generation cancelled"); setParsing(false); setGenerating(false); setCheckedTracks([]); }}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={cancelGeneration}>Cancel</Button>
           </div>
           {checkedTracks.length > 0 && <>
             <p role="status" className="text-[12px] text-muted">{checkedTracks.length} {checkedTracks.length === 1 ? "track" : "tracks"} {checkedTracks.some((track) => track.suggested) ? "suggested; musical fit may be approximate" : "checked"} · Candidates are provisional; final selection and order may change.</p>

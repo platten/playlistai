@@ -117,16 +117,17 @@ type GenerationOutcome struct {
 // requires the catalog, algorithm, profile snapshot, and generation context
 // recorded by the bridge alongside this value.
 type Playlist struct {
-	EnhancedAudio *EnhancedAudioSnapshot `json:"enhancedAudio,omitempty"`
-	Assessments   []TrackAssessment      `json:"assessments"`
-	AudioEvidence *AudioEvidenceSnapshot `json:"audioEvidence,omitempty"`
-	Tracks        []TrackRef             `json:"tracks"`
-	Mode          Mode                   `json:"mode"`
-	Seed          RNGSeed                `json:"seed"` // lossless full-width RNG seed
-	Rationale     []StepReason           `json:"rationale"`
-	Intent        MusicIntent            `json:"intent"`
-	Notices       []PlaylistNotice       `json:"notices"`
-	Outcome       GenerationOutcome      `json:"outcome"`
+	Duration      *PlaylistDurationAssessment `json:"duration,omitempty"`
+	EnhancedAudio *EnhancedAudioSnapshot      `json:"enhancedAudio,omitempty"`
+	Assessments   []TrackAssessment           `json:"assessments"`
+	AudioEvidence *AudioEvidenceSnapshot      `json:"audioEvidence,omitempty"`
+	Tracks        []TrackRef                  `json:"tracks"`
+	Mode          Mode                        `json:"mode"`
+	Seed          RNGSeed                     `json:"seed"` // lossless full-width RNG seed
+	Rationale     []StepReason                `json:"rationale"`
+	Intent        MusicIntent                 `json:"intent"`
+	Notices       []PlaylistNotice            `json:"notices"`
+	Outcome       GenerationOutcome           `json:"outcome"`
 }
 
 // IDs returns the track ids in order.

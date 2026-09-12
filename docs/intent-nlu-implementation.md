@@ -4,6 +4,10 @@ This extends the single consolidated PR. The deterministic compiler is active;
 MiniLM dictionary assistance is optional. A pretrained DistilBERT encoder alone
 is **not** a trained playlist intent extractor.
 
+The 40-prompt batch has since been approved and the first task pilot trained.
+It remains inactive because calibration did not meet the gate. See
+[approved changes and measured pilot results](intent-nlu-approved-review.md).
+
 ## Desktop behavior
 
 Setup now prepares missing MiniLM and DistilBERT assets automatically after the
@@ -64,8 +68,9 @@ python python/fetch_intent_nlu_models.py --setup-only --output C:/Users/pawel/Do
 
 For reviewed data preparation, training, ONNX export and independent numerical
 parity, follow the complete commands in [the review and training guide](intent-nlu-review.md).
-The 40-record English batch is explicitly unreviewed. Preparation rejects using
-unreviewed records as training labels. Synthetic test fixtures only verify that
+The original 40-record English proposal remains unreviewed for provenance; its
+separate approved derivative records the user's decisions and amendments.
+Preparation rejects unreviewed records as training labels. Synthetic fixtures verify that
 the training/export code runs; they do not establish learned accuracy.
 
 ## Packaging and offline setup
@@ -143,7 +148,7 @@ increase proposal count. This pilot establishes native integration and abstentio
 not improved interpretation or playlist quality from MiniLM. It remains off by
 default pending a broader reviewed phrase set and better validated mapping.
 
-Numerical parity is not intent accuracy or listener preference. Review, a trained
-task model, semantic calibration, broader relation/scope heads and independent
+Numerical parity is not intent accuracy or listener preference. Adequate semantic
+calibration, broader relation/scope heads and independent
 playlist/listening evaluation remain required before replacing the LLM or
 enabling learned hard overrides. The existing recommendation evidence gaps remain.

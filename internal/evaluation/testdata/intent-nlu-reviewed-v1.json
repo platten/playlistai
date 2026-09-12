@@ -1,0 +1,3354 @@
+{
+  "schema": "intent-nlu-review/v1",
+  "language": "en",
+  "offsetUnit": "utf8-bytes",
+  "license": "CC0-1.0 for these newly authored prompts and proposed annotations",
+  "warning": "User-approved development interpretations with two explicit amendments. This small corpus is not an independent musical-quality benchmark.",
+  "records": [
+    {
+      "id": "classical-reading",
+      "group": "classical-vocals",
+      "prompt": "Please make twelve classical tracks for reading; I prefer piano, and singing is fine.",
+      "interpretation": "Twelve classical tracks; piano preferred, singing permitted.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 12,
+          "end": 18
+        },
+        {
+          "id": "s2",
+          "text": "classical",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 19,
+          "end": 28
+        },
+        {
+          "id": "s3",
+          "text": "reading",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 40,
+          "end": 47
+        },
+        {
+          "id": "s4",
+          "text": "piano",
+          "kind": "instrument",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 58,
+          "end": 63
+        },
+        {
+          "id": "s5",
+          "text": "singing",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 69,
+          "end": 76
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "classical-silent",
+      "group": "classical-vocals",
+      "prompt": "Please make twelve classical tracks for reading; I prefer piano, but no singing.",
+      "interpretation": "Same soft piano preference, with a real vocal exclusion.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 12,
+          "end": 18
+        },
+        {
+          "id": "s2",
+          "text": "classical",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 19,
+          "end": 28
+        },
+        {
+          "id": "s3",
+          "text": "reading",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 40,
+          "end": 47
+        },
+        {
+          "id": "s4",
+          "text": "piano",
+          "kind": "instrument",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 58,
+          "end": 63
+        },
+        {
+          "id": "s5",
+          "text": "no",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 69,
+          "end": 71
+        },
+        {
+          "id": "s6",
+          "text": "singing",
+          "kind": "vocal",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 72,
+          "end": 79
+        }
+      ],
+      "relations": [
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review",
+      "annotationRepair": "Corrected operator byte offset to its standalone occurrence; approved interpretation unchanged."
+    },
+    {
+      "id": "aerosmith-near",
+      "group": "aerosmith-roles",
+      "prompt": "Fifteen songs with Aerosmith's sound, but do not play Aerosmith themselves.",
+      "interpretation": "Aerosmith sound reference and a separate forbidden output artist.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fifteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "Aerosmith",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 19,
+          "end": 28
+        },
+        {
+          "id": "s3",
+          "text": "do not play",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 42,
+          "end": 53
+        },
+        {
+          "id": "s4",
+          "text": "Aerosmith",
+          "kind": "artist",
+          "role": "exclude_output",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 54,
+          "end": 63
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "aerosmith-only",
+      "group": "aerosmith-roles",
+      "prompt": "Fifteen songs by Aerosmith only, with energetic guitars if possible.",
+      "interpretation": "Aerosmith-only output; energetic guitars remain preferences.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fifteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "Aerosmith",
+          "kind": "artist",
+          "role": "only_output",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 17,
+          "end": 26
+        },
+        {
+          "id": "s3",
+          "text": "only",
+          "kind": "operator",
+          "role": "only",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 27,
+          "end": 31
+        },
+        {
+          "id": "s4",
+          "text": "energetic",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 38,
+          "end": 47
+        },
+        {
+          "id": "s5",
+          "text": "guitars",
+          "kind": "instrument",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 48,
+          "end": 55
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s2",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "loeffler-night",
+      "group": "loeffler-context",
+      "prompt": "Ten tracks like Christian Löffler for a quiet evening. Vocals are welcome.",
+      "interpretation": "Artist sound reference, quiet context, vocals permitted.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Christian Löffler",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 16,
+          "end": 34
+        },
+        {
+          "id": "s3",
+          "text": "quiet evening",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 41,
+          "end": 54
+        },
+        {
+          "id": "s4",
+          "text": "Vocals",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 56,
+          "end": 62
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "loeffler-run",
+      "group": "loeffler-context",
+      "prompt": "Ten tracks like Christian Löffler, but more energetic for a run. Not just his own songs.",
+      "interpretation": "Relative energy increase and artist diversity, not an artist exclusion.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Christian Löffler",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 16,
+          "end": 34
+        },
+        {
+          "id": "s3",
+          "text": "more",
+          "kind": "operator",
+          "role": "increase",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 40,
+          "end": 44
+        },
+        {
+          "id": "s4",
+          "text": "energetic",
+          "kind": "mood",
+          "role": "relative",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 45,
+          "end": 54
+        },
+        {
+          "id": "s5",
+          "text": "run",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 61,
+          "end": 64
+        },
+        {
+          "id": "s6",
+          "text": "Not just",
+          "kind": "operator",
+          "role": "diversity",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 66,
+          "end": 74
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "weights",
+      "group": "workout-ballads",
+      "prompt": "Give me eighteen rock tracks for lifting weights. Avoid slow ballads; vocals are fine.",
+      "interpretation": "Rock for weights; slow ballads excluded, singing permitted.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "eighteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 8,
+          "end": 16
+        },
+        {
+          "id": "s2",
+          "text": "rock",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 17,
+          "end": 21
+        },
+        {
+          "id": "s3",
+          "text": "lifting weights",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 33,
+          "end": 48
+        },
+        {
+          "id": "s4",
+          "text": "Avoid",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 50,
+          "end": 55
+        },
+        {
+          "id": "s5",
+          "text": "slow ballads",
+          "kind": "style",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 56,
+          "end": 68
+        },
+        {
+          "id": "s6",
+          "text": "vocals",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 70,
+          "end": 76
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "weights-soft",
+      "group": "workout-ballads",
+      "prompt": "Give me eighteen rock tracks for lifting weights. Prefer fewer slow ballads, but some are okay.",
+      "interpretation": "Fewer ballads is a soft preference rather than a universal exclusion.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "eighteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 8,
+          "end": 16
+        },
+        {
+          "id": "s2",
+          "text": "rock",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 17,
+          "end": 21
+        },
+        {
+          "id": "s3",
+          "text": "lifting weights",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 33,
+          "end": 48
+        },
+        {
+          "id": "s4",
+          "text": "fewer",
+          "kind": "operator",
+          "role": "decrease",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 57,
+          "end": 62
+        },
+        {
+          "id": "s5",
+          "text": "slow ballads",
+          "kind": "style",
+          "role": "preference",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 63,
+          "end": 75
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "nin-first",
+      "group": "endpoint-order",
+      "prompt": "Fourteen songs: begin with Nine Inch Nails and finish with Marilyn Manson, with other artists between.",
+      "interpretation": "Actual artists at endpoints, inside fourteen total tracks.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fourteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 8
+        },
+        {
+          "id": "s2",
+          "text": "begin with",
+          "kind": "operator",
+          "role": "start",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 16,
+          "end": 26
+        },
+        {
+          "id": "s3",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "start",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 27,
+          "end": 42
+        },
+        {
+          "id": "s4",
+          "text": "finish with",
+          "kind": "operator",
+          "role": "destination",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 47,
+          "end": 58
+        },
+        {
+          "id": "s5",
+          "text": "Marilyn Manson",
+          "kind": "artist",
+          "role": "destination",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_end",
+          "start": 59,
+          "end": 73
+        }
+      ],
+      "relations": [
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "modifies"
+        },
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "manson-first",
+      "group": "endpoint-order",
+      "prompt": "Fourteen songs: begin with Marilyn Manson and finish with Nine Inch Nails, with other artists between.",
+      "interpretation": "Reverse endpoints without changing the count.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fourteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 8
+        },
+        {
+          "id": "s2",
+          "text": "begin with",
+          "kind": "operator",
+          "role": "start",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 16,
+          "end": 26
+        },
+        {
+          "id": "s3",
+          "text": "Marilyn Manson",
+          "kind": "artist",
+          "role": "start",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 27,
+          "end": 41
+        },
+        {
+          "id": "s4",
+          "text": "finish with",
+          "kind": "operator",
+          "role": "destination",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 46,
+          "end": 57
+        },
+        {
+          "id": "s5",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "destination",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_end",
+          "start": 58,
+          "end": 73
+        }
+      ],
+      "relations": [
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "modifies"
+        },
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 1,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "nin-like",
+      "group": "similarity-no-endpoint",
+      "prompt": "Twelve tracks that sound like Nine Inch Nails and Marilyn Manson. Neither needs to be first.",
+      "interpretation": "Two sound references; no required first artist.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 30,
+          "end": 45
+        },
+        {
+          "id": "s3",
+          "text": "Marilyn Manson",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 50,
+          "end": 64
+        },
+        {
+          "id": "s4",
+          "text": "Neither needs to be first",
+          "kind": "operator",
+          "role": "no_position_requirement",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 66,
+          "end": 91
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "nin-through",
+      "group": "similarity-no-endpoint",
+      "prompt": "Twelve tracks from Nine Inch Nails through Depeche Mode to Marilyn Manson.",
+      "interpretation": "Actual ordered artist start, waypoint and destination inside twelve.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "start",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 19,
+          "end": 34
+        },
+        {
+          "id": "s3",
+          "text": "Depeche Mode",
+          "kind": "artist",
+          "role": "waypoint",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_middle",
+          "start": 43,
+          "end": 55
+        },
+        {
+          "id": "s4",
+          "text": "Marilyn Manson",
+          "kind": "artist",
+          "role": "destination",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_end",
+          "start": 59,
+          "end": 73
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "hurt-required",
+      "group": "qualified-track",
+      "prompt": "Twelve songs like Nine Inch Nails. Include Hurt by Nine Inch Nails exactly once, anywhere.",
+      "interpretation": "Hurt required once; separate NIN similarity reference retained, no forced position.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 18,
+          "end": 33
+        },
+        {
+          "id": "s3",
+          "text": "Include",
+          "kind": "operator",
+          "role": "require",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 35,
+          "end": 42
+        },
+        {
+          "id": "s4",
+          "text": "Hurt",
+          "kind": "track",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 43,
+          "end": 47
+        },
+        {
+          "id": "s5",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "performer",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 51,
+          "end": 66
+        },
+        {
+          "id": "s6",
+          "text": "exactly once",
+          "kind": "operator",
+          "role": "once",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 67,
+          "end": 79
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        },
+        {
+          "from": "s6",
+          "to": "s4",
+          "kind": "modifies"
+        },
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "performed_by"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "hurt-reference",
+      "group": "qualified-track",
+      "prompt": "Twelve songs like Hurt by Nine Inch Nails, but Hurt itself does not have to be included.",
+      "interpretation": "Qualified recording sound reference, no required recording.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "Hurt",
+          "kind": "track",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 18,
+          "end": 22
+        },
+        {
+          "id": "s3",
+          "text": "Nine Inch Nails",
+          "kind": "artist",
+          "role": "performer",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 26,
+          "end": 41
+        },
+        {
+          "id": "s4",
+          "text": "does not have to be included",
+          "kind": "operator",
+          "role": "no_recording_requirement",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 59,
+          "end": 87
+        }
+      ],
+      "relations": [
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "performed_by"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "album-moon",
+      "group": "album-roles",
+      "prompt": "Ten tracks with the feel of the album Moon Safari by Air. Exclude Air recordings.",
+      "interpretation": "Album sound reference linked to Air; Air forbidden in output.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Moon Safari",
+          "kind": "album",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 38,
+          "end": 49
+        },
+        {
+          "id": "s3",
+          "text": "Air",
+          "kind": "artist",
+          "role": "performer",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 53,
+          "end": 56
+        },
+        {
+          "id": "s4",
+          "text": "Exclude",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 58,
+          "end": 65
+        },
+        {
+          "id": "s5",
+          "text": "Air",
+          "kind": "artist",
+          "role": "exclude_output",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 66,
+          "end": 69
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        },
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "performed_by"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "album-only",
+      "group": "album-roles",
+      "prompt": "Ten tracks from Moon Safari by Air only; no similar albums.",
+      "interpretation": "Required album domain, not an album similarity request.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Moon Safari",
+          "kind": "album",
+          "role": "only_output",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 16,
+          "end": 27
+        },
+        {
+          "id": "s3",
+          "text": "Air",
+          "kind": "artist",
+          "role": "performer",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 31,
+          "end": 34
+        },
+        {
+          "id": "s4",
+          "text": "only",
+          "kind": "operator",
+          "role": "only",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 35,
+          "end": 39
+        },
+        {
+          "id": "s5",
+          "text": "no similar albums",
+          "kind": "operator",
+          "role": "no_expansion",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 41,
+          "end": 58
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s3",
+          "kind": "modifies"
+        },
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "performed_by"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "bach-gould",
+      "group": "composer-performer",
+      "prompt": "Ten Bach recordings, preferably played by Glenn Gould. Other performers are fine.",
+      "interpretation": "Bach composer required; Gould performer preferred.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Bach",
+          "kind": "composer",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "canonical": "Johann Sebastian Bach",
+          "start": 4,
+          "end": 8
+        },
+        {
+          "id": "s3",
+          "text": "Glenn Gould",
+          "kind": "performer",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 42,
+          "end": 53
+        },
+        {
+          "id": "s4",
+          "text": "Other performers are fine",
+          "kind": "operator",
+          "role": "allow_alternatives",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 55,
+          "end": 80
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "gould-only",
+      "group": "composer-performer",
+      "prompt": "Ten Bach recordings played only by Glenn Gould, with no singing.",
+      "interpretation": "Bach composer and Gould performer required; vocals excluded.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Bach",
+          "kind": "composer",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "canonical": "Johann Sebastian Bach",
+          "start": 4,
+          "end": 8
+        },
+        {
+          "id": "s3",
+          "text": "only",
+          "kind": "operator",
+          "role": "only",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 27,
+          "end": 31
+        },
+        {
+          "id": "s4",
+          "text": "Glenn Gould",
+          "kind": "performer",
+          "role": "only_output",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 35,
+          "end": 46
+        },
+        {
+          "id": "s5",
+          "text": "no",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 53,
+          "end": 55
+        },
+        {
+          "id": "s6",
+          "text": "singing",
+          "kind": "vocal",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 56,
+          "end": 63
+        }
+      ],
+      "relations": [
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "duration-positive",
+      "group": "duration-negation",
+      "prompt": "One hour and fifteen minutes of relaxing electronic music for work, mostly instrumental.",
+      "interpretation": "Target 4500 seconds total within plus/minus60 seconds (4440–4560 inclusive); variable track count; instrumental preferred, not universal.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "One hour and fifteen minutes",
+          "kind": "quantity",
+          "role": "duration",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "normalizedValue": 4500,
+          "unit": "seconds",
+          "start": 0,
+          "end": 28,
+          "toleranceSeconds": 60
+        },
+        {
+          "id": "s2",
+          "text": "relaxing",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 32,
+          "end": 40
+        },
+        {
+          "id": "s3",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 41,
+          "end": 51
+        },
+        {
+          "id": "s4",
+          "text": "work",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 62,
+          "end": 66
+        },
+        {
+          "id": "s5",
+          "text": "mostly",
+          "kind": "operator",
+          "role": "soften",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 68,
+          "end": 74
+        },
+        {
+          "id": "s6",
+          "text": "instrumental",
+          "kind": "vocal",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 75,
+          "end": 87
+        }
+      ],
+      "relations": [
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture.",
+        "amendment": "User specified 4500 seconds within plus/minus60 seconds."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review",
+      "expectedOutcome": {
+        "durationSeconds": 4500,
+        "durationToleranceSeconds": 60,
+        "minimumDurationSeconds": 4440,
+        "maximumDurationSeconds": 4560,
+        "fixedTrackCount": false
+      }
+    },
+    {
+      "id": "duration-negative",
+      "group": "duration-negation",
+      "prompt": "Twelve tracks, not a twelve-minute playlist: relaxing electronic music for work.",
+      "interpretation": "Twelve tracks, no positive 720-second target.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "not",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 15,
+          "end": 18
+        },
+        {
+          "id": "s3",
+          "text": "twelve-minute",
+          "kind": "quantity",
+          "role": "rejected_duration",
+          "polarity": "negative",
+          "strength": "none",
+          "scope": "playlist",
+          "normalizedValue": 720,
+          "unit": "seconds",
+          "start": 21,
+          "end": 34
+        },
+        {
+          "id": "s4",
+          "text": "relaxing",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 45,
+          "end": 53
+        },
+        {
+          "id": "s5",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 54,
+          "end": 64
+        },
+        {
+          "id": "s6",
+          "text": "work",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 75,
+          "end": 79
+        }
+      ],
+      "relations": [
+        {
+          "from": "s2",
+          "to": "s3",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 2,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "warm-positive",
+      "group": "polarity-contrast",
+      "prompt": "Eight electronic tracks with a warm sound, not an aggressive one.",
+      "interpretation": "Warm positive, aggressive negative.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Eight",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 5
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 6,
+          "end": 16
+        },
+        {
+          "id": "s3",
+          "text": "warm",
+          "kind": "texture",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 31,
+          "end": 35
+        },
+        {
+          "id": "s4",
+          "text": "not",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 43,
+          "end": 46
+        },
+        {
+          "id": "s5",
+          "text": "aggressive",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 50,
+          "end": 60
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "warm-negative",
+      "group": "polarity-contrast",
+      "prompt": "Eight electronic tracks with an aggressive sound, not a warm one.",
+      "interpretation": "Aggressive positive, warm negative.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Eight",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 5
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 6,
+          "end": 16
+        },
+        {
+          "id": "s3",
+          "text": "aggressive",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 32,
+          "end": 42
+        },
+        {
+          "id": "s4",
+          "text": "not",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 50,
+          "end": 53
+        },
+        {
+          "id": "s5",
+          "text": "warm",
+          "kind": "texture",
+          "role": "preference",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 56,
+          "end": 60
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "vocal-opening",
+      "group": "stage-vocals",
+      "prompt": "Sixteen tracks moving from electronic to industrial rock. Only the opening section must be instrumental; vocals later are fine.",
+      "interpretation": "Instrumental restricted to opening; later vocals permitted.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Sixteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "start",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 27,
+          "end": 37
+        },
+        {
+          "id": "s3",
+          "text": "industrial rock",
+          "kind": "genre",
+          "role": "destination",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_end",
+          "start": 41,
+          "end": 56
+        },
+        {
+          "id": "s4",
+          "text": "Only the opening section",
+          "kind": "operator",
+          "role": "scope_start",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 58,
+          "end": 82
+        },
+        {
+          "id": "s5",
+          "text": "instrumental",
+          "kind": "vocal",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 91,
+          "end": 103
+        },
+        {
+          "id": "s6",
+          "text": "vocals",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "journey_later",
+          "start": 105,
+          "end": 111
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "vocal-global",
+      "group": "stage-vocals",
+      "prompt": "Sixteen tracks moving from electronic to industrial rock. Every track must be instrumental.",
+      "interpretation": "Same genre journey; global instrumental requirement.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Sixteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "start",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_start",
+          "start": 27,
+          "end": 37
+        },
+        {
+          "id": "s3",
+          "text": "industrial rock",
+          "kind": "genre",
+          "role": "destination",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "journey_end",
+          "start": 41,
+          "end": 56
+        },
+        {
+          "id": "s4",
+          "text": "Every track must be",
+          "kind": "operator",
+          "role": "universal",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 58,
+          "end": 77
+        },
+        {
+          "id": "s5",
+          "text": "instrumental",
+          "kind": "vocal",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 78,
+          "end": 90
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "genre-or",
+      "group": "genre-logic",
+      "prompt": "Twelve workout tracks: rock or metal, either is fine. No slow ballads.",
+      "interpretation": "Rock OR metal, not both on every recording; ballads excluded.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "workout",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 7,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "rock",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 23,
+          "end": 27
+        },
+        {
+          "id": "s4",
+          "text": "or",
+          "kind": "operator",
+          "role": "alternative",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 28,
+          "end": 30
+        },
+        {
+          "id": "s5",
+          "text": "metal",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 31,
+          "end": 36
+        },
+        {
+          "id": "s6",
+          "text": "No",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 54,
+          "end": 56
+        },
+        {
+          "id": "s7",
+          "text": "slow ballads",
+          "kind": "style",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 57,
+          "end": 69
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s3",
+          "kind": "alternative_member"
+        },
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "alternative_member"
+        },
+        {
+          "from": "s6",
+          "to": "s7",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review",
+      "annotationRepair": "Corrected operator byte offset to its standalone occurrence; approved interpretation unchanged."
+    },
+    {
+      "id": "genre-neither",
+      "group": "genre-logic",
+      "prompt": "Twelve workout tracks: soul, with neither rock nor metal.",
+      "interpretation": "Soul positive; both rock and metal excluded.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Twelve",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 6
+        },
+        {
+          "id": "s2",
+          "text": "workout",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 7,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "soul",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 23,
+          "end": 27
+        },
+        {
+          "id": "s4",
+          "text": "neither",
+          "kind": "operator",
+          "role": "exclude_group",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 34,
+          "end": 41
+        },
+        {
+          "id": "s5",
+          "text": "rock",
+          "kind": "genre",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 42,
+          "end": 46
+        },
+        {
+          "id": "s6",
+          "text": "nor",
+          "kind": "operator",
+          "role": "exclude_group",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 47,
+          "end": 50
+        },
+        {
+          "id": "s7",
+          "text": "metal",
+          "kind": "genre",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 51,
+          "end": 56
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        },
+        {
+          "from": "s6",
+          "to": "s7",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "date-range",
+      "group": "temporal-logic",
+      "prompt": "Ten electronic tracks first released between 2001 and 2009.",
+      "interpretation": "Continuous original-release interval 2001 through 2009.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 4,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "first released",
+          "kind": "operator",
+          "role": "original_release",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 22,
+          "end": 36
+        },
+        {
+          "id": "s4",
+          "text": "2001 and 2009",
+          "kind": "temporal",
+          "role": "range",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "startYear": 2001,
+          "endYear": 2009,
+          "start": 45,
+          "end": 58
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "date-or",
+      "group": "temporal-logic",
+      "prompt": "Ten electronic tracks first released in 2001 or 2009, excluding the years between.",
+      "interpretation": "Discrete original-release years, never a continuous range.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 4,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "first released",
+          "kind": "operator",
+          "role": "original_release",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 22,
+          "end": 36
+        },
+        {
+          "id": "s4",
+          "text": "2001",
+          "kind": "temporal",
+          "role": "alternative",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 40,
+          "end": 44
+        },
+        {
+          "id": "s5",
+          "text": "or",
+          "kind": "operator",
+          "role": "alternative",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 45,
+          "end": 47
+        },
+        {
+          "id": "s6",
+          "text": "2009",
+          "kind": "temporal",
+          "role": "alternative",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 48,
+          "end": 52
+        },
+        {
+          "id": "s7",
+          "text": "excluding the years between",
+          "kind": "operator",
+          "role": "exclude_interval",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 54,
+          "end": 81
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        },
+        {
+          "from": "s5",
+          "to": "s4",
+          "kind": "alternative_member"
+        },
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "alternative_member"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "early-aerosmith",
+      "group": "era-vs-date",
+      "prompt": "Fifteen songs like early Aerosmith, not their later power ballads; other artists welcome.",
+      "interpretation": "Scoped early-artist sound reference; no invented year cutoff; power-ballad sound negative.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fifteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "early",
+          "kind": "temporal",
+          "role": "relative_era",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 19,
+          "end": 24
+        },
+        {
+          "id": "s3",
+          "text": "Aerosmith",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 25,
+          "end": 34
+        },
+        {
+          "id": "s4",
+          "text": "not",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 36,
+          "end": 39
+        },
+        {
+          "id": "s5",
+          "text": "power ballads",
+          "kind": "style",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 52,
+          "end": 65
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "dated-aerosmith",
+      "group": "era-vs-date",
+      "prompt": "Fifteen songs by Aerosmith only, first released from 1973 through 1975.",
+      "interpretation": "Artist-only output and literal original-release range.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Fifteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 7
+        },
+        {
+          "id": "s2",
+          "text": "Aerosmith",
+          "kind": "artist",
+          "role": "only_output",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 17,
+          "end": 26
+        },
+        {
+          "id": "s3",
+          "text": "only",
+          "kind": "operator",
+          "role": "only",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 27,
+          "end": 31
+        },
+        {
+          "id": "s4",
+          "text": "first released",
+          "kind": "operator",
+          "role": "original_release",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 33,
+          "end": 47
+        },
+        {
+          "id": "s5",
+          "text": "1973 through 1975",
+          "kind": "temporal",
+          "role": "range",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "startYear": 1973,
+          "endYear": 1975,
+          "start": 53,
+          "end": 70
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s2",
+          "kind": "modifies"
+        },
+        {
+          "from": "s4",
+          "to": "s5",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 3,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "compound-band",
+      "group": "compound-entities",
+      "prompt": "Ten songs like Alice in Chains and Stone Temple Pilots, without either band's recordings.",
+      "interpretation": "Preserve both compound artist names; exclude both output identities.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Alice in Chains",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 15,
+          "end": 30
+        },
+        {
+          "id": "s3",
+          "text": "Stone Temple Pilots",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 35,
+          "end": 54
+        },
+        {
+          "id": "s4",
+          "text": "without either band's recordings",
+          "kind": "operator",
+          "role": "exclude_antecedents",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 56,
+          "end": 88
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s2",
+          "kind": "refers_to"
+        },
+        {
+          "from": "s4",
+          "to": "s3",
+          "kind": "refers_to"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "compound-band-allow",
+      "group": "compound-entities",
+      "prompt": "Ten songs like Alice in Chains and Stone Temple Pilots, and include both bands too.",
+      "interpretation": "Preserve both sound references and required presence of both output artists.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "Alice in Chains",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 15,
+          "end": 30
+        },
+        {
+          "id": "s3",
+          "text": "Stone Temple Pilots",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 35,
+          "end": 54
+        },
+        {
+          "id": "s4",
+          "text": "include both bands too",
+          "kind": "operator",
+          "role": "require_antecedents",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 60,
+          "end": 82
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s2",
+          "kind": "refers_to"
+        },
+        {
+          "from": "s4",
+          "to": "s3",
+          "kind": "refers_to"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "not-only-piano",
+      "group": "not-only",
+      "prompt": "Ten classical tracks, not only piano: strings and orchestral pieces are welcome.",
+      "interpretation": "Piano not excluded; broaden allowed instrumentation.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "classical",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 4,
+          "end": 13
+        },
+        {
+          "id": "s3",
+          "text": "not only",
+          "kind": "operator",
+          "role": "allow_alternatives",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 22,
+          "end": 30
+        },
+        {
+          "id": "s4",
+          "text": "piano",
+          "kind": "instrument",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 31,
+          "end": 36
+        },
+        {
+          "id": "s5",
+          "text": "strings",
+          "kind": "instrument",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 38,
+          "end": 45
+        },
+        {
+          "id": "s6",
+          "text": "orchestral",
+          "kind": "style",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 50,
+          "end": 60
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "only-piano",
+      "group": "not-only",
+      "prompt": "Ten classical tracks with piano only, no strings or orchestra.",
+      "interpretation": "Piano-only instrumentation, strings and orchestra excluded.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "classical",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 4,
+          "end": 13
+        },
+        {
+          "id": "s3",
+          "text": "piano",
+          "kind": "instrument",
+          "role": "only_output",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 26,
+          "end": 31
+        },
+        {
+          "id": "s4",
+          "text": "only",
+          "kind": "operator",
+          "role": "only",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 32,
+          "end": 36
+        },
+        {
+          "id": "s5",
+          "text": "no",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 38,
+          "end": 40
+        },
+        {
+          "id": "s6",
+          "text": "strings",
+          "kind": "instrument",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 41,
+          "end": 48
+        },
+        {
+          "id": "s7",
+          "text": "orchestra",
+          "kind": "instrument",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 52,
+          "end": 61
+        }
+      ],
+      "relations": [
+        {
+          "from": "s4",
+          "to": "s3",
+          "kind": "modifies"
+        },
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review",
+      "annotationRepair": "Corrected operator byte offset to its standalone occurrence; approved interpretation unchanged."
+    },
+    {
+      "id": "unicode-loeffler",
+      "group": "unicode-occurrences",
+      "prompt": "🎵 Eight tracks like Christian Löffler, but no Christian Löffler recordings.",
+      "interpretation": "Decomposed accent and emoji do not move source ownership between mentions.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Eight",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 5,
+          "end": 10
+        },
+        {
+          "id": "s2",
+          "text": "Christian Löffler",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "canonical": "Christian Löffler",
+          "start": 23,
+          "end": 42
+        },
+        {
+          "id": "s3",
+          "text": "no",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 48,
+          "end": 50
+        },
+        {
+          "id": "s4",
+          "text": "Christian Löffler",
+          "kind": "artist",
+          "role": "exclude_output",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "canonical": "Christian Löffler",
+          "start": 51,
+          "end": 70
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "typo-loeffler",
+      "group": "unicode-occurrences",
+      "prompt": "Eight tracks like christrian loeffler for relaxing, and singing is okay.",
+      "interpretation": "Ask “Did you mean Christian Löffler?” before resolving the candidate artist. Use the corrected name only on acceptance; rejection retains christrian loeffler and disables silent spelling correction.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Eight",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 5
+        },
+        {
+          "id": "s2",
+          "text": "christrian loeffler",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 18,
+          "end": 37,
+          "candidateCanonical": "Christian Löffler"
+        },
+        {
+          "id": "s3",
+          "text": "relaxing",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 42,
+          "end": 50
+        },
+        {
+          "id": "s4",
+          "text": "singing",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 56,
+          "end": 63
+        }
+      ],
+      "relations": [],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture.",
+        "amendment": "User requires a popup and explicit accept/reject choice instead of automatic correction."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review",
+      "confirmation": {
+        "kind": "artist_spelling",
+        "spanId": "s2",
+        "question": "Did you mean Christian Löffler?",
+        "suggestedArtist": "Christian Löffler",
+        "accept": {
+          "artist": "Christian Löffler",
+          "spellingDecision": "accepted"
+        },
+        "reject": {
+          "artist": "christrian loeffler",
+          "spellingDecision": "original",
+          "allowFuzzyCorrection": false
+        },
+        "cancel": "Do not generate; retain the editable prompt."
+      }
+    },
+    {
+      "id": "soft-instrumental",
+      "group": "some-all",
+      "prompt": "Thirteen electronic tracks. Include some instrumental pieces; vocals are okay too.",
+      "interpretation": "Instrumental subset preference, mixed vocals allowed.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Thirteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 8
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 9,
+          "end": 19
+        },
+        {
+          "id": "s3",
+          "text": "some",
+          "kind": "operator",
+          "role": "soften",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 36,
+          "end": 40
+        },
+        {
+          "id": "s4",
+          "text": "instrumental",
+          "kind": "vocal",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 41,
+          "end": 53
+        },
+        {
+          "id": "s5",
+          "text": "vocals",
+          "kind": "vocal",
+          "role": "allow",
+          "polarity": "positive",
+          "strength": "allowed",
+          "scope": "playlist",
+          "start": 62,
+          "end": 68
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "hard-instrumental",
+      "group": "some-all",
+      "prompt": "Thirteen electronic tracks. Absolutely no vocals, every piece instrumental.",
+      "interpretation": "Global instrumental requirement and vocal exclusion.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Thirteen",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 8
+        },
+        {
+          "id": "s2",
+          "text": "electronic",
+          "kind": "genre",
+          "role": "style",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 9,
+          "end": 19
+        },
+        {
+          "id": "s3",
+          "text": "Absolutely no",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 28,
+          "end": 41
+        },
+        {
+          "id": "s4",
+          "text": "vocals",
+          "kind": "vocal",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 42,
+          "end": 48
+        },
+        {
+          "id": "s5",
+          "text": "every piece",
+          "kind": "operator",
+          "role": "universal",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 50,
+          "end": 61
+        },
+        {
+          "id": "s6",
+          "text": "instrumental",
+          "kind": "vocal",
+          "role": "required",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 62,
+          "end": 74
+        }
+      ],
+      "relations": [
+        {
+          "from": "s3",
+          "to": "s4",
+          "kind": "modifies"
+        },
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "party-negative",
+      "group": "mood-negation",
+      "prompt": "Ten late-night tracks like Massive Attack, with dark textures, not cheerful party music.",
+      "interpretation": "Artist sound reference; dark preferred, cheerful party music negative.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "late-night",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 4,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "Massive Attack",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 27,
+          "end": 41
+        },
+        {
+          "id": "s4",
+          "text": "dark",
+          "kind": "texture",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 48,
+          "end": 52
+        },
+        {
+          "id": "s5",
+          "text": "not",
+          "kind": "operator",
+          "role": "exclude",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 63,
+          "end": 66
+        },
+        {
+          "id": "s6",
+          "text": "cheerful party music",
+          "kind": "mood",
+          "role": "exclude",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 67,
+          "end": 87
+        }
+      ],
+      "relations": [
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    },
+    {
+      "id": "party-positive",
+      "group": "mood-negation",
+      "prompt": "Ten late-night tracks like Massive Attack, with cheerful party energy rather than dark textures.",
+      "interpretation": "Same artist reference; cheerful party positive, dark texture negative.",
+      "spans": [
+        {
+          "id": "s1",
+          "text": "Ten",
+          "kind": "quantity",
+          "role": "count",
+          "polarity": "positive",
+          "strength": "required",
+          "scope": "playlist",
+          "start": 0,
+          "end": 3
+        },
+        {
+          "id": "s2",
+          "text": "late-night",
+          "kind": "activity",
+          "role": "context",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 4,
+          "end": 14
+        },
+        {
+          "id": "s3",
+          "text": "Massive Attack",
+          "kind": "artist",
+          "role": "similarity",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 27,
+          "end": 41
+        },
+        {
+          "id": "s4",
+          "text": "cheerful party energy",
+          "kind": "mood",
+          "role": "preference",
+          "polarity": "positive",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 48,
+          "end": 69
+        },
+        {
+          "id": "s5",
+          "text": "rather than",
+          "kind": "operator",
+          "role": "contrast",
+          "polarity": "neutral",
+          "strength": "none",
+          "scope": "playlist",
+          "start": 70,
+          "end": 81
+        },
+        {
+          "id": "s6",
+          "text": "dark",
+          "kind": "texture",
+          "role": "preference",
+          "polarity": "negative",
+          "strength": "preferred",
+          "scope": "playlist",
+          "start": 82,
+          "end": 86
+        }
+      ],
+      "relations": [
+        {
+          "from": "s5",
+          "to": "s6",
+          "kind": "modifies"
+        }
+      ],
+      "review": {
+        "status": "approved",
+        "reviewer": "project user",
+        "reviewedAt": "2026-09-12T22:43:57Z",
+        "batch": 4,
+        "basis": "Explicit batch approval in conversation; timestamp records approval capture."
+      },
+      "provenance": "agent-authored prompt annotation; interpretation approved by project user",
+      "evaluationStatus": "development-review"
+    }
+  ],
+  "approval": {
+    "recordedAt": "2026-09-12T22:43:57Z",
+    "reviewer": "project user",
+    "scope": "All four batches approved in the conversation; prompt19 duration tolerance and prompt36 interactive spelling decision amended.",
+    "originalProposal": "intent-nlu-review-v1.json"
+  }
+}

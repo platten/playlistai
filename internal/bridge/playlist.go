@@ -64,7 +64,8 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
-	EnhancedAudio *core.EnhancedAudioInput `json:"enhancedAudio,omitempty"`
+	Duration      *core.PlaylistDurationAssessment `json:"duration,omitempty"`
+	EnhancedAudio *core.EnhancedAudioInput         `json:"enhancedAudio,omitempty"`
 	// PresentationID identifies this delivery, not the deterministic generation.
 	// Exposure is recorded only after the frontend acknowledges displaying it.
 	PresentationID  string                      `json:"presentationId"`
@@ -178,6 +179,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	out := PlaylistResult{
+		Duration:     playlist.Duration,
 		GenerationID: progress.generationID, AudioEvidence: playlist.AudioEvidence, Assessments: playlist.Assessments,
 		Mode: string(playlist.Mode), Seed: playlist.Seed, Intent: playlist.Intent,
 		Outcome: playlist.Outcome,
@@ -211,7 +213,7 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
-	out.Outcome = core.ReconcileOutcome(out.Outcome, out.Intent, len(out.Tracks))
+	out.Outcome = core.ReconcileOutcome(out.Outcome, out.Intent, len(out.Tracks), out.Duration)
 	a.presentPlaylistNotices(&out)
 	out.Status = GenerationStatus{
 		State: string(out.Outcome.State), Reasons: append([]core.OutcomeReason(nil), out.Outcome.Reasons...), PartialReasons: []PlaylistNotice{},
@@ -360,6 +362,7 @@ func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, int
 func applyOverrides(intent core.MusicIntent, overrides ControlOverrides) core.MusicIntent {
 	original := intent.Normalized()
 	if overrides.TotalTrackCount != nil {
+		intent.TrackCountExplicit = true
 		intent.Controls.TotalTrackCount = *overrides.TotalTrackCount
 	}
 	if overrides.AudioWeight != nil {

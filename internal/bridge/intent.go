@@ -142,9 +142,11 @@ func (a *API) GenerateFromPromptWithContext(ctx context.Context, prompt string, 
 }
 
 type ResolutionSelection struct {
-	Kind    core.ReferenceKind `json:"kind"`
-	Query   string             `json:"query"`
-	TrackID string             `json:"trackId"`
+	Kind             core.ReferenceKind `json:"kind"`
+	Query            string             `json:"query"`
+	TrackID          string             `json:"trackId"`
+	RejectSpelling   bool               `json:"rejectSpelling,omitempty"`
+	spellingAccepted bool
 }
 
 // GenerateFromPromptResolved applies choices made only for references that the
@@ -204,6 +206,10 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	m.Controls.RecommendationMode = recommendationMode
 	m.VerificationPolicy = core.BestAvailable
 	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
+	selections, err = validateResolutionSelections(a.runtime().Resolver, m, selections)
+	if err != nil {
+		return GenerateResult{}, err
+	}
 	m.References = applySelections(m.References, selections)
 	m.InferredAnchors = applyAnchorSelections(m.InferredAnchors, selections)
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
@@ -215,6 +221,11 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	if m.Destination != nil {
 		refs := applySelections([]core.IntentReference{*m.Destination}, selections)
 		m.Destination = &refs[0]
+	}
+	var spellingIssues []intentresolution.Issue
+	m, spellingIssues = intentresolution.Apply(a.runtime().Resolver, m)
+	if err := intentresolution.SpellingConfirmationError(spellingIssues); err != nil {
+		return GenerateResult{}, err
 	}
 	resolveStarted := time.Now()
 	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly {
@@ -334,6 +345,11 @@ func applySelections(references []core.IntentReference, selections []ResolutionS
 			if selection.Kind == out[i].Kind && strings.EqualFold(strings.TrimSpace(selection.Query), strings.TrimSpace(out[i].Query)) {
 				out[i].TrackID = selection.TrackID
 				out[i].Resolution = nil
+				if selection.RejectSpelling {
+					out[i].SpellingDecision = "original"
+				} else if selection.spellingAccepted {
+					out[i].SpellingDecision = "accepted"
+				}
 			}
 		}
 	}

@@ -64,3 +64,13 @@ func TestEngineOnlyBlocksUnsupportedConstraintsAndMissingSeeds(t *testing.T) {
 		t.Fatal("cancellation lost")
 	}
 }
+
+func TestEngineOnlyDoesNotClaimAnUnverifiedDuration(t *testing.T) {
+	intent := baseIntent().Normalized()
+	intent.DurationSeconds = 4500
+	// A duration capability rejection does not need to call the baseline walk.
+	got, err := deejai.BuildOnly(context.Background(), nil, intent)
+	if err != nil || got.Outcome.State != core.OutcomeUnsupported || len(got.Tracks) != 0 || got.Duration == nil || got.Duration.TargetSeconds != 4500 || got.Duration.ToleranceSeconds != 60 || got.Duration.State != core.EvidenceUnsupported {
+		t.Fatalf("duration capability was misrepresented: %+v %v", got, err)
+	}
+}

@@ -109,7 +109,7 @@ func (a *API) LoadSavedPlaylist(id string) (SavedPlaylist, error) {
 		Intent: request.Intent, Reproducibility: request.Reproducibility,
 		Status: GenerationStatus{Reasons: []core.OutcomeReason{}, PartialReasons: []PlaylistNotice{}, Timings: []StageTiming{}},
 	}
-	if len(result.Tracks) < request.Intent.Count {
+	if len(result.Tracks) < request.Intent.Count && (request.Intent.DurationSeconds <= 0 || request.Intent.HasExplicitTrackCount()) {
 		result.Status.State = string(core.OutcomePartial)
 		result.Outcome.State = core.OutcomePartial
 		reason := PlaylistNotice{
@@ -148,7 +148,7 @@ func migrateLoadedResult(result PlaylistResult) PlaylistResult {
 			result.Outcome = core.GenerationOutcome{State: core.GenerationOutcomeState(result.Status.State), Reasons: result.Status.Reasons}
 		}
 	}
-	result.Outcome = core.ReconcileOutcome(result.Outcome, result.Intent, len(result.Tracks))
+	result.Outcome = core.ReconcileOutcome(result.Outcome, result.Intent, len(result.Tracks), result.Duration)
 	result.Status.State = string(result.Outcome.State)
 	result.Status.Reasons = append([]core.OutcomeReason{}, result.Outcome.Reasons...)
 	if result.Status.PartialReasons == nil {
