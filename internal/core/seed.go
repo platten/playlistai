@@ -47,7 +47,9 @@ func (s RNGSeed) Int64() (int64, error) {
 		return 0, err
 	}
 	if value > uint64(math.MaxInt64) {
-		return 0, fmt.Errorf("RNG seed %q exceeds int64 range", canonical)
+		// Preserve the full seed bit pattern for math/rand's signed API.
+		// Complementing first keeps the conversion within int64's range.
+		return -1 - int64(^value), nil
 	}
 	return int64(value), nil
 }
