@@ -193,36 +193,44 @@ func writeSidecarVersion(t *testing.T, schemaVersion int, rows []sidecarRow) str
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE features(track_id TEXT PRIMARY KEY,feature_json TEXT NOT NULL); CREATE TABLE semantic_vectors(track_id TEXT PRIMARY KEY,embedding BLOB NOT NULL)`); err != nil {
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE features(track_id TEXT PRIMARY KEY,feature_json TEXT NOT NULL); CREATE TABLE semantic_vectors(track_id TEXT PRIMARY KEY,embedding BLOB NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
 	meta := map[string]string{"schema_version": strconv.Itoa(schemaVersion), "catalog_version": "fake:v1", "feature_version": "pilot/v1", "text_model": "pilot-model", "model_revision": "abc123", "embedding_dim": "2", "track_count": strconv.Itoa(len(rows)), "supported_facets": "[\"styles\",\"vocal_evidence\"]"}
 	if schemaVersion >= 2 {
-		if _, err := db.Exec(`CREATE TABLE query_vectors(term TEXT PRIMARY KEY,embedding BLOB NOT NULL)`); err != nil {
+		if _, err := tx.Exec(`CREATE TABLE query_vectors(term TEXT PRIMARY KEY,embedding BLOB NOT NULL)`); err != nil {
 			t.Fatal(err)
 		}
 		meta["query_encoder"] = QueryEncoderPrecomputed
 		meta["query_term_count"] = "1"
 	}
 	for key, value := range meta {
-		if _, err := db.Exec("INSERT INTO meta VALUES(?,?)", key, value); err != nil {
+		if _, err := tx.Exec("INSERT INTO meta VALUES(?,?)", key, value); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, row := range rows {
 		raw, _ := json.Marshal(row.feature)
 		blob := vectorBlob(row.vector)
-		if _, err := db.Exec("INSERT INTO features VALUES(?,?)", row.id, string(raw)); err != nil {
+		if _, err := tx.Exec("INSERT INTO features VALUES(?,?)", row.id, string(raw)); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Exec("INSERT INTO semantic_vectors VALUES(?,?)", row.id, blob); err != nil {
+		if _, err := tx.Exec("INSERT INTO semantic_vectors VALUES(?,?)", row.id, blob); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if schemaVersion >= 2 {
-		if _, err := db.Exec("INSERT INTO query_vectors VALUES(?,?)", "relaxing", vectorBlob([]float32{1, 0})); err != nil {
+		if _, err := tx.Exec("INSERT INTO query_vectors VALUES(?,?)", "relaxing", vectorBlob([]float32{1, 0})); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 	return path
 }

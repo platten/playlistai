@@ -12,10 +12,12 @@ import (
 
 func TestArtistRecordingsHasNoSearchWindowAndHonorsCancellation(t *testing.T) {
 	c := metadataResolverCatalog(t)
+	tx := resolverFixtureTransaction(t, c.db)
 	for i := 0; i < 75; i++ {
-		insertResolverTrack(t, c.db, i, fmt.Sprint(i), "坂本龍一", fmt.Sprintf("Track %d", i))
+		insertResolverTrack(t, tx, i, fmt.Sprint(i), "坂本龍一", fmt.Sprintf("Track %d", i))
 	}
-	insertResolverTrack(t, c.db, 75, "decoy", "Other", "坂本龍一")
+	insertResolverTrack(t, tx, 75, "decoy", "Other", "坂本龍一")
+	commitResolverFixture(t, tx)
 	tracks, err := c.ArtistRecordings(context.Background(), "坂本龍一")
 	if err != nil || len(tracks) != 75 {
 		t.Fatalf("recordings=%d err=%v", len(tracks), err)
@@ -29,12 +31,14 @@ func TestArtistRecordingsHasNoSearchWindowAndHonorsCancellation(t *testing.T) {
 
 func TestTypedResolutionExactOutsideOldWindowAndCollisions(t *testing.T) {
 	c := metadataResolverCatalog(t)
+	tx := resolverFixtureTransaction(t, c.db)
 	for i := 0; i < 70; i++ {
-		insertResolverTrack(t, c.db, i, "decoy"+string(rune('A'+i%26)), "Other", "Late Artist Story")
+		insertResolverTrack(t, tx, i, "decoy"+string(rune('A'+i%26)), "Other", "Late Artist Story")
 	}
-	insertResolverTrack(t, c.db, 70, "late", "Late Artist", "Only Song")
-	insertResolverTrack(t, c.db, 71, "artist-halo", "Halo", "Unrelated")
-	insertResolverTrack(t, c.db, 72, "track-halo", "Beyoncé", "Halo")
+	insertResolverTrack(t, tx, 70, "late", "Late Artist", "Only Song")
+	insertResolverTrack(t, tx, 71, "artist-halo", "Halo", "Unrelated")
+	insertResolverTrack(t, tx, 72, "track-halo", "Beyoncé", "Halo")
+	commitResolverFixture(t, tx)
 
 	artist := c.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: "Late Artist"})
 	if artist.Status != core.ResolutionResolved || artist.Selected == nil || artist.Selected.Artist != "Late Artist" {
@@ -149,7 +153,29 @@ func metadataResolverCatalog(t *testing.T) *Catalog {
 	return &Catalog{db: db, version: "test:v2", hasAliases: true, hasUnicodeSearch: true, resolutionCache: make(map[string]core.ReferenceResolution), representativeCache: make(map[string][]core.WeightedTrack)}
 }
 
-func insertResolverTrack(t *testing.T, db *sql.DB, row int, id, artist, title string) {
+type resolverFixtureExecutor interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+// Batch fixture writes without changing the file-backed catalog being queried.
+func resolverFixtureTransaction(t *testing.T, db *sql.DB) *sql.Tx {
+	t.Helper()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+	return tx
+}
+
+func commitResolverFixture(t *testing.T, tx *sql.Tx) {
+	t.Helper()
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func insertResolverTrack(t *testing.T, db resolverFixtureExecutor, row int, id, artist, title string) {
 	t.Helper()
 	_, err := db.Exec(`INSERT INTO tracks VALUES (?, ?, ?, ?, ?, ?)`, row, id, artist, title, normalizeSearch(artist+" "+title), normalizeUnicodeSearch(artist+" "+title))
 	if err != nil {
@@ -166,9 +192,11 @@ func mustExec(t *testing.T, db *sql.DB, statement string) {
 
 func TestBroadArtistLookupComputesOnlyVisibleRepresentatives(t *testing.T) {
 	c := metadataResolverCatalog(t)
+	tx := resolverFixtureTransaction(t, c.db)
 	for i := 0; i < 40; i++ {
-		insertResolverTrack(t, c.db, i, fmt.Sprint(i), fmt.Sprintf("Shared %02d", i), "Recording")
+		insertResolverTrack(t, tx, i, fmt.Sprint(i), fmt.Sprintf("Shared %02d", i), "Recording")
 	}
+	commitResolverFixture(t, tx)
 	got := c.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: "Shared"})
 	if got.Status != core.ResolutionAmbiguous || len(got.Alternatives) != maxAlternatives {
 		t.Fatalf("ambiguity lost: %+v", got)
