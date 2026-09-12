@@ -47,6 +47,7 @@ fi
 
 # ---------------------------------------------------------------- Frontend
 if has pnpm && has node; then
+  step "CI timing helper" node --test scripts/go-test.test.mjs
   if has wails3; then
     step "wails3 generate bindings" wails3 generate bindings -clean=true -ts -i
   else
@@ -55,7 +56,7 @@ if has pnpm && has node; then
   step "pnpm install"       bash -c 'cd frontend && pnpm install --frozen-lockfile'
   step "frontend typecheck" bash -c 'cd frontend && pnpm run typecheck'
   step "frontend tests"     bash -c 'cd frontend && pnpm test'
-  step "frontend build"     bash -c 'cd frontend && pnpm run build'
+  step "frontend build"     bash -c 'cd frontend && pnpm run build:bundle'
 else
   warn "node/pnpm not found — skipping frontend checks (needed for a full pass)"
 fi

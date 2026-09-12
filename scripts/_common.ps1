@@ -9,7 +9,7 @@ Set-Location $script:RepoRoot
 
 $script:GoVersionMin = [version]"1.27"
 $script:NodeVersionMin = [version]"22.0"
-$script:PnpmVersion = "9"
+$script:PnpmVersion = "9.15.9"
 $script:Wails3Version = "v3.0.0-beta.16"
 $script:GolangCILintVersion = "v2.13.2"
 
