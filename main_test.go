@@ -32,7 +32,7 @@ func TestHeadlessCommandsBypassConfigurationAndDesktop(t *testing.T) {
 	if err := dispatch([]string{"--check-audio-worker"}, &out, log); (err == nil) != (expected == nil) {
 		t.Fatalf("packaging capability disagrees with this build: %v / %v", err, expected)
 	}
-	for _, command := range []string{"--audio-worker", "--app-update-worker"} {
+	for _, command := range []string{"--audio-worker", "--mert-worker", "--app-update-worker"} {
 		if err := dispatch([]string{command, filepath.Join(t.TempDir(), "absent")}, &out, log); err == nil {
 			t.Fatalf("%s accepted missing input", command)
 		}

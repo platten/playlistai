@@ -3,6 +3,11 @@ import { API, RecommendationMode } from "../lib/api";
 
 const options = [
   {
+    mode: RecommendationMode.EnhancedHybrid,
+    title: "Enhanced hybrid",
+    detail: "Combine catalog similarity, CLAP and archive evidence with optional measured DSP preferences and MERT audio similarity. Missing analysis stays neutral.",
+  },
+  {
     mode: RecommendationMode.AcousticBrainzFirst,
     title: "AcousticBrainz first",
     detail: "Prefer decisive archived predictions for supported characteristics. CLAP covers missing or uncertain evidence.",

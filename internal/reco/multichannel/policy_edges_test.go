@@ -11,6 +11,7 @@ import (
 
 func TestConfigRejectsInvalidBoundsButPreservesDisabledWeights(t *testing.T) {
 	invalid := Config{
+		EnhancedMERTWeight: -1, EnhancedDSPWeight: -1, EnhancedTransitionWeight: -1,
 		SeedAudioBudget: -1, SeedCooccurrenceBudget: -1, TasteClusterBudget: -1, MaxTasteClusters: -1,
 		ExplorationPool: -1, ExplorationBudget: -1, ExplorationMinScore: -3, MaxCandidates: -1, ReciprocalRankConstant: -1,
 		RetrievalWeight: -1, ListenerWeight: -1, NegativePenalty: -1, ExposurePenalty: -1, NoveltyWeight: -1, ExplorationChance: -1,

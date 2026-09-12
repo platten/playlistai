@@ -14,8 +14,9 @@ import (
 // current Prefs first and mutate just that field — never construct a fresh
 // Prefs{} with only the field it cares about, or it silently erases the rest.
 type Prefs struct {
-	RecommendationMode string `json:"recommendationMode,omitempty"`
-	AnalysisEnabled    bool   `json:"analysisEnabled"`
+	RecommendationMode   string `json:"recommendationMode,omitempty"`
+	AnalysisEnabled      bool   `json:"analysisEnabled"`
+	EnhancedAudioEnabled bool   `json:"enhancedAudioEnabled"`
 	// DebugLogging opts into potentially sensitive, memory-only diagnostics.
 	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.

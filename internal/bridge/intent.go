@@ -242,6 +242,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	req.Intent = m     // pin the generated seed while retaining the complete interpretation
 	req.Seed = pl.Seed // legacy readers still find the replay seed
 	req.Reproducibility = pl.Reproducibility
+	req.EnhancedAudio = pl.EnhancedAudio
 	req.RequestID = pl.Reproducibility.ID
 
 	titleStarted := time.Now()

@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
+import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
 import { RecommendationSettings } from "../components/RecommendationSettings";
 
@@ -367,6 +368,7 @@ export function SettingsScreen() {
       </section>
 
       <MusicAnalysisCard />
+      <EnhancedAudioCard />
       <MusicMetadataCard />
 
       <section className="flex flex-col gap-3">

@@ -14,6 +14,18 @@ PARTICULAR PURPOSE. See the GNU General Public License for more details.
 Third-party components and data
 ================================================================================
 
+MERT-v1-95M   https://huggingface.co/m-a-p/MERT-v1-95M       (CC-BY-NC-4.0)
+  Optional, separately licensed pretrained model weights. The application remains
+  GPL-3.0; installing these weights does not relicense them. Revision:
+  12af15fef9d0ac838c3f475bfbbf26d2060dd4f5. Maintainer tooling exports an FP32 ONNX
+  graph without retraining. Native model packs include upstream model notices.
+  The model compares audio representations, not natural-language prompts.
+
+ONNX Runtime   https://github.com/microsoft/onnxruntime                   (MIT)
+  Optional MERT packs include the pinned 1.26.0 CPU native runtime for their
+  target OS/architecture, its license and third-party notices. All runtime
+  binaries are verified by SHA-256. See docs/mert-model-preparation.md.
+
 Deej-AI
   https://github.com/teticio/Deej-AI                                  (GPL-3.0)
 deej-ai.online-app

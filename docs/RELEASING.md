@@ -3,6 +3,14 @@
 All Windows, Linux and macOS jobs use GitHub-hosted runners. See
 [runner routing](self-hosted-runners.md).
 
+Optional MERT model packs are prepared separately for every shipped target with
+`python/prepare_mert_packs.py`; see [the pinned export and packaging guide](mert-model-preparation.md).
+They contain the same FP32 graph, the verified target ONNX Runtime library and
+separate upstream notices. They require no Python at installation or inference.
+Retain the application-only release allowlist; model packs may be distributed
+alongside the application as separately licensed optional assets. Validate each
+pack on its native host with the compiled `mertparity` command before publishing.
+
 Playlist AI ships two things per platform: a native **installer** (the primary,
 recommended path) and a **portable archive** of the raw binary. Both are built
 by [`.github/workflows/release.yml`](../.github/workflows/release.yml) and

@@ -47,7 +47,8 @@ func (o *Orchestrator) assemblyKey(candidates []core.Candidate, intent core.Musi
 		BestAvailable                           bool
 		Knowledge                               *core.KnowledgeSnapshot
 		Assessments                             map[string]core.AudioAssessment
-	}{candidates, intent, request.Profile, resolvedContextTracks(o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments})
+		EnhancedFingerprint                     string
+	}{candidates, intent, request.Profile, resolvedContextTracks(o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments, request.EnhancedAudio.Fingerprint() + o.enhancedSnapshot.Fingerprint() + EnhancedPolicyVersion})
 }
 
 func (a candidateAssembly) complete(count int) bool {
@@ -67,6 +68,10 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
+	if err := o.prepareEnhanced(ctx, candidates, intent, request, references, required, waypoints); err != nil {
+		return out, err
+	}
+	request.EnhancedAudio = o.enhancedSnapshot
 	key := ""
 	if o.assemblyCache != nil {
 		key = o.assemblyKey(candidates, intent, request, references, required, waypoints, seed)
@@ -74,7 +79,7 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 			return o.assemblyCache.result, nil
 		}
 	}
-	ranked, err := o.rankCandidates(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile})
+	ranked, err := o.rankCandidates(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile, EnhancedAudio: request.EnhancedAudio})
 	if err != nil {
 		return out, err
 	}
@@ -113,7 +118,7 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 		return out, err
 	}
 	out.sequence, err = o.sequencer.Sequence(ctx, ports.SequenceRequest{
-		Intent: intent, Candidates: out.selection.Candidates, Required: required, Waypoints: waypoints,
+		Intent: intent, Candidates: out.selection.Candidates, Required: required, Waypoints: waypoints, EnhancedAudio: request.EnhancedAudio,
 		ReferenceAnchors: references, RecentSelections: recent,
 		Trajectory: trajectory, Seed: seed, CategoryStages: out.stageMembership,
 	})

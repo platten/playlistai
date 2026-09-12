@@ -93,6 +93,7 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 	for index := range result {
 		result[index].Scores.Total = r.total(result[index], intent, availability)
 	}
+	r.enhancedScores(result, intent, request.EnhancedAudio)
 	sort.SliceStable(result, func(i, j int) bool {
 		if result[i].Scores.Total != result[j].Scores.Total {
 			return result[i].Scores.Total > result[j].Scores.Total

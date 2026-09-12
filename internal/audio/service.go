@@ -32,7 +32,9 @@ type Service struct {
 	Analyzer ports.AudioAnalyzer
 	Store    ports.AnalysisStore
 	// DSPStore is separately opt-in. Nil preserves the existing CLAP-only path.
-	DSPStore   ports.DSPStore
+	DSPStore ports.DSPStore
+	// MERT is opt-in on an Enhanced request's service copy only.
+	MERT       *MERTService
 	Recordings ports.CachedRecordingReader
 	Policy     Policy
 	// Authorized is a distribution-level provider permission gate, independent
@@ -82,7 +84,21 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		return core.AudioAnalysis{}, int64(len(encoded)), err
 	}
 	hash := sha256.Sum256(encoded)
-	samples, original, err := decodeForAnalysis(ctx, encoded, s.DSPStore != nil)
+	audioHash := hex.EncodeToString(hash[:])
+	withEnhanced := s.DSPStore != nil || s.MERT != nil
+	enhancedCtx, enhancedCancel := context.WithCancel(ctx)
+	defer enhancedCancel()
+	if budget := EnhancedBudgetFor(ctx); withEnhanced && budget != nil {
+		// Cache-only compatibility checks never consume an admission. Once a
+		// generation's optional budget expires, CLAP continues on its own ctx.
+		withEnhanced = s.enhancedCacheMiss(ctx, ref, catalog, preview.Identity, audioHash) && budget.Allow(ref.ID)
+		if withEnhanced {
+			enhancedCancel()
+			enhancedCtx, enhancedCancel = budget.Context(ctx)
+			defer enhancedCancel()
+		}
+	}
+	samples, original, err := decodeForAnalysis(ctx, encoded, withEnhanced)
 	clear(encoded)
 	defer clear(samples)
 	defer clear(original.Samples)
@@ -93,16 +109,20 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	offset := float64(first) / SampleRate
 	record := core.AudioAnalysis{
 		TrackID: ref.ID, CatalogVersion: catalog, TrackKey: core.ProvisionalRecordingKey(ref), Identity: preview.Identity,
-		Model: s.Analyzer.Identity(), AudioSHA256: hex.EncodeToString(hash[:]), AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Model: s.Analyzer.Identity(), AudioSHA256: audioHash, AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Sampling: &core.AudioSampling{Policy: PreviewSamplingVersion, AvailableSeconds: float64(len(samples)) / SampleRate},
 		Coverage: core.PreviewCoverage{Available: true, StartSeconds: offset, EndSeconds: float64(last) / SampleRate, CoveredSeconds: float64(last-first) / SampleRate, Source: "deezer"},
 	}
-	if s.DSPStore != nil {
-		if _, err := s.storeDSPInterval(ctx, ref, catalog, preview.Identity, record.AudioSHA256, original, first, last); err != nil {
-			return core.AudioAnalysis{}, int64(len(encoded)), err
-		}
-		clear(original.Samples)
+	if withEnhanced && s.DSPStore != nil {
+		_, _ = s.storeDSPInterval(enhancedCtx, ref, catalog, preview.Identity, record.AudioSHA256, original, first, last)
 	}
+	if withEnhanced && s.MERT != nil {
+		// Optional representation failure must not discard usable CLAP evidence.
+		// The MERT caller separately checks its cache; cancellation still applies
+		// to all subsequent inference and writes through this shared context.
+		_, _ = s.MERT.AnalyzeDecoded(enhancedCtx, ref, catalog, preview.Identity, record.AudioSHA256, original)
+	}
+	clear(original.Samples)
 	err = forEachSegment(ctx, samples[first:last], func(segment []float32, start, end float64) error {
 		vector, err := s.Analyzer.EmbedAudio(ctx, segment)
 		if err != nil {

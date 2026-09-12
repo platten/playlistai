@@ -20,11 +20,11 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "ClearModel",
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow",
   "GetMetadataBundleInfo", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
-  "GetPreviewURL",
+  "GetPreviewURL", "GetEnhancedAnalysisStatus",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
   API: bridge,
-  RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only" },
+  RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" },
   FeedbackScope: { FeedbackScopeRequest: "request", FeedbackScopeDurable: "durable" },
   FeedbackType: { FeedbackLike: "like", FeedbackDislike: "dislike", FeedbackMoreLike: "more_like", FeedbackLessLike: "less_like", FeedbackAccepted: "accepted", FeedbackRemoved: "removed" },
 }));

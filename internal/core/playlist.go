@@ -38,6 +38,8 @@ type Candidate struct {
 }
 
 type CandidateScores struct {
+	EnhancedMERT          float64 `json:"enhancedMert"`
+	EnhancedDSP           float64 `json:"enhancedDsp"`
 	AcousticIntent        float64 `json:"acousticIntent"`
 	RetrievalFusion       float64 `json:"retrievalFusion"` // max-normalized weighted RRF, not a probability
 	AudioSeedAffinity     float64 `json:"audioSeedAffinity"`
@@ -57,6 +59,8 @@ type CandidateScores struct {
 }
 
 type CandidateFeatures struct {
+	EnhancedMERT          bool `json:"enhancedMert"`
+	EnhancedDSP           bool `json:"enhancedDsp"`
 	AcousticIntent        bool `json:"acousticIntent"`
 	RetrievalFusion       bool `json:"retrievalFusion"`
 	AudioSeedAffinity     bool `json:"audioSeedAffinity"`
@@ -111,6 +115,7 @@ type GenerationOutcome struct {
 // requires the catalog, algorithm, profile snapshot, and generation context
 // recorded by the bridge alongside this value.
 type Playlist struct {
+	EnhancedAudio *EnhancedAudioSnapshot `json:"enhancedAudio,omitempty"`
 	Assessments   []TrackAssessment      `json:"assessments"`
 	AudioEvidence *AudioEvidenceSnapshot `json:"audioEvidence,omitempty"`
 	Tracks        []TrackRef             `json:"tracks"`

@@ -49,23 +49,25 @@ type promptCase struct {
 	OnlyArtist      string   `json:"onlyArtist"`
 }
 type result struct {
-	RecommendationMode    core.RecommendationMode `json:"recommendationMode"`
-	ParsedIntent          core.MusicIntent        `json:"parsedIntent"`
-	ReplayedParsedIntent  bool                    `json:"replayedParsedIntent,omitempty"`
-	Algorithm             string                  `json:"algorithmVersion"`
-	Catalog               string                  `json:"catalogVersion"`
-	Parser                ports.ParserInfo        `json:"parser"`
-	ParseOnly             bool                    `json:"parseOnly,omitempty"`
-	ParserFallback        string                  `json:"parserFallback,omitempty"`
-	ParserIssues          []string                `json:"parserIssues,omitempty"`
-	Prompt                string                  `json:"prompt"`
-	Errors                []string                `json:"errors"`
-	Milliseconds          int64                   `json:"milliseconds"`
-	Replayed              bool                    `json:"replayed,omitempty"`
-	CachedAudioOnly       bool                    `json:"cachedAudioOnly,omitempty"`
-	AcousticBrainzEnabled bool                    `json:"acousticBrainzEnabled"`
-	Playlist              core.Playlist           `json:"playlist"`
-	Intent                core.MusicIntent        `json:"intent"`
+	EnhancedEvidenceSHA256      string                  `json:"enhancedEvidenceSha256,omitempty"`
+	EnhancedSnapshotFingerprint string                  `json:"enhancedSnapshotFingerprint,omitempty"`
+	RecommendationMode          core.RecommendationMode `json:"recommendationMode"`
+	ParsedIntent                core.MusicIntent        `json:"parsedIntent"`
+	ReplayedParsedIntent        bool                    `json:"replayedParsedIntent,omitempty"`
+	Algorithm                   string                  `json:"algorithmVersion"`
+	Catalog                     string                  `json:"catalogVersion"`
+	Parser                      ports.ParserInfo        `json:"parser"`
+	ParseOnly                   bool                    `json:"parseOnly,omitempty"`
+	ParserFallback              string                  `json:"parserFallback,omitempty"`
+	ParserIssues                []string                `json:"parserIssues,omitempty"`
+	Prompt                      string                  `json:"prompt"`
+	Errors                      []string                `json:"errors"`
+	Milliseconds                int64                   `json:"milliseconds"`
+	Replayed                    bool                    `json:"replayed,omitempty"`
+	CachedAudioOnly             bool                    `json:"cachedAudioOnly,omitempty"`
+	AcousticBrainzEnabled       bool                    `json:"acousticBrainzEnabled"`
+	Playlist                    core.Playlist           `json:"playlist"`
+	Intent                      core.MusicIntent        `json:"intent"`
 }
 
 type cachedPreviewsOnly struct{}
@@ -100,8 +102,10 @@ func run() error {
 	model := flag.String("model", "", "GGUF path")
 	runtime := flag.String("runtime", "", "llama-server path")
 	serverURL := flag.String("server-url", "", "reuse an already-running local llama server without managing its process")
-	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: acousticbrainz_first, clap_first, or deejai_only")
+	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: acousticbrainz_first, clap_first, deejai_only, or enhanced_hybrid")
+	enhancedEvidence := flag.String("enhanced-evidence", "", "optional frozen EnhancedAudioInput JSON; Enhanced Hybrid only, no online metadata or new previews")
 	parseOnly := flag.Bool("parse-only", false, "evaluate interpretation only; not a playlist acceptance run")
+	rulesParser := flag.Bool("rules-parser", false, "explicitly use the deterministic rules parser; default remains the local language model")
 	catalogDir := flag.String("catalog", "", "catalog directory")
 	fixture := flag.String("prompts", "internal/evaluation/testdata/music-prompts-v8.json", "prompt expectations JSON")
 	output := flag.String("output", "/tmp/music-prompts-report.json", "report JSON")
@@ -124,6 +128,12 @@ func run() error {
 	mode := core.RecommendationMode(*modeFlag)
 	if mode == "" || !mode.Valid() || *replayParsed && *replay == "" {
 		return fmt.Errorf("invalid mode or replay-parsed requires replay")
+	}
+	if *rulesParser && (*replay != "" || *serverURL != "" || *model != "" || *runtime != "") {
+		return fmt.Errorf("rules-parser cannot be combined with replay or language model options")
+	}
+	if *enhancedEvidence != "" && (mode != core.EnhancedHybrid || *online || (*bundle != "" && !*cacheOnly)) {
+		return fmt.Errorf("enhanced-evidence requires enhanced_hybrid, offline metadata, and cached-audio-only when a CLAP bundle is supplied")
 	}
 	if *count < 0 || *minimum < 1 || *minArtists < 0 || (*count > 0 && *minimum > *count) || *cacheOnly && *bundle == "" {
 		return fmt.Errorf("count must be nonnegative and at least min-tracks; min-tracks must be positive; cached-audio-only requires a bundle")
@@ -166,7 +176,7 @@ func run() error {
 		}
 		parser = llama.NewWithClient(client)
 		defer parser.Close()
-	} else if *replay == "" {
+	} else if *replay == "" && !*rulesParser {
 		parser, err = llama.New(ctx, llama.Options{BinaryPath: *runtime, ModelPath: *model, NCtx: 8192, GPULayers: 0, StartTimeout: 3 * time.Minute})
 		if err != nil {
 			return err
@@ -178,6 +188,10 @@ func run() error {
 		return err
 	}
 	defer cat.Close()
+	enhancedSnapshot, enhancedHash, err := readEnhancedEvidence(*enhancedEvidence, cat.CatalogVersion())
+	if err != nil {
+		return err
+	}
 	engine := multichannel.New(cat, brute.New(cat), cat, multichannel.DefaultConfig())
 	if parser != nil {
 		engine.WithAnchorProposer(parser.ProposeAnchors)
@@ -239,6 +253,7 @@ func run() error {
 		fmt.Printf("Checking: %s\n", c.Prompt)
 		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly, ParseOnly: *parseOnly, Algorithm: engine.AlgorithmVersion(), Catalog: cat.CatalogVersion()}
 		r.RecommendationMode, r.ReplayedParsedIntent = mode, *replayParsed
+		r.EnhancedEvidenceSHA256, r.EnhancedSnapshotFingerprint = enhancedHash, enhancedSnapshot.Fingerprint()
 		if mode == core.DeejAIOnly {
 			r.Algorithm = deejai.OnlyAlgorithmVersion
 		}
@@ -246,10 +261,17 @@ func run() error {
 		if parser != nil {
 			r.Parser = parser.Info()
 		}
+		if *rulesParser {
+			r.Parser = rules.New().Info()
+		}
 		var intent core.MusicIntent
 		var parseErr error
-		if *replay == "" && parser != nil {
-			intent, parseErr = parser.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+		if *replay == "" && (parser != nil || *rulesParser) {
+			if *rulesParser {
+				intent, parseErr = rules.New().Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+			} else {
+				intent, parseErr = parser.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+			}
 			if parseErr != nil && ctx.Err() == nil && !*parseOnly {
 				// Match the desktop fallback, while retaining the model failure
 				// and still checking whether the fallback preserved the request.
@@ -308,7 +330,7 @@ func run() error {
 			if mode == core.DeejAIOnly {
 				r.Playlist, err = deejai.BuildOnly(ctx, deejai.New(cat, brute.New(cat), cat), intent)
 			} else {
-				r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress})
+				r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress, EnhancedAudio: enhancedSnapshot})
 			}
 			if err != nil {
 				r.Errors = append(r.Errors, err.Error())

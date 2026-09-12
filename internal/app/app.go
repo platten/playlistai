@@ -34,6 +34,7 @@ type Container struct {
 	catalogLoadMu     sync.Mutex
 	metadataInstallMu sync.Mutex
 	analysis          analysisState
+	enhanced          enhancedState
 	cfg               config.Config
 	log               *slog.Logger
 
@@ -122,6 +123,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	}
 	c.wireEnrichExport()
 	c.wireAnalysis(ctx)
+	c.wireEnhanced(ctx)
 	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
 

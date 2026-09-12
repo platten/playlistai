@@ -15,8 +15,9 @@ import (
 // transition similarity, relevance, and optional waypoint-trajectory fit, then
 // performs bounded pair swaps that improve the same transition objective.
 type GreedySequencer struct {
-	cat ports.Catalog
-	cfg Config
+	enhancedInput core.EnhancedAudioInput
+	cat           ports.Catalog
+	cfg           Config
 }
 
 type sequenceItem struct {
@@ -31,6 +32,11 @@ func NewSequencer(cat ports.Catalog, cfg Config) *GreedySequencer {
 }
 
 func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRequest) (ports.SequenceResult, error) {
+	local := *s
+	s = &local
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		s.enhancedInput = request.EnhancedAudio.Input()
+	}
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
 	}
@@ -271,6 +277,7 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 
 func (s *GreedySequencer) orderingScore(candidate core.Candidate, previous core.TrackRef, request ports.SequenceRequest, position int) float64 {
 	score := s.cfg.TransitionRelevanceWeight * candidate.Scores.SelectionRelevance
+	score += s.enhancedTransition(previous, candidate.Track, s.enhancedInput, request.Intent)
 	if similarity, ok := s.trackSimilarity(previous, candidate.Track, request.Intent); ok {
 		score += request.Intent.Controls.TransitionSmoothness * similarity
 	}
@@ -335,6 +342,7 @@ func (s *GreedySequencer) sequenceObjective(items []sequenceItem, request ports.
 	var score float64
 	previous := s.startAnchor(request, nil)
 	for index, item := range items {
+		score += s.enhancedTransition(previous, item.track, s.enhancedInput, request.Intent)
 		if similarity, ok := s.trackSimilarity(previous, item.track, request.Intent); ok {
 			score += request.Intent.Controls.TransitionSmoothness * similarity
 		}
@@ -396,6 +404,9 @@ func (s *GreedySequencer) hardSpacingValid(items []sequenceItem, request ports.S
 
 func (s *GreedySequencer) candidateReason(candidate core.Candidate, request ports.SequenceRequest, position, total int, spacingRelaxed bool) core.StepReason {
 	evidence := rankingEvidence(candidate, request.Intent, s.cfg)
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		evidence = append(evidence, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference/taste similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; preview measurements, never hard musical evidence"})
+	}
 	evidence = append(evidence,
 		core.ComponentEvidence{Component: "selection_relevance", Score: candidate.Scores.SelectionRelevance, Weight: 1, Available: candidate.Available.SelectionRelevance},
 		core.ComponentEvidence{Component: "embedding_redundancy", Score: candidate.Scores.EmbeddingRedundancy, Weight: -s.cfg.EmbeddingRedundancyWeight, Available: candidate.Available.EmbeddingRedundancy},

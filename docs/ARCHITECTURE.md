@@ -13,15 +13,20 @@ build.
 > measured improvements, and outstanding validation. Preview-derived analysis is
 > optional; this is not a local music-library scanner.
 
-The staged [enhanced audio milestones](enhanced-audio-milestones.md) add an
-audio-only representation contract beside paired CLAP analysis. M1 stores derived
-segment/pooled vectors in an additive table in the existing analysis database;
-no generation path consumes these records yet. M2 adds a separate deterministic
-DSP cache and original-channel decoder branch, with model-free explicit analysis
-and opt-in shared CLAP decoding. Its ten [measurements](dsp-measurements.md) remain
-outside recommendation scoring until the Enhanced Hybrid milestone. See the
-[source preparation guide](enhanced-audio-data-preparation.md) for retained,
-verified maintainer assets and the subsequent native-runtime validation gate.
+The [enhanced audio milestones](enhanced-audio-milestones.md) add an audio-only
+representation contract beside paired CLAP analysis. Derived segment/pooled
+vectors and deterministic DSP measurements use separate additive tables in the
+existing analysis database. An original-channel decoder branch supports the ten
+[measurements](dsp-measurements.md), model-free explicit analysis and shared
+CLAP decoding. See the [source preparation guide](enhanced-audio-data-preparation.md)
+for retained, verified maintainer assets.
+
+The consolidated remaining implementation connects these stores through
+[Enhanced hybrid](enhanced-audio.md): a bounded provider freezes derived evidence
+before ranking, while a separate native MERT worker implements audio-only
+representation inference. CLAP retains its paired text/audio contract. Snapshot
+DTOs persist in history and generation fingerprints; settings and per-track
+details expose measured, proxy, embedding and unknown evidence separately.
 
 ---
 

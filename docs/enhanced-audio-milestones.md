@@ -3,10 +3,21 @@
 Base: `main`, `c2b0ea3326e015298587d7ef3027193635c0472a` (2026-09-11).
 The initial worktree was clean. Baseline `go test ./...` passed on Windows.
 
-Each row below is a separate PR. A dependent milestone starts only after its
-predecessor has an approving review and is merged into `main`. Do not self-approve,
-auto-merge, combine milestones, or publish a release to bypass that gate. Each PR
-must record its actual base, checks, limitations, and the preceding merged PR.
+M1 and M2 were reviewed and merged separately. At the user's request, all
+remaining milestones are tracked in one consolidated PR, based on M2's merge
+`bc9d6f23a7da22be9eb22ee951ffeb349e899774`. That PR requires user approval and
+merge; do not self-approve, auto-merge or publish a release. Milestone boundaries
+below remain implementation and validation checkpoints inside that PR.
+
+The remaining-work branch is `codex/enhanced-audio-remaining`; it started clean
+from `origin/main`. Baseline `go test ./...` passed on Windows. The implementation
+extends the existing representation/DSP stores, verified optional asset installer,
+native ONNX worker, request-local assembly fingerprint and settings controls.
+CLAP's paired encoder contract and all three existing modes remain unchanged.
+MERT uses a separate audio-only model identity and optional installation; its
+assets retain upstream licensing. Enhanced evidence is frozen before ranking,
+serialized for replay, and never used to satisfy hard criteria through proxies.
+No further analysis database is introduced.
 
 | Milestone | Deliverable | Acceptance boundary |
 | --- | --- | --- |
@@ -166,8 +177,9 @@ partial durations, deterministic repetition and cancellation during FFT work.
 No new dataset, model weight, Python environment, native library or application
 dependency is needed for DSP. M1's retained source assets remain in Downloads.
 There is no held-out musical-quality evaluation or MERT inference claim in M2.
-DSP is not yet exposed through the UI; M4 connects Enhanced Hybrid and M6 adds
-user controls/evidence. M3 is gated on M2 approval and merge.
+At the M2 boundary DSP was not exposed through the UI. M2 has since been approved
+and merged as PR #23; the consolidated implementation below connects generation
+and user controls.
 
 The final Windows gate (`scripts/test.ps1`, CGO enabled with the existing verified
 LLVM-MinGW compiler) passed: Wails bindings, frontend typecheck, 150 frontend
@@ -201,3 +213,31 @@ opposed channels; no random seed/model/runtime is involved. Algorithm identity i
 and are not measured peak RAM. Decode, cache I/O, model inference, cold/warm start,
 and full playlist performance were not measured by this isolated extraction
 benchmark. These numbers are not musical-quality evidence.
+
+## Consolidated M3–M7 delivery
+
+The remaining implementation is based on M2 merge
+`bc9d6f23a7da22be9eb22ee951ffeb349e899774`. It adds the separately identified
+native MERT worker and verified pack installation, Enhanced hybrid ranking and
+sequencing, bounded shared preview acquisition, explicit-feedback content
+centroids, immutable saved evidence, settings/evidence UI, and offline evaluation.
+The original three modes retain their separate policies. No training was run.
+
+The exported FP32 MERT graph passed eight PyTorch/ONNX reference cases; the native
+Windows worker passed reference health checks, cancellation and reload. Packs
+were assembled and their binary architectures verified for Windows amd64/arm64,
+Linux amd64/arm64 and macOS arm64. None contains Python. Actual native inference
+was exercised only on Windows amd64; other native hosts and complete installers
+remain release-validation requirements.
+
+Eight of eleven preselected catalog tracks had uniquely verified Deezer previews.
+The evaluation retained derived measurements/vectors, not audio. No eligible
+held-out adjacency corpus was available, so no musical-quality superiority or
+learned-weight claim is made. Optional M8 remains deferred pending usable exact
+recording mappings and an eligible corpus.
+
+See the [delivery report](enhanced-audio-delivery.md),
+[model preparation](mert-model-preparation.md),
+[real preview evaluation](enhanced-preview-evaluation.md), and
+[measured runtime results](enhanced-runtime-validation.md) for reproducible
+commands, identities, validation boundaries and retained artifact locations.
