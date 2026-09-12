@@ -212,7 +212,7 @@ jobs:
 
   windows:
     name: Package (Windows ${{ matrix.arch }})
-    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["windows-latest"]' || '["self-hosted", "Windows", "X64"]') }}
+    runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
