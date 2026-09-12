@@ -179,7 +179,7 @@ func (p *Parser) Info() ports.ParserInfo {
 	p.mu.Lock()
 	ready := p.ready
 	p.mu.Unlock()
-	return ports.ParserInfo{Name: "llama", Backend: "llama", Version: "llama/v14", Ready: ready, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "llama", Backend: "llama", Version: "llama/v15", Ready: ready, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. If the request fails and the managed

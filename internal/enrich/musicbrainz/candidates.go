@@ -78,10 +78,12 @@ func discoveryKey(intent core.MusicIntent, catalog string) string {
 		Journey     core.JourneyPlan
 		Temporal    []core.TemporalRequirement
 		Destination *core.IntentReference
+		Start       *core.IntentReference
+		Context     []core.ContextSeedPlan
 		Policy      core.VerificationPolicy
-	}{"discovery/v4+" + musicconcepts.Version, catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
+	}{"discovery/v5+" + musicconcepts.Version + "+" + core.ContextProfileVersion, catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
 		intent.Preferences, intent.EssentialCriteria, constraints, intent.References, intent.RequiredTracks, intent.Mode,
-		intent.Journey, intent.Temporal, intent.Destination, intent.VerificationPolicy})
+		intent.Journey, intent.Temporal, intent.Destination, intent.Start, contextPlans(intent), intent.VerificationPolicy})
 }
 
 func (s *candidateStream) Evidence(trackID string) []core.RetrievalEvidence {
@@ -99,7 +101,7 @@ func (s *candidateStream) recordEvidence(trackID, channel, source string) {
 }
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
-	genres := discoveryGenres(intent)
+	genres := contextualDiscoveryGenres(intent, contextPlans(intent))
 	if len(genres) == 0 || cat == nil || resolver == nil {
 		return nil
 	}

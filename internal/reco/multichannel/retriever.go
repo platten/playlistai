@@ -113,6 +113,9 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
 		}
 	}
+	if err := r.retrieveMusicContext(ctx, intent, byID, exclude); err != nil {
+		return nil, err
+	}
 	// Model descriptions and related genres broaden only retrieval. Eligibility
 	// continues to assess the original essential genre, never these hints.
 	if r.semantic != nil {

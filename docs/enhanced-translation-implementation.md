@@ -6,6 +6,11 @@ The ten development prompts cover classical, Aerosmith, Christian Löffler/Kiasm
 workouts and a Nine Inch Nails-to-Marilyn Manson journey. They are regression
 inputs, not a held-out musical-quality benchmark.
 
+The subsequent [music-context and compositional pre-parser implementation](music-context-implementation-results.md)
+adds source-attributed retrieval seeds and further extraction regressions. The
+measurements below describe the earlier translation implementation; the follow-up
+report records the newer parser and recommendation versions separately.
+
 ## Resulting behavior
 
 Explicit wording is extracted before the local language model and reconciled

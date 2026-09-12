@@ -25,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v12", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v13", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -101,7 +101,7 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		intent.Journey.EnergyTrajectory = trajectory
 	}
 
-	intent = lexicon.Reconcile(intent, lexicon.Extract(prompt))
+	intent = lexicon.ReconcileFallback(intent, lexicon.Extract(prompt))
 	out := intent.Normalized()
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
 	if intent.Start != nil || intent.Destination != nil || len(intent.Journey.EnergyTrajectory) > 0 {

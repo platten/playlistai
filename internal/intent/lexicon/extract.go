@@ -15,16 +15,16 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v1"
+const Version = "source-atoms/v2"
 
 var (
 	durationPattern = regexp.MustCompile(`(?i)\b([0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
 	periodPattern   = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b|\b((?:18|19|20)[0-9]0)['’]?s\b`)
 	referenceIntro  = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|from|through|via|to)\s+`)
 	referenceEnd    = regexp.MustCompile(`(?i)[,:;.!?\n]|\s+(?:but|with|for|over|through|via|to|into|from|by the end|at the end|and then|that|themselves)\b`)
-	negativeIntro   = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|no|not)\s+`)
+	negativeIntro   = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|do not want|don't want|don’t want|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|neither|nor|no|not)\s+`)
 	negativeEnd     = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
-	entitySplit     = regexp.MustCompile(`(?i)\s*(?:,|\band\b|\bor\b|&)\s*`)
+	entitySplit     = regexp.MustCompile(`(?i)\s*(?:,|\band\b|\bor\b|\bnor\b|&)\s*`)
 	startMarker     = regexp.MustCompile(`(?i)\b(?:starts?|starting|begins?|beginning)\s+(?:with\s+)?`)
 	endMarker       = regexp.MustCompile(`(?i)\b(?:ends?|ending|finishes?|finishing)\s+(?:with\s+|at\s+)?`)
 	softPrefix      = regexp.MustCompile(`(?i)\b(?:mostly|mainly|preferably|ideally|some|a bit of|a touch of|touch of)\s*$`)
@@ -50,14 +50,12 @@ func Extract(prompt string) core.IntentTranslation {
 		x.Atoms = append(x.Atoms, core.IntentAtom{ID: fmt.Sprintf("%s:%d:%d", kind, start, end), Kind: kind, Value: value, Scope: scope, Polarity: polarity, Strength: strength, Degree: degree, ConceptID: concept,
 			Evidence: []core.SourceEvidence{{Text: prompt[start:end], Start: start, End: end, Explicit: true}}})
 	}
-	for _, p := range durationPattern.FindAllStringSubmatchIndex(prompt, -1) {
-		n, _ := strconv.Atoi(prompt[p[2]:p[3]])
-		factor := 60
-		if strings.HasPrefix(strings.ToLower(prompt[p[4]:p[5]]), "h") {
-			factor = 3600
-		}
-		if n > 0 && n*factor <= 86400 {
-			add("duration", strconv.Itoa(n*factor), "playlist", "positive", "required", "plain", "", p[0], p[1])
+	for _, p := range durationMentions(prompt) {
+		add("duration", strconv.Itoa(p.seconds), "playlist", "positive", "required", "plain", "", p.start, p.end)
+	}
+	for _, p := range durationRangePattern.FindAllStringSubmatchIndex(prompt, -1) {
+		if !insideQuoted(prompt, p[0], p[1]) {
+			add("duration_range", prompt[p[0]:p[1]], "playlist", "positive", "required", "plain", "", p[0], p[1])
 		}
 	}
 	if n, ok := TrackCount(prompt); ok {
@@ -66,7 +64,7 @@ func Extract(prompt string) core.IntentTranslation {
 		}
 	}
 	for _, p := range periodPattern.FindAllStringSubmatchIndex(prompt, -1) {
-		if negativePrefix.MatchString(prompt[:p[0]]) || insideQuoted(prompt, p[0], p[1]) {
+		if insideQuoted(prompt, p[0], p[1]) {
 			continue
 		}
 		basis, first, last := "original_release", 0, 0
@@ -81,8 +79,31 @@ func Extract(prompt string) core.IntentTranslation {
 			last = first + 9
 		}
 		if first > 0 {
-			add("temporal", fmt.Sprintf("%s:%d:%d", basis, first, last), scopeAt(prompt, p[0]), "positive", "required", "plain", "", p[0], p[1])
+			kind, polarity, start := "temporal", "positive", p[0]
+			if negative := negativeCalendarPrefix.FindStringIndex(prompt[:p[0]]); negative != nil {
+				kind, polarity, start = "temporal_exclusion", "negative", negative[0]
+			}
+			add(kind, fmt.Sprintf("%s:%d:%d", basis, first, last), scopeAt(prompt, p[0]), polarity, "required", "plain", "", start, p[1])
 		}
+	}
+	for _, p := range yearRangePattern.FindAllStringSubmatchIndex(prompt, -1) {
+		if insideQuoted(prompt, p[0], p[1]) {
+			continue
+		}
+		first, _ := strconv.Atoi(prompt[p[4]:p[5]])
+		last, _ := strconv.Atoi(prompt[p[6]:p[7]])
+		if first > last {
+			continue
+		}
+		basis := "original_release"
+		if p[2] >= 0 && (strings.EqualFold(prompt[p[2]:p[3]], "composed") || strings.EqualFold(prompt[p[2]:p[3]], "written")) {
+			basis = "composition"
+		}
+		kind, polarity, start := "temporal", "positive", p[0]
+		if negative := negativeCalendarPrefix.FindStringIndex(prompt[:p[0]]); negative != nil {
+			kind, polarity, start = "temporal_exclusion", "negative", negative[0]
+		}
+		add(kind, fmt.Sprintf("%s:%d:%d", basis, first, last), scopeAt(prompt, p[0]), polarity, "required", "plain", "", start, p[1])
 	}
 	known := conceptMentions(prompt)
 	for _, r := range requiredTrackOccurrences(prompt) {
@@ -92,10 +113,7 @@ func Extract(prompt string) core.IntentTranslation {
 	// First protect explicitly introduced entities. Descriptive clauses such as
 	// "from quiet to loud" must not turn into artist endpoints.
 	for _, loc := range referenceIntro.FindAllStringIndex(prompt, -1) {
-		end := len(prompt)
-		if stop := referenceEnd.FindStringIndex(prompt[loc[1]:]); stop != nil {
-			end = loc[1] + stop[0]
-		}
+		end := referenceTextEnd(prompt, loc[1])
 		start, end := trimRange(prompt, loc[1], end)
 		intro := strings.ToLower(strings.TrimSpace(prompt[loc[0]:loc[1]]))
 		if end <= start {
@@ -139,7 +157,12 @@ func Extract(prompt string) core.IntentTranslation {
 		if intro == "to" && !hasSourceJourney(prompt, loc[0]) && !strings.HasPrefix(strings.ToLower(prompt[:loc[0]]), "transition") {
 			continue
 		}
-		if (intro == "from" || intro == "to" || intro == "via" || intro == "through") && !explicitEntity && !nameLike(value) {
+		if (intro == "from" || intro == "to" || intro == "via" || intro == "through") && !explicitEntity && !nameLike(value) && !compoundNameLike(value) {
+			continue
+		}
+		kind, scope, strength := referenceRole(intro, entityType)
+		if entityType == "artist" && ambiguousEntityMention(value) {
+			add("entity_mention", value, scope, "positive", strength, "plain", "", start, end)
 			continue
 		}
 		segments := splitRanges(prompt, start, end)
@@ -147,20 +170,6 @@ func Extract(prompt string) core.IntentTranslation {
 			segments = [][2]int{{start, end}}
 		}
 		for _, segment := range segments {
-			kind, scope := entityType, "playlist"
-			strength := "preferred"
-			if intro == "from" {
-				kind, scope = "start", "journey_start"
-				strength = "required"
-			}
-			if intro == "via" || intro == "through" {
-				scope = "journey_via"
-				strength = "required"
-			}
-			if intro == "to" || strings.HasPrefix(intro, "ending") || strings.HasPrefix(intro, "finish") || intro == "transitioning to" {
-				kind, scope = "destination", "journey_end"
-				strength = "required"
-			}
 			query := prompt[segment[0]:segment[1]]
 			if entityType != "artist" {
 				query = value
@@ -180,10 +189,14 @@ func Extract(prompt string) core.IntentTranslation {
 		}
 		value := strings.TrimSpace(prompt[start:end])
 		exactConcept := false
+		negativeOpening := false
+		if loc := negativeIntro.FindStringIndex(prompt[start:end]); loc != nil && loc[0] == 0 {
+			negativeOpening = true
+		}
 		for _, m := range known {
 			exactConcept = exactConcept || m.start == start && m.end == end
 		}
-		if len(strings.Fields(value)) <= 4 && nameLike(value) && !exactConcept && (!descriptiveRange(prompt, start, end, known) || len(strings.Fields(value)) > 1) && !strings.ContainsAny(value, ".!?:") && !genericReference(value) {
+		if len(strings.Fields(value)) <= 4 && nameLike(value) && !negativeOpening && !exactConcept && !fullyDescriptive(prompt, start, end, known) && !strings.ContainsAny(value, ".!?:") && !genericReference(value) {
 			add("artist", value, "playlist", "positive", "preferred", "plain", "", start, end)
 		}
 	}
@@ -195,7 +208,7 @@ func Extract(prompt string) core.IntentTranslation {
 		if stop := negativeEnd.FindStringIndex(prompt[loc[1]:]); stop != nil {
 			end = loc[1] + stop[0]
 		}
-		parts := splitRanges(prompt, loc[1], end)
+		parts := negativeEntityRanges(prompt, loc[1], end)
 		for _, part := range parts {
 			start, last := part[0], part[1]
 			value := strings.TrimSpace(strings.TrimSuffix(prompt[start:last], " themselves"))
@@ -211,14 +224,18 @@ func Extract(prompt string) core.IntentTranslation {
 			if value == "" || covered || descriptiveRange(prompt, start, last, known) || genericReference(value) || strings.Contains(strings.ToLower(value), "back to back") {
 				continue
 			}
-			corroborated := nameLike(value) || len(parts) > 1 && len(strings.Fields(value)) <= 2
+			corroborated := nameLike(value) || compoundNameLike(value) || len(parts) > 1 && len(strings.Fields(value)) <= 2
 			for _, a := range x.Atoms {
 				corroborated = corroborated || entityKind(a.Kind) && strings.EqualFold(a.Value, value)
 			}
 			if !corroborated {
 				continue
 			}
-			add("exclude_artist", value, "playlist", "negative", "required", "plain", "", loc[0], end)
+			kind := "exclude_artist"
+			if ambiguousEntityMention(value) {
+				kind = "entity_mention"
+			}
+			add(kind, value, "playlist", "negative", "required", "plain", "", loc[0], end)
 		}
 	}
 	for _, m := range known {
@@ -233,9 +250,9 @@ func Extract(prompt string) core.IntentTranslation {
 		if m.kind == "genre" {
 			strength = "essential"
 		}
-		if loc := negativePrefix.FindStringIndex(prefix); loc != nil {
+		if loc := negativeContextStart(prefix); loc >= 0 {
 			polarity = "negative"
-			spanStart = loc[0]
+			spanStart = loc
 			if m.kind == "genre" || m.kind == "vocal" {
 				strength = "required"
 			}
@@ -246,14 +263,20 @@ func Extract(prompt string) core.IntentTranslation {
 			strength = "preferred"
 			degree = "reduced"
 		}
+		softened := false
 		if loc := softPrefix.FindStringIndex(prefix); loc != nil {
+			softened = true
 			strength = "preferred"
 			spanStart = loc[0]
 			if strings.EqualFold(strings.TrimSpace(prefix[loc[0]:]), "mostly") || strings.EqualFold(strings.TrimSpace(prefix[loc[0]:]), "mainly") {
 				degree = "mostly"
 			}
 		}
-		if strictPrefix.MatchString(prefix) {
+		if additivePrefix.MatchString(prefix) {
+			softened = true
+			strength = "preferred"
+		}
+		if strictPrefix.MatchString(prefix) && !additivePrefix.MatchString(prefix) {
 			strength = "required"
 		}
 		if strings.HasPrefix(strings.ToLower(prompt[m.end:]), " influence") {
@@ -269,7 +292,7 @@ func Extract(prompt string) core.IntentTranslation {
 				m.concept = concept.ID
 			}
 		}
-		if m.kind == "vocal" && value == "instrumental" && degree != "mostly" {
+		if m.kind == "vocal" && value == "instrumental" && !softened {
 			strength = "required"
 		}
 		add(m.kind, value, scopeAt(prompt, m.start), polarity, strength, degree, m.concept, spanStart, m.end)
@@ -286,7 +309,7 @@ func Extract(prompt string) core.IntentTranslation {
 	}
 	filtered := x.Atoms[:0]
 	for _, a := range x.Atoms {
-		if (a.Kind == "temporal" || a.Kind == "duration" || a.Kind == "count") && overlapsEntity(x.Atoms, a.Evidence[0].Start, a.Evidence[0].End) {
+		if (a.Kind == "temporal" || a.Kind == "temporal_exclusion" || a.Kind == "duration" || a.Kind == "duration_range" || a.Kind == "count") && overlapsEntity(x.Atoms, a.Evidence[0].Start, a.Evidence[0].End) {
 			continue
 		}
 		filtered = append(filtered, a)
@@ -313,7 +336,7 @@ func Extract(prompt string) core.IntentTranslation {
 			a.Group = group
 			b.Group = group
 		}
-		if gap == "and" || gap == "," || gap == "or" {
+		if gap == "and" || gap == "," || gap == "or" || gap == "nor" {
 			if a.Polarity == "negative" && b.Polarity == "positive" && (gap != "," || a.Kind == b.Kind) && !negativeIntro.MatchString(b.Evidence[0].Text) {
 				b.Polarity = a.Polarity
 				b.Strength = a.Strength
@@ -425,7 +448,7 @@ func insideQuoted(s string, start, end int) bool {
 	return false
 }
 func entityKind(k string) bool {
-	return k == "artist" || k == "track" || k == "album" || k == "start" || k == "destination" || k == "exclude_artist" || k == "required_track"
+	return k == "artist" || k == "track" || k == "album" || k == "start" || k == "destination" || k == "exclude_artist" || k == "required_track" || k == "entity_mention"
 }
 func musicalKind(k string) bool {
 	switch k {
@@ -453,7 +476,7 @@ func overlapsEntity(atoms []core.IntentAtom, start, end int) bool {
 			// Exclusion evidence includes its negator/list clause. Only the
 			// literal identity is shielded; later "and no screaming" remains
 			// an independent musical instruction.
-			if a.Kind == "exclude_artist" {
+			if a.Kind == "exclude_artist" || a.Kind == "entity_mention" && a.Polarity == "negative" {
 				if offset := strings.Index(e.Text, a.Value); offset >= 0 {
 					left, right = e.Start+offset, e.Start+offset+len(a.Value)
 				}
@@ -477,7 +500,13 @@ func nameLike(v string) bool {
 	if len(words) == 0 || len(words) > 5 {
 		return false
 	}
-	for _, w := range words {
+	for i, w := range words {
+		if i > 0 && i < len(words)-1 {
+			switch w {
+			case "of", "the", "a", "an", "in", "on", "at", "de", "la", "van", "von":
+				continue
+			}
+		}
 		r, _ := utf8.DecodeRuneInString(w)
 		if !unicode.IsUpper(r) {
 			return false
@@ -491,7 +520,7 @@ func descriptiveRange(s string, start, end int, known []mention) bool {
 			return true
 		}
 	}
-	return durationPattern.MatchString(s[start:end]) || periodPattern.MatchString(s[start:end])
+	return durationPattern.MatchString(s[start:end]) || periodPattern.MatchString(s[start:end]) || yearRangePattern.MatchString(s[start:end])
 }
 func hasSourceJourney(s string, before int) bool {
 	start := strings.LastIndexAny(s[:before], ",;.!?") + 1

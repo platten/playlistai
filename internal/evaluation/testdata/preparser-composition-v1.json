@@ -1,0 +1,111 @@
+[
+  {
+    "prompt": "Some instrumental tracks, but vocals are fine too.",
+    "count": 20,
+    "meaning": {
+      "softInstrumental": true,
+      "forbiddenCriteria": ["instrumental", "vocals"],
+      "preferences": [
+        {"kind": "vocal", "value": "instrumental", "polarity": "positive", "strength": "preferred"},
+        {"kind": "vocal", "value": "vocals", "polarity": "positive", "strength": "preferred"}
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "I don't want aggressive music; keep it warm.",
+    "count": 20,
+    "meaning": {
+      "forbiddenCriteria": ["aggressive", "warm"],
+      "preferences": [
+        {"kind": "mood", "value": "aggressive", "polarity": "negative", "strength": "preferred"},
+        {"kind": "texture", "value": "warm", "polarity": "positive", "strength": "preferred"}
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "Neither rock nor metal; give me soul instead.",
+    "genre": "soul",
+    "count": 20,
+    "meaning": {
+      "forbiddenCriteria": ["rock", "metal"],
+      "preferences": [
+        {"kind": "genre", "value": "rock", "polarity": "negative", "strength": "required"},
+        {"kind": "genre", "value": "metal", "polarity": "negative", "strength": "required"}
+      ],
+      "constraints": [
+        {"kind": "exclude_style", "value": "rock"},
+        {"kind": "exclude_style", "value": "metal"}
+      ]
+    }
+  },
+  {
+    "prompt": "1 hour 30 minutes of ambient music.",
+    "genre": "ambient",
+    "count": 20,
+    "meaning": {"durationSeconds": 5400, "noTemporal": true}
+  },
+  {
+    "prompt": "Electronic tracks released between 1995 and 2003.",
+    "genre": "electronic",
+    "startYear": 1995,
+    "endYear": 2003,
+    "basis": "original_release",
+    "count": 20
+  },
+  {
+    "prompt": "Music like Florence and the Machine.",
+    "artist": "Florence and the Machine",
+    "count": 20,
+    "meaning": {"noTemporal": true}
+  },
+  {
+    "prompt": "Like Earth, Wind & Fire, but less disco.",
+    "artist": "Earth, Wind & Fire",
+    "count": 20,
+    "meaning": {
+      "forbiddenCriteria": ["disco"],
+      "preferences": [{"kind": "genre", "value": "disco", "polarity": "negative", "strength": "preferred"}],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "Take me from Boards of Canada to Aphex Twin.",
+    "artists": ["Boards of Canada", "Aphex Twin"],
+    "destination": "Aphex Twin",
+    "count": 20,
+    "meaning": {"start": "Boards of Canada", "noTemporal": true}
+  },
+  {
+    "prompt": "Take me from Florence and the Machine to Aphex Twin.",
+    "artists": ["Florence and the Machine", "Aphex Twin"],
+    "destination": "Aphex Twin",
+    "count": 20,
+    "meaning": {"start": "Florence and the Machine", "noTemporal": true}
+  },
+  {
+    "prompt": "Take me from Aphex Twin to Earth, Wind & Fire.",
+    "artists": ["Aphex Twin", "Earth, Wind & Fire"],
+    "destination": "Earth, Wind & Fire",
+    "count": 20,
+    "meaning": {"start": "Aphex Twin", "noTemporal": true}
+  },
+  {
+    "prompt": "Neither Florence and the Machine nor Coldplay.",
+    "excludedArtists": ["Florence and the Machine", "Coldplay"],
+    "count": 20,
+    "meaning": {"noTemporal": true}
+  },
+  {
+    "prompt": "No Earth, Wind & Fire.",
+    "excludedArtists": ["Earth, Wind & Fire"],
+    "count": 20,
+    "meaning": {"noTemporal": true}
+  },
+  {
+    "prompt": "I do not want music from the 1990s.",
+    "count": 20,
+    "meaning": {"noTemporal": true}
+  }
+]

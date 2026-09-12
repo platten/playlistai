@@ -87,6 +87,10 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 		}
 	}
 	budget, _ := ctx.Value(knowledgeBudgetKey{}).(*knowledgeBudget)
+	limit := KnowledgeRequests
+	if contextLimit, ok := ctx.Value(contextRequestLimitKey{}).(int); ok && contextLimit < limit {
+		limit = contextLimit
+	}
 	fallback := func(err error) ([]byte, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -97,7 +101,7 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 		return nil, err
 	}
 	if budget != nil {
-		if budget.requests >= KnowledgeRequests {
+		if budget.requests >= limit {
 			return fallback(fmt.Errorf("metadata request budget exhausted"))
 		}
 		if delay := time.Until(budget.backoffs[namespace]); delay > 0 {
@@ -110,7 +114,7 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 			}
 		}
 		ctx = httpretry.WithAttemptCheck(ctx, func() error {
-			if budget.requests >= KnowledgeRequests {
+			if budget.requests >= limit {
 				return fmt.Errorf("metadata request budget exhausted")
 			}
 			budget.requests++
@@ -178,6 +182,9 @@ func validMetadata(path, namespace string, raw []byte) bool {
 		if value := object[key]; len(value) > 0 && string(value) != "null" {
 			return false
 		}
+	}
+	if strings.HasSuffix(namespace, "context-v1:") {
+		return validContextMetadata(path, namespace, raw)
 	}
 	if namespace == "discogs-v1:" && strings.HasPrefix(path, "/releases/") {
 		_, err := sanitizeDiscogs(path, raw)
@@ -311,6 +318,9 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	if intent.Knowledge != nil {
 		return intent, nil
 	} // Saved evidence is immutable.
+	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+		return intent, ctx.Err()
+	}
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, KnowledgeBudget)
 	defer cancel()
@@ -366,7 +376,10 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		}
 		intent.Destination = &d
 	}
-	genres := discoveryGenres(intent)
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		c.prepareContext(ctx, intent, cat, resolver, &snapshot, p)
+	}
+	genres := contextualDiscoveryGenres(intent, snapshot.ContextPlans)
 	iterative, _ := ctx.Value(iterativeKnowledgeKey{}).(bool)
 	if iterative {
 		seen := map[string]bool{}
