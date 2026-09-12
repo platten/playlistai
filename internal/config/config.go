@@ -103,6 +103,9 @@ type PreviewConfig struct {
 // RecommendationConfig controls the bounded exact-retrieval strategy. The
 // legacy deejai strategy remains selectable as an evaluation baseline.
 type RecommendationConfig struct {
+	EnhancedMERTWeight        float64 `toml:"enhanced_mert_weight"`
+	EnhancedDSPWeight         float64 `toml:"enhanced_dsp_weight"`
+	EnhancedTransitionWeight  float64 `toml:"enhanced_transition_weight"`
 	Strategy                  string  `toml:"strategy"`
 	SeedAudioBudget           int     `toml:"seed_audio_budget"`
 	SeedCooccurrenceBudget    int     `toml:"seed_cooccurrence_budget"`
@@ -189,6 +192,7 @@ func Default() Config {
 			AlbumConcentrationWeight: .15, SoftArtistSpacingMax: 3,
 			TransitionRelevanceWeight: .15, LocalImprovementPasses: 3, LocalImprovementWindow: 4,
 			SemanticBudget: 96, SemanticMinimumScore: .15, SemanticWeight: .35, SemanticNegativePenalty: .55,
+			EnhancedMERTWeight: .15, EnhancedDSPWeight: .15, EnhancedTransitionWeight: .15,
 		},
 	}
 	return cfg
@@ -251,6 +255,11 @@ func (c Config) Validate() error {
 }
 
 func (c RecommendationConfig) Validate() error {
+	for name, value := range map[string]float64{"enhanced_mert_weight": c.EnhancedMERTWeight, "enhanced_dsp_weight": c.EnhancedDSPWeight, "enhanced_transition_weight": c.EnhancedTransitionWeight} {
+		if !(value >= 0 && value <= .15) {
+			return fmt.Errorf("config: recommendation.%s must be between 0 and 0.15", name)
+		}
+	}
 	if c.Strategy != RecommendationMultichannel && c.Strategy != RecommendationDeejAI {
 		return fmt.Errorf("config: unknown recommendation.strategy %q", c.Strategy)
 	}

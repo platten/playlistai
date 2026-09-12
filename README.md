@@ -20,6 +20,19 @@ Soundiiz.
 Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
 and Linux, with a React/TypeScript interface.
 
+**Enhanced hybrid** is an optional fourth recommendation mode. It combines the
+existing catalog, CLAP and archived evidence with measured preview DSP preferences
+and optional MERT audio similarity. Enable bounded analysis in Settings; DSP needs
+no model. MERT does not understand the text prompt directly. Preview measurements
+describe the analyzed preview, not necessarily the complete recording. Missing
+analysis stays neutral and never proves a hard musical requirement. The three
+existing modes retain their policies.
+
+MERT uses native Go/ONNX inference with no end-user Python requirement. Its
+separately licensed CC-BY-NC-4.0 weights are optional; the application remains
+GPL-3.0. See [model preparation and per-OS packs](docs/mert-model-preparation.md)
+and [enhanced analysis settings](docs/enhanced-audio.md).
+
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
 

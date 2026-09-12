@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   api: Object.fromEntries(["GetPreviewURL", "GetRecommendationMode", "SetRecommendationMode", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "GetMetadataStatus", "ClearMusicMetadataCache"].map((name) => [name, vi.fn()])),
   progress: null as null | { done: number; total: number; note: string },
 }));
-vi.mock("../lib/api", () => ({ API: mocks.api, RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only" } }));
+vi.mock("../lib/api", () => ({ API: mocks.api, RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" } }));
 vi.mock("./useProgress", () => ({ useProgress: () => mocks.progress }));
 function completed(value: unknown) { return Object.assign(Promise.resolve(value), { cancel: vi.fn() }); }
 function deferred() {

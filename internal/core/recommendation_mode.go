@@ -8,9 +8,10 @@ type RecommendationMode string
 const (
 	AcousticBrainzFirst RecommendationMode = "acousticbrainz_first"
 	CLAPFirst           RecommendationMode = "clap_first"
+	EnhancedHybrid      RecommendationMode = "enhanced_hybrid"
 	DeejAIOnly          RecommendationMode = "deejai_only"
 )
 
 func (m RecommendationMode) Valid() bool {
-	return m == "" || m == AcousticBrainzFirst || m == CLAPFirst || m == DeejAIOnly
+	return m == "" || m == AcousticBrainzFirst || m == CLAPFirst || m == DeejAIOnly || m == EnhancedHybrid
 }

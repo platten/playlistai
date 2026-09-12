@@ -29,14 +29,15 @@ type ControlOverrides struct {
 // BuildPlaylistRequest carries the complete resolved interpretation plus
 // explicit UI overrides. Legacy fields remain for old history records.
 type BuildPlaylistRequest struct {
-	GenerationID     string           `json:"generationId"`
-	Version          int              `json:"version"`
-	Intent           core.MusicIntent `json:"intent"`
-	Overrides        ControlOverrides `json:"overrides"`
-	Reproducibility  Reproducibility  `json:"reproducibility"`
-	SessionID        string           `json:"sessionId"`
-	RequestID        string           `json:"requestId"`
-	RecentSelections []core.TrackRef  `json:"recentSelections,omitempty"`
+	EnhancedAudio    *core.EnhancedAudioInput `json:"enhancedAudio,omitempty"`
+	GenerationID     string                   `json:"generationId"`
+	Version          int                      `json:"version"`
+	Intent           core.MusicIntent         `json:"intent"`
+	Overrides        ControlOverrides         `json:"overrides"`
+	Reproducibility  Reproducibility          `json:"reproducibility"`
+	SessionID        string                   `json:"sessionId"`
+	RequestID        string                   `json:"requestId"`
+	RecentSelections []core.TrackRef          `json:"recentSelections,omitempty"`
 
 	ReferenceIDs      []string     `json:"referenceIds,omitempty"`
 	RequiredIDs       []string     `json:"requiredIds,omitempty"`
@@ -63,6 +64,7 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
+	EnhancedAudio *core.EnhancedAudioInput `json:"enhancedAudio,omitempty"`
 	// PresentationID identifies this delivery, not the deterministic generation.
 	// Exposure is recorded only after the frontend acknowledges displaying it.
 	PresentationID  string                      `json:"presentationId"`
@@ -149,8 +151,19 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if intent.Controls.RecommendationMode == core.DeejAIOnly {
 		playlist, err = deejai.BuildOnly(ctx, a.runtime().BaselineReco, intent)
 	} else if contextual, ok := a.runtime().Reco.(ports.ContextualRecommendationEngine); ok {
+		var enhanced *core.EnhancedAudioSnapshot
+		if req.EnhancedAudio != nil && intent.Controls.RecommendationMode == core.EnhancedHybrid {
+			if req.EnhancedAudio.CatalogVersion != "" && a.runtime().Resolver != nil && req.EnhancedAudio.CatalogVersion != a.runtime().Resolver.CatalogVersion() {
+				return PlaylistResult{}, fmt.Errorf("saved enhanced evidence belongs to another catalog; start a new generation")
+			}
+			enhanced, err = core.NewEnhancedAudioSnapshot(*req.EnhancedAudio)
+			if err != nil {
+				return PlaylistResult{}, err
+			}
+		}
 		playlist, err = contextual.BuildRecommendation(ctx, ports.RecommendationRequest{
-			StopChecking: stop, OnChecked: progress.Checked, OnSuggested: progress.Suggested, Progress: progress,
+			EnhancedAudio: enhanced,
+			StopChecking:  stop, OnChecked: progress.Checked, OnSuggested: progress.Suggested, Progress: progress,
 			Intent: intent, Profile: profile, RecentSelections: recentSelections,
 		})
 	} else if personalized, ok := a.runtime().Reco.(ports.PersonalizedRecommendationEngine); ok {
@@ -175,6 +188,10 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		out.Notices = append(out.Notices, PlaylistNotice{
 			Code: notice.Code, Detail: notice.Detail, Requested: notice.Requested, Actual: notice.Actual,
 		})
+	}
+	if playlist.EnhancedAudio != nil {
+		input := playlist.EnhancedAudio.Input()
+		out.EnhancedAudio = &input
 	}
 	if playlist.Intent.Knowledge != nil {
 		for i, detail := range playlist.Intent.Knowledge.Notices {
@@ -219,6 +236,10 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	withEvidenceIdentity(&out.Reproducibility, out.AudioEvidence)
+	if playlist.EnhancedAudio != nil {
+		out.Reproducibility.ID = audioIdentity(out.Reproducibility.ID, playlist.EnhancedAudio.Fingerprint())
+		out.Reproducibility.EnhancedEvidenceSnapshot = playlist.EnhancedAudio.Fingerprint()
+	}
 	logRecommendationDiagnostics(ctx, out)
 	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
 		"profile_ms", profileTiming.Milliseconds, "recommend_ms", out.Status.Timings[1].Milliseconds)

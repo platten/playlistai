@@ -62,6 +62,9 @@ func dispatch(args []string, out io.Writer, log *slog.Logger) error {
 	if len(args) == 2 && args[0] == "--audio-worker" {
 		return audioruntime.Run(args[1])
 	}
+	if len(args) == 2 && args[0] == "--mert-worker" {
+		return audioruntime.RunMERT(args[1])
+	}
 	return run(log)
 }
 

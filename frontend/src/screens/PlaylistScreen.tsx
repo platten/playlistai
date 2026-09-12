@@ -20,6 +20,8 @@ import {
 } from "../components";
 import { playlistOutcomeMessage } from "../lib/playlistOutcome";
 import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
+import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { EnhancedAudioEvidence } from "../components/EnhancedAudioEvidence";
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
@@ -168,6 +170,7 @@ export function PlaylistScreen({
     setError(null);
     const call = API.BuildPlaylist({
       ...request,
+      enhancedAudio: accepted.current?.result.enhancedAudio ?? request.enhancedAudio,
       requestId: feedbackRequestId,
       sessionId,
       overrides: {
@@ -463,6 +466,7 @@ export function PlaylistScreen({
                     })
                   }
                 />
+                {expanded.has(i) && result && <EnhancedAudioEvidence result={result} track={t} />}
                 {expanded.has(i) && comparisons.length > 0 && (
                   <div className="mx-2 mb-3 rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
                     <p className="font-medium text-text">How this matches your request</p>
@@ -559,6 +563,7 @@ export function PlaylistScreen({
           })
         )}
       </div>
+      {result?.intent?.controls?.recommendationMode === "enhanced_hybrid" && <div className="mt-6"><EnhancedAudioCard trackIds={(result.tracks ?? []).map((track) => track.id)} /></div>}
     </div>
   );
 }

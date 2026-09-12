@@ -5,15 +5,18 @@ package multichannel
 const AlgorithmVersion = "multichannel/v22"
 
 type Config struct {
-	SeedAudioBudget        int
-	SeedCooccurrenceBudget int
-	TasteClusterBudget     int
-	MaxTasteClusters       int
-	ExplorationPool        int
-	ExplorationBudget      int
-	ExplorationMinScore    float64
-	MaxCandidates          int
-	ReciprocalRankConstant float64
+	EnhancedMERTWeight       float64
+	EnhancedDSPWeight        float64
+	EnhancedTransitionWeight float64
+	SeedAudioBudget          int
+	SeedCooccurrenceBudget   int
+	TasteClusterBudget       int
+	MaxTasteClusters         int
+	ExplorationPool          int
+	ExplorationBudget        int
+	ExplorationMinScore      float64
+	MaxCandidates            int
+	ReciprocalRankConstant   float64
 
 	RetrievalWeight         float64
 	ListenerWeight          float64
@@ -42,6 +45,7 @@ type Config struct {
 
 func DefaultConfig() Config {
 	return Config{
+		EnhancedMERTWeight: .15, EnhancedDSPWeight: .15, EnhancedTransitionWeight: .15,
 		SeedAudioBudget: 32, SeedCooccurrenceBudget: 32,
 		TasteClusterBudget: 24, MaxTasteClusters: 4,
 		ExplorationPool: 160, ExplorationBudget: 24, ExplorationMinScore: .10,
@@ -60,6 +64,18 @@ func DefaultConfig() Config {
 
 func (c Config) normalized() Config {
 	d := DefaultConfig()
+	if c.EnhancedMERTWeight < 0 {
+		c.EnhancedMERTWeight = d.EnhancedMERTWeight
+	}
+	if c.EnhancedDSPWeight < 0 {
+		c.EnhancedDSPWeight = d.EnhancedDSPWeight
+	}
+	if c.EnhancedTransitionWeight < 0 {
+		c.EnhancedTransitionWeight = d.EnhancedTransitionWeight
+	}
+	c.EnhancedMERTWeight = enhancedWeight(c.EnhancedMERTWeight)
+	c.EnhancedDSPWeight = enhancedWeight(c.EnhancedDSPWeight)
+	c.EnhancedTransitionWeight = enhancedWeight(c.EnhancedTransitionWeight)
 	if c.SeedAudioBudget <= 0 {
 		c.SeedAudioBudget = d.SeedAudioBudget
 	}

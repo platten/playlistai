@@ -29,6 +29,7 @@ type PersonalizedRecommendationEngine interface {
 // is not part of the user's musical intent. RecentSelections is used when
 // continuing radio; the original Intent references remain the primary anchor.
 type RecommendationRequest struct {
+	EnhancedAudio    *core.EnhancedAudioSnapshot
 	StopChecking     <-chan struct{}
 	OnChecked        func(core.TrackRef)
 	OnSuggested      func(core.TrackRef)
@@ -60,8 +61,9 @@ type CandidateRetriever interface {
 }
 
 type RankRequest struct {
-	Intent  core.MusicIntent
-	Profile core.TasteProfile
+	EnhancedAudio *core.EnhancedAudioSnapshot
+	Intent        core.MusicIntent
+	Profile       core.TasteProfile
 	// Request-local preview evidence permits clause-level source preference;
 	// this is not a new saved-intent field or a substitute for eligibility.
 	PreviewAssessments map[string]core.AudioAssessment
@@ -97,6 +99,7 @@ type Trajectory interface {
 }
 
 type SequenceRequest struct {
+	EnhancedAudio    *core.EnhancedAudioSnapshot
 	Intent           core.MusicIntent
 	Candidates       []core.Candidate
 	Required         []core.TrackRef

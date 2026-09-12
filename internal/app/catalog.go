@@ -65,6 +65,9 @@ func (c *Container) loadCatalog() error {
 		// swapping shared services while a generation is running.
 		rc := c.cfg.Recommendation
 		mc := multichannel.DefaultConfig()
+		mc.EnhancedMERTWeight = rc.EnhancedMERTWeight
+		mc.EnhancedDSPWeight = rc.EnhancedDSPWeight
+		mc.EnhancedTransitionWeight = rc.EnhancedTransitionWeight
 		mc.SeedAudioBudget = rc.SeedAudioBudget
 		mc.SeedCooccurrenceBudget = rc.SeedCooccurrenceBudget
 		mc.TasteClusterBudget = rc.TasteClusterBudget
@@ -119,6 +122,7 @@ func (c *Container) loadCatalog() error {
 		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
 			runtime.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
 		}
+		runtime.Reco.(*multichannel.Orchestrator).WithEnhancedAudioProvider(c.PrepareEnhancedAudio).WithEnhancedPreviewProvider(c.EnhancedPreviewService)
 	}
 	c.mu.Lock()
 	if c.closed {

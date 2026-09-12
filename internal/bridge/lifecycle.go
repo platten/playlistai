@@ -44,15 +44,16 @@ type GenerationStatus struct {
 }
 
 type Reproducibility struct {
-	EvidenceSnapshot   string       `json:"evidenceSnapshot"`
-	ID                 string       `json:"id"`
-	CatalogVersion     string       `json:"catalogVersion"`
-	AlgorithmVersion   string       `json:"algorithmVersion"`
-	IntentFingerprint  string       `json:"intentFingerprint"`
-	ProfileVersion     string       `json:"profileVersion"`
-	ProfileSnapshot    string       `json:"profileSnapshot"`
-	ContextFingerprint string       `json:"contextFingerprint"`
-	RNGSeed            core.RNGSeed `json:"rngSeed"`
+	EnhancedEvidenceSnapshot string       `json:"enhancedEvidenceSnapshot,omitempty"`
+	EvidenceSnapshot         string       `json:"evidenceSnapshot"`
+	ID                       string       `json:"id"`
+	CatalogVersion           string       `json:"catalogVersion"`
+	AlgorithmVersion         string       `json:"algorithmVersion"`
+	IntentFingerprint        string       `json:"intentFingerprint"`
+	ProfileVersion           string       `json:"profileVersion"`
+	ProfileSnapshot          string       `json:"profileSnapshot"`
+	ContextFingerprint       string       `json:"contextFingerprint"`
+	RNGSeed                  core.RNGSeed `json:"rngSeed"`
 }
 
 func audioIdentity(generation, evidence string) string {

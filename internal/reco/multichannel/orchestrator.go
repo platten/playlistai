@@ -17,23 +17,27 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
-	bestAvailable   bool
-	candidateSource ports.MusicCandidateSource
-	knowledge       *core.KnowledgeSnapshot
-	anchorProposer  func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)
-	audioProvider   func() *audio.Service
-	audioSession    *audio.Session     // set only on the request-local orchestrator copy
-	assemblyCache   *completedAssembly // request-local; never shared across generations
-	cat             ports.Catalog
-	resolver        ports.ReferenceResolver
-	retriever       ports.CandidateRetriever
-	ranker          ports.Ranker
-	selector        ports.CandidateSelector
-	sequencer       ports.PlaylistSequencer
-	features        ports.FeatureStore
-	semantic        ports.SemanticSearcher
-	scorer          ports.SemanticScorer
-	cfg             Config
+	enhancedProvider        EnhancedAudioProvider
+	enhancedPreviewProvider func() *audio.Service
+	enhancedSnapshot        *core.EnhancedAudioSnapshot
+	enhancedPrepared        bool
+	bestAvailable           bool
+	candidateSource         ports.MusicCandidateSource
+	knowledge               *core.KnowledgeSnapshot
+	anchorProposer          func(context.Context, core.MusicIntent, []string) ([]core.InferredAnchor, error)
+	audioProvider           func() *audio.Service
+	audioSession            *audio.Session     // set only on the request-local orchestrator copy
+	assemblyCache           *completedAssembly // request-local; never shared across generations
+	cat                     ports.Catalog
+	resolver                ports.ReferenceResolver
+	retriever               ports.CandidateRetriever
+	ranker                  ports.Ranker
+	selector                ports.CandidateSelector
+	sequencer               ports.PlaylistSequencer
+	features                ports.FeatureStore
+	semantic                ports.SemanticSearcher
+	scorer                  ports.SemanticScorer
+	cfg                     Config
 }
 
 func (o *Orchestrator) WithCandidateSource(source ports.MusicCandidateSource) *Orchestrator {
@@ -569,6 +573,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	local := *o
 	o = &local
 	o.assemblyCache = &completedAssembly{}
+	o.enhancedPrepared = false
+	o.enhancedSnapshot = nil
+	defer func() { result.EnhancedAudio = o.enhancedSnapshot }()
 	if err := ctx.Err(); err != nil {
 		return core.Playlist{}, err
 	}
@@ -578,6 +585,18 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	intent := request.Intent.Normalized()
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		ctx = audio.WithEnhancedBudget(ctx, audio.EnhancedTrackLimit, audio.EnhancedTimeLimit)
+		if request.EnhancedAudio != nil && o.resolver != nil {
+			catalog := request.EnhancedAudio.Input().CatalogVersion
+			if catalog != "" && catalog != o.resolver.CatalogVersion() {
+				return core.Playlist{}, fmt.Errorf("saved enhanced evidence belongs to another catalog; start a new generation")
+			}
+		}
+	}
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid && o.enhancedPreviewProvider != nil {
+		o.audioProvider = o.enhancedPreviewProvider
+	}
 	o.bestAvailable = intent.VerificationPolicy == core.BestAvailable
 	o.knowledge = intent.Knowledge
 	var resolutionIssues []resolution.Issue

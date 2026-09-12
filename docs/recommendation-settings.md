@@ -128,3 +128,8 @@ The separate [forty-prompt, three-mode live regression](three-mode-regression.md
 records minimum-count acceptance, interpretation failures, fulfillment outcomes,
 latency and actual evidence coverage. Its failures remain visible; enabling a
 source-priority setting is not a guarantee that every prompt can be fulfilled.
+# Enhanced hybrid
+
+An optional fourth mode adds local DSP preferences and MERT audio similarity to
+the existing evidence pipeline. It does not require MERT installation. See
+[enhanced settings, limits, replay and evidence policy](enhanced-audio.md).

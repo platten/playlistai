@@ -63,3 +63,24 @@ func TestHistoryRetainsAudioSnapshotAndOriginalDescription(t *testing.T) {
 		t.Fatalf("history lost evidence/description/seed: %+v", loaded)
 	}
 }
+
+func TestHistoryRetainsEnhancedReplayInput(t *testing.T) {
+	c := newLoadedContainer(t)
+	a := New(c, nil)
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, OriginalDescription: "deep bass", Seed: "7"}.Normalized()
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	input := core.EnhancedAudioInput{PolicyVersion: core.EnhancedAudioPolicyVersion, CatalogVersion: "catalog", PositiveCentroid: []float32{1, 0}}
+	result := PlaylistResult{Intent: intent, Seed: intent.Seed, EnhancedAudio: &input}
+	a.saveGenerated(context.Background(), "Enhanced", intent.OriginalDescription, intent, BuildPlaylistRequest{Intent: intent}, result)
+	rows, err := c.History.List(context.Background(), 1)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := a.LoadSavedPlaylist(rows[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Request.EnhancedAudio == nil || loaded.Result.EnhancedAudio == nil || loaded.Request.EnhancedAudio.PositiveCentroid[0] != 1 || loaded.Request.EnhancedAudio.PolicyVersion != core.EnhancedAudioPolicyVersion {
+		t.Fatal("enhanced replay snapshot lost")
+	}
+}
