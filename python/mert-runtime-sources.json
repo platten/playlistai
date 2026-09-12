@@ -2,10 +2,236 @@
   "version": "1.26.0",
   "source": "internal/audio/recommended.go recommendedRuntimes",
   "targets": {
-    "linux/amd64": {"target": "linux-x64", "extension": ".tgz", "sha256": "1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57", "size": 8590023, "library": "libonnxruntime.so.1.26.0", "librarySha256": "5bd5bedf736fc501692435d0ec4f6e8b2bdf48cd30af8e6d00d61b3ddc9a7ab8", "librarySize": 23023576},
-    "linux/arm64": {"target": "linux-aarch64", "extension": ".tgz", "sha256": "34ff1c2d0f12e2cf3d33a0c5f82e39792e1d581fbd6968fd7c30d173654be01a", "size": 7608947, "library": "libonnxruntime.so.1.26.0", "librarySha256": "115ecb838e703d390262b8b4d07d5248e6693c67658d4c98c48f94905ab27af4", "librarySize": 19543040},
-    "darwin/arm64": {"target": "osx-arm64", "extension": ".tgz", "sha256": "7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3", "size": 31717869, "library": "libonnxruntime.1.26.0.dylib", "librarySha256": "30afadcfc3c704f7671f8430d6252956651c1972373901d2be629da2e6a4d8ee", "librarySize": 37310032},
-    "windows/amd64": {"target": "win-x64", "extension": ".zip", "sha256": "6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4", "size": 75675381, "library": "onnxruntime.dll", "librarySha256": "b2ba7ca16e0e4fe71ad5148744ab885a2f5809e52a0c3de4d9ba3853a03977f9", "librarySize": 14897976},
-    "windows/arm64": {"target": "win-arm64", "extension": ".zip", "sha256": "852e89621fb752b261821dda131042ed7c7fa18d8bb06768bd4eb7fa7086d87f", "size": 77548904, "library": "onnxruntime.dll", "librarySha256": "01bba4af5089b1951df8b6e6e960e77313103e872519d57304c0ddc3b002a33b", "librarySize": 15041848}
+    "linux/amd64": {
+      "target": "linux-x64",
+      "extension": ".tgz",
+      "sha256": "1254da24fb389cf39dc0ff3451ab48301740ffbfcbaf646849df92f80ee92c57",
+      "size": 8590023,
+      "library": "libonnxruntime.so.1.26.0",
+      "librarySha256": "5bd5bedf736fc501692435d0ec4f6e8b2bdf48cd30af8e6d00d61b3ddc9a7ab8",
+      "librarySize": 23023576
+    },
+    "linux/arm64": {
+      "target": "linux-aarch64",
+      "extension": ".tgz",
+      "sha256": "34ff1c2d0f12e2cf3d33a0c5f82e39792e1d581fbd6968fd7c30d173654be01a",
+      "size": 7608947,
+      "library": "libonnxruntime.so.1.26.0",
+      "librarySha256": "115ecb838e703d390262b8b4d07d5248e6693c67658d4c98c48f94905ab27af4",
+      "librarySize": 19543040
+    },
+    "darwin/arm64": {
+      "target": "osx-arm64",
+      "extension": ".tgz",
+      "sha256": "7a1280bbb1701ea514f71828765237e7896e0f2e1cd332f1f70dbd5c3e33aca3",
+      "size": 31717869,
+      "library": "libonnxruntime.1.26.0.dylib",
+      "librarySha256": "30afadcfc3c704f7671f8430d6252956651c1972373901d2be629da2e6a4d8ee",
+      "librarySize": 37310032
+    },
+    "windows/amd64": {
+      "target": "win-x64",
+      "extension": ".zip",
+      "sha256": "6ebe99b5564bf4d029b6e93eac9ff423682b6212eade769e9ca3f685eaf500b4",
+      "size": 75675381,
+      "library": "onnxruntime.dll",
+      "librarySha256": "b2ba7ca16e0e4fe71ad5148744ab885a2f5809e52a0c3de4d9ba3853a03977f9",
+      "librarySize": 14897976
+    },
+    "windows/arm64": {
+      "target": "win-arm64",
+      "extension": ".zip",
+      "sha256": "852e89621fb752b261821dda131042ed7c7fa18d8bb06768bd4eb7fa7086d87f",
+      "size": 77548904,
+      "library": "onnxruntime.dll",
+      "librarySha256": "01bba4af5089b1951df8b6e6e960e77313103e872519d57304c0ddc3b002a33b",
+      "librarySize": 15041848
+    }
+  },
+  "windowsCRT": {
+    "source": "Microsoft Visual C++ v14 Redistributable 14.51.36247.0; official signed EXEs extracted without installation",
+    "targets": {
+      "windows/amd64": {
+        "files": [
+          {
+            "name": "msvcp140.dll",
+            "path": "amd64/msvcp140.dll",
+            "size": 643512,
+            "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+            "machine": "0x8664",
+            "imports": [
+              "VCRUNTIME140.dll",
+              "VCRUNTIME140_1.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-crt-string-l1-1-0.dll",
+              "api-ms-win-crt-locale-l1-1-0.dll",
+              "api-ms-win-crt-stdio-l1-1-0.dll",
+              "api-ms-win-crt-filesystem-l1-1-0.dll",
+              "api-ms-win-crt-time-l1-1-0.dll",
+              "api-ms-win-crt-environment-l1-1-0.dll",
+              "api-ms-win-crt-math-l1-1-0.dll",
+              "api-ms-win-crt-convert-l1-1-0.dll",
+              "api-ms-win-crt-utility-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          },
+          {
+            "name": "msvcp140_1.dll",
+            "path": "amd64/msvcp140_1.dll",
+            "size": 35768,
+            "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+            "machine": "0x8664",
+            "imports": [
+              "MSVCP140.dll",
+              "VCRUNTIME140.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          },
+          {
+            "name": "vcruntime140.dll",
+            "path": "amd64/vcruntime140.dll",
+            "size": 178616,
+            "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+            "machine": "0x8664",
+            "imports": [
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-string-l1-1-0.dll",
+              "api-ms-win-crt-stdio-l1-1-0.dll",
+              "api-ms-win-crt-convert-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          },
+          {
+            "name": "vcruntime140_1.dll",
+            "path": "amd64/vcruntime140_1.dll",
+            "size": 50112,
+            "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+            "machine": "0x8664",
+            "imports": [
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-string-l1-1-0.dll",
+              "VCRUNTIME140.dll",
+              "KERNEL32.dll"
+            ]
+          }
+        ],
+        "notices": [
+          {
+            "path": "MICROSOFT-CRT-NOTICES.txt",
+            "size": 54234,
+            "sha256": "aa8a0245f2194a69ae306b4c77223a23991a243d991752b6f96e521b411d6650"
+          }
+        ]
+      },
+      "windows/arm64": {
+        "files": [
+          {
+            "name": "msvcp140.dll",
+            "path": "arm64/msvcp140.dll",
+            "size": 1588064,
+            "sha256": "167ceac85c2d726c4cd9e39b8881fafdc6de1520c0e67c4f6b271235f9d2a6c5",
+            "machine": "0xaa64",
+            "imports": [
+              "VCRUNTIME140.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-crt-string-l1-1-0.dll",
+              "api-ms-win-crt-locale-l1-1-0.dll",
+              "api-ms-win-crt-stdio-l1-1-0.dll",
+              "api-ms-win-crt-time-l1-1-0.dll",
+              "api-ms-win-crt-filesystem-l1-1-0.dll",
+              "api-ms-win-crt-environment-l1-1-0.dll",
+              "api-ms-win-crt-math-l1-1-0.dll",
+              "api-ms-win-crt-convert-l1-1-0.dll",
+              "api-ms-win-crt-utility-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          },
+          {
+            "name": "msvcp140_1.dll",
+            "path": "arm64/msvcp140_1.dll",
+            "size": 50528,
+            "sha256": "c7713c2061b29d24de4874923522ada0815cfca80d09265c181e81d16c7c42d6",
+            "machine": "0xaa64",
+            "imports": [
+              "MSVCP140.dll",
+              "VCRUNTIME140.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          },
+          {
+            "name": "vcruntime140.dll",
+            "path": "arm64/vcruntime140.dll",
+            "size": 246112,
+            "sha256": "3c56f4167e2b3d8e6338497731e6aae8cd7ec46bd6789f9423a8d9cf9a630310",
+            "machine": "0xaa64",
+            "imports": [
+              "api-ms-win-crt-runtime-l1-1-0.dll",
+              "api-ms-win-crt-string-l1-1-0.dll",
+              "api-ms-win-crt-heap-l1-1-0.dll",
+              "api-ms-win-crt-convert-l1-1-0.dll",
+              "api-ms-win-crt-stdio-l1-1-0.dll",
+              "KERNEL32.dll"
+            ]
+          }
+        ],
+        "notices": [
+          {
+            "path": "MICROSOFT-CRT-NOTICES.txt",
+            "size": 54234,
+            "sha256": "aa8a0245f2194a69ae306b4c77223a23991a243d991752b6f96e521b411d6650"
+          }
+        ]
+      }
+    },
+    "archives": [
+      {
+        "url": "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+        "originalURL": "https://aka.ms/vc14/vc_redist.x64.exe",
+        "path": "vc_redist.x64.exe",
+        "size": 18731856,
+        "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c"
+      },
+      {
+        "url": "https://download.visualstudio.microsoft.com/download/pr/ece44298-3977-4f73-ab91-c13fe79cfea8/B70EF586669A620A0A30A1156969C05C6A3831DC8F8BC992DA75779D2A92F944/VC_redist.arm64.exe",
+        "originalURL": "https://aka.ms/vc14/vc_redist.arm64.exe",
+        "path": "vc_redist.arm64.exe",
+        "size": 11870816,
+        "sha256": "b70ef586669a620a0a30a1156969c05c6a3831dc8f8bc992da75779d2a92f944"
+      }
+    ],
+    "licenseSources": [
+      {
+        "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+        "path": "Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+        "size": 39553,
+        "sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783"
+      },
+      {
+        "url": "https://visualstudio.microsoft.com/wp-content/uploads/2021/11/Visual-Studio-2022-Community-License-EN.docx",
+        "path": "Visual-Studio-2022-Community-License-EN.docx",
+        "size": 62859,
+        "sha256": "41a207b10c8ab91d0d2f10a854715f73dca54509581692d2fe179aa3ffcb8540"
+      },
+      {
+        "url": "https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution",
+        "path": "VS2022-REDIST.html",
+        "size": 62589,
+        "sha256": "f0d1dc4adfeb026433b63461bc74009fb5f17fc5eed8e2e6e707e129da0ce6a4"
+      }
+    ],
+    "verification": {
+      "selectedDlls": "All 7 Authenticode signatures Valid, Microsoft; signatures.json retained",
+      "architectures": "PE 0x8664 amd64 and 0xaa64 arm64",
+      "recursiveClosure": "Selected DLL set closes all msvcp/vcruntime imports; remaining imports are Windows OS/API-set libraries. Windows 10+ supplies Universal CRT.",
+      "extraction": "No installer executed. Standard Python extracted valid MSCF containers by cabinet size. 7z extracted main CAB, then nested x64 payload a4 / arm64 payload a1. Unmodified DLLs copied into architecture directories."
+    }
   }
 }

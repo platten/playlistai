@@ -77,7 +77,10 @@ invalidate MERT/DSP; changing ranking weights does not require new inference.
 See [exact model conversion, checksums and pack commands](mert-model-preparation.md).
 All five shipped target packs can be distributed alongside application releases;
 each contains a shared FP32 model and the verified target native runtime, with
-separate upstream notices. Python is maintainer-only. Do not commit model packs
+separate upstream notices. Windows packs additionally carry their required
+Microsoft Visual C++ runtime DLLs and terms; the worker verifies app-local
+dependency loading. Review the pack's LICENSES.txt before installation.
+Python is maintainer-only. Do not commit model packs
 or audio to Git. Prepared sources and packs remain in Downloads for future use.
 
 Numerical parity, regression tests and synthetic benchmarks establish correctness

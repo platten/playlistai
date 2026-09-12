@@ -26,6 +26,13 @@ ONNX Runtime   https://github.com/microsoft/onnxruntime                   (MIT)
   target OS/architecture, its license and third-party notices. All runtime
   binaries are verified by SHA-256. See docs/mert-model-preparation.md.
 
+Microsoft Visual C++ Runtime 14.51.36247                    (Microsoft terms)
+  Windows MERT packs include the required architecture-specific app-local CRT
+  DLLs from Microsoft's signed redistributable packages. Their runtime EULA and
+  redistribution terms are retained in the pack's LICENSES.txt, separately from
+  the GPL application, CC-BY-NC model and MIT ONNX Runtime. They are not relicensed
+  under GPL. Maintainers must follow the included Microsoft redistribution terms.
+
 Deej-AI
   https://github.com/teticio/Deej-AI                                  (GPL-3.0)
 deej-ai.online-app

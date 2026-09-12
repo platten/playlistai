@@ -21,6 +21,11 @@ func RunMERT(dir string) error {
 	if err != nil {
 		return err
 	}
+	releaseRuntime, err := prepareMERTRuntime(dir, m)
+	if err != nil {
+		return err
+	}
+	defer releaseRuntime()
 	ort.SetSharedLibraryPath(m.File(dir, "runtime"))
 	if err = ort.InitializeEnvironment(); err != nil {
 		return err

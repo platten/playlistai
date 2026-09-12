@@ -57,6 +57,7 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
       <input id="mert-pack" value={path} disabled={busy} onChange={(e) => setPath(e.target.value)}
         className="mt-1 w-full rounded-control border border-line bg-surface px-3 py-2 text-text" />
       <p className="mt-1 text-faint">Use a verified pack for this OS and architecture. No Python is needed to install or run it.</p>
+      <p className="mt-1 text-faint">Review LICENSES.txt in the pack before installing. Installation accepts its model and runtime terms, including the Microsoft runtime terms in Windows packs.</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button size="sm" disabled={busy || !path.trim()} onClick={() => void run(() => API.InstallMERT(path.trim()))}>Install MERT pack</Button>
         <Button size="sm" variant="ghost" disabled={busy || !status?.installed} onClick={() => void run(() => API.RemoveMERT())}>Remove MERT</Button>

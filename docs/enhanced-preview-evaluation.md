@@ -25,7 +25,7 @@ $env:CGO_ENABLED = '1'
 go build -o "$env:TEMP/enhancedpreview.exe" ./cmd/enhancedpreview
 & "$env:TEMP/enhancedpreview.exe" `
   --authorized `
-  --bundle 'C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v1/mert-windows-amd64' `
+  --bundle 'C:/Users/pawel/Downloads/playlistai-enhanced-audio/derived-mert/packs-v2/mert-windows-amd64' `
   --catalog "$env:APPDATA/playlist-ai/catalog" `
   --clap-bundle "$env:APPDATA/playlist-ai/music-analysis/<installed-bundle>" `
   --track-ids '0DiWol3AO6WpXZgp0goxAV,70LcF31zb1H0PyJoS1Sx1r,2kRFrWaLWiKq48YYVdGcm8' `
@@ -80,6 +80,10 @@ CLAP/DSP retain the established sampled interval, while MERT uses up to the firs
 judgment. Do not interpret these results as full production ranking performance.
 
 ## Observed Windows run, 2026-09-11
+
+This historical acquisition used the original `packs-v1` graph/runtime on the
+development host. Fresh runs must use `packs-v2`, which adds verified app-local
+Windows CRT dependencies. The graph and representation identity are unchanged.
 
 The retained run is
 `C:/Users/pawel/Downloads/playlistai-enhanced-audio/evaluation/real-preview-20260911`.
