@@ -1,0 +1,506 @@
+[
+  {
+    "prompt": "Take me from Aphex Twin to Earth, Wind & Fire.",
+    "responses": [
+      {
+        "genres": [],
+        "temporal": [],
+        "destination": [
+          {
+            "kind": "artist",
+            "value": "Earth, Wind & Fire",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Earth, Wind & Fire"
+          }
+        ],
+        "genre_expansions": [],
+        "references": [],
+        "inferred_anchors": [],
+        "required_tracks": [],
+        "essential_criteria": [
+          {
+            "kind": "genre",
+            "value": "Aphex Twin",
+            "scope": "journey_start",
+            "span": "Aphex Twin"
+          }
+        ],
+        "styles": [],
+        "moods": [],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "",
+          "influence": "positive",
+          "explicit": false,
+          "span": ""
+        },
+        "textures": [],
+        "hard_constraints": [],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [
+          {
+            "kind": "artist",
+            "value": "Earth, Wind & Fire",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Earth, Wind & Fire"
+          }
+        ],
+        "energy_trajectory": [],
+        "total_count": 20,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Preserve the journey from Aphex Twin to Earth, Wind & Fire."
+      }
+    ]
+  },
+  {
+    "prompt": "Give me 15 songs with the feel of Aerosmith, except leave Aerosmith out of the results. I prefer energetic guitars.",
+    "responses": [
+      {
+        "genres": [],
+        "temporal": [],
+        "destination": [],
+        "genre_expansions": [],
+        "references": [],
+        "inferred_anchors": [],
+        "required_tracks": [
+          {
+            "kind": "track",
+            "value": "Aerosmith",
+            "influence": "negative",
+            "explicit": true,
+            "span": "Aerosmith"
+          }
+        ],
+        "essential_criteria": [
+          {
+            "kind": "genre",
+            "value": "rock",
+            "scope": "playlist",
+            "span": "rock"
+          },
+          {
+            "kind": "style",
+            "value": "energetic",
+            "scope": "playlist",
+            "span": "energetic"
+          },
+          {
+            "kind": "style",
+            "value": "guitar",
+            "scope": "playlist",
+            "span": "guitar"
+          }
+        ],
+        "styles": [],
+        "moods": [],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "",
+          "influence": "positive",
+          "explicit": false,
+          "span": ""
+        },
+        "textures": [],
+        "hard_constraints": [],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 15,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Preserve the mood and instrumentation preferences while excluding Aerosmith."
+      }
+    ]
+  },
+  {
+    "prompt": "I need 12 tracks for a quiet evening, similar to Christian Löffler. Prefer relaxing electronic sounds; vocals are welcome.",
+    "responses": [
+      {
+        "genres": [],
+        "temporal": [],
+        "destination": [],
+        "genre_expansions": [],
+        "references": [
+          {
+            "kind": "artist",
+            "value": "Christian Löffler",
+            "influence": "positive",
+            "explicit": true,
+            "span": "similarity reference (artist)=\"Christian Löffler\""
+          }
+        ],
+        "inferred_anchors": [],
+        "required_tracks": [],
+        "essential_criteria": [],
+        "styles": [],
+        "moods": [
+          {
+            "value": "relaxing",
+            "influence": "positive",
+            "explicit": true,
+            "span": "mood=\"relaxing\""
+          }
+        ],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "vocals",
+          "influence": "positive",
+          "explicit": true,
+          "span": "vocal=\"vocals\""
+        },
+        "textures": [],
+        "hard_constraints": [],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 12,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Preserve the specified preferences and exclude the specified artist."
+      },
+      {
+        "genres": [],
+        "temporal": [],
+        "destination": [],
+        "genre_expansions": [],
+        "references": [
+          {
+            "kind": "artist",
+            "value": "Christian Löffler",
+            "influence": "positive",
+            "explicit": true,
+            "span": "similarity reference (artist)=\"Christian Löffler\""
+          }
+        ],
+        "inferred_anchors": [],
+        "required_tracks": [
+          {
+            "kind": "track",
+            "value": "Artist - Title",
+            "influence": "positive",
+            "explicit": true,
+            "span": "similarity reference (artist)=\"Christian Löffler\""
+          }
+        ],
+        "essential_criteria": [],
+        "styles": [
+          {
+            "value": "relaxing",
+            "influence": "positive",
+            "explicit": true,
+            "span": "mood=\"relaxing\""
+          }
+        ],
+        "moods": [
+          {
+            "value": "electronic",
+            "influence": "positive",
+            "explicit": true,
+            "span": "genre=\"electronic\""
+          }
+        ],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "vocals",
+          "influence": "positive",
+          "explicit": true,
+          "span": "vocal=\"vocals\""
+        },
+        "textures": [],
+        "hard_constraints": [],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 12,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Use the named reference to retrieve similar catalog recordings."
+      }
+    ]
+  },
+  {
+    "prompt": "Make 10 songs like Alice in Chains and Stone Temple Pilots, without either band's recordings.",
+    "responses": [
+      {
+        "genres": [],
+        "temporal": [],
+        "destination": [],
+        "genre_expansions": [],
+        "references": [
+          {
+            "kind": "artist",
+            "value": "Alice in Chains",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Alice in Chains"
+          },
+          {
+            "kind": "artist",
+            "value": "Stone Temple Pilots",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Stone Temple Pilots"
+          }
+        ],
+        "inferred_anchors": [],
+        "required_tracks": [],
+        "essential_criteria": [
+          {
+            "kind": "genre",
+            "value": "alternative rock",
+            "scope": "playlist",
+            "span": "alternative rock"
+          }
+        ],
+        "styles": [],
+        "moods": [],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "",
+          "influence": "positive",
+          "explicit": false,
+          "span": ""
+        },
+        "textures": [],
+        "hard_constraints": [
+          {
+            "kind": "exclude_artist",
+            "value": "Alice in Chains",
+            "span": "exclude Alice in Chains"
+          },
+          {
+            "kind": "exclude_artist",
+            "value": "Stone Temple Pilots",
+            "span": "exclude Stone Temple Pilots"
+          }
+        ],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 10,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Preserve the similarity references while excluding the specified artists."
+      }
+    ]
+  },
+  {
+    "prompt": "Make a 12-track workout playlist of soul, with neither rock nor metal.",
+    "responses": [
+      {
+        "genres": [
+          {
+            "value": "soul",
+            "influence": "positive",
+            "explicit": true,
+            "span": "soul"
+          }
+        ],
+        "temporal": [
+          {
+            "basis": "composition",
+            "startYear": 1960,
+            "endYear": 2023,
+            "scope": "playlist"
+          }
+        ],
+        "destination": [
+          {
+            "kind": "artist",
+            "value": "Various Artists",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Various Artists"
+          }
+        ],
+        "genre_expansions": [],
+        "references": [],
+        "inferred_anchors": [],
+        "required_tracks": [
+          {
+            "kind": "track",
+            "value": "Various Artists - [Various Artists] - [Various Artists]",
+            "influence": "positive",
+            "explicit": true,
+            "span": "Various Artists - [Various Artists] - [Various Artists]"
+          }
+        ],
+        "essential_criteria": [
+          {
+            "kind": "genre",
+            "value": "soul",
+            "scope": "playlist",
+            "span": "soul"
+          },
+          {
+            "kind": "genre",
+            "value": "rock",
+            "scope": "playlist",
+            "span": "rock"
+          },
+          {
+            "kind": "genre",
+            "value": "metal",
+            "scope": "playlist",
+            "span": "metal"
+          }
+        ],
+        "styles": [],
+        "moods": [],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "",
+          "influence": "positive",
+          "explicit": false,
+          "span": ""
+        },
+        "textures": [],
+        "hard_constraints": [
+          {
+            "kind": "exclude_artist",
+            "value": "Various Artists",
+            "span": "exclude Various Artists"
+          },
+          {
+            "kind": "exclude_artist",
+            "value": "Various Artists",
+            "span": "exclude Various Artists"
+          },
+          {
+            "kind": "exclude_artist",
+            "value": "Various Artists",
+            "span": "exclude Various Artists"
+          }
+        ],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 12,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Preserve soul genre and exclude rock and metal genres."
+      }
+    ]
+  },
+  {
+    "prompt": "Build 16 tracks from relaxing electronic to industrial rock. Keep only the opening section instrumental; vocals are fine later.",
+    "responses": [
+      {
+        "genres": [
+          {
+            "value": "electronic",
+            "influence": "positive",
+            "explicit": true,
+            "span": "electronic",
+            "scope": "journey_start"
+          }
+        ],
+        "temporal": [
+          {
+            "basis": "composition",
+            "startYear": 0,
+            "endYear": 0,
+            "scope": "journey_start"
+          }
+        ],
+        "destination": [
+          {
+            "kind": "artist",
+            "value": "industrial rock",
+            "influence": "positive",
+            "explicit": true,
+            "span": "industrial rock"
+          }
+        ],
+        "genre_expansions": [],
+        "references": [],
+        "inferred_anchors": [],
+        "required_tracks": [
+          {
+            "kind": "artist",
+            "value": "instrumental",
+            "influence": "positive",
+            "explicit": true,
+            "span": "instrumental"
+          }
+        ],
+        "essential_criteria": [
+          {
+            "kind": "genre",
+            "value": "electronic",
+            "scope": "journey_start",
+            "span": "electronic"
+          },
+          {
+            "kind": "genre",
+            "value": "industrial rock",
+            "scope": "journey_end",
+            "span": "industrial rock"
+          },
+          {
+            "kind": "vocal",
+            "value": "instrumental",
+            "scope": "journey_start",
+            "span": "instrumental"
+          }
+        ],
+        "styles": [],
+        "moods": [
+          {
+            "value": "relaxing",
+            "influence": "positive",
+            "explicit": true,
+            "span": "relaxing"
+          }
+        ],
+        "instrumentation": [],
+        "vocal_preference": {
+          "value": "vocals",
+          "influence": "positive",
+          "explicit": false,
+          "span": "vocals"
+        },
+        "textures": [],
+        "hard_constraints": [],
+        "unsupported_requirements": [],
+        "mode": "similar",
+        "journey_waypoints": [],
+        "energy_trajectory": [],
+        "total_count": 16,
+        "audio_weight": 0.5,
+        "cooccurrence_weight": 0.5,
+        "discovery": 0.2,
+        "artist_diversity": 0.7,
+        "transition_smoothness": 0.6,
+        "notes": "Keep only the opening section instrumental; vocals are fine later."
+      }
+    ]
+  }
+]

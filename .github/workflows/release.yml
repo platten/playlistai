@@ -183,6 +183,7 @@ jobs:
           # --options runtime (hardened runtime) and --timestamp are both
           # required for the binary to be notarization-eligible.
           codesign --force --deep --options runtime --timestamp \
+            --entitlements build/darwin/intent-runtime.entitlements.plist \
             --sign "$MACOS_SIGNING_IDENTITY" "bin/playlist-ai.app"
           codesign --verify --deep --strict "bin/playlist-ai.app"
 
@@ -258,6 +259,9 @@ jobs:
       - name: Install native CLAP build compiler
         shell: pwsh
         run: .\scripts\install-clap-toolchain.ps1
+
+      - name: Stage native text runtime dependencies
+        run: python scripts/stage-nlu-runtime.py --arch ${{ matrix.arch }} --seven-zip "C:/Program Files/7-Zip/7z.exe"
 
       - name: Package (NSIS installer, ${{ matrix.arch }})
         shell: pwsh

@@ -17,9 +17,9 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// Version keys parsed-intent reuse. It follows the core contract because every
-// schema change that affects interpretation increments that contract version.
-const Version = core.CurrentIntentVersion
+// Version keys model wire grammar and compiler behavior independently of the
+// saved core intent contract. Historical MusicIntent loading is unchanged.
+const Version = 10
 
 type WireReference struct {
 	Kind      string `json:"kind"`
@@ -30,15 +30,15 @@ type WireReference struct {
 }
 
 type WirePreference struct {
-	Scope     string `json:"scope,omitempty"`
-	Strength  string `json:"strength,omitempty"`
-	ConceptID string `json:"conceptId,omitempty"`
-	Degree    string `json:"degree,omitempty"`
-	Group     string `json:"group,omitempty"`
 	Value     string `json:"value"`
 	Influence string `json:"influence"`
 	Explicit  bool   `json:"explicit"`
 	Span      string `json:"span"`
+	Scope     string `json:"scope,omitempty"`
+	Strength  string `json:"strength,omitempty"`
+	Degree    string `json:"degree,omitempty"`
+	Group     string `json:"group,omitempty"`
+	ConceptID string `json:"conceptId,omitempty"`
 }
 
 type WireCriterion struct {
@@ -103,10 +103,12 @@ type Wire struct {
 	ArtistDiversity      float64                    `json:"artist_diversity"`
 	TransitionSmoothness float64                    `json:"transition_smoothness"`
 	Notes                string                     `json:"notes"`
+	Start                []WireReference            `json:"start,omitempty"`
+	DurationSeconds      int                        `json:"duration_seconds,omitempty"`
 }
 
 // Every rule body is one physical line for the pinned llama.cpp parser.
-const GBNF = `root ::= "{" ws "\"genres\":" ws preflist ws "," ws "\"temporal\":" ws temporallist ws "," ws "\"destination\":" ws reflist ws "," ws "\"genre_expansions\":" ws genrelist ws "," ws "\"references\":" ws reflist ws "," ws "\"inferred_anchors\":" ws anchorlist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"essential_criteria\":" ws criterionlist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws "}" ws
+const GBNF = `root ::= "{" ws "\"genres\":" ws preflist ws "," ws "\"temporal\":" ws temporallist ws "," ws "\"destination\":" ws reflist ws "," ws "\"genre_expansions\":" ws genrelist ws "," ws "\"references\":" ws reflist ws "," ws "\"inferred_anchors\":" ws anchorlist ws "," ws "\"required_tracks\":" ws reflist ws "," ws "\"essential_criteria\":" ws criterionlist ws "," ws "\"styles\":" ws preflist ws "," ws "\"moods\":" ws preflist ws "," ws "\"instrumentation\":" ws preflist ws "," ws "\"vocal_preference\":" ws pref ws "," ws "\"textures\":" ws preflist ws "," ws "\"hard_constraints\":" ws hardlist ws "," ws "\"unsupported_requirements\":" ws unsupportedlist ws "," ws "\"mode\":" ws ("\"similar\"" | "\"journey\"") ws "," ws "\"journey_waypoints\":" ws reflist ws "," ws "\"energy_trajectory\":" ws energylist ws "," ws "\"total_count\":" ws int ws "," ws "\"audio_weight\":" ws num ws "," ws "\"cooccurrence_weight\":" ws num ws "," ws "\"discovery\":" ws num ws "," ws "\"artist_diversity\":" ws num ws "," ws "\"transition_smoothness\":" ws num ws "," ws "\"notes\":" ws str ws ("," ws "\"start\":" ws reflist ws)? ("," ws "\"duration_seconds\":" ws duration ws)? "}" ws
 temporallist ::= "[" ws (period (ws "," ws period){0,2})? ws "]"
 period ::= "{" ws "\"basis\":" ws ("\"composition\"" | "\"original_release\"") ws "," ws "\"startYear\":" ws int ws "," ws "\"endYear\":" ws int ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"") ws "}"
 genrelist ::= "[" ws (genre (ws "," ws genre){0,2})? ws "]"
@@ -119,7 +121,10 @@ anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "
 criterionlist ::= "[" ws (criterion (ws "," ws criterion){0,7})? ws "]"
 criterion ::= "{" ws "\"kind\":" ws ("\"genre\"" | "\"texture\"" | "\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
 preflist ::= "[" ws (pref (ws "," ws pref){0,7})? ws "]"
-pref ::= "{" ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
+pref ::= "{" ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws ("," ws "\"scope\":" ws scope ws)? ("," ws "\"strength\":" ws strength ws)? ("," ws "\"degree\":" ws str ws)? ("," ws "\"group\":" ws str ws)? "}"
+scope ::= "\"playlist\"" | "\"journey_start\"" | "\"journey_via\"" | "\"journey_end\""
+strength ::= "\"preferred\"" | "\"essential\"" | "\"required\""
+duration ::= "0" | [1-9] [0-9]{0,4}
 hardlist ::= "[" ws (hard (ws "," ws hard){0,7})? ws "]"
 hard ::= "{" ws "\"kind\":" ws str ws "," ws "\"value\":" ws str ws "," ws "\"span\":" ws str ws "}"
 unsupportedlist ::= "[" ws (unsupported (ws "," ws unsupported){0,7})? ws "]"
@@ -133,17 +138,23 @@ num ::= "-"? ("0" | [1-9] [0-9]{0,3}) ("." [0-9]{1,6})?
 ws ::= [ \t\n]{0,8}`
 
 func Parse(raw []byte) (core.MusicIntent, error) {
-	return parse(raw, "")
+	return parse(raw, "", nil)
 }
 
 // ParseForPrompt additionally verifies that every reference marked explicit
 // is grounded in the user's text. Model confidence cannot manufacture a user
 // instruction that was never present.
 func ParseForPrompt(raw []byte, prompt string) (core.MusicIntent, error) {
-	return parse(raw, prompt)
+	return parse(raw, prompt, nil)
 }
 
-func parse(raw []byte, prompt string) (core.MusicIntent, error) {
+// ParseForPromptWithSource compiles against the exact extraction supplied to
+// the model. The snapshot is copied before repairs, so retries cannot mutate it.
+func ParseForPromptWithSource(raw []byte, prompt string, source core.IntentTranslation) (core.MusicIntent, error) {
+	return parse(raw, prompt, &source)
+}
+
+func parse(raw []byte, prompt string, supplied *core.IntentTranslation) (core.MusicIntent, error) {
 	obj, ok := extractObject(raw)
 	if !ok {
 		return core.MusicIntent{}, fmt.Errorf("schema: no JSON object in response")
@@ -159,12 +170,23 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	if err := dec.Decode(&wire); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
-	if count, ok := rules.TrackCount(prompt); ok {
-		wire.TotalCount = min(core.MaxCount, max(core.MinCount, count))
+	var extracted core.IntentTranslation
+	if supplied == nil {
+		extracted = lexicon.Extract(prompt)
+	} else {
+		extracted = copySource(*supplied)
+		if err := validateSource(extracted, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
 	}
-	extracted := lexicon.Extract(prompt)
+	var compiled *core.MusicIntent
+	if wire.Genres == nil {
+		if count, ok := rules.TrackCount(prompt); ok {
+			wire.TotalCount = min(core.MaxCount, max(core.MinCount, count))
+		}
+	}
 	if prompt != "" && wire.Genres != nil {
-		reconcileSource(&wire, &extracted, prompt)
+		discardUngroundedProposals(&wire, &extracted, prompt)
 		discardInventedInstructions(&wire, prompt)
 		discardReferenceAttributedDescriptions(&wire)
 		preserveCategoryJourney(&wire, prompt)
@@ -177,12 +199,22 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 		preserveQualityClauses(&wire, prompt)
 		preserveEmotionalMeaning(&wire, prompt)
 		preserveVocalMeaning(&wire)
-		reconcileSource(&wire, &extracted, prompt)
+		intent := compileSource(&wire, &extracted, prompt)
+		compiled = &intent
 		if err := validateAffirmativeContrast(wire, prompt); err != nil {
 			return core.MusicIntent{}, err
 		}
-		if err := validateConstraintMeaning(&wire, prompt); err != nil {
+		if err := validateConstraintMeaning(&wire, prompt, extracted); err != nil {
 			return core.MusicIntent{}, err
+		}
+		// Validation may attach a more precise negative instruction to a hard
+		// constraint. Copy only that validated evidence back, not a lossy wire
+		// reconstruction of the complete compiled intent.
+		for i := range intent.HardConstraints {
+			old := intent.HardConstraints[i].Evidence
+			if len(old) == 0 || old[0].Text != wire.HardConstraints[i].Span {
+				intent.HardConstraints[i].Evidence = evidence(wire.HardConstraints[i].Span, true)
+			}
 		}
 		if err := validateOpenIntent(wire, prompt); err != nil {
 			return core.MusicIntent{}, err
@@ -199,10 +231,12 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 			return core.MusicIntent{}, err
 		}
 	}
-	intent := wire.ToCore()
-	intent.OriginalDescription = prompt
-	if prompt != "" && wire.Genres != nil {
-		intent = lexicon.Reconcile(intent, extracted)
+	intent := core.MusicIntent{}
+	if compiled != nil {
+		intent = *compiled
+	} else {
+		intent = wire.ToCore()
+		intent.OriginalDescription = prompt
 	}
 	if err := intent.Validate(); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
@@ -340,6 +374,7 @@ func (w Wire) ToCore() core.MusicIntent {
 	}
 	references, migratedAnchors := splitReferences(w.References)
 	intent := core.MusicIntent{
+		DurationSeconds:   w.DurationSeconds,
 		GenreExpansions:   w.GenreExpansions,
 		Temporal:          w.Temporal,
 		Version:           core.CurrentIntentVersion,
@@ -426,6 +461,12 @@ func (w Wire) ToCore() core.MusicIntent {
 				}
 			}
 		}
+	}
+	if len(w.Start) == 1 {
+		start := referenceToCore(w.Start[0])
+		intent.Start = &start
+		intent.Mode = core.ModeJourney
+		intent.Journey.Waypoints = append([]core.IntentReference{start}, intent.Journey.Waypoints...)
 	}
 	if len(w.Destination) == 1 {
 		d := referenceToCore(w.Destination[0])

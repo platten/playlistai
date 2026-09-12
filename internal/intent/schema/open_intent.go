@@ -35,7 +35,7 @@ func preserveQualityClauses(w *Wire, prompt string) {
 // Unmentioned positive entities are model inventions, not listener instructions.
 // Required tracks, exclusions and destinations still require strict validation.
 func discardInventedInstructions(w *Wire, prompt string) {
-	for _, group := range []*[]WireReference{&w.References, &w.JourneyWaypoints, &w.RequiredTracks, &w.Destination} {
+	for _, group := range []*[]WireReference{&w.References, &w.JourneyWaypoints, &w.RequiredTracks, &w.Start, &w.Destination} {
 		for i := range *group {
 			ref := &(*group)[i]
 			// A model may expand a surname into a full artist name. Keep the
@@ -165,11 +165,14 @@ func normalizePeriods(w *Wire, prompt string) {
 
 // Validate source grounding without deciding which musical words are allowed.
 func validateOpenIntent(w Wire, prompt string) error {
+	if len(w.Start) > 1 {
+		return fmt.Errorf("schema: at most one starting reference")
+	}
 	if len(w.Destination) > 1 {
 		return fmt.Errorf("schema: at most one final destination")
 	}
 	present := func(span string) bool { return strings.TrimSpace(span) != "" && containsReferenceWords(prompt, span) }
-	for _, refs := range [][]WireReference{w.References, w.RequiredTracks, w.JourneyWaypoints, w.Destination} {
+	for _, refs := range [][]WireReference{w.References, w.RequiredTracks, w.JourneyWaypoints, w.Start, w.Destination} {
 		for _, ref := range refs {
 			if !ref.Explicit || !present(ref.Span) || !referenceGrounded(ref.Span, ref) {
 				return fmt.Errorf("schema: ungrounded explicit %s reference %q", ref.Kind, ref.Value)

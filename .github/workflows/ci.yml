@@ -220,12 +220,18 @@ jobs:
       - name: Build + package (NSIS installer, amd64)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\scripts\build.ps1 -Architecture amd64
+        run: |
+          python scripts/stage-nlu-runtime.py --arch amd64 --seven-zip "C:/Program Files/7-Zip/7z.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\scripts\build.ps1 -Architecture amd64
 
       - name: Build + package (NSIS installer, arm64)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: .\scripts\build.ps1 -Architecture arm64
+        run: |
+          python scripts/stage-nlu-runtime.py --arch arm64 --seven-zip "C:/Program Files/7-Zip/7z.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\scripts\build.ps1 -Architecture arm64
 
       # Measure the host build separately. Cross-compiling an installer does not
       # exercise its native code, and these reports are not a claim of 95%.

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/assist"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/logging"
@@ -104,6 +105,7 @@ func (c *Client) ParseWithProgress(ctx context.Context, in ports.IntentInput, on
 }
 
 func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(chars int)) (core.MusicIntent, error) {
+	in = withSourceFacts(in)
 	correction := ""
 	for attempt, tokenBudget := range []int{1800, 2400} {
 		intent, result, err := c.parseAttemptCorrected(ctx, in, onDelta, tokenBudget, correction)
@@ -136,6 +138,7 @@ func retryableParseTransport(err error) bool {
 }
 
 func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int, correction string) (core.MusicIntent, completionResult, error) {
+	in = withSourceFacts(in)
 	body := chatRequest{
 		Messages:           buildMessages(in),
 		Grammar:            schema.GBNF,
@@ -193,7 +196,7 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 		return core.MusicIntent{}, result, fmt.Errorf("llama: empty completion (finish_reason=%q)", result.FinishReason)
 	}
 	logging.Diagnostic(ctx, "llm.response", map[string]any{"operation": "parse_intent", "content": result.Content, "finishReason": result.FinishReason})
-	intent, err := schema.ParseForPrompt([]byte(result.Content), in.Prompt)
+	intent, err := schema.ParseForPromptWithSource([]byte(result.Content), in.Prompt, *in.SourceFacts)
 	return intent, result, err
 }
 
@@ -350,6 +353,7 @@ func (c *Client) Healthy(ctx context.Context) bool {
 }
 
 func buildMessages(in ports.IntentInput) []chatMessage {
+	in = withSourceFacts(in)
 	msgs := []chatMessage{{Role: "system", Content: schema.SystemPrompt}}
 	for _, ex := range schema.FewShot {
 		msgs = append(msgs,
@@ -361,9 +365,18 @@ func buildMessages(in ports.IntentInput) []chatMessage {
 	if in.Locale != "" {
 		content += "\n\nRequest locale (context, not music instructions): " + in.Locale
 	}
-	content += lexicon.FactsMessage(lexicon.Extract(in.Prompt))
+	content += lexicon.FactsMessage(*in.SourceFacts)
+	content += assist.Message(in.IntentProposals)
 	msgs = append(msgs, chatMessage{Role: "user", Content: content})
 	return msgs
+}
+
+func withSourceFacts(in ports.IntentInput) ports.IntentInput {
+	if in.SourceFacts == nil {
+		source := lexicon.Extract(in.Prompt)
+		in.SourceFacts = &source
+	}
+	return in
 }
 
 func userMessage(in ports.IntentInput) string {

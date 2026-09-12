@@ -17,6 +17,8 @@ type Prefs struct {
 	RecommendationMode   string `json:"recommendationMode,omitempty"`
 	AnalysisEnabled      bool   `json:"analysisEnabled"`
 	EnhancedAudioEnabled bool   `json:"enhancedAudioEnabled"`
+	IntentAssistEnabled  bool   `json:"intentAssistEnabled,omitempty"`
+	IntentExtractorDir   string `json:"intentExtractorDir,omitempty"`
 	// DebugLogging opts into potentially sensitive, memory-only diagnostics.
 	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.

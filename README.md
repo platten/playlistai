@@ -51,6 +51,13 @@ pre-parser protects compound durations, negation and journey roles before and
 after the LLM step. See [implementation and validation](docs/music-context-implementation-results.md)
 and the [larger-model evaluation guide](docs/music-context-and-preparser-plan.md).
 
+First-run setup also prepares verified MiniLM and DistilBERT assets. Settings can
+enable experimental native MiniLM dictionary suggestions or import a reviewed,
+calibrated DistilBERT intent extractor. Both assist the local LLM; explicit source
+instructions remain authoritative. The generic DistilBERT encoder does not yet
+extract playlist intent. See [native setup and packaging](docs/intent-nlu-implementation.md)
+and [annotation review and offline training](docs/intent-nlu-review.md).
+
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
 

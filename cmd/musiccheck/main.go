@@ -465,7 +465,12 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 		}
 	}
 	if len(c.JourneyGenres) > 0 {
-		criteria := core.JourneyCriteria(m.EssentialCriteria)
+		var criteria []core.MusicalCriterion
+		for _, criterion := range core.JourneyCriteria(m.EssentialCriteria) {
+			if criterion.Kind == "genre" || criterion.Kind == "style" {
+				criteria = append(criteria, criterion)
+			}
+		}
 		if m.Mode != core.ModeJourney || len(criteria) != len(c.JourneyGenres) {
 			issues = append(issues, "journey stages not preserved")
 		} else {

@@ -208,7 +208,7 @@ func exclusionSpan(prompt, value string, names ...string) string {
 	return ""
 }
 
-func validateConstraintMeaning(w *Wire, prompt string) error {
+func validateConstraintMeaning(w *Wire, prompt string, snapshots ...core.IntentTranslation) error {
 	var excludedNames []string
 	for _, c := range w.HardConstraints {
 		if c.Kind == "exclude_artist" || c.Kind == "exclude_album" || c.Kind == "exclude_track" {
@@ -221,11 +221,23 @@ func validateConstraintMeaning(w *Wire, prompt string) error {
 			continue
 		}
 		span := exclusionSpan(prompt, c.Value, excludedNames...)
+		if span == "" && c.Kind == "exclude_artist" {
+			// Only the immutable independently extracted snapshot can ground
+			// a pronoun's antecedent or a leave-out construction. Model spans
+			// alone cannot manufacture this relationship.
+			for _, snapshot := range snapshots {
+				for _, atom := range snapshot.Atoms {
+					if atom.Kind == "exclude_artist" && atom.Polarity == "negative" && atom.Strength == "required" && strings.EqualFold(atom.Value, c.Value) && len(atom.Evidence) > 0 {
+						span = atom.Evidence[0].Text
+					}
+				}
+			}
+		}
 		if span == "" {
 			return fmt.Errorf("schema: exclusion of %q has no negative instruction in the request; remove the invented exclusion", c.Value)
 		}
 		c.Span = span
-		for _, group := range [][]WireReference{w.RequiredTracks, w.Destination} {
+		for _, group := range [][]WireReference{w.RequiredTracks, w.Start, w.Destination} {
 			for _, ref := range group {
 				conflict := c.Kind == "exclude_"+ref.Kind && core.NormalizeIdentityPart(c.Value) == core.NormalizeIdentityPart(ref.Value)
 				if c.Kind == "exclude_artist" && (ref.Kind == "track" || ref.Kind == "album") {

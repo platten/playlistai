@@ -11,6 +11,7 @@ import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
 import { RecommendationSettings } from "../components/RecommendationSettings";
+import { IntentModelsCard } from "../components/IntentModelsCard";
 
 /** ggml-org's official llama.cpp installer landing page. */
 const LLAMA_INSTALLER_URL = "https://llama.app";
@@ -368,6 +369,7 @@ export function SettingsScreen() {
       </section>
 
       <MusicAnalysisCard />
+      <IntentModelsCard />
       <EnhancedAudioCard />
       <MusicMetadataCard />
 

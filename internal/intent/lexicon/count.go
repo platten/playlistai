@@ -74,7 +74,7 @@ func countSpans(prompt string) [][]int {
 		}
 		// Preserve quoted names such as an album called "Ten Songs".
 		prefix := prompt[:span[0]]
-		if strings.Count(prefix, `"`)%2 != 0 || strings.LastIndex(prefix, "“") > strings.LastIndex(prefix, "”") {
+		if strings.Count(prefix, `"`)%2 != 0 || strings.LastIndex(prefix, "“") > strings.LastIndex(prefix, "”") || negatedQuantityPrefix.MatchString(prefix) {
 			continue
 		}
 		spans = append(spans, span)

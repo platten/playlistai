@@ -54,7 +54,14 @@ func checkMeaning(want *meaningExpectation, m core.MusicIntent) []string {
 		found := false
 		facet := strings.TrimPrefix(expected.Kind, "exclude_")
 		for _, actual := range m.HardConstraints {
-			found = found || actual.Kind == expected.Kind && strings.EqualFold(musicconcepts.Canonical(facet, actual.Value), musicconcepts.Canonical(facet, expected.Value))
+			kindMatches := actual.Kind == expected.Kind
+			// The recommendation consumer represents genre exclusions with the
+			// legacy exclude_style kind. Require the same recognized genre/value;
+			// a mood exclusion or an unrelated style is not an equivalent filter.
+			if expected.Kind == "exclude_genre" && actual.Kind == "exclude_style" {
+				_, kindMatches = musicconcepts.Find("genre", expected.Value)
+			}
+			found = found || kindMatches && strings.EqualFold(musicconcepts.Canonical(facet, actual.Value), musicconcepts.Canonical(facet, expected.Value))
 		}
 		if !found {
 			issues = append(issues, "explicit constraint lost: "+expected.Kind+" "+expected.Value)

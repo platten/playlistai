@@ -8,9 +8,9 @@ import (
 	"github.com/platten/playlistai/internal/intent/lexicon"
 )
 
-// Reconcile the same source snapshot before validation, not after a failed
-// model completion has already discarded a literal name or instruction.
-func reconcileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) {
+// Compile the source snapshot once. The wire projection exists only for the
+// established source validators; the complete core result remains authoritative.
+func compileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) core.MusicIntent {
 	discardUngroundedProposals(w, snapshot, prompt)
 	source := w.ToCore()
 	source.OriginalDescription = prompt
@@ -38,6 +38,11 @@ func reconcileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) {
 	w.References = refs(m.References)
 	w.RequiredTracks = refs(m.RequiredTracks)
 	w.JourneyWaypoints = refs(m.Journey.Waypoints)
+	w.Start = nil
+	if m.Start != nil {
+		w.Start = refs([]core.IntentReference{*m.Start})
+	}
+	w.DurationSeconds = m.DurationSeconds
 	w.Destination = nil
 	if m.Destination != nil {
 		w.Destination = refs([]core.IntentReference{*m.Destination})
@@ -70,6 +75,7 @@ func reconcileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) {
 	for _, p := range m.Journey.EnergyTrajectory {
 		w.EnergyTrajectory = append(w.EnergyTrajectory, WireEnergy{Position: p.Position, Energy: p.Energy})
 	}
+	return m
 }
 
 // A fabricated source span cannot make a model suggestion a user requirement.
@@ -82,12 +88,12 @@ func discardUngroundedProposals(w *Wire, snapshot *core.IntentTranslation, promp
 		if containsReferenceWords(prompt, *span) {
 			return false
 		}
-		if containsReferenceWords(prompt, value) {
-			return false // a fabricated span for real wording still needs validation
-		}
 		if lexicon.Owned(value, nil, snapshot.Atoms) {
 			*span = "" // canonical rewrite will be replaced by its literal atom
 			return false
+		}
+		if containsReferenceWords(prompt, value) {
+			return false // an unknown phrase still needs real source validation
 		}
 		if !containsReferenceWords(prompt, value) {
 			removed = true
@@ -140,7 +146,16 @@ func discardUngroundedProposals(w *Wire, snapshot *core.IntentTranslation, promp
 		}
 	}
 	w.Destination = destination
-	for _, group := range []*[]WireReference{&w.References, &w.RequiredTracks, &w.Destination, &w.JourneyWaypoints} {
+	start := w.Start[:0]
+	for _, r := range w.Start {
+		if startOutputCue(prompt, r) {
+			start = append(start, r)
+		} else {
+			removed = true
+		}
+	}
+	w.Start = start
+	for _, group := range []*[]WireReference{&w.References, &w.RequiredTracks, &w.Start, &w.Destination, &w.JourneyWaypoints} {
 		kept := (*group)[:0]
 		for _, r := range *group {
 			if referenceGrounded(prompt, r) || !invalid(r.Value, &r.Span) {
@@ -183,10 +198,24 @@ func requiredOutputCue(prompt string, r WireReference) bool {
 func endpointOutputCue(prompt string, r WireReference) bool {
 	for _, pos := range literalPositions(prompt, r.Value) {
 		prefix := prompt[:pos[0]]
-		if namedEndPrefix.MatchString(prefix) {
-			return true
+		if marker := namedEndPrefix.FindStringIndex(prefix); marker != nil {
+			if !negativeIncludePrefix.MatchString(prefix[:marker[0]]) {
+				return true
+			}
+			continue
 		}
 		if journeyToPrefix.MatchString(prefix) && regexp.MustCompile(`(?i)\b(?:from|transitioning|moving|leading)\b`).MatchString(prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+var namedStartPrefix = regexp.MustCompile(`(?i)\b(?:starts?|starting|begins?|beginning|opens?|opening)\s+(?:with|at|on)\s+(?:(?:the\s+)?artist\s+)?["“']?\s*$`)
+
+func startOutputCue(prompt string, r WireReference) bool {
+	for _, pos := range literalPositions(prompt, r.Value) {
+		if marker := namedStartPrefix.FindStringIndex(prompt[:pos[0]]); marker != nil && !negativeIncludePrefix.MatchString(prompt[:marker[0]]) {
 			return true
 		}
 	}

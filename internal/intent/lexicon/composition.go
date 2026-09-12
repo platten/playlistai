@@ -23,6 +23,14 @@ var (
 	calendarSinglePattern  = regexp.MustCompile(`(?i)\b(released|recorded|composed|written)\s+(?:in|during)\s+([12][0-9]{3})\b`)
 	calendarChoiceSuffix   = regexp.MustCompile(`(?i)^\s+(?:or|and)\s+[12][0-9]{3}\b`)
 	negativeListBoundary   = regexp.MustCompile(`(?i)\s+\b(?:nor|or)\b\s+`)
+	negatedQuantityPrefix  = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|never)(?:\s+(?:a|an|another|exactly))?\s*$`)
+	artistReferenceSuffix  = regexp.MustCompile(`(?i)\s+(?:only\b|released\b|recorded\b|and\s+(?:finish|end|begin|start)\b)`)
+	onlyArtistPrefix       = regexp.MustCompile(`(?i)\b(?:songs|tracks|music|playlist)\s+(?:only|exclusively)\s+by\s+([^,.;!?]+)`)
+	onlyArtistSuffix       = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+?)\s+only(?:\s*[,.;!?]|$)`)
+	onlyArtistDated        = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+),\s*(?:released|recorded)\s+(?:between|from)\s+[12][0-9]{3}\s+(?:and|to|through)\s+[12][0-9]{3}\s+only(?:\s*[,.;!?]|$)`)
+	preferredClause        = regexp.MustCompile(`(?i)\b(?:prefer|preferably|ideally|mostly|mainly|some|a bit of|a touch of)\s+(?:a\s+|an\s+)?`)
+	contrastOperator       = regexp.MustCompile(`(?i)\b(?:over|rather than|instead of)\s+(?:an?\s+)?$`)
+	negativeClause         = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid)\s+(?:(?:their|his|her|the|later|early|late)\s+)*`)
 )
 
 type durationMention struct {
@@ -50,7 +58,17 @@ func durationMentions(prompt string) []durationMention {
 		if insideQuoted(prompt, p[0], p[1]) || durationRangeOverlap(prompt, p[0], p[1]) {
 			continue
 		}
-		n, _ := strconv.Atoi(prompt[p[2]:p[3]])
+		phrase := strings.ToLower(prompt[p[2]:p[3]])
+		n, err := strconv.Atoi(phrase)
+		if err != nil {
+			if phrase == "a" || phrase == "an" {
+				n = 1
+			} else {
+				for _, word := range strings.Fields(strings.ReplaceAll(phrase, "-", " ")) {
+					n += numberValues[word]
+				}
+			}
+		}
 		factor := durationFactor(prompt[p[4]:p[5]])
 		if n <= 0 || n*factor > 86400 {
 			continue
@@ -68,7 +86,13 @@ func durationMentions(prompt string) []durationMention {
 		out = append(out, durationMention{p[0], p[1], n * factor})
 		previousFactor = factor
 	}
-	return out
+	positive := out[:0]
+	for _, p := range out {
+		if !negatedQuantityPrefix.MatchString(prompt[:p.start]) {
+			positive = append(positive, p)
+		}
+	}
+	return positive
 }
 
 func durationFactor(unit string) int {
@@ -81,6 +105,24 @@ func durationFactor(unit string) int {
 func durationRangeOverlap(prompt string, start, end int) bool {
 	for _, p := range durationRangePattern.FindAllStringIndex(prompt, -1) {
 		if start < p[1] && end > p[0] {
+			return true
+		}
+	}
+	return false
+}
+
+func quantityReference(value string) bool {
+	quantityEnd := func(start, end int) bool {
+		tail := strings.TrimSpace(strings.ToLower(value[end:]))
+		return start == 0 && (tail == "" || strings.HasPrefix(tail, "of "))
+	}
+	for _, p := range countSpans(value) {
+		if quantityEnd(p[0], p[1]) {
+			return true
+		}
+	}
+	for _, p := range durationMentions(value) {
+		if quantityEnd(p.start, p.end) {
 			return true
 		}
 	}
@@ -142,7 +184,7 @@ func negativeEntityRanges(prompt string, start, end int) [][2]int {
 func referenceRole(intro, entityType string) (kind, scope, strength string) {
 	kind, scope, strength = entityType, "playlist", "preferred"
 	switch {
-	case intro == "from":
+	case intro == "from" || intro == "begin with" || intro == "start with":
 		kind, scope, strength = "start", "journey_start", "required"
 	case intro == "via" || intro == "through":
 		scope, strength = "journey_via", "required"
@@ -150,6 +192,87 @@ func referenceRole(intro, entityType string) (kind, scope, strength string) {
 		kind, scope, strength = "destination", "journey_end", "required"
 	}
 	return
+}
+
+// OnlyArtist recognizes an affirmative output-domain restriction. A similarity
+// request, endpoint or the additive "not only" construction is not sufficient.
+func OnlyArtist(prompt string) string {
+	artist, _, _ := onlyArtistMention(prompt)
+	return artist
+}
+
+func onlyArtistMention(prompt string) (string, int, int) {
+	for _, pattern := range []*regexp.Regexp{onlyArtistPrefix, onlyArtistSuffix, onlyArtistDated} {
+		for _, p := range pattern.FindAllStringSubmatchIndex(prompt, -1) {
+			if insideQuoted(prompt, p[0], p[1]) || negatedQuantityPrefix.MatchString(prompt[:p[0]]) {
+				continue
+			}
+			start, end := trimRange(prompt, p[2], p[3])
+			if stop := artistReferenceSuffix.FindStringIndex(prompt[start:end]); stop != nil {
+				end = start + stop[0]
+			}
+			if start < end && !strings.Contains(strings.ToLower(prompt[start:end]), " not ") {
+				return prompt[start:end], start, end
+			}
+		}
+	}
+	return "", 0, 0
+}
+
+func composedPreferredStart(prompt string, pos int, known []mention) int {
+	begin := strings.LastIndexAny(prompt[:pos], ",;:.!?\n") + 1
+	for _, p := range preferredClause.FindAllStringIndex(prompt[begin:pos], -1) {
+		start := begin + p[0]
+		if additivePrefix.MatchString(prompt[:start]) || negativeContextStart(prompt[:start]) >= 0 {
+			continue
+		}
+		if descriptorGap(prompt, begin+p[1], pos, known) {
+			return start
+		}
+	}
+	return -1
+}
+
+func composedNegativeStart(prompt string, pos int, known []mention) int {
+	begin := strings.LastIndexAny(prompt[:pos], ",;:.!?\n") + 1
+	if p := contrastOperator.FindStringIndex(prompt[begin:pos]); p != nil {
+		// "over" can describe layered sounds. Only treat it as contrast when
+		// attached to an explicit preference, not "warm synth over loud drums".
+		if strings.HasPrefix(strings.ToLower(prompt[begin+p[0]:]), "over ") && !preferredClause.MatchString(prompt[begin:begin+p[0]]) {
+			return -1
+		}
+		for _, m := range known {
+			if m.start >= begin && m.end <= begin+p[0] {
+				return begin + p[0]
+			}
+		}
+	}
+	for _, p := range negativeClause.FindAllStringIndex(prompt[begin:pos], -1) {
+		start := begin + p[0]
+		if descriptorGap(prompt, begin+p[1], pos, known) && !additivePrefix.MatchString(prompt[start:pos]) {
+			return start
+		}
+	}
+	return -1
+}
+
+func descriptorGap(prompt string, start, end int, known []mention) bool {
+	gap := []byte(prompt[start:end])
+	for _, m := range known {
+		if m.start >= start && m.end <= end {
+			for i := m.start - start; i < m.end-start; i++ {
+				gap[i] = ' '
+			}
+		}
+	}
+	for _, word := range strings.Fields(strings.ToLower(string(gap))) {
+		switch word {
+		case "a", "an", "and", "or", "sound", "sounds", "feel", "music", "power", "cheerful":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func referenceTextEnd(prompt string, start int) int {
@@ -241,6 +364,13 @@ func applyCandidateRole(intent *core.MusicIntent, a core.IntentAtom) {
 	}
 	r := candidateReference(a)
 	intent.Mode = core.ModeJourney
+	listed := false
+	for _, ref := range intent.References {
+		listed = listed || ref.Kind == r.Kind && ref.Influence == r.Influence && strings.EqualFold(ref.Query, r.Query)
+	}
+	if !listed {
+		intent.References = append(intent.References, r)
+	}
 	kept := intent.Journey.Waypoints[:0]
 	for _, waypoint := range intent.Journey.Waypoints {
 		if !wordsContain(a.Value, waypoint.Query) {

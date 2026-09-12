@@ -7,7 +7,8 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
-var qualifiedIncludePattern = regexp.MustCompile(`(?i)\b(?:must include|include|make sure to include)\s+["“]?([^,;"”\n]+\s+-\s+[^,;"”\n]+)`)
+var qualifiedIncludePattern = regexp.MustCompile(`(?i)\b(?:must include|include|including|make sure to include)\s+["“]?([^,;"”\n]+(?:\s+[-—–]\s+|\s+by\s+)[^,;"”\n]+)`)
+var requiredTrackSuffix = regexp.MustCompile(`(?i)\s+(?:exactly once|but|and (?:then|make|keep|finish|end)|without)\b|\s+once\s*$|[.!?]$`)
 var negatedIncludePrefix = regexp.MustCompile(`(?i)\b(?:not|don't|don’t|never)\s*$`)
 
 // RequiredTracks preserves explicitly included, artist-qualified recordings.
@@ -34,6 +35,13 @@ func requiredTrackOccurrences(prompt string) []core.IntentReference {
 			continue
 		}
 		start, end := trimRange(prompt, loc[2], loc[3])
+		if !insideQuoted(prompt, start, end) {
+			if stop := requiredTrackSuffix.FindStringIndex(prompt[start:end]); stop != nil {
+				if _, _, ok := core.QualifiedReferenceParts(prompt[start : start+stop[0]]); ok {
+					end = start + stop[0]
+				}
+			}
+		}
 		value := prompt[start:end]
 		_, _, ok := core.QualifiedReferenceParts(value)
 		if !ok {

@@ -20,6 +20,7 @@ import (
 	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/bridge"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/intent/nlu"
 	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/updater"
 )
@@ -47,6 +48,12 @@ func main() {
 // Returning errors here makes exit policy explicit without terminating callers
 // that exercise command validation in tests.
 func dispatch(args []string, out io.Writer, log *slog.Logger) error {
+	if len(args) == 1 && args[0] == "--check-intent-worker" {
+		return nlu.CheckPackagedRuntime()
+	}
+	if len(args) == 4 && args[0] == "--nlu-worker" {
+		return nlu.RunWorker(nlu.WorkerConfig{Kind: nlu.ModelKind(args[1]), ModelDir: args[2], RuntimeLibrary: args[3]})
+	}
 	// Packaging gate: no GUI, network, models or user-data access required.
 	if len(args) == 1 && args[0] == "--check-audio-worker" {
 		_, err := audio.RecommendedBundle()
