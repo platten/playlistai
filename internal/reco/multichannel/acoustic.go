@@ -224,6 +224,33 @@ func preferAcousticRanking(candidate *core.Candidate, comparisons []core.IntentC
 	if len(covered) == 0 {
 		return
 	}
+	if strings.Contains(preview.PolicyVersion, audio.QueryPolicyVersion) {
+		masked := preview
+		masked.Clauses = append([]core.AudioClauseAssessment(nil), preview.Clauses...)
+		positiveAvailable, negativeAvailable := false, false
+		for i := range masked.Clauses {
+			a := &masked.Clauses[i]
+			if a.Clause.Negative {
+				negativeAvailable = negativeAvailable || a.ScoreAvailable
+			} else {
+				positiveAvailable = positiveAvailable || a.ScoreAvailable
+			}
+			if !a.ScoreAvailable || covered[a.Clause] {
+				a.Score = 0
+			}
+			// Retain the fixed denominator when suppressing duplicate evidence.
+			a.ScoreAvailable = true
+		}
+		var scored core.Candidate
+		audio.ApplyScores(&scored, masked)
+		if positiveAvailable {
+			candidate.Scores.SemanticMatch = scored.Scores.SemanticMatch
+		}
+		if negativeAvailable {
+			candidate.Scores.SemanticNegativeMatch = scored.Scores.SemanticNegativeMatch
+		}
+		return
+	}
 	var positive, negative float64
 	var positives, negatives int
 	positiveAvailable, negativeAvailable := false, false

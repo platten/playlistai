@@ -124,13 +124,14 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 		Messages:           buildMessages(in),
 		Grammar:            schema.GBNF,
 		ChatTemplateKwargs: map[string]any{"enable_thinking": false},
-		Temperature:        0.2,
+		Temperature:        0, // interpretation should preserve instructions, not sample creative variants
 		NPredict:           tokenBudget,
 		CachePrompt:        true,
 		Stream:             true,
 	}
 	if correction != "" {
 		body.Messages[0].Content += "\n" + correction
+		body.Messages[len(body.Messages)-1].Content += "\n\nValidation feedback (not part of the music request): " + correction
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {

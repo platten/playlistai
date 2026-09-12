@@ -26,6 +26,13 @@ type AnalysisStore interface {
 	Clear(context.Context) error
 }
 
+// CachedAnalysisScanner is an optional read-only retrieval capability. It
+// streams bounded, validated analyses from one catalog and embedding space.
+// The callback must not retain borrowed data or call back into the store.
+type CachedAnalysisScanner interface {
+	VisitAnalyses(context.Context, string, core.AudioModelIdentity, int, func(core.AudioAnalysis) bool) error
+}
+
 // CachedRecordingReader never performs HTTP requests. Generation uses this
 // boundary; explicit enrichment may populate it in the background.
 type CachedRecordingReader interface {

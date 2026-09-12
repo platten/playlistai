@@ -286,3 +286,14 @@ func TestGenreAssertionAcceptsEssentialStylesButNotOnlySoftHints(t *testing.T) {
 		t.Fatal("equivalent essential-category representation rejected", issues)
 	}
 }
+
+func TestVocalContractRejectsGenreMisclassification(t *testing.T) {
+	m := core.MusicIntent{Preferences: core.SemanticPreferences{VocalPreference: &core.IntentPreference{Value: "female vocals", Influence: core.InfluencePositive}}, EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "female vocals", Scope: "playlist"}}}
+	if len(checkIntent(promptCase{Vocal: "female"}, m)) == 0 {
+		t.Fatal("voice accepted as genre")
+	}
+	m.EssentialCriteria[0].Kind = "vocal"
+	if issues := checkIntent(promptCase{Vocal: "female"}, m); len(issues) != 0 {
+		t.Fatal(issues)
+	}
+}

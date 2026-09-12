@@ -766,8 +766,24 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
 	request.RecentSelections = recentSelections
+	var cachedAudio []core.Candidate
+	if o.audioSession != nil {
+		excluded := map[string]bool{}
+		for _, group := range [][]core.TrackRef{references, required, recentSelections} {
+			for _, track := range group {
+				excluded[track.ID] = true
+			}
+		}
+		cachedAudio, err = o.audioSession.CachedCandidates(ctx, o.cat, min(o.cfg.MaxCandidates, max(o.cfg.SemanticBudget, 2*intent.Count)), excluded)
+		if err != nil && ctx.Err() != nil {
+			return core.Playlist{}, ctx.Err()
+		}
+		if err != nil {
+			anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "cached_audio_search_incomplete", Detail: "Cached audio search was interrupted; available candidates still require the normal checks."})
+		}
+	}
 	positiveSemantic, _ := semanticQueryText(intent)
-	semanticSeeded := discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
+	semanticSeeded := len(cachedAudio) > 0 || discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
 		if core.WantsInstrumental(intent) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "instrumental_seed_unavailable", Detail: "No suitable instrumental starting point could be found in the catalog or online lookup.", Action: "retry the search or name an instrumental artist or recording"}}), nil
@@ -797,6 +813,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			o.retriever = retriever.withRecommendationPool(recommendationPoolSize(intent.Count, len(required)))
 		}
 	}
+	if len(cachedAudio) > 0 {
+		o.retriever = &cachedAudioRetriever{base: o.retriever, candidates: cachedAudio}
+	}
 	if stages := journeyCriteria(intent.EssentialCriteria); intent.Mode == core.ModeJourney && intent.Count < len(stages) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "journey_count_too_short", Detail: "The requested count cannot represent every journey stage.", Action: "increase the track count or remove a stage"}}), nil
 	}
@@ -822,7 +841,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	var candidates []core.Candidate
+	candidates := cachedAudio
 	if o.candidateSource == nil {
 		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,

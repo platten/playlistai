@@ -20,20 +20,21 @@ func CandidateAnalysisLimit(count int) int { return min(200, max(40, 4*count)) }
 // Session is owned by one generation. The service and persistent records are
 // shared; descriptions, clause embeddings, and eligibility are never shared.
 type Session struct {
-	service       *Service
-	ctx           context.Context
-	cancel        context.CancelFunc
-	stop          <-chan struct{}
-	catalog       string
-	intent        core.MusicIntent
-	clauses       []core.AudioClause
-	fingerprint   string
-	queries       map[string][]float32
-	checked       map[string]core.AudioAssessment
-	started       time.Time
-	newCandidates int
-	limit         int
-	snapshot      core.AudioEvidenceSnapshot
+	service              *Service
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	stop                 <-chan struct{}
+	catalog              string
+	intent               core.MusicIntent
+	clauses              []core.AudioClause
+	fingerprint          string
+	retrievalFingerprint string
+	queries              map[string][]float32
+	checked              map[string]core.AudioAssessment
+	started              time.Time
+	newCandidates        int
+	limit                int
+	snapshot             core.AudioEvidenceSnapshot
 }
 
 func (s *Service) Begin(ctx context.Context, intent core.MusicIntent, catalog string, stop <-chan struct{}) (*Session, error) {
@@ -62,6 +63,9 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 	if !s.Policy.Valid() {
 		x.snapshot.PolicyVersion = SimilarityPolicyVersion
 	}
+	if x.typedQueries() {
+		x.snapshot.PolicyVersion += "+" + QueryPolicyVersion
+	}
 	if core.WantsInstrumental(intent) {
 		if x.snapshot.PolicyVersion != "" {
 			x.snapshot.PolicyVersion += "+"
@@ -73,7 +77,8 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 	x.fingerprint = Fingerprint(struct {
 		Description string
 		Clauses     []core.AudioClause
-	}{intent.OriginalDescription, x.clauses})
+		QueryPolicy string
+	}{intent.OriginalDescription, x.clauses, x.snapshot.PolicyVersion})
 	return x, nil
 }
 
@@ -108,7 +113,8 @@ func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
 		Model       core.AudioModelIdentity
 		Policy      string
 		Assessments []core.AudioAssessment
-	}{out.Model, out.PolicyVersion, assessments})
+		Retrieval   string `json:",omitempty"`
+	}{out.Model, out.PolicyVersion, assessments, s.retrievalFingerprint})
 	return out
 }
 
@@ -271,15 +277,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 				assessment.Score = segmentSimilarity(s.queries[instrumentalPrompts[0]], record.Segments, false)
 			}
 		} else if supported && (!clause.Strict || clause.Kind != "vocal") {
-			query, ok := s.queries[clause.Text]
-			if !ok {
-				query, err = s.service.Analyzer.EmbedText(s.ctx, clause.Text)
-				if err == nil && validVector(query, record.Model.Dimension) {
-					s.queries[clause.Text] = query
-				} else {
-					query = nil
-				}
-			}
+			query := s.clauseQuery(clause)
 			if len(query) > 0 {
 				assessment.Score = segmentSimilarity(query, record.Segments, clause.Negative)
 				assessment.ScoreAvailable = true
@@ -369,6 +367,12 @@ func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
 	var positive, negative float64
 	stageScores := map[string]float64{}
 	stageCounts := map[string]int{}
+	type facet struct {
+		sum   float64
+		count int
+		scope string
+	}
+	facets := map[string]facet{}
 	for _, clause := range a.Clauses {
 		if clause.State == core.EvidenceUnknown && !clause.ScoreAvailable {
 			continue
@@ -382,6 +386,41 @@ func ApplyScores(candidate *core.Candidate, a core.AudioAssessment) {
 		} else {
 			positives++
 			positive += clause.Score
+		}
+		if !clause.Clause.Negative {
+			kind := clause.Clause.Kind
+			if kind == "style" {
+				kind = "genre"
+			}
+			key := clause.Clause.Scope + "\x00" + kind
+			f := facets[key]
+			f.sum += clause.Score
+			f.count++
+			f.scope = clause.Clause.Scope
+			facets[key] = f
+		}
+	}
+	if strings.Contains(a.PolicyVersion, QueryPolicyVersion) {
+		// Multiple genre aliases must not outvote a single requested mood.
+		// Equal facet weighting is a ranking policy, not calibrated confidence.
+		positive, positives = 0, 0
+		clear(stageScores)
+		clear(stageCounts)
+		keys := make([]string, 0, len(facets))
+		for key := range facets {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			f := facets[key]
+			mean := f.sum / float64(f.count)
+			if strings.HasPrefix(f.scope, "journey_") {
+				stageScores[f.scope] += mean
+				stageCounts[f.scope]++
+			} else {
+				positive += mean
+				positives++
+			}
 		}
 	}
 	if len(stageScores) > 0 {

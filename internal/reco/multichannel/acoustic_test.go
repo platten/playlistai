@@ -215,3 +215,25 @@ func TestAcousticPreviewDisagreementAndSourceScales(t *testing.T) {
 		t.Fatal("soft opposition was reported as fulfilled")
 	}
 }
+
+func TestAcousticSuppressionPreservesTypedFacetWeights(t *testing.T) {
+	for _, aliases := range []int{1, 3} {
+		a := core.AudioAssessment{PolicyVersion: audio.SimilarityPolicyVersion + "+" + audio.QueryPolicyVersion}
+		var comparisons []core.IntentComparison
+		for i := 0; i < aliases; i++ {
+			clause := core.AudioClause{Kind: "genre", Text: string(rune('a' + i)), Scope: "playlist"}
+			a.Clauses = append(a.Clauses, core.AudioClauseAssessment{Clause: clause, Score: 1, ScoreAvailable: true})
+			comparisons = append(comparisons, core.IntentComparison{Clause: clause, AcousticState: "supporting"})
+		}
+		a.Clauses = append(a.Clauses, core.AudioClauseAssessment{Clause: core.AudioClause{Kind: "mood", Text: "dreamy", Scope: "playlist"}, Score: 1, ScoreAvailable: true})
+		var c core.Candidate
+		audio.ApplyScores(&c, a)
+		preferAcousticRanking(&c, comparisons, a)
+		if c.Scores.SemanticMatch != .5 {
+			t.Fatalf("%d aliases changed mood weight: %v", aliases, c.Scores.SemanticMatch)
+		}
+		if a.Clauses[0].Score != 1 {
+			t.Fatal("suppression mutated evidence")
+		}
+	}
+}

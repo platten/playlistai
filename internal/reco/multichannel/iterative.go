@@ -46,9 +46,14 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			outNotices = append(outNotices, core.PlaylistNotice{Code: "discovery_stopped", Detail: "Discovery stopped; only eligible tracks were retained."})
 		}
 	}()
-	// Retrieval may prepare a 2N shortlist, but neither discovery nor recommendation
-	// should analyze surplus tracks once selection and sequencing can fill N.
+	// Descriptive requests need scored alternatives: an uncalibrated preview
+	// comparison makes a track rankable, not necessarily a good sound match.
+	// Keep the output count separate from the bounded comparison pool.
 	target := intent.Count - len(required)
+	comparisonTarget := target
+	if o.audioSession != nil && soundComparisonRequested(intent) {
+		comparisonTarget = max(target, min(o.cfg.MaxCandidates, recommendationPoolSize(intent.Count, len(required))))
+	}
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
 	}
@@ -88,6 +93,11 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		}
 		return nil
 	}
+	if stream != nil && len(initial) > 0 {
+		// Existing sound matches take part before a metadata stream can fill N.
+		queue = append([]core.Candidate(nil), initial...)
+		initial = nil
+	}
 	if len(required) == intent.Count {
 		return accepted, notices, nil // required tracks were already validated
 	}
@@ -108,7 +118,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			break
 		}
 		var candidate core.Candidate
-		if stream != nil {
+		if stream != nil && len(queue) == 0 {
 			track, err := stream.Next(ctx)
 			if err != nil {
 				if parent.Err() != nil {
@@ -223,7 +233,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		if request.OnChecked != nil && o.audioSession != nil {
 			request.OnChecked(candidate.Track)
 		}
-		if len(accepted) >= target {
+		if len(accepted) >= comparisonTarget {
 			complete, err := o.iterativeComplete(ctx, accepted, intent, request, references, required, waypoints, seed)
 			if err != nil {
 				return nil, notices, err
@@ -258,4 +268,22 @@ func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.
 	// Soft diversity preferences rank the available pool; they must not prolong
 	// analysis after sequencing has produced the requested valid track count.
 	return assembly.complete(intent.Count), err
+}
+
+func soundComparisonRequested(intent core.MusicIntent) bool {
+	for _, clause := range audio.Clauses(intent) {
+		switch clause.Kind {
+		case "mood", "texture", "description":
+			return true
+		case "instrumentation":
+			if !core.WantsInstrumental(intent) || clause.Text != "instrumental" {
+				return true
+			}
+		case "vocal":
+			if !core.WantsInstrumental(intent) {
+				return true
+			}
+		}
+	}
+	return false
 }
