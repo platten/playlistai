@@ -1,0 +1,506 @@
+{
+  "version": 1,
+  "date": "2026-09-12",
+  "publishedSourceCommit": "c671fdb398d4c3cbabd44472e30002a0dca44d70",
+  "interpretation": "Development consumer-field checks; not held-out or a listening score",
+  "recommendations": "Live coverage differs from baseline; frozen cache is a later isolated copy, not paired baseline evidence. Run source states and hashes are recorded separately.",
+  "model": "Qwen2.5-3B-Instruct Q4_K_M",
+  "contextTokens": 4096,
+  "temperature": 0,
+  "catalog": "1:956917:1788613313",
+  "fixtureSha256": "3d2409a6eee6b7ef3a29ef9ad058075706d9900b1f4ff5c0f5a5df9fb6bdcb95",
+  "parserRuns": [
+    {
+      "fixture": "native-parser-release-candidate",
+      "run": 1,
+      "cases": 10,
+      "passes": 10,
+      "milliseconds": 47058.0,
+      "reportSha256": "5c8dc19f641b0d74e14de69a9c9a03caec96c344be63f2a08d3fc87ee50d060d"
+    },
+    {
+      "fixture": "native-parser-release-candidate",
+      "run": 2,
+      "cases": 10,
+      "passes": 10,
+      "milliseconds": 46669.0,
+      "reportSha256": "8d7d9099ce9a71dd5d05414d35aec409a61783b089c43c34e603c86c7878df6e"
+    },
+    {
+      "fixture": "native-parser-existing-twelve",
+      "run": 1,
+      "cases": 12,
+      "passes": 12,
+      "milliseconds": 31632.0,
+      "reportSha256": "06ff53e295ed841329914d1a6c2a03407f2ee7df9607e506449d68990d99046e"
+    },
+    {
+      "fixture": "native-parser-existing-twelve",
+      "run": 2,
+      "cases": 12,
+      "passes": 12,
+      "milliseconds": 32077.0,
+      "reportSha256": "73f7530b20857d3e72b5d1052afcdb791d30678d2683f834717b66aba2007339"
+    }
+  ],
+  "recommendationRuns": [
+    {
+      "name": "frozen-final",
+      "sourceState": "Published c671fdb source",
+      "binarySha256": "497c7866f072dcdeb9f977eed9d57a9b84c09f5c1bd12dfce344c1d72b2713d8",
+      "reportSha256": "dcfc715db899181f8a712c88091ad62f3e7c6117a2b872b4f564c1379ebdb289",
+      "cases": [
+        {
+          "case": 1,
+          "prompt": "Give me 15 relaxing classical pieces to help me concentrate, mostly piano and strings, with no singing.",
+          "requestedCount": 15,
+          "returned": 4,
+          "state": "partial",
+          "strong": 0,
+          "close": 4,
+          "errors": null,
+          "milliseconds": 556,
+          "cacheHits": 31,
+          "newAnalyses": 60,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "eligible_tracks_exhausted",
+              "detail": "eligible sufficiently relevant tracks were exhausted",
+              "criterion": "",
+              "action": "reduce the requested count or add another fitting reference"
+            },
+            {
+              "code": "analysis_stopped",
+              "detail": "Analysis stopped; only checked tracks were retained.",
+              "criterion": "",
+              "action": "continue with these tracks or refine the description"
+            }
+          ]
+        },
+        {
+          "case": 2,
+          "prompt": "I want dramatic 20th-century classical music with big changes from quiet to loud. 12 tracks, not film scores.",
+          "requestedCount": 12,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 10,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_style: film score",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 3,
+          "prompt": "Make a 15-song workout playlist like Aerosmith: driving guitar riffs and high energy, but don't include Aerosmith themselves.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 1062,
+          "cacheHits": 20,
+          "newAnalyses": 60,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "analysis_stopped",
+              "detail": "Analysis stopped; only checked tracks were retained.",
+              "criterion": "",
+              "action": "continue with these tracks or refine the description"
+            }
+          ]
+        },
+        {
+          "case": 4,
+          "prompt": "Give me 12 bluesy hard rock tracks like early Aerosmith, with a raw live-band feel rather than polished pop.",
+          "requestedCount": 12,
+          "returned": 12,
+          "state": "partial",
+          "strong": 0,
+          "close": 12,
+          "errors": null,
+          "milliseconds": 515,
+          "cacheHits": 14,
+          "newAnalyses": 48,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "analysis_stopped",
+              "detail": "Analysis stopped; only checked tracks were retained.",
+              "criterion": "",
+              "action": "continue with these tracks or refine the description"
+            }
+          ]
+        },
+        {
+          "case": 5,
+          "prompt": "20 relaxing electronic tracks like christrian loeffler, with warm textures and a gentle pulse. Nothing too clubby.",
+          "requestedCount": 20,
+          "returned": 20,
+          "state": "partial",
+          "strong": 0,
+          "close": 20,
+          "errors": null,
+          "milliseconds": 1351,
+          "cacheHits": 30,
+          "newAnalyses": 80,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "analysis_stopped",
+              "detail": "Analysis stopped; only checked tracks were retained.",
+              "criterion": "",
+              "action": "continue with these tracks or refine the description"
+            }
+          ]
+        },
+        {
+          "case": 6,
+          "prompt": "Something like Christian Löffler and Kiasmos for a rainy evening: melancholic but comforting, mostly instrumental. 15 tracks.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 1314,
+          "cacheHits": 30,
+          "newAnalyses": 22,
+          "bytesFetched": 0,
+          "reasons": null
+        },
+        {
+          "case": 7,
+          "prompt": "I need 20 tracks for lifting weights—heavy, aggressive and energetic, with a steady beat. No slow ballads.",
+          "requestedCount": 20,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 11,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_style: slow ballad",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 8,
+          "prompt": "Build a 30-minute running playlist that starts easy, picks up the pace, then cools down. I like electronic music, but no harsh vocals.",
+          "requestedCount": 20,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 9,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_vocal: harsh vocals",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 9,
+          "prompt": "Take me from Nine Inch Nails to Marilyn Manson over 15 tracks, with smooth transitions and no repeat artists back to back.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 1332,
+          "cacheHits": null,
+          "newAnalyses": null,
+          "bytesFetched": null,
+          "reasons": null
+        },
+        {
+          "case": 10,
+          "prompt": "15 dark industrial rock tracks like Nine Inch Nails, but less aggressive, no Marilyn Manson, and no screaming.",
+          "requestedCount": 15,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 9,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_vocal: screaming",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "live-final",
+      "sourceState": "Development build before final exclusion, feedback refresh and preview review fixes; no new claims about those fixes from this run",
+      "binarySha256": "8440d57e1a5a4588079cb229395e16b28266db8e7d42be94016129291b1c47ca",
+      "reportSha256": "d519e44b1f1174e39a7a2cc4e72e77bff539a780b10ad63cde077f2ce7ddc6b1",
+      "cases": [
+        {
+          "case": 1,
+          "prompt": "Give me 15 relaxing classical pieces to help me concentrate, mostly piano and strings, with no singing.",
+          "requestedCount": 15,
+          "returned": 12,
+          "state": "partial",
+          "strong": 0,
+          "close": 12,
+          "errors": null,
+          "milliseconds": 930372,
+          "cacheHits": 81,
+          "newAnalyses": 226,
+          "bytesFetched": 52781512,
+          "reasons": [
+            {
+              "code": "eligible_tracks_exhausted",
+              "detail": "eligible sufficiently relevant tracks were exhausted",
+              "criterion": "",
+              "action": "reduce the requested count or add another fitting reference"
+            },
+            {
+              "code": "analysis_stopped",
+              "detail": "Analysis stopped; only checked tracks were retained.",
+              "criterion": "",
+              "action": "continue with these tracks or refine the description"
+            }
+          ]
+        },
+        {
+          "case": 2,
+          "prompt": "I want dramatic 20th-century classical music with big changes from quiet to loud. 12 tracks, not film scores.",
+          "requestedCount": 12,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 10,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_style: film score",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 3,
+          "prompt": "Make a 15-song workout playlist like Aerosmith: driving guitar riffs and high energy, but don't include Aerosmith themselves.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 735,
+          "cacheHits": 30,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": null
+        },
+        {
+          "case": 4,
+          "prompt": "Give me 12 bluesy hard rock tracks like early Aerosmith, with a raw live-band feel rather than polished pop.",
+          "requestedCount": 12,
+          "returned": 12,
+          "state": "partial",
+          "strong": 0,
+          "close": 12,
+          "errors": null,
+          "milliseconds": 13141,
+          "cacheHits": 24,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": null
+        },
+        {
+          "case": 5,
+          "prompt": "20 relaxing electronic tracks like christrian loeffler, with warm textures and a gentle pulse. Nothing too clubby.",
+          "requestedCount": 20,
+          "returned": 20,
+          "state": "partial",
+          "strong": 0,
+          "close": 20,
+          "errors": null,
+          "milliseconds": 956,
+          "cacheHits": 40,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": null
+        },
+        {
+          "case": 6,
+          "prompt": "Something like Christian Löffler and Kiasmos for a rainy evening: melancholic but comforting, mostly instrumental. 15 tracks.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 908,
+          "cacheHits": 30,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": null
+        },
+        {
+          "case": 7,
+          "prompt": "I need 20 tracks for lifting weights—heavy, aggressive and energetic, with a steady beat. No slow ballads.",
+          "requestedCount": 20,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 0,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_style: slow ballad",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 8,
+          "prompt": "Build a 30-minute running playlist that starts easy, picks up the pace, then cools down. I like electronic music, but no harsh vocals.",
+          "requestedCount": 20,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 13,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_vocal: harsh vocals",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        },
+        {
+          "case": 9,
+          "prompt": "Take me from Nine Inch Nails to Marilyn Manson over 15 tracks, with smooth transitions and no repeat artists back to back.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 1109,
+          "cacheHits": null,
+          "newAnalyses": null,
+          "bytesFetched": null,
+          "reasons": null
+        },
+        {
+          "case": 10,
+          "prompt": "15 dark industrial rock tracks like Nine Inch Nails, but less aggressive, no Marilyn Manson, and no screaming.",
+          "requestedCount": 15,
+          "returned": 0,
+          "state": "unsupported",
+          "strong": 0,
+          "close": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ],
+          "milliseconds": 22476,
+          "cacheHits": 0,
+          "newAnalyses": 0,
+          "bytesFetched": 0,
+          "reasons": [
+            {
+              "code": "unsupported_hard_constraint",
+              "detail": "the loaded catalog evidence cannot enforce this strict requirement",
+              "criterion": "exclude_vocal: screaming",
+              "action": "install a compatible feature sidecar or relax the requirement"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "journey-published",
+      "sourceState": "Published c671fdb source",
+      "binarySha256": "497c7866f072dcdeb9f977eed9d57a9b84c09f5c1bd12dfce344c1d72b2713d8",
+      "reportSha256": "70cb1be0e9dfd907007ca95569bc9ad6431f17b9a938002c75e612d2af6b5ef0",
+      "cases": [
+        {
+          "case": 1,
+          "prompt": "Take me from Nine Inch Nails to Marilyn Manson over 15 tracks, with smooth transitions and no repeat artists back to back.",
+          "requestedCount": 15,
+          "returned": 15,
+          "state": "partial",
+          "strong": 0,
+          "close": 15,
+          "errors": null,
+          "milliseconds": 1157,
+          "cacheHits": null,
+          "newAnalyses": null,
+          "bytesFetched": null,
+          "reasons": null
+        }
+      ]
+    }
+  ]
+}

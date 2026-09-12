@@ -174,12 +174,85 @@ Focused regressions cover each. The initial gate failed lint; the formatting,
 unused declaration and equivalent-condition issues were fixed before the passing
 full gate. Hosted checks must be assessed on the published commit separately.
 
+Published implementation `c671fdb` passed every hosted job in
+[CI run 34702827198](https://github.com/platten/playlistai/actions/runs/34702827198):
+Linux lint/race tests, macOS and Linux amd64/arm64 builds/coverage, and Windows
+contributor gate, amd64/arm64 installers and coverage. The following documentation
+update records these results without changing the tested application source.
+
 The previous native parser passed only 2/10 and 3/10 of the narrower checks;
 manual full-meaning review found 0/10 fully faithful in each baseline run.
 Different rubrics must not be treated as a directly measured numerical quality
 gain. Failed development iterations and the failed shorter-prompt ablation are
 retained in ignored local artifacts. The new ten prompts remain development
 data after using their failures to improve the implementation.
+
+## Ten-prompt recommendation checks
+
+All ten interpreted requests were replayed through Enhanced Hybrid. The frozen
+run used published source `c671fdb`, an isolated SQLite backup of the acquired
+CLAP/metadata cache and the fixed 15-recording DSP/MERT snapshot. It made no new
+preview downloads. The live development run allowed catalog-matched preview
+acquisition and metadata requests; its binary preceded the final exclusion,
+feedback-refresh and preview review fixes. The published-source journey check
+separately verified actual endpoints and spacing. Exact run/binary/report hashes
+and case results are in
+[the compact measurement record](data/enhanced-translation-implementation-results-v1.json).
+
+| Request | Requested | Frozen output | Live output | Remaining limit |
+| --- | ---: | ---: | ---: | --- |
+| Relaxing classical, piano/strings, no singing | 15 | 4 | 12 | Search/evidence budget; instrumentation and mood not all verified |
+| Dramatic 20th-century classical, no film scores | 12 | 0 | 0 | Strict film-score exclusion unsupported |
+| Aerosmith-like workout, excluding Aerosmith | 15 | 15 | 15 | Full count; sound/mood not independently verified |
+| Early Aerosmith, bluesy hard rock, raw feel | 12 | 12 | 12 | Relative artist era and some audible traits unverified |
+| Relaxing electronic, misspelled Löffler | 20 | 20 | 20 | Full count; requested traits not all verified |
+| Löffler/Kiasmos, mostly instrumental | 15 | 15 | 15 | Full count; soft vocal/mood evidence incomplete |
+| Lifting weights, no slow ballads | 20 | 0 | 0 | Strict slow-ballad exclusion unsupported |
+| Running arc, no harsh vocals | 30 minutes | 0 | 0 | Strict vocal subtype unsupported; duration/energy not enforced |
+| Actual NIN → actual Marilyn Manson | 15 | 15 | 15 | Endpoints/count/spacing pass; transition quality unverified |
+| Industrial rock, no Manson or screaming | 15 | 0 | 0 | Strict screaming exclusion unsupported |
+
+Both commands therefore exited nonzero: **6/10 minimum-output/contract checks
+passed, five full counts, one partial count, four unsupported requests**. The
+test's default minimum is one track; a minimum-output pass does not mean the
+requested count or musical quality was fulfilled. No acceptance assertion was
+relaxed to hide these failures. All 81 frozen and 89 live returned tracks were
+labeled **close**, with zero strong matches. The Aerosmith exclusion and actual
+journey endpoints passed their explicit checks. The separate published-source
+journey contained 15 tracks, began with NIN's “Suck,” ended with Manson's
+“Putting Holes In Happiness,” and had no adjacent repeated artists.
+
+The live classical case took 930,372 ms, including approximately 30 seconds of
+resolution and the 15-minute search budget. It recorded 226 new-analysis
+attempts, 81 cache hits and 52,781,512 transient fetched bytes; attempts do not
+mean that all recordings produced usable analyses. The resulting coverage was
+retained as derived data only. Other successful live cases used the cache and
+took 0.735–13.141 seconds. The frozen ten-case run took 6.169 seconds and fetched
+zero bytes. These shared-host, cache-dependent observations are not general
+latency guarantees or a paired before/after quality comparison.
+
+The live CLI exercises CLAP and metadata. The frozen run also supplies the
+compatible DSP/MERT snapshot, but this does not establish that selected tracks
+have useful MERT coverage. Native fixed-cohort evaluation and service regressions
+establish that those paths work; listening benefit remains unmeasured.
+
+To repeat against a chosen cache and previously saved parser report:
+
+```powershell
+bin/musiccheck.exe -mode enhanced_hybrid -online `
+  -catalog "$env:APPDATA/playlist-ai/catalog" -bundle CLAP_BUNDLE_DIRECTORY `
+  -analysis-dir DERIVED_CACHE_DIRECTORY -cache METADATA_SQLITE_PATH `
+  -prompts internal/evaluation/testdata/enhanced-translation-v1.json `
+  -replay bin/translation-parser.json -replay-parsed `
+  -output bin/translation-live.json
+```
+
+Supply actual existing paths. This command opts into identity-matched Deezer
+previews; their audio is transient. For the frozen comparison omit `-online`,
+add `-cached-audio-only -enhanced-evidence FROZEN_ENHANCED_EVIDENCE_JSON`, and use
+isolated metadata/derived-cache copies. Preserve the original source/cache and
+record hashes before each run. The retained frozen run is under
+`C:/Users/pawel/Downloads/playlistai-enhanced-audio/evaluation/translation-frozen-final-20260912`.
 
 ## Remaining limits
 
