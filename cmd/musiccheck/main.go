@@ -504,6 +504,13 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 	if c.Vocal != "" && (m.Preferences.VocalPreference == nil || !contains(m.Preferences.VocalPreference.Value, c.Vocal)) {
 		issues = append(issues, "vocal preference missing")
 	}
+	if c.Vocal != "" && m.Preferences.VocalPreference != nil {
+		for _, criterion := range m.EssentialCriteria {
+			if (criterion.Kind == "genre" || criterion.Kind == "style") && strings.EqualFold(criterion.Value, m.Preferences.VocalPreference.Value) {
+				issues = append(issues, "vocal preference misclassified as a genre requirement")
+			}
+		}
+	}
 	for _, item := range []struct {
 		want   string
 		actual []core.IntentPreference

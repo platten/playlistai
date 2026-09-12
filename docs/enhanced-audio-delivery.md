@@ -128,3 +128,13 @@ adjacency labels, and therefore supplies no superiority claim or calibrated
 weights. Optional AcousticBrainz bulk import awaits usable mappings and data.
 No supervised heads, Music-JEPA or retraining are included. Model packs are
 prepared for distribution but no release has been published by this task.
+
+## Prompt-to-audio follow-up
+
+The same PR also addresses lost prompt meaning, early selection before stronger
+sound alternatives are compared, compatible cached-audio retrieval, and balanced
+CLAP mood/genre facets. [Implementation and retest](prompt-to-audio-improvements.md)
+records the separate code gate and native results. Interpretation checks improved
+from 8/12 in the investigation to 11/12 in the final repeated runs, but the
+remaining interpretation/runtime failure and sparse real-cache outcomes mean
+this is not a passing end-to-end musical-quality evaluation.

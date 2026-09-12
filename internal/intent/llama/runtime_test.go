@@ -147,3 +147,14 @@ func TestNewFallsBackToNextRuntime(t *testing.T) {
 		t.Fatalf("Parse via fallback runtime: %v", err)
 	}
 }
+
+func TestExplicitStagedRuntimeUsesServe(t *testing.T) {
+	for _, name := range []string{"llama-primary", "llama-cpu"} {
+		path := filepath.Join(t.TempDir(), exeName(name))
+		touchExec(t, path)
+		rt := DetectRuntime(path)
+		if !rt.Available || rt.Kind != KindLlama || len(rt.subcmd()) != 1 || rt.subcmd()[0] != "serve" {
+			t.Fatalf("staged explicit runtime: %+v", rt)
+		}
+	}
+}

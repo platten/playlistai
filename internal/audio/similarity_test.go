@@ -18,7 +18,7 @@ func TestUncalibratedSimilaritiesRankWithoutProvingFit(t *testing.T) {
 	}
 	defer session.Close()
 	assessment, err := session.Check(context.Background(), core.TrackRef{ID: "one", Artist: "Fixture", Title: "Recording"}, false)
-	if err != nil || !assessment.Eligible || assessment.PolicyVersion != SimilarityPolicyVersion {
+	if err != nil || !assessment.Eligible || assessment.PolicyVersion != SimilarityPolicyVersion+"+"+QueryPolicyVersion {
 		t.Fatalf("%+v %v", assessment, err)
 	}
 	for _, clause := range assessment.Clauses {

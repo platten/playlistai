@@ -164,6 +164,14 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 		preserveNamedDestination(&wire, prompt)
 		normalizePeriods(&wire, prompt)
 		preserveQualityClauses(&wire, prompt)
+		preserveEmotionalMeaning(&wire, prompt)
+		preserveVocalMeaning(&wire)
+		if err := validateAffirmativeContrast(wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
+		if err := validateConstraintMeaning(&wire, prompt); err != nil {
+			return core.MusicIntent{}, err
+		}
 		if err := validateOpenIntent(wire, prompt); err != nil {
 			return core.MusicIntent{}, err
 		}

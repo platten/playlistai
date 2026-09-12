@@ -41,7 +41,7 @@ func (a *testAnalyzer) EmbedAudio(_ context.Context, samples []float32) ([]float
 	return []float32{1, 0}, nil
 }
 func (a *testAnalyzer) EmbedText(_ context.Context, text string) ([]float32, error) {
-	if text == "rock" || text == "sleepy" {
+	if text == "rock" || text == "sleepy" || text == "Music in the style of rock." || text == "Music with a sleepy mood." {
 		return []float32{0, 1}, nil
 	}
 	return []float32{1, 0}, nil

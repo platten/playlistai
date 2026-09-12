@@ -24,9 +24,8 @@ func preserveQualityClauses(w *Wire, prompt string) {
 				covered = covered || p.Value != "" && (containsReferenceWords(p.Span, value) || containsReferenceWords(p.Value, value))
 			}
 		}
-		for _, c := range w.EssentialCriteria {
-			covered = covered || containsReferenceWords(c.Span, value) || containsReferenceWords(c.Value, value)
-		}
+		// An essential texture can also be a requested preference. Preserve both
+		// roles; audio.Clauses deduplicates the actual model comparison.
 		if !covered {
 			w.Textures = append(w.Textures, WirePreference{Value: value, Span: span, Explicit: true, Influence: "positive"})
 		}
@@ -100,25 +99,68 @@ func discardInventedInstructions(w *Wire, prompt string) {
 // semantics, independent of any genre-to-recording recommendation mapping.
 func normalizePeriods(w *Wire, prompt string) {
 	mentions := centuryPattern.FindAllStringSubmatchIndex(prompt, -1)
-	if len(mentions) != 1 || len(w.Temporal) > 1 {
+	decades := decadePattern.FindAllStringSubmatchIndex(prompt, -1)
+	if len(mentions)+len(decades) != 1 {
 		return
 	}
-	match := mentions[0]
-	n, _ := strconv.Atoi(prompt[match[2]:match[3]])
-	if n < 1 {
-		return
-	}
+	var match []int
+	var first, last int
 	basis, scope := "original_release", "playlist"
-	if containsReferenceWords(prompt, "classical") {
-		basis = "composition"
+	if len(mentions) == 1 {
+		match = mentions[0]
+		n, _ := strconv.Atoi(prompt[match[2]:match[3]])
+		if n < 1 {
+			return
+		}
+		first, last = (n-1)*100+1, n*100
+		if containsReferenceWords(prompt, "classical") {
+			basis = "composition"
+		}
+	} else {
+		match = decades[0]
+		first, _ = strconv.Atoi(prompt[match[2]:match[3]])
+		last = first + 9
+	}
+	if negativePeriodPrefix.MatchString(prompt[:match[0]]) {
+		return // an excluded period must not become a positive date requirement
+	}
+	// A year or century inside an explicitly named entity is identity evidence.
+	for _, group := range [][]WireReference{w.References, w.RequiredTracks, w.Destination} {
+		for _, ref := range group {
+			for _, pos := range literalPositions(prompt, ref.Span) {
+				if pos[0] <= match[0] && pos[1] >= match[1] {
+					return
+				}
+			}
+		}
 	}
 	if len(w.Temporal) == 1 {
 		scope = w.Temporal[0].Scope
+		if w.Temporal[0].Basis == "composition" || w.Temporal[0].Basis == "original_release" {
+			basis = w.Temporal[0].Basis
+		}
 	}
 	if len(w.Destination) == 1 && strings.Index(strings.ToLower(prompt), strings.ToLower(w.Destination[0].Value)) > match[0] {
 		scope = "journey_start"
 	}
-	w.Temporal = []core.TemporalRequirement{{Basis: basis, StartYear: (n-1)*100 + 1, EndYear: n * 100, Scope: scope, Evidence: []core.SourceEvidence{{Text: prompt[match[0]:match[1]], Start: match[0], End: match[1], Explicit: true}}}}
+	w.Temporal = []core.TemporalRequirement{{Basis: basis, StartYear: first, EndYear: last, Scope: scope, Evidence: []core.SourceEvidence{{Text: prompt[match[0]:match[1]], Start: match[0], End: match[1], Explicit: true}}}}
+	// The same source period must not also become a sonic texture query.
+	text := prompt[match[0]:match[1]]
+	kept := w.EssentialCriteria[:0]
+	for _, c := range w.EssentialCriteria {
+		if c.Kind == "texture" && strings.EqualFold(strings.TrimSpace(c.Value), text) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	w.EssentialCriteria = kept
+	textures := w.Textures[:0]
+	for _, p := range w.Textures {
+		if !strings.EqualFold(strings.TrimSpace(p.Value), text) {
+			textures = append(textures, p)
+		}
+	}
+	w.Textures = textures
 }
 
 // Validate source grounding without deciding which musical words are allowed.

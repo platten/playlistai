@@ -11,6 +11,7 @@ import (
 var enhancedPhrasePattern = regexp.MustCompile(`\b(strong sub-bass|strong subbass|bass-heavy|bass heavy|deep bass|more bass|strong bass|lots of transients|sharp attacks|percussive|big dynamic swings|wide dynamics|compressed dynamics|bright sound|dark sound|darker)\b`)
 var enhancedQuotedPattern = regexp.MustCompile(`"[^"\n]*"`)
 var enhancedNegationPattern = regexp.MustCompile(`\b(no|not|less|without|avoid)(\s+[a-z]+){0,2}\s*$`)
+var enhancedAdditivePattern = regexp.MustCompile(`\bnot (?:only|just|merely)\s*$`)
 
 // This Enhanced-only vocabulary extraction leaves the saved intent and existing
 // parser modes untouched. It recognizes narrow production phrases, not arbitrary
@@ -47,7 +48,7 @@ func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 		if last := strings.LastIndexAny(prefix, ".,;:!?"); last >= 0 {
 			prefix = prefix[last+1:]
 		}
-		clauses = append(clauses, core.AudioClause{Kind: "texture", Text: description[location[0]:location[1]], Scope: "playlist", Negative: enhancedNegationPattern.MatchString(prefix)})
+		clauses = append(clauses, core.AudioClause{Kind: "texture", Text: description[location[0]:location[1]], Scope: "playlist", Negative: enhancedNegationPattern.MatchString(prefix) && !enhancedAdditivePattern.MatchString(prefix)})
 	}
 	// Alias duplication must not give one measured axis extra voting weight.
 	seen := map[core.AudioClause]bool{}

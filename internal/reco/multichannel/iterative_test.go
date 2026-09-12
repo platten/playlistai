@@ -115,7 +115,9 @@ func TestBestAvailableDiscoveryDoesNotExtendForSoftArtistDiversity(t *testing.T)
 			engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
 			engine.retriever = retriever
 			got, err := engine.Build(context.Background(), intent)
-			if err != nil || len(got.Tracks) != 10 || source.pulls != 10 || len(retriever.calls) != 0 {
+			// The complete cached pool now avoids provider discovery entirely;
+			// a genre-only request still stops after N actual assessments.
+			if err != nil || len(got.Tracks) != 10 || source.pulls != 0 || len(retriever.calls) != 0 {
 				t.Fatalf("tracks=%d pulls=%d retrievals=%d err=%v", len(got.Tracks), source.pulls, len(retriever.calls), err)
 			}
 			if got.AudioEvidence == nil || len(got.AudioEvidence.Assessments) != 10 {

@@ -130,7 +130,7 @@ func kindOf(path string) RuntimeKind {
 	switch b {
 	case "llama-server":
 		return KindServer
-	case "llama":
+	case "llama", "llama-primary", "llama-cpu":
 		return KindLlama
 	}
 	// An explicit path with an unusual name: assume the classic server.
