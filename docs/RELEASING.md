@@ -1,8 +1,7 @@
 # Releasing
 
-Windows builds prefer the registered self-hosted Windows x86-64 runner.
-All Linux and macOS jobs use GitHub-hosted runners. See
-[runner routing and the hosted override](self-hosted-runners.md).
+All Windows, Linux and macOS jobs use GitHub-hosted runners. See
+[runner routing](self-hosted-runners.md).
 
 Playlist AI ships two things per platform: a native **installer** (the primary,
 recommended path) and a **portable archive** of the raw binary. Both are built
