@@ -7,6 +7,7 @@ export interface PlaylistControls {
   artistDiversity: number;
   transitionSmoothness: number;
   count: number;
+  countExplicit?: boolean;
   excludeSeedArtists: boolean | undefined;
   runSeed: string;
 }

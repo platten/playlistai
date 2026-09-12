@@ -10,14 +10,15 @@ import (
 )
 
 type Issue struct {
-	Kind         core.ReferenceKind         `json:"kind"`
-	Influence    core.Influence             `json:"influence"`
-	Query        string                     `json:"query"`
-	Status       core.ResolutionStatus      `json:"status"`
-	Required     bool                       `json:"required"`
-	Inferred     bool                       `json:"inferred"`
-	Role         string                     `json:"role"`
-	Alternatives []core.ResolutionCandidate `json:"alternatives"`
+	Kind               core.ReferenceKind         `json:"kind"`
+	Influence          core.Influence             `json:"influence"`
+	Query              string                     `json:"query"`
+	Status             core.ResolutionStatus      `json:"status"`
+	Required           bool                       `json:"required"`
+	Inferred           bool                       `json:"inferred"`
+	Role               string                     `json:"role"`
+	Alternatives       []core.ResolutionCandidate `json:"alternatives"`
+	SpellingSuggestion *core.ResolutionCandidate  `json:"spellingSuggestion,omitempty"`
 }
 
 // Apply annotates every typed reference with the resolver result and selects
@@ -55,6 +56,12 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 	out := make([]core.IntentReference, len(references))
 	for i, reference := range references {
 		var result core.ReferenceResolution
+		if reference.SpellingDecision != "accepted" && reference.Resolution != nil && reference.Resolution.Selected != nil && IsSpellingCandidate(*reference.Resolution.Selected) {
+			reference.TrackID, reference.Resolution = "", nil
+		}
+		if reference.SpellingDecision == "original" {
+			reference.TrackID, reference.Resolution = "", nil
+		}
 		if reference.Resolution != nil && reference.Resolution.CatalogVersion == resolver.CatalogVersion() &&
 			(reference.Kind == core.ReferenceAlbum || reference.Resolution.Status == core.ResolutionResolved && reference.Resolution.Selected != nil) {
 			result = *reference.Resolution
@@ -66,11 +73,42 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 			reference.TrackID = result.Selected.Representatives[0].TrackID
 		} else {
 			reference.TrackID = ""
-			issues = append(issues, Issue{Kind: reference.Kind, Influence: reference.Influence, Query: reference.Query, Status: result.Status, Required: required, Alternatives: result.Alternatives})
+			issue := Issue{Kind: reference.Kind, Influence: reference.Influence, Query: reference.Query, Status: result.Status, Required: required, Alternatives: result.Alternatives}
+			if reference.SpellingDecision == "" && result.Status == core.ResolutionAmbiguous && len(result.Alternatives) == 1 && IsSpellingCandidate(result.Alternatives[0]) {
+				candidate := result.Alternatives[0]
+				issue.SpellingSuggestion = &candidate
+			}
+			issues = append(issues, issue)
 		}
 		out[i] = reference
 	}
 	return out, issues
+}
+
+// IsSpellingCandidate identifies a proposal that needs a user's identity choice.
+func IsSpellingCandidate(candidate core.ResolutionCandidate) bool {
+	for _, evidence := range candidate.Evidence {
+		if evidence.Match == "spelling" {
+			return true
+		}
+	}
+	return false
+}
+
+// SpellingConfirmationError runs before online recovery, which must not choose
+// another artist while a user's spelling decision is still pending.
+func SpellingConfirmationError(issues []Issue) error {
+	for _, issue := range issues {
+		if issue.Inferred || issue.Status != core.ResolutionAmbiguous {
+			continue
+		}
+		for _, candidate := range issue.Alternatives {
+			if IsSpellingCandidate(candidate) {
+				return fmt.Errorf("%w: confirm the artist spelling for %q", core.ErrAmbiguousReference, issue.Query)
+			}
+		}
+	}
+	return nil
 }
 
 func BlockingError(issues []Issue) error {

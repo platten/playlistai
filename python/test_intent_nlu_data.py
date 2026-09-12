@@ -39,6 +39,30 @@ class DataTests(unittest.TestCase):
             validate_record(row)
         self.assertEqual(byte_boundaries("🎵ö"), [0, 4, 6])
 
+    def test_approved_derivative_preserves_user_amendments_and_operator_boundaries(self):
+        rows = read_records(Path(__file__).parents[1] / "internal/evaluation/testdata/intent-nlu-reviewed-v1.json")
+        self.assertEqual(len(rows), 40)
+        for row in rows:
+            validate_record(row, require_reviewed=True)
+        by_id = {row["id"]: row for row in rows}
+        self.assertEqual(by_id["duration-positive"]["expectedOutcome"]["durationToleranceSeconds"], 60)
+        typo = by_id["typo-loeffler"]
+        self.assertFalse(typo["confirmation"]["reject"]["allowFuzzyCorrection"])
+        self.assertNotIn("canonical", next(s for s in typo["spans"] if s["kind"] == "artist"))
+        broken = copy.deepcopy(by_id["classical-silent"])
+        operator = next(s for s in broken["spans"] if s["kind"] == "operator" and s["text"] == "no")
+        operator["start"] = broken["prompt"].index("piano") + 3
+        operator["end"] = operator["start"] + 2
+        with self.assertRaisesRegex(ValueError, "inside another word"):
+            validate_record(broken, require_reviewed=True)
+
+    def test_possible_spelling_identity_keeps_split_without_promoting_it(self):
+        records = [fixture("christrian loeffler", "a"), fixture("Christian Löffler", "b"), fixture("Beta", "c"), fixture("Gamma", "d")]
+        records[0]["spans"][0]["candidateCanonical"] = "Christian Löffler"
+        _, assignments = grouped_splits(records, "fixed")
+        self.assertEqual(assignments["a"], assignments["b"])
+        self.assertNotIn("canonical", records[0]["spans"][0])
+
     def test_missing_review_metadata_and_dangling_relations_fail(self):
         row = fixture()
         row["review"]["reviewedAt"] = "2026-01-01"

@@ -77,10 +77,13 @@ func (c *Catalog) CatalogVersion() string { return c.version }
 // normalized names and aliases win before prefix/token fallback. No query word
 // is silently removed.
 func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	if ref.SpellingDecision == "original" {
+		ref.TrackID = "" // a stale corrected recording cannot override rejection
+	}
 	if ref.Kind == core.ReferenceAlbum {
 		return core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: c.version}
 	}
-	key := c.version + "\x00" + string(ref.Kind) + "\x00" + ref.TrackID + "\x00" + normalizeUnicodeSearch(ref.Query)
+	key := c.version + "\x00" + string(ref.Kind) + "\x00" + ref.TrackID + "\x00" + normalizeUnicodeSearch(ref.Query) + "\x00" + ref.SpellingDecision
 	c.resolutionMu.RLock()
 	if cached, ok := c.resolutionCache[key]; ok {
 		c.resolutionMu.RUnlock()
@@ -92,7 +95,7 @@ func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResol
 	if ref.TrackID != "" {
 		result = c.resolveID(ref.Kind, ref.TrackID)
 	} else if ref.Kind == core.ReferenceArtist {
-		result = c.resolveArtist(ref.Query)
+		result = c.resolveArtistWithSpelling(ref.Query, ref.SpellingDecision != "original")
 	} else {
 		result = c.resolveTrack(ref.Query)
 	}
@@ -102,7 +105,7 @@ func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResol
 		if len(lean) > 0 && len(lean) < len(tokens) {
 			query := strings.Join(lean, " ")
 			if ref.Kind == core.ReferenceArtist {
-				result = c.resolveArtist(query)
+				result = c.resolveArtistWithSpelling(query, ref.SpellingDecision != "original")
 			} else {
 				result = c.resolveTrack(query)
 			}
@@ -151,7 +154,7 @@ func (c *Catalog) resolveID(kind core.ReferenceKind, id string) core.ReferenceRe
 	return resolved(candidate)
 }
 
-func (c *Catalog) resolveArtist(query string) core.ReferenceResolution {
+func (c *Catalog) resolveArtistWithSpelling(query string, allowSpelling bool) core.ReferenceResolution {
 	latin, unicodeQuery := normalizeSearch(query), normalizeUnicodeSearch(query)
 	if latin == "" && unicodeQuery == "" {
 		return unresolved()
@@ -191,6 +194,9 @@ func (c *Catalog) resolveArtist(query string) core.ReferenceResolution {
 		})
 	}
 	if len(candidates) == 0 {
+		if !allowSpelling {
+			return unresolved()
+		}
 		return c.resolveArtistTypo(query)
 	}
 	// Rank identities before computing medoids. Broad/short artist names can

@@ -11,6 +11,22 @@ func (m MusicIntent) Validate() error {
 	if m.DurationSeconds < 0 || m.DurationSeconds > 24*60*60 {
 		return fmt.Errorf("intent: duration must be between zero and 24 hours")
 	}
+	if m.DurationToleranceSeconds < 0 || m.DurationToleranceSeconds > 24*60*60 || m.DurationSeconds == 0 && m.DurationToleranceSeconds != 0 {
+		return fmt.Errorf("intent: duration tolerance requires a target and must be between zero and 24 hours")
+	}
+	spellingGroups := [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)}
+	for _, endpoint := range []*IntentReference{m.Start, m.Destination} {
+		if endpoint != nil {
+			spellingGroups = append(spellingGroups, []IntentReference{*endpoint})
+		}
+	}
+	for _, group := range spellingGroups {
+		for _, ref := range group {
+			if ref.SpellingDecision != "" && ref.SpellingDecision != "original" && ref.SpellingDecision != "accepted" {
+				return fmt.Errorf("intent: invalid spelling decision")
+			}
+		}
+	}
 	if m.Start != nil && (m.Start.Influence == InfluenceNegative || (m.Start.Kind != ReferenceArtist && m.Start.Kind != ReferenceAlbum && m.Start.Kind != ReferenceTrack) || strings.TrimSpace(m.Start.Query) == "" && m.Start.TrackID == "") {
 		return fmt.Errorf("intent: invalid starting endpoint")
 	}

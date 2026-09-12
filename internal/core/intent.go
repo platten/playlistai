@@ -8,7 +8,7 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 9
+	CurrentIntentVersion = 10
 	DefaultCount         = 20
 	DefaultCreativity    = 0.5
 	DefaultNoise         = 0.0
@@ -81,12 +81,15 @@ type ReferenceResolution struct {
 }
 
 type IntentReference struct {
-	Kind       ReferenceKind        `json:"kind"`
-	Query      string               `json:"query"`
-	TrackID    string               `json:"trackId"`
-	Influence  Influence            `json:"influence"`
-	Evidence   []SourceEvidence     `json:"evidence"`
-	Resolution *ReferenceResolution `json:"resolution,omitempty"`
+	// SpellingDecision records the user's resolution choice without changing
+	// the original source evidence. Empty means no explicit choice was made.
+	SpellingDecision string               `json:"spellingDecision,omitempty"`
+	Kind             ReferenceKind        `json:"kind"`
+	Query            string               `json:"query"`
+	TrackID          string               `json:"trackId"`
+	Influence        Influence            `json:"influence"`
+	Evidence         []SourceEvidence     `json:"evidence"`
+	Resolution       *ReferenceResolution `json:"resolution,omitempty"`
 }
 
 // MusicalCriterion is a defining part of the requested music. Unlike a soft
@@ -213,28 +216,30 @@ type IntentConstraints struct {
 }
 
 type MusicIntent struct {
-	Translation         *IntentTranslation       `json:"translation,omitempty"`
-	Start               *IntentReference         `json:"start,omitempty"`
-	DurationSeconds     int                      `json:"durationSeconds,omitempty"`
-	VerificationPolicy  VerificationPolicy       `json:"verificationPolicy"`
-	Temporal            []TemporalRequirement    `json:"temporal"`
-	Destination         *IntentReference         `json:"destination,omitempty"`
-	Knowledge           *KnowledgeSnapshot       `json:"knowledge,omitempty"`
-	AnchorAttempts      []InferredAnchor         `json:"anchorAttempts"`
-	OriginalDescription string                   `json:"originalDescription"`
-	GenreExpansions     []GenreExpansion         `json:"genreExpansions"`
-	Version             int                      `json:"version"`
-	References          []IntentReference        `json:"references"`
-	InferredAnchors     []InferredAnchor         `json:"inferredAnchors"`
-	RequiredTracks      []IntentReference        `json:"requiredTracks"`
-	EssentialCriteria   []MusicalCriterion       `json:"essentialCriteria"`
-	Preferences         SemanticPreferences      `json:"preferences"`
-	HardConstraints     []HardConstraint         `json:"hardConstraints"`
-	Controls            IntentControls           `json:"controls"`
-	Journey             JourneyPlan              `json:"journey"`
-	Unsupported         []UnsupportedRequirement `json:"unsupportedRequirements"`
-	Capabilities        []CapabilityStatus       `json:"capabilities"`
-	InterpretationNotes string                   `json:"interpretationNotes"`
+	Translation              *IntentTranslation       `json:"translation,omitempty"`
+	Start                    *IntentReference         `json:"start,omitempty"`
+	DurationSeconds          int                      `json:"durationSeconds,omitempty"`
+	DurationToleranceSeconds int                      `json:"durationToleranceSeconds,omitempty"`
+	TrackCountExplicit       bool                     `json:"trackCountExplicit,omitempty"`
+	VerificationPolicy       VerificationPolicy       `json:"verificationPolicy"`
+	Temporal                 []TemporalRequirement    `json:"temporal"`
+	Destination              *IntentReference         `json:"destination,omitempty"`
+	Knowledge                *KnowledgeSnapshot       `json:"knowledge,omitempty"`
+	AnchorAttempts           []InferredAnchor         `json:"anchorAttempts"`
+	OriginalDescription      string                   `json:"originalDescription"`
+	GenreExpansions          []GenreExpansion         `json:"genreExpansions"`
+	Version                  int                      `json:"version"`
+	References               []IntentReference        `json:"references"`
+	InferredAnchors          []InferredAnchor         `json:"inferredAnchors"`
+	RequiredTracks           []IntentReference        `json:"requiredTracks"`
+	EssentialCriteria        []MusicalCriterion       `json:"essentialCriteria"`
+	Preferences              SemanticPreferences      `json:"preferences"`
+	HardConstraints          []HardConstraint         `json:"hardConstraints"`
+	Controls                 IntentControls           `json:"controls"`
+	Journey                  JourneyPlan              `json:"journey"`
+	Unsupported              []UnsupportedRequirement `json:"unsupportedRequirements"`
+	Capabilities             []CapabilityStatus       `json:"capabilities"`
+	InterpretationNotes      string                   `json:"interpretationNotes"`
 
 	// Deprecated v1/v2 fields. Normalized migrates from and backfills these so
 	// existing history and the current recommendation engine remain compatible.

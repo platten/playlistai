@@ -102,6 +102,9 @@ func (c *Client) prepareContext(ctx context.Context, intent core.MusicIntent, ca
 }
 
 func (c *Client) referenceContext(ctx context.Context, intent core.MusicIntent, ref core.IntentReference, scope string, cat ports.Catalog, resolver ports.ReferenceResolver) (core.ContextSeedPlan, bool) {
+	if ref.SpellingDecision == "original" {
+		return core.ContextSeedPlan{}, false
+	}
 	resolution := ref.Resolution
 	if resolution == nil || resolution.CatalogVersion != resolver.CatalogVersion() || resolution.Status != core.ResolutionResolved {
 		local := resolver.ResolveReference(ref)

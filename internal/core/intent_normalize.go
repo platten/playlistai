@@ -16,6 +16,11 @@ func (m MusicIntent) Normalized() MusicIntent {
 }
 
 func normalizeIntent(out MusicIntent) MusicIntent {
+	if out.DurationSeconds > 0 && out.DurationToleranceSeconds == 0 {
+		// Missing tolerance in historical requests adopts the documented
+		// one-minute default; no historical target or explicit count is changed.
+		out.DurationToleranceSeconds = DefaultDurationToleranceSeconds
+	}
 	out.Translation = cloneTranslation(out.Translation)
 	if out.Start != nil {
 		refs := cleanReferences([]IntentReference{*out.Start}, false)

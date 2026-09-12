@@ -59,7 +59,7 @@ func TestWirePayloadPreservesStartDurationAndScopedPreferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.DurationSeconds != 4500 || m.Start == nil || m.Start.Query != "Nine Inch Nails" || m.Destination == nil || m.Destination.Query != "Marilyn Manson" || core.WantsInstrumental(m) {
+	if m.DurationSeconds != 4500 || m.DurationToleranceSeconds != 60 || m.HasExplicitTrackCount() || m.Start == nil || m.Start.Query != "Nine Inch Nails" || m.Destination == nil || m.Destination.Query != "Marilyn Manson" || core.WantsInstrumental(m) {
 		t.Fatalf("consumed wire parity lost: %+v", m)
 	}
 	if p := m.Preferences.VocalRequests(); len(p) != 1 || p[0].Scope != "journey_start" || p[0].Strength != "required" {

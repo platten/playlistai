@@ -1,5 +1,10 @@
 import type { PlaylistResult } from "./api";
 
+export function hasFixedTrackCount(intent: PlaylistResult["intent"] | undefined) {
+  return !intent?.durationSeconds || intent.trackCountExplicit || !intent.translation ||
+    (intent.translation.atoms ?? []).some((atom) => atom.kind === "count" && atom.polarity === "positive" && atom.strength === "required");
+}
+
 /** Track count and musical fulfillment are independent. A full-length result
  * can still have unverified characteristics or an incomplete journey. */
 export function playlistOutcomeMessage(result: PlaylistResult, fallbackCount?: number) {
@@ -10,7 +15,7 @@ export function playlistOutcomeMessage(result: PlaylistResult, fallbackCount?: n
   if (state !== "partial") return null;
 
   const actual = result.tracks?.length ?? 0;
-  const requested = result.intent?.controls?.totalTrackCount || result.intent?.count || fallbackCount;
+  const requested = hasFixedTrackCount(result.intent) ? result.intent?.controls?.totalTrackCount || result.intent?.count || fallbackCount : undefined;
   if (requested && actual < requested) {
     return `Created ${actual} of ${requested} requested tracks`;
   }

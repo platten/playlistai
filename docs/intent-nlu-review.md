@@ -1,9 +1,10 @@
 # Review the English intent pilot
 
-These **40 prompt interpretations are proposals, not approved training labels**.
-No task-adapted intent model has been trained from this batch. Your review
-establishes what the app should understand; it does not label how recordings
-sound. Music/audio learning remains unsupervised.
+All **40 interpretations are approved**, with the user's amendments to prompts
+19 and 36 below. Review establishes what the app should understand; it does not
+label how recordings sound. Music/audio learning remains unsupervised. The first
+trained role pilot remains inactive because calibration did not meet the
+activation gate. See [approval and pilot results](intent-nlu-approved-review.md).
 
 Review one batch at a time. For each numbered prompt, mark **correct** or give a
 short correction to the interpretation. “Unclear” is a useful answer. Pay
@@ -11,12 +12,13 @@ particular attention to whether an artist must appear, only guides the sound,
 or is excluded; whether a trait applies everywhere or just to a section; and
 whether a preference is being turned into a strict requirement.
 
-The [annotation JSON](../internal/evaluation/testdata/intent-nlu-review-v1.json)
-retains exact original UTF-8 byte spans, separate operators and their proposed
-links. Every record has `review.status: unreviewed`. A maintainer must apply
-actual review responses, preserve the original proposal and record reviewer and
-timestamp; no script auto-approves it. The typo “christrian loeffler” stays in the
-original text even if the proposed identity is Christian Löffler.
+The [original proposal](../internal/evaluation/testdata/intent-nlu-review-v1.json)
+is preserved. The [approved derivative](../internal/evaluation/testdata/intent-nlu-reviewed-v1.json)
+records the actual batch approvals, amendments and approval-capture timestamp.
+Three mechanical operator offsets were repaired: `no` inside `piano` and `or`
+inside `workout` now point to the intended standalone words. Meanings and prompt
+text are unchanged. The typo stays literal; its proposed identity is a candidate
+requiring confirmation, not an automatically approved correction.
 
 ## Batch 1
 
@@ -96,7 +98,7 @@ original text even if the proposed identity is Christian Löffler.
 
 19. **duration-positive** — “One hour and fifteen minutes of relaxing electronic music for work, mostly instrumental.”
 
-   Proposed meaning: 4500 seconds total; instrumental preferred, not universal.
+   Approved meaning: Target 4500 seconds within ±60 seconds (4440–4560 inclusive), with variable track count; instrumental preferred, not universal.
 
 20. **duration-negative** — “Twelve tracks, not a twelve-minute playlist: relaxing electronic music for work.”
 
@@ -168,7 +170,7 @@ original text even if the proposed identity is Christian Löffler.
 
 36. **typo-loeffler** — “Eight tracks like christrian loeffler for relaxing, and singing is okay.”
 
-   Proposed meaning: Preserve literal typo as a candidate artist mention; suggested identity requires resolution.
+   Approved meaning: Show “Did you mean Christian Löffler?” Use the corrected artist if accepted; otherwise retain “christrian loeffler” and prevent silent spelling correction. Cancel leaves the prompt editable without generating.
 
 37. **soft-instrumental** — “Thirteen electronic tracks. Include some instrumental pieces; vocals are okay too.”
 
@@ -312,9 +314,10 @@ PyTorch encoder with maximum absolute error 2.082e-7 and minimum cosine
 0.999999999999381. These establish numerical parity for these fixtures only.
 The sixteen offline regressions pass, including one epoch and ONNX export of a
 tiny random DistilBERT with temporary synthetic test labels. The real review
-batch remains **40 unreviewed records, zero approvals**, and has not been used
-to train a task-adapted model. No semantic-calibration or playlist-quality
-improvement is established by these checks.
+batch at that initial run had **40 unreviewed records, zero approvals**. The later
+approval, actual training and failed activation gate are recorded in
+[the approved pilot results](intent-nlu-approved-review.md). No musical-quality
+improvement is established by numerical parity.
 
 Use a new output directory for each preparation/training/export; existing
 outputs are not overwritten. An unreviewed-record error means obtain the real

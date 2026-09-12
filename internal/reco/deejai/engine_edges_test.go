@@ -36,7 +36,7 @@ func TestFallbackReferenceResolutionKeepsIdentityAndInfluence(t *testing.T) {
 	if !reflect.DeepEqual(refs, got) {
 		t.Fatalf("journey fallback dropped a query or included a negative reference: %+v", refs)
 	}
-	if engine.AlgorithmVersion() != "deejai/v5" || OnlyAlgorithmVersion != AlgorithmVersion+"+engine-only/v2" {
+	if engine.AlgorithmVersion() != "deejai/v5" || OnlyAlgorithmVersion != AlgorithmVersion+"+engine-only/v3" {
 		t.Fatal("baseline behavior change lacks a replay version")
 	}
 }

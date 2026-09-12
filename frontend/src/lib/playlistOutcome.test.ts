@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { PlaylistResult } from "./api";
-import { playlistOutcomeMessage } from "./playlistOutcome";
+import { hasFixedTrackCount, playlistOutcomeMessage } from "./playlistOutcome";
 
 function result(value: unknown): PlaylistResult {
   return value as PlaylistResult;
 }
 
 describe("playlistOutcomeMessage", () => {
+  it("does not call a duration-only result a count shortfall", () => {
+    const r = result({ outcome: { state: "partial" }, tracks: [{}, {}], intent: { durationSeconds: 4500, count: 20, translation: { atoms: [] } } });
+    expect(hasFixedTrackCount(r.intent)).toBe(false);
+    expect(playlistOutcomeMessage(r, 20)).toBe("Playlist created with 2 tracks");
+    r.intent.trackCountExplicit = true;
+    expect(playlistOutcomeMessage(r, 20)).toBe("Created 2 of 20 requested tracks");
+  });
   it.each([undefined, "fulfilled", "complete", "future_state"])(
     "does not invent a warning for state %s", (state) => {
       expect(playlistOutcomeMessage(result({ outcome: { state } }))).toBeNull();

@@ -62,7 +62,7 @@ func seedNameMatches(value string, names []string) bool {
 func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, p ports.Progress) core.MusicIntent {
 	resolved := map[string]core.IntentReference{}
 	resolve := func(ref core.IntentReference) core.IntentReference {
-		if ref.Kind != core.ReferenceArtist || ref.Influence != core.InfluencePositive || ctx.Err() != nil {
+		if ref.Kind != core.ReferenceArtist || ref.Influence != core.InfluencePositive || ref.SpellingDecision == "original" || ctx.Err() != nil {
 			return ref
 		}
 		if ref.Resolution != nil && ref.Resolution.CatalogVersion == resolver.CatalogVersion() && ref.Resolution.Status == core.ResolutionResolved {

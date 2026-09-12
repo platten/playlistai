@@ -91,14 +91,18 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	}
 	intent.Temporal = periods
 	intent.DurationSeconds = 0
+	intent.DurationToleranceSeconds = 0
+	intent.TrackCountExplicit = false
 	hasCount, hasDuration := false, false
 	for _, a := range extracted.Atoms {
 		switch a.Kind {
 		case "count":
 			intent.Controls.TotalTrackCount, _ = strconv.Atoi(a.Value)
+			intent.TrackCountExplicit = true
 			hasCount = true
 		case "duration":
 			intent.DurationSeconds, _ = strconv.Atoi(a.Value)
+			intent.DurationToleranceSeconds = core.DefaultDurationToleranceSeconds
 			hasDuration = true
 		case "duration_range":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Value, Reason: "A duration range is preserved, but the current playlist duration control requires one target duration.", Evidence: a.Evidence})

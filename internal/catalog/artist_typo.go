@@ -54,6 +54,7 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 		}
 		// Umlaut transliteration is an alternate spelling, not a new identity.
 		german := strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "ß", "ss").Replace(strings.ToLower(artist))
+		bestEdits := 2
 		for _, variant := range []string{key, normalizeUnicodeSearch(german)} {
 			words := strings.Fields(variant)
 			if len(words) != len(q) {
@@ -63,12 +64,16 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 			for i := range q {
 				edits += boundedNameDistance(q[i], words[i])
 			}
-			if edits <= 1 {
-				seen[key] = true
-				candidates = append(candidates, core.ResolutionCandidate{Kind: core.ReferenceArtist, EntityID: "artist:" + key, Artist: artist, Confidence: .9,
-					Evidence: []core.ResolutionEvidence{{Match: "spelling", NormalizedQuery: normalizeUnicodeSearch(query), MatchedText: artist}}})
-				break
+			bestEdits = min(bestEdits, edits)
+		}
+		if bestEdits <= 1 {
+			match := "spelling"
+			if bestEdits == 0 {
+				match = "alias" // a standard transliteration needs no correction
 			}
+			seen[key] = true
+			candidates = append(candidates, core.ResolutionCandidate{Kind: core.ReferenceArtist, EntityID: "artist:" + key, Artist: artist, Confidence: .9,
+				Evidence: []core.ResolutionEvidence{{Match: match, NormalizedQuery: normalizeUnicodeSearch(query), MatchedText: artist}}})
 		}
 	}
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].EntityID < candidates[j].EntityID })
@@ -81,7 +86,7 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 	for i := range candidates {
 		candidates[i].Representatives = c.artistRepresentatives(candidates[i].Artist)
 	}
-	if len(candidates) > 1 {
+	if len(candidates) > 1 || candidates[0].Evidence[0].Match == "spelling" {
 		return core.ReferenceResolution{Status: core.ResolutionAmbiguous, Alternatives: candidates}
 	}
 	return resolved(candidates[0])

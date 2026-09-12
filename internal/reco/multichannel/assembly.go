@@ -12,11 +12,14 @@ import (
 // when checking can stop and to present the result. It does not fetch candidates
 // or relax requirements. Context identities are canonicalized at this boundary.
 type candidateAssembly struct {
-	selection       ports.SelectionResult
-	sequence        ports.SequenceResult
-	stageMembership []map[string]bool
-	reserveReasons  []core.OutcomeReason
-	countConflict   bool
+	selection             ports.SelectionResult
+	sequence              ports.SequenceResult
+	stageMembership       []map[string]bool
+	reserveReasons        []core.OutcomeReason
+	countConflict         bool
+	durationRequested     bool
+	durationMatched       bool
+	durationVariableCount bool
 }
 
 type completedAssembly struct {
@@ -52,7 +55,7 @@ func (o *Orchestrator) assemblyKey(candidates []core.Candidate, intent core.Musi
 }
 
 func (a candidateAssembly) complete(count int) bool {
-	if a.countConflict || len(a.reserveReasons) > 0 || len(a.sequence.Tracks) != count {
+	if a.countConflict || len(a.reserveReasons) > 0 || !a.durationVariableCount && len(a.sequence.Tracks) != count || a.durationRequested && !a.durationMatched {
 		return false
 	}
 	for _, notice := range a.sequence.Notices {
@@ -88,7 +91,8 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	if err != nil {
 		return out, err
 	}
-	if len(reasons) > 0 && len(required)+len(reserved) >= intent.Count {
+	variableDuration := intent.DurationSeconds > 0 && !intent.HasExplicitTrackCount()
+	if len(required)+len(reserved) > core.MaxCount || len(reasons) > 0 && !variableDuration && len(required)+len(reserved) >= intent.Count {
 		out.countConflict = true
 		return out, nil
 	}
@@ -96,10 +100,14 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	for _, candidate := range reserved {
 		fixed = append(fixed, candidate.Track)
 	}
+	selectionCount := intent.Count
+	if variableDuration {
+		selectionCount = max(selectionCount, len(fixed))
+	}
 	recent := resolvedContextTracks(o.cat, request.RecentSelections)
 	out.selection, err = o.selector.Select(ctx, remaining, ports.SelectionRequest{
 		Intent: intent, Required: fixed, Waypoints: waypoints,
-		RecentSelections: recent, Count: intent.Count - len(fixed),
+		RecentSelections: recent, Count: selectionCount - len(fixed),
 	})
 	if err != nil {
 		return out, err
@@ -117,11 +125,55 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	if err != nil {
 		return out, err
 	}
+	initialSequenceIntent := intent
+	if variableDuration {
+		initialSequenceIntent.Count, initialSequenceIntent.Controls.TotalTrackCount = selectionCount, selectionCount
+	}
 	out.sequence, err = o.sequencer.Sequence(ctx, ports.SequenceRequest{
-		Intent: intent, Candidates: out.selection.Candidates, Required: required, Waypoints: waypoints, EnhancedAudio: request.EnhancedAudio,
+		Intent: initialSequenceIntent, Candidates: out.selection.Candidates, Required: required, Waypoints: waypoints, EnhancedAudio: request.EnhancedAudio,
 		ReferenceAnchors: references, RecentSelections: recent,
 		Trajectory: trajectory, Seed: seed, CategoryStages: out.stageMembership,
 	})
+	if err == nil && intent.DurationSeconds > 0 {
+		out.durationRequested, out.durationVariableCount = true, variableDuration
+		assessment := o.assessDuration(out.sequence.Tracks, intent)
+		if assessment.State != core.EvidenceMatch {
+			// The normal selector establishes the same relevance floor and fit
+			// policy for every alternative before duration can consider it.
+			pool, poolErr := o.selector.Select(ctx, remaining, ports.SelectionRequest{Intent: intent, Required: fixed, Waypoints: waypoints, RecentSelections: recent, Count: len(remaining)})
+			if poolErr != nil {
+				return out, poolErr
+			}
+			proposed, fitErr := o.fitDuration(ctx, intent, out.selection.Candidates, pool.Candidates, required, len(reserved))
+			if fitErr != nil {
+				return out, fitErr
+			}
+			stages, stageErr := o.categoryMembership(ctx, append(candidatesForTracks(required), proposed...), intent)
+			if stageErr != nil {
+				return out, stageErr
+			}
+			sequenceIntent := intent
+			if variableDuration {
+				sequenceIntent.Count = len(proposed) + len(required)
+				sequenceIntent.Controls.TotalTrackCount = sequenceIntent.Count
+			}
+			sequence, sequenceErr := o.sequencer.Sequence(ctx, ports.SequenceRequest{Intent: sequenceIntent, Candidates: proposed, Required: required, Waypoints: waypoints, EnhancedAudio: request.EnhancedAudio,
+				ReferenceAnchors: references, RecentSelections: recent, Trajectory: trajectory, Seed: seed, CategoryStages: stages})
+			if sequenceErr == nil && len(sequence.Tracks) == len(proposed)+len(required) {
+				next := o.assessDuration(sequence.Tracks, intent)
+				before := durationObjective{len(assessment.UnknownTrackIDs), durationDistance(assessment.KnownMilliseconds, intent)}
+				after := durationObjective{len(next.UnknownTrackIDs), durationDistance(next.KnownMilliseconds, intent)}
+				if after.better(before) {
+					out.selection.Candidates, out.sequence, out.stageMembership = proposed, sequence, stages
+					assessment = next
+				}
+			}
+			if ctx.Err() != nil {
+				return out, ctx.Err()
+			}
+		}
+		out.durationMatched = assessment.State == core.EvidenceMatch
+	}
 	if err == nil && key != "" && out.complete(intent.Count) {
 		*o.assemblyCache = completedAssembly{key: key, result: out}
 	}

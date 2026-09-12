@@ -265,6 +265,7 @@ func (c *Client) one(ctx context.Context, ref core.TrackRef) core.EnrichedTrack 
 }
 
 type mbRecording struct {
+	Length           *int64           `json:"length"`
 	FirstReleaseDate string           `json:"first-release-date"`
 	Genres           []mbTag          `json:"genres"`
 	Tags             []mbTag          `json:"tags"`
@@ -365,6 +366,9 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		for _, tag := range group.tags {
 			et.GenreTags = append(et.GenreTags, core.AttributedGenreTag{Name: tag.Name, Votes: tag.Count, Source: "musicbrainz", EntityID: top.ID, Facet: group.facet})
 		}
+	}
+	if top.Length != nil && *top.Length > 0 && top.ID != "" {
+		et.FullRecordingDuration = &core.RecordingDuration{Milliseconds: *top.Length, Source: "musicbrainz", RecordingID: top.ID}
 	}
 	if len(top.ISRCs) > 0 {
 		et.ISRC = top.ISRCs[0]

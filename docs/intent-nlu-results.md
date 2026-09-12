@@ -1,5 +1,9 @@
 # Compact NLU implementation: measured results
 
+This records the initial implementation before annotation approval. See the
+[approved-batch follow-up](intent-nlu-approved-review.md) for current training,
+duration-tolerance and artist-confirmation behavior.
+
 12 September 2026. This extends the consolidated Enhanced Hybrid PR. See
 [implementation and packaging](intent-nlu-implementation.md) and
 [annotation review and training](intent-nlu-review.md).
