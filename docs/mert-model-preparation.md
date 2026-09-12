@@ -238,8 +238,10 @@ total **201,141,124 bytes**; the five compressed model packs total
 **1,194,532,691 bytes** (each is about 237–242 MB). These are asset packs, not
 complete application installers. `pack-inventory.json`,
 `architecture-inspection.json` and `package-inspection.json` retain that evidence.
-Native Linux/macOS/Windows ARM64 execution, complete installer execution on every target,
-and held-out musical suitability are not established by this Windows export.
+Native Linux amd64 worker parity, cancellation and reload subsequently passed in
+Ubuntu 24.04.4 WSL2; see [runtime validation](enhanced-runtime-validation.md).
+Native macOS/Linux ARM64/Windows ARM64 inference, complete installer execution on
+every target, and held-out musical suitability remain unestablished.
 Subsequent Windows worker memory measurements are recorded separately in
 [runtime validation](enhanced-runtime-validation.md); they are not all-platform bounds.
 The synthetic fixtures establish numerical behavior only. For musical evaluation,

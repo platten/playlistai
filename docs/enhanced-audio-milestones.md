@@ -227,7 +227,8 @@ The exported FP32 MERT graph passed eight PyTorch/ONNX reference cases; the nati
 Windows worker passed reference health checks, cancellation and reload. Packs
 were assembled and their binary architectures verified for Windows amd64/arm64,
 Linux amd64/arm64 and macOS arm64. None contains Python. Actual native inference
-was exercised only on Windows amd64; other native hosts and complete installers
+was exercised on Windows amd64 and subsequently Linux amd64 in Ubuntu WSL2.
+Other native inference hosts, Linux GUI behavior and complete installer execution
 remain release-validation requirements.
 
 Eight of eleven preselected catalog tracks had uniquely verified Deezer previews.

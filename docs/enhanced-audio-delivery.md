@@ -105,10 +105,12 @@ regressions verify active DSP/MERT ranking and MERT sequencing contributions.
 | Windows desktop CGO build and actual binary worker health | PASS: version, worker capability and framed MERT health with the prepared official pack |
 | Temporary native pack installation/status/removal | PASS: source assets preserved |
 | Windows CRT source and pack checks | PASS: official signed sources, all seven DLL architectures/hashes, recursive non-OS dependency closure, final worker loaded-module paths |
+| Native Linux amd64 MERT worker in Ubuntu 24.04.4 WSL2 | PASS: reference parity, cancellation/reload and ELF dependency resolution; no Linux GUI/installer check |
 | Edge rendered controls | PASS: dark/light, narrow/wide, install/remove/cancel states |
 | `git diff --check` | PASS |
+| [Hosted CI for implementation commit `92d2ff7`](https://github.com/platten/playlistai/actions/runs/34669812008) | PASS: Linux lint/race gate, Windows amd64/arm64 NSIS builds, Linux amd64/arm64 and macOS builds, host coverage jobs |
 | Four-mode rules-parser prompt expectations | FAIL: 11/12 cases in each mode; identical failing-case set, limitations above |
-| Native Linux/macOS/Windows ARM inference; all-target complete installers | NOT RUN locally |
+| Native macOS/Linux ARM64/Windows ARM64 inference; all-target complete installers | NOT RUN locally |
 | Held-out adjacency quality | NOT RUN: no eligible held-out corpus |
 
 The default gate skips opt-in real-model/provider tests without their environment;
@@ -117,8 +119,9 @@ results are recorded in the PR rather than represented by local passes.
 
 ## Limitations and deferred work
 
-Native Linux/macOS/Windows ARM inference and complete installer execution on
-every target remain unverified locally. Architecture inspection and compilation
+Native macOS/Linux ARM64/Windows ARM64 inference and complete installer execution
+on every target remain unverified locally. Linux amd64 worker validation used
+Ubuntu WSL2 on the same host, not an independent Linux desktop. Architecture inspection and compilation
 are reported separately from execution. Real-model/provider checks are opt-in;
 ordinary regressions are offline. The bounded convenience cohort has no held-out
 adjacency labels, and therefore supplies no superiority claim or calibrated
