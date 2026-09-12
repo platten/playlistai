@@ -2,44 +2,65 @@ package llama
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// fakeServerBin is built once for the whole package.
-var fakeServerBin string
+// The helper is shared by parallel lifecycle tests, but compile-only and
+// unrelated test selections never need to build it.
+var fakeServerBuild struct {
+	once sync.Once
+	dir  string
+	bin  string
+	err  error
+}
 
 func TestMain(m *testing.M) { os.Exit(runTests(m)) }
 
 func runTests(m *testing.M) int {
-	dir, err := os.MkdirTemp("", "llama-fakeserver")
-	if err != nil {
-		panic(err)
+	code := m.Run()
+	if fakeServerBuild.dir != "" {
+		if err := os.RemoveAll(fakeServerBuild.dir); err != nil {
+			fmt.Fprintln(os.Stderr, "remove fakeserver:", err)
+			return 1
+		}
 	}
-	defer os.RemoveAll(dir)
+	return code
+}
 
-	if _, err := os.Stat("internal/fakeserver/main.go"); err == nil {
+func fakeServerBinary(t *testing.T) string {
+	t.Helper()
+	fakeServerBuild.once.Do(func() {
+		fakeServerBuild.dir, fakeServerBuild.err = os.MkdirTemp("", "llama-fakeserver")
+		if fakeServerBuild.err != nil {
+			return
+		}
 		// Windows will not exec a file without an executable extension, so the
 		// suffix is part of the name rather than something the OS infers.
 		name := "fakeserver"
 		if runtime.GOOS == "windows" {
 			name += ".exe"
 		}
-		bin := filepath.Join(dir, name)
-		build := exec.Command("go", "build", "-o", bin, "./internal/fakeserver")
-		build.Stderr = os.Stderr
-		if err := build.Run(); err != nil {
-			panic("build fakeserver: " + err.Error())
+		fakeServerBuild.bin = filepath.Join(fakeServerBuild.dir, name)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		build := exec.CommandContext(ctx, "go", "build", "-o", fakeServerBuild.bin, "./internal/fakeserver")
+		if output, err := build.CombinedOutput(); err != nil {
+			fakeServerBuild.err = fmt.Errorf("build fakeserver: %w\n%s", err, output)
 		}
-		fakeServerBin = bin
+	})
+	if fakeServerBuild.err != nil {
+		t.Fatal(fakeServerBuild.err)
 	}
-	return m.Run()
+	return fakeServerBuild.bin
 }
 
 func dummyModel(t *testing.T) string {
@@ -52,10 +73,8 @@ func dummyModel(t *testing.T) string {
 }
 
 func TestServerLifecycle(t *testing.T) {
-	if fakeServerBin == "" {
-		t.Skip("fakeserver not built")
-	}
 	t.Parallel()
+	fakeServerBin := fakeServerBinary(t)
 
 	srv := newServer(ServerOptions{BinaryPath: fakeServerBin, ModelPath: dummyModel(t), NCtx: 2048})
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -64,6 +83,7 @@ func TestServerLifecycle(t *testing.T) {
 	if err := srv.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+	t.Cleanup(func() { _ = srv.Stop() })
 	if !srv.Alive() {
 		t.Fatal("should be alive after Start")
 	}
@@ -80,10 +100,8 @@ func TestServerLifecycle(t *testing.T) {
 }
 
 func TestServerAcceptsExplicitBenchmarkDevice(t *testing.T) {
-	if fakeServerBin == "" {
-		t.Skip("fakeserver not built")
-	}
 	t.Parallel()
+	fakeServerBin := fakeServerBinary(t)
 
 	srv := newServer(ServerOptions{
 		BinaryPath: fakeServerBin,
@@ -111,10 +129,8 @@ func TestServerStartFailsOnMissingBinary(t *testing.T) {
 }
 
 func TestParserEndToEndWithFakeServer(t *testing.T) {
-	if fakeServerBin == "" {
-		t.Skip("fakeserver not built")
-	}
 	t.Parallel()
+	fakeServerBin := fakeServerBinary(t)
 
 	p, err := New(context.Background(), Options{
 		BinaryPath:   fakeServerBin,

@@ -121,10 +121,8 @@ Available devices:
 }
 
 func TestNewFallsBackToNextRuntime(t *testing.T) {
-	if fakeServerBin == "" {
-		t.Skip("fakeserver not built")
-	}
 	t.Parallel()
+	fakeServerBin := fakeServerBinary(t)
 
 	broken := filepath.Join(t.TempDir(), "not-a-binary")
 	if err := os.WriteFile(broken, []byte("nope"), 0o755); err != nil {

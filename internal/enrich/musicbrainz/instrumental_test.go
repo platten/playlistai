@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
@@ -66,46 +68,51 @@ func TestInstrumentalPromptDiscoversCatalogSeedsAcrossPages(t *testing.T) {
 func TestInstrumentalLookupFallbackAndMissingEvidence(t *testing.T) {
 	for _, local := range []bool{false, true} {
 		t.Run(fmt.Sprint(local), func(t *testing.T) {
-			c, calls := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/ws/2/recording":
-					w.Header().Set("Retry-After", "0")
-					w.WriteHeader(http.StatusServiceUnavailable)
-				case "/search":
-					if r.URL.Query().Get("q") != `track:"instrumental"` {
-						t.Error("private prompt or incorrect search")
+			synctest.Test(t, func(t *testing.T) {
+				var retryStarts []time.Time
+				c, calls := virtualSeedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/ws/2/recording":
+						retryStarts = append(retryStarts, time.Now())
+						w.Header().Set("Retry-After", "0")
+						w.WriteHeader(http.StatusServiceUnavailable)
+					case "/search":
+						if r.URL.Query().Get("q") != `track:"instrumental"` {
+							t.Error("private prompt or incorrect search")
+						}
+						_, _ = fmt.Fprint(w, `{"data":[{"id":1,"title":"Song (Live)","artist":{"name":"Fixture"}}]}`)
+					default:
+						t.Errorf("unexpected lookup %s", r.URL)
 					}
-					_, _ = fmt.Fprint(w, `{"data":[{"id":1,"title":"Song (Live)","artist":{"name":"Fixture"}}]}`)
-				default:
-					t.Errorf("unexpected lookup %s", r.URL)
+				})
+				var entries []fakes.CatalogTrack
+				if local {
+					entries = append(entries, fakes.CatalogTrack{ID: "candidate", Display: "Fixture - Song (Instrumental)", Audio: []float32{1, 0}, Track: []float32{1, 0}})
+				}
+				cat := fakes.NewCatalog(2, entries...)
+				intent, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: "Instrumental, no vocals"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := c.ResolveMusic(context.Background(), intent, cat, cat, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertVirtualRetryDelays(t, retryStarts)
+				wantCalls := int32(httpretry.MaxAttempts + 1)
+				if local {
+					wantCalls += httpretry.MaxAttempts
+				} // optional recording enrichment of the local proposal
+				if (len(got.Knowledge.Candidates) > 0) != local || calls.Load() != wantCalls {
+					t.Fatalf("fallback mismatch: %+v calls=%d", got.Knowledge, calls.Load())
+				}
+				if !strings.Contains(strings.Join(got.Knowledge.Notices, " "), "503") {
+					t.Fatal("provider failure hidden")
+				}
+				if local && (got.InferredAnchors[0].Reference.TrackID != "candidate" || got.InferredAnchors[0].Suitability.State == core.EvidenceMatch || got.Seed.IsZero()) {
+					t.Fatal("unverified candidate promoted or replay seed missing")
 				}
 			})
-			var entries []fakes.CatalogTrack
-			if local {
-				entries = append(entries, fakes.CatalogTrack{ID: "candidate", Display: "Fixture - Song (Instrumental)", Audio: []float32{1, 0}, Track: []float32{1, 0}})
-			}
-			cat := fakes.NewCatalog(2, entries...)
-			intent, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: "Instrumental, no vocals"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			got, err := c.ResolveMusic(context.Background(), intent, cat, cat, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			wantCalls := int32(httpretry.MaxAttempts + 1)
-			if local {
-				wantCalls += httpretry.MaxAttempts
-			} // optional recording enrichment of the local proposal
-			if (len(got.Knowledge.Candidates) > 0) != local || calls.Load() != wantCalls {
-				t.Fatalf("fallback mismatch: %+v calls=%d", got.Knowledge, calls.Load())
-			}
-			if !strings.Contains(strings.Join(got.Knowledge.Notices, " "), "503") {
-				t.Fatal("provider failure hidden")
-			}
-			if local && (got.InferredAnchors[0].Reference.TrackID != "candidate" || got.InferredAnchors[0].Suitability.State == core.EvidenceMatch || got.Seed.IsZero()) {
-				t.Fatal("unverified candidate promoted or replay seed missing")
-			}
 		})
 	}
 }

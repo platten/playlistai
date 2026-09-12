@@ -60,10 +60,12 @@ func BenchmarkArtistRecordings(b *testing.B) {
 func TestArtistRowsSpanMultipleBatchesInCatalogOrder(t *testing.T) {
 	c := metadataResolverCatalog(t)
 	c.artistRows = map[string][]int{}
+	tx := resolverFixtureTransaction(t, c.db)
 	for row := 0; row < 600; row++ {
-		insertResolverTrack(t, c.db, row, fmt.Sprint(row), "Artist", "Song")
+		insertResolverTrack(t, tx, row, fmt.Sprint(row), "Artist", "Song")
 		c.artistRows["Artist"] = append(c.artistRows["Artist"], row)
 	}
+	commitResolverFixture(t, tx)
 	tracks, err := c.ArtistRecordings(context.Background(), "Artist")
 	if err != nil || len(tracks) != 600 {
 		t.Fatalf("batched artist lookup: %d %v", len(tracks), err)
