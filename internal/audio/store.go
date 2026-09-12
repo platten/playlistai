@@ -49,7 +49,12 @@ CREATE TABLE IF NOT EXISTS audio_representation (
  id TEXT PRIMARY KEY, catalog TEXT NOT NULL, track TEXT NOT NULL, track_key TEXT NOT NULL,
  model TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS audio_representation_lookup
- ON audio_representation(catalog, track, track_key, model);`)
+ ON audio_representation(catalog, track, track_key, model);
+CREATE TABLE IF NOT EXISTS dsp_analysis (
+ id TEXT PRIMARY KEY, catalog TEXT NOT NULL, track TEXT NOT NULL, track_key TEXT NOT NULL,
+ version TEXT NOT NULL, data TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS dsp_analysis_lookup
+ ON dsp_analysis(catalog, track, track_key, version);`)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
