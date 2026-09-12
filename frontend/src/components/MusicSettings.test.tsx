@@ -28,10 +28,14 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-it("saves/removes metadata credentials only after acknowledgment and clears the input", async () => {
-  render(<MusicMetadataCard />);
+// These tests verify acknowledgment ordering, not wall-clock performance. Allow
+// cold jsdom/accessibility initialization on slower hosted Windows runners.
+const credentialTestTimeout = 15_000;
+
+it("saves metadata credentials only after acknowledgment and clears the input", async () => {
+  await act(async () => { render(<MusicMetadataCard />); });
   const input = screen.getByLabelText("Discogs personal API token");
-  await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+  expect((input as HTMLInputElement).disabled).toBe(false);
   fireEvent.change(input, { target: { value: "  private-token  " } });
   const pending = deferred();
   api.SetDiscogsToken.mockReturnValueOnce(pending.promise);
@@ -43,10 +47,27 @@ it("saves/removes metadata credentials only after acknowledgment and clears the 
   expect((input as HTMLInputElement).value).toBe("");
   expect(screen.getByText(/Discogs token saved/)).toBeTruthy();
   expect(screen.getByText(/Snapshot 2026-01-01/)).toBeTruthy();
+}, credentialTestTimeout);
+
+it("removes metadata credentials only after acknowledgment and clears the input", async () => {
+  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: true }));
+  await act(async () => { render(<MusicMetadataCard />); });
+  const input = screen.getByLabelText("Discogs personal API token") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "replacement-token" } });
+  const pending = deferred();
+  api.SetDiscogsToken.mockReturnValueOnce(pending.promise);
   fireEvent.click(screen.getByRole("button", { name: "Remove token" }));
-  await screen.findByText(/Discogs token removed/);
   expect(api.SetDiscogsToken).toHaveBeenLastCalledWith("");
-});
+  expect(input.disabled).toBe(true);
+  expect(input.value).toBe("replacement-token");
+  expect(screen.queryByText(/Discogs token removed/)).toBeNull();
+  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: false }));
+  await act(async () => pending.resolve(null));
+  expect(screen.getByText(/Discogs token removed/)).toBeTruthy();
+  expect(input.value).toBe("");
+  expect(input.disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Remove token" })).toBeNull();
+}, credentialTestTimeout);
 
 it("reports metadata write failures and requires confirmation to clear cached metadata", async () => {
   render(<MusicMetadataCard />);
