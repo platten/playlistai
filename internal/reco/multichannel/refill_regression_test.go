@@ -86,6 +86,23 @@ type interruptedAnalysisStore struct {
 	interrupt func()
 }
 
+// cacheReadDeadline expires at the cache-read boundary selected by the fixture.
+// Keeping its cancellation separate from the generation parent exercises a
+// session deadline without racing catalog work against a short wall-clock timer.
+type cacheReadDeadline struct{ done chan struct{} }
+
+func (c *cacheReadDeadline) Deadline() (time.Time, bool) { return time.Time{}, false }
+func (c *cacheReadDeadline) Done() <-chan struct{}       { return c.done }
+func (c *cacheReadDeadline) Value(any) any               { return nil }
+func (c *cacheReadDeadline) Err() error {
+	select {
+	case <-c.done:
+		return context.DeadlineExceeded
+	default:
+		return nil
+	}
+}
+
 func (s *interruptedAnalysisStore) Find(ctx context.Context, catalog, track, key string, model core.AudioModelIdentity) (core.AudioAnalysis, bool, error) {
 	s.calls++
 	if s.calls == 2 {
@@ -108,16 +125,18 @@ func TestAudioInterruptionDuringCacheReadPreservesOnlyAcceptedTracks(t *testing.
 			parent, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			stop := make(chan struct{})
-			budget := time.Second
+			analysisParent := parent
 			switch kind {
 			case "session-budget":
-				budget = 100 * time.Millisecond
+				deadline := &cacheReadDeadline{done: make(chan struct{})}
+				analysisParent = deadline
+				store.interrupt = func() { close(deadline.done) }
 			case "stop-checking":
 				store.interrupt = func() { close(stop) }
 			case "parent-cancellation":
 				store.interrupt = cancel
 			}
-			session, err := service.BeginWithBudget(parent, intent, cat.CatalogVersion(), stop, budget)
+			session, err := service.BeginWithBudget(analysisParent, intent, cat.CatalogVersion(), stop, time.Minute)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,6 +154,30 @@ func TestAudioInterruptionDuringCacheReadPreservesOnlyAcceptedTracks(t *testing.
 			if store.calls != 2 || !session.ShouldStop() {
 				t.Fatalf("test did not interrupt the cache read: calls=%d stop=%v", store.calls, session.ShouldStop())
 			}
+			if kind == "session-budget" && (!session.Snapshot().BudgetExhausted || parent.Err() != nil) {
+				t.Fatal("session deadline was not distinguished from generation cancellation")
+			}
 		})
+	}
+}
+
+func TestExpiredAudioSessionBudgetSkipsCacheReads(t *testing.T) {
+	cat, service, r := recommendationPoolFixture(t, 2, 0)
+	store := &interruptedAnalysisStore{AnalysisStore: service.Store}
+	service.Store = store
+	intent := poolIntent(2).Normalized()
+	parent := context.Background()
+	// A zero duration deterministically exercises BeginWithBudget's own timer,
+	// independently of the controlled mid-read deadline in the test above.
+	session, err := service.BeginWithBudget(parent, intent, cat.CatalogVersion(), nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
+	engine.audioSession, engine.retriever = session, r
+	got, _, err := engine.collectIteratively(parent, r.candidates, nil, intent, ports.RecommendationRequest{Intent: intent}, newEligibility(intent, nil, nil), nil, nil, nil, 42)
+	if err != nil || len(got) != 0 || store.calls != 0 || !session.Snapshot().BudgetExhausted || parent.Err() != nil {
+		t.Fatalf("expired session performed work or canceled its parent: tracks=%d reads=%d snapshot=%+v err=%v", len(got), store.calls, session.Snapshot(), err)
 	}
 }
