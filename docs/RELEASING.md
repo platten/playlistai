@@ -1,7 +1,7 @@
 # Releasing
 
-Build and automation jobs prefer the registered self-hosted Windows/Linux x86-64
-runners. Native macOS and Linux ARM64 stay hosted. See
+Windows builds prefer the registered self-hosted Windows x86-64 runner.
+All Linux and macOS jobs use GitHub-hosted runners. See
 [runner routing and the hosted override](self-hosted-runners.md).
 
 Playlist AI ships two things per platform: a native **installer** (the primary,

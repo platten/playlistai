@@ -24,7 +24,7 @@ concurrency:
 jobs:
   lint-test:
     name: Lint & test (linux)
-    runs-on: ${{ fromJSON((vars.USE_HOSTED_RUNNERS == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -91,7 +91,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            preferred: '["self-hosted", "Linux", "X64"]'
+            preferred: '["ubuntu-latest"]'
           - os: ubuntu-24.04-arm
             preferred: '["ubuntu-24.04-arm"]'
           - os: macos-latest

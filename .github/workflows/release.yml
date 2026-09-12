@@ -35,7 +35,7 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ${{ vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]' }}
+            runner: '["ubuntu-latest"]'
             appimage_arch: x86_64
           - arch: arm64
             runner: '["ubuntu-24.04-arm"]'
@@ -299,7 +299,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [linux, macos, windows]
-    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
@@ -331,7 +331,7 @@ jobs:
   winget:
     name: winget manifests
     needs: publish
-    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
