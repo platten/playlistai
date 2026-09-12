@@ -35,12 +35,12 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            runner: ubuntu-latest
+            runner: ${{ vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]' }}
             appimage_arch: x86_64
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: '["ubuntu-24.04-arm"]'
             appimage_arch: aarch64
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
     env:
       HAS_PGP_KEY: ${{ secrets.LINUX_PGP_PRIVATE_KEY != '' && 'true' || 'false' }}
     steps:
@@ -212,7 +212,7 @@ jobs:
 
   windows:
     name: Package (Windows ${{ matrix.arch }})
-    runs-on: windows-latest
+    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["windows-latest"]' || '["self-hosted", "Windows", "X64"]') }}
     strategy:
       fail-fast: false
       matrix:
@@ -299,7 +299,7 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [linux, macos, windows]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
     permissions:
       contents: write
     steps:
@@ -331,7 +331,7 @@ jobs:
   winget:
     name: winget manifests
     needs: publish
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
     permissions:
       contents: write
     steps:

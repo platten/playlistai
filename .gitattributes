@@ -1,0 +1,2 @@
+# Go formatting checks require LF even on persistent Windows runner checkouts.
+*.go text eol=lf
