@@ -5,6 +5,7 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -23,7 +24,7 @@ concurrency:
 jobs:
   lint-test:
     name: Lint & test (linux)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((vars.USE_HOSTED_RUNNERS == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -88,8 +89,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: ubuntu-latest
+            preferred: '["self-hosted", "Linux", "X64"]'
+          - os: ubuntu-24.04-arm
+            preferred: '["ubuntu-24.04-arm"]'
+          - os: macos-latest
+            preferred: '["macos-latest"]'
+          - os: windows-latest
+            preferred: '["self-hosted", "Windows", "X64"]'
+    runs-on: ${{ fromJSON((vars.USE_HOSTED_RUNNERS == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && format('["{0}"]', matrix.os) || matrix.preferred) }}
     steps:
       - uses: actions/checkout@v5
 
@@ -136,15 +145,18 @@ jobs:
           & "$dir\makensis.exe" /VERSION
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Validate Windows contributor scripts
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: .\scripts\test.ps1 -NoRace
-
       - name: Install native CLAP build compiler
         if: runner.os == 'Windows'
         shell: pwsh
         run: .\scripts\install-clap-toolchain.ps1
+
+      - name: Validate Windows contributor scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = '1'
+          $env:CC = & .\scripts\install-clap-toolchain.ps1 -Architecture amd64 -CheckOnly
+          .\scripts\test.ps1
 
       - name: Build
         if: runner.os != 'Windows'

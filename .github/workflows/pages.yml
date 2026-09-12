@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

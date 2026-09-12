@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   submit:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.USE_HOSTED_RUNNERS == 'true' && '["ubuntu-latest"]' || '["self-hosted", "Linux", "X64"]') }}
     env:
       HAS_WINGET_TOKEN: ${{ secrets.WINGET_TOKEN != '' && 'true' || 'false' }}
     steps:

@@ -1,5 +1,9 @@
 # Releasing
 
+Build and automation jobs prefer the registered self-hosted Windows/Linux x86-64
+runners. Native macOS and Linux ARM64 stay hosted. See
+[runner routing and the hosted override](self-hosted-runners.md).
+
 Playlist AI ships two things per platform: a native **installer** (the primary,
 recommended path) and a **portable archive** of the raw binary. Both are built
 by [`.github/workflows/release.yml`](../.github/workflows/release.yml) and
