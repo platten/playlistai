@@ -52,6 +52,8 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return setup(ctx, args[1:], out, errOut)
 	case "verify":
 		return verify(ctx, args[1:], out, errOut)
+	case "source-probe":
+		return sourceProbe(ctx, args[1:], out, errOut)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

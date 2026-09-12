@@ -1,0 +1,282 @@
+{
+  "version": 1,
+  "applicationCommit": "46d84ac4dfff6217b45defd9ecca964469c9130c",
+  "purpose": "Fixed DistilBERT pilot, expanded diagnostic labels; no activation",
+  "approvedCalibrationPrompts": 8,
+  "additionalUnreviewedDiagnosticPrompts": 120,
+  "corpusSHA256": "ed160297232a25a222314f05e9d26058f7d423ce6a03f77ae10cbaf69344b244",
+  "hashes": {
+    "headSHA256": "35885ef639ffdc8b04422a98176c5ce68714004620d7f31bf4da83b9c696b91d",
+    "modelSHA256": "ed64b9532af09bdb88ae0cc5dbe16485a912b6716f3eff12fcc936208621816d",
+    "tokenizerSHA256": "eeaa9875b23b04b4c54ef759d03db9d1ba1554838f8fb26c5d96fa551df93d02",
+    "configSHA256": "595378a518f62b8c0212381191dfa0cc473e2fa7e4b0b852b7ed4b29e49876ac"
+  },
+  "frozenModelUnchanged": true,
+  "originalCalibrationExactlyReproduced": true,
+  "fixedThreshold": 0.5,
+  "samples": {
+    "originalApproved": {
+      "threshold": 0.5,
+      "acceptedSpans": 8,
+      "correctSpans": 8,
+      "incorrectSpans": 0,
+      "goldSpans": 39,
+      "missedSpans": 31,
+      "observedPrecision": 1.0,
+      "recall": 0.20512820512820512,
+      "precisionWilson95Lower": 0.6755924351161198,
+      "exampleCoverage": 1.0,
+      "exactRoleSpanExamples": 0
+    },
+    "expansion": {
+      "threshold": 0.5,
+      "acceptedSpans": 2,
+      "correctSpans": 2,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 527,
+      "observedPrecision": 1.0,
+      "recall": 0.003780718336483932,
+      "precisionWilson95Lower": 0.3423802275066531,
+      "exampleCoverage": 0.016666666666666666,
+      "exactRoleSpanExamples": 0
+    },
+    "combined": {
+      "threshold": 0.5,
+      "acceptedSpans": 10,
+      "correctSpans": 10,
+      "incorrectSpans": 0,
+      "goldSpans": 568,
+      "missedSpans": 558,
+      "observedPrecision": 1.0,
+      "recall": 0.017605633802816902,
+      "precisionWilson95Lower": 0.7224672001371106,
+      "exampleCoverage": 0.078125,
+      "exactRoleSpanExamples": 0
+    }
+  },
+  "expandedThresholdScan": [
+    {
+      "threshold": 0.5,
+      "acceptedSpans": 2,
+      "correctSpans": 2,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 527,
+      "observedPrecision": 1.0,
+      "recall": 0.003780718336483932,
+      "precisionWilson95Lower": 0.3423802275066531,
+      "exampleCoverage": 0.016666666666666666,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.6,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.7,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.75,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.8,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.85,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.9,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.925,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.95,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.975,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.99,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.995,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    },
+    {
+      "threshold": 0.999,
+      "acceptedSpans": 0,
+      "correctSpans": 0,
+      "incorrectSpans": 0,
+      "goldSpans": 529,
+      "missedSpans": 529,
+      "observedPrecision": null,
+      "recall": 0.0,
+      "precisionWilson95Lower": null,
+      "exampleCoverage": 0.0,
+      "exactRoleSpanExamples": 0
+    }
+  ],
+  "sourceQuantityComparison": {
+    "scope": "count/duration source role coverage; not numeric-value, polarity, strength or whole-intent accuracy",
+    "roles": {
+      "count": {
+        "gold": 25,
+        "sourceCorrect": 14,
+        "sourceAccepted": 15,
+        "distilbertCorrect": 2,
+        "distilbertAccepted": 2,
+        "distilbertCorrectBeyondSource": 0
+      },
+      "duration": {
+        "gold": 10,
+        "sourceCorrect": 9,
+        "sourceAccepted": 11,
+        "distilbertCorrect": 0,
+        "distilbertAccepted": 0,
+        "distilbertCorrectBeyondSource": 0
+      }
+    },
+    "sourceMedianMs": 0.5276000000000001
+  },
+  "training": {
+    "prompts": 26,
+    "spans": 137,
+    "headRoles": 63,
+    "rolesWithTrainingSpans": 41,
+    "rolesWithAtMostTwoTrainingSpans": 30
+  },
+  "execution": {
+    "runtime": "1.26.0",
+    "threads": 2,
+    "modelLoadMs": 339.17429999564774,
+    "medianTokenizeAndInferMs": 14.993549993960187,
+    "p95TokenizeAndInferMs": 19.061400002101436,
+    "modelBytes": 261279835,
+    "nativeExecution": false,
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.12.14"
+  },
+  "cpu": "Intel Core Ultra 9 285H, 16 reported cores/logical processors",
+  "decision": "Do not enable the current pilot: no measured additional correct quantity spans and zero accepted non-quantity roles. Keep tools and originals archived; future progress needs training data, not a larger calibration set alone.",
+  "calibrationEligible": false,
+  "productionReady": false,
+  "evaluationRequestsExecuted": 0,
+  "limitations": [
+    "New diagnostic annotations are not approved by the project user",
+    "Authored families and correlated spans are not a representative independent sample",
+    "Increasing calibration size measures a fixed model; it does not train new capabilities",
+    "Role spans do not measure whole intent, relations, playlist length or listening quality",
+    "Fresh author did not read held-out records; earlier coordinating-agent broad-search exposure is documented, so workflow is not a blinded study",
+    "Source comparison covers quantity-role spans, not numerical value, polarity, strength, complete intent or playlist quality"
+  ]
+}

@@ -1,5 +1,9 @@
 # Approved interpretation batches and first trained pilot
 
+Follow-up: the [expanded 128-prompt diagnostic](intent-nlu-expanded-calibration-results.md)
+found only two correct spans on 120 new prompts, both counts already covered by
+the pre-parser. The current pilot remains inactive.
+
 The project user approved all four batches. The approval was recorded on
 12 September 2026 at 22:43:57 UTC. The original proposal remains unchanged; the
 approved derivative is `internal/evaluation/testdata/intent-nlu-reviewed-v1.json`.
