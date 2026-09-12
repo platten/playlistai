@@ -2,7 +2,7 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v23"
+const AlgorithmVersion = "multichannel/v24"
 
 type Config struct {
 	EnhancedMERTWeight       float64

@@ -29,7 +29,7 @@ func TestSeeds(t *testing.T) {
 		{"upbeat instrumental tracks like Justice, 20 songs", []string{"Justice"}, core.ModeSimilar},
 		{"something similar to Boards of Canada", []string{"Boards of Canada"}, core.ModeSimilar},
 		{"stuff like Daft Punk and Justice", []string{"Daft Punk", "Justice"}, core.ModeSimilar},
-		{"a journey from soul to techno via drum and bass", []string{"soul", "drum and bass", "techno"}, core.ModeJourney},
+		{"a journey from soul to techno via drum and bass", nil, core.ModeJourney},
 		{"from Nick Drake to Aphex Twin", []string{"Nick Drake", "Aphex Twin"}, core.ModeJourney},
 		{"Bonobo vibes", []string{"Bonobo"}, core.ModeSimilar},
 		{"play Radiohead", []string{"Radiohead"}, core.ModeSimilar},
@@ -64,11 +64,11 @@ func TestElectronicMusicIsAnEssentialCategoryNotAnArtist(t *testing.T) {
 	if len(intent.References) != 0 || len(intent.Seeds.Queries) != 0 {
 		t.Fatalf("category became an artist seed: references=%+v seeds=%+v", intent.References, intent.Seeds)
 	}
-	if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Kind != "style" || intent.EssentialCriteria[0].Value != "electronic" {
+	if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Kind != "genre" || intent.EssentialCriteria[0].Value != "electronic" {
 		t.Fatalf("essential category = %+v", intent.EssentialCriteria)
 	}
-	if !hasPreference(intent.Preferences.Styles, "electronic", core.InfluencePositive) {
-		t.Fatalf("electronic preference missing: %+v", intent.Preferences.Styles)
+	if !hasPreference(intent.Preferences.Genres, "electronic", core.InfluencePositive) {
+		t.Fatalf("electronic preference missing: %+v", intent.Preferences.Genres)
 	}
 }
 
@@ -86,7 +86,7 @@ func TestAmbiguousCategoryNameCanBeExplicitArtistWithContext(t *testing.T) {
 func TestCategoryInfluenceAndJourneyStaySemantic(t *testing.T) {
 	t.Parallel()
 	hybrid := parse(t, "electronic music with some rock influence")
-	if len(hybrid.EssentialCriteria) != 1 || hybrid.EssentialCriteria[0].Value != "electronic" || !hasPreference(hybrid.Preferences.Styles, "rock", core.InfluencePositive) {
+	if len(hybrid.EssentialCriteria) != 1 || hybrid.EssentialCriteria[0].Value != "electronic" || !hasPreference(hybrid.Preferences.Genres, "rock", core.InfluencePositive) || hybrid.Preferences.Genres[1].Strength != "preferred" {
 		t.Fatalf("hybrid intent = %+v", hybrid)
 	}
 	journey := parse(t, "a journey from electronic to rock")
@@ -102,7 +102,7 @@ func TestNuancedSemanticNegationAndStrictVocalEvidence(t *testing.T) {
 		t.Fatalf("nuanced semantic intent was not preserved: %+v", intent.Preferences)
 	}
 	vocal := parse(t, "instrumental, no vocals")
-	if vocal.Preferences.VocalPreference == nil || vocal.Preferences.VocalPreference.Value != "no vocals" {
+	if vocal.Preferences.VocalPreference == nil || vocal.Preferences.VocalPreference.Value != "instrumental" || vocal.Preferences.VocalPreference.Strength != "required" {
 		t.Fatalf("vocal preference = %+v", vocal.Preferences.VocalPreference)
 	}
 	found := false
@@ -222,8 +222,11 @@ func TestConstraints(t *testing.T) {
 	if len(got) != 2 || !contains(got, "Skrillex") || !contains(got, "Deadmau5") {
 		t.Fatalf("excludes = %#v", got)
 	}
-	if !m.Constraints.NoRepeatArtistBackToBack {
-		t.Error("back-to-back rule should default on")
+	if m.Constraints.NoRepeatArtistBackToBack {
+		t.Error("parser invented an unrequested back-to-back rule")
+	}
+	if !parse(t, "like Justice, no repeat artists back to back").Constraints.NoRepeatArtistBackToBack {
+		t.Error("explicit back-to-back rule was lost")
 	}
 	if parse(t, "like Justice, same artist is ok").Constraints.NoRepeatArtistBackToBack {
 		t.Error("'same artist is ok' should turn the rule off")
@@ -257,7 +260,7 @@ func TestPreservesUnsupportedTexturePrompt(t *testing.T) {
 	t.Parallel()
 	prompt := "ambient electronic with microdetail, a deep groove, occasional sparkle, relaxing but not sleepy, no abstract drone"
 	m := parse(t, prompt)
-	for _, phrase := range []string{"microdetail", "a deep groove", "occasional sparkle", "relaxing but not sleepy"} {
+	for _, phrase := range []string{"microdetail", "a deep groove", "sparkle"} {
 		found := false
 		for _, preference := range m.Preferences.TextureDescriptions {
 			if preference.Value == phrase {
@@ -267,6 +270,9 @@ func TestPreservesUnsupportedTexturePrompt(t *testing.T) {
 		if !found {
 			t.Errorf("texture %q not preserved: %+v", phrase, m.Preferences.TextureDescriptions)
 		}
+	}
+	if !hasPreference(m.Preferences.Moods, "relaxing", core.InfluencePositive) || !hasPreference(m.Preferences.Moods, "sleepy", core.InfluenceNegative) {
+		t.Fatalf("contrast lost during texture/mood separation: %+v", m.Preferences)
 	}
 	if len(m.Unsupported) != 1 || m.Unsupported[0].Text != "no abstract drone" {
 		t.Fatalf("unsupported strict requirement = %+v", m.Unsupported)

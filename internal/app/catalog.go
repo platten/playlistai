@@ -122,7 +122,7 @@ func (c *Container) loadCatalog() error {
 		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
 			runtime.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
 		}
-		runtime.Reco.(*multichannel.Orchestrator).WithEnhancedAudioProvider(c.PrepareEnhancedAudio).WithEnhancedPreviewProvider(c.EnhancedPreviewService)
+		runtime.Reco.(*multichannel.Orchestrator).WithEnhancedAudioProvider(c.PrepareEnhancedAudio).WithEnhancedAudioRefreshProvider(c.RefreshEnhancedAudio).WithEnhancedPreviewProvider(c.EnhancedPreviewService)
 	}
 	c.mu.Lock()
 	if c.closed {

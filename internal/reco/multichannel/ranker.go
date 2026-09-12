@@ -42,10 +42,15 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 		vectors, ok := r.cat.Vectors(result[index].Track.ID)
 		comparisons := acousticComparisons(metadata[result[index].Track.ID], clauses)
 		if preview, ok := request.PreviewAssessments[result[index].Track.ID]; ok {
-			if intent.Controls.RecommendationMode == core.CLAPFirst {
+			switch intent.Controls.RecommendationMode {
+			case core.CLAPFirst:
 				audio.ApplyScores(&result[index], preview)
 				comparisons = preferCLAPRanking(comparisons, preview)
-			} else {
+			case core.EnhancedHybrid:
+				// Preserve both sources on their existing declared scales. A
+				// disputed archive class must not hide the fresh preview score.
+				audio.ApplyScores(&result[index], preview)
+			default:
 				preferAcousticRanking(&result[index], comparisons, preview)
 			}
 		}

@@ -33,6 +33,16 @@ separately licensed CC-BY-NC-4.0 weights are optional; the application remains
 GPL-3.0. See [model preparation and per-OS packs](docs/mert-model-preparation.md)
 and [enhanced analysis settings](docs/enhanced-audio.md).
 
+Enhanced hybrid preserves explicit musical terms before local-model interpretation
+using an embedded, versioned intent dictionary. Preferences such as “mostly
+instrumental” stay soft; exclusions stay binding. Results show strong matches
+first and label close suggestions with their remaining evidence gaps. Artist
+journeys can require actual starting and ending artists within the requested
+track count. Duration, relative artist eras, and unsupported vocal subtypes remain
+visible when the available evidence cannot verify them. See
+[dictionary preparation](docs/intent-dictionary-preparation.md) for the optional
+offline Python workflow; the desktop dictionary runs entirely in Go.
+
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
 

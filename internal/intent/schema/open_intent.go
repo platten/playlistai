@@ -9,7 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
-var centuryPattern = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?\s+century\b`)
+var centuryPattern = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b`)
 var qualityClausePattern = regexp.MustCompile(`(?i)\bwith\s+((?:(?:lots|plenty|a lot)\s+of|(?:a|an)\s+(?:good|strong|rich|delicate))\s+(.+?))(?:\s+(?:transitioning|leading|ending|moving|and then)\b|[,;.]|$)`)
 
 // Preserve an omitted open-vocabulary quality clause without inferring any

@@ -89,8 +89,8 @@ func TestCategoryExclusionDoesNotBecomeBareArtistOrBroaderGenre(t *testing.T) {
 			if len(exclusions) != 1 || exclusions[0] != want {
 				t.Fatalf("exclusion scope changed: %v", exclusions)
 			}
-			if len(intent.Preferences.Styles) != 2 || intent.Preferences.Styles[1].Influence != core.InfluenceNegative {
-				t.Fatalf("negative genre lost: %+v", intent.Preferences.Styles)
+			if len(intent.Preferences.Genres) != 2 || intent.Preferences.Genres[1].Influence != core.InfluenceNegative || intent.Preferences.Genres[1].Strength != "required" {
+				t.Fatalf("negative genre lost: %+v", intent.Preferences.Genres)
 			}
 		})
 	}
@@ -98,8 +98,8 @@ func TestCategoryExclusionDoesNotBecomeBareArtistOrBroaderGenre(t *testing.T) {
 
 func TestElectronicaAliasesAreCategories(t *testing.T) {
 	for prompt, want := range map[string]string{
-		"electronica": "electronic", "electronica music": "electronic",
-		"ambient electronica": "ambient electronic", "ambient electronica music": "ambient electronic",
+		"electronica": "electronica", "electronica music": "electronica",
+		"ambient electronica": "ambient electronica", "ambient electronica music": "ambient electronica",
 	} {
 		t.Run(prompt, func(t *testing.T) {
 			intent, _ := New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})

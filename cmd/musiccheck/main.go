@@ -19,6 +19,7 @@ import (
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/reco/deejai"
@@ -28,25 +29,26 @@ import (
 )
 
 type promptCase struct {
-	Prompt          string   `json:"prompt"`
-	Genre           string   `json:"genre"`
-	Artist          string   `json:"artist"`
-	ExcludedArtists []string `json:"excludedArtists"`
-	StartYear       int      `json:"startYear"`
-	EndYear         int      `json:"endYear"`
-	Basis           string   `json:"basis"`
-	Destination     string   `json:"destination"`
-	Vocal           string   `json:"vocal"`
-	Mood            string   `json:"mood"`
-	NegativeMoods   []string `json:"negativeMoods"`
-	Texture         string   `json:"texture"`
-	Artists         []string `json:"artists"`
-	Album           string   `json:"album"`
-	Track           string   `json:"track"`
-	JourneyGenres   []string `json:"journeyGenres"`
-	Count           int      `json:"count"`
-	MinimumArtists  int      `json:"minimumArtists"`
-	OnlyArtist      string   `json:"onlyArtist"`
+	Meaning         *meaningExpectation `json:"meaning,omitempty"`
+	Prompt          string              `json:"prompt"`
+	Genre           string              `json:"genre"`
+	Artist          string              `json:"artist"`
+	ExcludedArtists []string            `json:"excludedArtists"`
+	StartYear       int                 `json:"startYear"`
+	EndYear         int                 `json:"endYear"`
+	Basis           string              `json:"basis"`
+	Destination     string              `json:"destination"`
+	Vocal           string              `json:"vocal"`
+	Mood            string              `json:"mood"`
+	NegativeMoods   []string            `json:"negativeMoods"`
+	Texture         string              `json:"texture"`
+	Artists         []string            `json:"artists"`
+	Album           string              `json:"album"`
+	Track           string              `json:"track"`
+	JourneyGenres   []string            `json:"journeyGenres"`
+	Count           int                 `json:"count"`
+	MinimumArtists  int                 `json:"minimumArtists"`
+	OnlyArtist      string              `json:"onlyArtist"`
 }
 type result struct {
 	EnhancedEvidenceSHA256      string                  `json:"enhancedEvidenceSha256,omitempty"`
@@ -102,6 +104,8 @@ func run() error {
 	model := flag.String("model", "", "GGUF path")
 	runtime := flag.String("runtime", "", "llama-server path")
 	serverURL := flag.String("server-url", "", "reuse an already-running local llama server without managing its process")
+	contextSize := flag.Int("context-size", 4096, "configured native context size; must match a reused server")
+	diagnosticsPath := flag.String("diagnostics", "", "opt in to save bounded raw model/provider diagnostics to this local JSON file")
 	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: acousticbrainz_first, clap_first, deejai_only, or enhanced_hybrid")
 	enhancedEvidence := flag.String("enhanced-evidence", "", "optional frozen EnhancedAudioInput JSON; Enhanced Hybrid only, no online metadata or new previews")
 	parseOnly := flag.Bool("parse-only", false, "evaluate interpretation only; not a playlist acceptance run")
@@ -132,6 +136,9 @@ func run() error {
 	if *rulesParser && (*replay != "" || *serverURL != "" || *model != "" || *runtime != "") {
 		return fmt.Errorf("rules-parser cannot be combined with replay or language model options")
 	}
+	if *contextSize < 512 {
+		return fmt.Errorf("context-size must be at least 512 tokens")
+	}
 	if *enhancedEvidence != "" && (mode != core.EnhancedHybrid || *online || (*bundle != "" && !*cacheOnly)) {
 		return fmt.Errorf("enhanced-evidence requires enhanced_hybrid, offline metadata, and cached-audio-only when a CLAP bundle is supplied")
 	}
@@ -142,6 +149,12 @@ func run() error {
 	defer stop()
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Minute)
 	defer cancel()
+	var diagnostics *logging.Store
+	if *diagnosticsPath != "" {
+		diagnostics = &logging.Store{}
+		diagnostics.SetDebug(true)
+		ctx = logging.WithDiagnostics(ctx, diagnostics)
+	}
 	var parser *llama.Parser
 	var err error
 	prior := map[string]core.MusicIntent{}
@@ -170,14 +183,14 @@ func run() error {
 		}
 	}
 	if *serverURL != "" {
-		client := llama.NewClient(*serverURL)
+		client := llama.NewClientWithContext(*serverURL, *contextSize)
 		if !client.Healthy(ctx) {
 			return fmt.Errorf("local llama server is not healthy")
 		}
 		parser = llama.NewWithClient(client)
 		defer parser.Close()
 	} else if *replay == "" && !*rulesParser {
-		parser, err = llama.New(ctx, llama.Options{BinaryPath: *runtime, ModelPath: *model, NCtx: 8192, GPULayers: 0, StartTimeout: 3 * time.Minute})
+		parser, err = llama.New(ctx, llama.Options{BinaryPath: *runtime, ModelPath: *model, NCtx: *contextSize, GPULayers: 0, StartTimeout: 3 * time.Minute})
 		if err != nil {
 			return err
 		}
@@ -362,9 +375,21 @@ func run() error {
 			if c.Destination != "" && len(r.Playlist.Tracks) > 0 && !strings.EqualFold(r.Playlist.Tracks[len(r.Playlist.Tracks)-1].Artist, c.Destination) {
 				r.Errors = append(r.Errors, "wrong final artist")
 			}
+			if c.Meaning != nil && c.Meaning.Start != "" && len(r.Playlist.Tracks) > 0 && !strings.EqualFold(r.Playlist.Tracks[0].Artist, c.Meaning.Start) {
+				r.Errors = append(r.Errors, "wrong starting artist")
+			}
 		}
 		r.Milliseconds = time.Since(started).Milliseconds()
 		results = append(results, r)
+		if diagnostics != nil {
+			rawDiagnostics, diagnosticErr := json.MarshalIndent(diagnostics.Read(0), "", "  ")
+			if diagnosticErr != nil {
+				return diagnosticErr
+			}
+			if diagnosticErr = os.WriteFile(*diagnosticsPath, append(rawDiagnostics, '\n'), 0600); diagnosticErr != nil {
+				return diagnosticErr
+			}
+		}
 		report, _ := json.MarshalIndent(results, "", "  ")
 		if err = os.WriteFile(*output, append(report, '\n'), 0600); err != nil {
 			return err
@@ -416,7 +441,7 @@ func checkVariety(p core.Playlist, c promptCase, minimum int) []string {
 	return issues
 }
 func checkIntent(c promptCase, m core.MusicIntent) []string {
-	var issues []string
+	issues := checkMeaning(c.Meaning, m)
 	if c.Count > 0 && m.Controls.TotalTrackCount != c.Count {
 		issues = append(issues, fmt.Sprintf("requested count lost: got %d, want %d", m.Controls.TotalTrackCount, c.Count))
 	}

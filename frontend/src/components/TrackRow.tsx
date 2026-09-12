@@ -28,6 +28,8 @@ export interface TrackRowProps {
   expanded?: boolean;
   /** Rationale text; when present a caption row renders under the track. */
   reason?: string;
+  fitTier?: string;
+  matchDetail?: string;
   className?: string;
 }
 
@@ -54,6 +56,8 @@ export function TrackRow({
   onClick,
   expanded = false,
   reason,
+  fitTier,
+  matchDetail,
   className,
 }: TrackRowProps) {
   return (
@@ -102,6 +106,14 @@ export function TrackRow({
         </div>
       </div>
       {previewError && onDismissPreviewError && <ErrorState variant="inline" message={previewError} onDismiss={onDismissPreviewError} className="mx-2 mb-2" />}
+      {(fitTier === "strong" || fitTier === "close") && (
+        <p className="ml-[38px] mr-2 pb-2 text-[12px] text-muted sm:ml-[42px]">
+          <span className={cn("mr-2 font-medium", fitTier === "close" ? "text-warn" : "text-accent")}>
+            {fitTier === "close" ? "Close match" : "Strong match"}
+          </span>
+          {matchDetail}
+        </p>
+      )}
       {reason && (
         <p className="ml-[38px] mr-2 flex items-start gap-2 pt-0.5 pb-2.5 text-[12px] break-words text-muted sm:ml-[42px]">
           <span className="shrink-0 rounded-pill bg-accent-quiet px-1.5 py-px text-[11px] text-accent">

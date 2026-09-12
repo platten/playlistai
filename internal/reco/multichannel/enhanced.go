@@ -61,6 +61,10 @@ func enhancedDSP(a core.DSPAnalysis, clauses []core.AudioClause) (float64, bool)
 		var value core.DSPValue
 		var low, high float64
 		sign := 1.0
+		degree := 1.0
+		if clause.Degree == "reduced" {
+			degree = .5
+		}
 		switch strings.ToLower(strings.TrimSpace(clause.Text)) {
 		case "bass heavy", "bass-heavy", "strong bass", "deep bass", "more bass":
 			value, low, high = a.Features.BassEnergyRatio, 0, .6
@@ -84,7 +88,7 @@ func enhancedDSP(a core.DSPAnalysis, clauses []core.AudioClause) (float64, bool)
 				if clause.Negative {
 					sign = -sign
 				}
-				sum += sign * (onset + flux) / 2
+				sum += degree * sign * (onset + flux) / 2
 				observed++
 			}
 			continue
@@ -98,7 +102,7 @@ func enhancedDSP(a core.DSPAnalysis, clauses []core.AudioClause) (float64, bool)
 		if clause.Negative {
 			sign = -sign
 		}
-		sum += sign * (2*clamp((*value.Value-low)/(high-low), 0, 1) - 1)
+		sum += degree * sign * (2*clamp((*value.Value-low)/(high-low), 0, 1) - 1)
 		observed++
 	}
 	if requested == 0 || observed == 0 {

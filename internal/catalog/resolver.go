@@ -190,6 +190,9 @@ func (c *Catalog) resolveArtist(query string) core.ReferenceResolution {
 			Evidence:   []core.ResolutionEvidence{{Match: kind, NormalizedQuery: unicodeQuery, MatchedText: artist}},
 		})
 	}
+	if len(candidates) == 0 {
+		return c.resolveArtistTypo(query)
+	}
 	// Rank identities before computing medoids. Broad/short artist names can
 	// match hundreds of entities; only the visible alternatives need vectors.
 	result := rankResolution(candidates)

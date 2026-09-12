@@ -11,6 +11,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/metadata"
+	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -78,7 +79,7 @@ func discoveryKey(intent core.MusicIntent, catalog string) string {
 		Temporal    []core.TemporalRequirement
 		Destination *core.IntentReference
 		Policy      core.VerificationPolicy
-	}{"discovery/v3", catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
+	}{"discovery/v4+" + musicconcepts.Version, catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
 		intent.Preferences, intent.EssentialCriteria, constraints, intent.References, intent.RequiredTracks, intent.Mode,
 		intent.Journey, intent.Temporal, intent.Destination, intent.VerificationPolicy})
 }
@@ -98,25 +99,7 @@ func (s *candidateStream) recordEvidence(trackID, channel, source string) {
 }
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
-	var genres []string
-	seen := map[string]bool{}
-	add := func(value string) {
-		key := core.NormalizeIdentityPart(value)
-		if key != "" && !seen[key] {
-			genres = append(genres, value)
-			seen[key] = true
-		}
-	}
-	for _, p := range intent.Preferences.Genres {
-		if p.Influence != core.InfluenceNegative {
-			add(p.Value)
-		}
-	}
-	for _, p := range intent.EssentialCriteria {
-		if p.Kind == "genre" || p.Kind == "style" {
-			add(p.Value)
-		}
-	}
+	genres := discoveryGenres(intent)
 	if len(genres) == 0 || cat == nil || resolver == nil {
 		return nil
 	}
@@ -227,6 +210,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 	if !s.initialized {
 		s.initialized = true
 		var pools [][]core.GenreArtist
+		unavailableGenre := ""
 		for _, genre := range s.genres {
 			var pool core.GenreArtistPool
 			for _, cached := range s.snapshot.ArtistPools {
@@ -240,7 +224,11 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				s.snapshot.ArtistPools = append(s.snapshot.ArtistPools, pool)
 			}
 			if len(pool.Sources) == 0 {
-				return core.TrackRef{}, fmt.Errorf("artist lookup unavailable for %q", genre)
+				if err := ctx.Err(); err != nil {
+					return core.TrackRef{}, err
+				}
+				unavailableGenre = genre
+				continue
 			}
 			artists := make([]core.GenreArtist, 0, len(pool.Artists))
 			for _, i := range s.rng.Perm(len(pool.Artists)) {
@@ -261,6 +249,12 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					used[a.ID] = true
 				}
 			}
+		}
+		if unavailableGenre != "" {
+			if len(s.artists) == 0 {
+				return core.TrackRef{}, fmt.Errorf("artist lookup unavailable for %q", unavailableGenre)
+			}
+			s.snapshot.Notices = append(s.snapshot.Notices, "Some genre spelling lookups were unavailable; using retrieved candidates with the same musical checks.")
 		}
 	}
 	for len(s.artists) > 0 || len(s.pending) > 0 || len(s.deferredArtists) > 0 {

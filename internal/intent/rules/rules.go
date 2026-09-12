@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -24,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v11", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v12", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable
@@ -87,9 +88,9 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 	lookback := extractLookback(lower)
 	intent.Controls.TransitionSmoothness = float64(lookback-1) / 9
 
-	if explicitArtistSpacing.MatchString(lower) || !reAllowRepeat.MatchString(lower) && onlyArtist == "" {
+	if explicitArtistSpacing.MatchString(lower) {
 		intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{
-			Kind: "no_back_to_back_artist", Value: "true", Supported: true,
+			Kind: "no_back_to_back_artist", Value: "true", Supported: true, Evidence: sourceEvidence(prompt, explicitArtistSpacing.FindString(lower), true),
 		})
 	} else {
 		intent.Controls.ArtistDiversity = 0.3
@@ -100,8 +101,12 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		intent.Journey.EnergyTrajectory = trajectory
 	}
 
+	intent = lexicon.Reconcile(intent, lexicon.Extract(prompt))
 	out := intent.Normalized()
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
+	if intent.Start != nil || intent.Destination != nil || len(intent.Journey.EnergyTrajectory) > 0 {
+		out.Mode = core.ModeJourney
+	}
 	out.NotesForUser = summarize(out)
 	return out, nil
 }
@@ -403,10 +408,7 @@ func extractLookback(lower string) int {
 
 // --- constraints -----------------------------------------------------
 
-var (
-	reExclude     = regexp.MustCompile(`(?i)\b(?:without|no more|nothing by|nothing from|except|but not|skip|avoid|not|excluding)\s+([A-Z][\w.&'’-]*(?:\s+[A-Z][\w.&'’-]*){0,3})`)
-	reAllowRepeat = regexp.MustCompile(`(?i)\b(?:same artist (?:is )?ok|repeat artists?|let artists? repeat|same-artist repeats? (?:are )?fine|allow (?:artist )?repeats?)\b`)
-)
+var reExclude = regexp.MustCompile(`(?i)\b(?:without|no more|nothing by|nothing from|except|but not|skip|avoid|not|excluding)\s+([A-Z][\w.&'’-]*(?:\s+[A-Z][\w.&'’-]*){0,3})`)
 
 func extractArtistExcludes(orig string) []string {
 	var out []string
@@ -421,18 +423,8 @@ func extractArtistExcludes(orig string) []string {
 	return dedupeSeeds(out)
 }
 
-var reRequiredTrack = regexp.MustCompile(`(?i)\b(?:must include|include|make sure to include)\s+["“]?([^,;"”]+\s+-\s+[^,;"”]+)`)
-
 func extractRequiredTracks(prompt string) []core.IntentReference {
-	var out []core.IntentReference
-	for _, match := range reRequiredTrack.FindAllStringSubmatch(prompt, -1) {
-		value := strings.TrimSpace(match[1])
-		if value == "" {
-			continue
-		}
-		out = append(out, typedReference(prompt, value, core.ReferenceTrack, core.InfluencePositive))
-	}
-	return out
+	return lexicon.RequiredTracks(prompt)
 }
 
 func extractSemanticPreferences(prompt string) core.SemanticPreferences {

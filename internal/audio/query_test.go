@@ -74,3 +74,82 @@ func TestRepeatedGenreClausesCannotOutvoteMood(t *testing.T) {
 		t.Fatal("old calibrated aggregation changed")
 	}
 }
+
+func TestReviewedAliasesShareQueriesWithoutLosingPolarity(t *testing.T) {
+	for _, kind := range []string{"genre", "style"} {
+		first := ClauseQueries(core.AudioClause{Kind: kind, Text: "hip hop"})
+		for _, alias := range []string{"hip-hop", "HIPHOP"} {
+			c := core.AudioClause{Kind: kind, Text: alias, Negative: true, Scope: "journey_end", Strength: "preferred", Degree: "reduced"}
+			if got := ClauseQueries(c); !reflect.DeepEqual(first, got) {
+				t.Fatalf("alias changed query ensemble: %q != %q", first, got)
+			}
+			if !c.Negative || c.Scope != "journey_end" || c.Degree != "reduced" {
+				t.Fatal("query preparation mutated intent")
+			}
+		}
+	}
+	if reflect.DeepEqual(ClauseQueries(core.AudioClause{Kind: "genre", Text: "electronic"}), ClauseQueries(core.AudioClause{Kind: "genre", Text: "electronica"})) {
+		t.Fatal("broader genre substituted for electronica")
+	}
+	if got := ClauseQueries(core.AudioClause{Kind: "vocal", Text: "screaming", Negative: true}); !reflect.DeepEqual(got, []string{"screaming", "Music with screamed vocals."}) {
+		t.Fatalf("negative vocal trait lost its positive evidence query: %q", got)
+	}
+}
+
+func TestTypedScoreAlternativesAndScopedNegatives(t *testing.T) {
+	makeClause := func(scope, kind, group string, negative bool, score float64) core.AudioClauseAssessment {
+		return core.AudioClauseAssessment{Clause: core.AudioClause{Scope: scope, Kind: kind, Group: group, Negative: negative}, ScoreAvailable: true, Score: score}
+	}
+	a := core.AudioAssessment{PolicyVersion: QueryPolicyVersion, Clauses: []core.AudioClauseAssessment{
+		makeClause("playlist", "genre", "genres", false, .8),
+		makeClause("playlist", "genre", "genres", false, .2),
+		makeClause("playlist", "mood", "", false, .4),
+	}}
+	var candidate core.Candidate
+	ApplyScores(&candidate, a)
+	if delta := candidate.Scores.SemanticMatch - .6; delta < -1e-9 || delta > 1e-9 {
+		t.Fatalf("OR genres averaged into contradiction: %+v", candidate.Scores)
+	}
+	a.Clauses = []core.AudioClauseAssessment{
+		makeClause("journey_start", "genre", "", false, .9),
+		makeClause("journey_start", "vocal", "", true, .8),
+		makeClause("journey_end", "genre", "", false, .6),
+		makeClause("journey_end", "vocal", "", true, .1),
+	}
+	candidate = core.Candidate{}
+	ApplyScores(&candidate, a)
+	if candidate.Scores.SemanticMatch != .6 || candidate.Scores.SemanticNegativeMatch != .1 {
+		t.Fatalf("positive/negative borrowed from different stages: %+v", candidate.Scores)
+	}
+	a.Clauses = []core.AudioClauseAssessment{makeClause("playlist", "mood", "", true, .8)}
+	a.Clauses[0].Clause.Degree = "reduced"
+	candidate = core.Candidate{}
+	ApplyScores(&candidate, a)
+	if candidate.Scores.SemanticNegativeMatch != .4 {
+		t.Fatalf("less aggressive became the full exclusion penalty: %+v", candidate.Scores)
+	}
+}
+
+func TestCrossFacetAlternativesKeepOneStableGroupWeight(t *testing.T) {
+	for _, winner := range []string{"instrumentation", "genre", "negative"} {
+		a := core.AudioAssessment{PolicyVersion: QueryPolicyVersion, Clauses: []core.AudioClauseAssessment{
+			{Clause: core.AudioClause{Kind: "instrumentation", Text: "piano", Scope: "playlist", Group: "either"}, ScoreAvailable: true, Score: .1},
+			{Clause: core.AudioClause{Kind: "genre", Text: "ambient", Scope: "playlist", Group: "either"}, ScoreAvailable: true, Score: .1},
+			{Clause: core.AudioClause{Kind: "mood", Text: "relaxing", Scope: "playlist"}, ScoreAvailable: true, Score: .4},
+		}}
+		switch winner {
+		case "instrumentation":
+			a.Clauses[0].Score = .9
+		case "genre":
+			a.Clauses[1].Score = .9
+		case "negative":
+			a.Clauses[1].Clause.Negative = true
+			a.Clauses[1].Score = -.9
+		}
+		var candidate core.Candidate
+		ApplyScores(&candidate, a)
+		if delta := candidate.Scores.SemanticMatch - .65; delta < -1e-9 || delta > 1e-9 || candidate.Available.SemanticNegativeMatch {
+			t.Fatalf("%s winner changed OR group weight: %+v", winner, candidate)
+		}
+	}
+}

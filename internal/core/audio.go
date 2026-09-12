@@ -61,6 +61,10 @@ type AudioAnalysis struct {
 }
 
 type AudioClause struct {
+	ConceptID string `json:"conceptId,omitempty"`
+	Strength  string `json:"strength,omitempty"`
+	Degree    string `json:"degree,omitempty"`
+	Group     string `json:"group,omitempty"`
 	Kind      string `json:"kind"`
 	Text      string `json:"text"`
 	Scope     string `json:"scope"`

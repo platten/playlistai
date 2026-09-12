@@ -64,11 +64,15 @@ func TestExpiredEnhancedBudgetPreservesCLAP(t *testing.T) {
 
 type budgetExpiryAnalyzer struct {
 	mertFake
+	before                func()
 	err                   error
 	enteredBeforeDeadline bool
 }
 
 func (f *budgetExpiryAnalyzer) EmbedAudio(ctx context.Context, _ []float32) ([]float32, error) {
+	if f.before != nil {
+		f.before()
+	}
 	f.calls++
 	f.enteredBeforeDeadline = ctx.Err() == nil
 	<-ctx.Done()
@@ -94,7 +98,12 @@ func TestEnhancedDeadlineDuringInferenceDoesNotCancelCLAP(t *testing.T) {
 		clap := &testAnalyzer{model: core.AudioModelIdentity{Model: "fixture", Revision: "1", Preprocessing: PreprocessingVersion, Runtime: "fixture", Dimension: 2}}
 		preview := &Service{Resolver: &testResolver{url: "https://fixture.invalid/preview"}, Analyzer: clap, Store: store, Authorized: true, ParityValidated: true,
 			HTTPClient: &http.Client{Transport: enhancedDeadlineTransport{}}, AllowPreviewURL: func(u *url.URL) bool { return u.Hostname() == "fixture.invalid" }}
-		fake := &budgetExpiryAnalyzer{mertFake: mertFake{model: mertTestModel()}}
+		fake := &budgetExpiryAnalyzer{mertFake: mertFake{model: mertTestModel()}, before: func() {
+			usage, err := store.Usage(context.Background())
+			if err != nil || usage.Records != 1 || clap.calls != 1 {
+				t.Fatalf("slow optional inference began before CLAP was retained: %+v calls=%d err=%v", usage, clap.calls, err)
+			}
+		}}
 		preview.MERT = &MERTService{Preview: preview, Analyzer: fake, Store: store.Representations(), ParityValidated: true}
 		parent, cancel := context.WithCancel(context.Background())
 		defer cancel()

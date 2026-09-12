@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,7 +131,7 @@ func (*submittedGenreKnowledge) ResolveMusic(_ context.Context, intent core.Musi
 	return intent, nil
 }
 
-func TestSubmittedCountedGenreIsConfirmedBeforeArtistAlternatives(t *testing.T) {
+func TestSubmittedKnownGenreUsesDictionaryBeforeArtistAlternatives(t *testing.T) {
 	c := newLoadedContainer(t)
 	knowledge := &submittedGenreKnowledge{}
 	c.Knowledge = knowledge
@@ -145,17 +146,19 @@ func TestSubmittedCountedGenreIsConfirmedBeforeArtistAlternatives(t *testing.T) 
 	}
 	for range 2 {
 		preview, err := api.ParseIntentWithContext(ctx, "Classical 10 tracks", IntentSessionContext{GenerationID: "submitted"})
-		if err != nil || preview.Count != 10 || len(preview.Seeds) != 0 || len(preview.ResolutionIssues) != 0 || len(preview.Intent.EssentialCriteria) != 1 || preview.Intent.EssentialCriteria[0].Value != "Classical" {
+		if err != nil || preview.Count != 10 || len(preview.Seeds) != 0 || len(preview.ResolutionIssues) != 0 || len(preview.Intent.EssentialCriteria) != 1 || !strings.EqualFold(preview.Intent.EssentialCriteria[0].Value, "Classical") {
 			t.Fatalf("genre preview = %+v, %v", preview, err)
 		}
 	}
-	if knowledge.calls != 1 {
-		t.Fatalf("confirmed parse not reused: %d lookups", knowledge.calls)
+	// The embedded dictionary now establishes this exact genre spelling before
+	// parsing; a network taxonomy lookup would add no information.
+	if knowledge.calls != 0 {
+		t.Fatalf("known dictionary genre triggered %d redundant lookups", knowledge.calls)
 	}
 	if _, err := api.ParseIntentWithContext(ctx, "like Classical, 10 tracks", IntentSessionContext{GenerationID: "explicit"}); err != nil {
 		t.Fatal(err)
 	}
-	if knowledge.calls != 1 {
+	if knowledge.calls != 0 {
 		t.Fatal("explicit artist reinterpreted as genre")
 	}
 }

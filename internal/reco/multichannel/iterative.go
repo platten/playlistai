@@ -54,7 +54,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	if o.audioSession != nil && soundComparisonRequested(intent) {
 		comparisonTarget = max(target, min(o.cfg.MaxCandidates, recommendationPoolSize(intent.Count, len(required))))
 	}
-	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil {
+	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil && !o.enhanced {
 		return nil, []core.PlaylistNotice{{Code: "audio_analysis_unavailable", Detail: "Install and enable music analysis in setup to check the requested musical characteristics, then retry."}}, nil
 	}
 	attempted := map[string]struct{}{}
@@ -202,10 +202,12 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			if err != nil {
 				return nil, notices, err
 			}
-			if !assessment.Eligible {
+			if !assessment.Eligible && !o.enhancedMetadataFallback(ctx, candidate, intent) {
 				continue
 			}
 			audio.ApplyScores(&candidate, assessment)
+		} else if len(audio.Clauses(intent)) > 0 && o.enhanced && !o.enhancedMetadataFallback(ctx, candidate, intent) {
+			continue
 		}
 		batch, _, err = o.filterEssential(ctx, []core.Candidate{candidate}, intent.EssentialCriteria)
 		if err != nil {

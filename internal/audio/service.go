@@ -64,6 +64,13 @@ func (s *Service) ReadyFor(intent core.MusicIntent) bool {
 // AnalyzePreview computes reusable embeddings without making request-specific
 // judgments. Calibration gates categorical musical-fit judgments separately.
 func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog string) (core.AudioAnalysis, int64, error) {
+	return s.analyzePreview(ctx, ref, catalog, nil)
+}
+
+// beforeOptional finishes request-specific CLAP comparisons while the original
+// decoded PCM remains available for the subsequent optional extractors. It runs
+// synchronously after retaining the reusable audio row; buffers never escape.
+func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog string, beforeOptional func(core.AudioAnalysis) error) (core.AudioAnalysis, int64, error) {
 	if s == nil || !s.Authorized || !s.ParityValidated || s.Resolver == nil || s.Analyzer == nil || s.Store == nil || s.Analyzer.Identity().Preprocessing != PreprocessingVersion {
 		return core.AudioAnalysis{}, 0, fmt.Errorf("audio: verified model and provider authorization required")
 	}
@@ -86,18 +93,8 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	hash := sha256.Sum256(encoded)
 	audioHash := hex.EncodeToString(hash[:])
 	withEnhanced := s.DSPStore != nil || s.MERT != nil
-	enhancedCtx, enhancedCancel := context.WithCancel(ctx)
-	defer enhancedCancel()
-	if budget := EnhancedBudgetFor(ctx); withEnhanced && budget != nil {
-		// Cache-only compatibility checks never consume an admission. Once a
-		// generation's optional budget expires, CLAP continues on its own ctx.
-		withEnhanced = s.enhancedCacheMiss(ctx, ref, catalog, preview.Identity, audioHash) && budget.Allow(ref.ID)
-		if withEnhanced {
-			enhancedCancel()
-			enhancedCtx, enhancedCancel = budget.Context(ctx)
-			defer enhancedCancel()
-		}
-	}
+	// Decode once and retain the bounded source PCM for optional work. Do not
+	// spend the lazy enhanced admission/deadline before CLAP has been retained.
 	samples, original, err := decodeForAnalysis(ctx, encoded, withEnhanced)
 	clear(encoded)
 	defer clear(samples)
@@ -113,16 +110,6 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		Sampling: &core.AudioSampling{Policy: PreviewSamplingVersion, AvailableSeconds: float64(len(samples)) / SampleRate},
 		Coverage: core.PreviewCoverage{Available: true, StartSeconds: offset, EndSeconds: float64(last) / SampleRate, CoveredSeconds: float64(last-first) / SampleRate, Source: "deezer"},
 	}
-	if withEnhanced && s.DSPStore != nil {
-		_, _ = s.storeDSPInterval(enhancedCtx, ref, catalog, preview.Identity, record.AudioSHA256, original, first, last)
-	}
-	if withEnhanced && s.MERT != nil {
-		// Optional representation failure must not discard usable CLAP evidence.
-		// The MERT caller separately checks its cache; cancellation still applies
-		// to all subsequent inference and writes through this shared context.
-		_, _ = s.MERT.AnalyzeDecoded(enhancedCtx, ref, catalog, preview.Identity, record.AudioSHA256, original)
-	}
-	clear(original.Samples)
 	err = forEachSegment(ctx, samples[first:last], func(segment []float32, start, end float64) error {
 		vector, err := s.Analyzer.EmbedAudio(ctx, segment)
 		if err != nil {
@@ -144,6 +131,31 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	record.ID = Fingerprint(record)
 	if err := s.Store.Put(ctx, record); err != nil {
 		return core.AudioAnalysis{}, int64(len(encoded)), err
+	}
+	if beforeOptional != nil {
+		if err := beforeOptional(record); err != nil {
+			return record, int64(len(encoded)), err
+		}
+	}
+	// Retain completed essential evidence before optional DSP/MERT. An optional
+	// failure or deadline cannot discard this row, including when the enclosing
+	// request is canceled during optional inference. All PCM remains owned here
+	// and is cleared on every return; no worker outlives these borrowed buffers.
+	if withEnhanced && ctx.Err() == nil && s.enhancedCacheMiss(ctx, ref, catalog, preview.Identity, audioHash) && ctx.Err() == nil {
+		budget := EnhancedBudgetFor(ctx)
+		if budget == nil || budget.Allow(ref.ID) {
+			enhancedCtx, enhancedCancel := budget.Context(ctx)
+			defer enhancedCancel()
+			if enhancedCtx.Err() == nil && s.DSPStore != nil {
+				_, _ = s.storeDSPInterval(enhancedCtx, ref, catalog, preview.Identity, audioHash, original, first, last)
+			}
+			if enhancedCtx.Err() == nil && s.MERT != nil {
+				_, _ = s.MERT.AnalyzeDecoded(enhancedCtx, ref, catalog, preview.Identity, audioHash, original)
+			}
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return record, int64(len(encoded)), err
 	}
 	return record, int64(len(encoded)), nil
 }

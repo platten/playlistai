@@ -30,6 +30,14 @@ func Apply(resolver ports.ReferenceResolver, intent core.MusicIntent) (core.Musi
 	intent.References, issues = applyList(resolver, intent.References, false, issues)
 	intent.Journey.Waypoints, issues = applyList(resolver, intent.Journey.Waypoints, false, issues)
 	intent.RequiredTracks, issues = applyList(resolver, intent.RequiredTracks, true, issues)
+	for _, endpoint := range []**core.IntentReference{&intent.Start, &intent.Destination} {
+		if *endpoint == nil {
+			continue
+		}
+		resolved, next := applyList(resolver, []core.IntentReference{**endpoint}, true, issues)
+		issues = next
+		*endpoint = &resolved[0]
+	}
 	for index := range intent.InferredAnchors {
 		before := len(issues)
 		resolved, next := applyList(resolver, []core.IntentReference{intent.InferredAnchors[index].Reference}, false, issues)

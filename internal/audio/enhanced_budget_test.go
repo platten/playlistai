@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -41,6 +42,32 @@ func TestEnhancedBudgetSharedAdmissionsAndLegacyContext(t *testing.T) {
 	if child.Err() != context.DeadlineExceeded || parent.Err() != nil {
 		t.Fatal("deadline leaked")
 	}
+}
+
+func TestLazyEnhancedBudgetStartsAtFirstInferenceAndCannotReset(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := WithLazyEnhancedBudget(context.Background(), 2, time.Second)
+		time.Sleep(10 * time.Second) // metadata discovery consumes no inference time
+		budget := EnhancedBudgetFor(ctx)
+		if !budget.Allow("first") {
+			t.Fatal("discovery exhausted optional inference budget")
+		}
+		child, cancel := budget.Context(ctx)
+		defer cancel()
+		if child.Err() != nil {
+			t.Fatal(child.Err())
+		}
+		time.Sleep(2 * time.Second)
+		if budget.Allow("second") || child.Err() != context.DeadlineExceeded {
+			t.Fatal("inference deadline not enforced")
+		}
+		if EnhancedBudgetFor(WithLazyEnhancedBudget(ctx, 24, time.Minute)) != budget || budget.Used() != 1 {
+			t.Fatal("helper reset budget")
+		}
+		if ctx.Err() != nil {
+			t.Fatal("optional deadline canceled request")
+		}
+	})
 }
 
 func TestEnhancedBudgetSameTrackCostsOnce(t *testing.T) {

@@ -1,0 +1,263 @@
+[
+  {
+    "prompt": "Give me 15 relaxing classical pieces to help me concentrate, mostly piano and strings, with no singing.",
+    "genre": "classical",
+    "vocal": "instrumental",
+    "mood": "relaxing",
+    "count": 15,
+    "meaning": {
+      "forbiddenCriteria": [
+        "piano",
+        "strings",
+        "relaxing"
+      ],
+      "preferences": [
+        {
+          "kind": "instrumentation",
+          "strength": "preferred",
+          "polarity": "positive",
+          "value": "piano"
+        },
+        {
+          "kind": "instrumentation",
+          "strength": "preferred",
+          "polarity": "positive",
+          "value": "strings"
+        }
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "I want dramatic 20th-century classical music with big changes from quiet to loud. 12 tracks, not film scores.",
+    "genre": "classical",
+    "startYear": 1901,
+    "endYear": 2000,
+    "basis": "composition",
+    "count": 12,
+    "meaning": {
+      "forbiddenCriteria": [
+        "dramatic",
+        "20th-century classical"
+      ],
+      "preferences": [
+        {
+          "kind": "mood",
+          "polarity": "positive",
+          "value": "dramatic"
+        },
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "dynamic"
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "exclude_style",
+          "value": "film scores"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "Make a 15-song workout playlist like Aerosmith: driving guitar riffs and high energy, but don't include Aerosmith themselves.",
+    "artist": "Aerosmith",
+    "excludedArtists": [
+      "Aerosmith"
+    ],
+    "count": 15,
+    "meaning": {
+      "preferences": [
+        {
+          "kind": "instrumentation",
+          "polarity": "positive",
+          "value": "guitar"
+        }
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "Give me 12 bluesy hard rock tracks like early Aerosmith, with a raw live-band feel rather than polished pop.",
+    "genre": "hard rock",
+    "artist": "Aerosmith",
+    "count": 12,
+    "meaning": {
+      "preferences": [
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "bluesy"
+        },
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "raw live-band feel"
+        },
+        {
+          "kind": "texture",
+          "polarity": "negative",
+          "value": "polished pop"
+        }
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "20 relaxing electronic tracks like christrian loeffler, with warm textures and a gentle pulse. Nothing too clubby.",
+    "genre": "electronic",
+    "artist": "christrian loeffler",
+    "mood": "relaxing",
+    "count": 20,
+    "meaning": {
+      "preferences": [
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "warm"
+        },
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "gentle pulse"
+        },
+        {
+          "kind": "texture",
+          "polarity": "negative",
+          "value": "clubby"
+        }
+      ],
+      "noTemporal": true
+    }
+  },
+  {
+    "prompt": "Something like Christian Löffler and Kiasmos for a rainy evening: melancholic but comforting, mostly instrumental. 15 tracks.",
+    "artists": [
+      "Christian Löffler",
+      "Kiasmos"
+    ],
+    "mood": "melancholic",
+    "vocal": "instrumental",
+    "count": 15,
+    "meaning": {
+      "forbiddenCriteria": [
+        "melancholic",
+        "comforting",
+        "mostly instrumental"
+      ],
+      "preferences": [
+        {
+          "kind": "mood",
+          "polarity": "positive",
+          "value": "comforting"
+        },
+        {
+          "kind": "vocal",
+          "strength": "preferred",
+          "polarity": "positive",
+          "value": "instrumental"
+        }
+      ],
+      "noTemporal": true,
+      "softInstrumental": true
+    }
+  },
+  {
+    "prompt": "I need 20 tracks for lifting weights—heavy, aggressive and energetic, with a steady beat. No slow ballads.",
+    "mood": "aggressive",
+    "count": 20,
+    "meaning": {
+      "forbiddenCriteria": [
+        "heavy",
+        "aggressive"
+      ],
+      "preferences": [
+        {
+          "kind": "mood",
+          "polarity": "positive",
+          "value": "energetic"
+        },
+        {
+          "kind": "texture",
+          "polarity": "positive",
+          "value": "steady beat"
+        }
+      ],
+      "noTemporal": true,
+      "constraints": [
+        {
+          "kind": "exclude_style",
+          "value": "slow ballads"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "Build a 30-minute running playlist that starts easy, picks up the pace, then cools down. I like electronic music, but no harsh vocals.",
+    "genre": "electronic",
+    "meaning": {
+      "durationSeconds": 1800,
+      "energyArc": true,
+      "forbiddenCriteria": [
+        "no harsh vocals",
+        "easy",
+        "up",
+        "down"
+      ],
+      "noTemporal": true,
+      "constraints": [
+        {
+          "kind": "exclude_vocal",
+          "value": "harsh vocals"
+        }
+      ]
+    }
+  },
+  {
+    "prompt": "Take me from Nine Inch Nails to Marilyn Manson over 15 tracks, with smooth transitions and no repeat artists back to back.",
+    "artist": "Nine Inch Nails",
+    "destination": "Marilyn Manson",
+    "count": 15,
+    "meaning": {
+      "noTemporal": true,
+      "constraints": [
+        {
+          "kind": "no_back_to_back_artist",
+          "value": "true"
+        }
+      ],
+      "start": "Nine Inch Nails"
+    }
+  },
+  {
+    "prompt": "15 dark industrial rock tracks like Nine Inch Nails, but less aggressive, no Marilyn Manson, and no screaming.",
+    "genre": "industrial rock",
+    "artist": "Nine Inch Nails",
+    "excludedArtists": [
+      "Marilyn Manson"
+    ],
+    "mood": "dark",
+    "count": 15,
+    "meaning": {
+      "forbiddenCriteria": [
+        "dark industrial rock",
+        "less aggressive"
+      ],
+      "preferences": [
+        {
+          "kind": "mood",
+          "polarity": "negative",
+          "value": "aggressive"
+        }
+      ],
+      "noTemporal": true,
+      "constraints": [
+        {
+          "kind": "exclude_vocal",
+          "value": "screaming"
+        }
+      ]
+    }
+  }
+]

@@ -18,16 +18,22 @@ func SinglePlaylistGenre(intent MusicIntent) (MusicalCriterion, bool) {
 		}
 	}
 	for _, c := range intent.EssentialCriteria {
+		if c.Strength == "preferred" {
+			continue
+		}
 		if c.Kind == "genre" || c.Kind == "style" {
-			if c.Scope != "" && c.Scope != "playlist" {
+			if c.Group != "" || c.Scope != "" && c.Scope != "playlist" {
 				return MusicalCriterion{}, false
 			}
 			add(c)
 		}
 	}
 	for _, p := range intent.Preferences.Genres {
+		if p.Strength == "preferred" || p.Group != "" || (p.Scope != "" && p.Scope != "playlist") {
+			continue
+		}
 		if p.Influence != InfluenceNegative {
-			add(MusicalCriterion{Kind: "genre", Value: p.Value, Scope: "playlist", Evidence: p.Evidence})
+			add(MusicalCriterion{Kind: "genre", Value: p.Value, Scope: "playlist", Evidence: p.Evidence, Strength: p.Strength, ConceptID: p.ConceptID})
 		}
 	}
 	return result, len(values) == 1 && result.Value != ""

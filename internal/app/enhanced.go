@@ -228,7 +228,20 @@ func (c *Container) EnhancedPreviewService() *audio.Service {
 // PrepareEnhancedAudio is called once before ranking. Only the first bounded
 // candidates/references may trigger analysis; all remaining evidence is cached.
 func (c *Container) PrepareEnhancedAudio(ctx context.Context, intent core.MusicIntent, profile core.TasteProfile, refs []core.TrackRef) (*core.EnhancedAudioSnapshot, error) {
-	ctx = audio.WithEnhancedBudget(ctx, EnhancedAnalysisLimit, audio.EnhancedTimeLimit)
+	return c.prepareEnhancedAudio(ctx, intent, profile, refs, true, nil)
+}
+
+// RefreshEnhancedAudio reads only completed compatible evidence after refills.
+// It never admits tracks, downloads previews, rereads feedback, or restarts an
+// inference budget. The generation's initial taste centroids remain unchanged.
+func (c *Container) RefreshEnhancedAudio(ctx context.Context, intent core.MusicIntent, profile core.TasteProfile, refs []core.TrackRef, previous *core.EnhancedAudioSnapshot) (*core.EnhancedAudioSnapshot, error) {
+	return c.prepareEnhancedAudio(ctx, intent, profile, refs, false, previous)
+}
+
+func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicIntent, profile core.TasteProfile, refs []core.TrackRef, acquire bool, previous *core.EnhancedAudioSnapshot) (*core.EnhancedAudioSnapshot, error) {
+	if acquire {
+		ctx = audio.WithLazyEnhancedBudget(ctx, EnhancedAnalysisLimit, audio.EnhancedTimeLimit)
+	}
 	e := &c.enhanced
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
@@ -244,11 +257,16 @@ func (c *Container) PrepareEnhancedAudio(ctx context.Context, intent core.MusicI
 	if e.manifest != nil {
 		input.Model = e.manifest.Model
 	}
+	if !acquire && previous != nil {
+		prior := previous.Input()
+		if prior.CatalogVersion != input.CatalogVersion || prior.Model != input.Model || prior.PolicyVersion != core.EnhancedAudioPolicyVersion {
+			return nil, fmt.Errorf("enhanced audio refresh requires the same catalog, model and policy as the initial snapshot")
+		}
+		input.PositiveCentroid, input.NegativeCentroid = prior.PositiveCentroid, prior.NegativeCentroid
+	}
 	p, m := c.enhancedServices()
 	seen := map[string]bool{}
 	budget := audio.EnhancedBudgetFor(ctx)
-	budgetCtx, cancel := budget.Context(ctx)
-	defer cancel()
 	for _, ref := range refs {
 		if seen[ref.ID] {
 			continue
@@ -273,12 +291,14 @@ func (c *Container) PrepareEnhancedAudio(ctx context.Context, intent core.MusicI
 				input.Representations[ref.ID] = cached
 			}
 		}
-		if (!dspHit || !mertHit) && budget.Allow(ref.ID) && budgetCtx.Err() == nil {
+		if acquire && (!dspHit || !mertHit) && ctx.Err() == nil && budget.Allow(ref.ID) {
+			budgetCtx, cancel := budget.Context(ctx)
 			if m != nil {
 				_, _, _, _ = m.AnalyzeEnhancedPreview(budgetCtx, ref, catalog)
 			} else {
 				_, _, _ = p.AnalyzeDSPPreview(budgetCtx, ref, catalog)
 			}
+			cancel()
 		}
 		if a, ok, err := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion); err == nil && ok {
 			input.DSP[ref.ID] = a
@@ -296,7 +316,7 @@ func (c *Container) PrepareEnhancedAudio(ctx context.Context, intent core.MusicI
 		}
 		return completed, err
 	}
-	if m != nil && c.Feedback != nil {
+	if acquire && m != nil && c.Feedback != nil {
 		events, err := c.Feedback.ListFeedback(ctx, ports.FeedbackQuery{RequestID: profile.RequestID, SessionID: profile.SessionID})
 		if err != nil {
 			return nil, err

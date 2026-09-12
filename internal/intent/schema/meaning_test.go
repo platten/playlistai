@@ -9,7 +9,6 @@ import (
 
 func TestRejectInventedAndConflictingEntityExclusions(t *testing.T) {
 	for _, prompt := range []string{
-		"classical music ending with Miles Davis",
 		"classical music ending with Miles Davis but no Miles Davis",
 		"not only Miles Davis but also John Coltrane",
 	} {
@@ -20,6 +19,14 @@ func TestRejectInventedAndConflictingEntityExclusions(t *testing.T) {
 		if _, err := ParseForPrompt(raw, prompt); err == nil {
 			t.Fatalf("invalid exclusion accepted: %q", prompt)
 		}
+	}
+	w := Wire{Genres: []WirePreference{}, Mode: "journey", TotalCount: 5,
+		Destination:     []WireReference{{Kind: "artist", Value: "Miles Davis", Span: "Miles Davis", Explicit: true, Influence: "positive"}},
+		HardConstraints: []WireConstraint{{Kind: "exclude_artist", Value: "Miles Davis", Span: "Miles Davis"}}}
+	raw, _ := json.Marshal(w)
+	m, err := ParseForPrompt(raw, "classical music ending with Miles Davis")
+	if err != nil || m.Destination == nil || len(m.HardConstraints) != 0 {
+		t.Fatalf("source-grounded destination did not replace the invented exclusion: %+v %v", m, err)
 	}
 }
 
@@ -55,15 +62,15 @@ func TestEmotionPreservesTypePolarityAndScope(t *testing.T) {
 		if prompt == "not romantic music" && len(m.EssentialCriteria) != 0 {
 			t.Fatal("negative mood also required")
 		}
-		if prompt != "not romantic music" && (len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Kind != "mood") {
-			t.Fatal("essential mood kind lost")
+		if prompt != "not romantic music" && (len(m.EssentialCriteria) != 0 || m.Preferences.Moods[0].Strength != "preferred") {
+			t.Fatal("ordinary mood was promoted to a hard requirement")
 		}
 	}
 	w := Wire{Genres: []WirePreference{}, Mode: "journey", TotalCount: 5,
 		EssentialCriteria: []WireCriterion{{Kind: "mood", Value: "dreamy", Span: "dreamy", Scope: "journey_end"}}}
 	raw, _ := json.Marshal(w)
 	m, err := ParseForPrompt(raw, "start with jazz and end dreamy")
-	if err != nil || len(m.Preferences.Moods) != 0 || m.EssentialCriteria[0].Scope != "journey_end" {
+	if err != nil || len(m.Preferences.Moods) != 1 || m.Preferences.Moods[0].Scope != "journey_end" || m.Preferences.Moods[0].Strength != "preferred" {
 		t.Fatalf("stage mood flattened: %+v %v", m, err)
 	}
 }

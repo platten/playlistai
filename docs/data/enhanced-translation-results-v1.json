@@ -1,0 +1,679 @@
+{
+  "version": 1,
+  "environment": {
+    "commit": "7e91fc199c57b1487aa315f6a9c382db2c4364e8",
+    "go": "go version go1.27.0 windows/amd64",
+    "model": "Qwen2.5-3B-Instruct Q4_K_M",
+    "modelSha256": "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94",
+    "runtimeSha256": "57c293efc45195604f35fc3bef60df6fb917fa542f9d8dd0db9bbcb2f86a0802",
+    "fixtureSha256": "2cba0d68cf53a2f2f2fa51f4ad87ae28aef0cade4f0683580168b4f3af1c786f",
+    "nativeReplaySha256": "e177ea51c2dec3e40cfd4e74420486d600ee5a5d1216687eca4229e99ad0a84a",
+    "catalog": "1:956917:1788613313",
+    "catalogTracks": 956917,
+    "enhancedEvidenceSha256": "5ed69dd2f4e26a8291e0f2a08df10d378e0415c46cc1d39d82134e4804d9109a",
+    "context": 4096,
+    "temperature": 0,
+    "cachePrompt": true
+  },
+  "commit": "7e91fc199c57b1487aa315f6a9c382db2c4364e8",
+  "date": "2026-09-12",
+  "fixtureSha256": "2cba0d68cf53a2f2f2fa51f4ad87ae28aef0cade4f0683580168b4f3af1c786f",
+  "originalSystemSha256": "8361a86fa88afd552ea8a51daf1f48cacadee9d075fbf33d3c525de1c665df6b",
+  "compactSystemSha256": "0632c346f6f2085442ebb832196535a1cc7327b82d7f21282309edbe02b2ef12",
+  "model": "Qwen2.5-3B-Instruct Q4_K_M",
+  "contextTokens": 4096,
+  "temperature": 0,
+  "cachePrompt": true,
+  "requestsChecked": 64,
+  "reviewRubric": "docs/enhanced-translation-ten-prompt-audit.md",
+  "runs": [
+    {
+      "name": "direct-original-1",
+      "accepted": 6,
+      "narrowPasses": 2,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 62.412,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 2721
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2496
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: exclusion of \"Aerosmith\" has no negative instruction in the request; remove the invented exclusion"
+          ],
+          "milliseconds": 4520
+        },
+        {
+          "case": 4,
+          "parsed": false,
+          "narrowIssues": [
+            "llama: Post \"http://127.0.0.1:52321/v1/chat/completions\": readfrom tcp 127.0.0.1:64240->127.0.0.1:52321: write tcp 127.0.0.1:64240->127.0.0.1:52321: use of closed network connection"
+          ],
+          "milliseconds": 2623
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 5972
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 3079
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 2446
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 15932
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "llama: Post \"http://127.0.0.1:52321/v1/chat/completions\": readfrom tcp 127.0.0.1:58516->127.0.0.1:52321: write tcp 127.0.0.1:58516->127.0.0.1:52321: use of closed network connection"
+          ],
+          "milliseconds": 10822
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 11801
+        }
+      ],
+      "reportSha256": "b5c2a37b29cb5f85e2c5cc431584b4722e4ea5088b6782df1e791aa6990ef4ef"
+    },
+    {
+      "name": "direct-original-2",
+      "accepted": 7,
+      "narrowPasses": 3,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 62.276,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 2002
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2308
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "llama: Post \"http://127.0.0.1:52321/v1/chat/completions\": http: server closed idle connection"
+          ],
+          "milliseconds": 2001
+        },
+        {
+          "case": 4,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 4408
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 5799
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 3088
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 2469
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 13615
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: ungrounded constraint \"\""
+          ],
+          "milliseconds": 15246
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 11340
+        }
+      ],
+      "reportSha256": "d961fd19b7fc5275c0a7826d2b076835b932b31ca7113ce7380808b184c43f8c"
+    },
+    {
+      "name": "original-1",
+      "accepted": 7,
+      "narrowPasses": 3,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 68.796,
+      "promptTokens": 2071,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 2686
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2470
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: exclusion of \"Aerosmith\" has no negative instruction in the request; remove the invented exclusion"
+          ],
+          "milliseconds": 4515
+        },
+        {
+          "case": 4,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 5139
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 6283
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 3136
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 2347
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 15691
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: ungrounded constraint \"\""
+          ],
+          "milliseconds": 14360
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 12169
+        }
+      ],
+      "reportSha256": "fd7f17d3aed406e769e1916dc182a8e9053b7a459a10b281f9ffc0d2eb14caff"
+    },
+    {
+      "name": "compact-1",
+      "accepted": 5,
+      "narrowPasses": 1,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 59.092,
+      "promptTokens": 1448,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: ungrounded defining criterion \"piano, strings\""
+          ],
+          "milliseconds": 6097
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2359
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 4633
+        },
+        {
+          "case": 4,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: exclusion of \"polished pop\" has no negative instruction in the request; remove the invented exclusion"
+          ],
+          "milliseconds": 6251
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 8169
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 2776
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 3813
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 12319
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: intent: hard constraint must have kind and value"
+          ],
+          "milliseconds": 7814
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 4861
+        }
+      ],
+      "reportSha256": "c3490e3141f1e66c5c4bceb2a5a96a4665bbf4114d2a3136fbff663862c5fe1d"
+    },
+    {
+      "name": "compact-2",
+      "accepted": 5,
+      "narrowPasses": 1,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 55.66,
+      "promptTokens": 1448,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: ungrounded defining criterion \"piano, strings\""
+          ],
+          "milliseconds": 5652
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2297
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 4810
+        },
+        {
+          "case": 4,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: exclusion of \"polished pop\" has no negative instruction in the request; remove the invented exclusion"
+          ],
+          "milliseconds": 6920
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 7989
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 2861
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 2321
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 12598
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: intent: hard constraint must have kind and value"
+          ],
+          "milliseconds": 5374
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 4838
+        }
+      ],
+      "reportSha256": "d9f6f7071fe643747140a444146405771a87d43315da3b3d5886667593e89ae3"
+    },
+    {
+      "name": "original-2",
+      "accepted": 7,
+      "narrowPasses": 3,
+      "reviewedFullMeaningPasses": 0,
+      "seconds": 67.167,
+      "promptTokens": 2071,
+      "cases": [
+        {
+          "case": 1,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 2678
+        },
+        {
+          "case": 2,
+          "parsed": true,
+          "narrowIssues": [
+            "period not preserved"
+          ],
+          "milliseconds": 2279
+        },
+        {
+          "case": 3,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: exclusion of \"Aerosmith\" has no negative instruction in the request; remove the invented exclusion"
+          ],
+          "milliseconds": 4171
+        },
+        {
+          "case": 4,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 4922
+        },
+        {
+          "case": 5,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: negative entity reference needs an exclusion"
+          ],
+          "milliseconds": 7511
+        },
+        {
+          "case": 6,
+          "parsed": true,
+          "narrowIssues": [
+            "vocal preference missing",
+            "preference missing: melancholic"
+          ],
+          "milliseconds": 3034
+        },
+        {
+          "case": 7,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: aggressive"
+          ],
+          "milliseconds": 2255
+        },
+        {
+          "case": 8,
+          "parsed": true,
+          "narrowIssues": [],
+          "milliseconds": 15597
+        },
+        {
+          "case": 9,
+          "parsed": false,
+          "narrowIssues": [
+            "schema: ungrounded constraint \"\""
+          ],
+          "milliseconds": 13596
+        },
+        {
+          "case": 10,
+          "parsed": true,
+          "narrowIssues": [
+            "preference missing: dark"
+          ],
+          "milliseconds": 11124
+        }
+      ],
+      "reportSha256": "08f8f2f3e8614d867fabe1b219c9c4ad805bb77a069ba8262633ce0a14c9b7f0"
+    }
+  ],
+  "replays": [
+    {
+      "name": "enhanced-replay-1",
+      "requests": 6,
+      "totalTracks": 0,
+      "cases": [
+        {
+          "case": 1,
+          "count": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 2,
+          "count": 0,
+          "errors": [
+            "period not preserved",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 6,
+          "count": 0,
+          "errors": [
+            "vocal preference missing",
+            "preference missing: melancholic",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 7,
+          "count": 0,
+          "errors": [
+            "preference missing: aggressive",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 8,
+          "count": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 10,
+          "count": 0,
+          "errors": [
+            "preference missing: dark",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        }
+      ],
+      "reportSha256": "97e12691080f3301dbfd73168926afbc9426ad29f4b746f2cf2c05d5a14bed39"
+    },
+    {
+      "name": "enhanced-replay-2",
+      "requests": 7,
+      "totalTracks": 0,
+      "cases": [
+        {
+          "case": 1,
+          "count": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 2,
+          "count": 0,
+          "errors": [
+            "period not preserved",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 4,
+          "count": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 6,
+          "count": 0,
+          "errors": [
+            "vocal preference missing",
+            "preference missing: melancholic",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 7,
+          "count": 0,
+          "errors": [
+            "preference missing: aggressive",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 8,
+          "count": 0,
+          "errors": [
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        },
+        {
+          "case": 10,
+          "count": 0,
+          "errors": [
+            "preference missing: dark",
+            "insufficient playlist: got 0 tracks, minimum 1"
+          ]
+        }
+      ],
+      "reportSha256": "3f02df8508f0e2d81783221d360a98bf467fe4382d74b2f6726ada608c972880"
+    }
+  ],
+  "limitations": [
+    "Generated development prompts; not held-out musical-quality judgments.",
+    "Full-meaning counts are independent manual review, not musiccheck automatic assertions.",
+    "Replay uses only eight compatible cached recordings and no online metadata or preview downloads."
+  ]
+}

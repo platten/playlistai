@@ -32,9 +32,21 @@ var vocalPrompts = []string{
 var otherPrompts = []string{"Silence.", "Noise without music."}
 
 func instrumentalClause(c core.AudioClause) bool {
+	if c.Strength == "preferred" || c.Degree == "mostly" || c.Degree == "reduced" {
+		return false
+	}
 	v := strings.ToLower(strings.TrimSpace(c.Text))
 	return c.Kind == "vocal" && c.Negative && v == "vocals" ||
 		!c.Negative && (v == "instrumental" || v == "no vocals")
+}
+
+func requiredInstrumentalScreen(clauses []core.AudioClause) bool {
+	for _, c := range clauses {
+		if (c.Strict || c.Essential) && instrumentalClause(c) {
+			return true
+		}
+	}
+	return false
 }
 
 // Every segment must prefer an instrumental description over every vocal and

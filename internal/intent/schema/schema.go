@@ -12,6 +12,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -29,6 +30,11 @@ type WireReference struct {
 }
 
 type WirePreference struct {
+	Scope     string `json:"scope,omitempty"`
+	Strength  string `json:"strength,omitempty"`
+	ConceptID string `json:"conceptId,omitempty"`
+	Degree    string `json:"degree,omitempty"`
+	Group     string `json:"group,omitempty"`
 	Value     string `json:"value"`
 	Influence string `json:"influence"`
 	Explicit  bool   `json:"explicit"`
@@ -36,10 +42,13 @@ type WirePreference struct {
 }
 
 type WireCriterion struct {
-	Kind  string `json:"kind"`
-	Value string `json:"value"`
-	Scope string `json:"scope"`
-	Span  string `json:"span"`
+	Strength  string `json:"strength,omitempty"`
+	Group     string `json:"group,omitempty"`
+	ConceptID string `json:"conceptId,omitempty"`
+	Kind      string `json:"kind"`
+	Value     string `json:"value"`
+	Scope     string `json:"scope"`
+	Span      string `json:"span"`
 }
 
 type WireAnchor struct {
@@ -153,7 +162,9 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	if count, ok := rules.TrackCount(prompt); ok {
 		wire.TotalCount = min(core.MaxCount, max(core.MinCount, count))
 	}
+	extracted := lexicon.Extract(prompt)
 	if prompt != "" && wire.Genres != nil {
+		reconcileSource(&wire, &extracted, prompt)
 		discardInventedInstructions(&wire, prompt)
 		discardReferenceAttributedDescriptions(&wire)
 		preserveCategoryJourney(&wire, prompt)
@@ -166,6 +177,7 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 		preserveQualityClauses(&wire, prompt)
 		preserveEmotionalMeaning(&wire, prompt)
 		preserveVocalMeaning(&wire)
+		reconcileSource(&wire, &extracted, prompt)
 		if err := validateAffirmativeContrast(wire, prompt); err != nil {
 			return core.MusicIntent{}, err
 		}
@@ -189,6 +201,9 @@ func parse(raw []byte, prompt string) (core.MusicIntent, error) {
 	}
 	intent := wire.ToCore()
 	intent.OriginalDescription = prompt
+	if prompt != "" && wire.Genres != nil {
+		intent = lexicon.Reconcile(intent, extracted)
+	}
 	if err := intent.Validate(); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
 	}
@@ -233,7 +248,7 @@ func validateKnownModifiers(w Wire, prompt string) error {
 		}
 		return false
 	}
-	for _, preference := range expected.Preferences.Styles {
+	for _, preference := range append(expected.Preferences.Styles, expected.Preferences.Genres...) {
 		style := preference.Value
 		negative := preference.Influence == core.InfluenceNegative
 		if negative && (!hasPreference(style, "negative") || !hasConstraint(style)) {
@@ -258,7 +273,9 @@ func definingStyleCriteria(prompt string) []definingStyle {
 	intent, _ := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
 	result := make([]definingStyle, 0, len(intent.EssentialCriteria))
 	for _, criterion := range intent.EssentialCriteria {
-		result = append(result, definingStyle{normalizeStyleLabel(criterion.Value), criterion.Scope})
+		if criterion.Kind == "genre" || criterion.Kind == "style" {
+			result = append(result, definingStyle{normalizeStyleLabel(criterion.Value), criterion.Scope})
+		}
 	}
 	return result
 }
@@ -372,7 +389,7 @@ func (w Wire) ToCore() core.MusicIntent {
 		}
 	}
 	for _, genre := range intent.Preferences.Genres {
-		if genre.Influence == core.InfluenceNegative {
+		if genre.Influence == core.InfluenceNegative || genre.Strength == "preferred" || genre.Group != "" {
 			continue
 		}
 		found := false
@@ -451,7 +468,7 @@ func anchorsToCore(in []WireAnchor) []core.InferredAnchor {
 func criteriaToCore(in []WireCriterion) []core.MusicalCriterion {
 	out := make([]core.MusicalCriterion, 0, len(in))
 	for _, criterion := range in {
-		out = append(out, core.MusicalCriterion{Kind: criterion.Kind, Value: criterion.Value, Scope: criterion.Scope, Evidence: evidence(criterion.Span, true)})
+		out = append(out, core.MusicalCriterion{Kind: criterion.Kind, Value: criterion.Value, Scope: criterion.Scope, Evidence: evidence(criterion.Span, true), Strength: criterion.Strength, Group: criterion.Group, ConceptID: criterion.ConceptID})
 	}
 	return out
 }
@@ -552,6 +569,7 @@ func preferenceToCore(p WirePreference) core.IntentPreference {
 	return core.IntentPreference{
 		Value: p.Value, Influence: core.Influence(p.Influence),
 		Explicit: p.Explicit, Evidence: evidence(p.Span, p.Explicit),
+		Scope: p.Scope, Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group,
 	}
 }
 

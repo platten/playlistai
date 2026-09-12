@@ -90,6 +90,8 @@ type KnowledgeSnapshot struct {
 }
 
 type TrackAssessment struct {
+	FitTier     string             `json:"fitTier,omitempty"`
+	MatchDetail string             `json:"matchDetail,omitempty"`
 	Comparisons []IntentComparison `json:"comparisons,omitempty"`
 	TrackID     string             `json:"trackId"`
 	State       EvidenceState      `json:"state"`

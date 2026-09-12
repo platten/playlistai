@@ -84,3 +84,23 @@ func TestHistoryRetainsEnhancedReplayInput(t *testing.T) {
 		t.Fatal("enhanced replay snapshot lost")
 	}
 }
+
+func TestHistoryRetainsProtectedIntentAndCloseMatchExplanation(t *testing.T) {
+	c := newLoadedContainer(t)
+	a := New(c, nil)
+	intent := core.MusicIntent{Version: core.CurrentIntentVersion, OriginalDescription: "30 minutes, mostly instrumental", DurationSeconds: 1800, Start: &core.IntentReference{Kind: core.ReferenceArtist, Query: "Starting artist", Influence: core.InfluencePositive}, Translation: &core.IntentTranslation{Version: "lexicon/v1", Atoms: []core.IntentAtom{{ID: "duration:0", Kind: "duration", Value: "1800", Evidence: []core.SourceEvidence{{Text: "30 minutes", Start: 0, End: 10}}}}}, Preferences: core.SemanticPreferences{VocalPreference: &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "preferred", Degree: "mostly"}}}.Normalized()
+	result := PlaylistResult{Intent: intent, Assessments: []core.TrackAssessment{{TrackID: "track", FitTier: "close", MatchDetail: "Preview fits the mood; instrumentation remains unknown."}}}
+	a.saveGenerated(context.Background(), "Protected intent", intent.OriginalDescription, intent, BuildPlaylistRequest{Version: core.CurrentIntentVersion, Intent: intent}, result)
+	rows, err := c.History.List(context.Background(), 1)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("save: %v", err)
+	}
+	loaded, err := a.LoadSavedPlaylist(rows[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := loaded.Request.Intent
+	if m.DurationSeconds != 1800 || m.Start == nil || m.Start.Query != "Starting artist" || m.Translation == nil || m.Translation.Atoms[0].Evidence[0].Text != "30 minutes" || core.WantsInstrumental(m) || len(loaded.Result.Assessments) != 1 || loaded.Result.Assessments[0].FitTier != "close" || loaded.Result.Assessments[0].MatchDetail != result.Assessments[0].MatchDetail {
+		t.Fatalf("saved interpretation or uncertainty lost: %+v", loaded)
+	}
+}

@@ -1,0 +1,1517 @@
+{
+  "version": "music-concepts/v1",
+  "provenance": {
+    "description": "Small project-authored intent vocabulary and captions. Exact aliases are distinct from directional relationships and never prove track suitability. AcousticBrainz class identifiers were checked against public CC0 archive examples; no model weights or MusicBrainz database dump are included.",
+    "acousticBrainz": "https://acousticbrainz.org/data",
+    "classifierDefinitions": "https://acousticbrainz.org/datasets/accuracy",
+    "license": "GPL-3.0-only (project-authored registry); CC0 (referenced AcousticBrainz data)",
+    "conditionalModels": "genre_electronic omitted: subgenre predictions require independent electronic-domain applicability.",
+    "musicBrainz": "Search spellings only, not an assertion of provider ontology equivalence or track tags."
+  },
+  "concepts": [
+    {
+      "id": "genre.classical",
+      "kind": "genre",
+      "value": "classical",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "classical"
+        ],
+        "acousticBrainz": {
+          "genre_rosamerica": "cla",
+          "genre_tzanetakis": "cla"
+        }
+      }
+    },
+    {
+      "id": "genre.electronic",
+      "kind": "genre",
+      "value": "electronic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "electronic"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "electronic"
+        }
+      }
+    },
+    {
+      "id": "genre.electronica",
+      "kind": "genre",
+      "value": "electronica",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "electronica"
+        ]
+      }
+    },
+    {
+      "id": "genre.rock",
+      "kind": "genre",
+      "value": "rock",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "rock"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "rock",
+          "genre_rosamerica": "roc",
+          "genre_tzanetakis": "roc"
+        }
+      }
+    },
+    {
+      "id": "genre.rock-and-roll",
+      "kind": "genre",
+      "value": "rock & roll",
+      "aliases": ["rock and roll"],
+      "parents": ["genre.rock"],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {"musicBrainz": ["rock & roll", "rock and roll"]}
+    },
+    {
+      "id": "genre.hard-rock",
+      "kind": "genre",
+      "value": "hard rock",
+      "aliases": [
+        "hard-rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "hard rock",
+          "hard-rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.industrial-rock",
+      "kind": "genre",
+      "value": "industrial rock",
+      "aliases": [
+        "industrial-rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "industrial rock",
+          "industrial-rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.industrial",
+      "kind": "genre",
+      "value": "industrial",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "industrial"
+        ]
+      }
+    },
+    {
+      "id": "genre.industrial-metal",
+      "kind": "genre",
+      "value": "industrial metal",
+      "aliases": [
+        "industrial-metal"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.metal"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "industrial metal",
+          "industrial-metal"
+        ]
+      }
+    },
+    {
+      "id": "genre.metal",
+      "kind": "genre",
+      "value": "metal",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "metal"
+        ],
+        "acousticBrainz": {
+          "genre_tzanetakis": "met"
+        }
+      }
+    },
+    {
+      "id": "genre.blues",
+      "kind": "genre",
+      "value": "blues",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "blues"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "blues",
+          "genre_tzanetakis": "blu"
+        }
+      }
+    },
+    {
+      "id": "genre.blues-rock",
+      "kind": "genre",
+      "value": "blues rock",
+      "aliases": [
+        "blues-rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "blues rock",
+          "blues-rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.jazz",
+      "kind": "genre",
+      "value": "jazz",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "jazz"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "jazz",
+          "genre_rosamerica": "jaz",
+          "genre_tzanetakis": "jaz"
+        }
+      }
+    },
+    {
+      "id": "genre.pop",
+      "kind": "genre",
+      "value": "pop",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "pop"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "pop",
+          "genre_rosamerica": "pop",
+          "genre_tzanetakis": "pop"
+        }
+      }
+    },
+    {
+      "id": "genre.alternative",
+      "kind": "genre",
+      "value": "alternative",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "alternative"
+        ],
+        "acousticBrainz": {
+          "genre_dortmund": "alternative"
+        }
+      }
+    },
+    {
+      "id": "genre.alternative-rock",
+      "kind": "genre",
+      "value": "alternative rock",
+      "aliases": [
+        "alternative-rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "alternative rock",
+          "alternative-rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.indie-rock",
+      "kind": "genre",
+      "value": "indie rock",
+      "aliases": [
+        "indie-rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "indie rock",
+          "indie-rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.post-rock",
+      "kind": "genre",
+      "value": "post-rock",
+      "aliases": [
+        "post rock"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.rock"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "post-rock",
+          "post rock"
+        ]
+      }
+    },
+    {
+      "id": "genre.hip-hop",
+      "kind": "genre",
+      "value": "hip hop",
+      "aliases": [
+        "hip-hop",
+        "hiphop"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "hip hop",
+          "hip-hop",
+          "hiphop"
+        ],
+        "acousticBrainz": {
+          "genre_rosamerica": "hip",
+          "genre_tzanetakis": "hip"
+        }
+      }
+    },
+    {
+      "id": "genre.country",
+      "kind": "genre",
+      "value": "country",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "country"
+        ],
+        "acousticBrainz": {
+          "genre_tzanetakis": "cou"
+        }
+      }
+    },
+    {
+      "id": "genre.folk",
+      "kind": "genre",
+      "value": "folk",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "folk"
+        ]
+      }
+    },
+    {
+      "id": "genre.soul",
+      "kind": "genre",
+      "value": "soul",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {"musicBrainz": ["soul"]}
+    },
+    {
+      "id": "genre.disco",
+      "kind": "genre",
+      "value": "disco",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "disco"
+        ],
+        "acousticBrainz": {
+          "genre_tzanetakis": "dis"
+        }
+      }
+    },
+    {
+      "id": "genre.reggae",
+      "kind": "genre",
+      "value": "reggae",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "reggae"
+        ],
+        "acousticBrainz": {
+          "genre_tzanetakis": "reg"
+        }
+      }
+    },
+    {
+      "id": "genre.ambient",
+      "kind": "genre",
+      "value": "ambient",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "ambient"
+        ]
+      }
+    },
+    {
+      "id": "genre.ambient-electronic",
+      "kind": "genre",
+      "value": "ambient electronic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "ambient electronic"
+        ]
+      }
+    },
+    {
+      "id": "genre.ambient-electronica",
+      "kind": "genre",
+      "value": "ambient electronica",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronica"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "ambient electronica"
+        ]
+      }
+    },
+    {
+      "id": "genre.dark-ambient",
+      "kind": "genre",
+      "value": "dark ambient",
+      "aliases": [
+        "dark-ambient"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.ambient"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "dark ambient",
+          "dark-ambient"
+        ]
+      }
+    },
+    {
+      "id": "genre.downtempo",
+      "kind": "genre",
+      "value": "downtempo",
+      "aliases": [
+        "down-tempo"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "downtempo",
+          "down-tempo"
+        ]
+      }
+    },
+    {
+      "id": "genre.house",
+      "kind": "genre",
+      "value": "house",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "house"
+        ]
+      }
+    },
+    {
+      "id": "genre.deep-house",
+      "kind": "genre",
+      "value": "deep house",
+      "aliases": [
+        "deep-house"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.house"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "deep house",
+          "deep-house"
+        ]
+      }
+    },
+    {
+      "id": "genre.techno",
+      "kind": "genre",
+      "value": "techno",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "techno"
+        ]
+      }
+    },
+    {
+      "id": "genre.melodic-techno",
+      "kind": "genre",
+      "value": "melodic techno",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.techno"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "melodic techno"
+        ]
+      }
+    },
+    {
+      "id": "genre.trance",
+      "kind": "genre",
+      "value": "trance",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "trance"
+        ]
+      }
+    },
+    {
+      "id": "genre.drum-and-bass",
+      "kind": "genre",
+      "value": "drum and bass",
+      "aliases": [
+        "drum & bass",
+        "drum n bass",
+        "drum'n'bass",
+        "dnb",
+        "d&b"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "drum and bass",
+          "drum & bass",
+          "drum n bass",
+          "drum'n'bass",
+          "dnb",
+          "d&b"
+        ]
+      }
+    },
+    {
+      "id": "genre.dubstep",
+      "kind": "genre",
+      "value": "dubstep",
+      "aliases": [
+        "dub-step"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "dubstep",
+          "dub-step"
+        ]
+      }
+    },
+    {
+      "id": "genre.idm",
+      "kind": "genre",
+      "value": "idm",
+      "aliases": [
+        "intelligent dance music"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "idm",
+          "intelligent dance music"
+        ]
+      }
+    },
+    {
+      "id": "genre.synth-pop",
+      "kind": "genre",
+      "value": "synth-pop",
+      "aliases": [
+        "synthpop",
+        "synth pop"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic",
+        "genre.pop"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "synth-pop",
+          "synthpop",
+          "synth pop"
+        ]
+      }
+    },
+    {
+      "id": "genre.trip-hop",
+      "kind": "genre",
+      "value": "trip hop",
+      "aliases": [
+        "trip-hop"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.electronic"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "trip hop",
+          "trip-hop"
+        ]
+      }
+    },
+    {
+      "id": "genre.easy-listening",
+      "kind": "genre",
+      "value": "easy listening",
+      "aliases": [
+        "easy-listening"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "easy listening",
+          "easy-listening"
+        ]
+      }
+    },
+    {
+      "id": "genre.film-score",
+      "kind": "genre",
+      "value": "film score",
+      "aliases": [
+        "film scores",
+        "movie score",
+        "movie scores"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "film score",
+          "film scores",
+          "movie score",
+          "movie scores"
+        ]
+      }
+    },
+    {
+      "id": "genre.ballad",
+      "kind": "genre",
+      "value": "ballad",
+      "aliases": [
+        "ballads"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": [
+          "ballad",
+          "ballads"
+        ]
+      }
+    },
+    {
+      "id": "genre.slow-ballad",
+      "kind": "genre",
+      "value": "slow ballad",
+      "aliases": [
+        "slow ballads"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.ballad"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "slow ballad",
+          "slow ballads"
+        ]
+      }
+    },
+    {
+      "id": "genre.baroque",
+      "kind": "genre",
+      "value": "baroque",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.classical"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "baroque"
+        ]
+      }
+    },
+    {
+      "id": "genre.romantic-classical",
+      "kind": "genre",
+      "value": "romantic classical",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.classical"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "romantic classical"
+        ]
+      }
+    },
+    {
+      "id": "genre.contemporary-classical",
+      "kind": "genre",
+      "value": "contemporary classical",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.classical"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "contemporary classical"
+        ]
+      }
+    },
+    {
+      "id": "genre.chamber-music",
+      "kind": "genre",
+      "value": "chamber music",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "parents": [
+        "genre.classical"
+      ],
+      "providers": {
+        "musicBrainz": [
+          "chamber music"
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.orchestral",
+      "kind": "instrumentation",
+      "value": "orchestral",
+      "aliases": [
+        "orchestral music"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "related": ["instrumentation.orchestra"],
+      "providers": {
+        "clap": ["Music played by an orchestra."]
+      }
+    },
+    {
+      "id": "mood.relaxing",
+      "kind": "mood",
+      "value": "relaxing",
+      "aliases": [
+        "relaxed"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_relaxed": "relaxed"
+        }
+      }
+    },
+    {
+      "id": "mood.aggressive",
+      "kind": "mood",
+      "value": "aggressive",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_aggressive": "aggressive"
+        }
+      }
+    },
+    {
+      "id": "mood.happy",
+      "kind": "mood",
+      "value": "happy",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_happy": "happy"
+        }
+      }
+    },
+    {
+      "id": "mood.sad",
+      "kind": "mood",
+      "value": "sad",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_sad": "sad"
+        }
+      }
+    },
+    {
+      "id": "mood.party",
+      "kind": "mood",
+      "value": "party",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_party": "party"
+        }
+      }
+    },
+    {
+      "id": "mood.energetic",
+      "kind": "mood",
+      "value": "energetic",
+      "aliases": [
+        "high energy",
+        "high-energy"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.dramatic",
+      "kind": "mood",
+      "value": "dramatic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.melancholic",
+      "kind": "mood",
+      "value": "melancholic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.comforting",
+      "kind": "mood",
+      "value": "comforting",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.dark",
+      "kind": "mood",
+      "value": "dark",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.calm",
+      "kind": "mood",
+      "value": "calm",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.gentle",
+      "kind": "mood",
+      "value": "gentle",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.dreamy",
+      "kind": "mood",
+      "value": "dreamy",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.wistful",
+      "kind": "mood",
+      "value": "wistful",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.romantic",
+      "kind": "mood",
+      "value": "romantic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.sleepy",
+      "kind": "mood",
+      "value": "sleepy",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.uplifting",
+      "kind": "mood",
+      "value": "uplifting",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.meditative",
+      "kind": "mood",
+      "value": "meditative",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "mood.intense",
+      "kind": "mood",
+      "value": "intense",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.piano",
+      "kind": "instrumentation",
+      "value": "piano",
+      "aliases": [
+        "pianos"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.strings",
+      "kind": "instrumentation",
+      "value": "strings",
+      "aliases": [
+        "string instruments"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.guitar",
+      "kind": "instrumentation",
+      "value": "guitar",
+      "aliases": [
+        "guitars"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.electric-guitar",
+      "kind": "instrumentation",
+      "value": "electric guitar",
+      "aliases": [
+        "electric guitars"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.acoustic-guitar",
+      "kind": "instrumentation",
+      "value": "acoustic guitar",
+      "aliases": [
+        "acoustic guitars"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.drums",
+      "kind": "instrumentation",
+      "value": "drums",
+      "aliases": [
+        "drum kit"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.synthesizer",
+      "kind": "instrumentation",
+      "value": "synthesizer",
+      "aliases": [
+        "synthesizers",
+        "synths"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.violin",
+      "kind": "instrumentation",
+      "value": "violin",
+      "aliases": [
+        "violins"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.cello",
+      "kind": "instrumentation",
+      "value": "cello",
+      "aliases": [
+        "cellos"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.orchestra",
+      "kind": "instrumentation",
+      "value": "orchestra",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.saxophone",
+      "kind": "instrumentation",
+      "value": "saxophone",
+      "aliases": [
+        "saxophones"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "instrumentation.bass-guitar",
+      "kind": "instrumentation",
+      "value": "bass guitar",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "vocal.instrumental",
+      "kind": "vocal",
+      "value": "instrumental",
+      "aliases": [
+        "instrumental music"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "voice_instrumental": "instrumental"
+        }
+      }
+    },
+    {
+      "id": "vocal.vocals",
+      "kind": "vocal",
+      "value": "vocals",
+      "aliases": [
+        "vocal",
+        "voice",
+        "singing"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "voice_instrumental": "voice"
+        }
+      }
+    },
+    {
+      "id": "vocal.screaming",
+      "kind": "vocal",
+      "value": "screaming",
+      "aliases": [
+        "screamed vocals"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with screamed vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.harsh-vocals",
+      "kind": "vocal",
+      "value": "harsh vocals",
+      "aliases": [
+        "harsh singing"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with harsh vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.female-vocals",
+      "kind": "vocal",
+      "value": "female vocals",
+      "aliases": [
+        "female singing"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a female singer."
+        ]
+      }
+    },
+    {
+      "id": "vocal.male-vocals",
+      "kind": "vocal",
+      "value": "male vocals",
+      "aliases": [
+        "male singing"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a male singer."
+        ]
+      }
+    },
+    {
+      "id": "texture.bright",
+      "kind": "texture",
+      "value": "bright",
+      "aliases": [
+        "bright sound"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "timbre": "bright"
+        },
+        "dsp": [
+          "spectral_centroid_hz:positive"
+        ]
+      }
+    },
+    {
+      "id": "texture.dark",
+      "kind": "texture",
+      "value": "dark",
+      "aliases": [
+        "dark sound"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "timbre": "dark"
+        },
+        "dsp": [
+          "spectral_centroid_hz:negative"
+        ]
+      }
+    },
+    {
+      "id": "texture.dynamic",
+      "kind": "texture",
+      "value": "dynamic",
+      "aliases": [
+        "wide dynamics",
+        "big dynamic swings",
+        "big changes from quiet to loud"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with wide dynamics, changing from quiet to loud."
+        ],
+        "dsp": [
+          "short_window_rms_spread_db:positive"
+        ]
+      }
+    },
+    {
+      "id": "texture.compressed-dynamics",
+      "kind": "texture",
+      "value": "compressed dynamics",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "short_window_rms_spread_db:negative"
+        ]
+      }
+    },
+    {
+      "id": "texture.bass-heavy",
+      "kind": "texture",
+      "value": "bass heavy",
+      "aliases": [
+        "bass-heavy",
+        "strong bass"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "bass_energy_ratio:positive"
+        ]
+      }
+    },
+    {
+      "id": "texture.deep-bass",
+      "kind": "texture",
+      "value": "deep bass",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with deep bass."
+        ]
+      }
+    },
+    {
+      "id": "texture.strong-sub-bass",
+      "kind": "texture",
+      "value": "strong sub-bass",
+      "aliases": [
+        "strong subbass"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "subbass_energy_ratio:positive"
+        ]
+      }
+    },
+    {
+      "id": "texture.percussive",
+      "kind": "texture",
+      "value": "percussive",
+      "aliases": [
+        "lots of transients",
+        "sharp attacks"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "transients:positive"
+        ]
+      }
+    },
+    {
+      "id": "texture.danceable",
+      "kind": "texture",
+      "value": "danceable",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "danceability": "danceable"
+        }
+      }
+    },
+    {
+      "id": "texture.tonal",
+      "kind": "texture",
+      "value": "tonal",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "tonal_atonal": "tonal"
+        }
+      }
+    },
+    {
+      "id": "texture.atonal",
+      "kind": "texture",
+      "value": "atonal",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "tonal_atonal": "atonal"
+        }
+      }
+    },
+    {
+      "id": "texture.acoustic",
+      "kind": "texture",
+      "value": "acoustic",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_acoustic": "acoustic"
+        }
+      }
+    },
+    {
+      "id": "texture.electronic-production",
+      "kind": "texture",
+      "value": "electronic production",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "mood_electronic": "electronic"
+        }
+      }
+    },
+    {
+      "id": "texture.bluesy",
+      "kind": "texture",
+      "value": "bluesy",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.warm",
+      "kind": "texture",
+      "value": "warm",
+      "aliases": [
+        "warm textures"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.gentle-pulse",
+      "kind": "texture",
+      "value": "gentle pulse",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.heavy",
+      "kind": "texture",
+      "value": "heavy",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.clubby",
+      "kind": "texture",
+      "value": "clubby",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.driving",
+      "kind": "texture",
+      "value": "driving",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.driving-guitar-riffs",
+      "kind": "texture",
+      "value": "driving guitar riffs",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.guitar-riffs",
+      "kind": "texture",
+      "value": "guitar riffs",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.raw-live-band-feel",
+      "kind": "texture",
+      "value": "raw live-band feel",
+      "aliases": [
+        "raw live band feel"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.polished-pop",
+      "kind": "texture",
+      "value": "polished pop",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.polished",
+      "kind": "texture",
+      "value": "polished",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.steady-beat",
+      "kind": "texture",
+      "value": "steady beat",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.microdetail",
+      "kind": "texture",
+      "value": "microdetail",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "texture.sparkle",
+      "kind": "texture",
+      "value": "sparkle",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "activity.focus",
+      "kind": "activity",
+      "value": "focus",
+      "aliases": [
+        "concentrate",
+        "concentration"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "activity.workout",
+      "kind": "activity",
+      "value": "workout",
+      "aliases": [
+        "working out",
+        "exercise"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "activity.running",
+      "kind": "activity",
+      "value": "running",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "activity.lifting-weights",
+      "kind": "activity",
+      "value": "lifting weights",
+      "aliases": [
+        "weightlifting"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    },
+    {
+      "id": "activity.reading",
+      "kind": "activity",
+      "value": "reading",
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only"
+    }
+  ]
+}

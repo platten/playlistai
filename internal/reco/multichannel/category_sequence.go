@@ -127,6 +127,9 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 				capacity[stage] = min(request.Intent.Count, path.length+remaining)
 			}
 			for index, item := range pool {
+				if request.Intent.Start != nil && path.length == 0 && (!item.required || requiredIndices[index] != 0) {
+					continue
+				}
 				if used[recordingIDs[index]] || request.Intent.Constraints.NoRepeatArtistBackToBack && previous.ID != "" && previousArtist != 0 && previousArtist == artistIDs[index] {
 					continue
 				}
