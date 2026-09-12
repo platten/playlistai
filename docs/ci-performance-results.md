@@ -3,6 +3,9 @@
 The implementation preserves full PR validation on GitHub-hosted Windows,
 Linux x64/arm64 and macOS. Windows still builds both NSIS installers and measures
 full host coverage; its ARM64 installer remains a cross-compilation check.
+Windows now collects full atomic coverage in the race-enabled test pass, with
+the separate production-tag coverage check retained. Manual comparisons can
+still select the previous two-pass execution.
 
 Implemented changes:
 
@@ -33,6 +36,22 @@ scope, and normal GitHub cache isolation; their file counts and expanded sizes
 are retained for comparison. These inputs allow measurements without changing
 the required default checks.
 
+For example, a maintainer can run a bounded Windows concurrency comparison with
+`gh workflow run ci.yml --ref BRANCH -f windows_benchmark=true -f windows_package_parallelism=2 -f windows_test_mode=separate -f windows_cache=standard`.
+Choose `combined` to measure one race-and-coverage pass, or `refreshed` to test
+the alternative cache. Download `go-coverage-windows-latest` from the run; compare
+command durations in `*.summary.json` as well as complete job/setup/save times.
+The raw `*.jsonl` files retain detailed events and failure output. Coverage
+remains in `backend.out` and `production-build.out`.
+
+The aggregate truth table was exercised in Bash for all 32 combinations of
+normal/benchmark mode and dependency success/failure/cancellation/skipping.
+Partial experiments report `Windows benchmark complete`, never `CI complete`.
+Existing repository rules require PRs and linear history but currently do not
+require status checks. This change supplies the aggregate check without altering
+repository permissions/rules; it can be made required once this workflow is on
+main.
+
 Local validation completed with Go 1.27.0 on Windows amd64, Intel Core Ultra 9
 285H (16 logical CPUs), and the verified LLVM-MinGW compiler:
 
@@ -53,10 +72,23 @@ gate found an unchecked rollback in the new fixture cleanup; it was corrected,
 and the subsequent complete gate passed. Diagnostic Go sources are excluded
 from application package discovery.
 
-Hosted measurements will be recorded below once the implementation run and
-controlled experiments complete. Local timing is not a forecast of GitHub
-runner performance. No sharding, higher default concurrency, reduced coverage,
-paid runner or self-hosted runner has been adopted without hosted evidence.
+The first complete [implementation run](https://github.com/platten/playlistai/actions/runs/34695314573)
+passed every platform job in **12m50s**, compared with **17m46s** in the latest
+pre-change PR run. Its Windows job took 12m42s: the race command took 282.67s
+and the coverage command 186.01s. Both ran all 53 packages.
+
+The [combined race/coverage experiment](https://github.com/platten/playlistai/actions/runs/34695341525)
+passed in a **10m37s Windows job**; its combined Go command took 300.80s.
+The coverage profile has the same statement scope as the original Windows
+report, and total coverage remains **82.0%**. This supports combining the two
+instrumented passes, rather than reducing test or coverage scope. The timing
+report confirms a four-core AMD EPYC hosted runner with Go 1.27.1.
+
+Repeated hosted measurements and the final-head checks are recorded in the
+consolidated PR's validation section. These first samples do not establish a
+long-term median or tail latency. No sharding, higher default concurrency,
+reduced coverage, paid runner or self-hosted runner is introduced. Cache refresh
+remains an explicit experiment until its restore/build/save tradeoff is proven.
 
 The broader audio/recommendation fixture rewrite was assessed and deferred:
 those fixtures use concrete validated stores, and bridge tests deliberately
