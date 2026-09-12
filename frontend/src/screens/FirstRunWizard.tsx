@@ -10,9 +10,10 @@ import {
 } from "../lib/api";
 import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
+import { IntentModelsCard } from "../components/IntentModelsCard";
 
-type Step = "welcome" | "catalog" | "metadata" | "model" | "analysis" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "analysis", "preview", "done"];
+type Step = "welcome" | "catalog" | "metadata" | "model" | "intent" | "analysis" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "intent", "analysis", "preview", "done"];
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -59,7 +60,8 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
         {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
         {step === "catalog" && <CatalogStep onNext={() => setStep("metadata")} />}
         {step === "metadata" && <MetadataStep onNext={() => setStep("model")} />}
-        {step === "model" && <ModelStep onNext={() => setStep("analysis")} />}
+        {step === "model" && <ModelStep onNext={() => setStep("intent")} />}
+        {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard automatic /><Button variant="primary" onClick={() => setStep("analysis")}>Continue</Button><p className="text-[12px] text-muted">Setup downloads missing language models automatically. Leaving this step pauses the download; you can resume in Settings.</p></div>}
         {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
         {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}

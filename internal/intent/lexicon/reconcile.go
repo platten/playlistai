@@ -64,6 +64,9 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	intent.EssentialCriteria = criteria
 	constraints := make([]core.HardConstraint, 0, len(intent.HardConstraints))
 	for _, c := range intent.HardConstraints {
+		if c.Kind == "require_artist" {
+			continue // rebuilt only from an attached affirmative output-domain atom
+		}
 		if c.Kind != "" && c.Value != "" && (strings.HasPrefix(c.Kind, "require_") || c.Kind == "journey" || c.Kind == "journey_order" || c.Kind == "waypoint_order" || c.Kind == "transition_order" || !Owned(c.Value, c.Evidence, extracted.Atoms)) {
 			constraints = append(constraints, c)
 		}
@@ -112,10 +115,17 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			}
 		case "temporal_exclusion":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The requested period exclusion is preserved; the current calendar filter supports positive intervals only.", Evidence: a.Evidence})
+		case "temporal_alternatives":
+			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "Separate year alternatives are preserved; the current calendar filter cannot enforce a union of distinct years.", Evidence: a.Evidence})
+		case "relative_energy":
+			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative energy preference is preserved; comparison with the reference requires compatible measured energy evidence.", Evidence: a.Evidence})
 		case "reference_era":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative artist era is preserved; a supported career-period reference is needed before it can constrain retrieval.", Evidence: a.Evidence})
 		case "required_track":
 			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence})
+		case "require_artist":
+			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "require_artist", Value: a.Value, Evidence: a.Evidence})
+			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence})
 		case "entity_mention":
 			keptReferences := intent.References[:0]
 			for _, r := range intent.References {
@@ -251,6 +261,9 @@ func Owned(value string, evidence []core.SourceEvidence, atoms []core.IntentAtom
 		matchedValue := wordsContain(value, a.Value) || wordsContain(a.Value, value)
 		for _, e := range evidence {
 			for _, source := range a.Evidence {
+				if knownOccurrence(e) && knownOccurrence(source) && (e.End <= source.Start || e.Start >= source.End) {
+					continue // equal wording at another occurrence does not own this field
+				}
 				if strings.TrimSpace(e.Text) != "" && wordsContain(e.Text, source.Text) && wordsContain(source.Text, e.Text) {
 					return true // a complete, exact occurrence has a protected role
 				}
@@ -274,8 +287,11 @@ func Owned(value string, evidence []core.SourceEvidence, atoms []core.IntentAtom
 		}
 		for _, e := range evidence {
 			for _, source := range a.Evidence {
-				if e.Start >= 0 && source.Start >= 0 && e.Start < source.End && e.End > source.Start {
-					return true
+				if knownOccurrence(e) && knownOccurrence(source) {
+					if e.Start < source.End && e.End > source.Start {
+						return true
+					}
+					continue
 				}
 				if wordsContain(e.Text, source.Text) || wordsContain(source.Text, e.Text) {
 					return true
@@ -285,6 +301,8 @@ func Owned(value string, evidence []core.SourceEvidence, atoms []core.IntentAtom
 	}
 	return false
 }
+
+func knownOccurrence(e core.SourceEvidence) bool { return e.Start >= 0 && e.End > e.Start }
 func wordsContain(text, value string) bool {
 	words := func(s string) string {
 		s = strings.Map(func(r rune) rune {

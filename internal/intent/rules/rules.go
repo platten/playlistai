@@ -101,7 +101,12 @@ func (*Parser) Parse(_ context.Context, in ports.IntentInput) (core.MusicIntent,
 		intent.Journey.EnergyTrajectory = trajectory
 	}
 
-	intent = lexicon.ReconcileFallback(intent, lexicon.Extract(prompt))
+	source := in.SourceFacts
+	if source == nil {
+		extracted := lexicon.Extract(prompt)
+		source = &extracted
+	}
+	intent = lexicon.ReconcileFallback(intent, *source)
 	out := intent.Normalized()
 	out.Mode = mode // Normalized() would flip an unset mode to journey for >=2 seeds
 	if intent.Start != nil || intent.Destination != nil || len(intent.Journey.EnergyTrajectory) > 0 {

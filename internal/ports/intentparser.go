@@ -17,6 +17,12 @@ type IntentInput struct {
 	NowPlaying   *core.TrackRef  // resolves "like this"
 	RecentTracks []core.TrackRef // resolves "keep it going"
 	Locale       string
+	// IntentProposals come only from the local auxiliary text encoder. They are
+	// advisory and contain no catalog lists or audio embeddings.
+	IntentProposals []core.IntentProposal
+	// SourceFacts is the immutable extraction snapshot shared by every model
+	// attempt for this request. Callers may omit it; the local client prepares it.
+	SourceFacts *core.IntentTranslation
 }
 
 // ParserInfo describes the active backend for the UI badge.

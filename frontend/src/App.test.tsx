@@ -20,7 +20,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "ClearModel",
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow",
   "GetMetadataBundleInfo", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
-  "GetPreviewURL", "GetEnhancedAnalysisStatus",
+  "GetPreviewURL", "GetEnhancedAnalysisStatus", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
   API: bridge,
@@ -587,6 +587,8 @@ it("opens setup when catalog loading fails and completes onboarding without trap
   fireEvent.click(await screen.findByRole("button", { name: "Open setup" }));
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
+  await screen.findByRole("heading", { name: "Intent language models" });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));

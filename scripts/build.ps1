@@ -26,11 +26,13 @@ foreach ($arch in $architectures) {
     $buildInfo = (& go version -m (Join-Path $RepoRoot "bin\playlist-ai.exe") | Out-String)
     if ($LASTEXITCODE -ne 0 -or $buildInfo -notmatch 'CGO_ENABLED=1' -or $buildInfo -notmatch "GOARCH=$arch") { throw "Packaged application lacks the expected native build configuration" }
     if ($arch -eq "amd64" -or $env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
-        $check = Start-Process -FilePath (Join-Path $RepoRoot "bin\playlist-ai.exe") -ArgumentList "--check-audio-worker" -PassThru
-        try {
-            if (-not $check.WaitForExit(15000)) { $check.Kill(); throw "Native CLAP capability check timed out" }
-            if ($check.ExitCode -ne 0) { throw "Packaged application is missing native CLAP support" }
-        } finally { $check.Dispose() }
+        foreach ($capability in @("--check-audio-worker", "--check-intent-worker")) {
+            $check = Start-Process -FilePath (Join-Path $RepoRoot "bin\playlist-ai.exe") -ArgumentList $capability -WindowStyle Hidden -PassThru
+            try {
+                if (-not $check.WaitForExit(15000)) { $check.Kill(); throw "Native capability check timed out: $capability" }
+                if ($check.ExitCode -ne 0) { throw "Packaged application failed native capability check: $capability" }
+            } finally { $check.Dispose() }
+        }
     }
     Write-Pass "Windows $arch package"
 }

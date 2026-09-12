@@ -1,11 +1,9 @@
 package schema
 
-import (
-	"github.com/platten/playlistai/internal/intent/rules"
-)
+import "github.com/platten/playlistai/internal/intent/lexicon"
 
 func preserveArtistOnly(w *Wire, prompt string) {
-	artist := rules.OnlyArtist(prompt)
+	artist := lexicon.OnlyArtist(prompt)
 	if artist == "" {
 		return
 	}

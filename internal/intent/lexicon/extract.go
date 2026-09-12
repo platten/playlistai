@@ -15,12 +15,12 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v2"
+const Version = "source-atoms/v4"
 
 var (
-	durationPattern = regexp.MustCompile(`(?i)\b([0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
+	durationPattern = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
 	periodPattern   = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b|\b((?:18|19|20)[0-9]0)['’]?s\b`)
-	referenceIntro  = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|from|through|via|to)\s+`)
+	referenceIntro  = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|along the lines of|the atmosphere of|the feel of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|begin with|start with|from|through|via|to)\s+`)
 	referenceEnd    = regexp.MustCompile(`(?i)[,:;.!?\n]|\s+(?:but|with|for|over|through|via|to|into|from|by the end|at the end|and then|that|themselves)\b`)
 	negativeIntro   = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|do not want|don't want|don’t want|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|neither|nor|no|not)\s+`)
 	negativeEnd     = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
@@ -56,6 +56,16 @@ func Extract(prompt string) core.IntentTranslation {
 	for _, p := range durationRangePattern.FindAllStringSubmatchIndex(prompt, -1) {
 		if !insideQuoted(prompt, p[0], p[1]) {
 			add("duration_range", prompt[p[0]:p[1]], "playlist", "positive", "required", "plain", "", p[0], p[1])
+		}
+	}
+	for _, p := range regexp.MustCompile(`(?i)\b(?:released|recorded|composed|written)\s+in\s+[12][0-9]{3}(?:\s+or\s+[12][0-9]{3})+\b`).FindAllStringIndex(prompt, -1) {
+		if !insideQuoted(prompt, p[0], p[1]) {
+			add("temporal_alternatives", prompt[p[0]:p[1]], "playlist", "positive", "required", "plain", "", p[0], p[1])
+		}
+	}
+	for _, p := range regexp.MustCompile(`(?i)\b(?:more|less)\s+energy\b`).FindAllStringIndex(prompt, -1) {
+		if !insideQuoted(prompt, p[0], p[1]) && negativeContextStart(prompt[:p[0]]) < 0 {
+			add("relative_energy", prompt[p[0]:p[1]], "playlist", "positive", "preferred", "plain", "", p[0], p[1])
 		}
 	}
 	if n, ok := TrackCount(prompt); ok {
@@ -116,8 +126,17 @@ func Extract(prompt string) core.IntentTranslation {
 		end := referenceTextEnd(prompt, loc[1])
 		start, end := trimRange(prompt, loc[1], end)
 		intro := strings.ToLower(strings.TrimSpace(prompt[loc[0]:loc[1]]))
+		if (intro == "begin with" || intro == "start with" || intro == "finish with" || strings.HasPrefix(intro, "ending")) && negatedIncludePrefix.MatchString(prompt[:loc[0]]) {
+			continue
+		}
 		if end <= start {
 			continue
+		}
+		if !insideQuoted(prompt, start, end) && quantityReference(prompt[start:end]) {
+			continue // "I'd like 10 tracks" is a quantity, not an artist
+		}
+		if stop := artistReferenceSuffix.FindStringIndex(prompt[start:end]); stop != nil {
+			end = start + stop[0]
 		}
 		entityType := "artist"
 		if p := regexp.MustCompile(`(?i)^(early|late)\s+`).FindStringSubmatchIndex(prompt[start:end]); p != nil {
@@ -128,7 +147,7 @@ func Extract(prompt string) core.IntentTranslation {
 			entityType = "album"
 			explicitEntity = true
 		}
-		if strings.HasPrefix(strings.ToLower(prompt[start:end]), "the track ") || strings.HasPrefix(strings.ToLower(prompt[start:end]), "track ") {
+		if strings.HasPrefix(strings.ToLower(prompt[start:end]), "the track ") || strings.HasPrefix(strings.ToLower(prompt[start:end]), "track ") || strings.HasPrefix(strings.ToLower(prompt[start:end]), "the song ") || strings.HasPrefix(strings.ToLower(prompt[start:end]), "song ") {
 			entityType = "track"
 			explicitEntity = true
 		}
@@ -137,7 +156,7 @@ func Extract(prompt string) core.IntentTranslation {
 		}
 		// Lower-case type prefixes are syntax. A capitalized literal name such
 		// as "Artist A" must retain every word of its catalog query.
-		if p := regexp.MustCompile(`^(?:(?:the )?(?:artist|album|track)\s+|early\s+|late\s+)`).FindStringIndex(prompt[start:end]); p != nil {
+		if p := regexp.MustCompile(`^(?:(?:the )?(?:artist|album|track|song)\s+|early\s+|late\s+)`).FindStringIndex(prompt[start:end]); p != nil {
 			start += p[1]
 		}
 		start, end = trimRange(prompt, start, end)
@@ -176,6 +195,9 @@ func Extract(prompt string) core.IntentTranslation {
 			}
 			add(kind, query, scope, "positive", strength, "plain", "", segment[0], segment[1])
 		}
+	}
+	if artist, start, end := onlyArtistMention(prompt); artist != "" {
+		add("require_artist", artist, "playlist", "positive", "required", "plain", "", start, end)
 	}
 	// A short bare name is protected only with name-like syntax. Unknown bare
 	// categories still reach the open-vocabulary model unchanged.
@@ -238,6 +260,7 @@ func Extract(prompt string) core.IntentTranslation {
 			add(kind, value, "playlist", "negative", "required", "plain", "", loc[0], end)
 		}
 	}
+	x.Atoms = append(x.Atoms, attachedArtistExclusions(prompt, x.Atoms)...)
 	for _, m := range known {
 		if m.kind == "mood" && m.value == "romantic" && regexp.MustCompile(`(?i)\b(classical|composer|composition|period|era|century|romanticism)\b`).MatchString(prompt) {
 			continue
@@ -257,6 +280,12 @@ func Extract(prompt string) core.IntentTranslation {
 				strength = "required"
 			}
 		}
+		if loc := composedNegativeStart(prompt, m.start, known); loc >= 0 {
+			polarity, spanStart = "negative", loc
+			if m.kind == "genre" || m.kind == "vocal" {
+				strength = "required"
+			}
+		}
 		if loc := reducedPrefix.FindStringIndex(prefix); loc != nil {
 			polarity = "negative"
 			spanStart = loc[0]
@@ -269,6 +298,12 @@ func Extract(prompt string) core.IntentTranslation {
 			strength = "preferred"
 			spanStart = loc[0]
 			if strings.EqualFold(strings.TrimSpace(prefix[loc[0]:]), "mostly") || strings.EqualFold(strings.TrimSpace(prefix[loc[0]:]), "mainly") {
+				degree = "mostly"
+			}
+		}
+		if loc := composedPreferredStart(prompt, m.start, known); loc >= 0 {
+			softened, strength, spanStart = true, "preferred", loc
+			if strings.HasPrefix(strings.ToLower(prefix[loc:]), "mostly ") || strings.HasPrefix(strings.ToLower(prefix[loc:]), "mainly ") {
 				degree = "mostly"
 			}
 		}
@@ -309,7 +344,7 @@ func Extract(prompt string) core.IntentTranslation {
 	}
 	filtered := x.Atoms[:0]
 	for _, a := range x.Atoms {
-		if (a.Kind == "temporal" || a.Kind == "temporal_exclusion" || a.Kind == "duration" || a.Kind == "duration_range" || a.Kind == "count") && overlapsEntity(x.Atoms, a.Evidence[0].Start, a.Evidence[0].End) {
+		if (a.Kind == "temporal" || a.Kind == "temporal_exclusion" || a.Kind == "temporal_alternatives" || a.Kind == "relative_energy" || a.Kind == "duration" || a.Kind == "duration_range" || a.Kind == "count") && overlapsEntity(x.Atoms, a.Evidence[0].Start, a.Evidence[0].End) {
 			continue
 		}
 		filtered = append(filtered, a)
@@ -448,7 +483,7 @@ func insideQuoted(s string, start, end int) bool {
 	return false
 }
 func entityKind(k string) bool {
-	return k == "artist" || k == "track" || k == "album" || k == "start" || k == "destination" || k == "exclude_artist" || k == "required_track" || k == "entity_mention"
+	return k == "artist" || k == "track" || k == "album" || k == "start" || k == "destination" || k == "exclude_artist" || k == "require_artist" || k == "required_track" || k == "entity_mention"
 }
 func musicalKind(k string) bool {
 	switch k {
@@ -531,6 +566,12 @@ func scopeAt(s string, pos int) string {
 	// ("I like electronic music") therefore do not acquire the final-stage scope.
 	begin := strings.LastIndexAny(s[:pos], ".!?;") + 1
 	prefix := strings.ToLower(s[begin:pos])
+	if regexp.MustCompile(`(?i)\b(?:opening|first|initial)\s+(?:section|part|stage)\s*$`).MatchString(prefix) {
+		return "journey_start"
+	}
+	if regexp.MustCompile(`(?i)\b(?:closing|last|final)\s+(?:section|part|stage)\s*$`).MatchString(prefix) {
+		return "journey_end"
+	}
 	lastStart, lastEnd := -1, -1
 	for _, p := range startMarker.FindAllStringIndex(prefix, -1) {
 		lastStart = p[0]

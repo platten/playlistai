@@ -62,3 +62,7 @@ __pycache__/
 .idea/
 .vscode/
 *.swp
+
+# Verified native text runtime inputs staged into release binaries.
+/internal/nluresources/resources/*
+!/internal/nluresources/resources/README.txt

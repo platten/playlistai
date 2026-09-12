@@ -7,6 +7,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetPreviewProvider", "CompleteOnboarding",
+  "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
@@ -22,6 +23,7 @@ beforeEach(() => {
   api.GetCatalogInfo.mockImplementation(() => completed({ loaded: true }));
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: false }));
   api.GetPreviewProviderName.mockImplementation(() => completed("off"));
+  api.GetIntentAssistStatus.mockImplementation(() => completed({ installed: true, enabled: false, downloadBytes: 430000000 }));
 });
 afterEach(cleanup);
 async function start(onDone = vi.fn()) {
@@ -34,6 +36,8 @@ it("supports catalog-only onboarding, migrates off previews and advances only af
   const onDone = vi.fn();
   await start(onDone);
   fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
+  await screen.findByRole("heading", { name: "Intent language models" });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /Deezer \(recommended\)/ }).getAttribute("aria-pressed")).toBe("true"));
@@ -111,6 +115,8 @@ it("installs runtime then selects a recommended model, retaining errors for retr
   fireEvent.click(screen.getByRole("button", { name: "Download & use" }));
   await screen.findByRole("button", { name: "In use" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "Intent language models" });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
 });
 
@@ -162,6 +168,8 @@ it("keeps preview selection available after its initial read fails", async () =>
   api.GetPreviewProviderName.mockRejectedValueOnce(new Error("preference unavailable"));
   await start();
   fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
+  await screen.findByRole("heading", { name: "Intent language models" });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /^Deezer/ }).getAttribute("aria-pressed")).toBe("true"));
