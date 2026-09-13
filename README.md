@@ -129,9 +129,10 @@ previously selected capabilities. See [updates and setup readiness](docs/startup
 
 The optional first-run model setup installs llama.cpp through its official
 installer. The wizard asks that exact runtime to enumerate usable GPUs and free
-VRAM. It offers the single largest recommended Q4_K_M weight that fits completely on one GPU
-while reserving 1 GiB for context, KV cache, and compute buffers. When no usable
-llama.cpp GPU is reported, it offers the largest model from the bounded CPU recommendation list.
+VRAM. On multi-GPU systems, the wizard and Settings let the user choose a device
+or CPU; automatic selection prefers NVIDIA/CUDA and then currently available
+VRAM. Model choices are recalculated for that one device while reserving 1 GiB
+for context, KV cache, and compute buffers. CPU mode offers only the smallest model.
 
 Current priority:
 
@@ -141,15 +142,14 @@ Current priority:
 4. Gemma 3 12B
 5. Qwen3.5 4B
 
-Llama 3.2 3B and Qwen2.5 3B remain available in Settings for compatibility but
-are not recommended. Custom GGUF files remain supported. The curated ordering
+Custom GGUF files remain supported. The curated ordering
 is product policy; the exact five new artifacts have not yet completed the
 application-specific intent benchmark.
 
 The resulting tier picks are Qwen3.5 9B for 8, 12, and 16 GB GPUs, and
 Qwen3.5 35B A3B for 24 and 32 GB GPUs. They preserve that product priority and
 leave at least the configured reserve; they are not yet comparative
-intent-quality results. Settings shows these tier badges on the full catalog.
+intent-quality results.
 
 Automated capacity profiles include RTX 5070 Laptop (8 GB), RTX 5070 desktop
 (12 GB), RTX 3090 desktop (24 GB), and RTX 5090 Laptop/desktop (24/32 GB).

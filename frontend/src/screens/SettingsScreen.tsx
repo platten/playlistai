@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   API,
   type LlamaRuntimeInfo,
+  type ModelHardwareInfo,
   type ModelInfo,
   type ModelStatus,
   type TasteProfileSummary,
 } from "../lib/api";
-import { Button, EmptyState, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { Button, EmptyState, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
@@ -34,6 +35,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
+  const [hardware, setHardware] = useState<ModelHardwareInfo | null>(null);
   const [busy, setBusy] = useState<string | null>(null); // model id, "file", "clear", "llama", "taste"
   const [error, setError] = useState<string | null>(null);
   const [filePath, setFilePath] = useState("");
@@ -53,9 +55,12 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
     API.GetLlamaRuntime()
       .then((r) => setRuntime(r ?? null))
       .catch(() => setRuntime(null));
-    API.GetModelCatalog()
-      .then((c) => setCatalog(c ?? []))
-      .catch(() => setCatalog([]));
+    API.GetModelRecommendations()
+      .then((result) => {
+        setCatalog(result?.models ?? []);
+        setHardware(result?.hardware ?? null);
+      })
+      .catch(() => { setCatalog([]); setHardware(null); });
     API.GetTasteProfile("", "")
       .then((profile) => setTasteProfile(profile ?? null))
       .catch(() => setTasteProfile(null));
@@ -261,7 +266,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
         )}
         {busy && busy !== "taste" && !downloadingModel && (
           <p className="text-[12px] text-faint">
-            {busy === "clear" ? "Switching to the rules parser…" : "Starting the model…"}
+            {busy === "clear" ? "Switching to the rules parser…" : busy === "device" ? "Switching compute device…" : "Starting the model…"}
           </p>
         )}
         {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
@@ -272,8 +277,16 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
           </p>
         )}
 
+        {hardware && (
+          <ModelDeviceSelector
+            hardware={hardware}
+            disabled={busy !== null}
+            onChange={(deviceID) => void run("device", () => API.SetModelDevice(deviceID))}
+          />
+        )}
+
         <p className="text-[11.5px] text-faint">
-          GPU mode recommends the largest model that fits currently available GPU memory,
+          GPU mode shows models selected for the chosen device's currently available memory,
           with room reserved for context and runtime buffers. CPU mode recommends only the smallest model.
         </p>
 

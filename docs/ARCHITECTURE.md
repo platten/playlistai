@@ -395,12 +395,14 @@ runtime/onboarding hardening are recorded in
     resumable download, size + SHA-256 pinned and verified — see M9);
     `config.Prefs` persistence; `Container.SetModel / DownloadModel /
     ClearModel`; the first-run wizard asks its selected llama.cpp runtime to
-    enumerate accelerators and free VRAM. GPU recommendations must fit as a
+    enumerate accelerators and free VRAM. Multi-GPU systems expose a persisted
+    GPU-or-CPU selector in setup and Settings; automatic selection prefers
+    NVIDIA/CUDA. GPU recommendations must fit as a
     complete GGUF with 1 GiB reserved for context/KV/compute; nominal tier
-    metadata remains available without overriding the fit gate. The wizard shows
-    the largest eligible GPU model and the smallest download; CPU mode recommends
-    only the smallest catalog model. Settings retains every curated and legacy
-    model, with only the hardware-selected recommendation carrying a badge.
+    metadata remains available without overriding the fit gate. The wizard and
+    Settings show the largest eligible GPU model and the smallest download; CPU
+    mode recommends only the smallest catalog model. The selected llama.cpp
+    device id is also passed to the runtime when the model starts.
     *(done)*
 7. **Enrichment + export** — `internal/enrich/musicbrainz` (SQLite-cached ISRC +
    metadata lookup, 1 req/s rate limit); `internal/export/soundiizcsv` (Soundiiz

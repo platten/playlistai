@@ -24,7 +24,7 @@ func (c *Container) ResetAssets() error {
 		return err
 	}
 	prefs.OnboardingDone = false
-	prefs.ModelPath, prefs.ModelID, prefs.IntentExtractorDir = "", "", ""
+	prefs.ModelPath, prefs.ModelID, prefs.ModelDevice, prefs.IntentExtractorDir = "", "", "", ""
 	prefs.ModelDisabled = true
 	prefs.AnalysisEnabled, prefs.EnhancedAudioEnabled, prefs.IntentAssistEnabled = false, false, false
 	if err = prefs.Save(root); err != nil {

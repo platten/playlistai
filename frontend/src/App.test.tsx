@@ -17,7 +17,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "GetPreviewProviderName", "GetDebugLogging", "GetAnalysisStatus", "GetMetadataStatus",
   "SetPreviewProvider", "SetRecommendationMode", "RecordFeedback", "RecordTrackAcceptance", "ExportCSV",
   "OpenSoundiizHandoff", "OpenExternalURL",
-  "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "ClearModel",
+  "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "SetModelDevice", "ClearModel",
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
   "GetMetadataBundleInfo", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
   "GetPreviewURL", "GetEnhancedAnalysisStatus", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
@@ -499,7 +499,7 @@ it("saves recommendation mode only after acknowledgment and surfaces rejected ch
 });
 
 it("installs language runtime, downloads models and supports explicit local model selection", async () => {
-  bridge.GetModelCatalog.mockImplementation(() => completed([{ id: "small", label: "Small model", recommended: true, verified: true, installed: false, sizeApprox: 1000000000, licenseName: "Test license" }]));
+  bridge.GetModelRecommendations.mockImplementation(() => completed({ models: [{ id: "small", label: "Small model", recommended: true, verified: true, installed: false, sizeApprox: 1000000000, licenseName: "Test license" }], hardware: { mode: "cpu", devices: [], selectedDevice: "cpu" } }));
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
   fireEvent.click(await screen.findByRole("button", { name: "Install llama.cpp" }));
@@ -769,7 +769,7 @@ it("recovers failed export reads, reports handoff failures and copies an acknowl
 });
 
 it("keeps degraded Settings reads usable and visibly reports a failed mode read", async () => {
-  for (const method of ["GetModelStatus", "GetLlamaRuntime", "GetModelCatalog", "GetTasteProfile", "GetPreviewProviderName", "GetDebugLogging"]) {
+  for (const method of ["GetModelStatus", "GetLlamaRuntime", "GetModelRecommendations", "GetTasteProfile", "GetPreviewProviderName", "GetDebugLogging"]) {
     bridge[method].mockRejectedValueOnce(new Error("unavailable"));
   }
   render(<App />);

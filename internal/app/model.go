@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/platten/playlistai/internal/config"
@@ -67,10 +68,12 @@ func (c *Container) LlamaRuntime() (st llama.RuntimeStatus, builds []string) {
 	return llama.RuntimeStatus{Available: true, Path: rts[0].Path, Kind: rts[0].Kind, Source: src}, builds
 }
 
-// LlamaHardware probes GPU support through the exact llama.cpp runtime the app
-// would use. It returns the single device with the most VRAM because wizard
-// recommendations require the complete model to fit on one GPU.
-func (c *Container) LlamaHardware(ctx context.Context) (device llama.Device, available bool) {
+// LlamaDevices probes GPU support through the exact llama.cpp runtime the app
+// would use. The ids are suitable for llama.cpp's --device argument.
+func (c *Container) LlamaDevices(ctx context.Context) []llama.Device {
+	if c.deviceProber != nil {
+		return c.deviceProber(ctx)
+	}
 	for _, rt := range c.LlamaRuntimes() {
 		if rt.Label == "cpu" {
 			continue
@@ -80,16 +83,55 @@ func (c *Container) LlamaHardware(ctx context.Context) (device llama.Device, ava
 			c.log.Debug("llama device probe failed", "runtime", rt.Path, "err", err)
 			continue
 		}
-		for _, candidate := range devices {
-			if !available || candidate.TotalBytes > device.TotalBytes {
-				device, available = candidate, true
-			}
-		}
-		if available {
-			return device, true
+		if len(devices) > 0 {
+			return devices
 		}
 	}
-	return llama.Device{}, false
+	return nil
+}
+
+// LlamaHardware retains the single-device view used by older callers.
+func (c *Container) LlamaHardware(ctx context.Context) (llama.Device, bool) {
+	return PreferredLlamaDevice(c.LlamaDevices(ctx))
+}
+
+// PreferredLlamaDevice selects an NVIDIA/CUDA device by default, then the
+// device with the greatest currently usable memory within that class.
+func PreferredLlamaDevice(devices []llama.Device) (llama.Device, bool) {
+	var selected llama.Device
+	available := false
+	selectedNVIDIA := false
+	for _, candidate := range devices {
+		nvidia := strings.HasPrefix(strings.ToUpper(candidate.ID), "CUDA") || strings.Contains(strings.ToUpper(candidate.Name), "NVIDIA")
+		candidateFree := min(candidate.FreeBytes, candidate.TotalBytes)
+		selectedFree := min(selected.FreeBytes, selected.TotalBytes)
+		if !available || (nvidia && !selectedNVIDIA) || (nvidia == selectedNVIDIA && candidateFree > selectedFree) {
+			selected, available, selectedNVIDIA = candidate, true, nvidia
+		}
+	}
+	return selected, available
+}
+
+// ModelDevice returns the persisted compute choice resolved against currently
+// usable devices. A missing or stale preference falls back to automatic choice.
+func (c *Container) ModelDevice(ctx context.Context) (string, llama.Device, []llama.Device, bool) {
+	c.mu.Lock()
+	choice := c.modelDevice
+	c.mu.Unlock()
+	devices := c.LlamaDevices(ctx)
+	if choice == "cpu" {
+		return "cpu", llama.Device{}, devices, false
+	}
+	for _, device := range devices {
+		if device.ID == choice {
+			return choice, device, devices, true
+		}
+	}
+	device, ok := PreferredLlamaDevice(devices)
+	if !ok {
+		return "cpu", llama.Device{}, devices, false
+	}
+	return device.ID, device, devices, true
 }
 
 // ModelVRAMReserve returns the capacity intentionally excluded from model
@@ -267,15 +309,26 @@ func (c *Container) beginModelChange(parent context.Context) (context.Context, u
 }
 
 func (c *Container) startModel(ctx context.Context, modelPath string) (managedParser, error) {
+	probeCtx, probeCancel := context.WithTimeout(ctx, 6*time.Second)
+	deviceID, _, _, gpu := c.ModelDevice(probeCtx)
+	probeCancel()
+	return c.startModelOnDevice(ctx, modelPath, deviceID, gpu)
+}
+
+func (c *Container) startModelOnDevice(ctx context.Context, modelPath, deviceID string, gpu bool) (managedParser, error) {
 	ctx, cancel := context.WithTimeout(ctx, modelStartTimeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	gpuLayers := c.cfg.AI.GPULayers
+	if !gpu {
+		gpuLayers, deviceID = -1, ""
+	}
 	options := llama.Options{
 		BinaryPath: c.cfg.AI.LlamaServerPath, Runtimes: c.LlamaRuntimes(),
 		ModelPath: modelPath, NCtx: c.cfg.AI.NCtx, NThreads: c.cfg.AI.NThreads,
-		GPULayers: c.cfg.AI.GPULayers, StartTimeout: runtimeStartTimeout, Logger: c.log,
+		GPULayers: gpuLayers, Device: deviceID, StartTimeout: runtimeStartTimeout, Logger: c.log,
 	}
 	var parser managedParser
 	var err error
@@ -291,6 +344,86 @@ func (c *Container) startModel(ctx context.Context, modelPath string) (managedPa
 		return nil, ctx.Err()
 	}
 	return parser, err
+}
+
+// SetModelDevice persists a CPU or detected GPU choice. When a model is active,
+// a replacement is made ready on the new device before the old process stops.
+func (c *Container) SetModelDevice(ctx context.Context, choice string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 6*time.Second)
+	devices := c.LlamaDevices(probeCtx)
+	cancel()
+	gpu := false
+	if choice != "cpu" {
+		for _, device := range devices {
+			if device.ID == choice {
+				gpu = true
+				break
+			}
+		}
+		if !gpu {
+			return fmt.Errorf("app: compute device %q is not available", choice)
+		}
+	}
+
+	c.mu.Lock()
+	modelPath, modelID := c.modelPath, c.modelID
+	modelStarting := c.modelCancel != nil
+	c.mu.Unlock()
+	if modelPath == "" && modelStarting {
+		modelPath, modelID = c.cfg.AI.ModelPath, c.cfg.AI.ModelID
+	}
+	if modelPath == "" {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.closed {
+			return errors.New("application is closed")
+		}
+		prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+		if err != nil {
+			return err
+		}
+		prefs.ModelDevice = choice
+		if err := prefs.Save(c.cfg.DataDir); err != nil {
+			return err
+		}
+		c.modelDevice = choice
+		return nil
+	}
+
+	changeCtx, revision, finish := c.beginModelChange(ctx)
+	defer finish()
+	parser, err := c.startModelOnDevice(changeCtx, modelPath, choice, gpu)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	err = changeCtx.Err()
+	if err == nil && (c.closed || c.modelRevision != revision) {
+		err = context.Canceled
+	}
+	if err == nil {
+		prefs, loadErr := config.LoadPrefsChecked(c.cfg.DataDir)
+		if loadErr != nil {
+			err = loadErr
+		} else {
+			prefs.ModelDevice = choice
+			err = prefs.Save(c.cfg.DataDir)
+		}
+	}
+	if err != nil {
+		c.mu.Unlock()
+		_ = parser.Close()
+		return err
+	}
+	old := c.llama
+	c.llama, c.parser, c.modelDevice = parser, parser, choice
+	c.modelPath, c.modelID = modelPath, modelID
+	c.mu.Unlock()
+	if old != nil {
+		_ = old.Close()
+	}
+	c.log.Info("model compute device changed", "device", choice)
+	return nil
 }
 
 // commitModel is the only publication point for a started parser. Starting a

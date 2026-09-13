@@ -8,7 +8,7 @@ import {
   type ModelInfo,
   type ModelStatus,
 } from "../lib/api";
-import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
+import { AppIcon, Button, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { IntentModelsCard } from "../components/IntentModelsCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
@@ -362,6 +362,19 @@ function ModelStep({ onNext }: { onNext: () => void }) {
     }
   };
 
+  const chooseDevice = async (deviceID: string) => {
+    setBusy(`device:${deviceID}`);
+    setError(null);
+    try {
+      await API.SetModelDevice(deviceID);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   // GGUFs already on disk that aren't one of the curated models (those are
   // covered by the catalog list's "Use" button).
   const strayModels = onDisk.filter((m) => !m.catalogId);
@@ -485,6 +498,14 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         </div>
       )}
 
+      {hardware && (
+        <ModelDeviceSelector
+          hardware={hardware}
+          disabled={busy !== null}
+          onChange={(deviceID) => void chooseDevice(deviceID)}
+        />
+      )}
+
       {strayModels.length > 0 && (
         <div className="flex flex-col gap-2">
           <div className="text-[11px] tracking-[0.08em] text-faint uppercase">Already on disk</div>
@@ -572,7 +593,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
             note={progress?.note}
           />
         ) : (
-          <p className="text-[12px] text-faint">Starting the model…</p>
+          <p className="text-[12px] text-faint">{busy.startsWith("device:") ? "Switching compute device…" : "Starting the model…"}</p>
         ))}
       {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
 

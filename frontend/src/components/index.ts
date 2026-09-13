@@ -1,6 +1,7 @@
 export { cn } from "./cn";
 export * as Icon from "./icons";
 export { AppIcon } from "./AppIcon";
+export { ModelDeviceSelector } from "./ModelDeviceSelector";
 
 export { Button, type ButtonProps } from "./Button";
 export { ProgressBar, type ProgressBarProps } from "./ProgressBar";

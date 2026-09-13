@@ -72,9 +72,11 @@ type Container struct {
 	modelRevision      uint64
 	modelCancel        context.CancelFunc
 	modelFactory       func(context.Context, llama.Options) (managedParser, error)
+	deviceProber       func(context.Context) []llama.Device
 	modelDownloader    func(context.Context, modelmgr.Model, string, ports.Progress) (string, error)
 	modelPath          string
 	modelID            string
+	modelDevice        string
 	preview            ports.PreviewProvider
 	previewName        string
 	recommendationMode core.RecommendationMode
@@ -110,7 +112,10 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 		cfg.Preview.Provider = prefs.PreviewProvider
 	}
 
-	c := &Container{cfg: cfg, log: log}
+	c := &Container{cfg: cfg, log: log, modelDevice: prefs.ModelDevice}
+	if c.modelDevice == "" && cfg.AI.GPULayers < 0 {
+		c.modelDevice = "cpu"
+	}
 	c.lifetime, c.stopLifetime = context.WithCancel(ctx)
 	c.recommendationMode = core.RecommendationMode(prefs.RecommendationMode)
 	if hs, err := history.Open(cfg.DataDir); err != nil {
