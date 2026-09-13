@@ -20,7 +20,7 @@ import (
 
 func main() {
 	if len(os.Args) == 3 && os.Args[1] == "--mert-worker" {
-		if err := audioruntime.RunMERT(os.Args[2]); err != nil {
+		if err := audioruntime.RunMERT(os.Args[2]); err != nil { //nolint:staticcheck // cgo worker can also return nil after clean EOF.
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

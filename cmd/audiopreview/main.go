@@ -19,7 +19,7 @@ import (
 
 func main() {
 	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
-		if err := audioruntime.Run(os.Args[2]); err != nil {
+		if err := audioruntime.Run(os.Args[2]); err != nil { //nolint:staticcheck // cgo worker can also return nil after clean EOF.
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

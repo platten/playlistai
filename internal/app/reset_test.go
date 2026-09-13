@@ -74,3 +74,18 @@ func TestResetAssetsPreservesPersonalDataAndRequiresSetup(t *testing.T) {
 		t.Fatal("setup remained completed")
 	}
 }
+
+func TestResetRootRejectsLinkedDataDirectory(t *testing.T) {
+	parent := t.TempDir()
+	target := filepath.Join(parent, "target")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(parent, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symbolic links unavailable: %v", err)
+	}
+	if _, err := resetRoot(link); err == nil {
+		t.Fatal("linked data directory was accepted")
+	}
+}

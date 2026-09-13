@@ -12,18 +12,14 @@ import (
 // ResetAssets closes leased resources before removing app-managed downloads.
 // External, manually selected files and personal stores are never traversed.
 func (c *Container) ResetAssets() error {
-	root, err := filepath.Abs(c.cfg.DataDir)
-	if err != nil || filepath.Dir(root) == root {
-		return errors.New("invalid application data directory")
-	}
-	resolved, err := filepath.EvalSymlinks(root)
-	if err != nil || !sameSetupPath(root, resolved) {
-		return errors.New("reset requires an application data directory without symbolic links")
+	root, err := resetRoot(c.cfg.DataDir)
+	if err != nil {
+		return err
 	}
 	if err = c.Close(); err != nil {
 		return err
 	}
-	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	prefs, err := config.LoadPrefsChecked(root)
 	if err != nil {
 		return err
 	}
@@ -31,12 +27,12 @@ func (c *Container) ResetAssets() error {
 	prefs.ModelPath, prefs.ModelID, prefs.IntentExtractorDir = "", "", ""
 	prefs.ModelDisabled = true
 	prefs.AnalysisEnabled, prefs.EnhancedAudioEnabled, prefs.IntentAssistEnabled = false, false, false
-	if err = prefs.Save(c.cfg.DataDir); err != nil {
+	if err = prefs.Save(root); err != nil {
 		return err
 	}
 	var failures []error
 	for _, name := range []string{"models", "catalog", "metadata", "datasets", "music-analysis", "mert-analysis", "intent-nlu", "model-downloads", "llama", "catalog.tar.zst", "catalog.tar.zst.part"} {
-		if err := os.RemoveAll(filepath.Join(c.cfg.DataDir, name)); err != nil {
+		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
 			failures = append(failures, err)
 		}
 	}
@@ -53,4 +49,21 @@ func (c *Container) ResetAssets() error {
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// resetRoot permits harmless aliases in ancestor directories (for example,
+// macOS /var -> /private/var and Windows short paths) while rejecting a data
+// directory that is itself a symlink or junction. RemoveAll never follows
+// symlinked children, so deletion remains confined to the named entries below.
+func resetRoot(path string) (string, error) {
+	root, err := filepath.Abs(path)
+	if err != nil || filepath.Dir(root) == root {
+		return "", errors.New("invalid application data directory")
+	}
+	entry, linkErr := os.Lstat(root)
+	target, statErr := os.Stat(root)
+	if linkErr != nil || statErr != nil || !entry.IsDir() || !target.IsDir() || !os.SameFile(entry, target) {
+		return "", errors.New("reset requires an application data directory that is not a symbolic link")
+	}
+	return root, nil
 }
