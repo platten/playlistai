@@ -23,6 +23,9 @@ type Prefs struct {
 	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.
 	ModelPath string `json:"modelPath"`
+	// ModelDisabled preserves an explicit rules-parser choice over a model in
+	// the read-only TOML config. Absent in legacy preferences means no override.
+	ModelDisabled bool `json:"modelDisabled,omitempty"`
 	// ModelID is the catalog id when the model came from the built-in catalog.
 	ModelID string `json:"modelId"`
 	// PreviewProvider overrides preview.provider from the TOML config when set

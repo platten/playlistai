@@ -211,6 +211,7 @@ func (c *Container) ClearModel() error {
 		return err
 	}
 	prefs.ModelPath, prefs.ModelID = "", ""
+	prefs.ModelDisabled = true
 	if err := prefs.Save(c.cfg.DataDir); err != nil {
 		c.mu.Unlock()
 		return err
@@ -301,6 +302,7 @@ func (c *Container) commitModel(ctx context.Context, revision uint64, p managedP
 		prefs, err = config.LoadPrefsChecked(c.cfg.DataDir)
 		if err == nil {
 			prefs.ModelPath, prefs.ModelID = modelPath, modelID
+			prefs.ModelDisabled = false
 			err = prefs.Save(c.cfg.DataDir)
 		}
 	}

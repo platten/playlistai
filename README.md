@@ -109,6 +109,10 @@ work. See the [correctness and maintainability review](docs/codebase-review.md).
 
 ## Local models and hardware selection
 
+Startup update prompts display GitHub release notes. Setup skips available data
+and models; completed installations reopen only the steps needed to repair
+previously selected capabilities. See [updates and setup readiness](docs/startup-setup.md).
+
 The optional first-run model setup installs llama.cpp through its official
 installer. The wizard asks that exact runtime to enumerate usable GPUs and free
 VRAM. It offers the single largest recommended Q4_K_M weight that fits completely on one GPU

@@ -6,7 +6,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMetadataBundle", "GetModelStatus",
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
-  "SetPreviewProvider", "CompleteOnboarding",
+  "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
   "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
@@ -26,11 +26,66 @@ beforeEach(() => {
   api.GetIntentAssistStatus.mockImplementation(() => completed({ installed: true, enabled: false, downloadBytes: 430000000 }));
 });
 afterEach(cleanup);
+function setupStatus(pendingSteps: string[], repairSteps: string[] = [], onboarded = false) {
+  return { onboarded, needsSetup: !onboarded || repairSteps.length > 0, pendingSteps, repairSteps };
+}
 async function start(onDone = vi.fn()) {
   render(<FirstRunWizard onDone={onDone} />);
-  fireEvent.click(screen.getByRole("button", { name: "Get started" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   await act(async () => {});
 }
+
+it("skips every ready asset screen without changing saved choices or downloading", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
+  render(<FirstRunWizard onDone={vi.fn()} />);
+  await screen.findByText("You're set up");
+  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
+  for (const method of ["DownloadCatalog", "GetModelRecommendations", "InstallIntentModels", "GetAnalysisStatus", "SetPreviewProvider"]) {
+    expect(api[method]).not.toHaveBeenCalled();
+  }
+});
+
+it("repairs only the missing selected feature without repeating welcome or optional setup", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["model", "intent", "analysis"], ["model"], true)));
+  render(<FirstRunWizard onDone={vi.fn()} />);
+  await screen.findByRole("heading", { name: "Install llama.cpp" });
+  expect(screen.getByText(/Only the affected steps are shown/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
+  await screen.findByText("You're set up");
+  expect(api.InstallIntentModels).not.toHaveBeenCalled();
+  expect(api.SetPreviewProvider).not.toHaveBeenCalled();
+});
+
+it("rechecks remaining steps after installation and skips assets that became ready", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["metadata", "intent", "analysis"])));
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: true }));
+  await start();
+  await screen.findByRole("button", { name: "Download music metadata" });
+  api.InstallMetadataBundle.mockImplementation(() => {
+    api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
+    return completed(null);
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Download music metadata" }));
+  await screen.findByText("You're set up");
+  expect(api.InstallMetadataBundle).toHaveBeenCalledOnce();
+  expect(api.InstallIntentModels).not.toHaveBeenCalled();
+  expect(api.GetAnalysisStatus).not.toHaveBeenCalled();
+});
+
+it("offers retry on readiness errors and ignores a late response after unmount", async () => {
+  api.GetSetupStatus.mockRejectedValueOnce(new Error("readiness unavailable"));
+  const onDone = vi.fn();
+  const view = render(<FirstRunWizard onDone={onDone} />);
+  await screen.findByText(/readiness unavailable/);
+  const pending = deferred();
+  api.GetSetupStatus.mockReturnValueOnce(pending.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  view.unmount();
+  await act(async () => pending.resolve(setupStatus([])));
+  expect(onDone).not.toHaveBeenCalled();
+  expect(api.CompleteOnboarding).not.toHaveBeenCalled();
+});
 
 it("supports catalog-only onboarding, migrates off previews and advances only after acknowledged save", async () => {
   const onDone = vi.fn();
@@ -80,7 +135,7 @@ it("downloads optional metadata and cancels its pending work when closed", async
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: true }));
   api.InstallMetadataBundle.mockReturnValueOnce(pending.promise);
   const view = render(<FirstRunWizard onDone={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Get started" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   fireEvent.click(await screen.findByRole("button", { name: "Download music metadata" }));
   expect((screen.getByRole("button", { name: "Continue without download" }) as HTMLButtonElement).disabled).toBe(true);
   view.unmount();

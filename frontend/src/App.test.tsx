@@ -10,7 +10,7 @@ const progressHandlers = vi.hoisted(() => new Set<(event: { data: unknown }) => 
 const clipboard = vi.hoisted(() => vi.fn());
 
 const bridge = vi.hoisted(() => Object.fromEntries([
-  "GetOnboarded", "GetStatus", "GetCatalogInfo", "ListSavedPlaylists", "GetRecommendationMode",
+  "GetOnboarded", "GetSetupStatus", "GetStatus", "GetCatalogInfo", "ListSavedPlaylists", "GetRecommendationMode",
   "ParseIntentWithContext", "GenerateFromPromptWithContext", "GenerateFromPromptResolvedWithContext",
   "BuildPlaylist", "LoadSavedPlaylist", "CheckForUpdate", "AcknowledgePlaylistDisplayed",
   "PrepareExport", "GetModelStatus", "GetLlamaRuntime", "GetModelCatalog", "GetTasteProfile",
@@ -624,6 +624,26 @@ it("leaves Generate available when the onboarding read fails", async () => {
   const examples = screen.getByRole("region", { name: "Description examples" });
   fireEvent.click(examples.querySelector("button")!);
   expect(bridge.ParseIntentWithContext).not.toHaveBeenCalled();
+});
+
+it("opens a completed installation directly when startup assets are ready", async () => {
+  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: false, pendingSteps: ["intent", "analysis"], repairSteps: [] }));
+  render(<App />);
+  await screen.findByLabelText("Your description");
+  expect(bridge.GetOnboarded).not.toHaveBeenCalled();
+  expect(bridge.InstallIntentModels).not.toHaveBeenCalled();
+  expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
+});
+
+it("runs only the startup repair step when a configured model is missing", async () => {
+  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: true, pendingSteps: ["model", "intent", "analysis"], repairSteps: ["model"] }));
+  render(<App />);
+  await screen.findByRole("heading", { name: "Install llama.cpp" });
+  expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
+  await screen.findByLabelText("Your description");
+  expect(bridge.InstallIntentModels).not.toHaveBeenCalled();
 });
 
 it("reports failed playlist rebuilds without recording their display, then retries", async () => {

@@ -23,6 +23,36 @@ it.each([null, { available: false }, "offline"])("leaves startup unobstructed wi
   await mount();
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+it("shows GitHub notes immediately as keyboard-readable text without interpreting HTML", async () => {
+  const notes = "## What changed\n- Better musical matches\n<img src=x onerror='alert(1)'>\n<script>alert(1)</script>";
+  api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes });
+  await mount();
+  const region = screen.getByRole("region", { name: "Release notes" });
+  expect(region.textContent?.trim()).toBe(notes);
+  expect(region.closest("details")).toBeNull();
+  expect(region.querySelector("img,script")).toBeNull();
+  expect(region.tabIndex).toBe(0);
+  region.focus();
+  expect(document.activeElement).toBe(region);
+  expect(api.InstallUpdate).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Release page" }));
+  await act(async () => {});
+  expect(api.OpenUpdateReleasePage).toHaveBeenCalledOnce();
+});
+it.each(["", " \n\t "])("offers the release page when notes are missing: %j", async (notes) => {
+  api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes });
+  await mount();
+  expect(screen.getByRole("heading", { name: "What’s new" })).toBeTruthy();
+  expect(screen.getByText("Release notes are unavailable here. Open the release page on GitHub for details.")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Release notes" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Release page" })).toBeTruthy();
+});
+it("keeps recovery notices separate when there is no new release", async () => {
+  api.CheckForUpdate.mockResolvedValueOnce({ ...offer, available: false, canInstall: false, notes: "", notice: "Previous install failed" });
+  await mount();
+  expect(screen.getByText("Previous install failed")).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "What’s new" })).toBeNull();
+});
 it("shows manual update recovery and dismisses notices without losing the offer", async () => {
   api.CheckForUpdate.mockResolvedValueOnce({ ...offer, available: false, canInstall: false, notice: "Previous install failed", reason: "Read-only directory" });
   await mount();
@@ -43,6 +73,7 @@ it("keeps an active download open, reports cancellation failures, and permits in
   api.InstallUpdate.mockReturnValueOnce(new Promise((_yes, no) => { rejectInstall = no; }));
   await mount();
   fireEvent.click(screen.getByRole("button", { name: "Update and restart" }));
+  expect(screen.getByRole("region", { name: "Release notes" }).textContent?.trim()).toBe(offer.notes);
   fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
   expect(screen.getByRole("dialog")).toBeTruthy();
   act(() => progress({ data: { op: "app-update", done: 5000000, total: 10000000, note: "Downloading" } }));
