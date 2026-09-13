@@ -199,6 +199,11 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 }
 
 func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.BundleManifest, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if c.analysis.store == nil {
 		return fmt.Errorf("analysis storage unavailable")
 	}

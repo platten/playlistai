@@ -21,7 +21,6 @@ import {
 import { hasFixedTrackCount, playlistOutcomeMessage } from "../lib/playlistOutcome";
 import { PlaylistDuration } from "../components/PlaylistDuration";
 import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
-import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { EnhancedAudioEvidence } from "../components/EnhancedAudioEvidence";
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
@@ -577,7 +576,6 @@ export function PlaylistScreen({
           })
         )}
       </div>
-      {result?.intent?.controls?.recommendationMode === "enhanced_hybrid" && <div className="mt-6"><EnhancedAudioCard trackIds={(result.tracks ?? []).map((track) => track.id)} /></div>}
     </div>
   );
 }

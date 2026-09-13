@@ -103,6 +103,11 @@ func (c *Container) ModelVRAMReserve() int64 { return modelVRAMReserve }
 // under op "llama-install" as an indeterminate ("bouncing") bar with the
 // current phase + installer output as the note.
 func (c *Container) InstallLlamaRuntime(ctx context.Context, p ports.Progress, reinstall bool) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if p == nil {
 		p = ports.NopProgress{}
 	}
