@@ -661,7 +661,7 @@ export function GenerateScreen({
               />
             </div>
             <div className="mt-2 flex flex-wrap justify-between gap-2 text-[12px] text-muted">
-              <span>{generating ? "You can cancel below while processing continues." : "You can keep editing while your request summary updates."}</span>
+              <span>{generating ? "Detailed analysis can take several minutes on some devices. You can cancel below." : "You can keep editing while your request summary updates."}</span>
               <span aria-hidden="true" className="tabular-nums">{processingSeconds}s elapsed</span>
             </div>
           </div>

@@ -127,6 +127,7 @@ describe("active playlist navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate" }));
     expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).toBe("Original");
     expect(screen.getByRole("button", { name: "Generating…" })).toBeTruthy();
+    expect(screen.getByText("Detailed analysis can take several minutes on some devices. You can cancel below.")).toBeTruthy();
     const value = fixture();
     await act(async () => pending.resolve({ ...value, playlist: { ...value.playlist, generationId: bridge.GenerateFromPromptWithContext.mock.calls[0][1].generationId } }));
     await screen.findByText("Original song 1");
