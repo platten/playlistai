@@ -7,7 +7,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
-  "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
+  "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
@@ -40,9 +40,23 @@ it("skips every ready asset screen without changing saved choices or downloading
   render(<FirstRunWizard onDone={vi.fn()} />);
   await screen.findByText("You're set up");
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  for (const method of ["DownloadCatalog", "GetModelRecommendations", "InstallIntentModels", "GetAnalysisStatus", "SetPreviewProvider"]) {
+  for (const method of ["DownloadCatalog", "GetModelRecommendations", "InstallIntentModels", "GetAnalysisStatus", "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "SetPreviewProvider"]) {
     expect(api[method]).not.toHaveBeenCalled();
   }
+});
+
+it("offers missing MERT as an optional explicit download and cancels it when continuing", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["mert"])));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
+  const pending = deferred();
+  api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
+  await start();
+  fireEvent.click(await screen.findByRole("button", { name: /Download MERT for this device/ }));
+  expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("You're set up");
+  expect(pending.promise.cancel).toHaveBeenCalledWith("settings closed");
+  await act(async () => pending.resolve(null));
 });
 
 it("repairs only the missing selected feature without repeating welcome or optional setup", async () => {
@@ -94,6 +108,8 @@ it("supports catalog-only onboarding, migrates off previews and advances only af
   await screen.findByRole("heading", { name: "Intent language models" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "MERT audio similarity" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /Deezer \(recommended\)/ }).getAttribute("aria-pressed")).toBe("true"));
   const pending = deferred();
@@ -226,6 +242,8 @@ it("keeps preview selection available after its initial read fails", async () =>
   await screen.findByRole("heading", { name: "Intent language models" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "MERT audio similarity" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /^Deezer/ }).getAttribute("aria-pressed")).toBe("true"));
   expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);

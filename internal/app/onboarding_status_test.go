@@ -142,6 +142,77 @@ func TestSetupReadinessOptionalPoliciesAndPreviewOff(t *testing.T) {
 	}
 }
 
+func TestMERTReadinessOnlyRepairsPreviouslyInstalledModel(t *testing.T) {
+	t.Parallel()
+	c := &Container{cfg: testConfig(t), previewName: config.PreviewOff}
+	if err := (config.Prefs{OnboardingDone: true, EnhancedAudioEnabled: true}).Save(c.cfg.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).MERT; got.Required || got.Ready {
+		t.Fatalf("DSP opt-in incorrectly requires MERT: %+v", got)
+	}
+	marker := filepath.Join(c.cfg.DataDir, "mert-analysis", "active.json")
+	setupWriteFile(t, marker, "missing-version")
+	if got := setupRead(t, c).MERT; !got.Required || got.Ready {
+		t.Fatalf("lost selected MERT not repairable: %+v", got)
+	}
+	setupWriteFile(t, marker, "../outside")
+	if got := setupRead(t, c).MERT; !got.Required || got.Ready {
+		t.Fatalf("unsafe activation accepted: %+v", got)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).MERT; got.Required {
+		t.Fatalf("removed MERT still mandatory: %+v", got)
+	}
+}
+
+func TestMERTReadinessCachedHealthyBundleDetectsRemovedFilesAndPointer(t *testing.T) {
+	t.Parallel()
+	c := &Container{cfg: testConfig(t), previewName: config.PreviewOff}
+	manifest := audio.MERTBundleManifest{Version: 1, ID: "fixture", Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		Model:     core.AudioRepresentationIdentity{Model: "inert-fixture", Revision: "1"},
+		Artifacts: []audio.BundleArtifact{{Role: "model", Name: "model.onnx", Size: 5}, {Role: "runtime", Name: "runtime.zip", Size: 3, ArchiveMember: "runtime/library", UnpackedSize: 7}}}
+	id := manifest.ID + "-" + audio.Fingerprint(manifest)[:16]
+	root := filepath.Join(c.cfg.DataDir, "mert-analysis")
+	dir := filepath.Join(root, id)
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setupWriteFile(t, filepath.Join(root, "active.json"), id)
+	setupWriteFile(t, filepath.Join(dir, "mert-bundle.json"), string(raw))
+	setupWriteFile(t, filepath.Join(dir, "model.onnx"), "model")
+	setupWriteFile(t, filepath.Join(dir, "runtime.zip"), "zip")
+	setupWriteFile(t, manifest.File(dir, "runtime"), "library")
+	// Cache only the identity and directory. Readiness must never launch this
+	// deliberately invalid model or attempt to load its inert runtime bytes.
+	c.enhanced.manifest = &manifest
+	c.enhanced.worker = &audio.MERTWorker{BundleDir: dir, Model: manifest.Model}
+	if got := setupRead(t, c).MERT; got.Ready != audio.NativeInferenceAvailable() || !got.Required {
+		t.Fatalf("cached bundle readiness: %+v", got)
+	}
+	if err = os.Remove(manifest.File(dir, "runtime")); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).MERT; got.Ready || !got.Required {
+		t.Fatalf("missing extracted runtime accepted: %+v", got)
+	}
+	setupWriteFile(t, manifest.File(dir, "runtime"), "library")
+	if err = os.Remove(filepath.Join(dir, "model.onnx")); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).MERT; got.Ready || !got.Required {
+		t.Fatalf("missing model accepted: %+v", got)
+	}
+	setupWriteFile(t, filepath.Join(dir, "model.onnx"), "model")
+	setupWriteFile(t, filepath.Join(root, "active.json"), "different-version")
+	if got := setupRead(t, c).MERT; got.Ready || !got.Required {
+		t.Fatalf("wrong active pointer accepted: %+v", got)
+	}
+}
+
 func TestSetupReadinessHealthyCustomAnalysisDoesNotRequireGeneralFit(t *testing.T) {
 	t.Parallel()
 	cfg := testConfig(t)

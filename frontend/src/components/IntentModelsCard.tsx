@@ -79,6 +79,7 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
   return <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4" aria-label="Intent language models" aria-busy={busy}>
     <h2 className="text-[15px] font-semibold">Intent language models</h2>
     <p className="text-[13px] text-muted">Try compact, local language models to help interpret music descriptions. No Python installation needed.</p>
+    <p className="text-[12px] text-muted">The default download uses a compressed model pack for this device, verifies its segments, and prepares the models locally.</p>
     <p className="text-[12px] text-muted">{status?.detail ?? "Checking available models…"}</p>
     {busy && <ProgressBar label="Preparing intent models" done={progress?.done ?? 0} total={progress?.total ?? 0} note={progress?.note} />}
     {status?.unsupportedReason ? <p className="text-[12px] text-muted">Your existing prompt parser remains available.</p> : status?.installed ? <>

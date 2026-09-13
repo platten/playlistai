@@ -20,6 +20,7 @@ func main() {
 
 func run() error {
 	manifest := flag.String("manifest", "", "HTTPS URL or local manifest.json path")
+	checksum := flag.String("manifest-sha256", "", "optional pinned manifest SHA-256")
 	cache := flag.String("cache", "", "resumable compressed segment cache")
 	out := flag.String("out", "", "new destination directory (must not exist)")
 	flag.Parse()
@@ -29,7 +30,7 @@ func run() error {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	if err := modelpack.Fetch(ctx, *manifest, *cache, *out, nil); err != nil {
+	if err := modelpack.FetchPinned(ctx, *manifest, *checksum, *cache, *out, nil); err != nil {
 		return err
 	}
 	fmt.Println("Verified and unpacked model pack:", *out)

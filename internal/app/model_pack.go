@@ -16,12 +16,20 @@ import (
 // manifests. Only a fresh extraction directory is removed; resumable compressed
 // pieces remain in a separate cache. Activation remains the installer's job.
 func (c *Container) prepareModelPack(ctx context.Context, source, op string, p ports.Progress) (string, func(), error) {
+	return c.prepareModelPackSource(ctx, source, "", op, p)
+}
+
+func (c *Container) prepareRecommendedModelPack(ctx context.Context, d modelpack.Distribution, op string, p ports.Progress) (string, func(), error) {
+	return c.prepareModelPackSource(ctx, d.URL, d.SHA256, op, p)
+}
+
+func (c *Container) prepareModelPackSource(ctx context.Context, source, checksum, op string, p ports.Progress) (string, func(), error) {
 	source = strings.TrimSpace(source)
 	noop := func() {}
 	if source == "" {
 		return "", noop, fmt.Errorf("model pack source is required")
 	}
-	if info, err := os.Stat(source); err == nil && info.IsDir() {
+	if info, err := os.Stat(source); checksum == "" && err == nil && info.IsDir() {
 		return source, noop, nil
 	}
 	root := filepath.Join(c.cfg.DataDir, "model-downloads")
@@ -35,7 +43,7 @@ func (c *Container) prepareModelPack(ctx context.Context, source, op string, p p
 	cleanup := func() { _ = os.RemoveAll(work) }
 	destination := filepath.Join(work, "files")
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(op+"\n"+source)))
-	if err := modelpack.Fetch(ctx, source, filepath.Join(root, key), destination, modelPackProgress{p, op}); err != nil {
+	if err := modelpack.FetchPinned(ctx, source, checksum, filepath.Join(root, key), destination, modelPackProgress{p, op}); err != nil {
 		cleanup()
 		return "", noop, err
 	}

@@ -10,11 +10,12 @@ const browser = await chromium.launch({ executablePath: process.argv[3], headles
 const fixture = `
 let enabled=true,installed=false;
 window.__installs=[];window.__analyses=[];
-const status=()=>({enabled,installed,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
+const status=()=>({enabled,installed,recommendedManifestUrl:"https://models.example/mert/manifest.json",recommendedDownloadBytes:213882011,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
 const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},InstallMERT:p=>{window.__installs.push(p);return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},RemoveMERT:()=>{installed=false},ClearEnhancedAnalysis:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
+methods.InstallRecommendedMERT=()=>methods.InstallMERT("recommended");
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve(o[k](...args));p.cancel=()=>window.__cancel?.();return p;}});
 `;
-const runtime = `export const Events={On:()=>()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
+const runtime = `window.__progressCallbacks=[];export const Events={On:(name,callback)=>{window.__progressCallbacks.push(callback);return ()=>{}}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
 const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {EnhancedAudioCard} from '/src/components/EnhancedAudioCard.tsx';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:760,margin:'24px auto',padding:16}},React.createElement(EnhancedAudioCard,{trackIds:['one','two']})));`;
 const errors=[];
 try {
@@ -34,18 +35,21 @@ try {
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'no horizontal overflow');
     await page.setViewportSize({width:1000,height:1000});
   }
-  await page.getByLabel('MERT pack directory or manifest').fill(' https://models.example/mert/manifest.json ');
-  await page.getByRole('button',{name:'Install MERT pack'}).click();
+
+  await page.getByRole('button',{name:'Download MERT for this device'}).click();
   await page.getByRole('button',{name:'Cancel model installation'}).waitFor();
+  await page.evaluate(()=>window.__progressCallbacks.forEach(callback=>callback({data:{op:'mert-model',done:1,total:2,note:'Downloading segment 1 of 2'}})));
+  await page.getByRole('progressbar',{name:'Installing MERT'}).waitFor();
+  assert.equal(await page.getByRole('progressbar',{name:'Installing MERT'}).getAttribute('aria-valuenow'),'50');
   await page.screenshot({path:path.join(output,'mert-pack-progress.png'),fullPage:true});
   await page.getByRole('button',{name:'Cancel model installation'}).click();
   await page.getByRole('alert').filter({hasText:'Model pack cancelled'}).waitFor();
   await page.screenshot({path:path.join(output,'mert-pack-cancelled.png'),fullPage:true});
-  await page.getByRole('button',{name:'Install MERT pack'}).click();
+  await page.getByRole('button',{name:'Download MERT for this device'}).click();
   await page.waitForFunction(()=>window.__installs.length===2);
   await page.evaluate(()=>window.__finish());
   await page.getByText(/Revision: 12af/).waitFor();
-  assert.deepEqual(await page.evaluate(()=>window.__installs),['https://models.example/mert/manifest.json','https://models.example/mert/manifest.json']);
+  assert.deepEqual(await page.evaluate(()=>window.__installs),['recommended','recommended']);
   await page.getByRole('button',{name:'Analyze candidates'}).click();
   await page.getByRole('button',{name:'Cancel analysis'}).click();
   await page.getByRole('alert').filter({hasText:'Analysis cancelled'}).waitFor();

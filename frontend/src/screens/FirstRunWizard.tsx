@@ -11,9 +11,10 @@ import {
 import { AppIcon, Button, ErrorState, Icon, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { IntentModelsCard } from "../components/IntentModelsCard";
+import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 
-type Step = "welcome" | "catalog" | "metadata" | "model" | "intent" | "analysis" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "intent", "analysis", "preview", "done"];
+type Step = "welcome" | "catalog" | "metadata" | "model" | "intent" | "analysis" | "mert" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "intent", "analysis", "mert", "preview", "done"];
 type SetupStatus = Awaited<ReturnType<typeof API.GetSetupStatus>>;
 
 function setupSteps(status: SetupStatus | null): Step[] {
@@ -129,6 +130,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "model" && <ModelStep onNext={next} />}
         {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard automatic /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Setup downloads missing language models automatically. Leaving this step pauses the download; you can resume in Settings.</p></div>}
         {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
+        {step === "mert" && <div className="flex flex-1 flex-col gap-4"><EnhancedAudioCard setup /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. Download only if you accept the model and runtime licenses. Continue to skip or stop an active download; you can install MERT later in Settings.</p></div>}
         {step === "preview" && <PreviewStep onNext={next} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>

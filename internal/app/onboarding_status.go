@@ -30,6 +30,7 @@ type SetupReadiness struct {
 	Model     SetupCapability
 	Intent    SetupCapability
 	Analysis  SetupCapability
+	MERT      SetupCapability
 	Preview   SetupCapability
 }
 
@@ -120,8 +121,45 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 		activeManifest != nil && activeManifest.Version == 1 && activeManifest.Platform == runtime.GOOS+"/"+runtime.GOARCH
 	analysisPrior := manifest != nil || setupPathExists(filepath.Join(c.cfg.DataDir, "music-analysis", "active.json"))
 	status.Analysis = SetupCapability{Ready: analysisReady, Supported: analysisSupported, Required: prefs.AnalysisEnabled || analysisPrior}
+	status.MERT = c.setupMERTReadiness()
 	status.Preview = SetupCapability{Ready: isValidPreviewProvider(previewName) && (previewName == config.PreviewOff || preview != nil), Supported: true}
 	return status, nil
+}
+
+func (c *Container) setupMERTReadiness() SetupCapability {
+	c.enhanced.mu.Lock()
+	var manifest *audio.MERTBundleManifest
+	if c.enhanced.manifest != nil {
+		copyManifest := *c.enhanced.manifest
+		manifest = &copyManifest
+	}
+	bundleDir := ""
+	if c.enhanced.worker != nil {
+		bundleDir = c.enhanced.worker.BundleDir
+	}
+	c.enhanced.mu.Unlock()
+	root := filepath.Join(c.cfg.DataDir, "mert-analysis")
+	prior := manifest != nil || setupPathExists(filepath.Join(root, "active.json"))
+	_, supportErr := c.recommendedMERT()
+	ready := manifest != nil && bundleDir != "" && audio.NativeInferenceAvailable()
+	id := strings.TrimSpace(string(setupReadSmallFile(filepath.Join(root, "active.json"), 4096)))
+	if id == "" || id == "." || id == ".." || filepath.Base(id) != id || strings.ContainsAny(id, `/\:`) {
+		ready = false
+	}
+	if ready {
+		dir := filepath.Join(root, id)
+		var active audio.MERTBundleManifest
+		ready = sameSetupPath(dir, bundleDir) && json.Unmarshal(setupReadSmallFile(filepath.Join(dir, "mert-bundle.json"), 1<<20), &active) == nil && audio.Fingerprint(active) == audio.Fingerprint(*manifest)
+		if ready {
+			for _, a := range manifest.Artifacts {
+				if !setupFilePresent(filepath.Join(dir, a.Name), a.Size) || a.ArchiveMember != "" && !setupFilePresent(manifest.File(dir, a.Role), a.UnpackedSize) {
+					ready = false
+					break
+				}
+			}
+		}
+	}
+	return SetupCapability{Ready: ready, Supported: supportErr == nil || ready, Required: prior}
 }
 
 func setupPathExists(path string) bool {

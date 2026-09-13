@@ -27,7 +27,7 @@ func setupStatus(r app.SetupReadiness) SetupStatus {
 	for _, step := range []struct {
 		name       string
 		capability app.SetupCapability
-	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"model", r.Model}, {"intent", r.Intent}, {"analysis", r.Analysis}, {"preview", r.Preview}} {
+	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"model", r.Model}, {"intent", r.Intent}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"preview", r.Preview}} {
 		if step.capability.Ready || !step.capability.Supported {
 			continue
 		}
