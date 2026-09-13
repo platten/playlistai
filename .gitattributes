@@ -1,2 +1,5 @@
 # Go formatting checks require LF even on persistent Windows runner checkouts.
 *.go text eol=lf
+
+# Shell entry points must stay executable in Git Bash, WSL, macOS, and Linux.
+*.sh text eol=lf
