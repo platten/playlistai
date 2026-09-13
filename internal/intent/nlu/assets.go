@@ -19,7 +19,11 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const AssetsVersion = "intent-encoders-v1"
+const AssetsVersion = "distilbert-assets-v2"
+
+// Keep the local path so verified DistilBERT/runtime files from older installs
+// remain usable without copying or downloading the retired model.
+const assetDirectory = "intent-encoders-v1"
 const ProgressOp = "intent-models"
 
 // CheckPackagedRuntime verifies compiled support and embedded Windows dependency
@@ -81,7 +85,7 @@ func AssetsIdentity() string {
 	return AssetsVersion + "/" + hex.EncodeToString(h[:])
 }
 
-func AssetDir(root string) string { return filepath.Join(root, AssetsVersion) }
+func AssetDir(root string) string { return filepath.Join(root, assetDirectory) }
 
 func sourcePath(dir string, s Source) string {
 	name := strings.ReplaceAll(s.Name, "/", "_")
@@ -117,10 +121,13 @@ func RuntimePath(dir string) (string, error) {
 // AssetsReady performs integrity verification, not just a marker-file check.
 // Call at activation; parsing keeps an immutable active worker configuration.
 func AssetsReady(root string) bool {
+	return ModelAssetsReady(root) && RuntimeReady(root)
+}
+
+// RuntimeReady allows an imported reviewed extractor to operate independently
+// of the optional base encoder used by offline training tools.
+func RuntimeReady(root string) bool {
 	dir := AssetDir(root)
-	if !ModelAssetsReady(root) {
-		return false
-	}
 	a, err := audio.NativeRuntimeArtifact(runtime.GOOS + "/" + runtime.GOARCH)
 	if err != nil {
 		return false

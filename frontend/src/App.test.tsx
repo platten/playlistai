@@ -19,7 +19,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "OpenSoundiizHandoff", "OpenExternalURL",
   "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "SetModelDevice", "ClearModel",
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
-  "GetMetadataBundleInfo", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
+  "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
   "GetPreviewURL", "GetEnhancedAnalysisStatus", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({

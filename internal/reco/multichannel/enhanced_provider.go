@@ -45,6 +45,9 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 	if request.EnhancedAudio != nil {
 		var err error
 		o.enhancedSnapshot, err = core.NewEnhancedAudioSnapshot(request.EnhancedAudio.Input())
+		if err == nil {
+			o.mertSearch = o.enhancedSnapshot.Input().MERTSearch
+		}
 		return err
 	}
 	if !refresh && o.enhancedProvider == nil || refresh && o.enhancedRefreshProvider == nil {
@@ -55,7 +58,7 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 		if refresh {
 			return nil // retain the last completed snapshot on stop
 		}
-		o.enhancedSnapshot, _ = core.NewEnhancedAudioSnapshot(core.EnhancedAudioInput{})
+		o.enhancedSnapshot, _ = core.NewEnhancedAudioSnapshot(core.EnhancedAudioInput{MERTSearch: o.mertSearch})
 		return nil
 	default:
 	}
@@ -103,9 +106,11 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 		return err
 	}
 	if snapshot != nil {
-		o.enhancedSnapshot, err = core.NewEnhancedAudioSnapshot(snapshot.Input())
+		input := snapshot.Input()
+		input.MERTSearch = o.mertSearch
+		o.enhancedSnapshot, err = core.NewEnhancedAudioSnapshot(input)
 	} else if !refresh {
-		o.enhancedSnapshot, err = core.NewEnhancedAudioSnapshot(core.EnhancedAudioInput{})
+		o.enhancedSnapshot, err = core.NewEnhancedAudioSnapshot(core.EnhancedAudioInput{MERTSearch: o.mertSearch})
 	}
 	return err
 }

@@ -25,9 +25,8 @@ func TestRecommendedDistributionsSelectOnlyShippedPlatforms(t *testing.T) {
 	if _, err := RecommendedMERT("linux", "386"); err == nil {
 		t.Fatal("unsupported architecture accepted")
 	}
-	d := RecommendedIntent()
-	if d.Name != "intent-encoders-v1" || d.DownloadBytes != 324060693 || !validHash(d.SHA256) {
-		t.Fatal(d)
+	if _, err := recommended("intent-encoders-v1"); err == nil {
+		t.Fatal("retired combined intent pack is still recommended")
 	}
 }
 

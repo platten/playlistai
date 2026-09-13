@@ -1,0 +1,28 @@
+{
+  "version": "acousticbrainz-legacy-classes/v1",
+  "source": "https://acousticbrainz.org/ac2bbf32-0f6a-48bf-95d5-5edf4d060feb/high-level/view?n=0",
+  "documentation": "https://essentia.upf.edu/gaia_svm_models.html",
+  "reviewed": "2026-09-13",
+  "classifiers": {
+    "genre_dortmund": ["alternative", "blues", "electronic", "folkcountry", "funksoulrnb", "jazz", "pop", "raphiphop", "rock"],
+    "genre_rosamerica": ["cla", "dan", "hip", "jaz", "pop", "rhy", "roc", "spe"],
+    "genre_tzanetakis": ["blu", "cla", "cou", "dis", "hip", "jaz", "met", "pop", "reg", "roc"],
+    "danceability": ["danceable", "not_danceable"],
+    "mood_acoustic": ["acoustic", "not_acoustic"],
+    "mood_aggressive": ["aggressive", "not_aggressive"],
+    "mood_electronic": ["electronic", "not_electronic"],
+    "mood_happy": ["happy", "not_happy"],
+    "mood_party": ["party", "not_party"],
+    "mood_relaxed": ["relaxed", "not_relaxed"],
+    "mood_sad": ["sad", "not_sad"],
+    "timbre": ["bright", "dark"],
+    "tonal_atonal": ["tonal", "atonal"],
+    "voice_instrumental": ["voice", "instrumental"]
+  },
+  "disabled": {
+    "genre_electronic": "Conditional ambient/dnb/house/techno/trance classification needs independent domain applicability; not direct evidence of a subgenre.",
+    "ismir04_rhythm": "Ballroom classifier is not retained by the application projection.",
+    "moods_mirex": "Cluster labels combine different emotions; not exact synonyms. Not retained by the application projection.",
+    "gender": "Demographic classifier deliberately excluded from application projection."
+  }
+}

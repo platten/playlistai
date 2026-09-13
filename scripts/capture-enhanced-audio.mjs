@@ -8,15 +8,15 @@ const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4]; await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-let enabled=true,installed=false;
+let enabled=true,mertEnabled=true,installed=false;
 window.__installs=[];window.__analyses=[];
-const status=()=>({enabled,installed,recommendedManifestUrl:"https://models.example/mert/manifest.json",recommendedDownloadBytes:213882011,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
-const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},InstallMERT:p=>{window.__installs.push(p);return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},RemoveMERT:()=>{installed=false},ClearEnhancedAnalysis:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
+const status=()=>({enabled,mertEnabled,installed,searchableTracks:installed?2:0,recommendedManifestUrl:"https://models.example/mert/manifest.json",recommendedDownloadBytes:213882011,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
+const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},SetMERTSimilarityEnabled:v=>{mertEnabled=v},InstallMERT:p=>{window.__installs.push(p);return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},RemoveMERT:()=>{installed=false},ClearMERTSimilarityCache:()=>{},ClearDSPAnalysisCache:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
 methods.InstallRecommendedMERT=()=>methods.InstallMERT("recommended");
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve(o[k](...args));p.cancel=()=>window.__cancel?.();return p;}});
 `;
 const runtime = `window.__progressCallbacks=[];export const Events={On:(name,callback)=>{window.__progressCallbacks.push(callback);return ()=>{}}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
-const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {EnhancedAudioCard} from '/src/components/EnhancedAudioCard.tsx';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:760,margin:'24px auto',padding:16}},React.createElement(EnhancedAudioCard,{trackIds:['one','two']})));`;
+const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {EnhancedAudioCard} from '/src/components/EnhancedAudioCard.tsx';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:760,margin:'24px auto',padding:16,display:'grid',gap:16}},React.createElement(EnhancedAudioCard,{trackIds:['one','two']}),React.createElement(EnhancedAudioCard,{dspOnly:true})));`;
 const errors=[];
 try {
   const page=await browser.newPage({viewport:{width:1000,height:1000}});
@@ -25,8 +25,9 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/,r=>r.fulfill({contentType:'application/javascript',body:fixture}));
   await page.route(/.*@wailsio_runtime\.js.*/,r=>r.fulfill({contentType:'application/javascript',body:runtime}));
   await page.goto('http://127.0.0.1:9245');
-  await page.getByRole('heading',{name:'Enhanced audio analysis'}).waitFor();
-  await page.getByText(/Available · no model download required/).waitFor();
+  await page.getByRole('heading',{name:'MERT audio similarity'}).waitFor();
+  await page.getByRole('heading',{name:'DSP preview measurements'}).waitFor();
+  await page.getByText(/The similarity cache is empty/).waitFor();
   for (const theme of ['dark','light']) {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     await page.screenshot({path:path.join(output,`enhanced-${theme}.png`),fullPage:true});
@@ -60,5 +61,7 @@ try {
   await page.getByRole('button',{name:'Remove MERT'}).click();
   await page.getByText(/Not installed · CC-BY-NC/).waitFor();
   assert.deepEqual(errors,[]);
-  console.log('Enhanced UI: dark/light, narrow/wide, install/remove, bounded analysis and cancellation passed');
+  await page.getByRole('checkbox',{name:'Use DSP preview measurements'}).uncheck();
+  assert.equal(await page.getByRole('checkbox',{name:'Use MERT to find similar tracks'}).isChecked(),true,'DSP changes must leave MERT preference unchanged');
+  console.log('Recommendation model UI: dark/light, narrow/wide, separate DSP/MERT settings, install/remove, bounded analysis and cancellation passed');
 } finally {await browser.close();}

@@ -1,11 +1,5 @@
 [
   {
-    "name": "intent-encoders-v1",
-    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/intent-encoders-v1/manifest.json",
-    "sha256": "593edab66abd9e5ff3c98897f471513646fd84c8a2961efc54df36fc9eb5836c",
-    "downloadBytes": 324060693
-  },
-  {
     "name": "mert-darwin-arm64",
     "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-darwin-arm64/manifest.json",
     "sha256": "fa42ae469582fdab0f22f9c23c36e2c5ddbcb2085bf40f4b827e43140c8c7e64",

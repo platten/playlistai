@@ -20,14 +20,15 @@ import (
 const EnhancedAnalysisLimit = audio.EnhancedTrackLimit
 
 type enhancedState struct {
-	mu       sync.Mutex
-	opMu     sync.Mutex
-	enabled  bool
-	bundles  *audio.MERTBundleManager
-	worker   *audio.MERTWorker
-	pool     *audio.MERTWorkerPool
-	manifest *audio.MERTBundleManifest
-	detail   string
+	mu          sync.Mutex
+	opMu        sync.Mutex
+	enabled     bool
+	mertEnabled bool
+	bundles     *audio.MERTBundleManager
+	worker      *audio.MERTWorker
+	pool        *audio.MERTWorkerPool
+	manifest    *audio.MERTBundleManifest
+	detail      string
 }
 
 type EnhancedAnalysisStatus struct {
@@ -35,6 +36,7 @@ type EnhancedAnalysisStatus struct {
 	RecommendedDownloadBytes int64                                `json:"recommendedDownloadBytes"`
 	UnsupportedReason        string                               `json:"unsupportedReason,omitempty"`
 	Enabled                  bool                                 `json:"enabled"`
+	MERTEnabled              bool                                 `json:"mertEnabled"`
 	DSPAvailable             bool                                 `json:"dspAvailable"`
 	MERTAvailable            bool                                 `json:"mertAvailable"`
 	Installed                bool                                 `json:"installed"`
@@ -44,6 +46,7 @@ type EnhancedAnalysisStatus struct {
 	DownloadBytes            int64                                `json:"downloadBytes"`
 	DSPStorage               core.DSPStorageUsage                 `json:"dspStorage"`
 	MERTStorage              core.AudioRepresentationStorageUsage `json:"mertStorage"`
+	SearchableTracks         int64                                `json:"searchableTracks"`
 	Detail                   string                               `json:"detail"`
 	Limit                    int                                  `json:"limit"`
 }
@@ -57,9 +60,11 @@ type EnhancedAnalysisReport struct {
 
 func (c *Container) wireEnhanced(ctx context.Context) {
 	e := &c.enhanced
-	e.enabled = config.LoadPrefs(c.cfg.DataDir).EnhancedAudioEnabled
+	prefs := config.LoadPrefs(c.cfg.DataDir)
+	e.enabled = prefs.EnhancedAudioEnabled
+	e.mertEnabled = prefs.MERTSimilarityEnabledValue()
 	e.bundles = &audio.MERTBundleManager{Directory: filepath.Join(c.cfg.DataDir, "mert-analysis")}
-	e.detail = "DSP needs no model. MERT is an optional, separately licensed audio representation."
+	e.detail = "MERT finds similar tracks in Enhanced hybrid using available preview embeddings. DSP measurements are enabled separately."
 	if c.analysis.store == nil {
 		return
 	}
@@ -104,7 +109,7 @@ func (c *Container) loadMERT(ctx context.Context) error {
 	}
 	e.worker, e.pool, e.manifest = worker, pool, &manifest
 	e.detail = "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval."
-	if !e.enabled {
+	if !e.mertEnabled {
 		pool.Unload()
 	}
 	return nil
@@ -114,7 +119,7 @@ func (c *Container) GetEnhancedAnalysisStatus(ctx context.Context) (EnhancedAnal
 	e := &c.enhanced
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	s := EnhancedAnalysisStatus{Enabled: e.enabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
+	s := EnhancedAnalysisStatus{Enabled: e.enabled, MERTEnabled: e.mertEnabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
 	if distribution, err := c.recommendedMERT(); err != nil {
 		s.UnsupportedReason = err.Error()
 	} else {
@@ -134,6 +139,16 @@ func (c *Container) GetEnhancedAnalysisStatus(ctx context.Context) (EnhancedAnal
 			return s, err
 		}
 		s.MERTStorage, err = c.analysis.store.Representations().Usage(ctx)
+		if err == nil && e.manifest != nil {
+			rt := c.Runtime()
+			if rt.Resolver != nil {
+				coverage, searchErr := c.analysis.store.Representations().Search(ctx, ports.AudioRepresentationQuery{CatalogVersion: rt.Resolver.CatalogVersion(), Model: e.manifest.Model})
+				if searchErr != nil {
+					return s, searchErr
+				}
+				s.SearchableTracks = coverage.SearchableTracks
+			}
+		}
 		return s, err
 	}
 	return s, nil
@@ -154,11 +169,37 @@ func (c *Container) SetEnhancedAnalysisEnabled(enabled bool) error {
 	if err != nil {
 		return err
 	}
+	// Resolve the legacy shared opt-in before changing only the DSP setting.
+	mertEnabled := prefs.MERTSimilarityEnabledValue()
+	prefs.MERTSimilarityEnabled = &mertEnabled
 	prefs.EnhancedAudioEnabled = enabled
 	if err := prefs.Save(c.cfg.DataDir); err != nil {
 		return err
 	}
 	e.enabled = enabled
+	return nil
+}
+
+func (c *Container) SetMERTSimilarityEnabled(enabled bool) error {
+	e := &c.enhanced
+	e.opMu.Lock()
+	defer e.opMu.Unlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if enabled && c.analysis.store == nil {
+		return fmt.Errorf("MERT similarity storage unavailable")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	prefs, err := config.LoadPrefsChecked(c.cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	prefs.MERTSimilarityEnabled = &enabled
+	if err := prefs.Save(c.cfg.DataDir); err != nil {
+		return err
+	}
+	e.mertEnabled = enabled
 	if !enabled && e.pool != nil {
 		e.pool.Unload()
 	} else if !enabled && e.worker != nil {
@@ -265,18 +306,39 @@ func (c *Container) ClearEnhancedAnalysis(ctx context.Context) error {
 	return c.analysis.store.Representations().Clear(ctx)
 }
 
+func (c *Container) ClearMERTSimilarityCache(ctx context.Context) error {
+	c.enhanced.opMu.Lock()
+	defer c.enhanced.opMu.Unlock()
+	if c.analysis.store == nil {
+		return nil
+	}
+	return c.analysis.store.Representations().Clear(ctx)
+}
+
+func (c *Container) ClearDSPAnalysisCache(ctx context.Context) error {
+	c.enhanced.opMu.Lock()
+	defer c.enhanced.opMu.Unlock()
+	if c.analysis.store == nil {
+		return nil
+	}
+	return c.analysis.store.DSP().Clear(ctx)
+}
+
 func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
 	var recordings ports.CachedRecordingReader
 	if r, ok := c.Enrich.(ports.CachedRecordingReader); ok {
 		recordings = r
 	}
-	p := &audio.Service{Resolver: deezer.New(deezer.Config{}), Recordings: recordings, Authorized: true, DSPStore: c.analysis.store.DSP()}
+	p := &audio.Service{Resolver: deezer.New(deezer.Config{}), Recordings: recordings, Authorized: true}
+	if c.enhanced.enabled {
+		p.DSPStore = c.analysis.store.DSP()
+	}
 	if clap := c.AudioService(); clap != nil {
 		copy := clap.Clone()
 		copy.DSPStore = p.DSPStore
 		p = copy
 	}
-	if c.enhanced.worker == nil || c.enhanced.manifest == nil {
+	if !c.enhanced.mertEnabled || c.enhanced.worker == nil || c.enhanced.manifest == nil {
 		return p, nil
 	}
 	analyzer := ports.AudioRepresentationAnalyzer(c.enhanced.worker)
@@ -289,18 +351,14 @@ func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
 
 func (c *Container) EnhancedPreviewService() *audio.Service {
 	base := c.AudioService()
-	if base == nil {
-		return nil
-	}
 	c.enhanced.mu.Lock()
 	defer c.enhanced.mu.Unlock()
-	if !c.enhanced.enabled || c.analysis.store == nil {
+	if (!c.enhanced.enabled && !c.enhanced.mertEnabled) || c.analysis.store == nil {
 		return base
 	}
-	p := *base.Clone()
-	p.DSPStore = c.analysis.store.DSP()
-	_, p.MERT = c.enhancedServices()
-	return &p
+	p, m := c.enhancedServices()
+	p.MERT = m
+	return p
 }
 
 // PrepareEnhancedAudio is called once before ranking. Only the first bounded
@@ -323,7 +381,7 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 	e := &c.enhanced
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
-	if !e.enabled || c.analysis.store == nil || intent.Controls.RecommendationMode != core.EnhancedHybrid {
+	if (!e.enabled && !e.mertEnabled) || c.analysis.store == nil || intent.Controls.RecommendationMode != core.EnhancedHybrid {
 		return nil, nil
 	}
 	runtime := c.Runtime()
@@ -332,7 +390,7 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 	}
 	catalog := runtime.Resolver.CatalogVersion()
 	input := core.EnhancedAudioInput{CatalogVersion: catalog, DSPVersion: audio.DSPAnalysisVersion, DSP: map[string]core.DSPAnalysis{}, Representations: map[string]core.AudioRepresentation{}}
-	if e.manifest != nil {
+	if e.mertEnabled && e.manifest != nil {
 		input.Model = e.manifest.Model
 	}
 	if !acquire && previous != nil {
@@ -341,6 +399,7 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 			return nil, fmt.Errorf("enhanced audio refresh requires the same catalog, model and policy as the initial snapshot")
 		}
 		input.PositiveCentroid, input.NegativeCentroid = prior.PositiveCentroid, prior.NegativeCentroid
+		input.MERTSearch = prior.MERTSearch
 	}
 	p, m := c.enhancedServices()
 	seen := map[string]bool{}
@@ -357,9 +416,13 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 			}
 			return completed, err
 		}
-		dspCached, dspHit, _ := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion)
-		if dspHit {
-			input.DSP[ref.ID] = dspCached
+		dspHit := p.DSPStore == nil
+		if p.DSPStore != nil {
+			dspCached, hit, _ := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion)
+			dspHit = hit
+			if hit {
+				input.DSP[ref.ID] = dspCached
+			}
 		}
 		mertHit := m == nil
 		if m != nil {
@@ -378,8 +441,10 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 			}
 			cancel()
 		}
-		if a, ok, err := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion); err == nil && ok {
-			input.DSP[ref.ID] = a
+		if p.DSPStore != nil {
+			if a, ok, err := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion); err == nil && ok {
+				input.DSP[ref.ID] = a
+			}
 		}
 		if m != nil {
 			if a, ok, err := m.Store.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), input.Model); err == nil && ok {
@@ -420,8 +485,8 @@ func (c *Container) AnalyzeEnhancedTracks(ctx context.Context, ids []string, lik
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
 	report := EnhancedAnalysisReport{}
-	if !e.enabled || c.analysis.store == nil {
-		return report, fmt.Errorf("enable enhanced audio analysis first")
+	if (!e.enabled && !e.mertEnabled) || c.analysis.store == nil {
+		return report, fmt.Errorf("enable MERT similarity or DSP measurements first")
 	}
 	runtime := c.Runtime()
 	if runtime.Catalog == nil || runtime.Resolver == nil {
@@ -455,6 +520,9 @@ func (c *Container) AnalyzeEnhancedTracks(ctx context.Context, ids []string, lik
 	}
 	report.Requested = len(refs)
 	preview, mert := c.enhancedServices()
+	if mert == nil && preview.DSPStore == nil {
+		return report, fmt.Errorf("install a ready MERT model before analyzing tracks")
+	}
 	for i, ref := range refs {
 		if err := ctx.Err(); err != nil {
 			return report, err

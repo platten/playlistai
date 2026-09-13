@@ -47,40 +47,11 @@ func preferCLAPRanking(comparisons []core.IntentComparison, preview core.AudioAs
 // mood_electronic is not a genre and genre_electronic is a conditional subgenre
 // classifier: neither establishes membership in electronic music. Unmapped
 // phrases (e.g. microdetail, sleepy, hybrids) remain unknown, not approximated.
-var acousticClasses = map[string]map[string]string{
-	"genre_dortmund":   {"alternative": "alternative", "blues": "blues", "electronic": "electronic", "jazz": "jazz", "pop": "pop", "rock": "rock"},
-	"genre_rosamerica": {"classical": "cla", "hip hop": "hip", "jazz": "jaz", "pop": "pop", "rock": "roc"},
-	"genre_tzanetakis": {"blues": "blu", "classical": "cla", "country": "cou", "disco": "dis", "hip hop": "hip", "jazz": "jaz", "metal": "met", "pop": "pop", "reggae": "reg", "rock": "roc"},
-}
-
 func acousticClass(kind, text, model string) string {
-	// Only exact reviewed aliases enter classifier vocabularies. Conditional
-	// electronic subgenre models still require a separate applicability policy.
-	if concept, ok := musicconcepts.Find(kind, text); ok && model != "genre_electronic" {
-		if label := concept.Providers.AcousticBrainz[model]; label != "" {
-			return label
-		}
-		text = concept.Value
-	}
-	text = core.NormalizeIdentityPart(text)
-	if kind == "genre" || kind == "style" {
-		return acousticClasses[model][text]
-	}
-	if kind == "vocal" && model == "voice_instrumental" {
-		switch text {
-		case "vocal", "vocals", "voice", "singing":
-			return "voice"
-		case "instrumental":
-			return "instrumental"
-		}
-	}
-	if kind == "mood" {
-		if text == "relaxing" {
-			text = "relaxed"
-		}
-		if model == "mood_"+text {
-			return text
-		}
+	// The schema-validated thesaurus is the sole mapping authority. Constructing
+	// classifier names from arbitrary prompt words would bypass sense review.
+	if concept, ok := musicconcepts.Find(kind, text); ok {
+		return concept.Providers.AcousticBrainz[model]
 	}
 	return ""
 }

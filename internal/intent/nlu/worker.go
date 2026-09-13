@@ -28,7 +28,6 @@ type WorkerResponse struct {
 	Protocol    int
 	Kind        ModelKind
 	ModelSHA256 string
-	Embedding   []float32
 	Result      Result
 	Error       string
 }
@@ -86,11 +85,7 @@ func serveWorker(input io.Reader, output io.Writer, kind ModelKind, settings mod
 				var values []float32
 				values, err = model.Infer(encoding)
 				if err == nil {
-					if kind == MiniLM {
-						response.Embedding, err = MeanPool(values, encoding.AttentionMask, EmbeddingDimension)
-					} else {
-						response.Result, err = DecodeProposals(text, encoding, values, *settings.head, *settings.calibration)
-					}
+					response.Result, err = DecodeProposals(text, encoding, values, *settings.head, *settings.calibration)
 				}
 				clear(values)
 			}
@@ -101,7 +96,6 @@ func serveWorker(input io.Reader, output io.Writer, kind ModelKind, settings mod
 		if err := audio.WriteFrame(output, response); err != nil {
 			return err
 		}
-		clear(response.Embedding)
 	}
 }
 
@@ -118,14 +112,6 @@ type Worker struct {
 	cmd                 *exec.Cmd
 	stdin               io.WriteCloser
 	stdout              io.ReadCloser
-}
-
-func (w *Worker) EmbedText(ctx context.Context, text string) ([]float32, error) {
-	if w.Config.Kind != MiniLM {
-		return nil, fmt.Errorf("nlu: model does not provide sentence embeddings")
-	}
-	response, err := w.call(ctx, WorkerRequest{Protocol: WorkerProtocol, Text: text})
-	return response.Embedding, err
 }
 
 func (w *Worker) Propose(ctx context.Context, text string) (Result, error) {
@@ -213,10 +199,6 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) (WorkerRespons
 			w.stopLocked()
 			return WorkerResponse{}, fmt.Errorf("nlu: worker failed or model is incompatible")
 		}
-		if w.Config.Kind == MiniLM && !validEmbedding(result.response.Embedding) {
-			w.stopLocked()
-			return WorkerResponse{}, fmt.Errorf("nlu: invalid sentence embedding")
-		}
 		if w.Config.Kind == DistilBERT && !request.Health {
 			if err := validateProposals(request.Text, result.response.Result); err != nil {
 				w.stopLocked()
@@ -225,20 +207,6 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) (WorkerRespons
 		}
 		return result.response, nil
 	}
-}
-
-func validEmbedding(vector []float32) bool {
-	if len(vector) != EmbeddingDimension {
-		return false
-	}
-	var sum float64
-	for _, v := range vector {
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) {
-			return false
-		}
-		sum += float64(v) * float64(v)
-	}
-	return math.Abs(sum-1) < 0.001
 }
 
 func validateProposals(text string, result Result) error {

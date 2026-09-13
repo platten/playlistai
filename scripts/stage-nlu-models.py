@@ -1,4 +1,4 @@
-"""Optionally embed verified MiniLM/DistilBERT assets in a release executable.
+"""Optionally embed verified DistilBERT assets in a release executable.
 
 The normal setup path downloads missing assets. Running this before a platform
 build makes those model files available offline from that release binary.
@@ -25,6 +25,13 @@ if __name__ == '__main__':
     parser.add_argument('--platform', default={'Windows':'windows','Darwin':'darwin','Linux':'linux'}[platform.system()]+'/'+machine)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
+    # This app-owned output is wildcard-embedded. Retire stale generated model
+    # entries from older staging runs without touching imported model sources.
+    output_root = args.output.resolve()
+    for retired in output_root.glob("minilm-*"):
+        if retired.parent.resolve() != output_root or not retired.is_file():
+            raise ValueError("Unexpected retired staging entry")
+        retired.unlink()
     for item in json.loads((ROOT/'internal/intent/nlu/sources.json').read_text()):
         if not item['setup']:
             continue

@@ -7,6 +7,14 @@ model weights, audio, learned embeddings, or a provider database. Desktop users
 need neither Python nor a separately installed dictionary. No new external
 dataset is necessary to use this registry.
 
+The current v3 thesaurus contains 293 concepts and 726 canonical terms/aliases.
+See [the full prompt thesaurus](prompt-thesaurus.md) for every alias, CLAP caption,
+AcousticBrainz class, ambiguity policy and evaluation limitation. Its checked-in
+legacy classifier schema is `internal/musicconcepts/acoustic_schema.json`;
+Go startup and the preparation tool reject unsupported model/class mappings.
+Regenerate the reference with `node scripts/render-music-thesaurus.mjs` and use
+`--check` to detect stale documentation.
+
 The Python script is optional contributor tooling for validation, reproducible
 compression, and retaining source evidence for future changes. It uses Python
 3.10 or later and only the standard library. Existing model, MusicBrainz,

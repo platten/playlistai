@@ -1,9 +1,13 @@
 # Music metadata cache and fallback
 
-An optional [local Discogs dataset](local-metadata-dataset.md) now precedes
-online genre discovery. It is built from CC0 monthly dumps, not archived API
-responses. Settings shows its snapshot date and matched-track coverage. Clearing
-the query cache does **not** delete this separately installed dataset.
+An optional [catalog-independent MusicBrainz index](musicbrainz-offline-index.md)
+uses the official artist and recording JSON dumps for local identity and
+candidate-pool queries before the public API. Its multipart R2 bundle can be
+installed from the first-run wizard or Settings. The separate optional [local
+Discogs dataset](local-metadata-dataset.md) precedes online genre discovery. It
+is built from CC0 monthly dumps, not archived API responses. Settings shows the
+installed snapshots and coverage. Clearing the query cache does **not** delete
+either separately installed dataset.
 
 ## Settings
 

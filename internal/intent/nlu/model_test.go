@@ -10,33 +10,6 @@ import (
 	"testing"
 )
 
-func TestMeanPoolMasksPaddingAndNormalizes(t *testing.T) {
-	got, err := MeanPool([]float32{1, 0, 99, 99, 0, 1}, []int64{1, 0, 1}, 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, v := range got {
-		if math.Abs(float64(v)-1/math.Sqrt(2)) > 1e-6 {
-			t.Fatalf("wrong masked mean %v", got)
-		}
-	}
-	for _, tc := range []struct {
-		values []float32
-		mask   []int64
-		dim    int
-	}{
-		{[]float32{1}, []int64{1}, 2},
-		{[]float32{0, 0}, []int64{1}, 2},
-		{[]float32{1, 0}, []int64{0}, 2},
-		{[]float32{1, 0}, []int64{2}, 2},
-		{[]float32{float32(math.NaN()), 0}, []int64{1}, 2},
-	} {
-		if _, err := MeanPool(tc.values, tc.mask, tc.dim); err == nil {
-			t.Error("invalid pooling accepted")
-		}
-	}
-}
-
 func writeJSON(t *testing.T, path string, value any) []byte {
 	t.Helper()
 	raw, err := json.Marshal(value)

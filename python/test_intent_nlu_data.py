@@ -105,13 +105,13 @@ class DataTests(unittest.TestCase):
             align_labels(row, [(2, 9)], labels)
 
     def test_native_parity_cannot_hide_missing_or_shifted_outputs(self):
-        expected = {"version": 1, "kind": "minilm", "cases": [{"text": "ö", "ids": [1], "attentionMask": [1], "typeIds": [0], "tokens": [{"id": 1, "start": 0, "end": 2, "special": False}], "embedding": [1.] + [0.] * 383}]}
+        expected = {"version": 1, "kind": "distilbert", "cases": [{"text": "ö", "ids": [1], "attentionMask": [1], "typeIds": [0], "tokens": [{"id": 1, "start": 0, "end": 2, "special": False}]}]}
         actual = copy.deepcopy(expected)
         self.assertTrue(compare(expected, actual)["passed"])
         actual["cases"][0]["tokens"][0]["end"] = 1
         self.assertFalse(compare(expected, actual)["passed"])
         actual = copy.deepcopy(expected)
-        actual["cases"][0]["embedding"] = [float("nan"), 0.]
+        actual["cases"][0]["attentionMask"] = []
         self.assertFalse(compare(expected, actual)["passed"])
         actual["cases"] = []
         with self.assertRaises(ValueError):

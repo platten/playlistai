@@ -599,7 +599,57 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 			return
 		}
 	}
-	track := core.EnrichedTrack{Ref: meta.Ref, Matched: true, IdentityStatus: core.ResolutionResolved, RecordingID: r.ID, AllISRCs: r.ISRCs, OriginalReleaseDate: r.FirstReleaseDate}
+	track := knowledgeTrack(r, meta.Ref)
+	snapshot.Tracks = append(snapshot.Tracks, track)
+	snapshot.Candidates = append(snapshot.Candidates, meta.Ref)
+}
+
+// addDynamicKnowledgeRecording admits a MusicBrainz recording outside the
+// Deej-AI catalog only when Deezer independently corroborates its identity and
+// supplies a preview. The registered metadata then lets the ordinary CLAP,
+// MERT, acoustic-evidence, eligibility, ranking and history paths handle it.
+func (c *Client) addDynamicKnowledgeRecording(ctx context.Context, r mbRecording, cat ports.Catalog, snapshot *core.KnowledgeSnapshot) error {
+	registrar, ok := cat.(ports.DynamicTrackCatalog)
+	if !ok || c.candidatePreview == nil || len(r.ArtistCredit) == 0 || r.ID == "" {
+		return nil
+	}
+	ref := core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title}
+	track := knowledgeTrack(r, ref)
+	resolved, err := c.candidatePreview.ResolveAudioPreview(ctx, ref, track)
+	if err != nil {
+		return err
+	}
+	identity := resolved.Identity
+	if identity.Status != core.ResolutionResolved || identity.Provider != "deezer" || identity.ProviderID == "" || resolved.URL == "" {
+		return nil
+	}
+	ref.ID = "deezer:" + identity.ProviderID
+	track.Ref = ref
+	if identity.ISRC != "" {
+		track.ISRC = identity.ISRC
+	}
+	meta := core.TrackMeta{Ref: ref, PreviewURL: resolved.URL, Album: track.Album, AlbumReliable: track.Album != "", FullRecordingDuration: track.FullRecordingDuration}
+	if err := registrar.RegisterDynamicTrack(meta); err != nil {
+		return err
+	}
+	for _, prior := range snapshot.Tracks {
+		if prior.Ref.ID == ref.ID {
+			return nil
+		}
+	}
+	snapshot.Tracks = append(snapshot.Tracks, track)
+	snapshot.Candidates = append(snapshot.Candidates, ref)
+	return nil
+}
+
+func knowledgeTrack(r mbRecording, ref core.TrackRef) core.EnrichedTrack {
+	track := core.EnrichedTrack{Ref: ref, Matched: true, IdentityStatus: core.ResolutionResolved, RecordingID: r.ID, AllISRCs: append([]string(nil), r.ISRCs...), OriginalReleaseDate: r.FirstReleaseDate}
+	if len(r.ISRCs) > 0 {
+		track.ISRC = r.ISRCs[0]
+	}
+	if r.Length != nil && *r.Length > 0 {
+		track.FullRecordingDuration = &core.RecordingDuration{Milliseconds: *r.Length, Source: "musicbrainz", RecordingID: r.ID}
+	}
 	for _, credit := range r.ArtistCredit {
 		track.AllArtists = append(track.AllArtists, credit.Name)
 		track.ArtistIDs = append(track.ArtistIDs, credit.Artist.ID)
@@ -610,9 +660,13 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 	if len(r.Releases) > 0 {
 		track.Album = r.Releases[0].Title
 		track.ReleaseID = r.Releases[0].ID
+		track.ReleaseEditionDate = r.Releases[0].Date
+		track.Year = yearOf(r.Releases[0].Date)
+		if r.Releases[0].ReleaseGroup.FirstReleaseDate != "" {
+			track.OriginalReleaseDate = r.Releases[0].ReleaseGroup.FirstReleaseDate
+		}
 	}
-	snapshot.Tracks = append(snapshot.Tracks, track)
-	snapshot.Candidates = append(snapshot.Candidates, meta.Ref)
+	return track
 }
 
 func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) core.IntentReference {

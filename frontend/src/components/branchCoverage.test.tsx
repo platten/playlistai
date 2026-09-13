@@ -10,7 +10,7 @@ import { MusicMetadataCard } from "./MusicMetadataCard";
 import { MiniPlayerBar, PreviewPlayerProvider, usePreviewPlayer } from "./PreviewPlayer";
 
 const mocks = vi.hoisted(() => ({
-  api: Object.fromEntries(["GetPreviewURL", "GetRecommendationMode", "SetRecommendationMode", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "GetMetadataStatus", "ClearMusicMetadataCache"].map((name) => [name, vi.fn()])),
+  api: Object.fromEntries(["GetPreviewURL", "GetRecommendationMode", "SetRecommendationMode", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "ClearMusicMetadataCache"].map((name) => [name, vi.fn()])),
   progress: null as null | { done: number; total: number; note: string },
 }));
 vi.mock("../lib/api", () => ({ API: mocks.api, RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" } }));

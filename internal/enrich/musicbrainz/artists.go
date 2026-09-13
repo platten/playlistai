@@ -20,6 +20,17 @@ const maxSampledArtists = 6
 const recordingsPerArtist = 3
 
 func (c *Client) genreArtists(ctx context.Context, genre string) core.GenreArtistPool {
+	if offline := c.localMusicBrainz(); offline != nil {
+		rows, err := offline.ArtistsByTag(ctx, []string{genre}, genreArtistTarget, 0)
+		if err == nil && len(rows) > 0 {
+			pool := core.GenreArtistPool{Genre: genre, Available: len(rows), Complete: len(rows) < genreArtistTarget}
+			pool.Sources = append(pool.Sources, "musicbrainz-dump:"+offline.Info().Snapshot)
+			for _, row := range rows {
+				pool.Artists = append(pool.Artists, core.GenreArtist{ID: row.MBID, Name: row.Name, Tags: []core.AttributedGenreTag{{Name: genre, Votes: row.Votes, Source: "musicbrainz", EntityID: row.MBID, Facet: "artist_tag"}}})
+			}
+			return pool
+		}
+	}
 	query := `tag:"` + mbEscape(genre) + `"`
 	pool := c.genreArtistsQuery(ctx, genre, query)
 	// A compound description may be represented by separate artist tags.

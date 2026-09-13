@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MusicMetadataCard } from "./MusicMetadataCard";
 import { MusicAnalysisCard } from "./MusicAnalysisCard";
 const api = vi.hoisted(() => Object.fromEntries([
-  "GetMetadataStatus", "SetDiscogsToken", "ClearMusicMetadataCache", "GetAnalysisStatus", "GetRecommendedAnalysisBundle",
+  "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "SetDiscogsToken", "ClearMusicMetadataCache", "GetAnalysisStatus", "GetRecommendedAnalysisBundle",
   "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "SetAnalysisEnabled", "RemoveAnalysisModel", "ClearAnalysis",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
@@ -21,6 +21,7 @@ const installedStatus = { installed: true, available: true, generalFitAvailable:
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset().mockImplementation(() => completed(null)));
   api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: false }));
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: false, musicBrainzConfigured: false }));
   api.GetAnalysisStatus.mockImplementation(() => completed(installedStatus));
   api.GetRecommendedAnalysisBundle.mockImplementation(() => completed(bundle));
   api.InspectAnalysisBundle.mockImplementation(() => completed(bundle));
@@ -92,6 +93,19 @@ it("surfaces metadata status read failures", async () => {
   render(<MusicMetadataCard />);
   await screen.findByText(/status unavailable/);
   expect((screen.getByLabelText("Discogs personal API token") as HTMLInputElement).disabled).toBe(true);
+});
+
+it("downloads the configured offline MusicBrainz index from settings", async () => {
+  api.GetMetadataBundleInfo
+    .mockImplementationOnce(() => completed({ configured: false, musicBrainzConfigured: true, musicBrainzInstalled: false }))
+    .mockImplementation(() => completed({ configured: false, musicBrainzConfigured: true, musicBrainzInstalled: true, musicBrainzSnapshot: "20260912-001001", musicBrainzRecordings: 80 }));
+  render(<MusicMetadataCard />);
+  const button = await screen.findByRole("button", { name: "Download MusicBrainz data" });
+  expect(screen.getByText(/Cloudflare R2 archive/)).toBeTruthy();
+  fireEvent.click(button);
+  await screen.findByText("Offline MusicBrainz data installed.");
+  expect(api.InstallMusicBrainzBundle).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Download MusicBrainz data" })).toBeNull();
 });
 
 it("changes analysis settings, confirms cache removal and removes installed models", async () => {

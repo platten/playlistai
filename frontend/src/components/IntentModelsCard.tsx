@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { API } from "../lib/api";
 import { Button, ErrorState, ProgressBar, useProgress } from ".";
 
-export function IntentModelsCard({ automatic = false }: { automatic?: boolean }) {
+export function IntentModelsCard() {
   const [status, setStatus] = useState<Awaited<ReturnType<typeof API.GetIntentAssistStatus>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,14 +36,13 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
     void API.GetIntentAssistStatus().then((value) => {
       if (disposed) return;
       setStatus(value);
-      if (automatic && !value.installed && !value.unsupportedReason) void install();
     }).catch((e: unknown) => { if (!disposed) setError(String(e)); });
     return () => {
       disposed = true;
       mounted.current = false;
       void pending.current?.cancel();
     };
-  }, [automatic]);
+  }, []);
 
   async function toggle(enabled: boolean) {
     setBusy(true);
@@ -78,17 +77,19 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
 
   return <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4" aria-label="Intent language models" aria-busy={busy}>
     <h2 className="text-[15px] font-semibold">Intent language models</h2>
-    <p className="text-[13px] text-muted">Try compact, local language models to help interpret music descriptions. No Python installation needed.</p>
-    <p className="text-[12px] text-muted">The default download uses a compressed model pack for this device, verifies its segments, and prepares the models locally.</p>
+    <p className="text-[13px] text-muted">Optionally prepare DistilBERT for a reviewed local prompt extractor. Your current prompt parser remains available.</p>
+    <p className="text-[12px] text-muted">Setup downloads only pinned DistilBERT assets and the native runtime. No Python installation is needed.</p>
     <p className="text-[12px] text-muted">{status?.detail ?? "Checking available models…"}</p>
     {busy && <ProgressBar label="Preparing intent models" done={progress?.done ?? 0} total={progress?.total ?? 0} note={progress?.note} />}
-    {status?.unsupportedReason ? <p className="text-[12px] text-muted">Your existing prompt parser remains available.</p> : status?.installed ? <>
-      <p className="text-[12px] text-muted">MiniLM and DistilBERT assets verified.</p>
+    {status?.unsupportedReason ? <p className="text-[12px] text-muted">Your existing prompt parser remains available.</p> : status && (status.installed || status.extractorInstalled) ? <>
+      {status.installed && <p className="text-[12px] text-muted">DistilBERT base assets verified.</p>}
       <label className="flex items-center gap-2 text-[13px]">
-        <input type="checkbox" checked={status.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
-        Try compact intent suggestions
+        <input type="checkbox" checked={status.enabled} disabled={busy || !status.extractorInstalled} onChange={(e) => {
+          if (status.extractorInstalled) void toggle(e.target.checked);
+        }} />
+        Use reviewed DistilBERT suggestions
       </label>
-      <p className="text-[12px] text-muted">Uses your local LLM to check suggestions. Explicit instructions still take precedence.</p>
+      <p className="text-[12px] text-muted">Your local LLM checks the extractor’s suggestions against your instructions. Base assets alone cannot supply suggestions.</p>
       {status.extractorInstalled && <p className="text-[12px] text-muted">Reviewed DistilBERT extractor installed.</p>}
       <details className="text-[12px] text-muted">
         <summary className="cursor-pointer">Use a reviewed DistilBERT extractor</summary>
@@ -100,11 +101,11 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
           <Button disabled={busy || !extractorPath.trim()} onClick={() => void importExtractor()}>Install reviewed extractor</Button>
         </div>
       </details>
-    </> : <Button disabled={busy || !status} onClick={() => void install()}>{error ? "Retry intent model download" : `Download intent models${status ? ` · ${(status.downloadBytes / 1e6).toFixed(0)} MB` : ""}`}</Button>}
+    </> : <Button disabled={busy || !status} onClick={() => void install()}>{error ? "Retry DistilBERT download" : `Prepare DistilBERT${status ? ` · ${(status.downloadBytes / 1e6).toFixed(0)} MB` : ""}`}</Button>}
     {status && !status.unsupportedReason && <details className="text-[12px] text-muted">
       <summary className="cursor-pointer">Install a compressed model pack</summary>
       <div className="mt-3 flex flex-col gap-2">
-        <p>Use an HTTPS manifest URL or a local manifest JSON file. The app downloads or reads the segments, verifies them, and extracts MiniLM and DistilBERT assets for this device. This does not enable intent suggestions or install a trained extractor.</p>
+        <p>Use an HTTPS manifest URL or a local manifest JSON file. The app downloads or reads the segments, verifies them, and imports only the pinned DistilBERT assets for this device. This does not enable intent suggestions or install a trained extractor.</p>
         <label className="flex flex-col gap-1">Model pack manifest URL or path
           <input className="rounded-control border border-line bg-bg px-2 py-2 text-text" value={packSource} disabled={busy} onChange={(e) => setPackSource(e.target.value)} spellCheck={false} />
         </label>

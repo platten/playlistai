@@ -159,6 +159,26 @@ func TestEnhancedInferredArtistRepresentativesKeepWeights(t *testing.T) {
 	}
 }
 
+func TestEnhancedSeparatePositiveReferencesUseBestMatchingGroup(t *testing.T) {
+	cat, input := enhancedFixture(t)
+	intent := testIntent(1)
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	intent.References = append(intent.References, core.IntentReference{
+		Kind: core.ReferenceTrack, TrackID: "a", Influence: core.InfluencePositive,
+	})
+	got, err := NewRanker(cat, DefaultConfig()).Rank(
+		context.Background(),
+		candidatesForTracks(refs(cat, "b")),
+		ports.RankRequest{Intent: intent, EnhancedAudio: freezeEnhanced(t, input)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Scores.EnhancedMERT != 1 {
+		t.Fatalf("unrelated reference groups were averaged: %+v", got)
+	}
+}
+
 func freezeEnhanced(t *testing.T, input core.EnhancedAudioInput) *core.EnhancedAudioSnapshot {
 	t.Helper()
 	s, err := core.NewEnhancedAudioSnapshot(input)
@@ -421,5 +441,36 @@ func TestEnhancedStopPreservesEvidenceAndRejectsMalformedReplay(t *testing.T) {
 		if json.Unmarshal([]byte(raw), &s) == nil {
 			t.Fatalf("malformed replay accepted: %s", raw)
 		}
+	}
+}
+
+func TestEnhancedStopBeforeFirstAssemblyPreservesCompletedMERTSearch(t *testing.T) {
+	cat, _ := enhancedFixture(t)
+	search := &core.MERTSimilaritySearch{
+		Recorded:       true,
+		CatalogVersion: cat.CatalogVersion(),
+		Queries: []core.MERTSimilarityQuery{{
+			GroupID: "seed",
+			Track:   core.TrackRef{ID: "seed"},
+			Weight:  1,
+		}},
+	}
+	stop := make(chan struct{})
+	close(stop)
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithEnhancedAudioProvider(func(context.Context, core.MusicIntent, core.TasteProfile, []core.TrackRef) (*core.EnhancedAudioSnapshot, error) {
+		t.Fatal("provider called after checking stopped")
+		return nil, nil
+	})
+	engine.mertSearch = search
+	intent := testIntent(2)
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	if err := engine.prepareEnhanced(context.Background(), nil, intent, ports.RecommendationRequest{StopChecking: stop}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if engine.enhancedSnapshot == nil || engine.enhancedSnapshot.Input().MERTSearch == nil {
+		t.Fatal("stopped snapshot lost the completed MERT similarity search")
+	}
+	if got := engine.enhancedSnapshot.Input().MERTSearch; !got.Recorded || got.CatalogVersion != search.CatalogVersion || len(got.Queries) != 1 {
+		t.Fatalf("stopped snapshot changed the MERT search: %+v", got)
 	}
 }

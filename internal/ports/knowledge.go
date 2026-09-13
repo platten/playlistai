@@ -18,7 +18,7 @@ type IterativeMusicKnowledge interface {
 	PrepareMusic(context.Context, core.MusicIntent, Catalog, ReferenceResolver, Progress) (core.MusicIntent, error)
 }
 
-// MusicCandidateSource opens a request-local, bounded stream of real catalog
+// MusicCandidateSource opens a request-local, bounded stream of identity-resolved
 // recordings. Artist tags steer discovery, never establish track eligibility.
 type MusicCandidateSource interface {
 	OpenCandidates(core.MusicIntent, Catalog, ReferenceResolver) MusicCandidateStream

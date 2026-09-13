@@ -24,11 +24,12 @@ def key(value: str) -> str:
 
 
 def validate(document: dict) -> None:
-    if document.get("version") != "music-concepts/v1":
+    if document.get("version") != "music-concepts/v3":
         raise ValueError("unsupported registry version; update both Go and preparation contracts")
     concepts = document.get("concepts", [])
     if not concepts or not document.get("provenance"):
         raise ValueError("registry requires concepts and provenance")
+    schema = json.loads((ROOT / "internal/musicconcepts/acoustic_schema.json").read_text(encoding="utf-8"))
     ids, aliases = {}, {}
     for concept in concepts:
         for field in ("id", "kind", "value", "source", "license"):
@@ -46,6 +47,9 @@ def validate(document: dict) -> None:
                 raise ValueError(f"ambiguous exact alias {alias}: {identity}, {aliases[alias]}")
             aliases[alias] = identity
         providers = concept.get("providers", {})
+        for model, label in providers.get("acousticBrainz", {}).items():
+            if label not in schema["classifiers"].get(model, []):
+                raise ValueError(f"unsupported AcousticBrainz model/class: {model}/{label}")
         for query in providers.get("musicBrainz", []):
             if key(query) not in {key(s) for s in [concept["value"], *concept.get("aliases", [])]}:
                 raise ValueError(f"MusicBrainz query is not a reviewed exact alias: {identity}: {query}")

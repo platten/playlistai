@@ -80,6 +80,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	var prepared []preparedCandidate
 	retrievalInterrupted := false
 	refill := func() error {
+		if request.Progress != nil && len(accepted) > 0 {
+			request.Progress.Report("generation", int64(min(len(accepted), target)), int64(target), "Finding additional similar tracks with Deej-AI")
+		}
 		batch, err := o.prepareRecommendationPool(ctx, initial, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted,
 		}, eligible, recordings, recommendationPoolSize(batchCount, len(required)))

@@ -59,6 +59,10 @@ CREATE INDEX IF NOT EXISTS dsp_analysis_lookup
 		_ = db.Close()
 		return nil, err
 	}
+	if err := initRepresentationSearchSchema(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &Store{db: db, path: path}, nil
 }
 

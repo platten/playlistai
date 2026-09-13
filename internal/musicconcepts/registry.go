@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const Version = "music-concepts/v2"
+const Version = "music-concepts/v3"
 
 // ProviderMappings keeps provider class names out of the user's intent. Parent
 // and related concepts are never expanded by Canonical or Find.
@@ -75,6 +75,11 @@ func loadRegistry() ([]Concept, map[string]int, map[string]int) {
 			panic("musicconcepts: duplicate concept identity")
 		}
 		ids[c.ID] = i
+		for model, label := range c.Providers.AcousticBrainz {
+			if !ValidAcousticClass(model, label) {
+				panic("musicconcepts: unsupported AcousticBrainz model/class")
+			}
+		}
 		for _, value := range append([]string{c.Value}, c.Aliases...) {
 			key := kindKey(c.Kind) + "\x00" + normalize(value)
 			if prior, exists := aliases[key]; exists && prior != i {

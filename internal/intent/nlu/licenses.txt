@@ -1,4 +1,3 @@
-MiniLM: Apache-2.0 per https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
 DistilBERT: Apache-2.0 per https://huggingface.co/distilbert/distilbert-base-cased
 
 Copyright 2018- The Hugging Face team. All rights reserved.

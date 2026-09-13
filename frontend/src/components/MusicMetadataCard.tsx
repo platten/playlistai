@@ -2,34 +2,42 @@ import { useEffect, useRef, useState } from "react";
 import { API } from "../lib/api";
 import { Button } from "./Button";
 import { ErrorState } from "./ErrorState";
+import { ProgressBar } from "./ProgressBar";
+import { useProgress } from "./useProgress";
 
 type MetadataStatus = Awaited<ReturnType<typeof API.GetMetadataStatus>>;
+type PendingRequest = Promise<unknown> & { cancel: (reason?: unknown) => void };
 
 export function MusicMetadataCard() {
   const [status, setStatus] = useState<MetadataStatus | null>(null);
   const [token, setToken] = useState("");
-  const [busy, setBusy] = useState<"token" | "cache" | null>(null);
+  const [busy, setBusy] = useState<"token" | "cache" | "download" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
-  const pending = useRef(false);
+  const [bundle, setBundle] = useState<Awaited<ReturnType<typeof API.GetMetadataBundleInfo>> | null>(null);
+  const pending = useRef<PendingRequest | null>(null);
+  const downloadProgress = useProgress("musicbrainz-metadata");
 
   useEffect(() => {
     let disposed = false;
     void API.GetMetadataStatus().then((value) => { if (!disposed) setStatus(value); })
       .catch((e: unknown) => { if (!disposed) setError(String(e)); });
-    return () => { disposed = true; };
+    void API.GetMetadataBundleInfo().then((value) => { if (!disposed) setBundle(value); }).catch(() => undefined);
+    return () => { disposed = true; pending.current?.cancel("settings closed"); };
   }, []);
 
-  const run = async (kind: "token" | "cache", fn: () => Promise<unknown>, message: string) => {
+  const run = async (kind: "token" | "cache" | "download", fn: () => Promise<unknown>, message: string) => {
     if (pending.current) return;
-    pending.current = true;
+    const request = fn() as PendingRequest;
+    pending.current = request;
     setBusy(kind); setError(null); setNotice("");
     try {
-      await fn();
+      await request;
       setStatus(await API.GetMetadataStatus());
+      setBundle(await API.GetMetadataBundleInfo());
       setNotice(message);
     } catch (e) { setError(String(e)); }
-    finally { pending.current = false; setBusy(null); }
+    finally { pending.current = null; setBusy(null); }
   };
 
   return (
@@ -37,6 +45,17 @@ export function MusicMetadataCard() {
       <div>
         <h2 id="music-metadata-heading" className="text-[15px] font-semibold">Music metadata</h2>
         <p className="mt-1 text-[13px] text-muted">Local discovery first. Online lookups when more information is needed.</p>
+      </div>
+      <div className="rounded-control border border-line bg-inset p-3">
+        <h3 className="text-[13px] font-medium">Offline MusicBrainz index</h3>
+        <p className="mt-1 text-[12px] text-muted">
+          {status?.musicBrainzSnapshot
+            ? `Snapshot ${status.musicBrainzSnapshot.slice(0, 8)} · ${status.musicBrainzRecordings.toLocaleString()} recordings indexed. Candidate and identity searches use it before the public API.`
+            : "Optional. Download the verified MusicBrainz index from Playlist AI’s Cloudflare R2 archive. It avoids public API delays and can include recordings outside the recommendation catalog."}
+        </p>
+        {status?.musicBrainzIndexError && <p className="mt-2 text-[12px] text-warn">The installed MusicBrainz index could not be opened. Reinstall it to restore offline discovery.</p>}
+        {busy === "download" && <div className="mt-3"><ProgressBar label="Downloading offline MusicBrainz data" done={downloadProgress?.done ?? 0} total={downloadProgress?.total ?? 0} note={downloadProgress?.note} /></div>}
+        {bundle?.musicBrainzConfigured && !bundle.musicBrainzInstalled && busy !== "download" && <div className="mt-3"><Button size="sm" variant="primary" disabled={busy !== null} onClick={() => void run("download", () => API.InstallMusicBrainzBundle(), "Offline MusicBrainz data installed.")}>Download MusicBrainz data</Button></div>}
       </div>
       <div className="rounded-control border border-line bg-inset p-3">
         <h3 className="text-[13px] font-medium">Local Discogs dataset</h3>

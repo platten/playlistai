@@ -128,9 +128,9 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "catalog" && <CatalogStep onNext={next} />}
         {step === "metadata" && <MetadataStep onNext={next} />}
         {step === "model" && <ModelStep onNext={next} />}
-        {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard automatic /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Setup downloads missing language models automatically. Leaving this step pauses the download; you can resume in Settings.</p></div>}
+        {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">DistilBERT is optional. Prepare its assets to import a reviewed prompt extractor, or continue with your current parser.</p></div>}
         {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
-        {step === "mert" && <div className="flex flex-1 flex-col gap-4"><EnhancedAudioCard setup /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. Download only if you accept the model and runtime licenses. Continue to skip or stop an active download; you can install MERT later in Settings.</p></div>}
+        {step === "mert" && <div className="flex flex-1 flex-col gap-4"><p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</p><EnhancedAudioCard setup /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional for Enhanced hybrid. Download only if you accept the model and runtime licenses, then enable similarity when ready. Continue to skip or stop an active download; you can install MERT later in Settings.</p></div>}
         {step === "preview" && <PreviewStep onNext={next} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
@@ -142,13 +142,16 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof API.GetMetadataBundleInfo>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pending = useRef<ReturnType<typeof API.InstallMetadataBundle> | null>(null);
-  const progress = useProgress("metadata");
+  const pending = useRef<ReturnType<typeof API.InstallMetadataBundle> | ReturnType<typeof API.InstallMusicBrainzBundle> | null>(null);
+  const discogsProgress = useProgress("metadata");
+  const musicBrainzProgress = useProgress("musicbrainz-metadata");
   useEffect(() => {
     let disposed = false;
     void API.GetMetadataBundleInfo().then((value) => {
       if (disposed) return;
-      if (!value?.configured || value.installed) onNext();
+      const discogsMissing = value?.configured && !value.installed;
+      const musicBrainzMissing = value?.musicBrainzConfigured && !value.musicBrainzInstalled;
+      if (!discogsMissing && !musicBrainzMissing) onNext();
       else setInfo(value);
     }).catch((e: unknown) => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; void pending.current?.cancel(); };
@@ -156,17 +159,32 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
   const download = async () => {
     if (pending.current) return;
     setBusy(true); setError(null);
-    const request = API.InstallMetadataBundle();
-    pending.current = request;
-    try { await request; pending.current = null; onNext(); }
+    try {
+      if (info?.musicBrainzConfigured && !info.musicBrainzInstalled) {
+        const request = API.InstallMusicBrainzBundle();
+        pending.current = request;
+        await request;
+      }
+      if (info?.configured && !info.installed && info.catalogReady) {
+        const request = API.InstallMetadataBundle();
+        pending.current = request;
+        await request;
+      }
+      pending.current = null;
+      onNext();
+    }
     catch (e) { setError(String(e)); }
     finally { pending.current = null; setBusy(false); }
   };
-  return <StepShell title="Local music knowledge" description="Find genre and style candidates locally, with fewer online lookups. Download once; setup decompresses and verifies the compact dataset on your computer.">
-    <p className="text-[13px] text-muted">Release tags guide discovery. Your musical-fit and exclusion checks still apply, and online lookup remains available for gaps.</p>
+  const progress = musicBrainzProgress ?? discogsProgress;
+  const discogsMissing = Boolean(info?.configured && !info.installed);
+  const musicBrainzMissing = Boolean(info?.musicBrainzConfigured && !info.musicBrainzInstalled);
+  const canDownload = musicBrainzMissing || (discogsMissing && Boolean(info?.catalogReady));
+  return <StepShell title="Local music knowledge" description="Search MusicBrainz recordings and genre candidates locally, without waiting for its public API. Setup downloads the published data parts from Playlist AI’s Cloudflare R2 archive, then joins, decompresses, and verifies them on your computer.">
+    <p className="text-[13px] text-muted">Metadata proposes candidates. Preview analysis and exclusion checks still decide whether a recording fits your request.</p>
     {busy ? <ProgressBar label="Preparing local music metadata" done={progress?.done ?? 0} total={progress?.total ?? 0} note={progress?.note} /> :
-      <Button variant="primary" disabled={!info?.catalogReady} iconLeft={<Icon.Download size={14} />} onClick={() => void download()}>Download music metadata</Button>}
-    {info && !info.catalogReady && <p className="text-[12px] text-muted">Install the recommendation catalog first, or continue without this optional dataset.</p>}
+      <Button variant="primary" disabled={!canDownload} iconLeft={<Icon.Download size={14} />} onClick={() => void download()}>Download offline music data</Button>}
+    {discogsMissing && !info?.catalogReady && <p className="text-[12px] text-muted">The optional Discogs index needs the recommendation catalog. The MusicBrainz index can install independently.</p>}
     {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
     <StepFooter><Button variant="subtle" size="sm" disabled={busy} onClick={onNext}>Continue without download</Button></StepFooter>
   </StepShell>;

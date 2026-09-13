@@ -43,8 +43,11 @@ type candidateStream struct {
 	recordingOffsets    map[string]int
 	recordingPages      map[string]int
 	exactByArtist       map[string]map[string]string
+	offlineRead         map[string]bool
 	recordingReads      int
 	windowReads         int
+	previewReads        int
+	previewBudgetNotice bool
 	acousticSpent       time.Duration
 }
 
@@ -55,6 +58,15 @@ const discoveryWindow = 4
 
 func (s *candidateStream) discoveryWindowSize() int {
 	return min(20, max(discoveryWindow, max(s.intent.Count, s.intent.Controls.TotalTrackCount)))
+}
+
+func (s *candidateStream) dynamicPreviewLimit() int {
+	return min(100, max(20, max(s.intent.Count, s.intent.Controls.TotalTrackCount)*8))
+}
+
+func (s *candidateStream) dynamicDiscoveryEnabled() bool {
+	_, writable := s.cat.(ports.DynamicTrackCatalog)
+	return writable && s.client.candidatePreview != nil && s.intent.Controls.RecommendationMode == core.EnhancedHybrid
 }
 
 func discoveryKey(intent core.MusicIntent, catalog string) string {
@@ -285,10 +297,10 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		if len(s.artists) > 0 && s.windowReads < s.discoveryWindowSize() {
 			artist := s.artists[0]
 			s.artists = s.artists[1:]
-			// Avoid online recording pages for artists absent from the local
-			// catalog. Ambiguous names may still resolve at recording granularity.
+			// Artists outside Deej-AI remain eligible only when the enhanced local
+			// index path can corroborate each recording through a Deezer preview.
 			resolution := s.resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
-			if resolution.Status == core.ResolutionUnresolved {
+			if resolution.Status == core.ResolutionUnresolved && !s.dynamicDiscoveryEnabled() {
 				continue
 			}
 			if s.recordingOffsets == nil {
@@ -311,6 +323,67 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				}
 			}
 			s.exactByArtist[artist.ID] = exact
+			if offline := s.client.localMusicBrainz(); offline != nil && !s.offlineRead[artist.ID] {
+				if s.offlineRead == nil {
+					s.offlineRead = make(map[string]bool)
+				}
+				s.offlineRead[artist.ID] = true
+				rows, offlineErr := offline.ArtistRecordings(ctx, artist.ID, artistRecordingPages*100, 0)
+				if offlineErr != nil {
+					return core.TrackRef{}, offlineErr
+				}
+				if len(rows) > 0 {
+					s.snapshot.Sources = append(s.snapshot.Sources, "musicbrainz-dump:"+offline.Info().Snapshot)
+					for _, row := range rows {
+						r := offlineRecording(row)
+						credited, blocked := false, false
+						for _, credit := range r.ArtistCredit {
+							credited = credited || credit.Artist.ID == artist.ID
+							blocked = blocked || excludedArtist(credit.Name, s.intent.Constraints.ArtistsExclude)
+						}
+						if !credited || blocked {
+							continue
+						}
+						var matched core.KnowledgeSnapshot
+						if exact != nil {
+							key := core.ProvisionalRecordingKey(core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title})
+							id := exact[key]
+							if id != "" {
+								s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
+							}
+						} else {
+							s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched)
+						}
+						if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() {
+							if s.previewReads < s.dynamicPreviewLimit() {
+								s.previewReads++
+								_ = s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched)
+							} else if !s.previewBudgetNotice {
+								s.previewBudgetNotice = true
+								s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("Preview resolution reached its %d-recording limit; remaining MusicBrainz candidates were not analyzed.", s.dynamicPreviewLimit()))
+							}
+						}
+						for _, track := range matched.Candidates {
+							s.client.addKnowledgeRecording(r, s.cat, s.resolver, &s.snapshot, track.ID)
+							key := core.ProvisionalRecordingKey(track)
+							if !s.seen[key] {
+								tracks = append(tracks, track)
+								s.recordEvidence(track.ID, "musicbrainz_dump", "musicbrainz-dump:"+offline.Info().Snapshot)
+								s.seen[key] = true
+							}
+						}
+					}
+					s.enrichAcoustic(ctx)
+					if len(tracks) == 0 {
+						continue
+					}
+					if len(tracks) > 1 {
+						s.pending = append(s.pending, tracks[1:])
+					}
+					s.snapshot.Discovery = append(s.snapshot.Discovery, tracks[0])
+					return tracks[0], nil
+				}
+			}
 			values := url.Values{"query": {"arid:" + artist.ID}, "fmt": {"json"}, "limit": {"100"}}
 			if offset := s.recordingOffsets[artist.ID]; offset > 0 {
 				values.Set("offset", fmt.Sprint(offset))

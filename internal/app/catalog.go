@@ -57,8 +57,16 @@ func (c *Container) loadCatalog() error {
 	if err != nil {
 		return err
 	}
-	runtime := RuntimeSnapshot{Catalog: cat, Resolver: cat, Sim: brute.New(cat)}
+	var recommendationCatalog ports.Catalog = cat
+	var recommendationResolver ports.ReferenceResolver = cat
 	closers := []func() error{cat.Close}
+	if dynamic, overlayErr := catalog.OpenDynamic(cat, cat, filepath.Join(c.cfg.DataDir, "candidate-catalog", "tracks.sqlite")); overlayErr != nil {
+		c.log.Warn("dynamic candidate catalog unavailable; MusicBrainz candidates remain limited to Deej-AI", "err", overlayErr)
+	} else {
+		recommendationCatalog, recommendationResolver = dynamic, dynamic
+		closers = append(closers, dynamic.Close)
+	}
+	runtime := RuntimeSnapshot{Catalog: recommendationCatalog, Resolver: recommendationResolver, Sim: brute.New(cat)}
 	runtime.BaselineReco = deejai.New(cat, runtime.Sim, cat)
 	{
 		// Wire both engines once. Settings choose a request-local engine without
@@ -115,14 +123,18 @@ func (c *Container) loadCatalog() error {
 		if runtime.Features != nil {
 			// Feature-only sidecars still enforce grounded constraints even when
 			// they do not contain a compatible query encoder.
-			runtime.Reco = multichannel.NewWithSemantic(cat, runtime.Sim, cat, runtime.Features, semanticSearch, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
+			runtime.Reco = multichannel.NewWithSemantic(recommendationCatalog, runtime.Sim, recommendationResolver, runtime.Features, semanticSearch, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
 		} else {
-			runtime.Reco = multichannel.New(cat, runtime.Sim, cat, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
+			runtime.Reco = multichannel.New(recommendationCatalog, runtime.Sim, recommendationResolver, mc).WithAudioProvider(c.AudioService).WithAnchorProposer(c.ProposeAnchors)
 		}
 		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
 			runtime.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
 		}
-		runtime.Reco.(*multichannel.Orchestrator).WithEnhancedAudioProvider(c.PrepareEnhancedAudio).WithEnhancedAudioRefreshProvider(c.RefreshEnhancedAudio).WithEnhancedPreviewProvider(c.EnhancedPreviewService)
+		runtime.Reco.(*multichannel.Orchestrator).
+			WithEnhancedAudioProvider(c.PrepareEnhancedAudio).
+			WithEnhancedAudioRefreshProvider(c.RefreshEnhancedAudio).
+			WithEnhancedPreviewProvider(c.EnhancedPreviewService).
+			WithMERTSimilaritySearchProvider(c.SearchMERTSimilarity)
 	}
 	c.mu.Lock()
 	if c.closed {

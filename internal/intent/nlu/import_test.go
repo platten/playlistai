@@ -48,10 +48,10 @@ func TestImportSourcesPinsModelsBeforeChangingInstallation(t *testing.T) {
 func TestImportSourcesRequiresCompletePack(t *testing.T) {
 	t.Parallel()
 	root, source := t.TempDir(), t.TempDir()
-	one := Source{Model: "minilm", Name: "model.onnx", Size: 1, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("a"))), Setup: true}
+	one := Source{Model: "distilbert", Name: "model.onnx", Size: 1, SHA256: fmt.Sprintf("%x", sha256.Sum256([]byte("a"))), Setup: true}
 	two := one
-	two.Model = "distilbert"
-	if err := os.MkdirAll(filepath.Join(source, "minilm"), 0700); err != nil {
+	two.Name = "vocab.txt"
+	if err := os.MkdirAll(filepath.Join(source, "distilbert"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(sourcePath(source, one), []byte("a"), 0600); err != nil {

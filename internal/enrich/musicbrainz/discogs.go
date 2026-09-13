@@ -116,20 +116,28 @@ func (t *discogsTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 // MetadataStatus reveals configuration, never the credential itself.
 type MetadataStatus struct {
-	DatasetDate       string `json:"datasetDate"`
-	DatasetTracks     int64  `json:"datasetTracks"`
-	DatasetError      bool   `json:"datasetError"`
-	DiscogsConfigured bool   `json:"discogsConfigured"`
-	CredentialError   bool   `json:"credentialError"`
+	DatasetDate           string `json:"datasetDate"`
+	DatasetTracks         int64  `json:"datasetTracks"`
+	DatasetError          bool   `json:"datasetError"`
+	DiscogsConfigured     bool   `json:"discogsConfigured"`
+	CredentialError       bool   `json:"credentialError"`
+	MusicBrainzSnapshot   string `json:"musicBrainzSnapshot"`
+	MusicBrainzRecordings int64  `json:"musicBrainzRecordings"`
+	MusicBrainzIndexError bool   `json:"musicBrainzIndexError"`
 }
 
 func (c *Client) MetadataStatus() MetadataStatus {
 	c.datasetMu.RLock()
-	status := MetadataStatus{DatasetError: c.datasetError}
+	status := MetadataStatus{DatasetError: c.datasetError, MusicBrainzIndexError: c.offlineError}
 	if c.dataset != nil {
 		info := c.dataset.Info()
 		status.DatasetDate = info.Date
 		status.DatasetTracks = info.Tracks
+	}
+	if c.offline != nil {
+		info := c.offline.Info()
+		status.MusicBrainzSnapshot = info.Snapshot
+		status.MusicBrainzRecordings = info.Recordings
 	}
 	c.datasetMu.RUnlock()
 	if c.discogs == nil {

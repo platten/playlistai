@@ -88,6 +88,11 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 	return DownloadWithClient(ctx, url, target, size, sha256hex, onProgress, http.DefaultClient)
 }
 
+// VerifyFile checks a local file against an expected size and optional SHA-256.
+func VerifyFile(ctx context.Context, path string, size int64, sha256hex string) error {
+	return verifyFileContext(ctx, path, size, sha256hex)
+}
+
 // DownloadWithClient is Download with an explicit HTTP client, allowing callers
 // to constrain redirects and request timeouts without changing global state.
 func DownloadWithClient(ctx context.Context, url, target string, size int64, sha256hex string, onProgress func(done, total int64), client *http.Client) (int64, error) {

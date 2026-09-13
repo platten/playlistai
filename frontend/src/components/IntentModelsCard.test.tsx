@@ -5,7 +5,7 @@ import { IntentModelsCard } from "./IntentModelsCard";
 const api = vi.hoisted(() => ({ GetIntentAssistStatus: vi.fn(), InstallIntentModels: vi.fn(), InstallIntentModelPack: vi.fn(), SetIntentAssistEnabled: vi.fn(), InstallIntentExtractor: vi.fn() }));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
-const ready = { installed: true, enabled: false, downloadBytes: 430000000, detail: "Extraction awaits reviewed training." };
+const ready = { installed: true, enabled: false, extractorInstalled: true, downloadBytes: 280000000, detail: "Extraction awaits reviewed training." };
 function completed(value: unknown) { return Object.assign(Promise.resolve(value), { cancel: vi.fn() }); }
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset());
@@ -15,8 +15,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 it("does not download already verified models or silently enable the experiment", async () => {
-  render(<IntentModelsCard automatic />);
-  await screen.findByText("MiniLM and DistilBERT assets verified.");
+  render(<IntentModelsCard />);
+  await screen.findByText("DistilBERT base assets verified.");
   expect(api.InstallIntentModels).not.toHaveBeenCalled();
   expect(api.SetIntentAssistEnabled).not.toHaveBeenCalled();
   expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
@@ -24,10 +24,10 @@ it("does not download already verified models or silently enable the experiment"
 
 it("explains unsupported hosts without starting a download", async () => {
   api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, installed: false, unsupportedReason: "Requires macOS 14 or later", detail: "Requires macOS 14 or later" }));
-  render(<IntentModelsCard automatic />);
+  render(<IntentModelsCard />);
   await screen.findByText("Requires macOS 14 or later");
   expect(api.InstallIntentModels).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: /Download intent models/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Prepare DistilBERT/ })).toBeNull();
   expect(screen.queryByText("Install a compressed model pack")).toBeNull();
   expect(screen.getByText("Your existing prompt parser remains available.")).toBeTruthy();
 });
@@ -72,23 +72,27 @@ it("cancels compressed pack installation explicitly and when the card closes", a
   await act(async () => finish());
 });
 
-it("automatically downloads missing assets, preserves errors, and retries", async () => {
-  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, installed: false }));
+it("waits for explicit preparation, preserves errors, and retries", async () => {
+  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, installed: false, extractorInstalled: false }));
   api.InstallIntentModels.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("checksum mismatch")), { cancel: vi.fn() }));
   api.InstallIntentModels.mockImplementationOnce(() => completed(null));
-  render(<IntentModelsCard automatic />);
+  render(<IntentModelsCard />);
+  const prepare = await screen.findByRole("button", { name: /Prepare DistilBERT/ });
+  expect(api.InstallIntentModels).not.toHaveBeenCalled();
+  fireEvent.click(prepare);
   await screen.findByText(/checksum mismatch/);
-  fireEvent.click(screen.getByRole("button", { name: "Retry intent model download" }));
-  await screen.findByText("MiniLM and DistilBERT assets verified.");
+  fireEvent.click(screen.getByRole("button", { name: "Retry DistilBERT download" }));
+  await screen.findByText("DistilBERT base assets verified.");
   expect(api.InstallIntentModels).toHaveBeenCalledTimes(2);
 });
 
 it("cancels a pending download when setup is left", async () => {
   const cancel = vi.fn();
   let finish!: () => void;
-  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, installed: false }));
+  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, installed: false, extractorInstalled: false }));
   api.InstallIntentModels.mockReturnValue(Object.assign(new Promise<void>((resolve) => { finish = resolve; }), { cancel }));
-  const view = render(<IntentModelsCard automatic />);
+  const view = render(<IntentModelsCard />);
+  fireEvent.click(await screen.findByRole("button", { name: /Prepare DistilBERT/ }));
   await waitFor(() => expect(api.InstallIntentModels).toHaveBeenCalledOnce());
   view.unmount();
   expect(cancel).toHaveBeenCalledOnce();
@@ -105,6 +109,7 @@ it("keeps the enabled value unchanged when saving fails", async () => {
 });
 
 it("keeps an invalid trained pack retryable without claiming installation", async () => {
+  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, extractorInstalled: false }));
   api.InstallIntentExtractor.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("unreviewed calibration")), { cancel: vi.fn() }));
   render(<IntentModelsCard />);
   const field = await screen.findByLabelText("Prepared extractor directory");
@@ -113,4 +118,14 @@ it("keeps an invalid trained pack retryable without claiming installation", asyn
   await screen.findByText(/unreviewed calibration/);
   expect(api.InstallIntentExtractor).toHaveBeenCalledWith("C:/prepared/intent");
   expect(screen.queryByText("Reviewed DistilBERT extractor installed.")).toBeNull();
+});
+
+it("does not enable suggestions from base assets alone", async () => {
+  api.GetIntentAssistStatus.mockImplementationOnce(() => completed({ ...ready, extractorInstalled: false }));
+  render(<IntentModelsCard />);
+  const toggle = await screen.findByRole("checkbox");
+  expect((toggle as HTMLInputElement).disabled).toBe(true);
+  fireEvent.click(toggle);
+  expect(api.SetIntentAssistEnabled).not.toHaveBeenCalled();
+  expect(screen.queryByText(/MiniLM/)).toBeNull();
 });

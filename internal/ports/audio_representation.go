@@ -23,3 +23,28 @@ type AudioRepresentationStore interface {
 	Usage(context.Context) (core.AudioRepresentationStorageUsage, error)
 	Clear(context.Context) error
 }
+
+// AudioRepresentationQuery searches one fully identified audio-only space.
+// Exclude contains catalog track IDs. Limit zero requests coverage/fingerprint
+// only and permits an empty Vector; it never returns neighbors.
+type AudioRepresentationQuery struct {
+	CatalogVersion string
+	Model          core.AudioRepresentationIdentity
+	Vector         []float32
+	Limit          int
+	Exclude        map[string]struct{}
+}
+
+// AudioRepresentationSearcher is separate from the point-lookup store so
+// existing analyzers and fakes need not implement vector retrieval. A call reads
+// a stable view; callers freeze its hits when a generation uses several refills.
+type AudioRepresentationSearcher interface {
+	Search(context.Context, AudioRepresentationQuery) (core.AudioRepresentationSearchResult, error)
+}
+
+// AudioRepresentationBatchSearcher evaluates a bounded set of queries against
+// one compatible read view. Every result has the same coverage and fingerprint.
+// Queries must share catalog/model identity; exclusion sets may differ.
+type AudioRepresentationBatchSearcher interface {
+	SearchBatch(context.Context, []AudioRepresentationQuery) ([]core.AudioRepresentationSearchResult, error)
+}

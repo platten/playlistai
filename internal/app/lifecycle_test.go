@@ -84,7 +84,9 @@ func TestCatalogPublicationIsCompleteAndConcurrentLoadIsIdempotent(t *testing.T)
 		}
 	}
 	wg.Wait()
-	if !c.Ready() || len(c.closers) != initialClosers+1 {
+	// The immutable catalog and persistent dynamic-candidate overlay each own
+	// one handle and are published together.
+	if !c.Ready() || len(c.closers) != initialClosers+2 {
 		t.Fatal("catalog opened repeatedly or never became ready")
 	}
 }
