@@ -48,6 +48,8 @@ __pycache__/
 /build/catalog-dist/
 
 # Local dev
+/.tmp/
+/datasets/
 /.pnpm-store/
 *.log
 .DS_Store
