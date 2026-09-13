@@ -25,6 +25,7 @@ type enhancedState struct {
 	enabled  bool
 	bundles  *audio.MERTBundleManager
 	worker   *audio.MERTWorker
+	pool     *audio.MERTWorkerPool
 	manifest *audio.MERTBundleManifest
 	detail   string
 }
@@ -70,6 +71,9 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 	c.RegisterCloser(func() error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
+		if e.pool != nil {
+			return e.pool.Close()
+		}
 		if e.worker != nil {
 			return e.worker.Close()
 		}
@@ -90,15 +94,18 @@ func (c *Container) loadMERT(ctx context.Context) error {
 		_ = worker.Close()
 		return err
 	}
+	pool := audio.NewMERTWorkerPool(worker, audio.AnalysisParallelism())
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.worker != nil {
+	if e.pool != nil {
+		_ = e.pool.Close()
+	} else if e.worker != nil {
 		_ = e.worker.Close()
 	}
-	e.worker, e.manifest = worker, &manifest
+	e.worker, e.pool, e.manifest = worker, pool, &manifest
 	e.detail = "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval."
 	if !e.enabled {
-		worker.Unload()
+		pool.Unload()
 	}
 	return nil
 }
@@ -152,7 +159,9 @@ func (c *Container) SetEnhancedAnalysisEnabled(enabled bool) error {
 		return err
 	}
 	e.enabled = enabled
-	if !enabled && e.worker != nil {
+	if !enabled && e.pool != nil {
+		e.pool.Unload()
+	} else if !enabled && e.worker != nil {
 		e.worker.Unload()
 	}
 	return nil
@@ -230,10 +239,13 @@ func (c *Container) RemoveMERT() error {
 	defer e.opMu.Unlock()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.worker != nil {
+	if e.pool != nil {
+		_ = e.pool.Close()
+	} else if e.worker != nil {
 		_ = e.worker.Close()
 	}
 	e.worker = nil
+	e.pool = nil
 	e.manifest = nil
 	if e.bundles == nil {
 		return nil
@@ -267,7 +279,11 @@ func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
 	if c.enhanced.worker == nil || c.enhanced.manifest == nil {
 		return p, nil
 	}
-	m := &audio.MERTService{Preview: p, Analyzer: c.enhanced.worker, Store: c.analysis.store.Representations(), ParityValidated: c.enhanced.manifest.Parity.Valid()}
+	analyzer := ports.AudioRepresentationAnalyzer(c.enhanced.worker)
+	if c.enhanced.pool != nil {
+		analyzer = c.enhanced.pool
+	}
+	m := &audio.MERTService{Preview: p, Analyzer: analyzer, Store: c.analysis.store.Representations(), ParityValidated: c.enhanced.manifest.Parity.Valid()}
 	return p, m
 }
 

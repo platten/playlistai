@@ -66,6 +66,7 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 	}
 	var questions []question
 	positive := false
+	s.queryMu.Lock()
 	for _, clause := range s.clauses {
 		if clause.Strict {
 			continue
@@ -77,6 +78,7 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		positive = positive || !clause.Negative
 		questions = append(questions, question{clause, q})
 	}
+	s.queryMu.Unlock()
 	if !positive {
 		return nil, ctx.Err()
 	}
@@ -120,7 +122,9 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		candidates[i].Sources[0].Rank = i + 1
 	}
 	if len(candidates) > 0 {
+		s.mu.Lock()
 		s.retrievalFingerprint = Fingerprint(candidates)
+		s.mu.Unlock()
 	}
 	return candidates, err
 }

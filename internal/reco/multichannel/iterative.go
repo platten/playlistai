@@ -72,6 +72,12 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	recordings := map[string]bool{}
 	recent := append([]core.TrackRef(nil), request.RecentSelections...)
 	var queue []core.Candidate
+	type preparedCandidate struct {
+		candidate  core.Candidate
+		assessment core.AudioAssessment
+		err        error
+	}
+	var prepared []preparedCandidate
 	retrievalInterrupted := false
 	refill := func() error {
 		batch, err := o.prepareRecommendationPool(ctx, initial, ports.RetrievalRequest{
@@ -128,8 +134,18 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		if o.audioSession != nil && o.audioSession.ShouldStop() {
 			break
 		}
-		var candidate core.Candidate
-		if stream != nil && len(queue) == 0 {
+		var (
+			candidate          core.Candidate
+			preparedAssessment core.AudioAssessment
+			preparedErr        error
+		)
+		prechecked := len(prepared) > 0
+		if prechecked {
+			candidate = prepared[0].candidate
+			preparedAssessment = prepared[0].assessment
+			preparedErr = prepared[0].err
+			prepared = prepared[1:]
+		} else if stream != nil && len(queue) == 0 {
 			track, err := stream.Next(ctx)
 			if err != nil {
 				if parent.Err() != nil {
@@ -167,49 +183,73 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			}
 			candidate, queue = queue[0], queue[1:]
 		}
-		if _, seen := attempted[candidate.Track.ID]; seen {
-			// A provider/retriever that cannot advance must not spin forever.
-			if stream == nil && len(queue) == 0 {
-				break
+		if !prechecked {
+			if _, seen := attempted[candidate.Track.ID]; seen {
+				// A provider/retriever that cannot advance must not spin forever.
+				if stream == nil && len(queue) == 0 {
+					break
+				}
+				continue
 			}
-			continue
+			attempted[candidate.Track.ID] = struct{}{}
 		}
-		attempted[candidate.Track.ID] = struct{}{}
-		meta, exists := o.cat.Meta(candidate.Track.ID)
-		if !exists {
-			continue
-		}
-		candidate.Track = meta.Ref
-		key := core.ProvisionalRecordingKey(candidate.Track)
-		if recordings[key] {
-			continue
-		}
-		if !o.metadataEligible(candidate.Track, intent) {
-			continue
-		}
-		batch, err := eligible.filter(ctx, []core.Candidate{candidate}, intent.Constraints.ExcludeSeedArtists)
-		if err != nil {
-			return nil, notices, err
-		}
-		if o.features != nil {
-			batch, _, err = filterSemanticConstraints(ctx, o.features, batch, intent.HardConstraints)
+		var (
+			key   string
+			batch []core.Candidate
+			err   error
+		)
+		if prechecked {
+			key = core.ProvisionalRecordingKey(candidate.Track)
+			if recordings[key] {
+				continue
+			}
+		} else {
+			var keep bool
+			candidate, key, keep, err = o.prepareIterativeCandidate(ctx, candidate, intent, eligible, recordings)
 			if err != nil {
 				return nil, notices, err
 			}
+			if !keep {
+				continue
+			}
 		}
-		batch, _, _, err = o.scoreSemanticUnion(ctx, batch, intent)
-		if err != nil {
-			return nil, notices, err
-		}
-		if len(batch) == 0 {
-			continue
-		}
-		candidate = batch[0]
 		if request.Progress != nil {
 			request.Progress.Report("generation", int64(min(len(accepted), target)), int64(target), "Checking candidates for the final selection")
 		}
 		if o.audioSession != nil {
-			assessment, err := o.audioSession.Check(parent, candidate.Track, false)
+			var assessment core.AudioAssessment
+			if prechecked {
+				assessment, err = preparedAssessment, preparedErr
+			} else if stream == nil && o.audioSession.Parallelism() > 1 {
+				batch := []core.Candidate{candidate}
+				for len(batch) < o.audioSession.Parallelism() && len(queue) > 0 {
+					next := queue[0]
+					queue = queue[1:]
+					if _, seen := attempted[next.Track.ID]; seen {
+						continue
+					}
+					attempted[next.Track.ID] = struct{}{}
+					next, _, keep, prepareErr := o.prepareIterativeCandidate(ctx, next, intent, eligible, recordings)
+					if prepareErr != nil {
+						return nil, notices, prepareErr
+					}
+					if keep {
+						batch = append(batch, next)
+					}
+				}
+				tracks := make([]core.TrackRef, len(batch))
+				for index := range batch {
+					tracks[index] = batch[index].Track
+				}
+				assessments, checkErrs := o.audioSession.CheckMany(parent, tracks, false)
+				assessment = assessments[0]
+				err = checkErrs[0]
+				for index := 1; index < len(batch); index++ {
+					prepared = append(prepared, preparedCandidate{candidate: batch[index], assessment: assessments[index], err: checkErrs[index]})
+				}
+			} else {
+				assessment, err = o.audioSession.Check(parent, candidate.Track, false)
+			}
 			if err != nil {
 				return nil, notices, err
 			}
@@ -272,6 +312,33 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	}
 	notices = append(notices, core.PlaylistNotice{Code: "discovery_partial", Detail: "The bounded discovery pool did not yield a complete eligible playlist. Missing previews, evidence and provider coverage can limit results.", Requested: intent.Count, Actual: len(accepted) + len(required)})
 	return accepted, notices, nil
+}
+
+func (o *Orchestrator) prepareIterativeCandidate(ctx context.Context, candidate core.Candidate, intent core.MusicIntent, eligible *eligibility, recordings map[string]bool) (core.Candidate, string, bool, error) {
+	meta, exists := o.cat.Meta(candidate.Track.ID)
+	if !exists {
+		return candidate, "", false, nil
+	}
+	candidate.Track = meta.Ref
+	key := core.ProvisionalRecordingKey(candidate.Track)
+	if recordings[key] || !o.metadataEligible(candidate.Track, intent) {
+		return candidate, key, false, nil
+	}
+	batch, err := eligible.filter(ctx, []core.Candidate{candidate}, intent.Constraints.ExcludeSeedArtists)
+	if err != nil {
+		return candidate, key, false, err
+	}
+	if o.features != nil {
+		batch, _, err = filterSemanticConstraints(ctx, o.features, batch, intent.HardConstraints)
+		if err != nil {
+			return candidate, key, false, err
+		}
+	}
+	batch, _, _, err = o.scoreSemanticUnion(ctx, batch, intent)
+	if err != nil || len(batch) == 0 {
+		return candidate, key, false, err
+	}
+	return batch[0], key, true, nil
 }
 
 // Do not stop just because enough candidates passed CLAP: the final selector
