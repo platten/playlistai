@@ -143,7 +143,14 @@ func (r contextReader) Read(p []byte) (int, error) {
 
 // ReadManifest reads a bounded local JSON file or HTTPS manifest.
 func ReadManifest(ctx context.Context, location string) (Manifest, error) {
+	return readManifest(ctx, location, "")
+}
+
+func readManifest(ctx context.Context, location, checksum string) (Manifest, error) {
 	var m Manifest
+	if checksum != "" && !validHash(checksum) {
+		return m, errors.New("invalid pinned model manifest checksum")
+	}
 	if e := ctx.Err(); e != nil {
 		return m, e
 	}
@@ -180,6 +187,9 @@ func ReadManifest(ctx context.Context, location string) (Manifest, error) {
 	if len(b) > maxManifestBytes {
 		return m, errors.New("model manifest too large")
 	}
+	if checksum != "" && !strings.EqualFold(fmt.Sprintf("%x", sha256.Sum256(b)), checksum) {
+		return m, errors.New("pinned model manifest checksum mismatch")
+	}
 	if e = json.Unmarshal(b, &m); e != nil {
 		return m, e
 	}
@@ -213,7 +223,13 @@ func verify(ctx context.Context, filename string, size int64, sum string) error 
 // Existing destinations are never replaced. Callers validate and activate the new
 // directory through their existing model-specific activation path.
 func Fetch(ctx context.Context, manifestLocation, cacheDir, destination string, p ports.Progress) error {
-	m, e := ReadManifest(ctx, manifestLocation)
+	return FetchPinned(ctx, manifestLocation, "", cacheDir, destination, p)
+}
+
+// FetchPinned also verifies the maintainer-pinned manifest before downloading
+// any segments. Empty checksum preserves explicitly chosen custom imports.
+func FetchPinned(ctx context.Context, manifestLocation, checksum, cacheDir, destination string, p ports.Progress) error {
+	m, e := readManifest(ctx, manifestLocation, checksum)
 	if e != nil {
 		return e
 	}

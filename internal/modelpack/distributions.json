@@ -1,0 +1,38 @@
+[
+  {
+    "name": "intent-encoders-v1",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/intent-encoders-v1/manifest.json",
+    "sha256": "593edab66abd9e5ff3c98897f471513646fd84c8a2961efc54df36fc9eb5836c",
+    "downloadBytes": 324060693
+  },
+  {
+    "name": "mert-darwin-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-darwin-arm64/manifest.json",
+    "sha256": "fa42ae469582fdab0f22f9c23c36e2c5ddbcb2085bf40f4b827e43140c8c7e64",
+    "downloadBytes": 217330896
+  },
+  {
+    "name": "mert-linux-amd64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-linux-amd64/manifest.json",
+    "sha256": "cd6b73c699534a626e3bbbc86f6ce873d5b4a323862a2fb4ec04ea25d06f486e",
+    "downloadBytes": 216263779
+  },
+  {
+    "name": "mert-linux-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-linux-arm64/manifest.json",
+    "sha256": "f39dbddd07c5fb140c658dea316a233d40ae37f34d71221bf226e3a799af5dd3",
+    "downloadBytes": 215501193
+  },
+  {
+    "name": "mert-windows-amd64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-windows-amd64/manifest.json",
+    "sha256": "fef5297c765796d6cf5ef5bb5a40b89425cba54c6b43592042952b1147c56774",
+    "downloadBytes": 213882011
+  },
+  {
+    "name": "mert-windows-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-windows-arm64/manifest.json",
+    "sha256": "f7e1a57d18ef6cd2c73470be54ff6869698c2a8292e90cc80e05753599d6a26d",
+    "downloadBytes": 214013811
+  }
+]

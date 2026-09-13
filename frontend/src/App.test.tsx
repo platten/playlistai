@@ -608,6 +608,8 @@ it("opens setup when catalog loading fails and completes onboarding without trap
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByRole("heading", { name: "MERT audio similarity" });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));

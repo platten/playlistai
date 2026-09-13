@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/modelpack"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/taste"
@@ -28,18 +30,21 @@ type enhancedState struct {
 }
 
 type EnhancedAnalysisStatus struct {
-	Enabled       bool                                 `json:"enabled"`
-	DSPAvailable  bool                                 `json:"dspAvailable"`
-	MERTAvailable bool                                 `json:"mertAvailable"`
-	Installed     bool                                 `json:"installed"`
-	Model         string                               `json:"model"`
-	Revision      string                               `json:"revision"`
-	License       string                               `json:"license"`
-	DownloadBytes int64                                `json:"downloadBytes"`
-	DSPStorage    core.DSPStorageUsage                 `json:"dspStorage"`
-	MERTStorage   core.AudioRepresentationStorageUsage `json:"mertStorage"`
-	Detail        string                               `json:"detail"`
-	Limit         int                                  `json:"limit"`
+	RecommendedManifestURL   string                               `json:"recommendedManifestUrl"`
+	RecommendedDownloadBytes int64                                `json:"recommendedDownloadBytes"`
+	UnsupportedReason        string                               `json:"unsupportedReason,omitempty"`
+	Enabled                  bool                                 `json:"enabled"`
+	DSPAvailable             bool                                 `json:"dspAvailable"`
+	MERTAvailable            bool                                 `json:"mertAvailable"`
+	Installed                bool                                 `json:"installed"`
+	Model                    string                               `json:"model"`
+	Revision                 string                               `json:"revision"`
+	License                  string                               `json:"license"`
+	DownloadBytes            int64                                `json:"downloadBytes"`
+	DSPStorage               core.DSPStorageUsage                 `json:"dspStorage"`
+	MERTStorage              core.AudioRepresentationStorageUsage `json:"mertStorage"`
+	Detail                   string                               `json:"detail"`
+	Limit                    int                                  `json:"limit"`
 }
 
 type EnhancedAnalysisReport struct {
@@ -103,6 +108,12 @@ func (c *Container) GetEnhancedAnalysisStatus(ctx context.Context) (EnhancedAnal
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s := EnhancedAnalysisStatus{Enabled: e.enabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
+	if distribution, err := c.recommendedMERT(); err != nil {
+		s.UnsupportedReason = err.Error()
+	} else {
+		s.RecommendedManifestURL = distribution.URL
+		s.RecommendedDownloadBytes = distribution.DownloadBytes
+	}
 	if e.manifest != nil {
 		s.Revision = e.manifest.Model.Revision
 		for _, a := range e.manifest.Artifacts {
@@ -150,10 +161,20 @@ func (c *Container) SetEnhancedAnalysisEnabled(enabled bool) error {
 // InstallMERT imports a maintainer-prepared pack with verified hashes. The pack
 // includes the native runtime for this OS/architecture and never requires Python.
 func (c *Container) InstallMERT(ctx context.Context, directory string, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
 	e := &c.enhanced
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
-	if c.analysis.store == nil {
+	return c.installMERTLocked(ctx, directory, p)
+}
+
+func (c *Container) installMERTLocked(ctx context.Context, directory string, p ports.Progress) error {
+	e := &c.enhanced
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.analysis.store == nil || e.bundles == nil {
 		return fmt.Errorf("enhanced analysis storage unavailable")
 	}
 	directory, cleanup, err := c.prepareModelPack(ctx, directory, "mert-model", p)
@@ -165,6 +186,42 @@ func (c *Container) InstallMERT(ctx context.Context, directory string, p ports.P
 		return err
 	}
 	return c.loadMERT(ctx)
+}
+
+func (c *Container) recommendedMERT() (modelpack.Distribution, error) {
+	d, err := modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return d, err
+	}
+	if !audio.NativeInferenceAvailable() {
+		return d, fmt.Errorf("MERT requires a build with native inference support")
+	}
+	if c.analysis.store == nil || c.enhanced.bundles == nil {
+		return d, fmt.Errorf("enhanced analysis storage unavailable")
+	}
+	return d, nil
+}
+
+// InstallRecommendedMERT downloads the pinned bundle for this native platform.
+// Local import retains the same parity check and activation policy.
+func (c *Container) InstallRecommendedMERT(ctx context.Context, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	c.enhanced.opMu.Lock()
+	defer c.enhanced.opMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	d, err := c.recommendedMERT()
+	if err != nil {
+		return err
+	}
+	dir, cleanup, err := c.prepareRecommendedModelPack(ctx, d, "mert-model", p)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	return c.installMERTLocked(ctx, dir, p)
 }
 
 func (c *Container) RemoveMERT() error {

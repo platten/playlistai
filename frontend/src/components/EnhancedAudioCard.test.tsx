@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EnhancedAudioCard } from "./EnhancedAudioCard";
-const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "InstallMERT", "RemoveMERT", "ClearEnhancedAnalysis", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
+const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "InstallMERT", "InstallRecommendedMERT", "RemoveMERT", "ClearEnhancedAnalysis", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
 const status = { enabled: true, dspAvailable: true, installed: false, limit: 24, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } };
@@ -17,6 +17,46 @@ beforeEach(() => {
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed(status));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("downloads the recommended device pack explicitly without enabling analysis", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, enabled: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
+  const pending = deferred();
+  api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
+  const view = render(<EnhancedAudioCard setup />);
+  const button = await screen.findByRole("button", { name: "Download MERT for this device" });
+  expect(api.InstallRecommendedMERT).not.toHaveBeenCalled();
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+  fireEvent.click(button);
+  expect(api.InstallRecommendedMERT).toHaveBeenCalledWith();
+  expect(screen.getByRole("progressbar", { name: "Installing MERT" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel model installation" }));
+  expect(pending.promise.cancel).toHaveBeenCalledWith("model installation cancelled");
+  view.unmount();
+  await act(async () => pending.resolve(null));
+  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
+});
+it("allows setup to enable installed MERT without exposing bulk analysis actions", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, enabled: false }));
+  render(<EnhancedAudioCard setup />);
+  const checkbox = await screen.findByRole("checkbox", { name: "Enable bounded preview analysis" });
+  await act(async () => {});
+  expect((checkbox as HTMLInputElement).checked).toBe(false);
+  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
+  fireEvent.click(checkbox);
+  await waitFor(() => expect(api.SetEnhancedAnalysisEnabled).toHaveBeenCalledWith(true));
+  expect(screen.queryByRole("button", { name: "Analyze liked tracks" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Clear enhanced cache" })).toBeNull();
+});
+it("omits the recommended download for unsupported and already installed devices", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, recommendedManifestUrl: "https://models.example/mert/manifest.json", unsupportedReason: "No native pack for this device." }));
+  const view = render(<EnhancedAudioCard />);
+  await screen.findByText("No native pack for this device.");
+  expect(screen.queryByRole("button", { name: /Download MERT for this device/ })).toBeNull();
+  view.unmount();
+  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, recommendedManifestUrl: "https://models.example/mert/manifest.json" }));
+  render(<EnhancedAudioCard />);
+  await screen.findByText(/Installed · CC/);
+  expect(screen.queryByRole("button", { name: /Download MERT for this device/ })).toBeNull();
+});
 it("keeps DSP optional and installs only the chosen native pack", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
   expect(screen.getByText(/no model download required/)).toBeTruthy();

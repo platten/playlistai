@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -63,6 +64,37 @@ func TestEnhancedAnalysisOptionalPreferencesAndResponsiveStatus(t *testing.T) {
 	}
 	if snapshot, err := c.PrepareEnhancedAudio(ctx, core.MusicIntent{}, core.TasteProfile{}, nil); err != nil || snapshot != nil {
 		t.Fatal("legacy mode consumed enhanced evidence")
+	}
+}
+
+func TestRecommendedMERTStatusAndInstallPreconditions(t *testing.T) {
+	c := &Container{cfg: testConfig(t)}
+	s, err := c.GetEnhancedAnalysisStatus(context.Background())
+	if err != nil || s.RecommendedManifestURL != "" || s.RecommendedDownloadBytes != 0 || s.UnsupportedReason == "" {
+		t.Fatalf("unavailable storage advertised download: %+v %v", s, err)
+	}
+	if err = c.InstallRecommendedMERT(context.Background(), nil); err == nil {
+		t.Fatal("installed without storage")
+	}
+	if err = c.InstallMERT(context.Background(), "does-not-exist", nil); err == nil {
+		t.Fatal("local install accepted missing storage")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err = c.InstallRecommendedMERT(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled recommended install: %v", err)
+	}
+	if err = c.InstallIntentModels(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled default intent install: %v", err)
+	}
+	if err = c.InstallMERT(ctx, "does-not-exist", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled local install: %v", err)
+	}
+	if audio.NativeInferenceAvailable() {
+		return
+	}
+	if err = c.InstallIntentModels(context.Background(), nil); err == nil {
+		t.Fatal("non-native build attempted intent installation")
 	}
 }
 

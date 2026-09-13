@@ -118,10 +118,8 @@ func RuntimePath(dir string) (string, error) {
 // Call at activation; parsing keeps an immutable active worker configuration.
 func AssetsReady(root string) bool {
 	dir := AssetDir(root)
-	for _, s := range Sources() {
-		if s.Setup && !verified(sourcePath(dir, s), s.Size, s.SHA256) {
-			return false
-		}
+	if !ModelAssetsReady(root) {
+		return false
 	}
 	a, err := audio.NativeRuntimeArtifact(runtime.GOOS + "/" + runtime.GOARCH)
 	if err != nil {
@@ -132,6 +130,18 @@ func AssetsReady(root string) bool {
 		return false
 	}
 	return stageDependencies(dir, false) == nil
+}
+
+// ModelAssetsReady checks the pinned encoders independently of platform runtime
+// availability, so runtime repair does not redownload healthy model packs.
+func ModelAssetsReady(root string) bool {
+	dir := AssetDir(root)
+	for _, s := range Sources() {
+		if s.Setup && !verified(sourcePath(dir, s), s.Size, s.SHA256) {
+			return false
+		}
+	}
+	return true
 }
 
 func SetupBytes() int64 {

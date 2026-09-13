@@ -9,11 +9,13 @@ const output = process.argv[4];
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-window.__calls=[];window.__done=0;window.__installed=false;
+window.__calls=[];window.__done=0;window.__installed=false;window.__enhancedEnabled=false;
 const scenario=new URLSearchParams(location.search).get('scenario');
 const methods={
 GetSetupStatus:()=>scenario==='repair'?{onboarded:true,needsSetup:true,pendingSteps:['model','intent','analysis'],repairSteps:['model']}:
- {onboarded:false,needsSetup:true,pendingSteps:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:[]},
+ {onboarded:false,needsSetup:true,pendingSteps:scenario==='mert'?['mert']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:[]},
+SetEnhancedAnalysisEnabled:enabled=>{window.__enhancedEnabled=enabled},
+GetEnhancedAnalysisStatus:()=>({installed:false,dspAvailable:true,enabled:window.__enhancedEnabled,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
 GetMetadataBundleInfo:()=>({configured:true,installed:window.__installed,catalogReady:true}),
 InstallMetadataBundle:()=>{window.__installed=true},
 GetModelStatus:()=>({backend:'rules',ready:true}),GetLlamaRuntime:()=>({available:false,builds:[]}),
@@ -29,9 +31,16 @@ try {
   await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: entry }));
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: fixture }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: "export const Events={On:()=>()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;" }));
-  for (const scenario of ["ready", "repair", "partial"]) {
+  for (const scenario of ["ready", "repair", "partial", "mert"]) {
     await page.goto(`http://127.0.0.1:9245/?scenario=${scenario}`);
-    if (scenario === "partial") {
+    if (scenario === "mert") {
+      await page.getByRole("button", { name: "Get started" }).click();
+      await page.getByRole("heading", { name: "MERT audio similarity" }).waitFor();
+      await page.getByRole("button", { name: "Download MERT for this device" }).waitFor();
+      assert.equal(await page.getByRole("checkbox").isChecked(), false);
+      await page.getByRole("checkbox",{name:"Enable bounded preview analysis"}).check();
+      await page.waitForFunction(()=>window.__enhancedEnabled);
+    } else if (scenario === "partial") {
       await page.getByRole("button", { name: "Get started" }).click();
       await page.getByRole("button", { name: "Download music metadata" }).waitFor();
     } else if (scenario === "repair") {
@@ -52,6 +61,7 @@ try {
     }
     if (scenario === "repair") await page.getByRole("button", { name: "Skip for now" }).click();
     if (scenario === "partial") await page.getByRole("button", { name: "Download music metadata" }).click();
+    if (scenario === "mert") await page.getByRole("button", { name: "Continue" }).click();
     const finish = page.getByRole("button", { name: "Start using Playlist AI" });
     await finish.waitFor();
     await finish.focus();
@@ -59,6 +69,7 @@ try {
     await page.waitForFunction(() => window.__done === 1);
     const calls = await page.evaluate(() => window.__calls);
     assert.ok(!calls.includes("InstallIntentModels") && !calls.includes("SetPreviewProvider"), "ready or unselected optional steps must not run");
+    assert.ok(!calls.includes("InstallRecommendedMERT"), "MERT requires an explicit download action");
     assert.equal(calls.filter(call => call === "CompleteOnboarding").length, 1);
   }
   assert.deepEqual(errors, []);

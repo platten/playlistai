@@ -14,7 +14,7 @@ available. If a repair is needed, the wizard shows only affected steps. New
 optional features alone do not reopen a completed wizard.
 
 On first setup or when setup is opened manually, available catalog, metadata,
-model, intent, analysis, and preview configuration steps are skipped. Readiness
+model, intent, analysis, MERT, and preview configuration steps are skipped. Readiness
 is checked again after each completed or skipped step, so assets installed in
 the meantime do not cause redundant screens or downloads. Unsupported optional
 capabilities are omitted. Deliberately disabled previews and rules-only parsing

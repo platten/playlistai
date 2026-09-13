@@ -71,18 +71,53 @@ manifest; do not paste a Drive preview page as a manifest URL.
 These segmented manifests require the application changes accompanying this
 guide; v0.12.0 cannot import them directly. In the updated application:
 
-- In the Enhanced audio settings, enter the MERT manifest URL or local
-  `manifest.json` path into **MERT pack directory or manifest**. Choose the
-  bundle for your OS and architecture. Existing uncompressed directory imports
-  remain supported. Installation runs the existing native parity check before
-  switching the active MERT bundle.
-- In **Intent language models**, enter the intent manifest URL or local path
-  into **Model pack manifest URL or path**, then select **Install model pack**.
+- In the Enhanced audio settings, choose **Download MERT for this device**.
+  The application selects Windows x86-64/ARM64, Linux x86-64/ARM64, or macOS
+  Apple Silicon automatically. Unsupported targets show an explanation.
+  Advanced manifest and uncompressed directory imports remain supported.
+  Installation runs the existing native parity check before switching the
+  active MERT bundle.
+- In **Intent language models**, choose **Download intent models**. Setup uses
+  the hosted DistilBERT/MiniLM pack automatically when base models are missing.
+  Advanced imports still accept a manifest URL or local path.
   The supplied DistilBERT and MiniLM files must match the application's pinned
   hashes. Import does not enable experimental suggestions or a trained extractor.
   If the native intent runtime is absent, setup still downloads the small,
   pinned platform runtime from its existing upstream source; this universal
   intent archive does not contain five duplicate platform runtimes.
+
+The wizard uses the same installers. Its intent step downloads missing hosted
+encoders automatically; the optional MERT step offers the matching platform
+pack with its license notice and a download button. Healthy installed models
+are skipped. Use **Enable bounded preview analysis** on that step to opt into
+using enhanced audio evidence; downloading alone does not change this preference.
+Missing runtime repair reuses verified encoders, and adding this
+optional MERT step does not reopen setup for otherwise healthy installations.
+
+![Platform-specific MERT setup](images/hosted-mert-setup.png)
+
+## Hosted bundles
+
+Built-in downloads use the following HTTPS host with the bundle-specific paths
+below. The application's `internal/modelpack/distributions.json` pins each
+manifest's SHA-256 as well as its URL. Replacing hosted manifest bytes requires
+a reviewed application registry update. Do not modify these uploads in place.
+
+Host: `https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/`
+
+| Bundle | Manifest path |
+| --- | --- |
+| DistilBERT + MiniLM | `intent-encoders-v1/manifest.json` |
+| MERT Windows x86-64 | `mert-windows-amd64/manifest.json` |
+| MERT Windows ARM64 | `mert-windows-arm64/manifest.json` |
+| MERT Linux x86-64 | `mert-linux-amd64/manifest.json` |
+| MERT Linux ARM64 | `mert-linux-arm64/manifest.json` |
+| MERT macOS Apple Silicon | `mert-darwin-arm64/manifest.json` |
+
+All six hosted manifests matched the prepared originals, and all hosted segments
+were downloaded through the native Go transport, decompressed and verified.
+Native Windows checks passed for the downloaded MERT pack and the intent
+reference cases. These checks do not claim native execution on other hosts.
 
 Cancel preserves already downloaded compressed segments. Retrying verifies and
 reuses them. The segment cache is under the application's data directory in

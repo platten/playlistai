@@ -13,6 +13,7 @@ import (
 	"github.com/platten/playlistai/internal/intent/assist"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/nlu"
+	"github.com/platten/playlistai/internal/modelpack"
 	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -77,7 +78,9 @@ func (c *Container) GetIntentAssistStatus() IntentAssistStatus {
 	if s.extractor != nil {
 		detail = "MiniLM dictionary mapping and the imported DistilBERT extractor provide optional suggestions to your local LLM. Explicit source facts remain authoritative."
 	}
-	return IntentAssistStatus{Installed: s.installed, Enabled: s.enabled, DownloadBytes: nlu.SetupBytes(), Detail: detail, ExtractorInstalled: s.extractor != nil}
+	// This is the compressed model-pack estimate. Setup may additionally fetch
+	// the platform's pinned native runtime when it is not already available.
+	return IntentAssistStatus{Installed: s.installed, Enabled: s.enabled, DownloadBytes: modelpack.RecommendedIntent().DownloadBytes, Detail: detail, ExtractorInstalled: s.extractor != nil}
 }
 
 func (c *Container) InstallIntentModels(ctx context.Context, p ports.Progress) error {
@@ -103,6 +106,9 @@ func (c *Container) installIntentModels(ctx context.Context, source string, p po
 		return err
 	}
 	var installErr error
+	if err := nlu.CheckPackagedRuntime(); err != nil {
+		return err
+	}
 	if source != "" {
 		dir, cleanup, err := c.prepareModelPack(ctx, source, "intent-models", p)
 		if err != nil {
@@ -110,8 +116,15 @@ func (c *Container) installIntentModels(ctx context.Context, source string, p po
 		}
 		defer cleanup()
 		installErr = nlu.ImportAssets(ctx, c.intentAssetRoot(), dir, p)
-	} else {
+	} else if nlu.ModelAssetsReady(c.intentAssetRoot()) {
 		installErr = nlu.InstallAssets(ctx, c.intentAssetRoot(), p)
+	} else {
+		dir, cleanup, err := c.prepareRecommendedModelPack(ctx, modelpack.RecommendedIntent(), "intent-models", p)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		installErr = nlu.ImportAssets(ctx, c.intentAssetRoot(), dir, p)
 	}
 	if installErr != nil {
 		return installErr
