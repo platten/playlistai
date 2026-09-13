@@ -116,11 +116,13 @@ jobs:
           retention-days: 14
 
   wails-build:
+    # Windows stays independent so its longer script and packaging checks can
+    # run in parallel with lint. Unix builds start only after lint-test passes.
     name: Wails build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.windows_benchmark && '["windows-latest"]' || '["ubuntu-latest","ubuntu-24.04-arm","macos-latest","windows-latest"]') }}
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       CI_WINDOWS_TEST_MODE: ${{ inputs.windows_benchmark && inputs.windows_test_mode || 'combined' }}
@@ -304,21 +306,86 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  unix-wails-build:
+    name: Wails build (${{ matrix.os }})
+    if: ${{ !inputs.windows_benchmark }}
+    needs: lint-test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Linux system dependencies (GTK4 + WebKitGTK 6.0)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libwebkitgtk-6.0-dev
+
+      - name: Install Wails v3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@${{ env.WAILS3_VERSION }}
+
+      - name: Build
+        run: wails3 build
+
+      - name: Host Go coverage
+        run: |
+          mkdir -p coverage
+          go env GOOS GOARCH CGO_ENABLED CC > coverage/build-environment.txt
+          node scripts/go-test.mjs coverage/coverage-tests -count=1 -coverpkg=./... -covermode=atomic -coverprofile=coverage/backend.out ./...
+          go tool cover -func=coverage/backend.out > coverage/backend-summary.txt
+          go test -count=1 -tags production -coverprofile=coverage/production-build.out ./build
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: go-coverage-${{ matrix.os }}
+          path: coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: playlist-ai-${{ matrix.os }}
+          path: |
+            bin/playlist-ai
+            bin/playlist-ai.app
+          if-no-files-found: error
+          retention-days: 7
+
   ci-complete:
     # A partial manual benchmark must never satisfy the full required check.
     name: ${{ inputs.windows_benchmark && 'Windows benchmark complete' || 'CI complete' }}
     if: always()
-    needs: [lint-test, wails-build]
+    needs: [lint-test, wails-build, unix-wails-build]
     runs-on: ubuntu-latest
     steps:
       - name: Require every validation job
         env:
           LINT_RESULT: ${{ needs.lint-test.result }}
-          PLATFORM_RESULT: ${{ needs.wails-build.result }}
+          WINDOWS_RESULT: ${{ needs.wails-build.result }}
+          UNIX_RESULT: ${{ needs.unix-wails-build.result }}
           WINDOWS_BENCHMARK: ${{ inputs.windows_benchmark && 'true' || 'false' }}
         run: |
           if [[ "$WINDOWS_BENCHMARK" == "true" ]]; then
-            [[ "$LINT_RESULT" == "skipped" && "$PLATFORM_RESULT" == "success" ]]
+            [[ "$LINT_RESULT" == "skipped" && "$WINDOWS_RESULT" == "success" && "$UNIX_RESULT" == "skipped" ]]
           else
-            [[ "$LINT_RESULT" == "success" && "$PLATFORM_RESULT" == "success" ]]
+            [[ "$LINT_RESULT" == "success" && "$WINDOWS_RESULT" == "success" && "$UNIX_RESULT" == "success" ]]
           fi
