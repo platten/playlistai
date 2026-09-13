@@ -42,25 +42,17 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.11.1/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.11.1')) throw Error('Latest release missing');
-  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.11.1')) throw Error('Public download version unclear');
-  if (await page.locator('.measurement-grid article').count() !== 3) throw Error('Release measurements missing');
-  if (await page.locator('#recommendations .mode-card').count() !== 3) throw Error('Recommendation modes missing');
-  if (await page.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing');
-  if (!(await page.locator('#development').innerText()).includes('AVAILABLE IN 0.11.1')) throw Error('Released genre checks must be labeled');
-  if (await page.locator('#development tbody tr').count() !== 3 || !(await page.locator('#development .results-note').innerText()).includes('105 of 120 planned cases completed')) throw Error('Bounded replay completion counts missing');
-  const replay = JSON.parse(await readFile('docs/data/three-mode-regression-2026-09-11.json', 'utf8'));
-  for (const [index, result] of replay.summaries.entries()) {
-    const cells = await page.locator('#development tbody tr').nth(index).locator('td').allTextContents();
-    if (cells[0] !== `${result.completed}/40` || cells[1] !== `${result.atLeastFive} / ${result.assertionPasses}`) throw Error(`Website replay results differ from recorded evidence: ${result.mode}`);
-  }
-  const performance = await page.locator('.performance-note').innerText();
-  if (!performance.includes('60.4 ms') || !performance.includes('62.8 ms') || !performance.includes('no cache speed advantage')) throw Error('Current benchmark results or caveat missing');
-  await page.getByRole('link', {name:'Read the 0.11.1 release notes'}).waitFor();
+  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.12.1/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.12.1')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.12.1')) throw Error('Public download version unclear');
+  if (await page.locator('#new .release-list article').count() !== 4) throw Error('Release highlights missing');
+  await page.locator('.mode-options > summary').click();
+  if (await page.locator('#recommendations .mode-card').count() !== 4) throw Error('Recommendation modes missing');
+  if (!(await page.locator('#recommendations').innerText()).includes('DEFAULT FOR NEW SETUPS')) throw Error('Enhanced Hybrid default missing');
+  await page.getByRole('link', {name:'Read the 0.12.1 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
-    await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); window.scrollTo(0,0); });
+    await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); document.activeElement?.blur(); window.scrollTo({top:0,behavior:'instant'}); });
     if ((await page.locator('h1').innerText()).includes('musicyou')) throw Error('Headline words run together');
     const overflow = await page.evaluate(() => [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > innerWidth + 1 && getComputedStyle(e).position !== 'absolute').map(e => e.className));
     if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error(`Horizontal overflow at ${width}: ${overflow}`);
@@ -68,8 +60,7 @@ try {
     if (width === 1440 || width === 390) {
       const style = '.site-header,.skip-link{visibility:hidden!important}';
       await page.locator('#recommendations').screenshot({path:path.join(output,`modes-${width}.png`),style});
-      await page.locator('#development').screenshot({path:path.join(output,`development-${width}.png`),style});
-      await page.locator('#regression').screenshot({path:path.join(output,`regression-${width}.png`),style});
+      await page.locator('#new').screenshot({path:path.join(output,`release-${width}.png`),style});
     }
   }
   await page.getByRole('button', {name:'Open navigation'}).click();
@@ -81,23 +72,26 @@ try {
   if (await page.locator('#navigation').evaluate(e => e.classList.contains('open'))) throw Error('Navigation did not close');
   await page.emulateMedia({reducedMotion:'reduce'});
   if (await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior) !== 'auto') throw Error('Reduced motion ignored');
-  await page.getByText('Does CLAP work on every build?', {exact:true}).click();
-  await page.getByText('Native inference was validated', {exact:false}).waitFor();
-  await page.getByText('Timing, evidence coverage & test conditions', {exact:true}).click();
-  if (await page.locator('#regression .benchmark-details').getAttribute('open') === null) throw Error('Benchmark details did not open');
-  await page.getByText('Why this is not a listening-quality comparison', {exact:true}).click();
-  if (await page.locator('#development .benchmark-details').getAttribute('open') === null) throw Error('Current replay limitations did not open');
-  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded benchmark overflow');
+  await page.getByText('Do I need every model?', {exact:true}).click();
+  if (await page.locator('.faq-list details[open]').count() !== 1) throw Error('FAQ did not open');
+  await page.locator('.mode-options > summary').click();
+  if (!(await page.locator('.mode-options').innerText()).includes('Your saved mode choice is respected')) throw Error('Mode details missing');
+  if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded mode overflow');
   await page.getByText('Packages & portable downloads', {exact:true}).click();
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded download overflow');
   await page.screenshot({path:path.join(output,'site-mobile-expanded.png'),fullPage:true});
   const noJS = await browser.newPage({javaScriptEnabled:false,viewport:{width:390,height:900}});
+  noJS.setDefaultTimeout(10000);
+  await noJS.emulateMedia({reducedMotion:'reduce'});
   await noJS.goto(origin);
   await noJS.getByRole('link', {name:'Download for Windows',exact:false}).waitFor();
   if (await noJS.locator('.experience-grid .feature').count() !== 4) throw Error('Content missing without JavaScript');
-  if (await noJS.locator('.measurement-grid article').count() !== 3) throw Error('Measurements missing without JavaScript');
-  if (await noJS.locator('#recommendations .mode-card').count() !== 3) throw Error('Modes missing without JavaScript');
-  if (await noJS.locator('#regression tbody tr').count() !== 3) throw Error('Regression results missing without JavaScript');
+  if (await noJS.locator('#recommendations .mode-card').count() !== 4) throw Error('Modes missing without JavaScript');
+  await noJS.getByRole('link', {name:'The experience', exact:true}).click();
+  if (new URL(noJS.url()).hash !== '#experience') throw Error('Navigation unavailable without JavaScript');
+  await noJS.locator('.mode-options > summary').focus();
+  await noJS.keyboard.press('Enter');
+  if (!(await noJS.locator('.mode-options').evaluate(e => e.open))) throw Error('Modes unavailable without JavaScript');
   await noJS.close();
   if (process.argv.includes('--social')) {
     await page.setViewportSize({width:1200,height:630});
@@ -106,5 +100,5 @@ try {
     await page.screenshot({path:path.join(directory,'og.png')});
   }
   if (errors.length) throw Error(errors.join('\n'));
-  console.log('PASS: five viewports, keyboard examples and navigation, 13 versioned downloads, anchors, reduced motion, no-JS content, no external requests, no browser errors');
-} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); }
+  console.log('PASS: five viewports, keyboard examples and navigation, 13 versioned downloads, release highlights, four modes, FAQ, anchors, reduced motion, no-JS content, no external requests, no browser errors');
+} finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

@@ -1,143 +1,89 @@
-// Dependency-free static checks; rendered checks live in capture-site.mjs.
-// Run: node --test scripts/test-site.mjs
-import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
-import { test } from "node:test";
-
-const root = new URL("../", import.meta.url);
-const html = readFileSync(new URL("site/index.html", root), "utf8");
+// Dependency-free release checks; rendered checks live in capture-site.mjs.
+// Historical measurements remain in docs; the homepage presents user benefits.
+import assert from 'node:assert/strict';
+import { readFileSync, existsSync } from 'node:fs';
+import { test } from 'node:test';
+const root = new URL('../', import.meta.url);
+const html = readFileSync(new URL('site/index.html', root), 'utf8');
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
+const release = '0.12.1';
+const section = id => html.match(new RegExp(`<section[^>]+id="${id}"[\\s\\S]*?<\\/section>`))?.[0];
 
-test("published 0.11.1 replaces stale preview and download messaging", () => {
-  assert.match(html, /NOW AVAILABLE \/ VERSION 0\.11\.1/);
-  assert.match(html, /LATEST RELEASE \/ 0\.11\.1/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/releases/tag/v0.11.1"));
-  assert.ok(!links.some(link => link.includes("untagged-")));
-  assert.doesNotMatch(html, /COMING IN VERSION|awaiting publication|NOT IN THE PUBLIC DOWNLOAD|IN DEVELOPMENT|These unreleased changes|0\.11\.0/);
-  assert.match(html, /AVAILABLE IN 0\.11\.1/);
-  assert.match(html, /not rerun for 0\.11\.1/);
+test('hero, downloads and sharing metadata announce the current release', () => {
+  assert.ok(html.includes(`NOW AVAILABLE / VERSION ${release}`));
+  assert.ok(html.includes(`LATEST RELEASE / ${release}`));
+  for (const name of ['name="description"', 'property="og:description"']) {
+    const metadata = html.match(new RegExp(`<meta ${name} content="([^"]+)"`))?.[1];
+    assert.ok(metadata?.includes(release), name);
+  }
+  assert.ok(links.includes(`https://github.com/platten/playlistai/releases/tag/v${release}`));
+  assert.doesNotMatch(html, /untagged-|COMING IN VERSION|awaiting publication|0\.11\.1/);
 });
 
-test("downloads retain exact published application asset names", () => {
-  const approved = new Set(readFileSync(new URL("build/release-assets.txt", root), "utf8").trim().split(/\r?\n/));
-  const downloads = links.filter(link => link.includes("/releases/download/"));
+test('downloads retain exact published asset names and platforms', () => {
+  const approved = new Set(readFileSync(new URL('build/release-assets.txt', root), 'utf8').trim().split(/\r?\n/));
+  const downloads = links.filter(link => link.includes('/releases/download/'));
   assert.equal(downloads.length, 13);
   assert.equal(new Set(downloads).size, downloads.length);
   for (const link of downloads) {
-    assert.ok(link.startsWith("https://github.com/platten/playlistai/releases/download/v0.11.1/"));
-    assert.ok(approved.has(link.split("/").at(-1)), link);
+    assert.ok(link.startsWith(`https://github.com/platten/playlistai/releases/download/v${release}/`));
+    assert.ok(approved.has(link.split('/').at(-1)), link);
   }
+  assert.match(section('download'), /Apple Silicon only; no Intel Mac build/);
+  assert.match(section('download'), /Models and recommendation data download separately during setup/);
 });
 
-test("local navigation, accessibility references and files exist", () => {
+test('local navigation, accessibility references and assets resolve', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
-  assert.equal(new Set(ids).size, ids.length, "duplicate element IDs");
-  const references = [...html.matchAll(/\baria-(?:labelledby|controls)="([^"]+)"/g)].flatMap(match => match[1].split(" "));
-  for (const id of [...references, ...links.filter(link => link.startsWith("#")).map(link => link.slice(1))]) {
-    assert.ok(ids.includes(id), `Missing target: ${id}`);
-  }
-  for (const link of links.filter(link => !/^(https:|#)/.test(link))) {
-    assert.ok(existsSync(new URL(`site/${link}`, root)), link);
-  }
-  for (const match of html.matchAll(/\bsrc="([^"]+)"/g)) {
-    assert.ok(existsSync(new URL(`site/${match[1]}`, root)), match[1]);
-  }
+  assert.equal(new Set(ids).size, ids.length, 'duplicate element IDs');
+  const references = [...html.matchAll(/\baria-(?:labelledby|controls)="([^"]+)"/g)].flatMap(match => match[1].split(' '));
+  for (const id of [...references, ...links.filter(link => link.startsWith('#')).map(link => link.slice(1))]) assert.ok(ids.includes(id), `Missing target: ${id}`);
+  for (const link of links.filter(link => !/^(https:|#)/.test(link))) assert.ok(existsSync(new URL(`site/${link}`, root)), link);
+  for (const match of html.matchAll(/\bsrc="([^"]+)"/g)) assert.ok(existsSync(new URL(`site/${match[1]}`, root)), match[1]);
 });
 
-test("documentation links refer to existing files", () => {
+test('documentation links refer to existing files', () => {
   for (const link of links) {
     const match = link.match(/\/blob\/(?:v\d+\.\d+\.\d+|main)\/([^#]+)(?:#.*)?$/);
     if (match) assert.ok(existsSync(new URL(match[1], root)), link);
   }
 });
 
-test("release measurements retain their evidence and limitations", () => {
-  const notes = readFileSync(new URL("docs/releases/v0.8.0.md", root), "utf8");
-  for (const value of ["92.6 MB", "312.8 MB", "586,161", "956,917", "1.182", "89 µs"]) {
-    assert.ok(html.includes(value), value);
-    assert.ok(notes.includes(value), `Missing source measurement: ${value}`);
+test('highlights distinguish cumulative features from the patch release', () => {
+  const highlights = section('new');
+  assert.match(highlights, /since v0\.11\.0/);
+  for (const text of ['More of what you meant', 'Strong matches first', 'Setup does the heavy lifting', 'Pick up where you left off']) assert.ok(highlights.includes(text), text);
+  for (const version of ['0.12.0', release]) {
+    assert.ok(highlights.includes(`/releases/tag/v${version}`));
+    assert.ok(existsSync(new URL(`docs/releases/v${version}.md`, root)));
   }
-  assert.match(html, /not proof of musical fit/);
-  assert.match(html, /not typical playlist generation time/);
+  assert.match(highlights, /No Python required/);
+  assert.match(highlights, /Verified download parts can be reused on retry/);
 });
 
-test("published modes preserve their evidence boundaries", () => {
-  const section = html.match(/<section[^>]+id="recommendations"[\s\S]*?<\/section>/)?.[0];
-  assert.ok(section, "Recommendation controls section missing");
-  assert.match(section, /THREE MODES \/ AVAILABLE NOW/);
-  for (const name of ["AcousticBrainz first", "CLAP first", "Deej-AI only"]) {
-    assert.ok(section.includes(name), name);
-  }
-  assert.match(section, /Needs a resolved catalog artist or track/);
-  assert.match(section, /Priority changes ranking, not permission to ignore exclusions/);
-  assert.match(section, /changing Settings does not rewrite history/);
+test('four modes present the correct default and preserve optional analysis', () => {
+  const modes = section('recommendations');
+  assert.match(modes, /ENHANCED HYBRID \/ DEFAULT FOR NEW SETUPS/);
+  assert.equal([...modes.matchAll(/class="mode-card"/g)].length, 4);
+  for (const name of ['Enhanced Hybrid', 'AcousticBrainz first', 'CLAP first', 'Deej-AI only']) assert.ok(modes.includes(name), name);
+  assert.match(modes, /Your saved mode choice is respected/);
+  assert.match(modes, /does not require MERT/);
+  assert.match(html, /Downloading a model does not automatically enable preview analysis or experimental suggestions/);
 });
 
-test("live counts agree with all three recorded regression runs", () => {
-  const report = JSON.parse(readFileSync(new URL("docs/data/three-mode-regression-2026-09-09.json", root)));
-  assert.equal(report.results.length, 120);
-  assert.equal(report.summaries.length, 3);
-  const rows = [...html.matchAll(/<tr data-mode="([^"]+)">([\s\S]*?)<\/tr>/g)];
-  assert.equal(rows.length, 3);
-  assert.equal(new Set(rows.map(row => row[1])).size, 3);
-  for (const [, mode, row] of rows) {
-    const summary = report.summaries.find(item => item.mode === mode);
-    assert.ok(summary, mode);
-    const cases = report.results.filter(item => item.mode === mode);
-    assert.equal(cases.length, summary.cases);
-    assert.equal(cases.filter(item => item.tracks.length >= 5).length, summary.atLeastFive);
-    assert.equal(cases.filter(item => item.errors.length === 0).length, summary.assertionPasses);
-    assert.ok(row.includes(`data-result="minimum">${summary.atLeastFive}/${summary.cases}</td>`), mode);
-    assert.ok(row.includes(`data-result="assertions">${summary.assertionPasses}/${summary.cases}</td>`), mode);
-  }
+test('examples and recommendation claims explain practical limits', () => {
+  assert.match(section('experience'), /AN IDEA FOR YOUR NEXT REQUEST/);
+  assert.match(section('experience'), /Targets use known track lengths/);
+  assert.match(html, /Essential requirements and exclusions still apply/);
+  assert.match(html, /Missing evidence can mean a shorter playlist/);
+  assert.match(html, /not a listening-quality study/);
+  assert.match(html, /Earlier desktop version shown/);
+  assert.doesNotMatch(html, /data-result=|\d+\/40<\/td>|\d+% (?:accuracy|musical quality)/);
 });
 
-test("live measurements preserve failure and comparability caveats", () => {
-  assert.match(html, /not listening-quality scores/);
-  assert.match(html, /No mode met the five-track target for every prompt/);
-  assert.match(html, /12 fulfilled playlists, 27 partial results/);
-  assert.match(html, /David Bowie → Talking Heads/);
-  assert.match(html, /not a controlled speed comparison/);
-  assert.match(html, /no selected-track AcousticBrainz comparison scores/);
-  assert.match(html, /No held-out listening judgments were used/);
-  assert.ok(links.includes("https://github.com/platten/playlistai/blob/v0.9.0/docs/three-mode-regression.md"));
-  const benchmark = readFileSync(new URL("docs/performance-and-model-evaluation.md", root), "utf8");
-  for (const [display, source] of [["60.4 ms", "60.350 ms"], ["62.8 ms", "62.773 ms"]]) {
-    assert.ok(html.includes(display), display);
-    assert.ok(benchmark.includes(source), `Missing benchmark source: ${source}`);
-  }
-  assert.match(html, /no cache speed advantage/);
-  assert.match(html, /neither a whole-app latency measurement nor a musical-quality score/);
-});
-
-test("development replay retains incomplete denominators and coverage limits", () => {
-  const report = JSON.parse(readFileSync(new URL("docs/data/three-mode-regression-2026-09-11.json", root)));
-  const section = html.match(/<section[^>]+id="development"[\s\S]*?<\/section>/)?.[0];
-  assert.ok(section);
-  const rows = [...section.matchAll(/<tr><th scope="row">[^<]+<\/th><td>(\d+)\/40<\/td><td>(\d+) \/ (\d+)<\/td><\/tr>/g)];
-  assert.equal(rows.length, report.summaries.length);
-  report.summaries.forEach((summary, index) => {
-    assert.equal(summary.completed + summary.interrupted + summary.unattempted, 40);
-    assert.deepEqual(rows[index].slice(1).map(Number), [summary.completed, summary.atLeastFive, summary.assertionPasses]);
-  });
-  assert.match(section, /105 of 120 planned cases completed/);
-  assert.match(section, /Four remained interrupted and eleven were unattempted/);
-  assert.match(section, /No fresh LLM parsing or preview downloads/);
-  assert.match(section, /neither had selected-track AcousticBrainz comparison scores/);
-});
-
-test("0.11.1 highlights link to evidence without overstating coverage", () => {
-  const release = html.match(/<section[^>]+id="new"[\s\S]*?<\/section>/)?.[0];
-  assert.ok(release);
-  for (const text of ["Genre evidence for every track", "Stop when the playlist is ready", "A workspace that stays with you", "Safer settings and local data"]) {
-    assert.ok(release.includes(text), text);
-  }
-  for (const document of ["recommendation-settings.md", "music-metadata.md", "clap-model-candidates.md", "application-logs.md", "test-coverage.md"]) {
-    assert.ok(links.includes(`https://github.com/platten/playlistai/blob/v0.11.1/docs/${document}`), document);
-  }
-  assert.match(html, /150 passing behavioral tests/);
-  assert.match(html, /83\.8749% backend statements, 99\.17% frontend lines and 91\.01% frontend branches/);
-  assert.match(html, /not a release-tree coverage measurement/);
-  assert.match(html, /95% target remains unmet/);
-  assert.match(html, /no new held-out listening study was run for 0\.11\.1/);
+test('local-first copy discloses external lookups and model licensing', () => {
+  const privacy = section('privacy');
+  for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'AcousticBrainz', 'Deezer', 'Discogs', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
+  assert.match(privacy, /No cloud language model receives your prompt/);
+  assert.match(html, /MERT includes a noncommercial restriction/);
 });
