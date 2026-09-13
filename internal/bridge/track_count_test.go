@@ -9,6 +9,8 @@ import (
 
 func TestTrackCountPreviewAndGeneration(t *testing.T) {
 	api := New(newLoadedContainer(t), nil)
+	engine := &trackCountRecordingEngine{}
+	useRecommendationEngine(api, engine)
 	for _, count := range []int{5, 10, 20, 40} {
 		session := IntentSessionContext{TrackCount: count}
 		preview, err := api.ParseIntentWithContext(context.Background(), "like Justice, 30 tracks", session)
@@ -19,10 +21,20 @@ func TestTrackCountPreviewAndGeneration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if preview.Intent.Count != count || generated.Request.Intent.Count != count {
-			t.Fatalf("control lost: %d, %d", preview.Intent.Count, generated.Request.Intent.Count)
+		if preview.Intent.Count != count || generated.Request.Intent.Count != count || engine.count != count {
+			t.Fatalf("control lost: preview=%d request=%d engine=%d", preview.Intent.Count, generated.Request.Intent.Count, engine.count)
 		}
 	}
+}
+
+// This bridge regression verifies count propagation. Full recommendation-pool
+// selection is covered in multichannel; running it here makes a DTO check depend
+// on search latency under Windows race and whole-program coverage instrumentation.
+type trackCountRecordingEngine struct{ count int }
+
+func (e *trackCountRecordingEngine) Build(_ context.Context, intent core.MusicIntent) (core.Playlist, error) {
+	e.count = intent.Count
+	return core.Playlist{Intent: intent, Seed: intent.Seed, Mode: intent.Mode}, nil
 }
 
 func TestTrackCountControl(t *testing.T) {
