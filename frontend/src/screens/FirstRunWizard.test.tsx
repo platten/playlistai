@@ -5,7 +5,7 @@ import { FirstRunWizard } from "./FirstRunWizard";
 const api = vi.hoisted(() => Object.fromEntries([
   "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMetadataBundle", "GetModelStatus",
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
-  "DownloadModel", "UseModelFile", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
+  "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
   "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
@@ -207,6 +207,26 @@ it("shows GPU fit limitations and activates an existing custom model without dow
   expect(api.UseModelFile).toHaveBeenLastCalledWith("/models/custom.gguf");
   fireEvent.click(screen.getByRole("button", { name: "Reinstall" }));
   await waitFor(() => expect(api.ReinstallLlamaRuntime).toHaveBeenCalledOnce());
+});
+
+it("lets multi-GPU systems choose a GPU or CPU and refreshes fitting models", async () => {
+  api.GetLlamaRuntime.mockImplementation(() => completed({ available: true, builds: ["gpu", "cpu"] }));
+  api.GetModelRecommendations.mockImplementation(() => completed({
+    models: [{ id: "small", label: "Small model", installed: false, recommended: true, sizeApprox: 1000000000 }],
+    hardware: {
+      mode: "gpu", gpuAvailable: true, gpuName: "NVIDIA Test", selectedDevice: "CUDA0",
+      devices: [
+        { id: "CUDA0", name: "NVIDIA Test", freeBytes: 7000000000, totalBytes: 8000000000, nvidia: true },
+        { id: "Vulkan1", name: "AMD Test", freeBytes: 12000000000, totalBytes: 16000000000, nvidia: false },
+      ],
+    },
+  }));
+  await start();
+  const selector = await screen.findByRole("combobox", { name: "Model compute device" });
+  expect((selector as HTMLSelectElement).value).toBe("CUDA0");
+  fireEvent.change(selector, { target: { value: "cpu" } });
+  await waitFor(() => expect(api.SetModelDevice).toHaveBeenCalledWith("cpu"));
+  await waitFor(() => expect(api.GetModelRecommendations).toHaveBeenCalledTimes(2));
 });
 
 it("keeps metadata and model-status read failures recoverable without requiring installation", async () => {

@@ -40,14 +40,25 @@ type ModelInfo struct {
 
 // ModelHardwareInfo explains how the first-run model list was selected.
 type ModelHardwareInfo struct {
-	Mode          string `json:"mode"` // "gpu" | "cpu"
-	GPUAvailable  bool   `json:"gpuAvailable"`
-	GPUName       string `json:"gpuName"`
-	VRAMBytes     int64  `json:"vramBytes"`
-	VRAMFreeBytes int64  `json:"vramFreeBytes"`
-	FitBytes      int64  `json:"fitBytes"`
-	ReserveBytes  int64  `json:"reserveBytes"`
-	VRAMTierGB    int    `json:"vramTierGb"`
+	Mode           string            `json:"mode"` // "gpu" | "cpu"
+	GPUAvailable   bool              `json:"gpuAvailable"`
+	GPUName        string            `json:"gpuName"`
+	VRAMBytes      int64             `json:"vramBytes"`
+	VRAMFreeBytes  int64             `json:"vramFreeBytes"`
+	FitBytes       int64             `json:"fitBytes"`
+	ReserveBytes   int64             `json:"reserveBytes"`
+	VRAMTierGB     int               `json:"vramTierGb"`
+	SelectedDevice string            `json:"selectedDevice"`
+	Devices        []ModelDeviceInfo `json:"devices"`
+}
+
+// ModelDeviceInfo is one accelerator exposed by the installed llama.cpp build.
+type ModelDeviceInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	TotalBytes int64  `json:"totalBytes"`
+	FreeBytes  int64  `json:"freeBytes"`
+	NVIDIA     bool   `json:"nvidia"`
 }
 
 // ModelRecommendations is the hardware-filtered first-run model list.
@@ -119,12 +130,14 @@ func (a *API) GetModelRecommendations() ModelRecommendations {
 
 func (a *API) modelHardware() (modelmgr.Hardware, ModelHardwareInfo) {
 	reserve := a.app.ModelVRAMReserve()
-	if a.app.Config().AI.GPULayers < 0 {
-		return modelmgr.Hardware{ReserveBytes: reserve}, ModelHardwareInfo{Mode: "cpu", ReserveBytes: reserve}
-	}
 	probeCtx, cancel := context.WithTimeout(a.context(), 6*time.Second)
 	defer cancel()
-	device, gpu := a.app.LlamaHardware(probeCtx)
+	selected, device, devices, gpu := a.app.ModelDevice(probeCtx)
+	deviceInfos := make([]ModelDeviceInfo, 0, len(devices))
+	for _, candidate := range devices {
+		upperID, upperName := strings.ToUpper(candidate.ID), strings.ToUpper(candidate.Name)
+		deviceInfos = append(deviceInfos, ModelDeviceInfo{ID: candidate.ID, Name: candidate.Name, TotalBytes: candidate.TotalBytes, FreeBytes: candidate.FreeBytes, NVIDIA: strings.HasPrefix(upperID, "CUDA") || strings.Contains(upperName, "NVIDIA")})
+	}
 	fitBytes := device.FreeBytes
 	// A selected model's file size does not establish how much GPU memory its
 	// process occupies. Use measured free memory, bounded by device capacity.
@@ -138,8 +151,15 @@ func (a *API) modelHardware() (modelmgr.Hardware, ModelHardwareInfo) {
 		Mode: mode, GPUAvailable: gpu, GPUName: device.Name,
 		VRAMBytes: device.TotalBytes, VRAMFreeBytes: device.FreeBytes,
 		FitBytes: fitBytes, ReserveBytes: reserve,
-		VRAMTierGB: modelmgr.VRAMTierGB(device.TotalBytes),
+		VRAMTierGB:     modelmgr.VRAMTierGB(device.TotalBytes),
+		SelectedDevice: selected, Devices: deviceInfos,
 	}
+}
+
+// SetModelDevice selects CPU or one detected llama.cpp accelerator.
+func (a *API) SetModelDevice(deviceID string) error {
+	a.cancelRecommendationWork()
+	return a.app.SetModelDevice(a.context(), deviceID)
 }
 
 func (a *API) modelInfos(src []modelmgr.Model) []ModelInfo {

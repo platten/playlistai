@@ -29,7 +29,7 @@ func TestResetAssetsPreservesPersonalDataAndRequiresSetup(t *testing.T) {
 	if err := os.WriteFile(personal, []byte("keep"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := (config.Prefs{OnboardingDone: true, ModelPath: "external.gguf"}).Save(cfg.DataDir); err != nil {
+	if err := (config.Prefs{OnboardingDone: true, ModelPath: "external.gguf", ModelDevice: "CUDA1"}).Save(cfg.DataDir); err != nil {
 		t.Fatal(err)
 	}
 	legacy := filepath.Join(cfg.DataDir, "legacy.gguf")
@@ -62,7 +62,7 @@ func TestResetAssetsPreservesPersonalDataAndRequiresSetup(t *testing.T) {
 	if _, err := os.Stat(personal); err != nil {
 		t.Fatal(err)
 	}
-	if p := config.LoadPrefs(cfg.DataDir); p.OnboardingDone || p.ModelPath != "" {
+	if p := config.LoadPrefs(cfg.DataDir); p.OnboardingDone || p.ModelPath != "" || p.ModelDevice != "" {
 		t.Fatal(p)
 	}
 	next, err := New(context.Background(), cfg, nil)

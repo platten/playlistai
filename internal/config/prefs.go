@@ -28,6 +28,9 @@ type Prefs struct {
 	ModelDisabled bool `json:"modelDisabled,omitempty"`
 	// ModelID is the catalog id when the model came from the built-in catalog.
 	ModelID string `json:"modelId"`
+	// ModelDevice is "cpu" or a llama.cpp device id such as CUDA0. Empty uses
+	// automatic selection, which prefers NVIDIA hardware when available.
+	ModelDevice string `json:"modelDevice,omitempty"`
 	// PreviewProvider overrides preview.provider from the TOML config when set
 	// ("deezer" | "spotify" | "off"). Empty → use the TOML value.
 	PreviewProvider string `json:"previewProvider"`
