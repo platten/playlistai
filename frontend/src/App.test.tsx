@@ -139,7 +139,10 @@ describe("active playlist navigation", () => {
     render(<App />);
     await screen.findByLabelText("Your description");
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Reset models and datasets" }));
+    const resetButton = await screen.findByRole("button", { name: "Reset models and datasets" });
+    const resetSection = resetButton.closest("section");
+    expect(resetSection?.parentElement?.lastElementChild).toBe(resetSection);
+    fireEvent.click(resetButton);
     expect(bridge.ResetAssets).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Reset models and datasets" }));
     await screen.findByText("Ready for a fresh setup");

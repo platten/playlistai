@@ -151,18 +151,6 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
 
       <RecommendationSettings />
 
-      <section className="flex flex-col gap-3 rounded-card border border-warn/40 bg-surface p-4">
-        <h2 className="text-[15px] font-semibold">Reset models and datasets</h2>
-        <p className="text-[12px] text-muted">Remove all app-managed models, datasets, and old updater executables. Saved playlists and taste data are kept. Reopen the app to run setup again. Manually selected files outside app storage are kept.</p>
-        <Button variant="ghost" disabled={busy !== null} onClick={async () => {
-          if (resetPending.current || !window.confirm("Remove all downloaded models and datasets and old updater backups? Active generation will stop. Saved playlists and taste data are kept. You must close and reopen Playlist AI afterwards.")) return;
-          resetPending.current = true; setBusy("reset"); setError(null);
-          try { await API.ResetAssets(); setResetDone(true); onReset?.(); }
-          catch (e) { setResetError(`Reset could not finish: ${String(e)}. Close and reopen the app before continuing, then retry reset.`); }
-          finally { resetPending.current = false; setBusy(null); }
-        }}>{busy === "reset" ? "Resetting…" : "Reset models and datasets"}</Button>
-      </section>
-
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
           Language understanding
@@ -475,6 +463,18 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
           Generated tracks and preview playback are not likes. Only explicit feedback changes affinity;
           “less for this playlist” remains request-specific.
         </p>
+      </section>
+
+      <section className="flex flex-col gap-3 rounded-card border border-warn/40 bg-surface p-4">
+        <h2 className="text-[15px] font-semibold">Reset models and datasets</h2>
+        <p className="text-[12px] text-muted">Remove all app-managed models, datasets, and old updater executables. Saved playlists and taste data are kept. Reopen the app to run setup again. Manually selected files outside app storage are kept.</p>
+        <Button variant="ghost" disabled={busy !== null} onClick={async () => {
+          if (resetPending.current || !window.confirm("Remove all downloaded models and datasets and old updater backups? Active generation will stop. Saved playlists and taste data are kept. You must close and reopen Playlist AI afterwards.")) return;
+          resetPending.current = true; setBusy("reset"); setError(null);
+          try { await API.ResetAssets(); setResetDone(true); onReset?.(); }
+          catch (e) { setResetError(`Reset could not finish: ${String(e)}. Close and reopen the app before continuing, then retry reset.`); }
+          finally { resetPending.current = false; setBusy(null); }
+        }}>{busy === "reset" ? "Resetting…" : "Reset models and datasets"}</Button>
       </section>
     </div>
   );
