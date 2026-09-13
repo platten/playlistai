@@ -93,10 +93,32 @@ if ($HostCoverage) {
 }
 $goTestArgs += './...'
 Invoke-TestStep "go test $($goTestArgs -join ' ')" {
-    if ($TestReportDirectory) {
-        & node (Join-Path $PSScriptRoot 'go-test.mjs') (Join-Path $TestReportDirectory 'race-tests') @goTestArgs
-    } else {
-        & go test @goTestArgs
+    $previousCGO = $env:CGO_ENABLED
+    $previousCC = $env:CC
+    try {
+        if (-not $NoRace -and $env:OS -eq "Windows_NT") {
+            $goArch = (& go env GOARCH).Trim()
+            if ($goArch -ne "amd64") {
+                throw "the Go race detector is unavailable for windows/$goArch; rerun with -NoRace"
+            }
+            try {
+                $compiler = (& (Join-Path $PSScriptRoot "install-clap-toolchain.ps1") -Architecture amd64 -CheckOnly | Select-Object -Last 1).Trim()
+            } catch {
+                throw "Windows race tests need the project LLVM-MinGW toolchain; run scripts/setup.ps1, or use -NoRace when race testing is intentionally unavailable"
+            }
+            if ([string]::IsNullOrWhiteSpace($compiler)) { throw "Windows race compiler path was empty - run scripts/setup.ps1" }
+            $env:CGO_ENABLED = "1"
+            $env:CC = $compiler
+            Write-Info "Windows race compiler: $compiler"
+        }
+        if ($TestReportDirectory) {
+            & node (Join-Path $PSScriptRoot 'go-test.mjs') (Join-Path $TestReportDirectory 'race-tests') @goTestArgs
+        } else {
+            & go test @goTestArgs
+        }
+    } finally {
+        $env:CGO_ENABLED = $previousCGO
+        $env:CC = $previousCC
     }
 }
 

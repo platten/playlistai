@@ -162,7 +162,7 @@ if ($WithRace) {
         $missing.Add("gcc/mingw-w64 for go test -race")
     }
 } else {
-    $notes.Add("use -WithRace to install/check the optional mingw-w64 toolchain required by go test -race")
+    $notes.Add("test.ps1 configures the pinned LLVM-MinGW toolchain automatically; use -WithRace only to install/check gcc for direct go test -race commands")
 }
 
 if (Test-Command "wails3") {

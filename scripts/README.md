@@ -35,8 +35,10 @@ for Linux system packages; `--no-system` opts out. On Windows, `setup.ps1`
 prefers winget (`GoLang.Go`, `OpenJS.NodeJS.LTS`, `NSIS.NSIS`, and WebView2
 when absent) and falls back to an existing Scoop installation. `-NoSystem` skips package-manager
 changes but still installs project Go/Node tools when their runtimes exist. Use
-`-WithRace` to install/check the modern mingw-w64 compiler required by the
-Windows Go race detector.
+`test.ps1` normally configures the pinned LLVM-MinGW toolchain installed by setup
+for the Windows Go race detector, even when the caller's `CGO_ENABLED` is `0`.
+Use `-WithRace` only to install/check a separate modern mingw-w64 GCC toolchain
+for direct `go test -race` commands outside the repository script.
 
 Windows setup installs missing pnpm through the [official PowerShell
 installer](https://pnpm.io/installation#on-windows), pinned to the project's
