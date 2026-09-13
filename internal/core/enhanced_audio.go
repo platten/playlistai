@@ -8,7 +8,41 @@ import (
 	"errors"
 )
 
-const EnhancedAudioPolicyVersion = "enhanced-hybrid/v1"
+const EnhancedAudioPolicyVersion = "enhanced-hybrid/v2"
+
+// MERTSimilarityQuery records one resolved audio query inside a logical
+// reference group. Artist references can contain several weighted recordings;
+// unrelated user references remain separate groups.
+type MERTSimilarityQuery struct {
+	GroupID          string   `json:"groupId"`
+	Track            TrackRef `json:"track"`
+	Weight           float64  `json:"weight"`
+	RepresentationID string   `json:"representationId,omitempty"`
+}
+
+// MERTSimilarityHit is a frozen nearest-neighbor result. Representation is
+// retained so same-version replay never searches a cache that may have changed.
+type MERTSimilarityHit struct {
+	GroupID        string              `json:"groupId"`
+	QueryTrackID   string              `json:"queryTrackId"`
+	TrackID        string              `json:"trackId"`
+	Rank           int                 `json:"rank"`
+	Score          float64             `json:"score"`
+	QueryWeight    float64             `json:"queryWeight"`
+	Representation AudioRepresentation `json:"representation"`
+}
+
+// MERTSimilaritySearch describes one bounded, immutable search view. Recorded
+// distinguishes an executed empty search from legacy evidence with no search.
+type MERTSimilaritySearch struct {
+	Recorded         bool                        `json:"recorded"`
+	CatalogVersion   string                      `json:"catalogVersion"`
+	Model            AudioRepresentationIdentity `json:"model"`
+	ViewFingerprint  string                      `json:"viewFingerprint,omitempty"`
+	SearchableTracks int64                       `json:"searchableTracks"`
+	Queries          []MERTSimilarityQuery       `json:"queries"`
+	Hits             []MERTSimilarityHit         `json:"hits"`
+}
 
 // EnhancedAudioInput is the serializable, derived-only evidence captured before
 // ranking. It contains no PCM or model intermediates. Centroids are audio-only;
@@ -22,6 +56,7 @@ type EnhancedAudioInput struct {
 	Representations  map[string]AudioRepresentation `json:"representations"`
 	PositiveCentroid []float32                      `json:"positiveCentroid,omitempty"`
 	NegativeCentroid []float32                      `json:"negativeCentroid,omitempty"`
+	MERTSearch       *MERTSimilaritySearch          `json:"mertSearch,omitempty"`
 }
 
 // EnhancedAudioSnapshot owns a deep copy of its input. Accessors return copies

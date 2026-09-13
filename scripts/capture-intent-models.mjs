@@ -8,12 +8,12 @@ const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4]; await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-let installed=false,enabled=false,attempts=0;window.__packs=[];
-const status=()=>location.search.includes('unsupported')?{installed:false,enabled:false,downloadBytes:0,unsupportedReason:'Compact intent models require macOS 14 or newer.',detail:'Compact intent models require macOS 14 or newer.'}:{installed,enabled,downloadBytes:428000000,detail:"MiniLM dictionary suggestions are experimental and optional. DistilBERT's base encoder is prepared for training; extraction stays inactive until a reviewed, calibrated task model is available."};
-const methods={GetIntentAssistStatus:status,SetIntentAssistEnabled:v=>{enabled=v},InstallIntentModelPack:source=>{window.__packs.push(source);return new Promise((resolve,reject)=>{window.__finish=resolve;window.__cancel=()=>reject(new Error('Model pack cancelled'));})},InstallIntentModels:()=>{attempts++;if(attempts===1)return Promise.reject(new Error('Download interrupted'));installed=true}};
+let installed=false,extractorInstalled=false,enabled=false,attempts=0;window.__packs=[];
+const status=()=>location.search.includes('unsupported')?{installed:false,enabled:false,downloadBytes:0,unsupportedReason:'Compact intent models require macOS 14 or newer.',detail:'Compact intent models require macOS 14 or newer.'}:{installed,extractorInstalled,enabled,downloadBytes:280000000,detail:"DistilBERT base assets need a separately imported reviewed extractor before suggestions are available."};
+const methods={GetIntentAssistStatus:status,SetIntentAssistEnabled:v=>{enabled=v},InstallIntentExtractor:()=>{extractorInstalled=true},InstallIntentModelPack:source=>{window.__packs.push(source);return new Promise((resolve,reject)=>{window.__finish=resolve;window.__cancel=()=>reject(new Error('Model pack cancelled'));})},InstallIntentModels:()=>{attempts++;if(attempts===1)return Promise.reject(new Error('Download interrupted'));installed=true}};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve().then(()=>o[k](...args));p.cancel=()=>{if(k==='InstallIntentModelPack')window.__cancel?.()};return p;}});`;
 const runtime = `export const Events={On:()=>()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
-const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {IntentModelsCard} from '/src/components/IntentModelsCard.tsx';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:760,margin:'24px auto',padding:16}},React.createElement(IntentModelsCard,{automatic:true})));`;
+const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {IntentModelsCard} from '/src/components/IntentModelsCard.tsx';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement('main',{style:{maxWidth:760,margin:'24px auto',padding:16}},React.createElement(IntentModelsCard)));`;
 const errors=[];
 try {
   const page=await browser.newPage({viewport:{width:1000,height:760}});
@@ -22,12 +22,18 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/,r=>r.fulfill({contentType:'application/javascript',body:fixture}));
   await page.route(/.*@wailsio_runtime\.js.*/,r=>r.fulfill({contentType:'application/javascript',body:runtime}));
   await page.goto('http://127.0.0.1:9245');
+  await page.getByRole('button',{name:/Prepare DistilBERT/}).click();
   await page.getByRole('alert').filter({hasText:'Download interrupted'}).waitFor();
   await page.screenshot({path:path.join(output,'intent-models-retry.png'),fullPage:true});
-  await page.getByRole('button',{name:'Retry intent model download'}).click();
-  await page.getByText('MiniLM and DistilBERT assets verified.').waitFor();
+  await page.getByRole('button',{name:'Retry DistilBERT download'}).click();
+  await page.getByText('DistilBERT base assets verified.').waitFor();
   const toggle=page.getByRole('checkbox');
   assert.equal(await toggle.isChecked(),false);
+  assert.equal(await toggle.isDisabled(),true);
+  await page.getByText('Use a reviewed DistilBERT extractor',{exact:true}).click();
+  await page.getByLabel('Prepared extractor directory').fill('C:/reviewed/distilbert');
+  await page.getByRole('button',{name:'Install reviewed extractor'}).click();
+  await page.getByText('Reviewed DistilBERT extractor installed.').waitFor();
   await toggle.focus();await page.keyboard.press('Space');
   await page.waitForFunction(()=>document.querySelector('input[type=checkbox]').checked);
   await page.getByText('Install a compressed model pack',{exact:true}).click();
@@ -53,9 +59,9 @@ try {
   assert.deepEqual(await page.evaluate(()=>window.__packs),['https://models.example/intent/manifest.json','https://models.example/intent/manifest.json']);
   await page.goto('http://127.0.0.1:9245/?unsupported=1');
   await page.getByText('Your existing prompt parser remains available.').waitFor();
-  assert.equal(await page.getByRole('button',{name:/Download intent models/}).count(),0);
+  assert.equal(await page.getByRole('button',{name:/Prepare DistilBERT/}).count(),0);
   assert.equal(await page.getByRole('alert').count(),0);
   await page.screenshot({path:path.join(output,'intent-models-unsupported.png'),fullPage:true});
   assert.deepEqual(errors,[]);
-  console.log('Intent setup UI passed: automatic download failure/retry, compressed manifest install/cancel/retry, installed state, keyboard toggle, dark/light and narrow/wide, unsupported host without download.');
+  console.log('Intent setup UI passed: explicit DistilBERT preparation failure/retry, compressed manifest install/cancel/retry, installed state, keyboard toggle, dark/light and narrow/wide, unsupported host without download.');
 } finally {await browser.close();}

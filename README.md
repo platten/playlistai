@@ -30,13 +30,15 @@ work, and removes app-managed downloads and completed updater `previous.exe`
 backups. Close and reopen the app afterwards to run setup again. Saved playlists,
 taste data, and manually selected files outside app storage are preserved.
 
-**Enhanced hybrid** is an optional fourth recommendation mode. It combines the
-existing catalog, CLAP and archived evidence with measured preview DSP preferences
-and optional MERT audio similarity. Enable bounded analysis in Settings; DSP needs
-no model. MERT does not understand the text prompt directly. Preview measurements
-describe the analyzed preview, not necessarily the complete recording. Missing
-analysis stays neutral and never proves a hard musical requirement. The three
-existing modes retain their policies.
+**Enhanced hybrid** is an optional fourth recommendation mode. It can retrieve
+tracks that are audio-similar to resolved references by searching compatible
+locally cached MERT preview embeddings. The existing Deej-AI catalog model fills
+remaining slots when MERT coverage is sparse, while every candidate still passes
+the same constraints, ranking and sequencing. MERT and DSP have separate settings;
+DSP needs no model. MERT does not understand the text prompt directly. Preview
+measurements describe the analyzed preview, not necessarily the complete recording.
+Missing analysis stays neutral and never proves a hard musical requirement. The
+three existing modes retain their policies.
 
 MERT uses native Go/ONNX inference with no end-user Python requirement. Its
 separately licensed CC-BY-NC-4.0 weights are optional; the application remains
@@ -52,6 +54,9 @@ track count. Duration, relative artist eras, and unsupported vocal subtypes rema
 visible when the available evidence cannot verify them. See
 [dictionary preparation](docs/intent-dictionary-preparation.md) for the optional
 offline Python workflow; the desktop dictionary runs entirely in Go.
+The [prompt thesaurus](docs/prompt-thesaurus.md) lists 293 musical concepts and
+726 terms/aliases, with CLAP captions, schema-checked AcousticBrainz mappings,
+and explicit unsupported or ambiguous meanings.
 
 Enhanced hybrid also retrieves cached artist and album context from MusicBrainz
 and identity-checked Wikidata/Wikipedia links. This can supply genre hints and
@@ -61,11 +66,12 @@ pre-parser protects compound durations, negation and journey roles before and
 after the LLM step. See [implementation and validation](docs/music-context-implementation-results.md)
 and the [larger-model evaluation guide](docs/music-context-and-preparser-plan.md).
 
-First-run setup also prepares verified MiniLM and DistilBERT assets. Settings can
-enable experimental native MiniLM dictionary suggestions or import a reviewed,
-calibrated DistilBERT intent extractor. Both assist the local LLM; explicit source
-instructions remain authoritative. The generic DistilBERT encoder does not yet
-extract playlist intent. See [native setup and packaging](docs/intent-nlu-implementation.md)
+Settings and optional first-run setup can prepare verified DistilBERT assets
+and import a reviewed, calibrated DistilBERT intent extractor. The extractor
+assists the local LLM; explicit source instructions remain authoritative.
+Preparation and import never enable suggestions automatically. The generic base
+encoder cannot extract playlist intent. MiniLM has been removed.
+See [native setup and packaging](docs/intent-nlu-implementation.md)
 and [annotation review and offline training](docs/intent-nlu-review.md).
 
 Artist spelling suggestions ask for confirmation before changing the selected
@@ -216,8 +222,14 @@ prompt or listening history. MusicBrainz
 queries reuse a one-week cache; **Settings → Music metadata** can clear it and
 configure the Discogs token. Fallback requests are capped at 25/minute and still
 pass the normal musical-fit checks. An optional [local Discogs dataset](docs/local-metadata-dataset.md)
-uses monthly bulk dumps for indexed genre discovery before online requests.
-For wizard downloads, [build and host a compressed runtime bundle](docs/metadata-distribution.md).
+uses monthly bulk dumps for catalog-matched genre discovery. A separate
+[offline MusicBrainz index](docs/musicbrainz-offline-index.md) packages artist
+and recording JSON dumps into sub-200 MB R2 objects for wizard and Settings
+downloads before online requests. Its packer uses parallel decoding, a tunable
+`-sqlite-cache-mib` budget (64 MiB per database by default), and simultaneous
+hashing/compression; see [benchmarks and memory tradeoffs](docs/musicbrainzpack-performance.md).
+For Discogs wizard downloads, [build and host
+a compressed runtime bundle](docs/metadata-distribution.md).
 See [metadata setup and cache policy](docs/music-metadata.md).
 Recommendation exposure is stored
 separately from positive feedback, and a generated or briefly previewed track

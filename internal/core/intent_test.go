@@ -212,4 +212,8 @@ func TestTrackRefLinks(t *testing.T) {
 	if (TrackRef{}).SpotifyURI() != "" {
 		t.Fatal("empty id should yield empty uri")
 	}
+	providerRef := TrackRef{ID: "deezer:42", Artist: "A", Title: "B"}
+	if providerRef.SpotifyURI() != "" || providerRef.SpotifyURL() != "" {
+		t.Fatal("provider-scoped id should not produce a Spotify link")
+	}
 }

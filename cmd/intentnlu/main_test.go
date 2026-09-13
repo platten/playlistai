@@ -20,10 +20,10 @@ func TestCLIRejectsIncompleteOrUnknownCommandsWithoutAcquisition(t *testing.T) {
 	}
 }
 
-func TestReferenceValidationRequiresActualEmbeddingsAndByteOffsets(t *testing.T) {
+func TestReferenceValidationRequiresCompleteTokensAndByteOffsets(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "reference.json")
-	reference := parityReport{Version: 1, Kind: nlu.MiniLM, OffsetUnit: "utf8-bytes", MaxTokens: 256, Cases: []parityCase{{Text: "", Encoding: nlu.Encoding{IDs: []int64{101, 102}, AttentionMask: []int64{1, 1}, TypeIDs: []int64{0, 0}, Tokens: []nlu.Token{{ID: 101, Special: true}, {ID: 102, Special: true}}}}}}
+	reference := parityReport{Version: 1, Kind: nlu.DistilBERT, OffsetUnit: "utf8-bytes", MaxTokens: 512, Cases: []parityCase{{Text: "", Encoding: nlu.Encoding{IDs: []int64{101, 102}, AttentionMask: []int64{1, 1}, TypeIDs: []int64{0, 0}, Tokens: []nlu.Token{{ID: 101, Special: true}, {ID: 102, Special: true}}}}}}
 	write := func() {
 		raw, err := json.Marshal(reference)
 		if err != nil {
@@ -34,21 +34,15 @@ func TestReferenceValidationRequiresActualEmbeddingsAndByteOffsets(t *testing.T)
 		}
 	}
 	write()
-	if _, _, err := readReference(path, nlu.MiniLM); err == nil {
-		t.Fatal("embedding parity accepted without original embeddings")
-	}
-	reference.Cases[0].Embedding = make([]float32, 384)
-	reference.Cases[0].Embedding[0] = 1
-	write()
-	if _, _, err := readReference(path, nlu.MiniLM); err != nil {
+	if _, _, err := readReference(path, nlu.DistilBERT); err != nil {
 		t.Fatal(err)
 	}
 	reference.OffsetUnit = "characters"
 	write()
-	if _, _, err := readReference(path, nlu.MiniLM); err == nil {
+	if _, _, err := readReference(path, nlu.DistilBERT); err == nil {
 		t.Fatal("character offsets treated as bytes")
 	}
-	if _, _, err := readReference(path, nlu.DistilBERT); err == nil {
+	if _, _, err := readReference(path, nlu.ModelKind("retired-model")); err == nil {
 		t.Fatal("different checkpoint contract accepted")
 	}
 }
@@ -62,22 +56,5 @@ func TestVerifierCannotOverwriteReferenceOrModel(t *testing.T) {
 		if err == nil {
 			t.Fatal("overwrite of input accepted")
 		}
-	}
-}
-
-func TestEmbeddingComparisonRejectsUnnormalizedAndChangedOutputs(t *testing.T) {
-	vector := make([]float32, 384)
-	vector[0] = 1
-	if _, _, ok := compareVectors(vector, vector); !ok {
-		t.Fatal("identical reference rejected")
-	}
-	changed := append([]float32(nil), vector...)
-	changed[0] = 2
-	if _, _, ok := compareVectors(changed, vector); ok {
-		t.Fatal("unnormalized vector accepted")
-	}
-	changed[0], changed[1] = 0, 1
-	if _, _, ok := compareVectors(changed, vector); ok {
-		t.Fatal("unrelated vector accepted")
 	}
 }

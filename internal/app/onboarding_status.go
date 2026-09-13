@@ -12,6 +12,7 @@ import (
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/intent/nlu"
+	"github.com/platten/playlistai/internal/mbindex"
 	"github.com/platten/playlistai/internal/metadata"
 )
 
@@ -60,16 +61,27 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	metadataDir := filepath.Join(c.cfg.DataDir, "metadata")
 	metadataPath := metadata.ActivePath(metadataDir)
 	metadataPrior := setupPathExists(filepath.Join(metadataDir, "active")) || setupPathExists(metadataPath)
-	metadataReady := false
+	discogsReady := false
 	if catalogReady {
 		if store, openErr := metadata.Open(metadataPath); openErr == nil {
-			metadataReady = store.Compatible(rt.Resolver.CatalogVersion())
+			discogsReady = store.Compatible(rt.Resolver.CatalogVersion())
 			_ = store.Close()
 		}
 	}
+	musicBrainzDir := filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")
+	musicBrainzPath := mbindex.ActivePath(musicBrainzDir)
+	musicBrainzPrior := setupPathExists(filepath.Join(musicBrainzDir, "active")) || setupPathExists(musicBrainzPath)
+	musicBrainzReady := false
+	if store, openErr := mbindex.Open(musicBrainzPath); openErr == nil {
+		musicBrainzReady = true
+		_ = store.Close()
+	}
+	discogsSupported := c.cfg.Metadata.ManifestURL != ""
+	musicBrainzSupported := c.cfg.Metadata.MusicBrainzManifestURL != ""
+	metadataReady := (!discogsSupported || discogsReady) && (!musicBrainzSupported || musicBrainzReady)
 	// A new default metadata source is not prior opt-in. Compatibility can
 	// only be assessed once the catalog it belongs to has loaded.
-	status.Metadata = SetupCapability{Ready: metadataReady, Supported: c.cfg.Metadata.ManifestURL != "", Required: metadataPrior && catalogReady}
+	status.Metadata = SetupCapability{Ready: metadataReady, Supported: discogsSupported || musicBrainzSupported, Required: metadataPrior && catalogReady || musicBrainzPrior}
 
 	if prefs.ModelDisabled {
 		modelPath = ""
@@ -93,9 +105,13 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	intentSupported := nlu.CheckPackagedRuntime() == nil
 	intentReady := intentInstalled && setupIntentFilesPresent(c.intentAssetRoot())
 	if prefs.IntentExtractorDir != "" {
-		intentReady = intentReady && extractorDir != "" && sameSetupPath(extractorDir, prefs.IntentExtractorDir) && setupExtractorFilesPresent(extractorDir)
+		intentReady = extractorDir != "" && sameSetupPath(extractorDir, prefs.IntentExtractorDir) && setupExtractorFilesPresent(extractorDir) && setupIntentRuntimePresent(c.intentAssetRoot())
 	}
-	status.Intent = SetupCapability{Ready: intentReady, Supported: intentSupported, Required: prefs.IntentAssistEnabled || prefs.IntentExtractorDir != ""}
+	extractorEnabled := prefs.IntentExtractorDir != "" && prefs.IntentAssistEnabled
+	if prefs.IntentExtractorEnabled != nil {
+		extractorEnabled = *prefs.IntentExtractorEnabled
+	}
+	status.Intent = SetupCapability{Ready: intentReady, Supported: intentSupported, Required: extractorEnabled || prefs.IntentExtractorDir != ""}
 
 	c.analysis.mu.Lock()
 	analysisReady := c.analysis.manifest != nil && c.analysis.service.InferenceReady()
@@ -192,6 +208,11 @@ func setupIntentFilesPresent(root string) bool {
 			return false
 		}
 	}
+	return setupIntentRuntimePresent(root)
+}
+
+func setupIntentRuntimePresent(root string) bool {
+	dir := nlu.AssetDir(root)
 	artifact, err := audio.NativeRuntimeArtifact(runtime.GOOS + "/" + runtime.GOARCH)
 	runtimePath, pathErr := nlu.RuntimePath(dir)
 	if err != nil || pathErr != nil || !setupFilePresent(runtimePath, artifact.UnpackedSize) {

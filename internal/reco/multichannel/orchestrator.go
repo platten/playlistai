@@ -20,7 +20,9 @@ type Orchestrator struct {
 	enhancedProvider        EnhancedAudioProvider
 	enhancedRefreshProvider EnhancedAudioRefreshProvider
 	enhancedPreviewProvider func() *audio.Service
+	mertSearchProvider      MERTSimilaritySearchProvider
 	enhancedSnapshot        *core.EnhancedAudioSnapshot
+	mertSearch              *core.MERTSimilaritySearch
 	enhancedPrepared        bool
 	bestAvailable           bool
 	enhanced                bool
@@ -81,7 +83,7 @@ func New(cat ports.Catalog, sim ports.SimilarityEngine, resolver ports.Reference
 func (o *Orchestrator) AlgorithmVersion() string {
 	version := AlgorithmVersion
 	if o.candidateSource != nil {
-		version += "+iterative/v1"
+		version += "+iterative/v2"
 	}
 	if o.semantic == nil && o.features == nil {
 		return version
@@ -580,6 +582,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	o.assemblyCache = &completedAssembly{}
 	o.enhancedPrepared = false
 	o.enhancedSnapshot = nil
+	o.mertSearch = nil
 	defer func() { result.EnhancedAudio = o.enhancedSnapshot }()
 	if err := ctx.Err(); err != nil {
 		return core.Playlist{}, err
@@ -790,6 +793,43 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
 	request.RecentSelections = recentSelections
+	var mertAudio []core.Candidate
+	if request.EnhancedAudio != nil {
+		input := request.EnhancedAudio.Input()
+		o.mertSearch = input.MERTSearch
+	} else if intent.Controls.RecommendationMode == core.EnhancedHybrid && o.mertSearchProvider != nil {
+		queries := mertSimilarityQueries(o.cat, intent)
+		excluded := map[string]struct{}{}
+		for _, group := range [][]core.TrackRef{references, required, waypoints, recentSelections} {
+			for _, track := range group {
+				excluded[track.ID] = struct{}{}
+			}
+		}
+		for _, query := range queries {
+			excluded[query.Track.ID] = struct{}{}
+		}
+		searchCtx, cancelSearch := context.WithCancel(ctx)
+		if request.StopChecking != nil {
+			go func() {
+				select {
+				case <-request.StopChecking:
+					cancelSearch()
+				case <-searchCtx.Done():
+				}
+			}()
+		}
+		o.mertSearch, err = o.mertSearchProvider(searchCtx, intent, request.Profile, queries, excluded,
+			min(o.cfg.MaxCandidates, max(o.cfg.SemanticBudget, 2*intent.Count)))
+		cancelSearch()
+		if err != nil && ctx.Err() != nil {
+			return core.Playlist{}, ctx.Err()
+		}
+		if err != nil {
+			anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "mert_search_incomplete", Detail: "MERT similarity search was unavailable; Deej-AI and other compatible evidence will continue filling the playlist."})
+			o.mertSearch = nil
+		}
+	}
+	mertAudio = o.mertCandidates(o.mertSearch)
 	var cachedAudio []core.Candidate
 	if o.audioSession != nil {
 		excluded := map[string]bool{}
@@ -807,7 +847,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	positiveSemantic, _ := semanticQueryText(intent)
-	semanticSeeded := len(cachedAudio) > 0 || discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
+	semanticSeeded := len(cachedAudio) > 0 || len(mertAudio) > 0 || discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
 		if core.WantsInstrumental(intent) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "instrumental_seed_unavailable", Detail: "No suitable instrumental starting point could be found in the catalog or online lookup.", Action: "retry the search or name an instrumental artist or recording"}}), nil
@@ -832,13 +872,16 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if len(required) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(required) {
 		return core.Playlist{}, fmt.Errorf("%w: requested %d tracks but %d are required", core.ErrCountBelowRequired, intent.Count, len(required))
 	}
-	if o.candidateSource != nil || o.audioSession != nil {
+	if o.candidateSource != nil || o.audioSession != nil || intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		if retriever, ok := o.retriever.(*Retriever); ok {
 			o.retriever = retriever.withRecommendationPool(recommendationPoolSize(recommendationBatchCount(intent, len(required)), len(required)))
 		}
 	}
 	if len(cachedAudio) > 0 {
 		o.retriever = &cachedAudioRetriever{base: o.retriever, candidates: cachedAudio}
+	}
+	if len(mertAudio) > 0 {
+		o.retriever = &mertAudioRetriever{base: o.retriever, candidates: mertAudio, cfg: o.cfg}
 	}
 	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && (len(stages) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(stages)) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "journey_count_too_short", Detail: "The requested count cannot represent every journey stage.", Action: "increase the track count or remove a stage"}}), nil
@@ -865,7 +908,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	candidates := cachedAudio
+	candidates := append(append([]core.Candidate(nil), cachedAudio...), mertAudio...)
 	if o.candidateSource == nil {
 		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
@@ -912,7 +955,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_constraint_conflict", Detail: err.Error(), Action: "remove the required track or relax the conflicting exclusion"}}), nil
 		}
 	}
-	if o.candidateSource != nil || o.audioSession != nil {
+	if o.candidateSource != nil || o.audioSession != nil || intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		var notices []core.PlaylistNotice
 		candidates, notices, err = o.collectIteratively(ctx, candidates, discovery, intent, request, eligible, references, required, waypoints, seedValue)
 		if err != nil {

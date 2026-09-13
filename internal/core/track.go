@@ -7,7 +7,8 @@ import "strings"
 
 // TrackRef identifies a catalog track.
 //
-// ID is the Spotify base-62 track id (also the key of the Deej-AI datasets).
+// ID is the Spotify base-62 track id for Deej-AI rows. Preview-resolved tracks
+// outside that dataset use a provider-scoped id such as "deezer:123".
 // Artist/Title are split from the catalog's single "Artist - Title" string, so
 // Artist is the first artist only and Title may itself contain " - ".
 type TrackRef struct {
@@ -36,7 +37,7 @@ func NormalizeIdentityPart(value string) string {
 
 // SpotifyURI is the spotify:track:<id> form.
 func (t TrackRef) SpotifyURI() string {
-	if t.ID == "" {
+	if t.ID == "" || strings.Contains(t.ID, ":") {
 		return ""
 	}
 	return "spotify:track:" + t.ID
@@ -44,7 +45,7 @@ func (t TrackRef) SpotifyURI() string {
 
 // SpotifyURL is the open.spotify.com web link.
 func (t TrackRef) SpotifyURL() string {
-	if t.ID == "" {
+	if t.ID == "" || strings.Contains(t.ID, ":") {
 		return ""
 	}
 	return "https://open.spotify.com/track/" + t.ID

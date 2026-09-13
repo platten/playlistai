@@ -1,5 +1,11 @@
 # Hosting compressed model bundles
 
+MiniLM has been retired. The current application prepares only pinned DistilBERT
+assets through direct verified downloads; it no longer recommends or automatically
+downloads the old combined intent pack. A new DistilBERT-only compressed pack must
+be prepared, measured, verified and published before a hosted registry entry can
+be added. No unpublished manifest URL or compressed size is assumed below.
+
 The `models/` directory contains ready-to-upload, losslessly compressed model
 bundles. It is ignored by Git. These are inference assets, not a music training
 dataset. Original downloads remain under `C:\Users\pawel\Downloads`.
@@ -18,7 +24,7 @@ independent archives. No quantization, pruning, or precision reduction is applie
 | `mert-linux-amd64` | 216,263,779 | Same model with Linux x64 ONNX Runtime |
 | `mert-linux-arm64` | 215,501,193 | Same model with Linux ARM64 ONNX Runtime |
 | `mert-darwin-arm64` | 217,330,896 | Same model with macOS Apple Silicon ONNX Runtime |
-| `intent-encoders-v1` | 324,060,693 | Pinned DistilBERT and MiniLM ONNX models, tokenizers and setup metadata |
+| `intent-encoders-v1` (retired; historical) | 324,060,693 | Former combined intent pack; no longer used by default setup |
 
 These measured bundles each contain two parts. `models/inventory.json` records
 every part's size/checksum and the uncompressed totals; `models/SHA256SUMS`
@@ -77,17 +83,13 @@ guide; v0.12.0 cannot import them directly. In the updated application:
   Advanced manifest and uncompressed directory imports remain supported.
   Installation runs the existing native parity check before switching the
   active MERT bundle.
-- In **Intent language models**, choose **Download intent models**. Setup uses
-  the hosted DistilBERT/MiniLM pack automatically when base models are missing.
-  Advanced imports still accept a manifest URL or local path.
-  The supplied DistilBERT and MiniLM files must match the application's pinned
-  hashes. Import does not enable experimental suggestions or a trained extractor.
-  If the native intent runtime is absent, setup still downloads the small,
-  pinned platform runtime from its existing upstream source; this universal
-  intent archive does not contain five duplicate platform runtimes.
+- In **Intent language models**, choose **Prepare DistilBERT**. Setup verifies
+  the pinned DistilBERT files and matching platform runtime independently.
+  Advanced imports accept a manifest URL or local path and copy only the current
+  pinned DistilBERT setup files. Base preparation does not claim trained extractor
+  health or enable suggestions. Import a reviewed calibrated extractor separately.
 
-The wizard uses the same installers. Its intent step downloads missing hosted
-encoders automatically; the optional MERT step offers the matching platform
+The wizard uses the same installers. Its intent step offers explicit optional DistilBERT preparation; the optional MERT step offers the matching platform
 pack with its license notice and a download button. Healthy installed models
 are skipped. Use **Enable bounded preview analysis** on that step to opt into
 using enhanced audio evidence; downloading alone does not change this preference.
@@ -107,14 +109,14 @@ Host: `https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/`
 
 | Bundle | Manifest path |
 | --- | --- |
-| DistilBERT + MiniLM | `intent-encoders-v1/manifest.json` |
 | MERT Windows x86-64 | `mert-windows-amd64/manifest.json` |
 | MERT Windows ARM64 | `mert-windows-arm64/manifest.json` |
 | MERT Linux x86-64 | `mert-linux-amd64/manifest.json` |
 | MERT Linux ARM64 | `mert-linux-arm64/manifest.json` |
 | MERT macOS Apple Silicon | `mert-darwin-arm64/manifest.json` |
 
-All six hosted manifests matched the prepared originals, and all hosted segments
+Historically, all six hosted manifests (including the now-retired combined
+intent pack) matched the prepared originals, and all hosted segments
 were downloaded through the native Go transport, decompressed and verified.
 Native Windows checks passed for the downloaded MERT pack and the intent
 reference cases. These checks do not claim native execution on other hosts.
@@ -137,14 +139,14 @@ The command verifies transport and file integrity. It does not activate a model;
 the desktop installer separately enforces its model-specific compatibility and
 health checks.
 
-## Prepared upload sizes and verification
+## Historical prepared upload sizes and verification
 
 All six bundles contain two segments. The first is 190 MB (decimal); the second
 contains the remainder. `models/inventory.json` records exact sizes and hashes.
 
 | Bundle | Total compressed bytes | Total MB |
 | --- | ---: | ---: |
-| DistilBERT + MiniLM | 324,060,693 | 324.06 |
+| Retired DistilBERT + MiniLM | 324,060,693 | 324.06 |
 | MERT Windows x86-64 | 213,882,011 | 213.88 |
 | MERT Windows ARM64 | 214,013,811 | 214.01 |
 | MERT Linux x86-64 | 216,263,779 | 216.26 |
@@ -175,16 +177,21 @@ foreach ($platform in @('windows-amd64', 'windows-arm64', 'linux-amd64', 'linux-
     --name "mert-$platform" --output "models/mert-$platform"
 }
 
-# Repackage only checksum-pinned setup assets, using the native directory layout.
+# Prepare the new DistilBERT-only pack from current pinned setup sources.
+# This creates a local artifact; it does not publish or update the app registry.
 .\.venv-model-pack\Scripts\python.exe python/prepare_model_distribution.py `
   --source C:/Users/pawel/Downloads/playlistai-intent-nlu-v1 `
   --intent-sources internal/intent/nlu/sources.json `
   --license internal/intent/nlu/licenses.txt `
-  --name intent-encoders-v1 --output models/intent-encoders-v1
+  --name distilbert-assets-v2 --output models/distilbert-assets-v2
 
 .\.venv-model-pack\Scripts\python.exe -m unittest discover `
   -s python -p test_prepare_model_distribution.py
 ```
+
+The current retained DistilBERT setup payload totals 261,535,276 bytes before
+compression and platform runtime files. MiniLM's retired setup payload was
+91,114,788 bytes; this is not a measured compressed-download or installer saving.
 
 Run from the repository root. Every output directory must be empty; the script
 refuses to overwrite existing bundles. Select a fresh directory to reproduce

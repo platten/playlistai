@@ -53,7 +53,12 @@ func TestPinnedSourcesHaveNoPathCollisions(t *testing.T) {
 			t.Fatal("unpinned source", s)
 		}
 	}
-	if ModelSHA256(MiniLM) == "" || ModelSHA256(DistilBERT) == "" {
+	if ModelSHA256(DistilBERT) == "" {
 		t.Fatal("encoder missing")
+	}
+	for _, source := range Sources() {
+		if source.Model == "minilm" || source.Setup && source.Model != string(DistilBERT) {
+			t.Fatal("retired or unexpected model in active sources", source.Model)
+		}
 	}
 }

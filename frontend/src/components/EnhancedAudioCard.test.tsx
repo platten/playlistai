@@ -2,10 +2,10 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EnhancedAudioCard } from "./EnhancedAudioCard";
-const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "InstallMERT", "InstallRecommendedMERT", "RemoveMERT", "ClearEnhancedAnalysis", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
+const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "SetMERTSimilarityEnabled", "InstallMERT", "InstallRecommendedMERT", "RemoveMERT", "ClearMERTSimilarityCache", "ClearDSPAnalysisCache", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
-const status = { enabled: true, dspAvailable: true, installed: false, limit: 24, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } };
+const status = { enabled: true, mertEnabled: true, mertAvailable: true, dspAvailable: true, installed: true, searchableTracks: 2, limit: 24, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } };
 function completed(value: unknown) { return Object.assign(Promise.resolve(value), { cancel: vi.fn() }); }
 function deferred() {
   let resolve!: (v: unknown) => void;
@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 it("downloads the recommended device pack explicitly without enabling analysis", async () => {
-  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, enabled: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, mertEnabled: false, mertAvailable: false, installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   const view = render(<EnhancedAudioCard setup />);
@@ -33,18 +33,20 @@ it("downloads the recommended device pack explicitly without enabling analysis",
   view.unmount();
   await act(async () => pending.resolve(null));
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
+  expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
 });
 it("allows setup to enable installed MERT without exposing bulk analysis actions", async () => {
-  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, enabled: false }));
+  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, mertEnabled: false }));
   render(<EnhancedAudioCard setup />);
-  const checkbox = await screen.findByRole("checkbox", { name: "Enable bounded preview analysis" });
+  const checkbox = await screen.findByRole("checkbox", { name: "Use MERT to find similar tracks" });
   await act(async () => {});
   expect((checkbox as HTMLInputElement).checked).toBe(false);
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
   fireEvent.click(checkbox);
-  await waitFor(() => expect(api.SetEnhancedAnalysisEnabled).toHaveBeenCalledWith(true));
+  await waitFor(() => expect(api.SetMERTSimilarityEnabled).toHaveBeenCalledWith(true));
+  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Analyze liked tracks" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Clear enhanced cache" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Clear similarity cache" })).toBeNull();
 });
 it("omits the recommended download for unsupported and already installed devices", async () => {
   api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, recommendedManifestUrl: "https://models.example/mert/manifest.json", unsupportedReason: "No native pack for this device." }));
@@ -54,19 +56,20 @@ it("omits the recommended download for unsupported and already installed devices
   view.unmount();
   api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, recommendedManifestUrl: "https://models.example/mert/manifest.json" }));
   render(<EnhancedAudioCard />);
-  await screen.findByText(/Installed · CC/);
+  await screen.findByText(/Ready · enabled · CC/);
   expect(screen.queryByRole("button", { name: /Download MERT for this device/ })).toBeNull();
 });
-it("keeps DSP optional and installs only the chosen native pack", async () => {
+it("changes MERT independently of DSP and installs only the chosen native pack", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
-  expect(screen.getByText(/no model download required/)).toBeTruthy();
+  expect(screen.getByText("2 tracks with compatible cached embeddings.")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Install MERT pack" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("MERT pack directory or manifest"), { target: { value: " C:/packs/mert " } });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Install MERT pack" })); });
   expect(api.InstallMERT).toHaveBeenCalledWith("C:/packs/mert");
   expect(api.AnalyzeEnhancedTracks).not.toHaveBeenCalled();
   await act(async () => { fireEvent.click(screen.getByRole("checkbox")); });
-  expect(api.SetEnhancedAnalysisEnabled).toHaveBeenCalledWith(false);
+  expect(api.SetMERTSimilarityEnabled).toHaveBeenCalledWith(false);
+  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
 });
 it("reports bounded candidate outcomes and cancels ongoing work on close", async () => {
   await act(async () => { render(<EnhancedAudioCard trackIds={["a", "b"]} />); });
@@ -85,16 +88,44 @@ it("reports bounded candidate outcomes and cancels ongoing work on close", async
 it("requires cache-clear confirmation and leaves a failed install retryable", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-  fireEvent.click(screen.getByRole("button", { name: "Clear enhanced cache" }));
-  expect(api.ClearEnhancedAnalysis).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Clear similarity cache" }));
+  expect(api.ClearMERTSimilarityCache).not.toHaveBeenCalled();
   confirm.mockReturnValue(true);
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear enhanced cache" })); });
-  expect(api.ClearEnhancedAnalysis).toHaveBeenCalledOnce();
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear similarity cache" })); });
+  expect(api.ClearMERTSimilarityCache).toHaveBeenCalledOnce();
+  expect(api.ClearDSPAnalysisCache).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("MERT pack directory or manifest"), { target: { value: "missing" } });
   api.InstallMERT.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("hash mismatch")), { cancel: vi.fn() }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Install MERT pack" })); });
   expect(screen.getByRole("alert").textContent).toContain("hash mismatch");
   expect((screen.getByRole("button", { name: "Install MERT pack" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it("keeps DSP settings and cache clearing separate from MERT", async () => {
+  await act(async () => { render(<EnhancedAudioCard dspOnly />); });
+  expect(screen.queryByRole("button", { name: "Install MERT pack" })).toBeNull();
+  await act(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "Use DSP preview measurements" })); });
+  expect(api.SetEnhancedAnalysisEnabled).toHaveBeenCalledWith(false);
+  expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear DSP cache" })); });
+  expect(api.ClearDSPAnalysisCache).toHaveBeenCalledOnce();
+  expect(api.ClearMERTSimilarityCache).not.toHaveBeenCalled();
+});
+
+it("shows loading, cold-cache fallback and failed preference saves without claiming success", async () => {
+  const pending = deferred();
+  api.GetEnhancedAnalysisStatus.mockReturnValueOnce(pending.promise);
+  render(<EnhancedAudioCard />);
+  expect(screen.getByText("Checking MERT…")).toBeTruthy();
+  expect(screen.queryByText(/Not installed/)).toBeNull();
+  expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+  await act(async () => pending.resolve({ ...status, mertEnabled: false, searchableTracks: 0 }));
+  expect(screen.getByText(/The similarity cache is empty/)).toBeTruthy();
+  api.SetMERTSimilarityEnabled.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("save failed")), { cancel: vi.fn() }));
+  await act(async () => { fireEvent.click(screen.getByRole("checkbox")); });
+  expect(screen.getByRole("alert").textContent).toContain("save failed");
+  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
 });
 
 it.each(["https://models.example/mert/manifest.json", "C:/models/mert/manifest.json"])("installs the chosen manifest %s and cancels on close", async (source) => {

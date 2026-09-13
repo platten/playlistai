@@ -14,6 +14,11 @@ func (a *API) SetEnhancedAnalysisEnabled(enabled bool) error {
 	a.operations.cancel("enhanced-analysis")
 	return a.app.SetEnhancedAnalysisEnabled(enabled)
 }
+func (a *API) SetMERTSimilarityEnabled(enabled bool) error {
+	a.cancelRecommendationWork()
+	a.operations.cancel("enhanced-analysis")
+	return a.app.SetMERTSimilarityEnabled(enabled)
+}
 func (a *API) InstallMERT(ctx context.Context, directory string) error {
 	ctx, _, finish := a.operations.begin(ctx, "mert-install")
 	defer finish()
@@ -38,6 +43,16 @@ func (a *API) ClearEnhancedAnalysis(ctx context.Context) error {
 	a.cancelRecommendationWork()
 	a.operations.cancel("enhanced-analysis")
 	return a.app.ClearEnhancedAnalysis(ctx)
+}
+func (a *API) ClearMERTSimilarityCache(ctx context.Context) error {
+	a.cancelRecommendationWork()
+	a.operations.cancel("enhanced-analysis")
+	return a.app.ClearMERTSimilarityCache(ctx)
+}
+func (a *API) ClearDSPAnalysisCache(ctx context.Context) error {
+	a.cancelRecommendationWork()
+	a.operations.cancel("enhanced-analysis")
+	return a.app.ClearDSPAnalysisCache(ctx)
 }
 func (a *API) AnalyzeEnhancedTracks(ctx context.Context, ids []string, liked bool) (app.EnhancedAnalysisReport, error) {
 	ctx, _, finish := a.operations.begin(ctx, "enhanced-analysis")

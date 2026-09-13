@@ -17,9 +17,7 @@ import (
 type ModelKind string
 
 const (
-	MiniLM             ModelKind = "minilm"
-	DistilBERT         ModelKind = "distilbert"
-	EmbeddingDimension           = 384
+	DistilBERT ModelKind = "distilbert"
 )
 
 type WorkerConfig struct {
@@ -86,7 +84,7 @@ func readSettings(config WorkerConfig) (modelSettings, error) {
 
 func readModelSettings(dir string, kind ModelKind) (modelSettings, error) {
 	var settings modelSettings
-	if kind != MiniLM && kind != DistilBERT {
+	if kind != DistilBERT {
 		return settings, fmt.Errorf("nlu: unsupported model kind")
 	}
 	var architecture struct {
@@ -100,9 +98,6 @@ func readModelSettings(dir string, kind ModelKind) (modelSettings, error) {
 	}
 	if err = json.Unmarshal(raw, &architecture); err != nil {
 		return settings, err
-	}
-	if kind == MiniLM && (architecture.ModelType != "bert" || architecture.HiddenSize != EmbeddingDimension) {
-		return settings, fmt.Errorf("nlu: incompatible MiniLM architecture")
 	}
 	if kind == DistilBERT && (architecture.ModelType != "distilbert" || architecture.Dim != 768) {
 		return settings, fmt.Errorf("nlu: incompatible DistilBERT architecture")
@@ -119,7 +114,7 @@ func readModelSettings(dir string, kind ModelKind) (modelSettings, error) {
 			maxTokens = settings.head.MaxTokens
 		}
 	}
-	settings.tokenizer, err = LoadWordPiece(filepath.Join(dir, "vocab.txt"), kind == MiniLM, maxTokens)
+	settings.tokenizer, err = LoadWordPiece(filepath.Join(dir, "vocab.txt"), false, maxTokens)
 	return settings, err
 }
 
@@ -178,48 +173,6 @@ func fileDigest(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// MeanPool normalizes a masked mean of token states, including CLS and SEP as
-// the pinned sentence-transformer does. Masked padding never contributes.
-func MeanPool(hidden []float32, mask []int64, dimension int) ([]float32, error) {
-	if dimension <= 0 || len(mask) == 0 || len(hidden) != len(mask)*dimension {
-		return nil, fmt.Errorf("nlu: invalid pooling shape")
-	}
-	out := make([]float32, dimension)
-	sums := make([]float64, dimension)
-	count := 0
-	for token, included := range mask {
-		if included != 0 && included != 1 {
-			return nil, fmt.Errorf("nlu: invalid attention mask")
-		}
-		if included == 0 {
-			continue
-		}
-		count++
-		for d, value := range hidden[token*dimension : (token+1)*dimension] {
-			if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-				return nil, fmt.Errorf("nlu: nonfinite embedding")
-			}
-			sums[d] += float64(value)
-		}
-	}
-	if count == 0 {
-		return nil, fmt.Errorf("nlu: empty embedding")
-	}
-	var length float64
-	for d := range sums {
-		sums[d] /= float64(count)
-		length += sums[d] * sums[d]
-	}
-	if length <= 1e-24 || math.IsInf(length, 0) {
-		return nil, fmt.Errorf("nlu: invalid embedding norm")
-	}
-	length = math.Sqrt(length)
-	for d := range sums {
-		out[d] = float32(sums[d] / length)
-	}
-	return out, nil
 }
 
 func DecodeProposals(text string, encoding Encoding, logits []float32, head HeadManifest, calibration Calibration) (Result, error) {

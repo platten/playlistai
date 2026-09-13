@@ -36,11 +36,3 @@ func recommended(name string) (Distribution, error) {
 func RecommendedMERT(goos, goarch string) (Distribution, error) {
 	return recommended("mert-" + goos + "-" + goarch)
 }
-
-func RecommendedIntent() Distribution {
-	d, err := recommended("intent-encoders-v1")
-	if err != nil {
-		panic(err)
-	}
-	return d
-}

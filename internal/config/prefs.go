@@ -17,8 +17,11 @@ type Prefs struct {
 	RecommendationMode   string `json:"recommendationMode,omitempty"`
 	AnalysisEnabled      bool   `json:"analysisEnabled"`
 	EnhancedAudioEnabled bool   `json:"enhancedAudioEnabled"`
-	IntentAssistEnabled  bool   `json:"intentAssistEnabled,omitempty"`
-	IntentExtractorDir   string `json:"intentExtractorDir,omitempty"`
+	// Nil retains the legacy shared DSP/MERT opt-in until either setting changes.
+	MERTSimilarityEnabled  *bool  `json:"mertSimilarityEnabled,omitempty"`
+	IntentAssistEnabled    bool   `json:"intentAssistEnabled,omitempty"`
+	IntentExtractorEnabled *bool  `json:"intentExtractorEnabled,omitempty"`
+	IntentExtractorDir     string `json:"intentExtractorDir,omitempty"`
 	// DebugLogging opts into potentially sensitive, memory-only diagnostics.
 	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.
@@ -36,6 +39,13 @@ type Prefs struct {
 	PreviewProvider string `json:"previewProvider"`
 	// OnboardingDone marks the first-run wizard as complete (or skipped).
 	OnboardingDone bool `json:"onboardingDone"`
+}
+
+func (p Prefs) MERTSimilarityEnabledValue() bool {
+	if p.MERTSimilarityEnabled != nil {
+		return *p.MERTSimilarityEnabled
+	}
+	return p.EnhancedAudioEnabled
 }
 
 func prefsPath(dataDir string) string { return filepath.Join(dataDir, "prefs.json") }

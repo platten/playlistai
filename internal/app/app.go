@@ -23,6 +23,7 @@ import (
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/mbindex"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
@@ -157,13 +158,15 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 // enrichment (the review screen still works, just with no ISRC/metadata).
 func (c *Container) wireEnrichExport() {
 	mb, err := musicbrainz.New(musicbrainz.Config{
-		AcousticBrainzURL: musicbrainz.AcousticBrainzURL,
-		DatasetPath:       filepath.Join(c.cfg.DataDir, "metadata", "discogs.sqlite"),
-		UserAgent:         c.cfg.Enrich.UserAgent,
-		CachePath:         c.cfg.Enrich.CachePath,
-		MirrorURL:         c.cfg.Enrich.MirrorURL,
-		MinScore:          c.cfg.Enrich.MinScore,
-		CredentialPath:    filepath.Join(c.cfg.DataDir, "credentials", "discogs-token"),
+		AcousticBrainzURL:        musicbrainz.AcousticBrainzURL,
+		DatasetPath:              filepath.Join(c.cfg.DataDir, "metadata", "discogs.sqlite"),
+		OfflineIndexPath:         mbindex.ActivePath(filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")),
+		UserAgent:                c.cfg.Enrich.UserAgent,
+		CachePath:                c.cfg.Enrich.CachePath,
+		MirrorURL:                c.cfg.Enrich.MirrorURL,
+		MinScore:                 c.cfg.Enrich.MinScore,
+		CredentialPath:           filepath.Join(c.cfg.DataDir, "credentials", "discogs-token"),
+		CandidatePreviewResolver: deezer.New(deezer.Config{}),
 	})
 	if err != nil {
 		c.log.Warn("enricher unavailable; continuing without MusicBrainz", "err", err)

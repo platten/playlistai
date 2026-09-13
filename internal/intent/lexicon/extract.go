@@ -15,23 +15,24 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v5"
+const Version = "source-atoms/v6"
 
 var (
-	durationPattern = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
-	periodPattern   = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b|\b((?:18|19|20)[0-9]0)['’]?s\b`)
-	referenceIntro  = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|along the lines of|the atmosphere of|the feel of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|begin with|start with|from|through|via|to)\s+`)
-	referenceEnd    = regexp.MustCompile(`(?i)[,:;.!?\n]|\s+(?:but|with|for|over|through|via|to|into|from|by the end|at the end|and then|that|themselves)\b`)
-	negativeIntro   = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|do not want|don't want|don’t want|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|neither|nor|no|not)\s+`)
-	negativeEnd     = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
-	entitySplit     = regexp.MustCompile(`(?i)\s*(?:,|\band\b|\bor\b|\bnor\b|&)\s*`)
-	startMarker     = regexp.MustCompile(`(?i)\b(?:starts?|starting|begins?|beginning)\s+(?:with\s+)?`)
-	endMarker       = regexp.MustCompile(`(?i)\b(?:ends?|ending|finishes?|finishing)\s+(?:with\s+|at\s+)?`)
-	softPrefix      = regexp.MustCompile(`(?i)\b(?:mostly|mainly|preferably|ideally|some|a bit of|a touch of|touch of)\s*$`)
-	negativePrefix  = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|skip|rather than|nothing)(?:\s+(?:too|very|much))?\s*$`)
-	reducedPrefix   = regexp.MustCompile(`(?i)\b(?:less|not too|nothing too)\s*$`)
-	strictPrefix    = regexp.MustCompile(`(?i)\b(?:must be|must have|only|strictly|always|absolutely)\s*$`)
-	quotePattern    = regexp.MustCompile(`"[^"\n]+"|“[^”\n]+”`)
+	durationPattern    = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
+	periodPattern      = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b|\b((?:18|19|20)[0-9]0)['’]?s\b`)
+	referenceIntro     = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|along the lines of|the atmosphere of|the feel of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|begin with|start with|from|through|via|to)\s+`)
+	referenceEnd       = regexp.MustCompile(`(?i)[,:;.!?\n]|\s+(?:but|with|for|over|through|via|to|into|from|by the end|at the end|and then|that|themselves)\b`)
+	negativeIntro      = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|do not want|don't want|don’t want|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|neither|nor|no|not)\s+`)
+	negativeEnd        = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
+	entitySplit        = regexp.MustCompile(`(?i)\s*(?:,|\band\b|\bor\b|\bnor\b|&)\s*`)
+	startMarker        = regexp.MustCompile(`(?i)\b(?:starts?|starting|begins?|beginning)\s+(?:with\s+)?`)
+	endMarker          = regexp.MustCompile(`(?i)\b(?:ends?|ending|finishes?|finishing)\s+(?:with\s+|at\s+)?`)
+	softPrefix         = regexp.MustCompile(`(?i)\b(?:mostly|mainly|preferably|ideally|some|a bit of|a touch of|touch of)\s*$`)
+	negativePrefix     = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|skip|rather than|nothing)(?:\s+(?:too|very|much))?\s*$`)
+	reducedPrefix      = regexp.MustCompile(`(?i)\b(?:less|not too|nothing too)\s*$`)
+	strictPrefix       = regexp.MustCompile(`(?i)\b(?:must be|must have|only|strictly|always|absolutely)\s*$`)
+	quotePattern       = regexp.MustCompile(`"[^"\n]+"|“[^”\n]+”`)
+	openTexturePattern = regexp.MustCompile(`(?i)\bwith\s+(?:(?:lots|plenty|a lot)\s+of|(?:a|an)\s+(?:good|strong|rich|delicate))\s+(.+?)(?:\s+(?:transitioning|leading|ending|moving|and then)\b|[,;.]|$)`)
 )
 
 type mention struct {
@@ -404,6 +405,39 @@ func conceptMentions(prompt string) []mention {
 				}
 				candidates = append(candidates, mention{p[0], p[1], c.Kind, c.Value, c.ID})
 			}
+		}
+	}
+	// A newly recognized adjective must not erase the remainder of an open
+	// sonic description ("shimmering spectral detail"). Preserve a longer
+	// literal phrase when its only recognized facet is one texture. Multiple
+	// traits and logical operators still go through normal composition.
+	for _, p := range openTexturePattern.FindAllStringSubmatchIndex(prompt, -1) {
+		start, end := trimRange(prompt, p[2], p[3])
+		value := prompt[start:end]
+		if _, known := musicconcepts.Find("texture", value); known {
+			continue
+		}
+		blocked := false
+		for _, word := range []string{"and", "or", "no", "not", "without", "less", "more", "mostly", "only", "but", "rather", "except", "from", "to", "like", "by"} {
+			blocked = blocked || wordsContain(value, word)
+		}
+		var textures []mention
+		for _, c := range candidates {
+			if c.start >= start && c.end <= end {
+				if c.kind != "texture" {
+					blocked = true
+				}
+				duplicate := false
+				for _, prior := range textures {
+					duplicate = duplicate || prior.start == c.start && prior.end == c.end
+				}
+				if !duplicate {
+					textures = append(textures, c)
+				}
+			}
+		}
+		if !blocked && len(textures) == 1 && (textures[0].start > start || textures[0].end < end) {
+			candidates = append(candidates, mention{start: start, end: end, kind: "texture", value: value})
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {

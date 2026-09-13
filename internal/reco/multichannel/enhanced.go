@@ -130,10 +130,10 @@ func (r *TransparentRanker) enhancedScores(candidates []core.Candidate, intent c
 	positive := r.enhancedReferences(input, positiveReferenceVectors(r.cat, intent))
 	negative := r.enhancedReferences(input, negativeReferenceVectors(r.cat, intent))
 	if len(positive) == 0 {
-		positive = append(positive, enhancedReference{input.PositiveCentroid, 1})
+		positive = append(positive, []enhancedReference{{input.PositiveCentroid, 1}})
 	}
 	if len(negative) == 0 {
-		negative = append(negative, enhancedReference{input.NegativeCentroid, 1})
+		negative = append(negative, []enhancedReference{{input.NegativeCentroid, 1}})
 	}
 	var mertEnabled, dspEnabled bool
 	for i := range candidates {
@@ -174,8 +174,8 @@ type enhancedReference struct {
 	weight float64
 }
 
-func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, refs []referenceVectors) []enhancedReference {
-	var out []enhancedReference
+func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, refs []referenceVectors) [][]enhancedReference {
+	var out [][]enhancedReference
 	for _, group := range refs {
 		var weight float64
 		var representatives []enhancedReference
@@ -192,28 +192,34 @@ func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, re
 			representatives = append(representatives, enhancedReference{vector, rep.weight})
 		}
 		if weight > 0 {
-			for _, rep := range representatives {
-				rep.weight /= weight
-				out = append(out, rep)
+			for index := range representatives {
+				representatives[index].weight /= weight
 			}
+			out = append(out, representatives)
 		}
 	}
 	return out
 }
 
-func enhancedReferenceSimilarity(vector []float32, refs []enhancedReference, dimension int) (float64, bool) {
-	var total float64
-	var weights float64
-	for _, ref := range refs {
-		if similarity, ok := enhancedCosine(vector, ref.vector, dimension); ok {
-			total += similarity * ref.weight
-			weights += ref.weight
+func enhancedReferenceSimilarity(vector []float32, refs [][]enhancedReference, dimension int) (float64, bool) {
+	best, available := -2.0, false
+	for _, group := range refs {
+		var total, weights float64
+		for _, ref := range group {
+			if similarity, ok := enhancedCosine(vector, ref.vector, dimension); ok {
+				total += similarity * ref.weight
+				weights += ref.weight
+			}
+		}
+		if weights > 0 && (!available || total/weights > best) {
+			best = total / weights
+			available = true
 		}
 	}
-	if weights == 0 {
+	if !available {
 		return 0, false
 	}
-	return total / weights, true
+	return best, true
 }
 
 func (s *GreedySequencer) enhancedTransition(left, right core.TrackRef, requestInput core.EnhancedAudioInput, intent core.MusicIntent) float64 {

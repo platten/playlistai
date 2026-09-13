@@ -41,3 +41,18 @@ type AudioRepresentationStorageUsage struct {
 	Records int64 `json:"records"`
 	Bytes   int64 `json:"bytes"`
 }
+
+// AudioRepresentationMatch retains the exact derived record used for a cached
+// audio similarity result. Score is cosine similarity, never a probability.
+type AudioRepresentationMatch struct {
+	Representation AudioRepresentation `json:"representation"`
+	Score          float64             `json:"score"`
+}
+
+// AudioRepresentationSearchResult describes one stable compatible search view.
+// Only bounded winning representations are returned, not the entire index.
+type AudioRepresentationSearchResult struct {
+	Matches          []AudioRepresentationMatch `json:"matches"`
+	SearchableTracks int64                      `json:"searchableTracks"`
+	Fingerprint      string                     `json:"fingerprint"`
+}

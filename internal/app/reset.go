@@ -27,11 +27,13 @@ func (c *Container) ResetAssets() error {
 	prefs.ModelPath, prefs.ModelID, prefs.ModelDevice, prefs.IntentExtractorDir = "", "", "", ""
 	prefs.ModelDisabled = true
 	prefs.AnalysisEnabled, prefs.EnhancedAudioEnabled, prefs.IntentAssistEnabled = false, false, false
+	disabled := false
+	prefs.MERTSimilarityEnabled, prefs.IntentExtractorEnabled = &disabled, &disabled
 	if err = prefs.Save(root); err != nil {
 		return err
 	}
 	var failures []error
-	for _, name := range []string{"models", "catalog", "metadata", "datasets", "music-analysis", "mert-analysis", "intent-nlu", "model-downloads", "llama", "catalog.tar.zst", "catalog.tar.zst.part"} {
+	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "intent-nlu", "model-downloads", "llama", "catalog.tar.zst", "catalog.tar.zst.part"} {
 		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
 			failures = append(failures, err)
 		}

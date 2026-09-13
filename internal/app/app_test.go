@@ -247,7 +247,7 @@ func TestLoadCatalogFromFixture(t *testing.T) {
 		t.Fatal("recommendation engine not wired to the loaded catalog")
 	}
 	active, ok := c.runtime.Reco.(ports.VersionedRecommendationEngine)
-	if !ok || active.AlgorithmVersion() != multichannel.AlgorithmVersion+"+iterative/v1" {
+	if !ok || active.AlgorithmVersion() != multichannel.AlgorithmVersion+"+iterative/v2" {
 		t.Fatalf("active recommendation version = %T/%v", c.runtime.Reco, ok)
 	}
 	baseline, ok := c.runtime.BaselineReco.(ports.VersionedRecommendationEngine)

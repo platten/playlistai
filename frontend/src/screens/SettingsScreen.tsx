@@ -150,6 +150,10 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
       </div>
 
       <RecommendationSettings />
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</h2>
+        <EnhancedAudioCard />
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">
@@ -396,7 +400,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
 
       <MusicAnalysisCard />
       <IntentModelsCard />
-      <EnhancedAudioCard />
+      <EnhancedAudioCard dspOnly />
       <MusicMetadataCard />
 
       <section className="flex flex-col gap-3">

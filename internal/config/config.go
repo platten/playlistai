@@ -30,8 +30,14 @@ type Config struct {
 // checksums and catalog version. Override with TOML or a release linker value.
 var DefaultMetadataManifestURL = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/metadata-manifest.json"
 
+// The hosted manifest identifies the split, compressed MusicBrainz index and
+// pins every part plus the expanded SQLite database by SHA-256. Override with
+// TOML or a release linker value when testing another published bundle.
+var DefaultMusicBrainzManifestURL = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/musicbrainz/musicbrainz-manifest.json"
+
 type MetadataConfig struct {
-	ManifestURL string `toml:"manifest_url"`
+	ManifestURL            string `toml:"manifest_url"`
+	MusicBrainzManifestURL string `toml:"musicbrainz_manifest_url"`
 }
 
 // SemanticConfig points to an optional offline-built sidecar. The sidecar
@@ -158,7 +164,7 @@ func Default() Config {
 
 	cfg := Config{
 		DataDir:  data,
-		Metadata: MetadataConfig{ManifestURL: DefaultMetadataManifestURL},
+		Metadata: MetadataConfig{ManifestURL: DefaultMetadataManifestURL, MusicBrainzManifestURL: DefaultMusicBrainzManifestURL},
 		Catalog: CatalogConfig{
 			Dir: filepath.Join(data, "catalog"),
 			// Deej-AI catalog (~957k tracks), tar+zstd, ~210 MB. Hosted on

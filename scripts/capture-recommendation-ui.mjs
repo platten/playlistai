@@ -13,6 +13,7 @@ const browser = await chromium.launch({ executablePath: process.argv[3], headles
 const runtime = `
 export const Events = { On(name, fn) { const handler = (e) => fn({data:e.detail}); window.addEventListener(name,handler); return () => window.removeEventListener(name,handler); } };
 export const Clipboard = { SetText: async()=>{} };
+export const Browser = { OpenURL: async()=>{} };
 export const Call = { ByID:()=>Promise.resolve(null) };
 export const CancellablePromise = Promise;
 export const System = { IsMac:()=>new URLSearchParams(window.location.search).get('platform')==='darwin' };
@@ -34,7 +35,7 @@ const emit = (data) => window.dispatchEvent(new CustomEvent('playlistai:progress
 const methods = {
 GetOnboarded:()=> !window.location.search.includes('wizard'), GetStatus:()=>({parserBackend:'llama'}), GetCatalogInfo:()=>({loaded:true}), ListSavedPlaylists:()=>[],
 GetRecommendationMode:()=>window.location.search.includes('deejai')?'deejai_only':'acousticbrainz_first',
-ParseIntentWithContext:()=>new Promise((resolve,reject)=>{window.__finishParse=(issues=[],instrumental=false,overrides={})=>resolve({...preview,...(instrumental?{backend:'rules',parser:{requestedBackend:'rules'},intent:{...intent,originalDescription:'Instrumental, no vocals',essentialCriteria:[],hardConstraints:[{kind:'exclude_vocals'}],preferences:{...intent.preferences,genres:[],vocalPreference:{value:'no vocals',influence:'positive'}}}}:{}),...overrides,resolutionIssues:issues});window.__failParse=()=>reject(new Error('Local model unavailable'));}), GetPreviewProviderName:()=> 'deezer', GetModelStatus:()=>({backend:'llama',modelLabel:'Local language model'}),GetLlamaRuntime:()=>window.__llamaRuntime??({available:true,builds:['cpu']}),GetModelCatalog:()=>window.__modelCatalog??[],GetModelRecommendations:()=>window.__modelRecommendations??({models:[],hardware:{}}),GetInstalledModels:()=>[],
+ParseIntentWithContext:()=>new Promise((resolve,reject)=>{window.__finishParse=(issues=[],instrumental=false,overrides={})=>resolve({...preview,...(instrumental?{backend:'rules',parser:{requestedBackend:'rules'},intent:{...intent,originalDescription:'Instrumental, no vocals',essentialCriteria:[],hardConstraints:[{kind:'exclude_vocals'}],preferences:{...intent.preferences,genres:[],vocalPreference:{value:'no vocals',influence:'positive'}}}}:{}),...overrides,resolutionIssues:issues});window.__failParse=()=>reject(new Error('Local model unavailable'));}), GetPreviewProviderName:()=> 'deezer', GetModelStatus:()=>({backend:'llama',modelLabel:'Local language model'}),GetLlamaRuntime:()=>window.__llamaRuntime??({available:true,builds:['cpu']}),GetModelCatalog:()=>window.__modelCatalog??[],GetModelRecommendations:()=>window.__modelRecommendations??({models:window.__modelCatalog??[],hardware:{}}),GetInstalledModels:()=>[],
 BuildPlaylist:()=>{window.__buildCalls++;throw new Error('Unexpected duplicate build');},
 DownloadModel:(id)=>{window.__downloadedModel=id;},
 GetPreviewURL:(id)=>new Promise(resolve=>{window.__previewTrackId=id;window.__resolvePreview=resolve;}),
@@ -53,7 +54,7 @@ GenerateFromPromptWithContext:(prompt,context)=>new Promise((resolve,reject)=>{
   window.__failGeneration=()=>reject(new Error('Music lookup timed out while resolving the requested artist.'));
   window.__finishGeneration=(state='fulfilled',empty=false,notices=[],options={})=>{
     const requestedCount=options.requestedCount??tracks.length;
-    const resultIntent={...intent,count:requestedCount,controls:{...intent.controls,totalTrackCount:requestedCount,...(options.matchTiers?{recommendationMode:'enhanced_hybrid'}:{})}};
+    const resultIntent={...intent,originalDescription:window.__lastGenerationPrompt,count:requestedCount,controls:{...intent.controls,totalTrackCount:requestedCount,...(options.matchTiers?{recommendationMode:'enhanced_hybrid'}:{})}};
     resolve({playlist:{generationId:context.generationId,assessments:options.matchTiers?tracks.map((track,i)=>({trackId:track.id,fitTier:i<20?'strong':'close',matchDetail:i<20?'Requested mood and style have supporting evidence.':'Similar preview sound; requested instrumentation remains unknown.'})):[],tracks:empty?[]:tracks.slice(0,options.actualCount??tracks.length),intent:resultIntent,notices,seed:'7',mode:'similar',status:{state},outcome:{state,reasons:state==='fulfilled'||options.noReasons?[]:notices.length?[{criterion:'Missing Artist',detail:'The requested artist has no usable catalog seed.',action:'Add a specific track or another artist reference.'}]:[{criterion:'instrumental',detail:'Vocal evidence is unknown for available recordings.',action:'Add a known instrumental reference or relax the vocal requirement.'}]},reproducibility:{id:context.generationId}},request:{intent:resultIntent,seed:'7',reproducibility:{id:context.generationId}},name:window.__playlistHeading || 'Your generated playlist'});
   };
   window.__advanceGeneration=()=>{emit({op:'generation',generationId:active.id,note:'Checking musical fit',done:1,total:40});emit({op:'generation',generationId:active.id,note:'Checking musical fit',checkedTrack:{id:'one',artist:'Fixture Artist',title:'Checked track'}});};
@@ -165,7 +166,7 @@ try {
   const deejButtons = deejPage.getByLabel("Description examples").getByRole("button");
   assert.equal(await deejButtons.count(), 4, "Deej-AI-only mode exposes exactly four examples");
   assert.deepEqual(await deejButtons.allTextContents(), deejExamples, "Deej-AI examples use only artist seeds or artist transitions with counts");
-  await deejPage.getByText("Catalog artist or track required · include a track count", { exact: true }).waitFor();
+  await deejPage.getByText("Catalog artist or track required · Enter to generate", { exact: true }).waitFor();
   await deejPage.screenshot({ path: path.join(output, "generate-deejai-examples.png"), fullPage: true, animations: "disabled" });
   await deejPage.close();
   await composer.fill("Classical 10 tracks");
@@ -440,12 +441,12 @@ try {
   const previousGenerationId=await page.evaluate(()=>window.__generationId);
   await page.getByRole('button',{name:'Regenerate',exact:true}).click();
   await page.getByRole('heading',{name:'What do you want to hear?',exact:true}).waitFor();
-  assert.equal(await composer.inputValue(),'ambient electronica','Regenerate restores the saved original description, not the playlist heading');
+  assert.equal(await composer.inputValue(),'Something like an ambiguous artist','Regenerate restores the submitted description, not the playlist heading');
   await page.getByText('The local model is processing your request…',{exact:true}).waitFor();
   assert.equal(await page.locator('#generate-playlist').isDisabled(),true,'Automatic resubmission disables Generate while parsing');
   await page.evaluate(()=>window.__finishParse());
   await page.waitForFunction(n=>window.__generationCalls===n+1,beforeRegenerate);
-  assert.equal(await page.evaluate(()=>window.__lastGenerationPrompt),'ambient electronica');
+  assert.equal(await page.evaluate(()=>window.__lastGenerationPrompt),'Something like an ambiguous artist');
   assert.notEqual(await page.evaluate(()=>window.__generationId),previousGenerationId,'Regenerate starts a new generation operation');
   await page.evaluate(()=>window.__finishGeneration('partial',false,[],{matchTiers:true}));
   await page.getByRole('heading',{name:'Your generated playlist'}).waitFor();
@@ -628,6 +629,9 @@ try {
     await smallest.getByRole('button',{name:'Download & use',exact:true}).click();
     await page.waitForFunction(()=>window.__downloadedModel==='qwen2.5-3b-instruct-q4km');
   }
+  await page.getByRole("button", {name:"Continue",exact:true}).click();
+  await page.getByRole("heading", {name:"Intent language models",exact:true}).waitFor();
+  await page.screenshot({path:path.join(output,"wizard-intent-distilbert.png"),fullPage:true,animations:"disabled"});
   await page.getByRole("button", {name:"Continue",exact:true}).click();
   await page.getByRole("heading", {name:"Music analysis",exact:true}).waitFor();
   await page.screenshot({path:path.join(output,"wizard-analysis.png"),fullPage:true,animations:"disabled"});

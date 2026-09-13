@@ -14,8 +14,8 @@ const scenario=new URLSearchParams(location.search).get('scenario');
 const methods={
 GetSetupStatus:()=>scenario==='repair'?{onboarded:true,needsSetup:true,pendingSteps:['model','intent','analysis'],repairSteps:['model']}:
  {onboarded:false,needsSetup:true,pendingSteps:scenario==='mert'?['mert']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:[]},
-SetEnhancedAnalysisEnabled:enabled=>{window.__enhancedEnabled=enabled},
-GetEnhancedAnalysisStatus:()=>({installed:false,dspAvailable:true,enabled:window.__enhancedEnabled,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
+SetMERTSimilarityEnabled:enabled=>{window.__enhancedEnabled=enabled},
+GetEnhancedAnalysisStatus:()=>({installed:false,dspAvailable:true,enabled:false,mertEnabled:window.__enhancedEnabled,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
 GetMetadataBundleInfo:()=>({configured:true,installed:window.__installed,catalogReady:true}),
 InstallMetadataBundle:()=>{window.__installed=true},
 GetModelStatus:()=>({backend:'rules',ready:true}),GetLlamaRuntime:()=>({available:false,builds:[]}),
@@ -38,7 +38,7 @@ try {
       await page.getByRole("heading", { name: "MERT audio similarity" }).waitFor();
       await page.getByRole("button", { name: "Download MERT for this device" }).waitFor();
       assert.equal(await page.getByRole("checkbox").isChecked(), false);
-      await page.getByRole("checkbox",{name:"Enable bounded preview analysis"}).check();
+      await page.getByRole("checkbox",{name:"Use MERT to find similar tracks"}).check();
       await page.waitForFunction(()=>window.__enhancedEnabled);
     } else if (scenario === "partial") {
       await page.getByRole("button", { name: "Get started" }).click();

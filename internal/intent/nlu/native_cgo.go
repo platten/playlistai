@@ -11,7 +11,6 @@ import (
 
 type onnxModel struct {
 	session        *ort.DynamicAdvancedSession
-	kind           ModelKind
 	dimension      int
 	releaseLibrary func()
 }
@@ -43,20 +42,17 @@ func loadNativeModel(config WorkerConfig, settings modelSettings) (nativeModel, 
 			return nil, err
 		}
 	}
-	inputs, output, dimension := []string{"input_ids", "attention_mask", "token_type_ids"}, "last_hidden_state", EmbeddingDimension
-	if config.Kind == DistilBERT {
-		if settings.head == nil {
-			cleanup()
-			return nil, fmt.Errorf("nlu: trained head required")
-		}
-		inputs, output, dimension = []string{"input_ids", "attention_mask"}, settings.head.OutputName, len(settings.head.Labels)
+	if settings.head == nil {
+		cleanup()
+		return nil, fmt.Errorf("nlu: trained head required")
 	}
+	inputs, output, dimension := []string{"input_ids", "attention_mask"}, settings.head.OutputName, len(settings.head.Labels)
 	session, err := ort.NewDynamicAdvancedSession(filepath.Join(config.ModelDir, "model.onnx"), inputs, []string{output}, options)
 	if err != nil {
 		cleanup()
 		return nil, err
 	}
-	return &onnxModel{session: session, kind: config.Kind, dimension: dimension, releaseLibrary: releaseLibrary}, nil
+	return &onnxModel{session: session, dimension: dimension, releaseLibrary: releaseLibrary}, nil
 }
 
 func (m *onnxModel) Infer(encoding Encoding) ([]float32, error) {
@@ -75,14 +71,6 @@ func (m *onnxModel) Infer(encoding Encoding) ([]float32, error) {
 	}
 	defer func() { _ = mask.Destroy() }()
 	inputs := []ort.Value{ids, mask}
-	if m.kind == MiniLM {
-		types, err := ort.NewTensor(ort.NewShape(1, int64(length)), encoding.TypeIDs)
-		if err != nil {
-			return nil, err
-		}
-		defer func() { _ = types.Destroy() }()
-		inputs = append(inputs, types)
-	}
 	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, int64(length), int64(m.dimension)))
 	if err != nil {
 		return nil, err

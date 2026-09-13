@@ -4,9 +4,10 @@ The [expanded calibration diagnostic](intent-nlu-expanded-calibration-results.md
 found no additional useful extraction from the current trained DistilBERT pilot;
 it remains inactive. More reviewed training data is needed before reconsidering it.
 
-This extends the single consolidated PR. The deterministic compiler is active;
-MiniLM dictionary assistance is optional. A pretrained DistilBERT encoder alone
-is **not** a trained playlist intent extractor.
+The deterministic compiler and local LLM remain active. MiniLM dictionary
+assistance has been removed. Optional learned assistance uses only an imported,
+reviewed DistilBERT task extractor; its pretrained base encoder alone is **not**
+a trained playlist intent extractor.
 
 The 40-prompt batch has since been approved and the first task pilot trained.
 It remains inactive because calibration did not meet the gate. See
@@ -14,26 +15,36 @@ It remains inactive because calibration did not meet the gate. See
 
 ## Desktop behavior
 
-Setup now prepares missing MiniLM and DistilBERT assets automatically after the
-LLM step. Interrupted downloads resume in Settings → Intent language models.
-Every downloaded file has a pinned revision, byte size and SHA-256. Setup checks
-native MiniLM health before reporting success and does not change the selected
-LLM. No prompt is sent to model hosts. Inference runs in the compiled application
-worker with ONNX Runtime; end users need neither Python nor a compiler.
+Setup offers explicit preparation of DistilBERT assets. It downloads only the
+pinned DistilBERT setup files and the matching native ONNX runtime, reusing
+verified local files. No current DistilBERT-only compressed pack is published,
+so automatic fallback to the retired combined pack is disabled. Advanced
+manifest imports copy only the current pinned DistilBERT assets.
 
-MiniLM proposes dictionary concepts only for short, otherwise-unrecognized
-descriptions. It abstains on recognized source facts, artist references and
-explicit operator/quantity clauses. Similarity thresholds are heuristic candidate
-filters, not calibrated confidence. Suggestions go to the existing local LLM as
-advice. They cannot become hard requirements or recording suitability evidence.
-The switch starts off while we collect quality evidence. Failure or timeout
-preserves the established parser, and cancellation stops the native child.
+Base setup verifies file sizes, hashes and packaged native dependency availability.
+It does not claim trained inference health. After a trained model has been
+independently calibrated, Settings can import its directory. Import checks the
+model, vocabulary, configuration, head and calibration hashes, copies an immutable
+local pack, then requires native inference health. The separate **Use reviewed
+DistilBERT suggestions** control remains disabled until an extractor is installed.
+Preparation and import never enable it automatically.
 
-After a trained DistilBERT model has been independently calibrated, Settings can
-import its prepared directory. Import checks the model, vocabulary, configuration,
-head and calibration hashes, copies an immutable local pack, then checks native
-health before activation. Imported span-role proposals remain advisory to the LLM.
-Downloading the generic encoder never enables this path automatically.
+The extractor sends bounded source-span proposals to the local LLM. Explicit
+source facts remain authoritative, and failures preserve the existing parser.
+Inference runs in an isolated compiled application worker; end users need neither
+Python nor a compiler. Cancellation reaps the worker before a later restart.
+
+The advisory identity is now `distilbert-advisory/v2` and the asset identity is
+`distilbert-assets-v2`. The installed directory remains
+`intent-nlu/intent-encoders-v1` to reuse verified legacy DistilBERT/runtime files.
+Old MiniLM assets are no longer discovered or executed. They are not deleted from
+user data during this migration. Build staging removes retired `minilm-*` payloads.
+
+Legacy shared enablement migrates to `intentExtractorEnabled` only for a valid
+previously imported extractor. Dictionary-only opt-in becomes disabled, prior
+extractor opt-outs stay disabled, and runtime repair preserves selected extractor
+settings. A reviewed extractor requires its runtime, not the unused base encoder.
+Saved MiniLM proposal provenance remains readable historical data.
 
 Source extraction is computed once for the app request, shared across LLM
 retries and rules fallback, and compiled once. The compiler fixes required
@@ -52,14 +63,12 @@ checkpoints and model cards. Models are never committed to Git.
 
 | Directory | Role | Runtime status |
 | --- | --- | --- |
-| `minilm` | all-MiniLM-L6-v2, 384-dimensional text similarity | Native optional dictionary proposals |
 | `distilbert` | DistilBERT base cased, task adaptation source | Base encoder abstains; trained/calibrated task head required |
 | `gliner` | GLiNER Small v2.1 entity baseline | Archived research checkpoint; no release-runtime claim |
 | `gliner25` | GLiNER2.5 Small structured extraction challenger | Archived research checkpoint; native export remains unverified |
 
 The exact model sources, revisions, hashes and Apache-2.0 declarations are in
-[`sources.json`](../internal/intent/nlu/sources.json). Native text embeddings never
-enter CLAP/MERT or other audio embedding indexes. No additional audio was acquired.
+[`sources.json`](../internal/intent/nlu/sources.json). The text extractor never supplies vectors to CLAP/MERT or other audio indexes. No additional audio was acquired.
 
 Recreate the source archive with Python 3.11 or newer, using only its standard
 library for downloads:
@@ -113,15 +122,21 @@ are ignored by Git; the embedded placeholder permits normal offline unit tests
 without model downloads. Regular release builds download model weights during
 setup; the optional staging step produces a fully self-contained model payload.
 
-The Go-only setup/evaluation utility uses the same asset verification and worker:
+The Go-only setup/evaluation utility uses the same asset verification. Its
+DistilBERT verification command checks independently generated tokenizer cases;
+trained-task numerical parity remains in the extraction export/review workflow:
 
 ```powershell
 go build -o bin/intentnlu.exe ./cmd/intentnlu
 bin/intentnlu.exe setup --root C:/prepared/intent-nlu
-bin/intentnlu.exe verify --kind minilm --model-dir C:/prepared/intent-nlu/intent-encoders-v1/minilm --runtime C:/prepared/intent-nlu/intent-encoders-v1/runtime/onnxruntime.dll --reference-input bin/intent-nlu-parity/minilm-reference.json --output bin/intent-nlu-parity/minilm-native.json
+bin/intentnlu.exe verify --kind distilbert --model-dir C:/prepared/intent-nlu/intent-encoders-v1/distilbert --runtime C:/prepared/intent-nlu/intent-encoders-v1/runtime/onnxruntime.dll --reference-input bin/intent-nlu-parity/distilbert-reference.json --output bin/intent-nlu-parity/distilbert-native.json
 ```
 
-## Validation and boundaries
+## Historical validation before MiniLM removal
+
+The measurements below describe the earlier combined-model implementation.
+They are retained as historical evidence and do not validate the removal or
+represent current MiniLM availability.
 
 See [measured parser and playlist results](intent-nlu-results.md) for the same-3B
 before/after replay, checker changes and unresolved failures.
@@ -149,8 +164,7 @@ with the initial conservative filters. Inspecting candidate ranks also found
 semantically wrong neighbors (for example, “ominous and threatening” ranked
 “comforting” highest). These were rejected; the thresholds were not lowered to
 increase proposal count. This pilot establishes native integration and abstention,
-not improved interpretation or playlist quality from MiniLM. It remains off by
-default pending a broader reviewed phrase set and better validated mapping.
+not improved interpretation or playlist quality from MiniLM. That experimental model has since been removed from the runtime.
 
 Numerical parity is not intent accuracy or listener preference. Adequate semantic
 calibration, broader relation/scope heads and independent

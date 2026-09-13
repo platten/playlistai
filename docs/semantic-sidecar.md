@@ -55,8 +55,8 @@ python -m pip install sentence-transformers
 python python/build_semantic_sidecar.py \
   --catalog build/catalog/catalog.sqlite --input pilot.jsonl \
   --output semantic.sqlite --report semantic-coverage.json \
-  --model /models/all-MiniLM-L6-v2 \
-  --model-name sentence-transformers/all-MiniLM-L6-v2 \
+  --model /models/reviewed-text-encoder \
+  --model-name <publisher/model> \
   --model-revision <git-commit> --feature-version pilot-2026-09 --limit 5000
 ```
 
@@ -116,7 +116,10 @@ release dates describe particular editions and must not be treated as verified
 original recording dates. See the [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API)
 and [release-date guidance](https://musicbrainz.org/doc/Release/Date).
 
-The pilot model is a replaceable baseline: its [model card](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
+The historical pilot used MiniLM; removing that runtime model does not invalidate
+already prepared sidecars, which contain their own query/document vectors.
+Choose and pin a compatible text encoder when preparing a new sidecar. The
+historical [model card](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2)
 documents 384-dimensional sentence embeddings, while [Sentence Transformers
 semantic-search guidance](https://www.sbert.net/examples/sentence_transformer/applications/semantic-search/README.html)
 requires compatible query/document encoders. An audio-text pilot is deferred:

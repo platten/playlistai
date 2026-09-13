@@ -5,7 +5,7 @@ const options = [
   {
     mode: RecommendationMode.EnhancedHybrid,
     title: "Enhanced hybrid",
-    detail: "Combine catalog similarity, CLAP and archive evidence with optional measured DSP preferences and MERT audio similarity. Missing analysis stays neutral.",
+    detail: "Find similar tracks through the catalog and optional MERT preview embeddings, then combine CLAP, archive evidence and optional DSP measurements. Missing previews keep existing recommendation scores.",
   },
   {
     mode: RecommendationMode.AcousticBrainzFirst,

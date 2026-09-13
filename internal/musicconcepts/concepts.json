@@ -1,12 +1,14 @@
 {
-  "version": "music-concepts/v2",
+  "version": "music-concepts/v3",
   "provenance": {
-    "description": "Small project-authored intent vocabulary and captions. Exact aliases are distinct from directional relationships and never prove track suitability. AcousticBrainz class identifiers were checked against public CC0 archive examples; no model weights or MusicBrainz database dump are included.",
+    "description": "Project-authored musical thesaurus: exact contextual aliases, descriptive CLAP captions, and schema-validated AcousticBrainz classes. Captions are hypotheses for similarity ranking, not measured guarantees.",
     "acousticBrainz": "https://acousticbrainz.org/data",
     "classifierDefinitions": "https://acousticbrainz.org/datasets/accuracy",
     "license": "GPL-3.0-only (project-authored registry); CC0 (referenced AcousticBrainz data)",
     "conditionalModels": "genre_electronic omitted: subgenre predictions require independent electronic-domain applicability.",
-    "musicBrainz": "Search spellings only, not an assertion of provider ontology equivalence or track tags."
+    "musicBrainz": "Search spellings only, not an assertion of provider ontology equivalence or track tags.",
+    "schema": "acoustic_schema.json",
+    "clap": "https://github.com/LAION-AI/CLAP"
   },
   "concepts": [
     {
@@ -22,8 +24,14 @@
         "acousticBrainz": {
           "genre_rosamerica": "cla",
           "genre_tzanetakis": "cla"
-        }
-      }
+        },
+        "clap": [
+          "Music in the style of classical."
+        ]
+      },
+      "aliases": [
+        "classical music"
+      ]
     },
     {
       "id": "genre.electronic",
@@ -37,8 +45,14 @@
         ],
         "acousticBrainz": {
           "genre_dortmund": "electronic"
-        }
-      }
+        },
+        "clap": [
+          "Music in the style of electronic."
+        ]
+      },
+      "aliases": [
+        "electronic music"
+      ]
     },
     {
       "id": "genre.electronica",
@@ -52,6 +66,9 @@
       "providers": {
         "musicBrainz": [
           "electronica"
+        ],
+        "clap": [
+          "Music in the style of electronica."
         ]
       }
     },
@@ -69,18 +86,35 @@
           "genre_dortmund": "rock",
           "genre_rosamerica": "roc",
           "genre_tzanetakis": "roc"
-        }
+        },
+        "clap": [
+          "Music in the style of rock."
+        ]
       }
     },
     {
       "id": "genre.rock-and-roll",
       "kind": "genre",
       "value": "rock & roll",
-      "aliases": ["rock and roll"],
-      "parents": ["genre.rock"],
+      "aliases": [
+        "rock and roll",
+        "rock n roll",
+        "rock 'n' roll"
+      ],
+      "parents": [
+        "genre.rock"
+      ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
-      "providers": {"musicBrainz": ["rock & roll", "rock and roll"]}
+      "providers": {
+        "musicBrainz": [
+          "rock & roll",
+          "rock and roll"
+        ],
+        "clap": [
+          "Music in the style of rock & roll."
+        ]
+      }
     },
     {
       "id": "genre.hard-rock",
@@ -98,6 +132,9 @@
         "musicBrainz": [
           "hard rock",
           "hard-rock"
+        ],
+        "clap": [
+          "Music in the style of hard rock."
         ]
       }
     },
@@ -117,6 +154,9 @@
         "musicBrainz": [
           "industrial rock",
           "industrial-rock"
+        ],
+        "clap": [
+          "Music in the style of industrial rock."
         ]
       }
     },
@@ -129,6 +169,9 @@
       "providers": {
         "musicBrainz": [
           "industrial"
+        ],
+        "clap": [
+          "Music in the style of industrial."
         ]
       }
     },
@@ -148,6 +191,9 @@
         "musicBrainz": [
           "industrial metal",
           "industrial-metal"
+        ],
+        "clap": [
+          "Music in the style of industrial metal."
         ]
       }
     },
@@ -163,7 +209,10 @@
         ],
         "acousticBrainz": {
           "genre_tzanetakis": "met"
-        }
+        },
+        "clap": [
+          "Music in the style of metal."
+        ]
       }
     },
     {
@@ -179,7 +228,10 @@
         "acousticBrainz": {
           "genre_dortmund": "blues",
           "genre_tzanetakis": "blu"
-        }
+        },
+        "clap": [
+          "Music in the style of blues."
+        ]
       }
     },
     {
@@ -198,6 +250,9 @@
         "musicBrainz": [
           "blues rock",
           "blues-rock"
+        ],
+        "clap": [
+          "Music in the style of blues rock."
         ]
       }
     },
@@ -215,7 +270,10 @@
           "genre_dortmund": "jazz",
           "genre_rosamerica": "jaz",
           "genre_tzanetakis": "jaz"
-        }
+        },
+        "clap": [
+          "Music in the style of jazz."
+        ]
       }
     },
     {
@@ -232,7 +290,10 @@
           "genre_dortmund": "pop",
           "genre_rosamerica": "pop",
           "genre_tzanetakis": "pop"
-        }
+        },
+        "clap": [
+          "Music in the style of pop."
+        ]
       }
     },
     {
@@ -247,7 +308,10 @@
         ],
         "acousticBrainz": {
           "genre_dortmund": "alternative"
-        }
+        },
+        "clap": [
+          "Music in the style of alternative."
+        ]
       }
     },
     {
@@ -266,6 +330,9 @@
         "musicBrainz": [
           "alternative rock",
           "alternative-rock"
+        ],
+        "clap": [
+          "Music in the style of alternative rock."
         ]
       }
     },
@@ -285,6 +352,9 @@
         "musicBrainz": [
           "indie rock",
           "indie-rock"
+        ],
+        "clap": [
+          "Music in the style of indie rock."
         ]
       }
     },
@@ -304,6 +374,9 @@
         "musicBrainz": [
           "post-rock",
           "post rock"
+        ],
+        "clap": [
+          "Music in the style of post-rock."
         ]
       }
     },
@@ -313,7 +386,8 @@
       "value": "hip hop",
       "aliases": [
         "hip-hop",
-        "hiphop"
+        "hiphop",
+        "hip hop music"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -326,7 +400,10 @@
         "acousticBrainz": {
           "genre_rosamerica": "hip",
           "genre_tzanetakis": "hip"
-        }
+        },
+        "clap": [
+          "Music in the style of hip hop."
+        ]
       }
     },
     {
@@ -341,7 +418,10 @@
         ],
         "acousticBrainz": {
           "genre_tzanetakis": "cou"
-        }
+        },
+        "clap": [
+          "Music in the style of country."
+        ]
       }
     },
     {
@@ -353,6 +433,9 @@
       "providers": {
         "musicBrainz": [
           "folk"
+        ],
+        "clap": [
+          "Music in the style of folk."
         ]
       }
     },
@@ -362,7 +445,14 @@
       "value": "soul",
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
-      "providers": {"musicBrainz": ["soul"]}
+      "providers": {
+        "musicBrainz": [
+          "soul"
+        ],
+        "clap": [
+          "Music in the style of soul."
+        ]
+      }
     },
     {
       "id": "genre.disco",
@@ -376,7 +466,10 @@
         ],
         "acousticBrainz": {
           "genre_tzanetakis": "dis"
-        }
+        },
+        "clap": [
+          "Music in the style of disco."
+        ]
       }
     },
     {
@@ -391,7 +484,10 @@
         ],
         "acousticBrainz": {
           "genre_tzanetakis": "reg"
-        }
+        },
+        "clap": [
+          "Music in the style of reggae."
+        ]
       }
     },
     {
@@ -403,6 +499,9 @@
       "providers": {
         "musicBrainz": [
           "ambient"
+        ],
+        "clap": [
+          "Music in the style of ambient."
         ]
       }
     },
@@ -418,6 +517,9 @@
       "providers": {
         "musicBrainz": [
           "ambient electronic"
+        ],
+        "clap": [
+          "Music in the style of ambient electronic."
         ]
       }
     },
@@ -438,6 +540,9 @@
           "ambient electronic",
           "ambient",
           "electronica"
+        ],
+        "clap": [
+          "Music in the style of ambient electronica."
         ]
       }
     },
@@ -457,6 +562,9 @@
         "musicBrainz": [
           "dark ambient",
           "dark-ambient"
+        ],
+        "clap": [
+          "Music in the style of dark ambient."
         ]
       }
     },
@@ -476,6 +584,9 @@
         "musicBrainz": [
           "downtempo",
           "down-tempo"
+        ],
+        "clap": [
+          "Music in the style of downtempo."
         ]
       }
     },
@@ -491,6 +602,9 @@
       "providers": {
         "musicBrainz": [
           "house"
+        ],
+        "clap": [
+          "Music in the style of house."
         ]
       }
     },
@@ -510,6 +624,9 @@
         "musicBrainz": [
           "deep house",
           "deep-house"
+        ],
+        "clap": [
+          "Music in the style of deep house."
         ]
       }
     },
@@ -525,6 +642,9 @@
       "providers": {
         "musicBrainz": [
           "techno"
+        ],
+        "clap": [
+          "Music in the style of techno."
         ]
       }
     },
@@ -540,6 +660,9 @@
       "providers": {
         "musicBrainz": [
           "melodic techno"
+        ],
+        "clap": [
+          "Music in the style of melodic techno."
         ]
       }
     },
@@ -555,6 +678,9 @@
       "providers": {
         "musicBrainz": [
           "trance"
+        ],
+        "clap": [
+          "Music in the style of trance."
         ]
       }
     },
@@ -567,7 +693,9 @@
         "drum n bass",
         "drum'n'bass",
         "dnb",
-        "d&b"
+        "d&b",
+        "drum-n-bass",
+        "drum and bass music"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -582,6 +710,9 @@
           "drum'n'bass",
           "dnb",
           "d&b"
+        ],
+        "clap": [
+          "Music in the style of drum and bass."
         ]
       }
     },
@@ -601,6 +732,9 @@
         "musicBrainz": [
           "dubstep",
           "dub-step"
+        ],
+        "clap": [
+          "Music in the style of dubstep."
         ]
       }
     },
@@ -620,6 +754,9 @@
         "musicBrainz": [
           "idm",
           "intelligent dance music"
+        ],
+        "clap": [
+          "Music in the style of idm."
         ]
       }
     },
@@ -629,7 +766,8 @@
       "value": "synth-pop",
       "aliases": [
         "synthpop",
-        "synth pop"
+        "synth pop",
+        "synthesized pop"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -642,6 +780,9 @@
           "synth-pop",
           "synthpop",
           "synth pop"
+        ],
+        "clap": [
+          "Music in the style of synth-pop."
         ]
       }
     },
@@ -650,7 +791,8 @@
       "kind": "genre",
       "value": "trip hop",
       "aliases": [
-        "trip-hop"
+        "trip-hop",
+        "triphop"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -661,6 +803,9 @@
         "musicBrainz": [
           "trip hop",
           "trip-hop"
+        ],
+        "clap": [
+          "Music in the style of trip hop."
         ]
       }
     },
@@ -677,6 +822,9 @@
         "musicBrainz": [
           "easy listening",
           "easy-listening"
+        ],
+        "clap": [
+          "Music in the style of easy listening."
         ]
       }
     },
@@ -687,7 +835,9 @@
       "aliases": [
         "film scores",
         "movie score",
-        "movie scores"
+        "movie scores",
+        "motion picture score",
+        "cinema score"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -697,6 +847,9 @@
           "film scores",
           "movie score",
           "movie scores"
+        ],
+        "clap": [
+          "Music in the style of film score."
         ]
       }
     },
@@ -713,6 +866,9 @@
         "musicBrainz": [
           "ballad",
           "ballads"
+        ],
+        "clap": [
+          "Music in the style of ballad."
         ]
       }
     },
@@ -732,6 +888,9 @@
         "musicBrainz": [
           "slow ballad",
           "slow ballads"
+        ],
+        "clap": [
+          "Music in the style of slow ballad."
         ]
       }
     },
@@ -747,6 +906,9 @@
       "providers": {
         "musicBrainz": [
           "baroque"
+        ],
+        "clap": [
+          "Music in the style of baroque."
         ]
       }
     },
@@ -762,6 +924,9 @@
       "providers": {
         "musicBrainz": [
           "romantic classical"
+        ],
+        "clap": [
+          "Music in the style of romantic classical."
         ]
       }
     },
@@ -777,6 +942,9 @@
       "providers": {
         "musicBrainz": [
           "contemporary classical"
+        ],
+        "clap": [
+          "Music in the style of contemporary classical."
         ]
       }
     },
@@ -792,8 +960,14 @@
       "providers": {
         "musicBrainz": [
           "chamber music"
+        ],
+        "clap": [
+          "Music in the style of chamber music."
         ]
-      }
+      },
+      "aliases": [
+        "chamber ensemble music"
+      ]
     },
     {
       "id": "instrumentation.orchestral",
@@ -804,9 +978,13 @@
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
-      "related": ["instrumentation.orchestra"],
+      "related": [
+        "instrumentation.orchestra"
+      ],
       "providers": {
-        "clap": ["Music played by an orchestra."]
+        "clap": [
+          "Music played by an orchestra."
+        ]
       }
     },
     {
@@ -814,14 +992,20 @@
       "kind": "mood",
       "value": "relaxing",
       "aliases": [
-        "relaxed"
+        "relaxed",
+        "soothing",
+        "relaxational",
+        "relaxing mood"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "acousticBrainz": {
           "mood_relaxed": "relaxed"
-        }
+        },
+        "clap": [
+          "Music with a relaxing mood."
+        ]
       }
     },
     {
@@ -833,8 +1017,16 @@
       "providers": {
         "acousticBrainz": {
           "mood_aggressive": "aggressive"
-        }
-      }
+        },
+        "clap": [
+          "Music with an aggressive mood."
+        ]
+      },
+      "aliases": [
+        "aggression",
+        "aggressive mood",
+        "aggressive sounding"
+      ]
     },
     {
       "id": "mood.happy",
@@ -845,8 +1037,17 @@
       "providers": {
         "acousticBrainz": {
           "mood_happy": "happy"
-        }
-      }
+        },
+        "clap": [
+          "Music with a happy mood."
+        ]
+      },
+      "aliases": [
+        "cheerful",
+        "joyful",
+        "joyous",
+        "happy sounding"
+      ]
     },
     {
       "id": "mood.sad",
@@ -857,8 +1058,16 @@
       "providers": {
         "acousticBrainz": {
           "mood_sad": "sad"
-        }
-      }
+        },
+        "clap": [
+          "Music with a sad mood."
+        ]
+      },
+      "aliases": [
+        "sorrowful",
+        "sad sounding",
+        "sorrowful mood"
+      ]
     },
     {
       "id": "mood.party",
@@ -869,8 +1078,15 @@
       "providers": {
         "acousticBrainz": {
           "mood_party": "party"
-        }
-      }
+        },
+        "clap": [
+          "Music with a party mood."
+        ]
+      },
+      "aliases": [
+        "party music",
+        "party atmosphere"
+      ]
     },
     {
       "id": "mood.energetic",
@@ -878,161 +1094,315 @@
       "value": "energetic",
       "aliases": [
         "high energy",
-        "high-energy"
+        "high-energy",
+        "high powered",
+        "full of energy",
+        "energetic mood"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an energetic mood."
+        ]
+      }
     },
     {
       "id": "mood.dramatic",
       "kind": "mood",
       "value": "dramatic",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a dramatic mood."
+        ]
+      }
     },
     {
       "id": "mood.melancholic",
       "kind": "mood",
       "value": "melancholic",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "melancholy",
+        "melancholia"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a melancholic mood."
+        ]
+      }
     },
     {
       "id": "mood.comforting",
       "kind": "mood",
       "value": "comforting",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "reassuring"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a comforting mood."
+        ]
+      }
     },
     {
       "id": "mood.dark",
       "kind": "mood",
       "value": "dark",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a dark mood."
+        ]
+      }
     },
     {
       "id": "mood.calm",
       "kind": "mood",
       "value": "calm",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "tranquil",
+        "peaceful",
+        "serene"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a calm mood."
+        ]
+      }
     },
     {
       "id": "mood.gentle",
       "kind": "mood",
       "value": "gentle",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "gentleness",
+        "gentle mood"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a gentle mood."
+        ]
+      }
     },
     {
       "id": "mood.dreamy",
       "kind": "mood",
       "value": "dreamy",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "dreamlike",
+        "dream-like",
+        "dreamy mood"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a dreamy mood."
+        ]
+      }
     },
     {
       "id": "mood.wistful",
       "kind": "mood",
       "value": "wistful",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "wistfulness"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a wistful mood."
+        ]
+      }
     },
     {
       "id": "mood.romantic",
       "kind": "mood",
       "value": "romantic",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "romantic mood"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a romantic mood."
+        ]
+      }
     },
     {
       "id": "mood.sleepy",
       "kind": "mood",
       "value": "sleepy",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "drowsy",
+        "sleep inducing"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a sleepy mood."
+        ]
+      }
     },
     {
       "id": "mood.uplifting",
       "kind": "mood",
       "value": "uplifting",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "uplift",
+        "uplifting mood"
+      ],
+      "providers": {
+        "clap": [
+          "Music with an uplifting mood."
+        ]
+      }
     },
     {
       "id": "mood.meditative",
       "kind": "mood",
       "value": "meditative",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "contemplative"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a meditative mood."
+        ]
+      }
     },
     {
       "id": "mood.intense",
       "kind": "mood",
       "value": "intense",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an intense mood."
+        ]
+      }
     },
     {
       "id": "instrumentation.piano",
       "kind": "instrumentation",
       "value": "piano",
       "aliases": [
-        "pianos"
+        "pianos",
+        "acoustic piano",
+        "piano led",
+        "piano-led"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring piano."
+        ]
+      }
     },
     {
       "id": "instrumentation.strings",
       "kind": "instrumentation",
       "value": "strings",
       "aliases": [
-        "string instruments"
+        "string instruments",
+        "string section",
+        "string ensemble"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring strings."
+        ]
+      }
     },
     {
       "id": "instrumentation.guitar",
       "kind": "instrumentation",
       "value": "guitar",
       "aliases": [
-        "guitars"
+        "guitars",
+        "guitar led",
+        "guitar-led"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring guitar."
+        ]
+      }
     },
     {
       "id": "instrumentation.electric-guitar",
       "kind": "instrumentation",
       "value": "electric guitar",
       "aliases": [
-        "electric guitars"
+        "electric guitars",
+        "electric guitar led",
+        "electric guitar-led"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring electric guitar."
+        ]
+      }
     },
     {
       "id": "instrumentation.acoustic-guitar",
       "kind": "instrumentation",
       "value": "acoustic guitar",
       "aliases": [
-        "acoustic guitars"
+        "acoustic guitars",
+        "acoustic guitar led",
+        "acoustic guitar-led"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring acoustic guitar."
+        ]
+      }
     },
     {
       "id": "instrumentation.drums",
       "kind": "instrumentation",
       "value": "drums",
       "aliases": [
-        "drum kit"
+        "drum kit",
+        "drumkit",
+        "drum set"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring drums."
+        ]
+      }
     },
     {
       "id": "instrumentation.synthesizer",
@@ -1040,10 +1410,18 @@
       "value": "synthesizer",
       "aliases": [
         "synthesizers",
-        "synths"
+        "synths",
+        "synth",
+        "synthesiser",
+        "synthesisers"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring synthesizer."
+        ]
+      }
     },
     {
       "id": "instrumentation.violin",
@@ -1053,55 +1431,90 @@
         "violins"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring violin."
+        ]
+      }
     },
     {
       "id": "instrumentation.cello",
       "kind": "instrumentation",
       "value": "cello",
       "aliases": [
-        "cellos"
+        "cellos",
+        "violoncello",
+        "violoncellos"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring cello."
+        ]
+      }
     },
     {
       "id": "instrumentation.orchestra",
       "kind": "instrumentation",
       "value": "orchestra",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring orchestra."
+        ]
+      }
     },
     {
       "id": "instrumentation.saxophone",
       "kind": "instrumentation",
       "value": "saxophone",
       "aliases": [
-        "saxophones"
+        "saxophones",
+        "sax"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring saxophone."
+        ]
+      }
     },
     {
       "id": "instrumentation.bass-guitar",
       "kind": "instrumentation",
       "value": "bass guitar",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "electric bass guitar"
+      ],
+      "providers": {
+        "clap": [
+          "Music featuring bass guitar."
+        ]
+      }
     },
     {
       "id": "vocal.instrumental",
       "kind": "vocal",
       "value": "instrumental",
       "aliases": [
-        "instrumental music"
+        "instrumental music",
+        "instrumentals"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "acousticBrainz": {
           "voice_instrumental": "instrumental"
-        }
+        },
+        "clap": [
+          "Instrumental music without a singing voice."
+        ]
       }
     },
     {
@@ -1111,14 +1524,20 @@
       "aliases": [
         "vocal",
         "voice",
-        "singing"
+        "singing",
+        "sung vocals",
+        "sung voice",
+        "vocal singing"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "acousticBrainz": {
           "voice_instrumental": "voice"
-        }
+        },
+        "clap": [
+          "Music with vocals."
+        ]
       }
     },
     {
@@ -1126,7 +1545,9 @@
       "kind": "vocal",
       "value": "screaming",
       "aliases": [
-        "screamed vocals"
+        "screamed vocals",
+        "screamed singing",
+        "screams"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -1141,7 +1562,8 @@
       "kind": "vocal",
       "value": "harsh vocals",
       "aliases": [
-        "harsh singing"
+        "harsh singing",
+        "harsh vocal delivery"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -1186,7 +1608,11 @@
       "kind": "texture",
       "value": "bright",
       "aliases": [
-        "bright sound"
+        "bright sound",
+        "bright timbre",
+        "bright tone",
+        "bright tonal colour",
+        "bright tonal color"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -1196,6 +1622,9 @@
         },
         "dsp": [
           "spectral_centroid_hz:positive"
+        ],
+        "clap": [
+          "Music with a bright timbre."
         ]
       }
     },
@@ -1204,7 +1633,11 @@
       "kind": "texture",
       "value": "dark",
       "aliases": [
-        "dark sound"
+        "dark sound",
+        "dark timbre",
+        "dark tone",
+        "dark tonal colour",
+        "dark tonal color"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -1214,6 +1647,9 @@
         },
         "dsp": [
           "spectral_centroid_hz:negative"
+        ],
+        "clap": [
+          "Music with a dark timbre."
         ]
       }
     },
@@ -1224,7 +1660,9 @@
       "aliases": [
         "wide dynamics",
         "big dynamic swings",
-        "big changes from quiet to loud"
+        "big changes from quiet to loud",
+        "wide dynamic range",
+        "large dynamic range"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
@@ -1246,8 +1684,15 @@
       "providers": {
         "dsp": [
           "short_window_rms_spread_db:negative"
+        ],
+        "clap": [
+          "Music with a narrow dynamic range."
         ]
-      }
+      },
+      "aliases": [
+        "narrow dynamic range",
+        "compressed dynamic range"
+      ]
     },
     {
       "id": "texture.bass-heavy",
@@ -1255,13 +1700,20 @@
       "value": "bass heavy",
       "aliases": [
         "bass-heavy",
-        "strong bass"
+        "strong bass",
+        "bass heavy sound",
+        "bass emphasis",
+        "bass forward",
+        "bass-forward"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "dsp": [
           "bass_energy_ratio:positive"
+        ],
+        "clap": [
+          "Music with strong, prominent bass."
         ]
       }
     },
@@ -1275,20 +1727,28 @@
         "clap": [
           "Music with deep bass."
         ]
-      }
+      },
+      "aliases": [
+        "deep low bass"
+      ]
     },
     {
       "id": "texture.strong-sub-bass",
       "kind": "texture",
       "value": "strong sub-bass",
       "aliases": [
-        "strong subbass"
+        "strong subbass",
+        "sub bass emphasis",
+        "sub-bass emphasis"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "dsp": [
           "subbass_energy_ratio:positive"
+        ],
+        "clap": [
+          "Music with strong sub-bass."
         ]
       }
     },
@@ -1298,13 +1758,18 @@
       "value": "percussive",
       "aliases": [
         "lots of transients",
-        "sharp attacks"
+        "sharp attacks",
+        "percussion driven",
+        "percussion-driven"
       ],
       "source": "project-authored/v1",
       "license": "GPL-3.0-only",
       "providers": {
         "dsp": [
           "transients:positive"
+        ],
+        "clap": [
+          "Music with prominent percussion and sharp rhythmic attacks."
         ]
       }
     },
@@ -1317,8 +1782,16 @@
       "providers": {
         "acousticBrainz": {
           "danceability": "danceable"
-        }
-      }
+        },
+        "clap": [
+          "Music with a rhythm suited to dancing."
+        ]
+      },
+      "aliases": [
+        "easy to dance to",
+        "suited to dancing",
+        "danceable rhythm"
+      ]
     },
     {
       "id": "texture.tonal",
@@ -1329,8 +1802,15 @@
       "providers": {
         "acousticBrainz": {
           "tonal_atonal": "tonal"
-        }
-      }
+        },
+        "clap": [
+          "Music with a clear tonal center."
+        ]
+      },
+      "aliases": [
+        "tonal harmony",
+        "tonal music"
+      ]
     },
     {
       "id": "texture.atonal",
@@ -1341,8 +1821,16 @@
       "providers": {
         "acousticBrainz": {
           "tonal_atonal": "atonal"
-        }
-      }
+        },
+        "clap": [
+          "Atonal music without a clear tonal center."
+        ]
+      },
+      "aliases": [
+        "atonality",
+        "atonal harmony",
+        "atonal music"
+      ]
     },
     {
       "id": "texture.acoustic",
@@ -1353,8 +1841,16 @@
       "providers": {
         "acousticBrainz": {
           "mood_acoustic": "acoustic"
-        }
-      }
+        },
+        "clap": [
+          "Music played on acoustic instruments."
+        ]
+      },
+      "aliases": [
+        "acoustic instrumentation",
+        "acoustically played",
+        "acoustic sound"
+      ]
     },
     {
       "id": "texture.electronic-production",
@@ -1365,25 +1861,45 @@
       "providers": {
         "acousticBrainz": {
           "mood_electronic": "electronic"
-        }
-      }
+        },
+        "clap": [
+          "Music made with electronic instruments and electronic production."
+        ]
+      },
+      "aliases": [
+        "electronically produced",
+        "electronic sound",
+        "electronic instrumentation"
+      ]
     },
     {
       "id": "texture.bluesy",
       "kind": "texture",
       "value": "bluesy",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with blues-influenced phrasing."
+        ]
+      }
     },
     {
       "id": "texture.warm",
       "kind": "texture",
       "value": "warm",
       "aliases": [
-        "warm textures"
+        "warm textures",
+        "warm sound",
+        "warm timbre"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a warm timbre."
+        ]
+      }
     },
     {
       "id": "texture.gentle-pulse",
@@ -1402,35 +1918,64 @@
       "kind": "texture",
       "value": "heavy",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a heavy sound."
+        ]
+      }
     },
     {
       "id": "texture.clubby",
       "kind": "texture",
       "value": "clubby",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a nightclub dance sound."
+        ]
+      }
     },
     {
       "id": "texture.driving",
       "kind": "texture",
       "value": "driving",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a driving rhythmic feel."
+        ]
+      }
     },
     {
       "id": "texture.driving-guitar-riffs",
       "kind": "texture",
       "value": "driving guitar riffs",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with driving guitar riffs."
+        ]
+      }
     },
     {
       "id": "texture.guitar-riffs",
       "kind": "texture",
       "value": "guitar riffs",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "guitar riff",
+        "riffing guitar"
+      ],
+      "providers": {
+        "clap": [
+          "Music with guitar riffs."
+        ]
+      }
     },
     {
       "id": "texture.raw-live-band-feel",
@@ -1440,42 +1985,79 @@
         "raw live band feel"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with the raw sound of a live band."
+        ]
+      }
     },
     {
       "id": "texture.polished-pop",
       "kind": "texture",
       "value": "polished pop",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with polished pop production."
+        ]
+      }
     },
     {
       "id": "texture.polished",
       "kind": "texture",
       "value": "polished",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with polished production."
+        ]
+      }
     },
     {
       "id": "texture.steady-beat",
       "kind": "texture",
       "value": "steady beat",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "steady pulse",
+        "regular beat"
+      ],
+      "providers": {
+        "clap": [
+          "Music with a steady beat."
+        ]
+      }
     },
     {
       "id": "texture.microdetail",
       "kind": "texture",
       "value": "microdetail",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "fine sonic detail"
+      ],
+      "providers": {
+        "clap": [
+          "Music with fine audible sonic details."
+        ]
+      }
     },
     {
       "id": "texture.sparkle",
       "kind": "texture",
       "value": "sparkle",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a sparkling sound."
+        ]
+      }
     },
     {
       "id": "activity.focus",
@@ -1483,10 +2065,17 @@
       "value": "focus",
       "aliases": [
         "concentrate",
-        "concentration"
+        "concentration",
+        "focusing",
+        "focused work"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for focus."
+        ]
+      }
     },
     {
       "id": "activity.workout",
@@ -1494,34 +2083,2768 @@
       "value": "workout",
       "aliases": [
         "working out",
-        "exercise"
+        "exercise",
+        "workouts",
+        "fitness training"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for working out."
+        ]
+      }
     },
     {
       "id": "activity.running",
       "kind": "activity",
       "value": "running",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "aliases": [
+        "jogging"
+      ],
+      "providers": {
+        "clap": [
+          "Music for running."
+        ]
+      }
     },
     {
       "id": "activity.lifting-weights",
       "kind": "activity",
       "value": "lifting weights",
       "aliases": [
-        "weightlifting"
+        "weightlifting",
+        "weight training"
       ],
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for lifting weights."
+        ]
+      }
     },
     {
       "id": "activity.reading",
       "kind": "activity",
       "value": "reading",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for reading."
+        ]
+      }
+    },
+    {
+      "id": "genre.rhythm-and-blues",
+      "kind": "genre",
+      "value": "rhythm and blues",
+      "aliases": [
+        "r&b",
+        "rnb",
+        "rhythm & blues"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "acousticBrainz": {
+          "genre_rosamerica": "rhy"
+        },
+        "clap": [
+          "Music in the style of rhythm and blues."
+        ]
+      }
+    },
+    {
+      "id": "genre.funk",
+      "kind": "genre",
+      "value": "funk",
+      "aliases": [
+        "funk music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of funk."
+        ]
+      }
+    },
+    {
+      "id": "genre.rap",
+      "kind": "genre",
+      "value": "rap",
+      "aliases": [
+        "rap music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of rap."
+        ]
+      }
+    },
+    {
+      "id": "genre.punk-rock",
+      "kind": "genre",
+      "value": "punk rock",
+      "aliases": [
+        "punk-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of punk rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.post-punk",
+      "kind": "genre",
+      "value": "post-punk",
+      "aliases": [
+        "post punk"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of post-punk."
+        ]
+      }
+    },
+    {
+      "id": "genre.synthwave",
+      "kind": "genre",
+      "value": "synthwave",
+      "aliases": [
+        "synth wave"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of synthwave."
+        ]
+      }
+    },
+    {
+      "id": "genre.retrowave",
+      "kind": "genre",
+      "value": "retrowave",
+      "aliases": [
+        "retro wave"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of retrowave."
+        ]
+      }
+    },
+    {
+      "id": "genre.new-wave",
+      "kind": "genre",
+      "value": "new wave",
+      "aliases": [
+        "new-wave"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of new wave."
+        ]
+      }
+    },
+    {
+      "id": "genre.shoegaze",
+      "kind": "genre",
+      "value": "shoegaze",
+      "aliases": [
+        "shoe gaze",
+        "shoegazing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of shoegaze."
+        ]
+      }
+    },
+    {
+      "id": "genre.dream-pop",
+      "kind": "genre",
+      "value": "dream pop",
+      "aliases": [
+        "dream-pop"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of dream pop."
+        ]
+      }
+    },
+    {
+      "id": "genre.noise-rock",
+      "kind": "genre",
+      "value": "noise rock",
+      "aliases": [
+        "noise-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of noise rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.progressive-rock",
+      "kind": "genre",
+      "value": "progressive rock",
+      "aliases": [
+        "prog rock",
+        "prog-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of progressive rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.psychedelic-rock",
+      "kind": "genre",
+      "value": "psychedelic rock",
+      "aliases": [
+        "psych rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of psychedelic rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.progressive-metal",
+      "kind": "genre",
+      "value": "progressive metal",
+      "aliases": [
+        "prog metal",
+        "prog-metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of progressive metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.death-metal",
+      "kind": "genre",
+      "value": "death metal",
+      "aliases": [
+        "death-metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of death metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.black-metal",
+      "kind": "genre",
+      "value": "black metal",
+      "aliases": [
+        "black-metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of black metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.doom-metal",
+      "kind": "genre",
+      "value": "doom metal",
+      "aliases": [
+        "doom-metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of doom metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.thrash-metal",
+      "kind": "genre",
+      "value": "thrash metal",
+      "aliases": [
+        "thrash-metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of thrash metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.metalcore",
+      "kind": "genre",
+      "value": "metalcore",
+      "aliases": [
+        "metal core"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of metalcore."
+        ]
+      }
+    },
+    {
+      "id": "genre.grunge",
+      "kind": "genre",
+      "value": "grunge",
+      "aliases": [
+        "grunge music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of grunge."
+        ]
+      }
+    },
+    {
+      "id": "genre.post-metal",
+      "kind": "genre",
+      "value": "post-metal",
+      "aliases": [
+        "post metal"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of post-metal."
+        ]
+      }
+    },
+    {
+      "id": "genre.garage-rock",
+      "kind": "genre",
+      "value": "garage rock",
+      "aliases": [
+        "garage-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of garage rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.surf-rock",
+      "kind": "genre",
+      "value": "surf rock",
+      "aliases": [
+        "surf-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of surf rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.math-rock",
+      "kind": "genre",
+      "value": "math rock",
+      "aliases": [
+        "math-rock"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of math rock."
+        ]
+      }
+    },
+    {
+      "id": "genre.electro",
+      "kind": "genre",
+      "value": "electro",
+      "aliases": [
+        "electro music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of electro."
+        ]
+      }
+    },
+    {
+      "id": "genre.electropop",
+      "kind": "genre",
+      "value": "electropop",
+      "aliases": [
+        "electro pop",
+        "electro-pop"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of electropop."
+        ]
+      }
+    },
+    {
+      "id": "genre.minimal-techno",
+      "kind": "genre",
+      "value": "minimal techno",
+      "aliases": [
+        "minimal-techno"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of minimal techno."
+        ]
+      }
+    },
+    {
+      "id": "genre.tech-house",
+      "kind": "genre",
+      "value": "tech house",
+      "aliases": [
+        "tech-house"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of tech house."
+        ]
+      }
+    },
+    {
+      "id": "genre.acid-house",
+      "kind": "genre",
+      "value": "acid house",
+      "aliases": [
+        "acid-house"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of acid house."
+        ]
+      }
+    },
+    {
+      "id": "genre.progressive-house",
+      "kind": "genre",
+      "value": "progressive house",
+      "aliases": [
+        "progressive-house"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of progressive house."
+        ]
+      }
+    },
+    {
+      "id": "genre.uk-garage",
+      "kind": "genre",
+      "value": "uk garage",
+      "aliases": [
+        "ukg",
+        "UK garage music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of uk garage."
+        ]
+      }
+    },
+    {
+      "id": "genre.jungle",
+      "kind": "genre",
+      "value": "jungle",
+      "aliases": [
+        "jungle music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of jungle."
+        ]
+      }
+    },
+    {
+      "id": "genre.breakbeat",
+      "kind": "genre",
+      "value": "breakbeat",
+      "aliases": [
+        "breakbeats"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of breakbeat."
+        ]
+      }
+    },
+    {
+      "id": "genre.liquid-drum-and-bass",
+      "kind": "genre",
+      "value": "liquid drum and bass",
+      "aliases": [
+        "liquid dnb",
+        "liquid d&b"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of liquid drum and bass."
+        ]
+      }
+    },
+    {
+      "id": "genre.hardstyle",
+      "kind": "genre",
+      "value": "hardstyle",
+      "aliases": [
+        "hard style"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of hardstyle."
+        ]
+      }
+    },
+    {
+      "id": "genre.psytrance",
+      "kind": "genre",
+      "value": "psytrance",
+      "aliases": [
+        "psy trance",
+        "psychedelic trance"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of psytrance."
+        ]
+      }
+    },
+    {
+      "id": "genre.future-bass",
+      "kind": "genre",
+      "value": "future bass",
+      "aliases": [
+        "future-bass"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of future bass."
+        ]
+      }
+    },
+    {
+      "id": "genre.chillwave",
+      "kind": "genre",
+      "value": "chillwave",
+      "aliases": [
+        "chill wave"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of chillwave."
+        ]
+      }
+    },
+    {
+      "id": "genre.vaporwave",
+      "kind": "genre",
+      "value": "vaporwave",
+      "aliases": [
+        "vapor wave"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of vaporwave."
+        ]
+      }
+    },
+    {
+      "id": "genre.dub",
+      "kind": "genre",
+      "value": "dub",
+      "aliases": [
+        "dub music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of dub."
+        ]
+      }
+    },
+    {
+      "id": "genre.ska",
+      "kind": "genre",
+      "value": "ska",
+      "aliases": [
+        "ska music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of ska."
+        ]
+      }
+    },
+    {
+      "id": "genre.dancehall",
+      "kind": "genre",
+      "value": "dancehall",
+      "aliases": [
+        "dance hall"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of dancehall."
+        ]
+      }
+    },
+    {
+      "id": "genre.reggaeton",
+      "kind": "genre",
+      "value": "reggaeton",
+      "aliases": [
+        "reggaetón"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of reggaeton."
+        ]
+      }
+    },
+    {
+      "id": "genre.bossa-nova",
+      "kind": "genre",
+      "value": "bossa nova",
+      "aliases": [
+        "bossa-nova"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of bossa nova."
+        ]
+      }
+    },
+    {
+      "id": "genre.samba",
+      "kind": "genre",
+      "value": "samba",
+      "aliases": [
+        "samba music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of samba."
+        ]
+      }
+    },
+    {
+      "id": "genre.tango",
+      "kind": "genre",
+      "value": "tango",
+      "aliases": [
+        "tango music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of tango."
+        ]
+      }
+    },
+    {
+      "id": "genre.salsa",
+      "kind": "genre",
+      "value": "salsa",
+      "aliases": [
+        "salsa music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of salsa."
+        ]
+      }
+    },
+    {
+      "id": "genre.flamenco",
+      "kind": "genre",
+      "value": "flamenco",
+      "aliases": [
+        "flamenco music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of flamenco."
+        ]
+      }
+    },
+    {
+      "id": "genre.afrobeat",
+      "kind": "genre",
+      "value": "afrobeat",
+      "aliases": [
+        "afrobeat music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of afrobeat."
+        ]
+      }
+    },
+    {
+      "id": "genre.afrobeats",
+      "kind": "genre",
+      "value": "afrobeats",
+      "aliases": [
+        "afrobeats music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of afrobeats."
+        ]
+      }
+    },
+    {
+      "id": "genre.bluegrass",
+      "kind": "genre",
+      "value": "bluegrass",
+      "aliases": [
+        "bluegrass music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of bluegrass."
+        ]
+      }
+    },
+    {
+      "id": "genre.americana",
+      "kind": "genre",
+      "value": "americana",
+      "aliases": [
+        "americana music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of americana."
+        ]
+      }
+    },
+    {
+      "id": "genre.gospel",
+      "kind": "genre",
+      "value": "gospel",
+      "aliases": [
+        "gospel music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of gospel."
+        ]
+      }
+    },
+    {
+      "id": "genre.bebop",
+      "kind": "genre",
+      "value": "bebop",
+      "aliases": [
+        "be bop",
+        "be-bop"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of bebop."
+        ]
+      }
+    },
+    {
+      "id": "genre.free-jazz",
+      "kind": "genre",
+      "value": "free jazz",
+      "aliases": [
+        "free-jazz"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of free jazz."
+        ]
+      }
+    },
+    {
+      "id": "genre.jazz-fusion",
+      "kind": "genre",
+      "value": "jazz fusion",
+      "aliases": [
+        "jazz-fusion"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of jazz fusion."
+        ]
+      }
+    },
+    {
+      "id": "genre.smooth-jazz",
+      "kind": "genre",
+      "value": "smooth jazz",
+      "aliases": [
+        "smooth-jazz"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of smooth jazz."
+        ]
+      }
+    },
+    {
+      "id": "genre.swing-jazz",
+      "kind": "genre",
+      "value": "swing jazz",
+      "aliases": [
+        "swing music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of swing jazz."
+        ]
+      }
+    },
+    {
+      "id": "genre.neo-soul",
+      "kind": "genre",
+      "value": "neo-soul",
+      "aliases": [
+        "neo soul",
+        "neosoul"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of neo-soul."
+        ]
+      }
+    },
+    {
+      "id": "genre.contemporary-r-b",
+      "kind": "genre",
+      "value": "contemporary r&b",
+      "aliases": [
+        "contemporary rnb",
+        "contemporary rhythm and blues"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of contemporary r&b."
+        ]
+      }
+    },
+    {
+      "id": "genre.boom-bap",
+      "kind": "genre",
+      "value": "boom bap",
+      "aliases": [
+        "boom-bap"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of boom bap."
+        ]
+      }
+    },
+    {
+      "id": "genre.trap-music",
+      "kind": "genre",
+      "value": "trap music",
+      "aliases": [
+        "trap beats"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of trap music."
+        ]
+      }
+    },
+    {
+      "id": "genre.opera",
+      "kind": "genre",
+      "value": "opera",
+      "aliases": [
+        "operatic music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of opera."
+        ]
+      }
+    },
+    {
+      "id": "genre.minimalist-classical",
+      "kind": "genre",
+      "value": "minimalist classical",
+      "aliases": [
+        "classical minimalism"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of minimalist classical."
+        ]
+      }
+    },
+    {
+      "id": "genre.choral-music",
+      "kind": "genre",
+      "value": "choral music",
+      "aliases": [
+        "choir music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of choral music."
+        ]
+      }
+    },
+    {
+      "id": "genre.a-cappella",
+      "kind": "genre",
+      "value": "a cappella",
+      "aliases": [
+        "a capella",
+        "acapella",
+        "acappella"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of a cappella."
+        ]
+      }
+    },
+    {
+      "id": "genre.lo-fi-hip-hop",
+      "kind": "genre",
+      "value": "lo-fi hip hop",
+      "aliases": [
+        "lofi hip hop",
+        "lo-fi hip-hop",
+        "lofi hiphop"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music in the style of lo-fi hip hop."
+        ]
+      }
+    },
+    {
+      "id": "mood.tense",
+      "kind": "mood",
+      "value": "tense",
+      "aliases": [
+        "tension filled",
+        "tense mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a tense mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.euphoric",
+      "kind": "mood",
+      "value": "euphoric",
+      "aliases": [
+        "euphoria",
+        "euphoric mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an euphoric mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.nostalgic",
+      "kind": "mood",
+      "value": "nostalgic",
+      "aliases": [
+        "nostalgia",
+        "nostalgic mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a nostalgic mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.ominous",
+      "kind": "mood",
+      "value": "ominous",
+      "aliases": [
+        "foreboding",
+        "ominous mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an ominous mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.mysterious",
+      "kind": "mood",
+      "value": "mysterious",
+      "aliases": [
+        "enigmatic",
+        "mysterious mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a mysterious mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.playful",
+      "kind": "mood",
+      "value": "playful",
+      "aliases": [
+        "playfulness"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a playful mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.hopeful",
+      "kind": "mood",
+      "value": "hopeful",
+      "aliases": [
+        "hopefulness"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a hopeful mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.lonely",
+      "kind": "mood",
+      "value": "lonely",
+      "aliases": [
+        "lonesome",
+        "loneliness"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a lonely mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.triumphant",
+      "kind": "mood",
+      "value": "triumphant",
+      "aliases": [
+        "triumphal",
+        "triumphant mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a triumphant mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.bittersweet",
+      "kind": "mood",
+      "value": "bittersweet",
+      "aliases": [
+        "bitter sweet",
+        "bitter-sweet"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a bittersweet mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.somber",
+      "kind": "mood",
+      "value": "somber",
+      "aliases": [
+        "sombre",
+        "somber mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a somber mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.angry",
+      "kind": "mood",
+      "value": "angry",
+      "aliases": [
+        "anger",
+        "angry mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an angry mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.tender",
+      "kind": "mood",
+      "value": "tender",
+      "aliases": [
+        "tenderness"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a tender mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.restless",
+      "kind": "mood",
+      "value": "restless",
+      "aliases": [
+        "restlessness"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a restless mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.majestic",
+      "kind": "mood",
+      "value": "majestic",
+      "aliases": [
+        "majestic mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a majestic mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.brooding",
+      "kind": "mood",
+      "value": "brooding",
+      "aliases": [
+        "brooding mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a brooding mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.haunting",
+      "kind": "mood",
+      "value": "haunting",
+      "aliases": [
+        "haunting mood"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a haunting mood."
+        ]
+      }
+    },
+    {
+      "id": "mood.whimsical",
+      "kind": "mood",
+      "value": "whimsical",
+      "aliases": [
+        "whimsy"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a whimsical mood."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.flute",
+      "kind": "instrumentation",
+      "value": "flute",
+      "aliases": [
+        "flutes"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring flute."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.clarinet",
+      "kind": "instrumentation",
+      "value": "clarinet",
+      "aliases": [
+        "clarinets"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring clarinet."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.oboe",
+      "kind": "instrumentation",
+      "value": "oboe",
+      "aliases": [
+        "oboes"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring oboe."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.bassoon",
+      "kind": "instrumentation",
+      "value": "bassoon",
+      "aliases": [
+        "bassoons"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring bassoon."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.trumpet",
+      "kind": "instrumentation",
+      "value": "trumpet",
+      "aliases": [
+        "trumpets"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring trumpet."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.trombone",
+      "kind": "instrumentation",
+      "value": "trombone",
+      "aliases": [
+        "trombones"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring trombone."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.french-horn",
+      "kind": "instrumentation",
+      "value": "french horn",
+      "aliases": [
+        "french horns"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring french horn."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.tuba",
+      "kind": "instrumentation",
+      "value": "tuba",
+      "aliases": [
+        "tubas"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring tuba."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.harp",
+      "kind": "instrumentation",
+      "value": "harp",
+      "aliases": [
+        "harps"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring harp."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.harpsichord",
+      "kind": "instrumentation",
+      "value": "harpsichord",
+      "aliases": [
+        "harpsichords"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring harpsichord."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.pipe-organ",
+      "kind": "instrumentation",
+      "value": "pipe organ",
+      "aliases": [
+        "pipe organs"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring pipe organ."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.electric-organ",
+      "kind": "instrumentation",
+      "value": "electric organ",
+      "aliases": [
+        "electric organs"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring electric organ."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.electric-piano",
+      "kind": "instrumentation",
+      "value": "electric piano",
+      "aliases": [
+        "electric pianos"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring electric piano."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.double-bass",
+      "kind": "instrumentation",
+      "value": "double bass",
+      "aliases": [
+        "upright bass",
+        "string bass"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring double bass."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.viola",
+      "kind": "instrumentation",
+      "value": "viola",
+      "aliases": [
+        "violas"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring viola."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.banjo",
+      "kind": "instrumentation",
+      "value": "banjo",
+      "aliases": [
+        "banjos"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring banjo."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.mandolin",
+      "kind": "instrumentation",
+      "value": "mandolin",
+      "aliases": [
+        "mandolins"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring mandolin."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.ukulele",
+      "kind": "instrumentation",
+      "value": "ukulele",
+      "aliases": [
+        "ukuleles",
+        "uke"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring ukulele."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.accordion",
+      "kind": "instrumentation",
+      "value": "accordion",
+      "aliases": [
+        "accordions"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring accordion."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.harmonica",
+      "kind": "instrumentation",
+      "value": "harmonica",
+      "aliases": [
+        "harmonicas"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring harmonica."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.sitar",
+      "kind": "instrumentation",
+      "value": "sitar",
+      "aliases": [
+        "sitars"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring sitar."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.tabla",
+      "kind": "instrumentation",
+      "value": "tabla",
+      "aliases": [
+        "tablas"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring tabla."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.congas",
+      "kind": "instrumentation",
+      "value": "congas",
+      "aliases": [
+        "conga drums"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring congas."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.bongos",
+      "kind": "instrumentation",
+      "value": "bongos",
+      "aliases": [
+        "bongo drums"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring bongos."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.timpani",
+      "kind": "instrumentation",
+      "value": "timpani",
+      "aliases": [
+        "kettledrums"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring timpani."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.marimba",
+      "kind": "instrumentation",
+      "value": "marimba",
+      "aliases": [
+        "marimbas"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring marimba."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.vibraphone",
+      "kind": "instrumentation",
+      "value": "vibraphone",
+      "aliases": [
+        "vibraphones"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring vibraphone."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.xylophone",
+      "kind": "instrumentation",
+      "value": "xylophone",
+      "aliases": [
+        "xylophones"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring xylophone."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.drum-machine",
+      "kind": "instrumentation",
+      "value": "drum machine",
+      "aliases": [
+        "drum machines"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring drum machine."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.brass-section",
+      "kind": "instrumentation",
+      "value": "brass section",
+      "aliases": [
+        "brass ensemble"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring brass section."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.woodwinds",
+      "kind": "instrumentation",
+      "value": "woodwinds",
+      "aliases": [
+        "woodwind section",
+        "woodwind ensemble"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring woodwinds."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.string-quartet",
+      "kind": "instrumentation",
+      "value": "string quartet",
+      "aliases": [
+        "string quartets"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring string quartet."
+        ]
+      }
+    },
+    {
+      "id": "instrumentation.choir",
+      "kind": "instrumentation",
+      "value": "choir",
+      "aliases": [
+        "choirs",
+        "chorus ensemble"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music featuring choir."
+        ]
+      }
+    },
+    {
+      "id": "vocal.whispered-vocals",
+      "kind": "vocal",
+      "value": "whispered vocals",
+      "aliases": [
+        "whisper singing",
+        "whispered singing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with whispered vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.breathy-vocals",
+      "kind": "vocal",
+      "value": "breathy vocals",
+      "aliases": [
+        "breathy singing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with breathy vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.growled-vocals",
+      "kind": "vocal",
+      "value": "growled vocals",
+      "aliases": [
+        "growling vocals",
+        "growled singing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with growled vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.clean-vocals",
+      "kind": "vocal",
+      "value": "clean vocals",
+      "aliases": [
+        "clean singing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with clean vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.raspy-vocals",
+      "kind": "vocal",
+      "value": "raspy vocals",
+      "aliases": [
+        "raspy singing",
+        "gravelly vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with raspy vocals."
+        ]
+      }
+    },
+    {
+      "id": "vocal.falsetto",
+      "kind": "vocal",
+      "value": "falsetto",
+      "aliases": [
+        "falsetto singing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with falsetto singing."
+        ]
+      }
+    },
+    {
+      "id": "vocal.humming",
+      "kind": "vocal",
+      "value": "humming",
+      "aliases": [
+        "hummed vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with humming."
+        ]
+      }
+    },
+    {
+      "id": "vocal.vocal-harmonies",
+      "kind": "vocal",
+      "value": "vocal harmonies",
+      "aliases": [
+        "harmonized vocals",
+        "harmonised vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with vocal harmonies."
+        ]
+      }
+    },
+    {
+      "id": "vocal.spoken-word",
+      "kind": "vocal",
+      "value": "spoken word",
+      "aliases": [
+        "spoken-word",
+        "spoken vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "A spoken word performance over music."
+        ]
+      }
+    },
+    {
+      "id": "vocal.rapping",
+      "kind": "vocal",
+      "value": "rapping",
+      "aliases": [
+        "rapped vocals",
+        "rapped delivery"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with rapping."
+        ]
+      }
+    },
+    {
+      "id": "vocal.chanting",
+      "kind": "vocal",
+      "value": "chanting",
+      "aliases": [
+        "chanted vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with chanting."
+        ]
+      }
+    },
+    {
+      "id": "vocal.scat-singing",
+      "kind": "vocal",
+      "value": "scat singing",
+      "aliases": [
+        "scat vocals"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with scat singing."
+        ]
+      }
+    },
+    {
+      "id": "vocal.yodeling",
+      "kind": "vocal",
+      "value": "yodeling",
+      "aliases": [
+        "yodelling"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with yodeling."
+        ]
+      }
+    },
+    {
+      "id": "texture.distorted-guitar",
+      "kind": "texture",
+      "value": "distorted guitar",
+      "aliases": [
+        "distorted guitars",
+        "guitar distortion"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with distorted guitar."
+        ]
+      }
+    },
+    {
+      "id": "texture.fuzzy-guitar",
+      "kind": "texture",
+      "value": "fuzzy guitar",
+      "aliases": [
+        "fuzz guitar",
+        "fuzzed guitar"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with fuzzy guitar."
+        ]
+      }
+    },
+    {
+      "id": "texture.clean-guitar-tone",
+      "kind": "texture",
+      "value": "clean guitar tone",
+      "aliases": [
+        "undistorted guitar",
+        "clean guitar sound"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a clean, undistorted guitar tone."
+        ]
+      }
+    },
+    {
+      "id": "texture.reverberant",
+      "kind": "texture",
+      "value": "reverberant",
+      "aliases": [
+        "reverb laden",
+        "reverb-laden",
+        "lots of reverb"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with reverberant sounds and audible reverb tails."
+        ]
+      }
+    },
+    {
+      "id": "texture.dry-recording",
+      "kind": "texture",
+      "value": "dry recording",
+      "aliases": [
+        "dry production",
+        "dry recorded sound"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music recorded with a dry sound and little reverberation."
+        ]
+      }
+    },
+    {
+      "id": "texture.lo-fi-production",
+      "kind": "texture",
+      "value": "lo-fi production",
+      "aliases": [
+        "lofi production",
+        "low fidelity production",
+        "low-fidelity production"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with lo-fi production."
+        ]
+      }
+    },
+    {
+      "id": "texture.crackly-recording",
+      "kind": "texture",
+      "value": "crackly recording",
+      "aliases": [
+        "vinyl crackle",
+        "record crackle"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with audible recording crackle."
+        ]
+      }
+    },
+    {
+      "id": "texture.spacious",
+      "kind": "texture",
+      "value": "spacious",
+      "aliases": [
+        "spacious sound",
+        "spacious production"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a spacious recorded sound."
+        ]
+      }
+    },
+    {
+      "id": "texture.dense-arrangement",
+      "kind": "texture",
+      "value": "dense arrangement",
+      "aliases": [
+        "densely arranged",
+        "dense instrumentation"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a dense arrangement."
+        ]
+      }
+    },
+    {
+      "id": "texture.sparse-arrangement",
+      "kind": "texture",
+      "value": "sparse arrangement",
+      "aliases": [
+        "sparsely arranged",
+        "sparse instrumentation"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a sparse arrangement."
+        ]
+      }
+    },
+    {
+      "id": "texture.minimal-arrangement",
+      "kind": "texture",
+      "value": "minimal arrangement",
+      "aliases": [
+        "minimal instrumentation",
+        "stripped down arrangement",
+        "stripped-down arrangement"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a stripped-down arrangement."
+        ]
+      }
+    },
+    {
+      "id": "texture.layered",
+      "kind": "texture",
+      "value": "layered",
+      "aliases": [
+        "layered sound",
+        "layered arrangement"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with layered sounds."
+        ]
+      }
+    },
+    {
+      "id": "texture.syncopated",
+      "kind": "texture",
+      "value": "syncopated",
+      "aliases": [
+        "syncopation",
+        "syncopated rhythm"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with syncopated rhythms."
+        ]
+      }
+    },
+    {
+      "id": "texture.polyrhythmic",
+      "kind": "texture",
+      "value": "polyrhythmic",
+      "aliases": [
+        "polyrhythm",
+        "polyrhythms"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with simultaneous contrasting rhythmic patterns."
+        ]
+      }
+    },
+    {
+      "id": "texture.swung-rhythm",
+      "kind": "texture",
+      "value": "swung rhythm",
+      "aliases": [
+        "swing rhythm",
+        "swung beat"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a swung rhythm."
+        ]
+      }
+    },
+    {
+      "id": "texture.four-on-the-floor",
+      "kind": "texture",
+      "value": "four on the floor",
+      "aliases": [
+        "four-on-the-floor",
+        "four to the floor"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a four-on-the-floor kick drum rhythm."
+        ]
+      }
+    },
+    {
+      "id": "texture.broken-beat",
+      "kind": "texture",
+      "value": "broken beat",
+      "aliases": [
+        "broken beats"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a broken beat rhythm."
+        ]
+      }
+    },
+    {
+      "id": "texture.arpeggiated",
+      "kind": "texture",
+      "value": "arpeggiated",
+      "aliases": [
+        "arpeggios",
+        "arpeggiated pattern"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with arpeggiated note patterns."
+        ]
+      }
+    },
+    {
+      "id": "texture.droning",
+      "kind": "texture",
+      "value": "droning",
+      "aliases": [
+        "sustained drone",
+        "drone texture"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with sustained droning tones."
+        ]
+      }
+    },
+    {
+      "id": "texture.sustained-tones",
+      "kind": "texture",
+      "value": "sustained tones",
+      "aliases": [
+        "sustained notes"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with sustained tones."
+        ]
+      }
+    },
+    {
+      "id": "texture.staccato",
+      "kind": "texture",
+      "value": "staccato",
+      "aliases": [
+        "short detached notes"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music played with short, detached notes."
+        ]
+      }
+    },
+    {
+      "id": "texture.legato",
+      "kind": "texture",
+      "value": "legato",
+      "aliases": [
+        "smooth connected notes"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music played with smoothly connected notes."
+        ]
+      }
+    },
+    {
+      "id": "texture.plucked-strings",
+      "kind": "texture",
+      "value": "plucked strings",
+      "aliases": [
+        "plucked string sound"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with plucked strings."
+        ]
+      }
+    },
+    {
+      "id": "texture.bowed-strings",
+      "kind": "texture",
+      "value": "bowed strings",
+      "aliases": [
+        "bowed string sound"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with bowed strings."
+        ]
+      }
+    },
+    {
+      "id": "texture.fingerpicked-guitar",
+      "kind": "texture",
+      "value": "fingerpicked guitar",
+      "aliases": [
+        "fingerpicking",
+        "fingerstyle guitar"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with fingerpicked guitar."
+        ]
+      }
+    },
+    {
+      "id": "texture.strummed-guitar",
+      "kind": "texture",
+      "value": "strummed guitar",
+      "aliases": [
+        "strumming",
+        "guitar strumming"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with strummed guitar."
+        ]
+      }
+    },
+    {
+      "id": "texture.palm-muted-guitar",
+      "kind": "texture",
+      "value": "palm muted guitar",
+      "aliases": [
+        "palm-muted guitar"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with palm muted guitar."
+        ]
+      }
+    },
+    {
+      "id": "texture.tremolo",
+      "kind": "texture",
+      "value": "tremolo",
+      "aliases": [
+        "tremolo texture"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a tremolo effect."
+        ]
+      }
+    },
+    {
+      "id": "texture.glitchy",
+      "kind": "texture",
+      "value": "glitchy",
+      "aliases": [
+        "glitch texture",
+        "glitch effects"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with glitch-like sound effects."
+        ]
+      }
+    },
+    {
+      "id": "texture.shimmering",
+      "kind": "texture",
+      "value": "shimmering",
+      "aliases": [
+        "shimmering texture"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with shimmering textures."
+        ]
+      }
+    },
+    {
+      "id": "texture.airy",
+      "kind": "texture",
+      "value": "airy",
+      "aliases": [
+        "airy texture"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with an airy sound."
+        ]
+      }
+    },
+    {
+      "id": "texture.gritty",
+      "kind": "texture",
+      "value": "gritty",
+      "aliases": [
+        "gritty texture"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with gritty textures."
+        ]
+      }
+    },
+    {
+      "id": "texture.punchy-drums",
+      "kind": "texture",
+      "value": "punchy drums",
+      "aliases": [
+        "punchy percussion"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with punchy drums."
+        ]
+      }
+    },
+    {
+      "id": "texture.rolling-bassline",
+      "kind": "texture",
+      "value": "rolling bassline",
+      "aliases": [
+        "rolling bass line"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a rolling bassline."
+        ]
+      }
+    },
+    {
+      "id": "texture.sub-bass",
+      "kind": "texture",
+      "value": "sub bass",
+      "aliases": [
+        "sub-bass",
+        "subbass"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with low sub bass frequencies."
+        ]
+      }
+    },
+    {
+      "id": "texture.walking-bass",
+      "kind": "texture",
+      "value": "walking bass",
+      "aliases": [
+        "walking bassline",
+        "walking bass line"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with walking bass."
+        ]
+      }
+    },
+    {
+      "id": "texture.melodic",
+      "kind": "texture",
+      "value": "melodic",
+      "aliases": [
+        "melodic phrasing"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with prominent melodic phrasing."
+        ]
+      }
+    },
+    {
+      "id": "texture.dissonant",
+      "kind": "texture",
+      "value": "dissonant",
+      "aliases": [
+        "dissonance",
+        "dissonant harmony"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with dissonant harmonies."
+        ]
+      }
+    },
+    {
+      "id": "texture.consonant",
+      "kind": "texture",
+      "value": "consonant",
+      "aliases": [
+        "consonance",
+        "consonant harmony"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with consonant harmonies."
+        ]
+      }
+    },
+    {
+      "id": "activity.studying",
+      "kind": "activity",
+      "value": "studying",
+      "aliases": [
+        "study session"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for studying."
+        ]
+      }
+    },
+    {
+      "id": "activity.sleep",
+      "kind": "activity",
+      "value": "sleep",
+      "aliases": [
+        "sleeping",
+        "bedtime"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for sleep."
+        ]
+      }
+    },
+    {
+      "id": "activity.yoga",
+      "kind": "activity",
+      "value": "yoga",
+      "aliases": [
+        "yoga practice"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for yoga."
+        ]
+      }
+    },
+    {
+      "id": "activity.meditation",
+      "kind": "activity",
+      "value": "meditation",
+      "aliases": [
+        "meditation session"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for meditation."
+        ]
+      }
+    },
+    {
+      "id": "activity.driving",
+      "kind": "activity",
+      "value": "driving",
+      "aliases": [
+        "road trip"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for driving."
+        ]
+      }
+    },
+    {
+      "id": "activity.dinner",
+      "kind": "activity",
+      "value": "dinner",
+      "aliases": [
+        "dinner music"
+      ],
+      "source": "project-authored/thesaurus-v3",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music for dinner."
+        ]
+      }
     }
   ]
 }

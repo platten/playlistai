@@ -22,6 +22,17 @@ func (a *API) InstallMetadataBundle(ctx context.Context) error {
 	return err
 }
 
+func (a *API) InstallMusicBrainzBundle(ctx context.Context) error {
+	ctx, _, finish := a.operations.begin(ctx, "musicbrainz-metadata-install")
+	defer finish()
+	a.cancelRecommendationWork()
+	err := a.app.InstallMusicBrainzBundle(ctx, NewWailsProgress())
+	if err == nil {
+		a.intentCache.clear()
+	}
+	return err
+}
+
 type metadataService interface {
 	ClearCache(context.Context) error
 	MetadataStatus() musicbrainz.MetadataStatus

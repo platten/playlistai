@@ -49,3 +49,11 @@ type Catalog interface {
 	// matches, best-first.
 	Resolve(query string, max int) []core.TrackRef
 }
+
+// DynamicTrackCatalog is an optional extension used by bounded discovery
+// providers. It admits only identity-resolved tracks and persists enough
+// metadata for playback and saved-history hydration. Dynamic tracks do not
+// become dense catalog rows and therefore never enter Deej-AI vector search.
+type DynamicTrackCatalog interface {
+	RegisterDynamicTrack(core.TrackMeta) error
+}

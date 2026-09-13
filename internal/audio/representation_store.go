@@ -52,10 +52,27 @@ func (s *RepresentationStore) Put(ctx context.Context, a core.AudioRepresentatio
 	if err != nil {
 		return err
 	}
-	_, err = s.store.db.ExecContext(ctx, `INSERT OR IGNORE INTO audio_representation
+	tx, err := s.store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO audio_representation
 (id,catalog,track,track_key,model,data) VALUES(?,?,?,?,?,?)`,
 		a.ID, a.CatalogVersion, a.TrackID, a.TrackKey, Fingerprint(a.Model), string(raw))
-	return err
+	if err != nil {
+		return err
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if inserted > 0 {
+		if err := putRepresentationProjection(ctx, tx, a); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *RepresentationStore) Usage(ctx context.Context) (core.AudioRepresentationStorageUsage, error) {

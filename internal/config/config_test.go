@@ -23,6 +23,16 @@ func TestDefaultMetadataWizardSourceAndOverrides(t *testing.T) {
 	if got := u.ResolveReference(&url.URL{Path: "discogs-runtime.sqlite.zst"}).String(); got != "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/discogs-runtime.sqlite.zst" {
 		t.Fatalf("wizard default does not target the hosted archive: %s", got)
 	}
+	musicBrainzURL, err := url.Parse(Default().Metadata.MusicBrainzManifestURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := musicBrainzURL.String(); got != "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/musicbrainz/musicbrainz-manifest.json" {
+		t.Fatalf("MusicBrainz wizard default does not target the hosted manifest: %s", got)
+	}
+	if got := musicBrainzURL.ResolveReference(&url.URL{Path: "musicbrainz.sqlite.zst.part-00001"}).String(); got != "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/musicbrainz/musicbrainz.sqlite.zst.part-00001" {
+		t.Fatalf("MusicBrainz archive parts do not resolve under the hosted directory: %s", got)
+	}
 	for _, source := range []string{"https://example.org/custom/metadata-manifest.json", ""} {
 		path := filepath.Join(t.TempDir(), "config.toml")
 		if err := os.WriteFile(path, []byte("[metadata]\nmanifest_url = \""+source+"\"\n"), 0600); err != nil {
@@ -32,6 +42,15 @@ func TestDefaultMetadataWizardSourceAndOverrides(t *testing.T) {
 		if err != nil || cfg.Metadata.ManifestURL != source {
 			t.Fatal(cfg.Metadata, err)
 		}
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	const customMusicBrainz = "https://example.org/custom/musicbrainz-manifest.json"
+	if err := os.WriteFile(path, []byte("[metadata]\nmusicbrainz_manifest_url = \""+customMusicBrainz+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Metadata.MusicBrainzManifestURL != customMusicBrainz {
+		t.Fatal(cfg.Metadata, err)
 	}
 }
 

@@ -142,6 +142,19 @@ func TestSetupReadinessOptionalPoliciesAndPreviewOff(t *testing.T) {
 	}
 }
 
+func TestSetupReadinessRepairsMusicBrainzIndexWithoutCatalog(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig(t)
+	cfg.Metadata.MusicBrainzManifestURL = "https://example.invalid/musicbrainz-manifest.json"
+	root := filepath.Join(cfg.DataDir, "musicbrainz-metadata")
+	setupWriteFile(t, filepath.Join(root, "active"), "musicbrainz-broken.sqlite")
+	c := &Container{cfg: cfg, previewName: config.PreviewOff}
+	status := setupRead(t, c)
+	if status.Metadata.Ready || !status.Metadata.Supported || !status.Metadata.Required {
+		t.Fatalf("broken catalog-independent MusicBrainz index not identified: %+v", status.Metadata)
+	}
+}
+
 func TestMERTReadinessOnlyRepairsPreviouslyInstalledModel(t *testing.T) {
 	t.Parallel()
 	c := &Container{cfg: testConfig(t), previewName: config.PreviewOff}
@@ -165,6 +178,23 @@ func TestMERTReadinessOnlyRepairsPreviouslyInstalledModel(t *testing.T) {
 	}
 	if got := setupRead(t, c).MERT; got.Required {
 		t.Fatalf("removed MERT still mandatory: %+v", got)
+	}
+}
+
+func TestRemovedMiniLMOptInDoesNotRequireIntentRepair(t *testing.T) {
+	c := &Container{cfg: testConfig(t)}
+	if err := (config.Prefs{OnboardingDone: true, IntentAssistEnabled: true}).Save(c.cfg.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).Intent; got.Required {
+		t.Fatalf("legacy MiniLM-only opt-in reopened setup: %+v", got)
+	}
+	enabled := true
+	if err := (config.Prefs{OnboardingDone: true, IntentExtractorEnabled: &enabled}).Save(c.cfg.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if got := setupRead(t, c).Intent; !got.Required || got.Ready {
+		t.Fatalf("explicit missing extractor was not repairable: %+v", got)
 	}
 }
 

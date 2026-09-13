@@ -1,31 +1,11 @@
 package assist
 
 import (
-	"context"
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
-	"github.com/platten/playlistai/internal/musicconcepts"
 )
-
-type embedFunc func(context.Context, string) ([]float32, error)
-
-func (f embedFunc) EmbedText(ctx context.Context, s string) ([]float32, error) { return f(ctx, s) }
-
-func TestHardOperatorsAndKnownEntitiesNeverBecomeSimilarityFacts(t *testing.T) {
-	m := Mapper{Embedder: embedFunc(func(context.Context, string) ([]float32, error) {
-		t.Fatal("model should not run on protected/operator phrases")
-		return nil, nil
-	})}
-	for _, prompt := range []string{"no glittery cosmic haze", "like Aerosmith", "only frothy featherlike sounds", "start with vaporous crystalline layers", "10 tracks", "quiet classical"} {
-		got, err := m.Propose(context.Background(), prompt)
-		if err != nil || len(got) != 0 {
-			t.Fatalf("%q: %v %v", prompt, got, err)
-		}
-	}
-}
 
 func TestAdvisoryCannotBecomeHardConstraintAndDoesNotEraseAnotherOccurrence(t *testing.T) {
 	source := core.SourceEvidence{Text: "floating clouds", Start: 20, End: 35}
@@ -51,34 +31,13 @@ func TestAdvisoryPreservesDistinctOccurrencesAndMixedEvidence(t *testing.T) {
 	}
 }
 
-func TestDictionaryMappingIsAnAdvisoryWithOriginalSpan(t *testing.T) {
-	v := make([]float32, 384)
-	v[0] = 1
-	other := make([]float32, 384)
-	other[1] = 1
-	m := Mapper{Embedder: embedFunc(func(context.Context, string) ([]float32, error) { return v, nil }), Identity: "test-model", vectors: [][]float32{v, other}, concepts: []musicconcepts.Concept{{ID: "mood:relaxed", Kind: "mood", Value: "relaxed"}, {ID: "mood:angry", Kind: "mood", Value: "angry"}}}
-	prompt := "featherlight clouds floating"
-	got, err := m.Propose(context.Background(), prompt)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("%v %v", got, err)
+func TestReviewedExtractorMessageRetainsSourceAuthority(t *testing.T) {
+	proposals := []core.IntentProposal{{Origin: "distilbert", Kind: "artist", Role: "similarity", Source: core.SourceEvidence{Text: "Aerosmith"}, Advisory: true}}
+	message := Message(proposals)
+	if !strings.Contains(message, "NOT protected facts") || !strings.Contains(message, "Source-span interpretation proposal") || !strings.Contains(message, "Aerosmith") {
+		t.Fatal(message)
 	}
-	p := got[0]
-	if !p.Advisory || p.Source.Text != prompt || p.Source.Start != 0 || p.Source.End != len(prompt) || p.Model != "test-model" {
-		t.Fatal(p)
-	}
-	if !strings.Contains(Message(got), "NOT protected facts") {
-		t.Fatal("missing advisory boundary")
-	}
-}
-
-func TestCancelledMappingAndMalformedVectors(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	m := Mapper{Embedder: embedFunc(func(context.Context, string) ([]float32, error) { return make([]float32, 384), nil })}
-	if _, err := m.Propose(ctx, "featherlight clouds floating"); !errors.Is(err, context.Canceled) {
-		t.Fatal(err)
-	}
-	if _, err := m.Propose(context.Background(), "featherlight clouds floating"); err == nil {
-		t.Fatal("zero embedding accepted")
+	if Message(nil) != "" {
+		t.Fatal("empty proposals added prompt text")
 	}
 }

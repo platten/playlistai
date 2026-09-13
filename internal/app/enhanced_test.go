@@ -98,6 +98,70 @@ func TestRecommendedMERTStatusAndInstallPreconditions(t *testing.T) {
 	}
 }
 
+func TestMERTAndDSPPreferencesRemainIndependentAfterLegacyMigration(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(map[bool]string{false: "opted out", true: "opted in"}[legacy], func(t *testing.T) {
+			cfg := testConfig(t)
+			if err := (config.Prefs{EnhancedAudioEnabled: legacy, OnboardingDone: true}).Save(cfg.DataDir); err != nil {
+				t.Fatal(err)
+			}
+			c, err := New(context.Background(), cfg, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			status, err := c.GetEnhancedAnalysisStatus(context.Background())
+			if err != nil || status.Enabled != legacy || status.MERTEnabled != legacy {
+				t.Fatalf("migration: %+v %v", status, err)
+			}
+			if err := c.SetEnhancedAnalysisEnabled(!legacy); err != nil {
+				t.Fatal(err)
+			}
+			prefs := config.LoadPrefs(cfg.DataDir)
+			if prefs.MERTSimilarityEnabled == nil || *prefs.MERTSimilarityEnabled != legacy || prefs.EnhancedAudioEnabled == legacy || !prefs.OnboardingDone {
+				t.Fatalf("DSP changed MERT or unrelated settings: %+v", prefs)
+			}
+			if err := c.SetMERTSimilarityEnabled(!legacy); err != nil {
+				t.Fatal(err)
+			}
+			prefs = config.LoadPrefs(cfg.DataDir)
+			if prefs.MERTSimilarityEnabledValue() == legacy || prefs.EnhancedAudioEnabled == legacy {
+				t.Fatalf("MERT preference was not independent: %+v", prefs)
+			}
+			if err := c.RemoveMERT(); err != nil {
+				t.Fatal(err)
+			}
+			status, err = c.GetEnhancedAnalysisStatus(context.Background())
+			if err != nil || status.Enabled == legacy || status.MERTEnabled == legacy {
+				t.Fatalf("model removal changed preferences: %+v %v", status, err)
+			}
+		})
+	}
+}
+
+func TestMERTPreviewServiceDoesNotRequireCLAPOrDSP(t *testing.T) {
+	c, err := New(context.Background(), testConfig(t), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if err := c.SetMERTSimilarityEnabled(true); err != nil {
+		t.Fatal(err)
+	}
+	c.enhanced.worker = &audio.MERTWorker{}
+	c.enhanced.manifest = &audio.MERTBundleManifest{}
+	service := c.EnhancedPreviewService()
+	if c.AudioService() != nil || service == nil || service.MERT == nil || service.DSPStore != nil {
+		t.Fatalf("MERT acquired a CLAP/DSP dependency: %+v", service)
+	}
+	if err := c.SetMERTSimilarityEnabled(false); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.EnhancedPreviewService(); got != nil {
+		t.Fatal("disabled MERT remained attached")
+	}
+}
+
 type refreshFeedbackFixture struct {
 	ports.FeedbackStore
 	events []core.FeedbackEvent
@@ -126,7 +190,9 @@ func TestEnhancedRefreshFreezesTasteWhileAddingCompletedEvidence(t *testing.T) {
 			model := core.AudioRepresentationIdentity{Model: "fixture", Revision: "1", Preprocessing: "fixture/v1", Runtime: "fixture/v1", Dimension: 2, WeightsSHA256: strings.Repeat("a", 64), Pooling: "mean-l2/v1"}
 			// The inert worker supplies identity only. All representation reads
 			// use fixture rows; no native process or preview acquisition runs.
-			c.enhanced.enabled = true
+			// MERT cache reads and refills must also work with CLAP/DSP disabled.
+			c.enhanced.enabled = false
+			c.enhanced.mertEnabled = true
 			c.enhanced.worker = &audio.MERTWorker{Model: model}
 			c.enhanced.manifest = &audio.MERTBundleManifest{Model: model}
 			feedback := &refreshFeedbackFixture{FeedbackStore: c.Feedback}
@@ -159,6 +225,11 @@ func TestEnhancedRefreshFreezesTasteWhileAddingCompletedEvidence(t *testing.T) {
 				t.Fatalf("initial taste capture: %v reads=%d", err, feedback.reads)
 			}
 			initial := first.Input()
+			initial.MERTSearch = &core.MERTSimilaritySearch{Recorded: true, CatalogVersion: cat.CatalogVersion(), Model: model, ViewFingerprint: "frozen-cache-view", SearchableTracks: 2}
+			first, err = core.NewEnhancedAudioSnapshot(initial)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if cold && len(initial.PositiveCentroid) != 0 || !cold && !reflect.DeepEqual(initial.PositiveCentroid, []float32{1, 0}) {
 				t.Fatalf("wrong initial taste: %+v", initial.PositiveCentroid)
 			}
@@ -182,6 +253,9 @@ func TestEnhancedRefreshFreezesTasteWhileAddingCompletedEvidence(t *testing.T) {
 				t.Fatalf("refresh: %v", err)
 			}
 			got := refreshed.Input()
+			if !reflect.DeepEqual(got.MERTSearch, initial.MERTSearch) {
+				t.Fatal("refresh replaced the frozen MERT search")
+			}
 			if feedback.reads != 1 || !reflect.DeepEqual(got.PositiveCentroid, initial.PositiveCentroid) || !reflect.DeepEqual(got.NegativeCentroid, initial.NegativeCentroid) {
 				t.Fatalf("feedback changed frozen taste: reads=%d positive=%v negative=%v", feedback.reads, got.PositiveCentroid, got.NegativeCentroid)
 			}

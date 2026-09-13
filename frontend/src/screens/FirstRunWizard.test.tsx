@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FirstRunWizard } from "./FirstRunWizard";
 const api = vi.hoisted(() => Object.fromEntries([
-  "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMetadataBundle", "GetModelStatus",
+  "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMetadataBundle", "InstallMusicBrainzBundle", "GetModelStatus",
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
@@ -75,12 +75,12 @@ it("rechecks remaining steps after installation and skips assets that became rea
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["metadata", "intent", "analysis"])));
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: true }));
   await start();
-  await screen.findByRole("button", { name: "Download music metadata" });
+  await screen.findByRole("button", { name: "Download offline music data" });
   api.InstallMetadataBundle.mockImplementation(() => {
     api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
     return completed(null);
   });
-  fireEvent.click(screen.getByRole("button", { name: "Download music metadata" }));
+  fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByText("You're set up");
   expect(api.InstallMetadataBundle).toHaveBeenCalledOnce();
   expect(api.InstallIntentModels).not.toHaveBeenCalled();
@@ -152,7 +152,7 @@ it("downloads optional metadata and cancels its pending work when closed", async
   api.InstallMetadataBundle.mockReturnValueOnce(pending.promise);
   const view = render(<FirstRunWizard onDone={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Download music metadata" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Download offline music data" }));
   expect((screen.getByRole("button", { name: "Continue without download" }) as HTMLButtonElement).disabled).toBe(true);
   view.unmount();
   expect(pending.promise.cancel).toHaveBeenCalled();
@@ -162,9 +162,26 @@ it("downloads optional metadata and cancels its pending work when closed", async
 it("offers a skip when the catalog required by optional metadata is absent", async () => {
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: false }));
   await start();
-  expect((screen.getByRole("button", { name: "Download music metadata" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Download offline music data" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Continue without download" }));
   await screen.findByRole("heading", { name: "Install llama.cpp" });
+});
+
+it("downloads MusicBrainz metadata without requiring the recommendation catalog", async () => {
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({
+    configured: false,
+    catalogReady: false,
+    musicBrainzConfigured: true,
+    musicBrainzInstalled: false,
+  }));
+  await start();
+  const button = await screen.findByRole("button", { name: "Download offline music data" });
+  expect(screen.getByText(/Cloudflare R2 archive/)).toBeTruthy();
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(button);
+  await screen.findByRole("heading", { name: "Install llama.cpp" });
+  expect(api.InstallMusicBrainzBundle).toHaveBeenCalledOnce();
+  expect(api.InstallMetadataBundle).not.toHaveBeenCalled();
 });
 
 it("installs runtime then selects a recommended model, retaining errors for retry", async () => {
@@ -247,10 +264,10 @@ it("retries optional metadata installation and advances after the acknowledged i
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, catalogReady: true }));
   api.InstallMetadataBundle.mockRejectedValueOnce(new Error("metadata download failed"));
   await start();
-  fireEvent.click(screen.getByRole("button", { name: "Download music metadata" }));
+  fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByText(/metadata download failed/);
   fireEvent.click(screen.getByLabelText("Dismiss error"));
-  fireEvent.click(screen.getByRole("button", { name: "Download music metadata" }));
+  fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(api.InstallMetadataBundle).toHaveBeenCalledTimes(2);
 });

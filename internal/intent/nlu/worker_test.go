@@ -36,17 +36,15 @@ func fakeWorker() {
 			time.Sleep(10 * time.Second)
 		}
 		response := WorkerResponse{Protocol: WorkerProtocol, Kind: ModelKind(os.Args[2]), ModelSHA256: "test-digest"}
-		if response.Kind == MiniLM {
-			response.Embedding = make([]float32, EmbeddingDimension)
-			response.Embedding[0] = 1
-		} else {
-			response.Result = Result{Abstained: true, Reason: "trained_head_unavailable"}
+		response.Result = Result{Abstained: true, Reason: "no_confident_proposals"}
+		if os.Getenv("PLAYLISTAI_NLU_FAKE_UNTRAINED") == "1" {
+			response.Result.Reason = "trained_head_unavailable"
 		}
 		if request.Text == "wrong-model" {
 			response.ModelSHA256 = "another-digest"
 		}
-		if request.Text == "wrong-dimension" {
-			response.Embedding = []float32{1}
+		if request.Text == "wrong-proposal" {
+			response.Result = Result{Proposals: []Proposal{{Text: "invented", Start: 0, End: 999, Label: "artist:similarity", Score: .9}}}
 		}
 		if audio.WriteFrame(os.Stdout, response) != nil {
 			return
@@ -56,7 +54,7 @@ func fakeWorker() {
 
 func TestWorkerCancellationReapsAndCanRestart(t *testing.T) {
 	t.Setenv("PLAYLISTAI_NLU_FAKE_WORKER", "1")
-	w := &Worker{Config: WorkerConfig{Kind: MiniLM, ModelDir: t.TempDir(), RuntimeLibrary: "unused"}, ExpectedModelSHA256: "test-digest"}
+	w := &Worker{Config: WorkerConfig{Kind: DistilBERT, ModelDir: t.TempDir(), RuntimeLibrary: "unused"}, ExpectedModelSHA256: "test-digest"}
 	defer w.Close()
 	if err := w.Health(context.Background()); err != nil {
 		t.Fatal(err)
@@ -64,7 +62,7 @@ func TestWorkerCancellationReapsAndCanRestart(t *testing.T) {
 	pid := w.cmd.Process.Pid
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
-	if _, err := w.EmbedText(ctx, "wait"); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := w.Propose(ctx, "wait"); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancellation: %v", err)
 	}
 	if w.cmd != nil {
@@ -83,28 +81,29 @@ func TestWorkerCancellationReapsAndCanRestart(t *testing.T) {
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.EmbedText(context.Background(), "quiet"); err == nil {
+	if _, err := w.Propose(context.Background(), "quiet"); err == nil {
 		t.Fatal("closed worker restarted")
 	}
 }
 
-func TestWorkerRejectsChangedModelAndInvalidVector(t *testing.T) {
+func TestWorkerRejectsChangedModelAndInvalidProposal(t *testing.T) {
 	t.Setenv("PLAYLISTAI_NLU_FAKE_WORKER", "1")
-	w := &Worker{Config: WorkerConfig{Kind: MiniLM, ModelDir: t.TempDir(), RuntimeLibrary: "unused"}, ExpectedModelSHA256: "test-digest"}
+	w := &Worker{Config: WorkerConfig{Kind: DistilBERT, ModelDir: t.TempDir(), RuntimeLibrary: "unused"}, ExpectedModelSHA256: "test-digest"}
 	defer w.Close()
-	for _, text := range []string{"wrong-model", "wrong-dimension"} {
-		if _, err := w.EmbedText(context.Background(), text); err == nil || w.cmd != nil {
+	for _, text := range []string{"wrong-model", "wrong-proposal"} {
+		if _, err := w.Propose(context.Background(), text); err == nil || w.cmd != nil {
 			t.Fatalf("accepted %s or left process alive", text)
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := w.EmbedText(ctx, "quiet"); !errors.Is(err, context.Canceled) || w.cmd != nil {
+	if _, err := w.Propose(ctx, "quiet"); !errors.Is(err, context.Canceled) || w.cmd != nil {
 		t.Fatal("pre-canceled request spawned worker")
 	}
 }
 
 func TestWorkerHealthCannotPromoteUntrainedExtractor(t *testing.T) {
+	t.Setenv("PLAYLISTAI_NLU_FAKE_UNTRAINED", "1")
 	t.Setenv("PLAYLISTAI_NLU_FAKE_WORKER", "1")
 	w := &Worker{Config: WorkerConfig{Kind: DistilBERT, ModelDir: t.TempDir(), RuntimeLibrary: "unused"}}
 	defer w.Close()
@@ -137,40 +136,23 @@ func TestServeWorkerUntrainedDistilBERTAbstainsWithoutInference(t *testing.T) {
 	}
 }
 
-// Real models are opt-in; ordinary regressions do not acquire model artifacts.
-func TestNativeMiniLMWithoutPython(t *testing.T) {
-	dir, library := os.Getenv("PLAYLISTAI_TEST_NLU_MODEL_DIR"), os.Getenv("PLAYLISTAI_TEST_NLU_RUNTIME")
+// Real reviewed extractors are opt-in; ordinary tests never acquire model files.
+func TestNativeReviewedExtractorWithoutPython(t *testing.T) {
+	dir, library := os.Getenv("PLAYLISTAI_TEST_NLU_EXTRACTOR_DIR"), os.Getenv("PLAYLISTAI_TEST_NLU_RUNTIME")
 	if dir == "" || library == "" {
-		t.Skip("set PLAYLISTAI_TEST_NLU_MODEL_DIR and PLAYLISTAI_TEST_NLU_RUNTIME for native inference")
+		t.Skip("set PLAYLISTAI_TEST_NLU_EXTRACTOR_DIR and PLAYLISTAI_TEST_NLU_RUNTIME for native inference")
 	}
 	t.Setenv("PLAYLISTAI_NLU_FAKE_WORKER", "")
 	empty := t.TempDir()
 	t.Setenv("PATH", empty)
 	t.Setenv("PYTHONHOME", empty)
 	t.Setenv("PYTHONPATH", empty)
-	w := &Worker{Config: WorkerConfig{Kind: MiniLM, ModelDir: dir, RuntimeLibrary: library}}
+	w := &Worker{Config: WorkerConfig{Kind: DistilBERT, ModelDir: dir, RuntimeLibrary: library}}
 	defer w.Close()
 	if err := w.Health(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	a, err := w.EmbedText(context.Background(), "relaxing electronic music")
-	if err != nil {
+	if _, err := w.Propose(context.Background(), "like Aerosmith"); err != nil {
 		t.Fatal(err)
-	}
-	b, err := w.EmbedText(context.Background(), "relaxing electronic music")
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := w.EmbedText(context.Background(), "aggressive metal workout")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var self, other float64
-	for i := range a {
-		self += float64(a[i]) * float64(b[i])
-		other += float64(a[i]) * float64(c[i])
-	}
-	if self < 0.99999 || other > 0.999 {
-		t.Fatalf("native output lacks stable text dependence: same=%f, different=%f", self, other)
 	}
 }

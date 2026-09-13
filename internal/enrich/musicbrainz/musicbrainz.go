@@ -24,6 +24,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/deezerhttp"
+	"github.com/platten/playlistai/internal/mbindex"
 	"github.com/platten/playlistai/internal/metadata"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -38,6 +39,7 @@ type Config struct {
 	// AcousticBrainzURL enables optional archived acoustic evidence; empty disables.
 	AcousticBrainzURL string
 	DatasetPath       string // optional catalog-matched bulk metadata, separate from API cache
+	OfflineIndexPath  string // optional catalog-independent MusicBrainz dump index
 	// UserAgent identifies the app with a contact URL (MusicBrainz requirement).
 	UserAgent string
 	// CachePath is the SQLite file for cached lookups.
@@ -58,27 +60,36 @@ type Config struct {
 	MinScore int
 	// Interval between live requests. Default 1s; tests set it lower.
 	Interval time.Duration
+	// CandidatePreviewResolver is used only for bounded enhanced discovery.
+	// A recording outside Deej-AI is admitted only after this resolver returns
+	// an exact, unambiguous provider identity and a playable preview.
+	CandidatePreviewResolver ports.AudioPreviewResolver
 }
 
 // Client implements ports.Enricher.
 type Client struct {
-	datasetMu       sync.RWMutex
-	datasetPath     string
-	retiredDatasets []*metadata.Store // immutable readers retained until shutdown
-	dataset         *metadata.Store
-	datasetError    bool
-	base            string
-	ua              string
-	minScore        int
-	interval        time.Duration
-	hc              *http.Client
-	deezerBase      string
-	deezerClient    *http.Client
-	discogs         *discogsClient
-	acoustic        *acousticClient
-	wikidataBase    string
-	wikipediaBase   string
-	contextClient   *http.Client
+	datasetMu        sync.RWMutex
+	datasetPath      string
+	retiredDatasets  []*metadata.Store // immutable readers retained until shutdown
+	dataset          *metadata.Store
+	datasetError     bool
+	offlinePath      string
+	retiredOffline   []*mbindex.Store
+	offline          *mbindex.Store
+	offlineError     bool
+	base             string
+	ua               string
+	minScore         int
+	interval         time.Duration
+	hc               *http.Client
+	deezerBase       string
+	deezerClient     *http.Client
+	discogs          *discogsClient
+	acoustic         *acousticClient
+	wikidataBase     string
+	wikipediaBase    string
+	contextClient    *http.Client
+	candidatePreview ports.AudioPreviewResolver
 
 	limiter *requestLimiter
 
@@ -126,11 +137,12 @@ func New(cfg Config) (*Client, error) {
 	}
 
 	c := &Client{
-		base:     strings.TrimRight(base, "/"),
-		ua:       cfg.UserAgent,
-		minScore: minScore,
-		interval: interval,
-		hc:       &http.Client{Timeout: 20 * time.Second},
+		base:             strings.TrimRight(base, "/"),
+		ua:               cfg.UserAgent,
+		minScore:         minScore,
+		interval:         interval,
+		hc:               &http.Client{Timeout: 20 * time.Second},
+		candidatePreview: cfg.CandidatePreviewResolver,
 	}
 	limiterKey := strings.ToLower(parsed.Host)
 	if host == "musicbrainz.org" || host == "www.musicbrainz.org" {
@@ -188,6 +200,18 @@ func New(cfg Config) (*Client, error) {
 			c.datasetError = true
 		}
 	}
+	if cfg.OfflineIndexPath != "" {
+		if filepath.Base(cfg.OfflineIndexPath) == "musicbrainz.sqlite" {
+			cfg.OfflineIndexPath = mbindex.ActivePath(filepath.Dir(cfg.OfflineIndexPath))
+		}
+		if _, statErr := os.Stat(cfg.OfflineIndexPath); statErr == nil {
+			c.offline, err = mbindex.Open(cfg.OfflineIndexPath)
+			c.offlinePath = cfg.OfflineIndexPath
+			c.offlineError = err != nil
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			c.offlineError = true
+		}
+	}
 	return c, nil
 }
 
@@ -205,10 +229,42 @@ func (c *Client) Close() error {
 	for _, s := range c.retiredDatasets {
 		err = errors.Join(err, s.Close())
 	}
+	if c.offline != nil {
+		err = errors.Join(err, c.offline.Close())
+	}
+	for _, s := range c.retiredOffline {
+		err = errors.Join(err, s.Close())
+	}
 	if c.db != nil {
 		return errors.Join(err, c.db.Close())
 	}
 	return err
+}
+
+func (c *Client) localMusicBrainz() *mbindex.Store {
+	c.datasetMu.RLock()
+	defer c.datasetMu.RUnlock()
+	return c.offline
+}
+
+// ActivateOfflineIndex keeps in-flight requests on their prior immutable index.
+func (c *Client) ActivateOfflineIndex(path string) error {
+	s, err := mbindex.Open(path)
+	if err != nil {
+		return err
+	}
+	c.datasetMu.Lock()
+	defer c.datasetMu.Unlock()
+	if c.offline != nil && c.offlinePath == path {
+		return s.Close()
+	}
+	if c.offline != nil {
+		c.retiredOffline = append(c.retiredOffline, c.offline)
+	}
+	c.offline = s
+	c.offlinePath = path
+	c.offlineError = false
+	return nil
 }
 
 func (c *Client) localDataset() *metadata.Store {
@@ -311,16 +367,24 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		"limit": {"3"},
 	}.Encode()
 
-	raw, err := c.knowledgeGet(ctx, path, false)
-	if err != nil {
-		return miss
-	}
-
 	var body struct {
 		Recordings []mbRecording `json:"recordings"`
 	}
-	if json.Unmarshal(raw, &body) != nil {
-		return miss
+	if offline := c.localMusicBrainz(); offline != nil {
+		if rows, err := offline.FindRecordings(ctx, ref.Artist, ref.Title, 3); err == nil {
+			for _, row := range rows {
+				body.Recordings = append(body.Recordings, offlineRecording(row))
+			}
+		}
+	}
+	if len(body.Recordings) == 0 {
+		raw, err := c.knowledgeGet(ctx, path, false)
+		if err != nil {
+			return miss
+		}
+		if json.Unmarshal(raw, &body) != nil {
+			return miss
+		}
 	}
 	miss.IdentityStatus = core.ResolutionUnresolved
 	if len(body.Recordings) == 0 {
@@ -351,13 +415,14 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 
 	top := matching[0]
 	et := core.EnrichedTrack{
-		IdentityStatus: core.ResolutionResolved,
-		Alternatives:   miss.Alternatives,
-		Ref:            ref,
-		MatchScore:     top.Score,
-		Matched:        top.Score >= c.minScore,
-		AllISRCs:       top.ISRCs,
-		RecordingID:    top.ID,
+		IdentityStatus:      core.ResolutionResolved,
+		Alternatives:        miss.Alternatives,
+		Ref:                 ref,
+		MatchScore:          top.Score,
+		Matched:             top.Score >= c.minScore,
+		AllISRCs:            top.ISRCs,
+		RecordingID:         top.ID,
+		OriginalReleaseDate: top.FirstReleaseDate,
 	}
 	for _, group := range []struct {
 		facet string
