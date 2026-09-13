@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { IntentModelsCard } from "./IntentModelsCard";
-const api = vi.hoisted(() => ({ GetIntentAssistStatus: vi.fn(), InstallIntentModels: vi.fn(), SetIntentAssistEnabled: vi.fn(), InstallIntentExtractor: vi.fn() }));
+const api = vi.hoisted(() => ({ GetIntentAssistStatus: vi.fn(), InstallIntentModels: vi.fn(), InstallIntentModelPack: vi.fn(), SetIntentAssistEnabled: vi.fn(), InstallIntentExtractor: vi.fn() }));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
 const ready = { installed: true, enabled: false, downloadBytes: 430000000, detail: "Extraction awaits reviewed training." };
@@ -28,7 +28,48 @@ it("explains unsupported hosts without starting a download", async () => {
   await screen.findByText("Requires macOS 14 or later");
   expect(api.InstallIntentModels).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: /Download intent models/ })).toBeNull();
+  expect(screen.queryByText("Install a compressed model pack")).toBeNull();
   expect(screen.getByText("Your existing prompt parser remains available.")).toBeTruthy();
+});
+
+it("installs a trimmed manifest source, reports progress, and keeps a failure retryable", async () => {
+  let reject!: (error: Error) => void;
+  api.InstallIntentModelPack.mockReturnValueOnce(Object.assign(new Promise((_, fail) => { reject = fail; }), { cancel: vi.fn() }));
+  api.InstallIntentModelPack.mockImplementationOnce(() => completed(null));
+  render(<IntentModelsCard />);
+  const source = await screen.findByLabelText("Model pack manifest URL or path");
+  fireEvent.click(screen.getByText("Install a compressed model pack"));
+  const button = screen.getByRole("button", { name: "Install model pack" });
+  expect((button as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(source, { target: { value: " https://models.example/intent/manifest.json " } });
+  fireEvent.click(button);
+  expect(api.InstallIntentModelPack).toHaveBeenCalledWith("https://models.example/intent/manifest.json");
+  expect(screen.getByRole("progressbar", { name: "Preparing intent models" })).toBeTruthy();
+  expect((source as HTMLInputElement).disabled).toBe(true);
+  await act(async () => reject(new Error("segment checksum mismatch")));
+  expect(screen.getByText(/segment checksum mismatch/)).toBeTruthy();
+  fireEvent.click(button);
+  await waitFor(() => expect(api.InstallIntentModelPack).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+  expect(api.InstallIntentModels).not.toHaveBeenCalled();
+  expect(api.InstallIntentExtractor).not.toHaveBeenCalled();
+  expect(api.SetIntentAssistEnabled).not.toHaveBeenCalled();
+});
+
+it("cancels compressed pack installation explicitly and when the card closes", async () => {
+  let finish!: () => void;
+  const cancel = vi.fn();
+  api.InstallIntentModelPack.mockReturnValue(Object.assign(new Promise<void>((resolve) => { finish = resolve; }), { cancel }));
+  const view = render(<IntentModelsCard />);
+  fireEvent.change(await screen.findByLabelText("Model pack manifest URL or path"), { target: { value: " C:/models/intent/manifest.json " } });
+  fireEvent.click(screen.getByText("Install a compressed model pack"));
+  fireEvent.click(screen.getByRole("button", { name: "Install model pack" }));
+  expect(api.InstallIntentModelPack).toHaveBeenCalledWith("C:/models/intent/manifest.json");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel model preparation" }));
+  expect(cancel).toHaveBeenCalledOnce();
+  view.unmount();
+  expect(cancel).toHaveBeenCalledTimes(2);
+  await act(async () => finish());
 });
 
 it("automatically downloads missing assets, preserves errors, and retries", async () => {

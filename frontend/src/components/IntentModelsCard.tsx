@@ -7,15 +7,16 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [extractorPath, setExtractorPath] = useState("");
+  const [packSource, setPackSource] = useState("");
   const pending = useRef<ReturnType<typeof API.InstallIntentModels> | null>(null);
   const mounted = useRef(false);
   const progress = useProgress("intent-models");
 
-  async function install() {
+  async function install(source?: string) {
     if (pending.current) return;
     setBusy(true);
     setError(null);
-    const request = API.InstallIntentModels();
+    const request = source ? API.InstallIntentModelPack(source) : API.InstallIntentModels();
     pending.current = request;
     try {
       await request;
@@ -75,7 +76,7 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
     }
   }
 
-  return <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4" aria-label="Intent language models">
+  return <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4" aria-label="Intent language models" aria-busy={busy}>
     <h2 className="text-[15px] font-semibold">Intent language models</h2>
     <p className="text-[13px] text-muted">Try compact, local language models to help interpret music descriptions. No Python installation needed.</p>
     <p className="text-[12px] text-muted">{status?.detail ?? "Checking available models…"}</p>
@@ -99,6 +100,17 @@ export function IntentModelsCard({ automatic = false }: { automatic?: boolean })
         </div>
       </details>
     </> : <Button disabled={busy || !status} onClick={() => void install()}>{error ? "Retry intent model download" : `Download intent models${status ? ` · ${(status.downloadBytes / 1e6).toFixed(0)} MB` : ""}`}</Button>}
+    {status && !status.unsupportedReason && <details className="text-[12px] text-muted">
+      <summary className="cursor-pointer">Install a compressed model pack</summary>
+      <div className="mt-3 flex flex-col gap-2">
+        <p>Use an HTTPS manifest URL or a local manifest JSON file. The app downloads or reads the segments, verifies them, and extracts MiniLM and DistilBERT assets for this device. This does not enable intent suggestions or install a trained extractor.</p>
+        <label className="flex flex-col gap-1">Model pack manifest URL or path
+          <input className="rounded-control border border-line bg-bg px-2 py-2 text-text" value={packSource} disabled={busy} onChange={(e) => setPackSource(e.target.value)} spellCheck={false} />
+        </label>
+        <Button disabled={busy || !packSource.trim()} onClick={() => void install(packSource.trim())}>Install model pack</Button>
+      </div>
+    </details>}
+    {busy && <Button variant="ghost" onClick={() => void pending.current?.cancel()}>Cancel model preparation</Button>}
     {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
   </section>;
 }

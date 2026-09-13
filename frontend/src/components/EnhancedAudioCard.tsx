@@ -11,6 +11,7 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [installing, setInstalling] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const pending = useRef<Pending | null>(null);
@@ -23,9 +24,9 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
     void call.then((value) => { if (current) setStatus(value); }).catch((e) => { if (current) setError(String(e)); });
     return () => { current = false; mounted.current = false; void call.cancel("settings closed"); void pending.current?.cancel("settings closed"); };
   }, []);
-  const run = async (operation: () => Pending, report = false) => {
+  const run = async (operation: () => Pending, report = false, modelInstallation = false) => {
     if (pending.current) return;
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setInstalling(modelInstallation); setError(""); setNotice("");
     try {
       const call = operation(); pending.current = call;
       const value = await call;
@@ -36,7 +37,7 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
       const updated = await API.GetEnhancedAnalysisStatus();
       if (mounted.current) setStatus(updated);
     } catch (e) { if (mounted.current) setError(String(e)); }
-    finally { pending.current = null; if (mounted.current) setBusy(false); }
+    finally { pending.current = null; if (mounted.current) { setBusy(false); setInstalling(false); } }
   };
   return <section className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4" aria-busy={busy}>
     <h2 className="text-[15px] font-semibold">Enhanced audio analysis</h2>
@@ -53,13 +54,13 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
       {status?.revision && <p className="break-all">Revision: {status.revision}</p>}
       {!!status?.downloadBytes && <p>Pack assets: {size(status.downloadBytes)} · cached representations: {size(status.mertStorage?.bytes ?? 0)}</p>}
       <p className="mt-2">MERT compares audio with audio. It does not understand the text prompt directly.</p>
-      <label className="mt-3 block" htmlFor="mert-pack">Prepared MERT pack directory</label>
+      <label className="mt-3 block" htmlFor="mert-pack">MERT pack directory or manifest</label>
       <input id="mert-pack" value={path} disabled={busy} onChange={(e) => setPath(e.target.value)}
-        className="mt-1 w-full rounded-control border border-line bg-surface px-3 py-2 text-text" />
-      <p className="mt-1 text-faint">Use a verified pack for this OS and architecture. No Python is needed to install or run it.</p>
+        className="mt-1 w-full rounded-control border border-line bg-surface px-3 py-2 text-text" spellCheck={false} />
+      <p className="mt-1 text-faint">Enter a prepared directory, an HTTPS manifest URL, or a local manifest JSON path. Compressed segments are downloaded or read, verified, and extracted for this OS and architecture. No Python is needed to install or run it.</p>
       <p className="mt-1 text-faint">Review LICENSES.txt in the pack before installing. Installation accepts its model and runtime terms, including the Microsoft runtime terms in Windows packs.</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy || !path.trim()} onClick={() => void run(() => API.InstallMERT(path.trim()))}>Install MERT pack</Button>
+        <Button size="sm" disabled={busy || !path.trim()} onClick={() => void run(() => API.InstallMERT(path.trim()), false, true)}>Install MERT pack</Button>
         <Button size="sm" variant="ghost" disabled={busy || !status?.installed} onClick={() => void run(() => API.RemoveMERT())}>Remove MERT</Button>
       </div>
     </div>
@@ -69,7 +70,7 @@ export function EnhancedAudioCard({ trackIds }: { trackIds?: string[] }) {
       <Button size="sm" variant="ghost" disabled={busy || !status?.dspAvailable} onClick={() => {
         if (window.confirm("Clear cached DSP and MERT analysis? CLAP and model files are kept.")) void run(() => API.ClearEnhancedAnalysis());
       }}>Clear enhanced cache</Button>
-      {busy && <Button size="sm" variant="ghost" onClick={() => void pending.current?.cancel("analysis cancelled")}>Cancel analysis</Button>}
+      {busy && <Button size="sm" variant="ghost" onClick={() => void pending.current?.cancel(installing ? "model installation cancelled" : "analysis cancelled")}>{installing ? "Cancel model installation" : "Cancel analysis"}</Button>}
     </div>
     <p className="text-[12px] text-faint">Up to {status?.limit ?? 24} tracks per analysis action. Missing previews remain unknown. Preview measurements describe the analyzed interval, not necessarily the complete recording.</p>
     <p role="status" className="text-[12px] text-muted">{busy ? progress?.note || "Working…" : notice || status?.detail}</p>

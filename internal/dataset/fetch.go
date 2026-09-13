@@ -85,6 +85,12 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 // with (bytesDone, expectedTotal); expectedTotal is size, or -1 when unknown.
 // Returns the total size of the file on success.
 func Download(ctx context.Context, url, target string, size int64, sha256hex string, onProgress func(done, total int64)) (int64, error) {
+	return DownloadWithClient(ctx, url, target, size, sha256hex, onProgress, http.DefaultClient)
+}
+
+// DownloadWithClient is Download with an explicit HTTP client, allowing callers
+// to constrain redirects and request timeouts without changing global state.
+func DownloadWithClient(ctx context.Context, url, target string, size int64, sha256hex string, onProgress func(done, total int64), client *http.Client) (int64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -118,7 +124,10 @@ func Download(ctx context.Context, url, target string, size int64, sha256hex str
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
 
-	resp, err := httpretry.Client(http.DefaultClient).Do(req)
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := httpretry.Client(client).Do(req)
 	if err != nil {
 		return 0, err
 	}

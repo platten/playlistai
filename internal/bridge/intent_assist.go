@@ -20,6 +20,13 @@ func (a *API) SetIntentAssistEnabled(enabled bool) error {
 	return a.app.SetIntentAssistEnabled(enabled)
 }
 
+func (a *API) InstallIntentModelPack(ctx context.Context, source string) error {
+	ctx, _, finish := a.operations.begin(ctx, "intent-models")
+	defer finish()
+	a.cancelRecommendationWork()
+	return a.app.InstallIntentModelPack(ctx, source, NewWailsProgress())
+}
+
 func (a *API) InstallIntentExtractor(ctx context.Context, directory string) error {
 	ctx, _, finish := a.operations.begin(ctx, "intent-extractor")
 	defer finish()

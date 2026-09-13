@@ -109,6 +109,10 @@ work. See the [correctness and maintainability review](docs/codebase-review.md).
 
 ## Local models and hardware selection
 
+Maintainers can host losslessly compressed MERT and intent model packs as
+segments below 200 MB. The desktop resumes, verifies and decompresses them
+without Python. See [model distribution and R2 upload instructions](docs/model-distribution.md).
+
 Startup update prompts display GitHub release notes. Setup skips available data
 and models; completed installations reopen only the steps needed to repair
 previously selected capabilities. See [updates and setup readiness](docs/startup-setup.md).

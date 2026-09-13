@@ -81,6 +81,19 @@ func (c *Container) GetIntentAssistStatus() IntentAssistStatus {
 }
 
 func (c *Container) InstallIntentModels(ctx context.Context, p ports.Progress) error {
+	return c.installIntentModels(ctx, "", p)
+}
+
+// InstallIntentModelPack consumes a segmented model manifest without enabling
+// experimental suggestions or a trained extractor.
+func (c *Container) InstallIntentModelPack(ctx context.Context, source string, p ports.Progress) error {
+	if strings.TrimSpace(source) == "" {
+		return fmt.Errorf("model pack source is required")
+	}
+	return c.installIntentModels(ctx, source, p)
+}
+
+func (c *Container) installIntentModels(ctx context.Context, source string, p ports.Progress) error {
 	ctx, release := c.OperationContext(ctx)
 	defer release()
 	s := &c.intentAssist
@@ -89,8 +102,19 @@ func (c *Container) InstallIntentModels(ctx context.Context, p ports.Progress) e
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := nlu.InstallAssets(ctx, c.intentAssetRoot(), p); err != nil {
-		return err
+	var installErr error
+	if source != "" {
+		dir, cleanup, err := c.prepareModelPack(ctx, source, "intent-models", p)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		installErr = nlu.ImportAssets(ctx, c.intentAssetRoot(), dir, p)
+	} else {
+		installErr = nlu.InstallAssets(ctx, c.intentAssetRoot(), p)
+	}
+	if installErr != nil {
+		return installErr
 	}
 	dir := nlu.AssetDir(c.intentAssetRoot())
 	rt, err := nlu.RuntimePath(dir)
