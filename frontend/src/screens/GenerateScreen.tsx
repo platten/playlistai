@@ -37,6 +37,13 @@ const DEEJAI_SAMPLES = [
   "A journey from Radiohead to Sigur Rós, 12 tracks",
 ];
 
+const DEEJAI_SURPRISES = [
+  "something like Bonobo, keep it mellow",
+  "like Daft Punk, adventurous",
+  "a journey from Justice to Boards of Canada",
+  "a journey from Radiohead to Sigur Rós",
+];
+
 const resolutionIssueKey = (kind: string, query: string) => `${kind.toLowerCase()}\u0000${query.toLowerCase()}`;
 
 interface SpellingConfirmation {
@@ -51,22 +58,22 @@ interface SpellingConfirmation {
 // Prompts for the "Surprise me" button. Each names a well-known seed artist so
 // it resolves against the catalog, and varies mode/knobs/mood for variety.
 const SURPRISES = [
-  "something like Bonobo, 25 tracks, keep it mellow",
+  "something like Bonobo, keep it mellow",
   "a journey from Justice to Boards of Canada",
-  "upbeat instrumental like Justice, leaning 90s, about 20 songs",
-  "like Aphex Twin but a little unpredictable, 30 tracks",
-  "chill beats like Nujabes, 20 songs",
-  "like Fleetwood Mac, 25 tracks, no back-to-back artists",
+  "upbeat instrumental like Justice, leaning 90s",
+  "like Aphex Twin but a little unpredictable",
+  "chill beats like Nujabes",
+  "like Fleetwood Mac, no back-to-back artists",
   "a set that drifts from Radiohead to Sigur Rós",
-  "like Daft Punk, adventurous, 30 tracks",
-  "like Tame Impala, dreamy, 25 songs",
-  "something like Burial, late-night, 20 tracks",
-  "like The Chemical Brothers, high energy, 30 songs",
-  "like Khruangbin, 25 tracks, keep it faithful",
+  "like Daft Punk, adventurous",
+  "like Tame Impala, dreamy",
+  "something like Burial, late-night",
+  "like The Chemical Brothers, high energy",
+  "like Khruangbin, keep it faithful",
   "a journey from Kraftwerk to Aphex Twin",
-  "like Massive Attack, moody, 20 tracks",
-  "like Four Tet, 30 tracks, a little wandering",
-  "like Portishead, 20 tracks",
+  "like Massive Attack, moody",
+  "like Four Tet, a little wandering",
+  "like Portishead",
 ];
 
 /** The prompt entry point: editing is local; submit to parse and generate. */
@@ -493,7 +500,7 @@ export function GenerateScreen({
   }, [info?.loaded, onRegenerationStarted, regeneration, runGenerate]);
 
   const surprise = useCallback(() => {
-    const choices = deejAIOnly ? DEEJAI_SAMPLES : SURPRISES;
+    const choices = deejAIOnly ? DEEJAI_SURPRISES : SURPRISES;
     const pick = choices[Math.floor(Math.random() * choices.length)];
     setPrompt(pick);
     setSource("fresh");

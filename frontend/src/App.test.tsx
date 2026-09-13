@@ -695,7 +695,9 @@ it("leaves Generate available when the onboarding read fails", async () => {
   render(<App />);
   await screen.findByLabelText("Your description");
   fireEvent.click(screen.getByRole("button", { name: "Surprise me" }));
-  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value.length).toBeGreaterThan(0);
+  const surprise = (screen.getByLabelText("Your description") as HTMLTextAreaElement).value;
+  expect(surprise.length).toBeGreaterThan(0);
+  expect(surprise).not.toMatch(/\b\d+\s+(?:tracks?|songs?)\b/i);
   const examples = screen.getByRole("region", { name: "Description examples" });
   fireEvent.click(examples.querySelector("button")!);
   expect(bridge.ParseIntentWithContext).not.toHaveBeenCalled();
@@ -823,8 +825,11 @@ it("uses Deej-AI's control policy and fresh examples when that mode is selected"
   await screen.findByText("Deej-AI only", { selector: "span" });
   const examples = screen.getByRole("region", { name: "Description examples" });
   expect(examples.textContent).toMatch(/tracks/);
+  const trackCount = screen.getByRole("combobox", { name: "Number of tracks" });
+  fireEvent.change(trackCount, { target: { value: "40" } });
   fireEvent.click(screen.getByRole("button", { name: "Surprise me" }));
-  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).toMatch(/tracks/);
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).not.toMatch(/\b\d+\s+(?:tracks?|songs?)\b/i);
+  expect((trackCount as HTMLSelectElement).value).toBe("40");
   bridge.GenerateFromPromptWithContext.mockImplementationOnce((_prompt, context) => {
     const value = fixture();
     return completed({ ...value, playlist: { ...value.playlist, generationId: context.generationId,
