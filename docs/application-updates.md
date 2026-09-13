@@ -38,7 +38,12 @@ must match the GitHub-provided SHA-256 digest and declared size (maximum 512 MiB
 The shared bounded exponential retry policy applies to the check and download.
 Checks have a 15-second timeout; installation preparation has a 15-minute budget.
 The UI reports download progress in decimal MB and permits cancellation before
-handoff. Release notes render as plain text.
+handoff. Release notes render as GitHub-flavored Markdown, including headings,
+lists, emphasis, code, tables and read-only task lists. Formatting uses the app's
+dark/light theme. Raw HTML is ignored and images display only their alternative
+text, without external image requests. Absolute HTTP(S) links open in the system
+browser on click; other link targets remain plain text. Long notes and tables
+are independently scrollable with keyboard access.
 
 ZIP/tar extraction rejects traversal, absolute paths, links, special files,
 duplicate files and unexpected entries, and limits expanded data to 1 GiB and

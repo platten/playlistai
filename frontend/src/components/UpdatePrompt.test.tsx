@@ -4,13 +4,15 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { UpdatePrompt } from "./UpdatePrompt";
 const api = vi.hoisted(() => ({ CheckForUpdate: vi.fn(), InstallUpdate: vi.fn(), CancelUpdate: vi.fn(), OpenUpdateReleasePage: vi.fn() }));
 const events = vi.hoisted(() => ({ On: vi.fn() }));
+const browser = vi.hoisted(() => ({ OpenURL: vi.fn() }));
 vi.mock("../lib/api", () => ({ API: api }));
-vi.mock("@wailsio/runtime", () => ({ Events: events }));
+vi.mock("@wailsio/runtime", () => ({ Events: events, Browser: browser }));
 let progress: (event: { data: unknown }) => void;
 const offer = { available: true, canInstall: true, version: "1.2.3", current: "1.2.2", size: 10000000, notes: "Release notes", usesInstaller: true };
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset().mockResolvedValue(undefined));
   api.CheckForUpdate.mockResolvedValue(offer);
+  browser.OpenURL.mockReset().mockResolvedValue(undefined);
   events.On.mockImplementation((_name, callback) => { progress = callback; return () => {}; });
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   HTMLDialogElement.prototype.close = function () { this.open = false; };
@@ -23,12 +25,13 @@ it.each([null, { available: false }, "offline"])("leaves startup unobstructed wi
   await mount();
   expect(screen.queryByRole("dialog")).toBeNull();
 });
-it("shows GitHub notes immediately as keyboard-readable text without interpreting HTML", async () => {
+it("renders GitHub notes immediately as keyboard-readable Markdown without interpreting HTML", async () => {
   const notes = "## What changed\n- Better musical matches\n<img src=x onerror='alert(1)'>\n<script>alert(1)</script>";
   api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes });
   await mount();
   const region = screen.getByRole("region", { name: "Release notes" });
-  expect(region.textContent?.trim()).toBe(notes);
+  expect(screen.getByRole("heading", { name: "What changed", level: 4 })).toBeTruthy();
+  expect(region.querySelector("li")?.textContent?.trim()).toBe("Better musical matches");
   expect(region.closest("details")).toBeNull();
   expect(region.querySelector("img,script")).toBeNull();
   expect(region.tabIndex).toBe(0);
@@ -38,6 +41,38 @@ it("shows GitHub notes immediately as keyboard-readable text without interpretin
   fireEvent.click(screen.getByRole("button", { name: "Release page" }));
   await act(async () => {});
   expect(api.OpenUpdateReleasePage).toHaveBeenCalledOnce();
+});
+it("renders rich release formatting and keeps links in the system browser", async () => {
+  api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes: "# Release\n\n**Better** and *clearer* with `MERT`.\n\n1. First\n2. Second\n\n- [x] Ready\n\n| Pack | Size |\n| --- | --- |\n| MERT | 214 MB |\n\n> Keep your models.\n\n```text\nexample command\n```\n\n[Details](https://github.com/platten/playlistai/releases/tag/v0.12.1)" });
+  await mount();
+  const region = screen.getByRole("region", { name: "Release notes" });
+  expect(region.querySelector("strong")?.textContent).toBe("Better");
+  expect(region.querySelector("em")?.textContent).toBe("clearer");
+  expect(region.querySelector("code")?.textContent).toBe("MERT");
+  expect(region.querySelectorAll("ol li")).toHaveLength(2);
+  expect(region.querySelector("pre code")?.textContent).toContain("example command");
+  expect(region.querySelector("blockquote")?.textContent).toContain("Keep your models.");
+  expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
+  expect(screen.getByRole("cell", { name: "214 MB" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("link", { name: "Details" }));
+  await act(async () => {});
+  expect(browser.OpenURL).toHaveBeenCalledWith("https://github.com/platten/playlistai/releases/tag/v0.12.1");
+  expect(api.InstallUpdate).not.toHaveBeenCalled();
+  browser.OpenURL.mockRejectedValueOnce(new Error("browser unavailable"));
+  fireEvent.click(screen.getByRole("link", { name: "Details" }));
+  await act(async () => {});
+  expect(screen.getByRole("alert").textContent).toContain("Could not open release-note link");
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+it("does not load images or activate unsafe and relative links", async () => {
+  api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes: "![Cover](https://example.com/tracker.png)\n\n[Script](javascript:alert%281%29) [File](file:///C:/private) [Data](data:text/html,test) [Relative](../settings) [Web](https://example.com/notes)\n\n<iframe src='https://example.com'></iframe>" });
+  await mount();
+  const region = screen.getByRole("region", { name: "Release notes" });
+  expect(region.querySelector("img, iframe, script")).toBeNull();
+  expect(screen.getByText("Cover")).toBeTruthy();
+  expect(screen.getAllByRole("link")).toHaveLength(1);
+  expect(screen.getByRole("link").getAttribute("href")).toBe("https://example.com/notes");
+  expect(browser.OpenURL).not.toHaveBeenCalled();
 });
 it.each(["", " \n\t "])("offers the release page when notes are missing: %j", async (notes) => {
   api.CheckForUpdate.mockResolvedValueOnce({ ...offer, notes });

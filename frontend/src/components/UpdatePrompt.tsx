@@ -5,6 +5,7 @@ import { ErrorState } from "./ErrorState";
 import { ProgressBar } from "./ProgressBar";
 import { useProgress } from "./useProgress";
 import { X } from "./icons";
+import { ReleaseNotes } from "./ReleaseNotes";
 
 type UpdateOffer = Awaited<ReturnType<typeof API.CheckForUpdate>>;
 
@@ -92,8 +93,8 @@ export function UpdatePrompt() {
         {(offer.available || notes) && <section aria-labelledby="update-notes-title" className="mt-5 rounded-lg border border-line bg-inset p-4">
           <h3 id="update-notes-title" className="text-sm font-semibold">What’s new</h3>
           {notes ? <div role="region" aria-label="Release notes" tabIndex={0}
-            className="mt-3 max-h-[28dvh] overflow-y-auto overscroll-contain whitespace-pre-wrap break-words pr-3 text-sm leading-relaxed text-muted [overflow-wrap:anywhere]">
-            {notes}
+            className="mt-3 max-h-[28dvh] overflow-y-auto overscroll-contain break-words pr-3 text-sm leading-relaxed text-muted [overflow-wrap:anywhere]">
+            <ReleaseNotes notes={notes} onLinkError={setError} />
           </div> : <p className="mt-2 text-sm leading-relaxed text-muted">Release notes are unavailable here. Open the release page on GitHub for details.</p>}
         </section>}
       </div>
