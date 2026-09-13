@@ -40,6 +40,7 @@ function AppContent() {
   const { choice, cycle } = useTheme();
   const ThemeIcon = THEME_ICONS[choice];
   const [screen, setScreen] = useState<Screen>("generate");
+  const [resetDone, setResetDone] = useState(false);
   const [playlist, setPlaylist] = useState<PlaylistState | null>(null);
   const [regeneration, setRegeneration] = useState<Regeneration | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
@@ -116,6 +117,7 @@ function AppContent() {
     setScreen("reviewexport");
   };
 
+  if (resetDone) return <div className="flex h-full items-center justify-center bg-bg p-8 text-text"><div className="max-w-md"><h1 className="text-2xl font-semibold">Ready for a fresh setup</h1><p role="status" className="mt-3 text-muted">Models and datasets have been removed. Close and reopen Playlist AI to run the setup wizard.</p></div></div>;
   if (onboarded === null) {
     // Avoid a flash of the wizard (or the main shell) while the one check
     // resolves — this is a local read, effectively instant.
@@ -180,9 +182,10 @@ function AppContent() {
           </button>
         </header>
 
-        <main key={screen} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
-          {(screen === "generate" || (screen === "playlist" && !playlist) || (screen === "reviewexport" && !review)) && (
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
+          <div hidden={screen !== "generate" && !(screen === "playlist" && !playlist) && !(screen === "reviewexport" && !review)}>
             <GenerateScreen
+              active={screen === "generate"}
               regeneration={regeneration}
               onRegenerationStarted={(id) => setRegeneration((current) => current?.id === id ? null : current)}
               sessionId={sessionId}
@@ -190,7 +193,7 @@ function AppContent() {
               onGenerated={openPlaylist}
               onNeedSetup={() => { setSetupStatus(null); setOnboarded(false); }}
             />
-          )}
+          </div>
           {screen === "playlist" && playlist && (
             <PlaylistScreen
               key={playlist.request.requestId}
@@ -221,7 +224,7 @@ function AppContent() {
               onBack={() => setScreen("playlist")}
             />
           )}
-          {screen === "settings" && <SettingsScreen />}
+          {screen === "settings" && <SettingsScreen onReset={() => setResetDone(true)} />}
         </main>
         <MiniPlayerBar />
       </div>

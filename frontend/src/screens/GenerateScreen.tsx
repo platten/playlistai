@@ -76,6 +76,7 @@ export interface Regeneration {
 }
 
 export function GenerateScreen({
+  active = true,
   sessionId,
   parserBackend,
   onGenerated,
@@ -83,6 +84,7 @@ export function GenerateScreen({
   regeneration,
   onRegenerationStarted,
 }: {
+  active?: boolean;
   sessionId: string;
   parserBackend: string;
   onGenerated: (
@@ -96,6 +98,17 @@ export function GenerateScreen({
   onRegenerationStarted?: (id: string) => void;
 }) {
   const [prompt, setPrompt] = useState(regeneration?.prompt ?? "");
+  const [trackCount, setTrackCount] = useState(20);
+  const activeScreen = useRef(active);
+  activeScreen.current = active;
+  const completedInBackground = useRef<Parameters<typeof onGenerated> | null>(null);
+  useEffect(() => {
+    if (active && completedInBackground.current) {
+      const result = completedInBackground.current;
+      completedInBackground.current = null;
+      onGenerated(...result);
+    }
+  }, [active, onGenerated]);
   const regenerationStarted = useRef("");
   const regenerationPending = Boolean(regeneration?.prompt.trim() && regenerationStarted.current !== regeneration.id);
   const [info, setInfo] = useState<CatalogInfo | null>(null);
@@ -130,6 +143,7 @@ export function GenerateScreen({
   const intentContext = useCallback(
     () => ({
       sessionId,
+      trackCount,
       generationId: activeGenerationId.current,
       nowPlaying:
         player.track && (player.status === "playing" || player.status === "paused")
@@ -138,7 +152,7 @@ export function GenerateScreen({
       recentTracks: player.recentTracks,
       locale: navigator.language || "",
     }),
-    [player.recentTracks, player.status, player.track, sessionId],
+    [player.recentTracks, player.status, player.track, sessionId, trackCount],
   );
 
   // Optional "start from a past playlist" source, gated behind a radio button.
@@ -212,16 +226,19 @@ export function GenerateScreen({
   }, []);
 
   useEffect(() => {
+    if (!active) return;
     refreshSaved();
-  }, [refreshSaved]);
+  }, [refreshSaved, active]);
 
   useEffect(() => {
+    if (!active) return;
     API.GetCatalogInfo()
       .then((i) => setInfo(i ?? { loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false }))
       .catch(() => setInfo({ loaded: false, trackCount: 0, dim: 0, configured: false, bundled: false, autoSetup: false }));
-  }, []);
+  }, [active]);
 
   useEffect(() => {
+    if (!active) return;
     let current = true;
     const call = API.GetRecommendationMode();
     call.then((mode) => {
@@ -233,7 +250,7 @@ export function GenerateScreen({
       current = false;
       void call.cancel("generate screen unmounted");
     };
-  }, []);
+  }, [active]);
 
   const pickSaved = (id: string) => {
     const hit = saved.find((s) => s.id === id);
@@ -243,7 +260,7 @@ export function GenerateScreen({
 
   useEffect(() => {
     setPreview(null);
-  }, [prompt]);
+  }, [prompt, trackCount]);
 
   useEffect(() => {
     setResolutionChoices({});
@@ -395,7 +412,8 @@ export function GenerateScreen({
             return;
           }
           if ((res.playlist.tracks ?? []).length === 0) setOutcome(res.playlist);
-          else onGenerated(res.request, res.name || q, res.playlist);
+          else if (activeScreen.current) onGenerated(res.request, res.name || q, res.playlist);
+          else completedInBackground.current = [res.request, res.name || q, res.playlist];
         })
         .catch((e) => {
           if (sequence === generationSequence.current) setError(String(e));
@@ -523,7 +541,7 @@ export function GenerateScreen({
         <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.025em] sm:text-[32px]">What do you want to hear?</h1>
         <p className="max-w-[62ch] text-[14px] leading-relaxed text-muted">
           {deejAIOnly
-            ? "Name a catalog artist or track, or request a transition between two artists. Include the number of tracks you want."
+            ? "Name a catalog artist or track, or request a transition between two artists."
             : catalogOnly
             ? "Start with genres, artists, tracks, or a journey between sounds."
             : "Set the mood, name an artist, or describe a journey between sounds. An artist or track is optional."}
@@ -643,7 +661,7 @@ export function GenerateScreen({
               />
             </div>
             <div className="mt-2 flex flex-wrap justify-between gap-2 text-[12px] text-muted">
-              <span>{generating ? "You can cancel below while processing continues." : "You can keep editing while your request summary updates."}</span>
+              <span>{generating ? "Detailed analysis can take several minutes on some devices. You can cancel below." : "You can keep editing while your request summary updates."}</span>
               <span aria-hidden="true" className="tabular-nums">{processingSeconds}s elapsed</span>
             </div>
           </div>
@@ -651,7 +669,7 @@ export function GenerateScreen({
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-inset/50 px-4 py-3 sm:px-5">
           <span id="description-help" className="w-full text-[12px] leading-relaxed text-muted">
             {deejAIOnly
-              ? "Catalog artist or track required · include a track count"
+              ? "Catalog artist or track required · Enter to generate"
               : catalogOnly
               ? "Genres, artists, tracks or a journey · Enter to generate"
               : "Artist or track optional in local-model mode · Enter to generate"}
@@ -664,6 +682,16 @@ export function GenerateScreen({
           >
             Surprise me
           </Button>
+          <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-3 rounded-control border border-line-strong bg-surface px-3 py-2 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20">
+            <span className="text-[11px] font-medium tracking-wide text-muted">TRACKS</span>
+            <select aria-label="Number of tracks" value={replaySaved ? savedRequest?.intent.controls.totalTrackCount : trackCount} disabled={generating || regenerationPending || replaySaved}
+              onChange={(event) => setTrackCount(Number(event.target.value))}
+              className="cursor-pointer bg-surface pr-2 text-[14px] font-semibold tabular-nums text-text outline-none disabled:cursor-default disabled:opacity-50">
+              {[5, 10, 20, 40].map((count) => <option key={count} value={count}>{count}</option>)}
+              {replaySaved && savedRequest && ![5, 10, 20, 40].includes(savedRequest.intent.controls.totalTrackCount) && <option value={savedRequest.intent.controls.totalTrackCount}>{savedRequest.intent.controls.totalTrackCount}</option>}
+            </select>
+          </label>
           <Button
             id="generate-playlist"
             aria-busy={generating}
@@ -675,6 +703,7 @@ export function GenerateScreen({
           >
             {generating ? "Generating…" : "Generate playlist"}
           </Button>
+          </div>
         </div>
       </div>
 

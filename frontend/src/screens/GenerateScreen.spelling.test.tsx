@@ -165,7 +165,7 @@ it.each(["accept", "keep"])("retains the %s spelling decision while resolving a 
   await submit();
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: action === "accept" ? "Use Christian Löffler" : "Keep “christrian loeffler”" }));
-  const chooser = await screen.findByRole("combobox");
+  const chooser = await screen.findByRole("combobox", { name: /Choose the intended artist/ });
   if (action === "keep") {
     expect(screen.queryByText(/Generate playlist will search MusicBrainz/)).toBeNull();
   }

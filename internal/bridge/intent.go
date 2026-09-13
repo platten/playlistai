@@ -35,6 +35,7 @@ type IntentPreview struct {
 }
 
 type IntentSessionContext struct {
+	TrackCount   int             `json:"trackCount,omitempty"`
 	GenerationID string          `json:"generationId"`
 	SessionID    string          `json:"sessionId"`
 	NowPlaying   *core.TrackRef  `json:"nowPlaying"`
@@ -44,6 +45,7 @@ type IntentSessionContext struct {
 
 func (session IntentSessionContext) input(prompt string) ports.IntentInput {
 	return ports.IntentInput{
+		TrackCount:   session.TrackCount,
 		GenerationID: session.GenerationID,
 		Prompt:       prompt, SessionID: session.SessionID, NowPlaying: session.NowPlaying,
 		RecentTracks: session.RecentTracks, Locale: session.Locale,
@@ -62,6 +64,9 @@ func (a *API) ParseIntentWithContext(ctx context.Context, prompt string, session
 }
 
 func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput) (IntentPreview, error) {
+	if err := validateTrackCount(input.TrackCount); err != nil {
+		return IntentPreview{}, err
+	}
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
 	if err := ctx.Err(); err != nil {
@@ -84,6 +89,7 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 		return IntentPreview{}, err
 	}
 	m, backend := entry.intent, entry.outcome.Backend
+	m = withTrackCount(m, input.TrackCount)
 	logging.Diagnostic(ctx, "intent.parsed", m)
 	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	var issues []intentresolution.Issue
@@ -160,6 +166,9 @@ func (a *API) GenerateFromPromptResolvedWithContext(ctx context.Context, prompt 
 }
 
 func (a *API) generateFromPromptOperation(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
+	if err := validateTrackCount(input.TrackCount); err != nil {
+		return GenerateResult{}, err
+	}
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
 	ctx = a.diagnosticContext(ctx)
@@ -200,7 +209,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	if err != nil {
 		return GenerateResult{}, err
 	}
-	m := entry.intent
+	m := withTrackCount(entry.intent, input.TrackCount)
 	logging.Diagnostic(ctx, "intent.parsed", m)
 	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	m.Controls.RecommendationMode = recommendationMode
