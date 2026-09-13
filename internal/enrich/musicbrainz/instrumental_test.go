@@ -81,10 +81,14 @@ func TestInstrumentalLookupFallbackAndMissingEvidence(t *testing.T) {
 							t.Error("private prompt or incorrect search")
 						}
 						_, _ = fmt.Fprint(w, `{"data":[{"id":1,"title":"Song (Live)","artist":{"name":"Fixture"}}]}`)
+					case "/w/api.php":
+						_, _ = fmt.Fprint(w, `{"query":{"pages":[{"pageid":1,"title":"Instrumental music","lastrevid":2,"links":[]}]}}`)
 					default:
 						t.Errorf("unexpected lookup %s", r.URL)
 					}
 				})
+				c.wikipediaBase = c.base
+				c.contextClient = c.hc
 				var entries []fakes.CatalogTrack
 				if local {
 					entries = append(entries, fakes.CatalogTrack{ID: "candidate", Display: "Fixture - Song (Instrumental)", Audio: []float32{1, 0}, Track: []float32{1, 0}})
@@ -103,6 +107,9 @@ func TestInstrumentalLookupFallbackAndMissingEvidence(t *testing.T) {
 				if local {
 					wantCalls += httpretry.MaxAttempts
 				} // optional recording enrichment of the local proposal
+				if !local {
+					wantCalls++
+				}
 				if (len(got.Knowledge.Candidates) > 0) != local || calls.Load() != wantCalls {
 					t.Fatalf("fallback mismatch: %+v calls=%d", got.Knowledge, calls.Load())
 				}
@@ -114,5 +121,41 @@ func TestInstrumentalLookupFallbackAndMissingEvidence(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestInstrumentalLookupUsesWikipediaOnlyAsCatalogLead(t *testing.T) {
+	c, _ := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ws/2/recording":
+			_, _ = fmt.Fprint(w, `{"count":0,"recordings":[]}`)
+		case "/search":
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+		case "/w/api.php":
+			_, _ = fmt.Fprint(w, `{"query":{"pages":[{"pageid":10,"title":"Instrumental music","lastrevid":42,"links":[{"ns":0,"title":"Missing name"},{"ns":0,"title":"Fixture (band)"}]}]}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	c.wikipediaBase = c.base
+	c.contextClient = c.hc
+	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "candidate", Display: "Fixture - Ordinary title", Audio: []float32{1, 0}, Track: []float32{1, 0}})
+	intent, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: "Instrumental, no vocals"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent.Seed = "42"
+	got, err := c.ResolveMusic(context.Background(), intent, cat, cat, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Knowledge == nil || len(got.Knowledge.Candidates) != 1 || got.Knowledge.Candidates[0].ID != "candidate" {
+		t.Fatalf("Wikipedia lead did not resolve through catalog: %+v", got.Knowledge)
+	}
+	if got.InferredAnchors[0].Suitability.State == core.EvidenceMatch {
+		t.Fatal("Wikipedia link was treated as musical-fit evidence")
+	}
+	if !strings.Contains(strings.Join(got.Knowledge.Sources, " "), "oldid=42") {
+		t.Fatalf("fixed Wikipedia revision was not recorded: %q", got.Knowledge.Sources)
 	}
 }

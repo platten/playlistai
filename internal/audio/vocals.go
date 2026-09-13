@@ -2,7 +2,9 @@ package audio
 
 import (
 	"math"
+	"slices"
 	"strings"
+	"sync"
 
 	"github.com/platten/playlistai/internal/core"
 )
@@ -31,6 +33,51 @@ var vocalPrompts = []string{
 }
 var otherPrompts = []string{"Silence.", "Noise without music."}
 
+type vocalQueryCacheKey struct {
+	model  string
+	policy string
+	prompt string
+}
+
+type vocalQueryCacheEntry struct {
+	ready  chan struct{}
+	vector []float32
+}
+
+type vocalQueryCache struct {
+	entries sync.Map
+}
+
+// Fixed vocal contrasts are public model inputs and do not depend on a user's
+// prompt. Coalesce their first inference and reuse them while the same analyzer
+// instance and complete model identity remain active. Session copies are
+// independent because Session.Close clears its own vectors.
+func (s *Session) fixedVocalQuery(prompt string) ([]float32, bool) {
+	key := vocalQueryCacheKey{
+		model: Fingerprint(s.snapshot.Model), policy: VocalPolicyVersion, prompt: prompt,
+	}
+	cache := s.service.vocalQueryCache()
+	entry := &vocalQueryCacheEntry{ready: make(chan struct{})}
+	actual, loaded := cache.entries.LoadOrStore(key, entry)
+	entry = actual.(*vocalQueryCacheEntry)
+	if loaded {
+		select {
+		case <-entry.ready:
+			return slices.Clone(entry.vector), len(entry.vector) > 0
+		case <-s.ctx.Done():
+			return nil, false
+		}
+	}
+	vector, err := s.service.Analyzer.EmbedText(s.ctx, prompt)
+	if err == nil && validVector(vector, s.snapshot.Model.Dimension) {
+		entry.vector = slices.Clone(vector)
+	} else {
+		cache.entries.Delete(key) // failures remain retryable
+	}
+	close(entry.ready)
+	return slices.Clone(entry.vector), len(entry.vector) > 0
+}
+
 func instrumentalClause(c core.AudioClause) bool {
 	if c.Strength == "preferred" || c.Degree == "mostly" || c.Degree == "reduced" {
 		return false
@@ -49,26 +96,29 @@ func requiredInstrumentalScreen(clauses []core.AudioClause) bool {
 	return false
 }
 
-// Every segment must prefer an instrumental description over every vocal and
-// non-musical description. Ties, invalid vectors and missing evidence abstain.
-func (s *Session) instrumentalEvidence(record core.AudioAnalysis) (core.EvidenceState, float64) {
-	if len(record.Segments) == 0 || record.Identity.Status != core.ResolutionResolved {
-		return core.EvidenceUnknown, 0
-	}
+func (s *Session) instrumentalQueryGroupsLocked() ([][][]float32, bool) {
 	groups := [][][]float32{{}, {}, {}}
 	for i, prompts := range [][]string{instrumentalPrompts, vocalPrompts, otherPrompts} {
 		for _, prompt := range prompts {
 			vector, ok := s.queries[prompt]
 			if !ok {
-				var err error
-				vector, err = s.service.Analyzer.EmbedText(s.ctx, prompt)
-				if err != nil || !validVector(vector, record.Model.Dimension) {
-					return core.EvidenceUnknown, 0
+				vector, ok = s.fixedVocalQuery(prompt)
+				if !ok {
+					return nil, false
 				}
 				s.queries[prompt] = vector
 			}
 			groups[i] = append(groups[i], vector)
 		}
+	}
+	return groups, true
+}
+
+// Every segment must prefer an instrumental description over every vocal and
+// non-musical description. Ties, invalid vectors and missing evidence abstain.
+func instrumentalEvidenceWithGroups(record core.AudioAnalysis, groups [][][]float32) (core.EvidenceState, float64) {
+	if len(record.Segments) == 0 || record.Identity.Status != core.ResolutionResolved || len(groups) != 3 {
+		return core.EvidenceUnknown, 0
 	}
 	state, strongestVocal := core.EvidenceMatch, -1.0
 	for _, segment := range record.Segments {
@@ -91,6 +141,16 @@ func (s *Session) instrumentalEvidence(record core.AudioAnalysis) (core.Evidence
 		}
 	}
 	return state, strongestVocal
+}
+
+func (s *Session) instrumentalEvidence(record core.AudioAnalysis) (core.EvidenceState, float64) {
+	s.queryMu.Lock()
+	defer s.queryMu.Unlock()
+	groups, ok := s.instrumentalQueryGroupsLocked()
+	if !ok {
+		return core.EvidenceUnknown, 0
+	}
+	return instrumentalEvidenceWithGroups(record, groups)
 }
 
 func (s *Session) SupportsConstraint(kind string) bool {

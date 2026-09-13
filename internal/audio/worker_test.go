@@ -75,6 +75,26 @@ func TestWorkerCancellationAndCrashPermitRestart(t *testing.T) {
 	}
 }
 
+func TestWorkerCancellationInterruptsMutexWait(t *testing.T) {
+	w := &Worker{}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- w.Health(ctx)
+	}()
+	select {
+	case err := <-done:
+		if err != context.Canceled {
+			t.Fatalf("canceled wait returned %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("canceled worker call remained blocked on the mutex")
+	}
+}
+
 func TestBundlePreprocessingCannotSilentlyChangeCompiledContract(t *testing.T) {
 	config := preprocessingConfig{Version: PreprocessingVersion, SamplingRate: SampleRate, SegmentSamples: SegmentSamples, FFTSize: 1024, HopSize: 480, MelBins: MelBins, MinimumFrequency: 50, MaximumFrequency: 14000, MelScale: "slaney", Padding: "reflect", Floor: 1e-10}
 	path := filepath.Join(t.TempDir(), "preprocessing.json")

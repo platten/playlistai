@@ -208,7 +208,8 @@ included in desktop or analysis downloads.
 
 Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
-MusicBrainz metadata, linked Wikidata/Wikipedia context in Enhanced hybrid,
+MusicBrainz metadata, linked Wikidata/Wikipedia context in Enhanced hybrid, a
+bounded Wikipedia artist-lead fallback for seedless instrumental searches,
 optional Discogs fallback, and Soundiiz handoff. Context requests contain public
 entity names, identifiers and catalog recording titles; they do not send the full
 prompt or listening history. MusicBrainz

@@ -766,7 +766,7 @@ export function GenerateScreen({
             {(preview.requiredTracks ?? []).length > 0 && <p>Must include: {(preview.requiredTracks ?? []).join(", ")}</p>}
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-[12px] text-muted">Interpretation details and diagnostics</summary>
-          <p className="mt-2 text-[12px] text-muted">Generation may look up extracted music names and genres in MusicBrainz, and missing artists' popular tracks in Deezer. Your full description and taste profile stay local. Cached metadata can be reused offline; musical fit may remain approximate.</p>
+          <p className="mt-2 text-[12px] text-muted">Generation may look up extracted music names and genres in MusicBrainz, and missing artists' popular tracks in Deezer. When an instrumental-only search has no starting point, it may also check artist links on Wikipedia. Your full description and taste profile stay local. Cached metadata can be reused offline; musical fit may remain approximate.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {needsSeed && (
               <Chip>

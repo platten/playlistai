@@ -645,6 +645,13 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	if o.audioProvider != nil && len(audio.Clauses(intent)) > 0 {
 		if service := o.audioProvider(); service.ReadyFor(intent) {
+			if request.Progress != nil {
+				note := "Preparing musical analysis"
+				if core.WantsInstrumental(intent) {
+					note = "Preparing vocal screening"
+				}
+				request.Progress.Report("generation", 0, 0, note)
+			}
 			catalogVersion := "unknown"
 			if o.resolver != nil {
 				catalogVersion = o.resolver.CatalogVersion()
@@ -680,7 +687,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return outcomePlaylist(intent, seed, core.OutcomeUnsupported, []core.OutcomeReason{{Code: "vocal_analysis_unavailable", Detail: "This request needs CLAP preview screening to exclude vocals, but the local analysis model is not ready.", Action: "download and validate the CLAP model in Settings, then generate again"}}), nil
 	}
 	if request.Progress != nil {
-		request.Progress.Report("generation", 0, 0, "Finding starting points")
+		note := "Finding starting points"
+		if core.WantsInstrumental(intent) {
+			note = "Checking instrumental starting points"
+		}
+		request.Progress.Report("generation", 0, 0, note)
 	}
 	intent, anchorNotices, err := o.assessInferredAnchors(ctx, intent)
 	if err != nil {

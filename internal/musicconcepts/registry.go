@@ -10,15 +10,16 @@ import (
 	"strings"
 )
 
-const Version = "music-concepts/v1"
+const Version = "music-concepts/v2"
 
 // ProviderMappings keeps provider class names out of the user's intent. Parent
 // and related concepts are never expanded by Canonical or Find.
 type ProviderMappings struct {
-	MusicBrainz    []string          `json:"musicBrainz,omitempty"`
-	AcousticBrainz map[string]string `json:"acousticBrainz,omitempty"`
-	CLAP           []string          `json:"clap,omitempty"`
-	DSP            []string          `json:"dsp,omitempty"`
+	MusicBrainz          []string          `json:"musicBrainz,omitempty"`
+	MusicBrainzDiscovery []string          `json:"musicBrainzDiscovery,omitempty"`
+	AcousticBrainz       map[string]string `json:"acousticBrainz,omitempty"`
+	CLAP                 []string          `json:"clap,omitempty"`
+	DSP                  []string          `json:"dsp,omitempty"`
 }
 
 type Concept struct {
@@ -133,6 +134,7 @@ func clone(c Concept) Concept {
 	c.Parents = slices.Clone(c.Parents)
 	c.Related = slices.Clone(c.Related)
 	c.Providers.MusicBrainz = slices.Clone(c.Providers.MusicBrainz)
+	c.Providers.MusicBrainzDiscovery = slices.Clone(c.Providers.MusicBrainzDiscovery)
 	c.Providers.CLAP = slices.Clone(c.Providers.CLAP)
 	c.Providers.DSP = slices.Clone(c.Providers.DSP)
 	if c.Providers.AcousticBrainz != nil {

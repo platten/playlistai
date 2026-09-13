@@ -26,8 +26,10 @@ var (
 	negatedQuantityPrefix  = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|never)(?:\s+(?:a|an|another|exactly))?\s*$`)
 	artistReferenceSuffix  = regexp.MustCompile(`(?i)\s+(?:only\b|released\b|recorded\b|and\s+(?:finish|end|begin|start)\b)`)
 	onlyArtistPrefix       = regexp.MustCompile(`(?i)\b(?:songs|tracks|music|playlist)\s+(?:only|exclusively)\s+by\s+([^,.;!?]+)`)
-	onlyArtistSuffix       = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+?)\s+only(?:\s*[,.;!?]|$)`)
+	onlyArtistSuffix       = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+?)\s+only(?:\s*[,.;!?]|\s*$)`)
 	onlyArtistDated        = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+),\s*(?:released|recorded)\s+(?:between|from)\s+[12][0-9]{3}\s+(?:and|to|through)\s+[12][0-9]{3}\s+only(?:\s*[,.;!?]|$)`)
+	onlyArtistBarePrefix   = regexp.MustCompile(`(?i)^\s*(?:only|exclusively)\s+([^,.;!?]+?)\s*$`)
+	onlyArtistBareSuffix   = regexp.MustCompile(`(?i)^\s*([^,.;!?]+?)\s+(?:only|exclusively)\s*$`)
 	preferredClause        = regexp.MustCompile(`(?i)\b(?:prefer|preferably|ideally|mostly|mainly|some|a bit of|a touch of)\s+(?:a\s+|an\s+)?`)
 	contrastOperator       = regexp.MustCompile(`(?i)\b(?:over|rather than|instead of)\s+(?:an?\s+)?$`)
 	negativeClause         = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid)\s+(?:(?:their|his|her|the|later|early|late)\s+)*`)
@@ -202,8 +204,18 @@ func OnlyArtist(prompt string) string {
 }
 
 func onlyArtistMention(prompt string) (string, int, int) {
-	for _, pattern := range []*regexp.Regexp{onlyArtistPrefix, onlyArtistSuffix, onlyArtistDated} {
-		for _, p := range pattern.FindAllStringSubmatchIndex(prompt, -1) {
+	masked := MaskTrackCounts(prompt)
+	type candidate struct {
+		pattern *regexp.Regexp
+		input   string
+		bare    bool
+	}
+	patterns := []candidate{
+		{onlyArtistPrefix, prompt, false}, {onlyArtistSuffix, prompt, false}, {onlyArtistDated, prompt, false},
+		{onlyArtistSuffix, masked, false}, {onlyArtistBarePrefix, masked, true}, {onlyArtistBareSuffix, masked, true},
+	}
+	for _, candidate := range patterns {
+		for _, p := range candidate.pattern.FindAllStringSubmatchIndex(candidate.input, -1) {
 			if insideQuoted(prompt, p[0], p[1]) || negatedQuantityPrefix.MatchString(prompt[:p[0]]) {
 				continue
 			}
@@ -211,7 +223,8 @@ func onlyArtistMention(prompt string) (string, int, int) {
 			if stop := artistReferenceSuffix.FindStringIndex(prompt[start:end]); stop != nil {
 				end = start + stop[0]
 			}
-			if start < end && !strings.Contains(strings.ToLower(prompt[start:end]), " not ") {
+			value := prompt[start:end]
+			if start < end && (!candidate.bare || nameLike(value)) && !strings.Contains(strings.ToLower(value), " not ") {
 				return prompt[start:end], start, end
 			}
 		}
@@ -283,8 +296,32 @@ func referenceTextEnd(prompt string, start int) int {
 	if ambiguousEntityMention(prompt[start:end]) {
 		return end
 	}
+	// Preserve names such as Men Without Hats, while separating the explicit
+	// repeated-name construction in "like Aerosmith without Aerosmith". Broader
+	// unequal-name cases remain available to catalog-backed interpretation.
+	segment := prompt[start:end]
+	lower := strings.ToLower(segment)
+	if at := strings.Index(lower, " without "); at >= 0 {
+		left := strings.TrimSpace(segment[:at])
+		right := strings.Trim(strings.TrimSpace(MaskTrackCounts(segment[at+len(" without "):])), " ,;.!?")
+		if left != "" && strings.EqualFold(left, right) {
+			return start + at
+		}
+	}
 	if stop := referenceEnd.FindStringIndex(prompt[start:]); stop != nil {
 		return start + stop[0]
+	}
+	return end
+}
+
+func trimTrailingCount(prompt string, start, end int) int {
+	for _, span := range countSpans(prompt) {
+		if span[0] < start || span[1] > end {
+			continue
+		}
+		if strings.Trim(prompt[span[1]:end], " ,;.!?\t\r\n") == "" {
+			return span[0]
+		}
 	}
 	return end
 }

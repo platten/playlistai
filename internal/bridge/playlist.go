@@ -92,6 +92,8 @@ type PlaylistNotice struct {
 func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
+	ctx, cancel := context.WithTimeout(ctx, generationTimeout)
+	defer cancel()
 	ctx = a.diagnosticContext(ctx)
 	a.operations.cancel("intent-preview")
 	ctx, current, finish := a.operations.begin(ctx, generationOperation)
@@ -100,11 +102,12 @@ func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (Play
 	defer finishGeneration()
 	result, err := a.runBuild(ctx, req)
 	if err != nil {
+		err = generationOperationError(err)
 		logging.Diagnostic(ctx, "generation.error", err.Error())
 	}
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
-			return PlaylistResult{}, contextErr
+			return PlaylistResult{}, generationOperationError(contextErr)
 		}
 		if !current() {
 			return PlaylistResult{}, context.Canceled

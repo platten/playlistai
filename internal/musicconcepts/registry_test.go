@@ -67,11 +67,15 @@ func TestRegistryResultsCannotMutateEmbeddedData(t *testing.T) {
 	changed, _ := FindID(original.ID)
 	changed.Aliases[0] = "corrupt"
 	changed.Providers.MusicBrainz[0] = "corrupt"
+	ambient, _ := Find("genre", "ambient electronica")
+	changedAmbient, _ := FindID(ambient.ID)
+	changedAmbient.Providers.MusicBrainzDiscovery[0] = "corrupt"
 	changed.Providers.AcousticBrainz["genre_rosamerica"] = "corrupt"
 	all := Concepts()
 	all[0].Value = "corrupt"
 	again, _ := Find("genre", "hip-hop")
-	if !reflect.DeepEqual(original, again) || Concepts()[0].Value == "corrupt" {
+	againAmbient, _ := Find("genre", "ambient electronica")
+	if !reflect.DeepEqual(original, again) || !reflect.DeepEqual(ambient, againAmbient) || Concepts()[0].Value == "corrupt" {
 		t.Fatal("callers can mutate registry state")
 	}
 }

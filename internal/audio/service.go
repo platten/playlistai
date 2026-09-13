@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -45,6 +46,29 @@ type Service struct {
 	// AllowPreviewURL exists for isolated fixture servers. Production leaves it
 	// nil and only permits HTTPS on Deezer's preview CDN, including redirects.
 	AllowPreviewURL func(*url.URL) bool
+	fixedQueries    *vocalQueryCache
+}
+
+var fixedQueryCacheInit sync.Mutex
+
+func (s *Service) vocalQueryCache() *vocalQueryCache {
+	fixedQueryCacheInit.Lock()
+	defer fixedQueryCacheInit.Unlock()
+	if s.fixedQueries == nil {
+		s.fixedQueries = &vocalQueryCache{}
+	}
+	return s.fixedQueries
+}
+
+// Clone retains immutable model-query caches while allowing callers to attach
+// request-specific optional services or policy without mutating the base.
+func (s *Service) Clone() *Service {
+	if s == nil {
+		return nil
+	}
+	s.vocalQueryCache()
+	clone := *s
+	return &clone
 }
 
 func (s *Service) Ready() bool {

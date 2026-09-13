@@ -171,6 +171,8 @@ func (a *API) generateFromPromptOperation(ctx context.Context, input ports.Inten
 	}
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
+	ctx, cancel := context.WithTimeout(ctx, generationTimeout)
+	defer cancel()
 	ctx = a.diagnosticContext(ctx)
 	logging.Diagnostic(ctx, "generation.prompt", input)
 	a.operations.cancel("intent-preview")
@@ -180,11 +182,12 @@ func (a *API) generateFromPromptOperation(ctx context.Context, input ports.Inten
 	defer finishGeneration()
 	result, err := a.generateFromPrompt(ctx, input, selections)
 	if err != nil {
+		err = generationOperationError(err)
 		logging.Diagnostic(ctx, "generation.error", err.Error())
 	}
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
-			return GenerateResult{}, contextErr
+			return GenerateResult{}, generationOperationError(contextErr)
 		}
 		if !current() {
 			return GenerateResult{}, context.Canceled

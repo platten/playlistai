@@ -31,6 +31,18 @@ func TestDiscoveryIncludesSoftStylesAndApprovedAliases(t *testing.T) {
 	}
 }
 
+func TestAmbientElectronicaUsesBroadDiscoveryWithoutChangingIntent(t *testing.T) {
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "ambient electronica"}}}
+	got := discoveryGenres(intent)
+	want := []string{"ambient electronica", "ambient electronic", "ambient", "electronica"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("discovery queries = %q, want %q", got, want)
+	}
+	if intent.EssentialCriteria[0].Value != "ambient electronica" {
+		t.Fatalf("retrieval hints changed requested genre: %+v", intent.EssentialCriteria)
+	}
+}
+
 func TestResolveMusicStyleOnlyUsesExactAliasWithoutInventingFit(t *testing.T) {
 	var queried []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,6 +106,34 @@ func TestCandidateAliasLookupFailureKeepsSuccessfulArtistPool(t *testing.T) {
 	}
 	if len(stream.Snapshot().Notices) == 0 {
 		t.Fatal("partial provider coverage was not recorded")
+	}
+}
+
+func TestInstrumentalOnlyRequestOpensContinuingCandidateStream(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ws/2/artist":
+			if r.URL.Query().Get("query") != `tag:"instrumental"` {
+				t.Fatalf("artist query = %q", r.URL.Query().Get("query"))
+			}
+			_, _ = fmt.Fprint(w, `{"count":1,"artists":[{"id":"a1","name":"Artist","tags":[{"name":"instrumental","count":3}]}]}`)
+		case "/ws/2/recording":
+			_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"r1","title":"One","artist-credit":[{"name":"Artist","artist":{"id":"a1"}}]}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := newClient(t, server.URL, time.Nanosecond)
+	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One"})
+	intent := core.MusicIntent{Seed: "42", Count: 5, Preferences: core.SemanticPreferences{VocalPreference: &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}}}
+	stream := client.OpenCandidates(intent, cat, cat)
+	if stream == nil {
+		t.Fatal("instrumental request did not open a continuation stream")
+	}
+	got, err := stream.Next(context.Background())
+	if err != nil || got.ID != "one" {
+		t.Fatalf("instrumental continuation = %+v, %v", got, err)
 	}
 }
 

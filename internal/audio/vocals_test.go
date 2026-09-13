@@ -95,7 +95,7 @@ func TestVocalScreeningRequiresEverySegmentAndReusesFeatures(t *testing.T) {
 				}
 				session.Close()
 			}
-			if resolver.calls != 0 || encoder.textCalls != 2*(len(instrumentalPrompts)+len(vocalPrompts)+len(otherPrompts)) {
+			if resolver.calls != 0 || encoder.textCalls != len(instrumentalPrompts)+len(vocalPrompts)+len(otherPrompts) {
 				t.Fatal("unexpected audio retrieval or repeated text encoding")
 			}
 		})
@@ -118,6 +118,7 @@ func TestVocalScreeningAbstainsOnInvalidIdentityVectorsAndTextFailure(t *testing
 		t.Fatal("invalid vector passed")
 	}
 	clear(session.queries)
+	service.fixedQueries = &vocalQueryCache{}
 	encoder.textFailure = true
 	record.Segments[0].Embedding = []float32{1, 0}
 	if state, _ := session.instrumentalEvidence(record); state != core.EvidenceUnknown {

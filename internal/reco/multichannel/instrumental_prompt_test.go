@@ -36,7 +36,8 @@ func TestInstrumentalPromptUsesCLAPWithoutGeneralCalibration(t *testing.T) {
 	}
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
 	var checked []string
-	result, err := engine.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent, OnChecked: func(track core.TrackRef) { checked = append(checked, track.ID) }})
+	progress := &fakes.RecordingProgress{}
+	result, err := engine.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent, Progress: progress, OnChecked: func(track core.TrackRef) { checked = append(checked, track.ID) }})
 	if err != nil || len(result.Tracks) != 2 || len(checked) != 2 {
 		t.Fatalf("playlist=%+v checked=%v err=%v", result, checked, err)
 	}
@@ -47,6 +48,14 @@ func TestInstrumentalPromptUsesCLAPWithoutGeneralCalibration(t *testing.T) {
 	}
 	if resolver.calls != 0 || result.AudioEvidence == nil || !noticeCode(result.Notices, "vocal_preview_screening") {
 		t.Fatal("missing cache/coverage evidence")
+	}
+	var preparing, checking bool
+	for _, row := range progress.Snapshot() {
+		preparing = preparing || row.Note == "Preparing vocal screening"
+		checking = checking || row.Note == "Checking instrumental starting points"
+	}
+	if !preparing || !checking {
+		t.Fatalf("instrumental generation did not report early progress: %+v", progress.Snapshot())
 	}
 	intent.RequiredTracks = []core.IntentReference{{Kind: core.ReferenceTrack, TrackID: "cooc", Influence: core.InfluencePositive}}
 	result, err = engine.Build(context.Background(), intent)

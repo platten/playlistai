@@ -241,3 +241,45 @@ func TestArtistPronounExclusionRequiresOneAdjacentLiteralPair(t *testing.T) {
 		}
 	}
 }
+
+func TestShortArtistOnlyAndRepeatedArtistExclusion(t *testing.T) {
+	for _, prompt := range []string{
+		"Aerosmith only",
+		"only Aerosmith",
+		"Aerosmith only 10 tracks",
+		"10 tracks Aerosmith only",
+		"songs by Aerosmith only 10 tracks",
+	} {
+		t.Run(prompt, func(t *testing.T) {
+			m, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: prompt})
+			if err != nil {
+				t.Fatal(err)
+			}
+			required := false
+			for _, c := range m.HardConstraints {
+				required = required || c.Kind == "require_artist" && c.Value == "Aerosmith"
+			}
+			if !required || len(m.References) != 1 || m.References[0].Query != "Aerosmith" || m.References[0].Influence != core.InfluencePositive {
+				t.Fatalf("artist-only intent lost: %+v", m)
+			}
+			if strings.Contains(prompt, "10") && (m.Count != 10 || !m.TrackCountExplicit) {
+				t.Fatalf("explicit count lost: %+v", m)
+			}
+		})
+	}
+
+	m, err := rules.New().Parse(context.Background(), ports.IntentInput{Prompt: "like Aerosmith without Aerosmith 10 tracks"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	positive, excluded := false, false
+	for _, ref := range m.References {
+		positive = positive || ref.Influence == core.InfluencePositive && ref.Query == "Aerosmith"
+	}
+	for _, c := range m.HardConstraints {
+		excluded = excluded || c.Kind == "exclude_artist" && c.Value == "Aerosmith"
+	}
+	if !positive || !excluded || m.Count != 10 || !m.TrackCountExplicit {
+		t.Fatalf("similarity/exclusion/count composition lost: %+v", m)
+	}
+}

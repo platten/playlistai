@@ -43,6 +43,20 @@ func validContextMetadata(path, namespace string, raw []byte) bool {
 			} `json:"query"`
 		}
 		return json.Unmarshal(raw, &data) == nil && len(data.Query.Pages) == 1
+	case "wikipedia-discovery-v1:":
+		var data struct {
+			Query struct {
+				Pages []struct {
+					PageID       int64 `json:"pageid"`
+					LastRevision int64 `json:"lastrevid"`
+					Links        []struct {
+						NS    int    `json:"ns"`
+						Title string `json:"title"`
+					} `json:"links"`
+				} `json:"pages"`
+			} `json:"query"`
+		}
+		return json.Unmarshal(raw, &data) == nil && len(data.Query.Pages) == 1 && data.Query.Pages[0].PageID > 0 && data.Query.Pages[0].LastRevision > 0
 	}
 	return false
 }
