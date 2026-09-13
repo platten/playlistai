@@ -183,7 +183,7 @@ func validMetadata(path, namespace string, raw []byte) bool {
 			return false
 		}
 	}
-	if strings.HasSuffix(namespace, "context-v1:") {
+	if strings.HasSuffix(namespace, "context-v1:") || namespace == "wikipedia-discovery-v1:" {
 		return validContextMetadata(path, namespace, raw)
 	}
 	if namespace == "discogs-v1:" && strings.HasPrefix(path, "/releases/") {

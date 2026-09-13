@@ -62,19 +62,25 @@ func TestExplicitArtistOnlyProducesTenTracksWithoutOtherArtists(t *testing.T) {
 		References:      []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Artist 0", Influence: core.InfluencePositive}},
 		HardConstraints: []core.HardConstraint{{Kind: "require_artist", Value: "Artist 0"}},
 		Controls:        core.IntentControls{TotalTrackCount: 10, AudioWeight: .5, CooccurrenceWeight: .5, ArtistDiversity: .7}}
-	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(&fixtureDiscovery{})
-	playlist, err := engine.Build(context.Background(), intent)
-	if err != nil || len(playlist.Tracks) != 10 {
-		t.Fatalf("tracks=%d outcome=%+v err=%v", len(playlist.Tracks), playlist.Outcome, err)
-	}
-	for _, track := range playlist.Tracks {
-		if track.Artist != "Artist 0" {
-			t.Fatal("artist-only filter bypassed")
+	var playlist core.Playlist
+	var err error
+	for _, mode := range []core.RecommendationMode{core.AcousticBrainzFirst, core.CLAPFirst, core.EnhancedHybrid} {
+		intent.Controls.RecommendationMode = mode
+		engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(&fixtureDiscovery{})
+		playlist, err = engine.Build(context.Background(), intent)
+		if err != nil || len(playlist.Tracks) != 10 {
+			t.Fatalf("mode=%s tracks=%d outcome=%+v err=%v", mode, len(playlist.Tracks), playlist.Outcome, err)
+		}
+		for _, track := range playlist.Tracks {
+			if track.Artist != "Artist 0" {
+				t.Fatalf("artist-only filter bypassed in %s", mode)
+			}
+		}
+		if !playlist.Intent.HardConstraints[0].RuntimeEnforced {
+			t.Fatalf("runtime enforcement not reported in %s", mode)
 		}
 	}
-	if !playlist.Intent.HardConstraints[0].RuntimeEnforced {
-		t.Fatal("runtime enforcement not reported")
-	}
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(&fixtureDiscovery{})
 	spacing := intent
 	spacing.HardConstraints = append(append([]core.HardConstraint(nil), intent.HardConstraints...), core.HardConstraint{Kind: "no_back_to_back_artist", Value: "true"})
 	conflict, err := engine.Build(context.Background(), spacing)

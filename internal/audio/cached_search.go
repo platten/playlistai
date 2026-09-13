@@ -66,6 +66,8 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 	}
 	var questions []question
 	positive := false
+	strictInstrumental := requiredInstrumentalScreen(s.clauses)
+	var instrumentalGroups [][][]float32
 	s.queryMu.Lock()
 	for _, clause := range s.clauses {
 		if clause.Strict {
@@ -77,6 +79,11 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		}
 		positive = positive || !clause.Negative
 		questions = append(questions, question{clause, q})
+	}
+	if strictInstrumental {
+		var ok bool
+		instrumentalGroups, ok = s.instrumentalQueryGroupsLocked()
+		positive = positive || ok
 	}
 	s.queryMu.Unlock()
 	if !positive {
@@ -92,6 +99,14 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 			return true
 		}
 		a := core.AudioAssessment{PolicyVersion: s.snapshot.PolicyVersion}
+		instrumentalScore := 0.0
+		if strictInstrumental {
+			state, _ := instrumentalEvidenceWithGroups(record, instrumentalGroups)
+			if state != core.EvidenceMatch {
+				return true
+			}
+			instrumentalScore = 1
+		}
 		for _, q := range questions {
 			a.Clauses = append(a.Clauses, core.AudioClauseAssessment{Clause: q.clause, Score: segmentSimilarity(q.vector, record.Segments, q.clause.Negative), ScoreAvailable: true, State: core.EvidenceUnknown})
 		}
@@ -99,7 +114,7 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		ApplyScores(&c, a)
 		// Positive and negative evidence only order a retrieval channel. They
 		// cannot satisfy a hard criterion or exclude an otherwise eligible track.
-		score := c.Scores.SemanticMatch - c.Scores.SemanticNegativeMatch
+		score := instrumentalScore + c.Scores.SemanticMatch - c.Scores.SemanticNegativeMatch
 		c.Sources = []core.RetrievalEvidence{{Channel: "cached_audio", QueryID: s.fingerprint, Score: score, QueryWeight: 1}}
 		at := sort.Search(len(candidates), func(i int) bool {
 			other := candidates[i].Sources[0].Score

@@ -102,6 +102,11 @@ func (s *candidateStream) recordEvidence(trackID, channel, source string) {
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
 	genres := contextualDiscoveryGenres(intent, contextPlans(intent))
+	if len(genres) == 0 && core.WantsInstrumental(intent) {
+		// MusicBrainz's instrumental tag is a discovery hint. Every proposed
+		// recording still has to pass catalog identity and CLAP vocal screening.
+		genres = []string{"instrumental"}
+	}
 	if len(genres) == 0 || cat == nil || resolver == nil {
 		return nil
 	}

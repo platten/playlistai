@@ -272,9 +272,9 @@ func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
 	}
 	p := &audio.Service{Resolver: deezer.New(deezer.Config{}), Recordings: recordings, Authorized: true, DSPStore: c.analysis.store.DSP()}
 	if clap := c.AudioService(); clap != nil {
-		copy := *clap
+		copy := clap.Clone()
 		copy.DSPStore = p.DSPStore
-		p = &copy
+		p = copy
 	}
 	if c.enhanced.worker == nil || c.enhanced.manifest == nil {
 		return p, nil
@@ -297,7 +297,7 @@ func (c *Container) EnhancedPreviewService() *audio.Service {
 	if !c.enhanced.enabled || c.analysis.store == nil {
 		return base
 	}
-	p := *base
+	p := *base.Clone()
 	p.DSPStore = c.analysis.store.DSP()
 	_, p.MERT = c.enhancedServices()
 	return &p

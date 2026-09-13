@@ -96,6 +96,14 @@ func TestReviewedAliasesShareQueriesWithoutLosingPolarity(t *testing.T) {
 	}
 }
 
+func TestGentlePulseUsesReviewedCLAPCaption(t *testing.T) {
+	got := ClauseQueries(core.AudioClause{Kind: "texture", Text: "gentle pulse"})
+	want := []string{"gentle pulse", "Music with a soft, steady rhythmic pulse."}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("gentle pulse queries = %q, want %q", got, want)
+	}
+}
+
 func TestTypedScoreAlternativesAndScopedNegatives(t *testing.T) {
 	makeClause := func(scope, kind, group string, negative bool, score float64) core.AudioClauseAssessment {
 		return core.AudioClauseAssessment{Clause: core.AudioClause{Scope: scope, Kind: kind, Group: group, Negative: negative}, ScoreAvailable: true, Score: score}

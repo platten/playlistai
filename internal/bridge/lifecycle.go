@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -19,8 +20,16 @@ import (
 const (
 	defaultRecommendationAlgorithmVersion = "unversioned"
 	generationOperation                   = "generation"
+	generationTimeout                     = 2 * time.Minute
 	maxParsedIntentCacheEntries           = 64
 )
+
+func generationOperationError(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("playlist generation reached the two-minute time limit; try a smaller playlist or add a specific artist or track")
+	}
+	return err
+}
 
 type StageTiming struct {
 	Stage        string `json:"stage"`

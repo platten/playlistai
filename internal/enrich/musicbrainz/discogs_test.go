@@ -205,7 +205,7 @@ func TestDiscogsFallbackCatalogIdentityExclusionsAndReplay(t *testing.T) {
 		c := discogsFixture(t, func(r *http.Request) *http.Response {
 			calls++
 			if r.URL.Path == "/database/search" {
-				if r.URL.Query().Get("genre") != "ambient electronica" {
+				if r.URL.Query().Get("genre") != "fixture genre" {
 					t.Error("genre phrase changed")
 				}
 				return jsonResponse(r, 200, `{"results":[{"id":1,"type":"release"}],"pagination":{"items":1}}`)
@@ -215,7 +215,7 @@ func TestDiscogsFallbackCatalogIdentityExclusionsAndReplay(t *testing.T) {
 		mbCalls := 0
 		c.hc = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) { mbCalls++; return jsonResponse(r, 502, `{}`), nil })}
 		cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One"}, fakes.CatalogTrack{ID: "blocked", Display: "Excluded - Blocked"}, fakes.CatalogTrack{ID: "heading", Display: "Artist - Heading"})
-		intent := core.MusicIntent{Seed: "42", Preferences: core.SemanticPreferences{Genres: []core.IntentPreference{{Value: "ambient electronica", Influence: core.InfluencePositive}}}}
+		intent := core.MusicIntent{Seed: "42", Preferences: core.SemanticPreferences{Genres: []core.IntentPreference{{Value: "fixture genre", Influence: core.InfluencePositive}}}}
 		intent.Constraints.ArtistsExclude = []string{"Excluded"}
 		stream := c.OpenCandidates(intent, cat, cat)
 		track, err := stream.Next(context.Background())

@@ -25,7 +25,7 @@ func New() *Parser { return &Parser{} }
 
 // Info implements ports.IntentParser.
 func (*Parser) Info() ports.ParserInfo {
-	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v13", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
+	return ports.ParserInfo{Name: "rules", Backend: "rules", Version: "rules/v14", Ready: true, ContractVersion: core.CurrentIntentVersion, Evidence: true}
 }
 
 // Parse implements ports.IntentParser. It never returns an error; an unparsable

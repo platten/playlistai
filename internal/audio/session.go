@@ -425,7 +425,10 @@ func (s *Session) assess(record core.AudioAnalysis, out core.AudioAssessment) co
 	vocalState, vocalScore := core.EvidenceUnknown, 0.0
 	needsVocalScreen := core.WantsInstrumental(s.intent) || requiredInstrumentalScreen(s.clauses)
 	if needsVocalScreen {
-		vocalState, vocalScore = s.instrumentalEvidence(record)
+		groups, ok := s.instrumentalQueryGroupsLocked()
+		if ok {
+			vocalState, vocalScore = instrumentalEvidenceWithGroups(record, groups)
+		}
 		out.Detail = "CLAP vocal screening compared instrumental, singing, speech and non-musical descriptions for every sampled preview segment. This is a preview-only zero-shot assessment, not a guarantee about the complete recording."
 	}
 	scored := false

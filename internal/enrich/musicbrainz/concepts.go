@@ -16,6 +16,7 @@ func discoveryGenres(intent core.MusicIntent) []string {
 		queries := []string{value}
 		if c, ok := musicconcepts.Find(kind, value); ok {
 			queries = append([]string{c.Value}, c.Providers.MusicBrainz...)
+			queries = append(queries, c.Providers.MusicBrainzDiscovery...)
 		}
 		concepts = append(concepts, queries)
 	}

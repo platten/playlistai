@@ -1,5 +1,5 @@
 {
-  "version": "music-concepts/v1",
+  "version": "music-concepts/v2",
   "provenance": {
     "description": "Small project-authored intent vocabulary and captions. Exact aliases are distinct from directional relationships and never prove track suitability. AcousticBrainz class identifiers were checked against public CC0 archive examples; no model weights or MusicBrainz database dump are included.",
     "acousticBrainz": "https://acousticbrainz.org/data",
@@ -433,6 +433,11 @@
       "providers": {
         "musicBrainz": [
           "ambient electronica"
+        ],
+        "musicBrainzDiscovery": [
+          "ambient electronic",
+          "ambient",
+          "electronica"
         ]
       }
     },
@@ -1385,7 +1390,12 @@
       "kind": "texture",
       "value": "gentle pulse",
       "source": "project-authored/v1",
-      "license": "GPL-3.0-only"
+      "license": "GPL-3.0-only",
+      "providers": {
+        "clap": [
+          "Music with a soft, steady rhythmic pulse."
+        ]
+      }
     },
     {
       "id": "texture.heavy",

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -48,7 +49,7 @@ func (c *Client) discoverInstrumental(ctx context.Context, intent *core.MusicInt
 		}
 	}
 	if len(snapshot.Candidates) == 0 {
-		c.discoverInstrumentalFallback(ctx, cat, resolver, snapshot)
+		c.discoverInstrumentalFallback(ctx, intent, cat, resolver, snapshot)
 	}
 	if len(snapshot.Candidates) == 0 {
 		snapshot.Notices = append(snapshot.Notices, "Instrumental lookup found no matching catalog recordings. Retry the search or add a specific instrumental artist or track reference.")
@@ -72,7 +73,7 @@ func (c *Client) discoverInstrumental(ctx context.Context, intent *core.MusicInt
 	}
 }
 
-func (c *Client) discoverInstrumentalFallback(ctx context.Context, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) {
+func (c *Client) discoverInstrumentalFallback(ctx context.Context, intent *core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot) {
 	seen := map[string]bool{}
 	add := func(ref core.TrackRef) {
 		if !seen[ref.ID] {
@@ -114,4 +115,83 @@ func (c *Client) discoverInstrumentalFallback(ctx context.Context, cat ports.Cat
 	if len(snapshot.Candidates) > before {
 		snapshot.Notices = append(snapshot.Notices, "Also checking recordings labeled instrumental in the local catalog.")
 	}
+	if len(snapshot.Candidates) == 0 {
+		c.discoverInstrumentalWikipedia(ctx, intent, cat, resolver, snapshot, add)
+	}
+}
+
+// Wikipedia supplies bounded artist-name leads only after the ordinary
+// recording providers and local title lookup produce nothing. A lead must
+// resolve to an exact catalog artist, and its representative is still screened
+// by CLAP; page text and links never establish that a recording is instrumental.
+func (c *Client) discoverInstrumentalWikipedia(ctx context.Context, intent *core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, add func(core.TrackRef)) {
+	path := "/w/api.php?" + url.Values{
+		"action": {"query"}, "format": {"json"}, "formatversion": {"2"},
+		"prop": {"links|info"}, "inprop": {"url"}, "plnamespace": {"0"},
+		"pllimit": {"100"}, "titles": {"Instrumental music"}, "maxlag": {"5"},
+	}.Encode()
+	raw, err := c.metadataGet(ctx, c.wikipediaBase, path, "wikipedia-discovery-v1:", c.contextClient, false)
+	if err != nil {
+		return
+	}
+	var response struct {
+		Query struct {
+			Pages []struct {
+				PageID       int64  `json:"pageid"`
+				Title        string `json:"title"`
+				LastRevision int64  `json:"lastrevid"`
+				Links        []struct {
+					NS    int    `json:"ns"`
+					Title string `json:"title"`
+				} `json:"links"`
+			} `json:"pages"`
+		} `json:"query"`
+	}
+	if json.Unmarshal(raw, &response) != nil || len(response.Query.Pages) != 1 {
+		return
+	}
+	page := response.Query.Pages[0]
+	seed, _ := intent.Seed.Int64()
+	rng := rand.New(rand.NewSource(seed)) //nolint:gosec // saved playlist seed makes fallback replayable
+	links := slices.Clone(page.Links)
+	rng.Shuffle(len(links), func(i, j int) { links[i], links[j] = links[j], links[i] })
+	artists := 0
+	for _, link := range links {
+		if ctx.Err() != nil || artists >= 12 || len(snapshot.Candidates) >= 40 {
+			break
+		}
+		name := wikipediaArtistLead(link.Title)
+		if link.NS != 0 || name == "" || excludedArtist(name, intent.Constraints.ArtistsExclude) {
+			continue
+		}
+		resolved := resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: name, Influence: core.InfluencePositive})
+		if resolved.Status != core.ResolutionResolved || resolved.Selected == nil || len(resolved.Selected.Representatives) == 0 {
+			continue
+		}
+		representatives := resolved.Selected.Representatives
+		representative := representatives[rng.Intn(len(representatives))]
+		meta, ok := cat.Meta(representative.TrackID)
+		if !ok || excludedArtist(meta.Ref.Artist, intent.Constraints.ArtistsExclude) {
+			continue
+		}
+		add(meta.Ref)
+		artists++
+	}
+	if artists == 0 {
+		return
+	}
+	revision := strconv.FormatInt(page.LastRevision, 10)
+	source := "https://en.wikipedia.org/w/index.php?" + url.Values{"title": {page.Title}, "oldid": {revision}}.Encode()
+	snapshot.Sources = append(snapshot.Sources, source)
+	snapshot.Notices = append(snapshot.Notices, "Used catalog-matched artist links from a fixed Wikipedia page because recording searches supplied no starting points; CLAP still screens every proposed recording.")
+}
+
+func wikipediaArtistLead(title string) string {
+	title = strings.TrimSpace(title)
+	for _, suffix := range []string{" (band)", " (musician)", " (composer)", " (rapper)", " (DJ)"} {
+		if strings.HasSuffix(title, suffix) {
+			return strings.TrimSpace(strings.TrimSuffix(title, suffix))
+		}
+	}
+	return title
 }

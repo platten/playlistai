@@ -15,7 +15,7 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v4"
+const Version = "source-atoms/v5"
 
 var (
 	durationPattern = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
@@ -230,6 +230,8 @@ func Extract(prompt string) core.IntentTranslation {
 		if stop := negativeEnd.FindStringIndex(prompt[loc[1]:]); stop != nil {
 			end = loc[1] + stop[0]
 		}
+		end = trimTrailingCount(prompt, loc[1], end)
+		_, end = trimRange(prompt, loc[1], end)
 		parts := negativeEntityRanges(prompt, loc[1], end)
 		for _, part := range parts {
 			start, last := part[0], part[1]

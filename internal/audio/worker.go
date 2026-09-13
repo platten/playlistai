@@ -96,7 +96,13 @@ func (w *Worker) Health(ctx context.Context) error {
 }
 
 func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, error) {
-	w.mu.Lock()
+	for !w.mu.TryLock() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 	defer w.mu.Unlock()
 	if w.closed {
 		return nil, fmt.Errorf("audio: worker is closed")

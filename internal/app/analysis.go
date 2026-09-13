@@ -125,9 +125,9 @@ func (c *Container) AudioService() *audio.Service {
 		}
 		// The installed model ranks best-available descriptions and screens vocals.
 		// The setting controls additional calibrated musical-fit assessments.
-		service := *c.analysis.service
+		service := c.analysis.service.Clone()
 		service.Policy = audio.Policy{}
-		return &service
+		return service
 	}
 	return c.analysis.service
 }

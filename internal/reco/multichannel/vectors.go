@@ -63,6 +63,9 @@ func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influenc
 		if reference.Influence != influence {
 			continue
 		}
+		if influence == core.InfluenceNegative && outputOnlyArtistExclusion(intent, reference) {
+			continue
+		}
 		key := referenceKey(reference)
 		if _, duplicate := seen[key]; duplicate {
 			continue
@@ -79,6 +82,22 @@ func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influenc
 		}
 	}
 	return result
+}
+
+// An artist exclusion limits output identity. It does not mean the listener
+// dislikes that artist's sound; "like X without X" must keep X as its positive
+// similarity anchor without subtracting the same vectors again.
+func outputOnlyArtistExclusion(intent core.MusicIntent, reference core.IntentReference) bool {
+	if reference.Kind != core.ReferenceArtist {
+		return false
+	}
+	query := core.NormalizeIdentityPart(reference.Query)
+	for _, constraint := range intent.HardConstraints {
+		if constraint.Kind == "exclude_artist" && query != "" && query == core.NormalizeIdentityPart(constraint.Value) {
+			return true
+		}
+	}
+	return false
 }
 
 func referenceRepresentatives(cat ports.Catalog, reference core.IntentReference) []weightedVectors {
