@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -79,12 +81,29 @@ func runInstaller(installer, targetDir, expectedHash string) error {
 	if err != nil {
 		return err
 	}
+	return withInstallerCOM(func() error {
+		return executeInstaller(verb, name, parameters)
+	})
+}
+
+// withInstallerCOM keeps initialization, shell execution and cleanup on the
+// same Windows thread, without taking ownership of an existing apartment.
+func withInstallerCOM(run func() error) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED); err != nil {
-		return err
+	// x/sys returns every nonzero HRESULT as syscall.Errno. S_FALSE (1) is
+	// successful initialization of an existing STA, not ERROR_INVALID_FUNCTION.
+	// Both S_OK and S_FALSE acquire a reference that must be released below.
+	// https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex
+	const sFalse = syscall.Errno(1)
+	if err := windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED); err != nil && !errors.Is(err, sFalse) {
+		return fmt.Errorf("initialize Windows installer COM: %w", err)
 	}
 	defer windows.CoUninitialize()
+	return run()
+}
+
+func executeInstaller(verb, name, parameters *uint16) error {
 	info := shellExecuteInfo{Mask: 0x40 | 0x100, Verb: verb, File: name, Parameters: parameters, Show: 1}
 	info.Size = uint32(unsafe.Sizeof(info))
 	r, _, callErr := windows.NewLazySystemDLL("shell32.dll").NewProc("ShellExecuteExW").Call(uintptr(unsafe.Pointer(&info)))

@@ -83,6 +83,29 @@ are the trust boundary; the digest is not an independent publisher signature.
 
 ## Validation and reproduction
 
+### Windows reports “Incorrect function” before the installer opens
+
+Older updater helpers incorrectly treated `CoInitializeEx`'s `S_FALSE` result
+(`1`, meaning the thread's COM apartment was already initialized) as a Windows
+error. Go's Windows wrapper formats that value as “Incorrect function.” This
+can stop an update before the installer or UAC prompt opens.
+
+The helper now accepts both successful COM results, balances either with
+`CoUninitialize`, and still rejects genuine initialization failures. It keeps
+initialization, installer execution and cleanup on the same OS thread. Native
+Windows regression tests exercise an existing STA, cleanup after an execution
+error, and rejection of an incompatible MTA without disturbing its owner.
+See Microsoft's [COM initialization contract](https://learn.microsoft.com/en-us/windows/win32/api/combaseapi/nf-combaseapi-coinitializeex).
+
+An already-installed helper cannot fix itself through this failing path. Close
+Playlist AI and run the matching Windows installer from the
+[official release page](https://github.com/platten/playlistai/releases/latest)
+manually, using the existing installation folder. This bypasses the old updater;
+models, settings and history do not need to be reset. Keep the reported
+`previous.exe` backup until the updated application opens successfully.
+
+### Checks
+
 ```sh
 bash scripts/test.sh
 go build -tags production -o /tmp/playlist-ai-version-check .
