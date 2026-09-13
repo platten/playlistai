@@ -17,10 +17,10 @@ func TestRecommendationSettingsPersistAndPreserveOtherPrefs(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := &Container{cfg: cfg}
-	if c.RecommendationMode() != core.AcousticBrainzFirst {
+	if c.RecommendationMode() != core.EnhancedHybrid {
 		t.Fatal("wrong default")
 	}
-	for _, mode := range []core.RecommendationMode{core.CLAPFirst, core.DeejAIOnly, core.AcousticBrainzFirst} {
+	for _, mode := range []core.RecommendationMode{core.EnhancedHybrid, core.CLAPFirst, core.DeejAIOnly, core.AcousticBrainzFirst} {
 		if err := c.SetRecommendationMode(mode); err != nil {
 			t.Fatal(err)
 		}
@@ -46,6 +46,19 @@ func TestRecommendationSettingsPersistAndPreserveOtherPrefs(t *testing.T) {
 	c.cfg.DataDir = path
 	if err := c.SetRecommendationMode(core.CLAPFirst); err == nil || c.RecommendationMode() != core.AcousticBrainzFirst {
 		t.Fatal("failed save changed mode")
+	}
+}
+
+func TestRecommendationModeDefaultAndExplicitConfiguration(t *testing.T) {
+	for _, saved := range []core.RecommendationMode{"", "unknown"} {
+		c := &Container{cfg: testConfig(t), recommendationMode: saved}
+		if c.RecommendationMode() != core.EnhancedHybrid {
+			t.Fatal("unset or invalid preference did not use Enhanced Hybrid")
+		}
+		c.cfg.Recommendation.Strategy = config.RecommendationDeejAI
+		if c.RecommendationMode() != core.DeejAIOnly {
+			t.Fatal("explicit engine-only configuration lost")
+		}
 	}
 }
 

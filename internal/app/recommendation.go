@@ -16,7 +16,7 @@ func (c *Container) RecommendationMode() core.RecommendationMode {
 	if c.cfg.Recommendation.Strategy == config.RecommendationDeejAI {
 		return core.DeejAIOnly
 	}
-	return core.AcousticBrainzFirst
+	return core.EnhancedHybrid
 }
 
 func (c *Container) SetRecommendationMode(mode core.RecommendationMode) error {
