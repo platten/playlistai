@@ -1,0 +1,25 @@
+.release-notes { color: var(--pai-muted); overflow-wrap: anywhere; }
+.release-notes > :first-child { margin-top: 0; }
+.release-notes > :last-child { margin-bottom: 0; }
+.release-notes p, .release-notes ul, .release-notes ol, .release-notes pre, .release-notes blockquote, .release-notes-table { margin-block: .75rem; }
+.release-notes h4, .release-notes h5, .release-notes h6 { color: var(--pai-text); font-size: .875rem; font-weight: 650; line-height: 1.5; margin: 1.25rem 0 .5rem; }
+.release-notes .release-notes-title { font-size: 1rem; }
+.release-notes strong { color: var(--pai-text); font-weight: 600; }
+.release-notes ul { list-style: disc; padding-left: 1.25rem; }
+.release-notes ol { list-style: decimal; padding-left: 1.25rem; }
+.release-notes li { margin-block: .375rem; }
+.release-notes li > p, .release-notes li > ul, .release-notes li > ol { margin-block: .375rem; }
+.release-notes a { color: var(--pai-accent); text-decoration: underline; text-underline-offset: 3px; }
+.release-notes a:hover { color: var(--pai-accent-hover); }
+.release-notes a:focus-visible, .release-notes-table:focus-visible { outline: 2px solid var(--pai-accent); outline-offset: 2px; }
+.release-notes code { background: var(--pai-panel); color: var(--pai-text); border-radius: 4px; padding: .1rem .25rem; font-size: .85em; }
+.release-notes pre { background: var(--pai-panel); border: 1px solid var(--pai-line); border-radius: 6px; padding: .75rem; white-space: pre-wrap; }
+.release-notes pre code { padding: 0; }
+.release-notes blockquote { border-left: 2px solid var(--pai-accent); padding-left: .75rem; }
+.release-notes hr { border: 0; border-top: 1px solid var(--pai-line); margin-block: 1rem; }
+.release-notes-table { max-width: 100%; overflow-x: auto; }
+.release-notes table { border-collapse: collapse; width: 100%; font-size: .8125rem; }
+.release-notes th, .release-notes td { border: 1px solid var(--pai-line); padding: .5rem .625rem; text-align: left; min-width: 6rem; }
+.release-notes th { background: var(--pai-panel); color: var(--pai-text); font-weight: 600; }
+.release-notes .contains-task-list { list-style: none; }
+.release-notes input[type="checkbox"] { margin-right: .375rem; accent-color: var(--pai-accent); }
