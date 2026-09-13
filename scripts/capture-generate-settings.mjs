@@ -38,6 +38,13 @@ try {
   await page.getByLabel('Your description').fill('A jazz playlist');
   await page.getByRole('button',{name:'Generate playlist'}).click();
   await page.waitForFunction(()=>typeof window.__finish==='function');
+  await page.getByText('Detailed analysis can take several minutes on some devices. You can cancel below.').waitFor();
+  await page.evaluate(()=>document.documentElement.dataset.theme='dark');
+  for(const width of [1000,390]) {
+    await page.setViewportSize({width,height:760});
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'processing horizontal overflow');
+    await page.screenshot({path:path.join(output,`generate-processing-dark-${width}.png`),fullPage:true,animations:'disabled'});
+  }
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   await page.getByRole('button',{name:'Reset models and datasets',exact:true}).waitFor();
   for(const theme of ['dark','light']) {
