@@ -94,7 +94,7 @@ export function PlaylistScreen({
   );
   const accepted = useRef<PlaylistDraft["accepted"]>(restored?.accepted ?? (initialResultMatches && initialResult ? { controls, result: initialResult } : undefined));
   const [busy, setBusy] = useState(!initialResultMatches);
-  const recommendationMode = result?.intent?.controls?.recommendationMode || initial?.recommendationMode || "acousticbrainz_first";
+  const recommendationMode = result?.intent?.controls?.recommendationMode || initial?.recommendationMode || "enhanced_hybrid";
   const engineOnly = recommendationMode === "deejai_only";
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);

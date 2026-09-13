@@ -59,6 +59,9 @@ func TestGenerateGenreJourneyUsesStageLookupsAndReplays(t *testing.T) {
 	// Preserve the metadata-only engine as a documented replay baseline. The
 	// iterative desktop path requires preview analysis for musical clauses and
 	// has separate synthetic CLAP/stream acceptance tests.
+	if err := c.SetRecommendationMode(core.AcousticBrainzFirst); err != nil {
+		t.Fatal(err)
+	}
 	c.Knowledge = struct{ ports.MusicKnowledge }{client}
 	api := New(c, nil)
 	useRecommendationEngine(api, multichannel.New(c.Runtime().Catalog, c.Runtime().Sim, c.Runtime().Resolver, multichannel.DefaultConfig()))

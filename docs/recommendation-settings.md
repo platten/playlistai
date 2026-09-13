@@ -6,7 +6,8 @@ on a playlist to apply the current setting to a fresh generation.
 
 | Mode | Ranking behavior | When to use it |
 | --- | --- | --- |
-| AcousticBrainz first (default) | Decisive archived classifier predictions lead overlapping characteristics; CLAP fills gaps. | Prefer available recording-level archived analysis. |
+| Enhanced Hybrid (default) | Combines the existing evidence pipeline with available local DSP preferences and optional MERT similarity. | Richer matching with supported audio evidence; MERT installation is optional. |
+| AcousticBrainz first | Decisive archived classifier predictions lead overlapping characteristics; CLAP fills gaps. | Prefer available recording-level archived analysis. |
 | CLAP first | Scored preview comparisons lead overlapping characteristics; AcousticBrainz fills gaps. | Prefer matching previews against your description. |
 | Deej-AI only | The original audio/co-occurrence embedding walk, without provider enrichment, semantic retrieval, personalization, CLAP, AcousticBrainz or MMR selection. | Fast catalog-reference exploration without musical-fit analysis. |
 
@@ -130,6 +131,7 @@ latency and actual evidence coverage. Its failures remain visible; enabling a
 source-priority setting is not a guarantee that every prompt can be fulfilled.
 # Enhanced hybrid
 
-An optional fourth mode adds local DSP preferences and MERT audio similarity to
+Enhanced Hybrid is the default for new installations and unset preferences. Saved
+mode choices and an explicit Deej-AI configuration remain respected. It adds local DSP preferences and MERT audio similarity to
 the existing evidence pipeline. It does not require MERT installation. See
 [enhanced settings, limits, replay and evidence policy](enhanced-audio.md).
