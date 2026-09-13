@@ -98,7 +98,11 @@ func TestBundlePreprocessingCannotSilentlyChangeCompiledContract(t *testing.T) {
 func TestSnapshotIdentityIgnoresExecutionMetrics(t *testing.T) {
 	s := &Session{started: time.Now()}
 	s.snapshot.Assessments = []core.AudioAssessment{{TrackID: "b", AnalysisID: "second"}, {TrackID: "a", AnalysisID: "first"}}
-	first := s.Snapshot().ID
+	firstSnapshot := s.Snapshot()
+	first := firstSnapshot.ID
+	if firstSnapshot.Assessments[0].TrackID != "a" || firstSnapshot.Assessments[1].TrackID != "b" {
+		t.Fatal("snapshot assessments were not published deterministically")
+	}
 	s.snapshot.CacheHits = 10
 	s.snapshot.NewAnalyses = 20
 	s.snapshot.BytesFetched = 999

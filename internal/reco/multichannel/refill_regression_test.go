@@ -86,6 +86,37 @@ type interruptedAnalysisStore struct {
 	interrupt func()
 }
 
+type parallelTestAudioAnalyzer struct {
+	ports.AudioAnalyzer
+	parallelism int
+}
+
+func (a *parallelTestAudioAnalyzer) Parallelism() int { return a.parallelism }
+
+type candidateFailureStore struct {
+	ports.AnalysisStore
+	trackID string
+}
+
+func (s *candidateFailureStore) Find(ctx context.Context, catalog, track, key string, model core.AudioModelIdentity) (core.AudioAnalysis, bool, error) {
+	if track == s.trackID {
+		return core.AudioAnalysis{}, false, errors.New("synthetic candidate failure")
+	}
+	return s.AnalysisStore.Find(ctx, catalog, track, key, model)
+}
+
+func TestParallelCheckingDoesNotSurfaceUnneededLaterCandidateFailure(t *testing.T) {
+	cat, service, retriever := recommendationPoolFixture(t, 2, 0)
+	service.Analyzer = &parallelTestAudioAnalyzer{AudioAnalyzer: service.Analyzer, parallelism: 2}
+	service.Store = &candidateFailureStore{AnalysisStore: service.Store, trackID: "p001"}
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
+	engine.retriever = retriever
+	got, err := engine.Build(context.Background(), poolIntent(1))
+	if err != nil || len(got.Tracks) != 1 || got.Tracks[0].ID != "p000" {
+		t.Fatalf("later speculative failure changed the completed playlist: tracks=%+v err=%v", got.Tracks, err)
+	}
+}
+
 // cacheReadDeadline expires at the cache-read boundary selected by the fixture.
 // Keeping its cancellation separate from the generation parent exercises a
 // session deadline without racing catalog work against a short wall-clock timer.

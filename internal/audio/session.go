@@ -6,6 +6,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -22,6 +23,8 @@ func CandidateAnalysisLimit(count int) int { return min(200, max(40, 4*count)) }
 // Session is owned by one generation. The service and persistent records are
 // shared; descriptions, clause embeddings, and eligibility are never shared.
 type Session struct {
+	mu                   sync.Mutex
+	queryMu              sync.Mutex
 	service              *Service
 	ctx                  context.Context
 	cancel               context.CancelFunc
@@ -33,6 +36,7 @@ type Session struct {
 	retrievalFingerprint string
 	queries              map[string][]float32
 	checked              map[string]core.AudioAssessment
+	checking             map[string]chan struct{}
 	started              time.Time
 	newCandidates        int
 	limit                int
@@ -57,7 +61,7 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 		case <-budgetCtx.Done():
 		}
 	}()
-	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: Clauses(intent), queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
+	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: Clauses(intent), queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, checking: map[string]chan struct{}{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
 	x.limit = CandidateAnalysisLimit(intent.Count)
 	if budget > AnalysisBudget {
 		x.limit = min(1000, max(100, 20*intent.Count))
@@ -89,6 +93,8 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 
 func (s *Session) Close() {
 	s.cancel()
+	s.queryMu.Lock()
+	defer s.queryMu.Unlock()
 	for _, v := range s.queries {
 		clear(v)
 	}
@@ -97,23 +103,39 @@ func (s *Session) Close() {
 
 func (s *Session) Calibrated() bool { return s.service.Policy.Valid() }
 
+func (s *Session) Parallelism() int {
+	if analyzer, ok := s.service.Analyzer.(interface{ Parallelism() int }); ok {
+		return max(1, analyzer.Parallelism())
+	}
+	return 1
+}
+
 // ShouldStop checks cancellation and the existing budget flags without copying,
 // sorting or hashing every assessment. Poll this in candidate loops; materialize
 // a full Snapshot only when returning evidence to the caller/history.
 func (s *Session) ShouldStop() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.ctx != nil {
-		s.stopped()
+		s.stoppedLocked()
 	}
 	return s.snapshot.Stopped || s.snapshot.BudgetExhausted
 }
 
 func (s *Session) Snapshot() core.AudioEvidenceSnapshot {
-	s.ShouldStop()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ctx != nil {
+		s.stoppedLocked()
+	}
 	s.snapshot.ElapsedMilliseconds = time.Since(s.started).Milliseconds()
 	out := s.snapshot
 	// Execution timings and cache hits do not change the evidence's identity.
 	assessments := append([]core.AudioAssessment(nil), out.Assessments...)
 	sort.Slice(assessments, func(i, j int) bool { return assessments[i].TrackID < assessments[j].TrackID })
+	// Parallel checks may complete in any order. Publish the same stable order
+	// used by the evidence fingerprint so history replay stays deterministic.
+	out.Assessments = assessments
 	out.ID = Fingerprint(struct {
 		Model       core.AudioModelIdentity
 		Policy      string
@@ -203,7 +225,7 @@ func Clauses(intent core.MusicIntent) []core.AudioClause {
 	return out
 }
 
-func (s *Session) stopped() bool {
+func (s *Session) stoppedLocked() bool {
 	select {
 	case <-s.stop:
 		s.snapshot.Stopped = true
@@ -217,18 +239,50 @@ func (s *Session) stopped() bool {
 	return false
 }
 
+func (s *Session) stopped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stoppedLocked()
+}
+
 // Check returns unknown for unavailable evidence. All channels call this same
 // method before ranking. anchor=true is bounded separately by six proposals.
 func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (core.AudioAssessment, error) {
-	if prior, ok := s.checked[track.ID]; ok {
-		return prior, nil
+	for {
+		s.mu.Lock()
+		if s.checking == nil {
+			s.checking = map[string]chan struct{}{}
+		}
+		if prior, ok := s.checked[track.ID]; ok {
+			s.mu.Unlock()
+			return prior, nil
+		}
+		if pending, ok := s.checking[track.ID]; ok {
+			s.mu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return core.AudioAssessment{TrackID: track.ID}, ctx.Err()
+			}
+		}
+		s.checking[track.ID] = make(chan struct{})
+		s.mu.Unlock()
+		break
 	}
-	out := core.AudioAssessment{TrackID: track.ID, IntentFingerprint: s.fingerprint, PolicyVersion: s.snapshot.PolicyVersion, Detail: "Preview evidence is unavailable; musical fit is unknown."}
+	s.mu.Lock()
+	policyVersion := s.snapshot.PolicyVersion
+	s.mu.Unlock()
+	out := core.AudioAssessment{TrackID: track.ID, IntentFingerprint: s.fingerprint, PolicyVersion: policyVersion, Detail: "Preview evidence is unavailable; musical fit is unknown."}
 	defer func() {
 		// Unknown and missing evidence stays visible in the history snapshot.
 		// Only reusable analyses have an analysis ID and enter the feature DB.
+		s.mu.Lock()
 		s.checked[track.ID] = out
 		s.snapshot.Assessments = append(s.snapshot.Assessments, out)
+		close(s.checking[track.ID])
+		delete(s.checking, track.ID)
+		s.mu.Unlock()
 	}()
 	if err := ctx.Err(); err != nil {
 		return out, err
@@ -250,8 +304,10 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	}
 	completed := false
 	if !hit {
+		s.mu.Lock()
 		if !anchor && s.newCandidates >= s.limit {
 			s.snapshot.BudgetExhausted = true
+			s.mu.Unlock()
 			out.Detail = "The new-analysis count limit was reached before this track could be checked."
 			return out, nil
 		}
@@ -259,6 +315,7 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 			s.newCandidates++
 		}
 		s.snapshot.NewAnalyses++
+		s.mu.Unlock()
 		var bytes int64
 		var comparisonErr error
 		record, bytes, err = s.service.analyzePreview(s.ctx, track, s.catalog, func(record core.AudioAnalysis) error {
@@ -269,7 +326,9 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 			completed = comparisonErr == nil
 			return comparisonErr
 		})
+		s.mu.Lock()
 		s.snapshot.BytesFetched += bytes
+		s.mu.Unlock()
 		if comparisonErr != nil {
 			return out, comparisonErr
 		}
@@ -287,7 +346,9 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 			return out, nil
 		}
 	} else {
+		s.mu.Lock()
 		s.snapshot.CacheHits++
+		s.mu.Unlock()
 	}
 	if err := ctx.Err(); err != nil {
 		return out, err
@@ -305,7 +366,54 @@ func (s *Session) Check(ctx context.Context, track core.TrackRef, anchor bool) (
 	return out, nil
 }
 
+// CheckMany analyzes independent tracks concurrently when the configured
+// analyzer has multiple worker slots. Results remain aligned with input order.
+func (s *Session) CheckMany(ctx context.Context, tracks []core.TrackRef, anchor bool) ([]core.AudioAssessment, []error) {
+	results := make([]core.AudioAssessment, len(tracks))
+	errs := make([]error, len(tracks))
+	if len(tracks) == 0 {
+		return results, errs
+	}
+	parallelism := min(len(tracks), s.Parallelism())
+	// Near the new-analysis limit, keep admission ordered. Cache hits do not
+	// consume the limit, so this conservative fallback preserves prior behavior.
+	s.mu.Lock()
+	if !anchor && s.limit-s.newCandidates < len(tracks) {
+		parallelism = 1
+	}
+	s.mu.Unlock()
+	if parallelism == 1 {
+		for index, track := range tracks {
+			results[index], errs[index] = s.Check(ctx, track, anchor)
+		}
+		return results, errs
+	}
+	type job struct {
+		index int
+		track core.TrackRef
+	}
+	jobs := make(chan job)
+	var workers sync.WaitGroup
+	workers.Add(parallelism)
+	for range parallelism {
+		go func() {
+			defer workers.Done()
+			for item := range jobs {
+				results[item.index], errs[item.index] = s.Check(ctx, item.track, anchor)
+			}
+		}()
+	}
+	for index, track := range tracks {
+		jobs <- job{index: index, track: track}
+	}
+	close(jobs)
+	workers.Wait()
+	return results, errs
+}
+
 func (s *Session) assess(record core.AudioAnalysis, out core.AudioAssessment) core.AudioAssessment {
+	s.queryMu.Lock()
+	defer s.queryMu.Unlock()
 	// The complete derived CLAP record includes every preview-segment audio
 	// embedding. Diagnostic writes remain opt-in and memory-only; logging at this
 	// point avoids an extra database read for both cached and new analyses.
@@ -429,11 +537,15 @@ func segmentSimilarity(query []float32, segments []core.AudioSegment, negative b
 // Assessment returns request-local evidence for read-only scoring. Callers must
 // not mutate its slices; the session owns the evidence until generation ends.
 func (s *Session) Assessment(trackID string) (core.AudioAssessment, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.checked[trackID]
 	return a, ok
 }
 
 func (s *Session) Criterion(trackID string, criterion core.MusicalCriterion) core.EvidenceState {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, a := range s.checked[trackID].Clauses {
 		if a.Clause.Essential && a.Clause.Kind == criterion.Kind && a.Clause.Text == criterion.Value && a.Clause.Scope == criterion.Scope {
 			return a.State
@@ -445,6 +557,8 @@ func (s *Session) Criterion(trackID string, criterion core.MusicalCriterion) cor
 // StageSimilarity guides placement within a journey without claiming that an
 // uncalibrated similarity verifies stage membership.
 func (s *Session) StageSimilarity(trackID string, criterion core.MusicalCriterion) (float64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, a := range s.checked[trackID].Clauses {
 		if a.Clause.Essential && a.Clause.Kind == criterion.Kind && a.Clause.Text == criterion.Value && a.Clause.Scope == criterion.Scope && a.ScoreAvailable {
 			return a.Score, true

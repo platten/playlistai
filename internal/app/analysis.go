@@ -21,6 +21,7 @@ type analysisState struct {
 	store    *audio.Store
 	bundles  *audio.BundleManager
 	worker   *audio.Worker
+	pool     *audio.WorkerPool
 	service  *audio.Service
 	manifest *audio.BundleManifest
 	enabled  bool
@@ -62,6 +63,9 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 	c.RegisterCloser(func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if s.pool != nil {
+			return s.pool.Close()
+		}
 		if s.worker != nil {
 			return s.worker.Close()
 		}
@@ -82,27 +86,31 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 		_ = worker.Close()
 		return err
 	}
+	pool := audio.NewWorkerPool(worker, audio.AnalysisParallelism())
 	var recordings ports.CachedRecordingReader
 	if r, ok := c.Enrich.(ports.CachedRecordingReader); ok {
 		recordings = r
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.worker != nil {
+	if s.pool != nil {
+		_ = s.pool.Close()
+	} else if s.worker != nil {
 		_ = s.worker.Close()
 	}
 	s.worker = worker
+	s.pool = pool
 	s.manifest = &manifest
 	// Provider permission for analysis, persistent derivatives and distributed
 	// users was confirmed by the project owner for this implementation.
-	s.service = &audio.Service{Resolver: deezer.New(deezer.Config{}), Analyzer: worker, Store: s.store, Recordings: recordings, Policy: manifest.Policy, Authorized: true, ParityValidated: manifest.Parity.Valid()}
+	s.service = &audio.Service{Resolver: deezer.New(deezer.Config{}), Analyzer: pool, Store: s.store, Recordings: recordings, Policy: manifest.Policy, Authorized: true, ParityValidated: manifest.Parity.Valid()}
 	if !s.enabled {
-		worker.Unload()
+		pool.Unload()
 	}
 	s.detail = "Preview audio is processed in memory. Derived features stay on this device until cleared. Assessments cover the preview only."
 	if !manifest.Policy.Valid() {
 		s.enabled = false
-		worker.Unload()
+		pool.Unload()
 		s.detail = "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit."
 	}
 	return nil
@@ -230,7 +238,9 @@ func (c *Container) SetAnalysisEnabled(enabled bool) error {
 		return err
 	}
 	c.analysis.enabled = enabled
-	if !enabled && c.analysis.worker != nil {
+	if !enabled && c.analysis.pool != nil {
+		c.analysis.pool.Unload()
+	} else if !enabled && c.analysis.worker != nil {
 		c.analysis.worker.Unload()
 	}
 	return nil
@@ -251,10 +261,13 @@ func (c *Container) RemoveAnalysisModel() error {
 	}
 	c.analysis.mu.Lock()
 	defer c.analysis.mu.Unlock()
-	if c.analysis.worker != nil {
+	if c.analysis.pool != nil {
+		_ = c.analysis.pool.Close()
+	} else if c.analysis.worker != nil {
 		_ = c.analysis.worker.Close()
 	}
 	c.analysis.worker = nil
+	c.analysis.pool = nil
 	c.analysis.service = nil
 	c.analysis.manifest = nil
 	c.analysis.detail = "Music analysis model removed. Derived features are retained until explicitly cleared."
