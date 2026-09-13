@@ -1,5 +1,6 @@
 const toggle = document.querySelector(".menu-toggle");
 const navigation = document.getElementById("navigation");
+document.documentElement.classList.add("js");
 function closeMenu() {
   navigation.classList.remove("open");
   toggle.setAttribute("aria-expanded", "false");
