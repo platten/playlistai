@@ -369,6 +369,14 @@ func (r *partReader) Read(p []byte) (int, error) {
 }
 
 func extract(ctx context.Context, names []string, destination string, files []File) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	extractionRoot, e := os.OpenRoot(destination)
+	if e != nil {
+		return e
+	}
+	defer extractionRoot.Close()
 	reader := &partReader{names: names}
 	defer reader.Close()
 	decoder, e := zstd.NewReader(contextReader{ctx, reader}, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(256<<20))
@@ -395,11 +403,14 @@ func extract(ctx context.Context, names []string, destination string, files []Fi
 			return fmt.Errorf("invalid model archive entry %q", h.Name)
 		}
 		seen[h.Name] = true
-		target := filepath.Join(destination, filepath.FromSlash(h.Name))
-		if e = os.MkdirAll(filepath.Dir(target), 0o755); e != nil {
+		target := filepath.FromSlash(h.Name)
+		if !filepath.IsLocal(target) {
+			return errors.New("model archive path is not local")
+		}
+		if e = extractionRoot.MkdirAll(filepath.Dir(target), 0o755); e != nil {
 			return e
 		}
-		out, e := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		out, e := extractionRoot.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
 		if e != nil {
 			return e
 		}

@@ -23,6 +23,24 @@ import (
 )
 
 func checksum(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+
+func TestExtractionRootRejectsRedirectedDirectory(t *testing.T) {
+	location, manifest := fixture(t, []*tar.Header{{Name: "nested/model.onnx", Typeflag: tar.TypeReg, Mode: 0600, Size: 5}}, []string{"model"})
+	stage, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(stage, "nested")); err != nil {
+		t.Skipf("directory symlink unavailable: %v", err)
+	}
+	var parts []string
+	for _, part := range manifest.Parts {
+		parts = append(parts, filepath.Join(filepath.Dir(location), part.Path))
+	}
+	if err := extract(context.Background(), parts, stage, manifest.Files); err == nil {
+		t.Fatal("extraction escaped through directory link")
+	}
+	if _, err := os.Stat(filepath.Join(outside, "model.onnx")); !os.IsNotExist(err) {
+		t.Fatal("extraction wrote outside staging", err)
+	}
+}
 func fixture(t *testing.T, headers []*tar.Header, payloads []string) (string, Manifest) {
 	t.Helper()
 	dir := t.TempDir()
