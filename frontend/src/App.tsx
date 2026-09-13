@@ -44,6 +44,7 @@ function AppContent() {
   const [regeneration, setRegeneration] = useState<Regeneration | null>(null);
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
+  const [setupStatus, setSetupStatus] = useState<Awaited<ReturnType<typeof API.GetSetupStatus>> | null>(null);
   const [parserBackend, setParserBackend] = useState("rules");
   const presentations = useRef(new Map<string, Promise<void>>());
   const displayed = useCallback((id: string) => {
@@ -75,9 +76,19 @@ function AppContent() {
 
   useEffect(() => {
     let active = true;
-    API.GetOnboarded()
-      .then((v) => { if (active) setOnboarded(Boolean(v)); })
-      .catch(() => { if (active) setOnboarded(true); }); // fail open — never trap the user behind a broken check
+    void (async () => {
+      try {
+        const status = await API.GetSetupStatus();
+        if (status) {
+          if (active) { setSetupStatus(status); setOnboarded(!status.needsSetup); }
+          return;
+        }
+      } catch { /* Fall back to the saved choice if readiness cannot be read. */ }
+      try {
+        const done = await API.GetOnboarded();
+        if (active) setOnboarded(Boolean(done));
+      } catch { if (active) setOnboarded(true); } // never trap startup over a failed local read
+    })();
     return () => { active = false; };
   }, []);
 
@@ -111,7 +122,7 @@ function AppContent() {
     return <div className="h-full bg-bg" />;
   }
   if (!onboarded) {
-    return <div className="h-full overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"><FirstRunWizard onDone={() => setOnboarded(true)} /></div>;
+    return <div className="h-full overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"><FirstRunWizard initialStatus={setupStatus} onDone={() => setOnboarded(true)} /></div>;
   }
 
   return (
@@ -177,7 +188,7 @@ function AppContent() {
               sessionId={sessionId}
               parserBackend={parserBackend}
               onGenerated={openPlaylist}
-              onNeedSetup={() => setOnboarded(false)}
+              onNeedSetup={() => { setSetupStatus(null); setOnboarded(false); }}
             />
           )}
           {screen === "playlist" && playlist && (

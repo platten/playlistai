@@ -14,6 +14,15 @@ import { IntentModelsCard } from "../components/IntentModelsCard";
 
 type Step = "welcome" | "catalog" | "metadata" | "model" | "intent" | "analysis" | "preview" | "done";
 const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "intent", "analysis", "preview", "done"];
+type SetupStatus = Awaited<ReturnType<typeof API.GetSetupStatus>>;
+
+function setupSteps(status: SetupStatus | null): Step[] {
+  if (!status) return STEPS;
+  const repair = status.onboarded && status.needsSetup;
+  const pending = repair ? status.repairSteps : status.pendingSteps;
+  const missing = STEPS.filter((step) => (pending ?? []).includes(step));
+  return [...(!status.onboarded && missing.length ? ["welcome" as Step] : []), ...missing, "done"];
+}
 
 function fmtGB(bytes: number): string {
   if (!bytes) return "—";
@@ -21,14 +30,64 @@ function fmtGB(bytes: number): string {
 }
 
 /**
- * Shown once, before the normal app, until the user finishes or skips it.
- * Walks: welcome -> download the catalog -> pick a local model (or stay on
- * rules) -> pick a preview backend -> done. Every step can be skipped; nothing
- * here is required to use the app.
+ * Shows missing supported setup steps, or repairs to previously selected
+ * capabilities. Rechecks local readiness between steps. Every step can be
+ * skipped; completed installations do not revisit healthy capabilities.
  */
-export function FirstRunWizard({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState<Step>("welcome");
+export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; initialStatus?: SetupStatus | null }) {
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [step, setStep] = useState<Step | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [checkError, setCheckError] = useState("");
+  const [repair, setRepair] = useState(false);
+  const alive = useRef(true);
+  const advancing = useRef(false);
+  const request = useRef(0);
+
+  const load = useCallback(async () => {
+    const id = ++request.current;
+    setChecking(true); setCheckError("");
+    try {
+      const status = initialStatus ?? await API.GetSetupStatus();
+      if (!alive.current || request.current !== id) return;
+      const selected = setupSteps(status);
+      setSteps(selected); setStep(selected[0]);
+      setRepair(Boolean(status?.onboarded && status.needsSetup));
+    } catch (error) {
+      if (alive.current && request.current === id) setCheckError(String(error));
+    } finally {
+      if (alive.current && request.current === id) setChecking(false);
+    }
+  }, [initialStatus]);
+  useEffect(() => {
+    alive.current = true;
+    void load();
+    return () => { alive.current = false; request.current++; };
+  }, [load]);
+
+  const next = useCallback(async () => {
+    if (!step || advancing.current) return;
+    advancing.current = true;
+    const id = ++request.current;
+    setChecking(true);
+    // Installation may have satisfied later steps too. Recheck availability
+    // without revisiting completed/skipped steps or adding new optional steps.
+    const remaining = steps.slice(steps.indexOf(step) + 1);
+    try {
+      const status = await API.GetSetupStatus();
+      if (!alive.current || request.current !== id) return;
+      const pending = status ? (repair ? status.repairSteps : status.pendingSteps) ?? [] : remaining;
+      const selected = remaining.filter((candidate) => candidate === "done" || pending.includes(candidate));
+      setStep(selected[0] ?? "done");
+      setSteps((current) => [...current.slice(0, current.indexOf(step) + 1), ...selected]);
+    } catch {
+      // An unavailable status read cannot mark an unknown asset as installed.
+      if (alive.current && request.current === id) setStep(remaining[0] ?? "done");
+    } finally {
+      if (alive.current && request.current === id) { setChecking(false); advancing.current = false; }
+    }
+  }, [step, steps, repair]);
 
   const finish = useCallback(() => {
     setFinishing(true);
@@ -37,13 +96,19 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
       .finally(onDone); // local-first: don't get stuck here over a write error
   }, [onDone]);
 
-  const stepIndex = STEPS.indexOf(step);
+  const stepIndex = step ? steps.indexOf(step) : 0;
+
+  if (checking) return <div role="status" className="mx-auto max-w-[640px] px-4 py-10 text-sm text-muted">Checking existing setup…</div>;
+  if (!step) return <div className="mx-auto flex max-w-[640px] flex-col gap-4 px-4 py-10">
+    <ErrorState message={checkError || "Setup availability could not be checked."} onRetry={() => void load()} onDismiss={() => { setSteps(STEPS); setStep("welcome"); setCheckError(""); }} />
+    <Button onClick={() => { setSteps(STEPS); setStep("welcome"); setCheckError(""); }}>Continue with setup</Button>
+  </div>;
 
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[640px] flex-col px-4 py-10 sm:px-8">
       <div className="flex items-center gap-3 pb-8">
         <div className="flex items-center gap-1.5">
-          {STEPS.slice(0, -1).map((s, i) => (
+          {steps.slice(0, -1).map((s, i) => (
             <span
               key={s}
               className={
@@ -57,13 +122,14 @@ export function FirstRunWizard({ onDone }: { onDone: () => void }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {step === "welcome" && <WelcomeStep onNext={() => setStep("catalog")} />}
-        {step === "catalog" && <CatalogStep onNext={() => setStep("metadata")} />}
-        {step === "metadata" && <MetadataStep onNext={() => setStep("model")} />}
-        {step === "model" && <ModelStep onNext={() => setStep("intent")} />}
-        {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard automatic /><Button variant="primary" onClick={() => setStep("analysis")}>Continue</Button><p className="text-[12px] text-muted">Setup downloads missing language models automatically. Leaving this step pauses the download; you can resume in Settings.</p></div>}
-        {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => setStep("preview")}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
-        {step === "preview" && <PreviewStep onNext={() => setStep("done")} />}
+        {repair && step !== "done" && <p className="mb-5 rounded-control border border-line bg-surface p-3 text-sm text-muted">Some files needed by your current setup are unavailable. Only the affected steps are shown; your existing data and choices are kept.</p>}
+        {step === "welcome" && <WelcomeStep onNext={() => void next()} />}
+        {step === "catalog" && <CatalogStep onNext={next} />}
+        {step === "metadata" && <MetadataStep onNext={next} />}
+        {step === "model" && <ModelStep onNext={next} />}
+        {step === "intent" && <div className="flex flex-1 flex-col gap-4"><IntentModelsCard automatic /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Setup downloads missing language models automatically. Leaving this step pauses the download; you can resume in Settings.</p></div>}
+        {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
+        {step === "preview" && <PreviewStep onNext={next} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
     </div>

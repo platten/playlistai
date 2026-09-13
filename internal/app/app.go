@@ -100,7 +100,9 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	if prefsErr != nil {
 		log.Warn("preferences unavailable; original file preserved", "err", prefsErr)
 	}
-	if prefs.ModelPath != "" {
+	if prefs.ModelDisabled {
+		cfg.AI.ModelPath, cfg.AI.ModelID = "", ""
+	} else if prefs.ModelPath != "" {
 		cfg.AI.ModelPath = prefs.ModelPath
 		cfg.AI.ModelID = prefs.ModelID
 	}
