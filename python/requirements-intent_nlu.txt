@@ -1,6 +1,6 @@
 # Offline maintainer tooling only. Install in a separate CPython 3.12 environment.
 # Use the CPU torch index documented in docs/intent-nlu-review.md.
-torch==2.7.1
+torch==2.13.0
 transformers==5.10.1
 tokenizers==0.19.1
 onnx==1.22.0
