@@ -10,6 +10,7 @@ import (
 // context. No catalog data is ever passed in — the parser must not see track
 // lists or embeddings.
 type IntentInput struct {
+	TrackCount   int  // explicit UI control; zero preserves legacy prompt-only behavior
 	SkipMetadata bool // desktop engine-only policy; not a model-generated field
 	GenerationID string
 	Prompt       string

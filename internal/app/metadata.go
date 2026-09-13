@@ -30,6 +30,8 @@ func (c *Container) GetMetadataBundleInfo() MetadataBundleInfo {
 }
 
 func (c *Container) InstallMetadataBundle(ctx context.Context, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
 	c.metadataInstallMu.Lock()
 	defer c.metadataInstallMu.Unlock()
 	if err := ctx.Err(); err != nil {

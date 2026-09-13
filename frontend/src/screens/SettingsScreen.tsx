@@ -27,7 +27,10 @@ const PREVIEW_OPTIONS: { id: string; label: string }[] = [
 ];
 
 /** Local models, playback, metadata providers, and user data controls. */
-export function SettingsScreen() {
+export function SettingsScreen({ onReset }: { onReset?: () => void }) {
+  const [resetDone, setResetDone] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const resetPending = useRef(false);
   const [status, setStatus] = useState<ModelStatus | null>(null);
   const [runtime, setRuntime] = useState<LlamaRuntimeInfo | null>(null);
   const [catalog, setCatalog] = useState<ModelInfo[]>([]);
@@ -124,6 +127,16 @@ export function SettingsScreen() {
   // already on disk is a no-op fetch, so no download bar for it.
   const downloadingModel = busy !== null && catalog.some((m) => m.id === busy && !m.installed);
 
+  if (resetDone) return <div className="mx-auto max-w-[560px] p-8"><h1 className="text-2xl font-semibold">Setup reset</h1><p role="status" className="mt-3 text-muted">Models and datasets have been removed. Close and reopen Playlist AI to run setup again.</p></div>;
+  if (busy === "reset" || resetError) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg p-8 text-text" role="alert">
+      <div className="max-w-md">
+        <h1 className="text-2xl font-semibold">{resetError ? "Reset needs attention" : "Resetting local downloads…"}</h1>
+        <p className="mt-3 text-muted">{resetError || "Stopping active work and removing models, datasets, and updater backups. Please keep the app open."}</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-6 px-4 py-8 sm:px-8">
       <div>
@@ -132,6 +145,18 @@ export function SettingsScreen() {
       </div>
 
       <RecommendationSettings />
+
+      <section className="flex flex-col gap-3 rounded-card border border-warn/40 bg-surface p-4">
+        <h2 className="text-[15px] font-semibold">Reset models and datasets</h2>
+        <p className="text-[12px] text-muted">Remove all app-managed models, datasets, and old updater executables. Saved playlists and taste data are kept. Reopen the app to run setup again. Manually selected files outside app storage are kept.</p>
+        <Button variant="ghost" disabled={busy !== null} onClick={async () => {
+          if (resetPending.current || !window.confirm("Remove all downloaded models and datasets and old updater backups? Active generation will stop. Saved playlists and taste data are kept. You must close and reopen Playlist AI afterwards.")) return;
+          resetPending.current = true; setBusy("reset"); setError(null);
+          try { await API.ResetAssets(); setResetDone(true); onReset?.(); }
+          catch (e) { setResetError(`Reset could not finish: ${String(e)}. Close and reopen the app before continuing, then retry reset.`); }
+          finally { resetPending.current = false; setBusy(null); }
+        }}>{busy === "reset" ? "Resetting…" : "Reset models and datasets"}</Button>
+      </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">

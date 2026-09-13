@@ -5,7 +5,7 @@ import App from "./App";
 import { StrictMode } from "react";
 import { PlaylistScreen } from "./screens/PlaylistScreen";
 import { PreviewPlayerProvider } from "./components/PreviewPlayer";
-import type { BuildPlaylistRequest } from "./lib/api";
+import type { BuildPlaylistRequest, PlaylistResult } from "./lib/api";
 const progressHandlers = vi.hoisted(() => new Set<(event: { data: unknown }) => void>());
 const clipboard = vi.hoisted(() => vi.fn());
 
@@ -18,7 +18,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "SetPreviewProvider", "SetRecommendationMode", "RecordFeedback", "RecordTrackAcceptance", "ExportCSV",
   "OpenSoundiizHandoff", "OpenExternalURL",
   "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "ClearModel",
-  "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow",
+  "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
   "GetMetadataBundleInfo", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
   "GetPreviewURL", "GetEnhancedAnalysisStatus", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
 ].map((name) => [name, vi.fn()])));
@@ -87,6 +87,64 @@ async function generate() {
 }
 
 describe("active playlist navigation", () => {
+  it("keeps Settings open on background completion and presents the result on return", async () => {
+    const pending = deferred();
+    bridge.GenerateFromPromptWithContext.mockReturnValueOnce(pending.promise);
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("Your description"), { target: { value: "Original" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+    await waitFor(() => expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const value = fixture();
+    await act(async () => pending.resolve({ ...value, playlist: { ...value.playlist, generationId: bridge.GenerateFromPromptWithContext.mock.calls[0][1].generationId } }));
+    expect(screen.getByText("Track previews")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    await screen.findByText("Original song 1");
+  });
+
+  it.each([5, 10, 20, 40])("passes the selected %i-track length through preview and generation", async (count) => {
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("Your description"), { target: { value: "Original" } });
+    const selector = screen.getByRole("combobox", { name: "Number of tracks" });
+    expect((selector as HTMLSelectElement).value).toBe("20");
+    fireEvent.change(selector, { target: { value: String(count) } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+    await screen.findByText("Original song 1");
+    expect(bridge.ParseIntentWithContext.mock.calls[0][1].trackCount).toBe(count);
+    expect(bridge.GenerateFromPromptWithContext.mock.calls[0][1].trackCount).toBe(count);
+  });
+
+  it("continues generation through Settings and retains the prompt and progress", async () => {
+    const pending = deferred();
+    bridge.GenerateFromPromptWithContext.mockReturnValueOnce(pending.promise);
+    render(<App />);
+    fireEvent.change(await screen.findByLabelText("Your description"), { target: { value: "Original" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+    await waitFor(() => expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await screen.findByText("Track previews");
+    expect(pending.promise.cancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Generate" }));
+    expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).toBe("Original");
+    expect(screen.getByRole("button", { name: "Generating…" })).toBeTruthy();
+    const value = fixture();
+    await act(async () => pending.resolve({ ...value, playlist: { ...value.playlist, generationId: bridge.GenerateFromPromptWithContext.mock.calls[0][1].generationId } }));
+    await screen.findByText("Original song 1");
+    expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
+  });
+
+  it("requires confirmation before reset and shows next-launch instructions", async () => {
+    const confirmation = vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValueOnce(true);
+    render(<App />);
+    await screen.findByLabelText("Your description");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reset models and datasets" }));
+    expect(bridge.ResetAssets).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reset models and datasets" }));
+    await screen.findByText("Ready for a fresh setup");
+    expect(bridge.ResetAssets).toHaveBeenCalledOnce();
+    expect(confirmation).toHaveBeenCalledTimes(2);
+  });
   it.each([0, 7])("rebuilds a legacy request with stable fallback identity and defaults (random word %s)", async (word) => {
     vi.stubGlobal("crypto", { getRandomValues: (words: Uint32Array) => { words.fill(word); return words; } });
     const request = { version: 1, mode: "journey", seedIds: ["waypoint"], seed: "18446744073709551615" } as unknown as BuildPlaylistRequest;
@@ -109,6 +167,17 @@ describe("active playlist navigation", () => {
     expect(bridge.RecordFeedback.mock.calls[0][0].requestId).toBe(bridge.BuildPlaylist.mock.calls[0][0].requestId);
     fireEvent.click(screen.getByRole("button", { name: "Review & export" }));
     expect(review).toHaveBeenCalledWith(["legacy"], "Legacy journey", bridge.BuildPlaylist.mock.calls[0][0].requestId, "legacy-session");
+  });
+
+  it("does not show MERT setup controls on an enhanced playlist", async () => {
+    const value = fixture("Enhanced", 2);
+    value.request.intent.controls.recommendationMode = "enhanced_hybrid";
+    value.playlist.intent = value.request.intent;
+    render(<PreviewPlayerProvider><PlaylistScreen request={value.request as unknown as BuildPlaylistRequest} heading="Enhanced" initialResult={value.playlist as unknown as PlaylistResult}
+      sessionId="enhanced-session" onBack={vi.fn()} onRegenerate={vi.fn()} onReview={vi.fn()} /></PreviewPlayerProvider>);
+    await screen.findByText("Enhanced song 1");
+    expect(screen.queryByText("MERT-v1-95M · optional")).toBeNull();
+    expect(bridge.GetEnhancedAnalysisStatus).not.toHaveBeenCalled();
   });
 
   it.each(["resolve", "reject"])("ignores a departed screen status %s after the current model status arrives", async (outcome) => {
@@ -221,7 +290,7 @@ describe("saved description generation", () => {
     bridge.LoadSavedPlaylist.mockImplementationOnce(() => completed({ request: fixture("A").request, result: fixture("A").playlist })).mockReturnValueOnce(pending.promise);
     await chooseSaved();
     await waitFor(() => expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "B" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Previous playlist" }), { target: { value: "B" } });
     expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.keyDown(screen.getByLabelText("Your description"), { key: "Enter" });
     expect(bridge.GenerateFromPromptWithContext).not.toHaveBeenCalled();
@@ -318,7 +387,7 @@ it("requires an explicit ambiguous reference selection before generating", async
   render(<App />);
   fireEvent.change(await screen.findByLabelText("Your description"), { target: { value: "Shared name" } });
   fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
-  const chooser = await screen.findByRole("combobox");
+  const chooser = await screen.findByRole("combobox", { name: /Choose the intended artist/ });
   expect(bridge.GenerateFromPromptWithContext).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
@@ -577,7 +646,7 @@ it("regenerates exactly once with fresh settings and never resubmits on tab revi
   expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledTimes(2);
   expect(bridge.GenerateFromPromptWithContext.mock.calls[1][0]).toBe("Original");
   fireEvent.click(screen.getByRole("button", { name: "Generate" }));
-  expect((await screen.findByLabelText("Your description") as HTMLTextAreaElement).value).toBe("");
+  expect((await screen.findByLabelText("Your description") as HTMLTextAreaElement).value).toBe("Original");
   fireEvent.click(screen.getByRole("button", { name: "Playlist" }));
   await screen.findByText("Regenerated song 1");
   expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledTimes(2);

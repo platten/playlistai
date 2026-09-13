@@ -20,6 +20,16 @@ Soundiiz.
 Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
 and Linux, with a React/TypeScript interface.
 
+Choose **5, 10, 20, or 40 tracks** beside Generate (default: 20). This explicit
+selection takes precedence over a count in the description; replaying a saved
+playlist retains its original length. Generation keeps running while Settings
+is open, with progress or the completed result available when you return.
+
+**Settings → Reset models and datasets** asks for confirmation, stops active
+work, and removes app-managed downloads and completed updater `previous.exe`
+backups. Close and reopen the app afterwards to run setup again. Saved playlists,
+taste data, and manually selected files outside app storage are preserved.
+
 **Enhanced hybrid** is an optional fourth recommendation mode. It combines the
 existing catalog, CLAP and archived evidence with measured preview DSP preferences
 and optional MERT audio similarity. Enable bounded analysis in Settings; DSP needs
