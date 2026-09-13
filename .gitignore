@@ -54,6 +54,8 @@ __pycache__/
 .env
 .env.local
 /playlist-ai-data/
+/models/*
+!/models/README.md
 /discogs-downloads/
 /discogs_*.xml.gz
 /discogs.sqlite

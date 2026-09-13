@@ -156,6 +156,11 @@ func (c *Container) InstallMERT(ctx context.Context, directory string, p ports.P
 	if c.analysis.store == nil {
 		return fmt.Errorf("enhanced analysis storage unavailable")
 	}
+	directory, cleanup, err := c.prepareModelPack(ctx, directory, "mert-model", p)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
 	if _, err := e.bundles.InstallLocal(ctx, directory, p); err != nil {
 		return err
 	}

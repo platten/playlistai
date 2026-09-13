@@ -21,7 +21,7 @@ it("keeps DSP optional and installs only the chosen native pack", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
   expect(screen.getByText(/no model download required/)).toBeTruthy();
   expect((screen.getByRole("button", { name: "Install MERT pack" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(screen.getByLabelText("Prepared MERT pack directory"), { target: { value: " C:/packs/mert " } });
+  fireEvent.change(screen.getByLabelText("MERT pack directory or manifest"), { target: { value: " C:/packs/mert " } });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Install MERT pack" })); });
   expect(api.InstallMERT).toHaveBeenCalledWith("C:/packs/mert");
   expect(api.AnalyzeEnhancedTracks).not.toHaveBeenCalled();
@@ -50,9 +50,28 @@ it("requires cache-clear confirmation and leaves a failed install retryable", as
   confirm.mockReturnValue(true);
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear enhanced cache" })); });
   expect(api.ClearEnhancedAnalysis).toHaveBeenCalledOnce();
-  fireEvent.change(screen.getByLabelText("Prepared MERT pack directory"), { target: { value: "missing" } });
+  fireEvent.change(screen.getByLabelText("MERT pack directory or manifest"), { target: { value: "missing" } });
   api.InstallMERT.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("hash mismatch")), { cancel: vi.fn() }));
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Install MERT pack" })); });
   expect(screen.getByRole("alert").textContent).toContain("hash mismatch");
   expect((screen.getByRole("button", { name: "Install MERT pack" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+it.each(["https://models.example/mert/manifest.json", "C:/models/mert/manifest.json"])("installs the chosen manifest %s and cancels on close", async (source) => {
+  const pending = deferred();
+  api.InstallMERT.mockReturnValueOnce(pending.promise);
+  const view = render(<EnhancedAudioCard />);
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText("MERT pack directory or manifest"), { target: { value: ` ${source} ` } });
+  fireEvent.click(screen.getByRole("button", { name: "Install MERT pack" }));
+  expect(api.InstallMERT).toHaveBeenCalledWith(source);
+  expect(screen.getByRole("status").textContent).toBe("Working…");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel model installation" }));
+  expect(pending.promise.cancel).toHaveBeenCalledWith("model installation cancelled");
+  expect(screen.queryByRole("button", { name: "Cancel analysis" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Install MERT pack" }) as HTMLButtonElement).disabled).toBe(true);
+  view.unmount();
+  expect(pending.promise.cancel).toHaveBeenCalledWith("settings closed");
+  await act(async () => pending.resolve(null));
+  expect(api.GetEnhancedAnalysisStatus).toHaveBeenCalledTimes(1);
 });
