@@ -5,6 +5,7 @@
 param(
     [ValidateSet("amd64", "arm64")][string]$Architecture = "amd64",
     [string]$Directory = (Join-Path $env:LOCALAPPDATA "playlist-ai-build-tools"),
+    [ValidateRange(1, 10)][int]$DownloadAttempts = 3,
     [switch]$CheckOnly
 )
 Set-StrictMode -Version Latest
@@ -28,7 +29,17 @@ if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
         $previousProgress = $ProgressPreference
         try {
             $ProgressPreference = "SilentlyContinue"
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+            for ($attempt = 1; $attempt -le $DownloadAttempts; $attempt++) {
+                Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $archive
+                    break
+                } catch {
+                    if ($attempt -eq $DownloadAttempts) { throw }
+                    Write-Warning "LLVM-MinGW download attempt $attempt of $DownloadAttempts failed: $($_.Exception.Message). Retrying."
+                    Start-Sleep -Seconds (2 * $attempt)
+                }
+            }
         } finally { $ProgressPreference = $previousProgress }
         if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $sha256) { throw "LLVM-MinGW archive checksum mismatch" }
         Expand-Archive -LiteralPath $archive -DestinationPath $staging

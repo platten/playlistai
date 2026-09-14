@@ -10,7 +10,7 @@ foreach ($name in @("PNPM_HOME", "PNPM_VERSION", "GITHUB_PATH", "GITHUB_ENV")) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, "Process")
 }
 $originalPath = $env:Path
-$installerState = @{ Case = ""; Download = "" }
+$installerState = @{ Case = ""; Download = ""; Attempts = 0; SleepSeconds = @() }
 
 # Only substitute the network response; run the actual wrapper and child
 # PowerShell process. No network, user registry changes, or downloads needed.
@@ -18,6 +18,7 @@ function Invoke-WebRequest {
     param([string]$Uri, [switch]$UseBasicParsing, [string]$OutFile)
     if ($Uri -ne "https://get.pnpm.io/install.ps1") { throw "Unexpected installer URL: $Uri" }
     $installerState.Download = $OutFile
+    $installerState.Attempts++
     if ($installerState.Case -eq "download") {
         Set-Content -LiteralPath $OutFile -Value "# partial download"
         throw "fixture download failure"
@@ -25,6 +26,7 @@ function Invoke-WebRequest {
     $content = if ($installerState.Case -eq "exit") { "exit 23" } else { "# installer produced no executable" }
     Set-Content -LiteralPath $OutFile -Value $content
 }
+function Start-Sleep([int]$Seconds) { $installerState.SleepSeconds += $Seconds }
 
 try {
     foreach ($case in @(
@@ -33,6 +35,8 @@ try {
         @{ Name = "missing"; Message = "Official installer did not produce*" }
     )) {
         $installerState.Case = $case.Name
+        $installerState.Attempts = 0
+        $installerState.SleepSeconds = @()
         $env:PNPM_HOME = Join-Path $fixtureRoot $case.Name
         $env:PNPM_VERSION = "preserve-me"
         $env:GITHUB_PATH = Join-Path $fixtureRoot "github-path"
@@ -41,6 +45,10 @@ try {
         try { & (Join-Path $PSScriptRoot "install-pnpm.ps1") -Version "9" }
         catch { $failure = $_.Exception.Message }
         if ($failure -notlike $case.Message) { throw "$($case.Name): unexpected failure '$failure'" }
+        $expectedAttempts = if ($case.Name -eq "download") { 3 } else { 1 }
+        if ($installerState.Attempts -ne $expectedAttempts) { throw "$($case.Name): expected $expectedAttempts download attempts, got $($installerState.Attempts)" }
+        $expectedDelays = if ($case.Name -eq "download") { "2,4" } else { "" }
+        if (($installerState.SleepSeconds -join ",") -ne $expectedDelays) { throw "$($case.Name): unexpected retry delays '$($installerState.SleepSeconds -join ',')'" }
         if (Test-Path -LiteralPath $installerState.Download) { throw "Temporary installer was not removed" }
         if ($env:PNPM_VERSION -ne "preserve-me" -or $env:Path -ne $originalPath) { throw "Failed installation changed version or PATH" }
         if ((Test-Path $env:GITHUB_PATH) -or (Test-Path $env:GITHUB_ENV)) { throw "Failed installation exported Actions environment" }
