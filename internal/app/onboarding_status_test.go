@@ -13,7 +13,6 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/intent/llama"
-	"github.com/platten/playlistai/internal/intent/nlu"
 	"github.com/platten/playlistai/internal/preview/deezer"
 )
 
@@ -114,31 +113,27 @@ func TestSetupReadinessOptionalPoliciesAndPreviewOff(t *testing.T) {
 	cfg := testConfig(t)
 	c := &Container{cfg: cfg, previewName: config.PreviewOff}
 	status := setupRead(t, c)
-	if status.Catalog.Required || status.Catalog.Supported || status.Metadata.Required || status.Intent.Required || status.Analysis.Required || !status.Preview.Ready {
+	if status.Catalog.Required || status.Catalog.Supported || status.Metadata.Required || status.Analysis.Required || !status.Preview.Ready {
 		t.Fatalf("never-installed defaults or intentional preview off: %+v", status)
 	}
-	setupWriteFile(t, filepath.Join(cfg.DataDir, "metadata", "active"), "malformed prior pointer")
 	setupWriteFile(t, filepath.Join(cfg.DataDir, "music-analysis", "active.json"), "missing-bundle")
 	status = setupRead(t, c)
 	if status.Metadata.Required || !status.Analysis.Required || status.Analysis.Ready {
-		t.Fatalf("metadata cannot establish compatibility before catalog; analysis marker needs repair: %+v", status)
+		t.Fatalf("optional metadata stays optional; analysis marker needs repair: %+v", status)
 	}
 	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "a", Display: "Artist - Song"})
 	c.runtime = RuntimeSnapshot{Catalog: cat, Resolver: cat}
 	status = setupRead(t, c)
-	if !status.Catalog.Ready || !status.Metadata.Required || status.Metadata.Ready {
-		t.Fatalf("broken prior metadata not identified with loaded catalog: %+v", status)
+	if !status.Catalog.Ready || status.Metadata.Required {
+		t.Fatalf("loaded catalog must not make optional metadata required: %+v", status)
 	}
-	prefs := config.Prefs{OnboardingDone: true, IntentAssistEnabled: true, IntentExtractorDir: filepath.Join(t.TempDir(), "missing-extractor"), AnalysisEnabled: true}
+	prefs := config.Prefs{OnboardingDone: true, AnalysisEnabled: true}
 	if err := prefs.Save(cfg.DataDir); err != nil {
 		t.Fatal(err)
 	}
 	status = setupRead(t, c)
-	if !status.Intent.Required || status.Intent.Ready || !status.Analysis.Required || status.Intent.Supported != (nlu.CheckPackagedRuntime() == nil) {
+	if !status.Analysis.Required {
 		t.Fatalf("configured optional capabilities not assessed: %+v", status)
-	}
-	if _, err := os.Stat(filepath.Join(cfg.DataDir, "intent-nlu")); !os.IsNotExist(err) {
-		t.Fatal("status created an asset directory", err)
 	}
 }
 
@@ -178,23 +173,6 @@ func TestMERTReadinessOnlyRepairsPreviouslyInstalledModel(t *testing.T) {
 	}
 	if got := setupRead(t, c).MERT; got.Required {
 		t.Fatalf("removed MERT still mandatory: %+v", got)
-	}
-}
-
-func TestRemovedMiniLMOptInDoesNotRequireIntentRepair(t *testing.T) {
-	c := &Container{cfg: testConfig(t)}
-	if err := (config.Prefs{OnboardingDone: true, IntentAssistEnabled: true}).Save(c.cfg.DataDir); err != nil {
-		t.Fatal(err)
-	}
-	if got := setupRead(t, c).Intent; got.Required {
-		t.Fatalf("legacy MiniLM-only opt-in reopened setup: %+v", got)
-	}
-	enabled := true
-	if err := (config.Prefs{OnboardingDone: true, IntentExtractorEnabled: &enabled}).Save(c.cfg.DataDir); err != nil {
-		t.Fatal(err)
-	}
-	if got := setupRead(t, c).Intent; !got.Required || got.Ready {
-		t.Fatalf("explicit missing extractor was not repairable: %+v", got)
 	}
 }
 

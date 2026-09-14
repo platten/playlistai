@@ -18,10 +18,7 @@ type Prefs struct {
 	AnalysisEnabled      bool   `json:"analysisEnabled"`
 	EnhancedAudioEnabled bool   `json:"enhancedAudioEnabled"`
 	// Nil retains the legacy shared DSP/MERT opt-in until either setting changes.
-	MERTSimilarityEnabled  *bool  `json:"mertSimilarityEnabled,omitempty"`
-	IntentAssistEnabled    bool   `json:"intentAssistEnabled,omitempty"`
-	IntentExtractorEnabled *bool  `json:"intentExtractorEnabled,omitempty"`
-	IntentExtractorDir     string `json:"intentExtractorDir,omitempty"`
+	MERTSimilarityEnabled *bool `json:"mertSimilarityEnabled,omitempty"`
 	// DebugLogging opts into potentially sensitive, memory-only diagnostics.
 	DebugLogging bool `json:"debugLogging,omitempty"`
 	// ModelPath is the GGUF the user chose for the local parser. Empty → rules.

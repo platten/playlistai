@@ -136,12 +136,6 @@ func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, c
 	}
 	if err != nil || artist.ID == "" {
 		if err != nil {
-			if c.MetadataStatus().DiscogsConfigured {
-				notice("MusicBrainz artist lookup was unavailable. Trying Discogs release tracklists.")
-				if found, ok := c.discogsArtistSeed(ctx, ref, cat, resolver, snapshot); ok {
-					return found
-				}
-			}
 			notice(fmt.Sprintf("MusicBrainz artist lookup was unavailable: %v. Trying Deezer's artist search.", err))
 		} else {
 			notice(fmt.Sprintf("MusicBrainz did not identify %q. Trying Deezer's artist search.", ref.Query))

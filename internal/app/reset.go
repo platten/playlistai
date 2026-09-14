@@ -24,11 +24,11 @@ func (c *Container) ResetAssets() error {
 		return err
 	}
 	prefs.OnboardingDone = false
-	prefs.ModelPath, prefs.ModelID, prefs.ModelDevice, prefs.IntentExtractorDir = "", "", "", ""
+	prefs.ModelPath, prefs.ModelID, prefs.ModelDevice = "", "", ""
 	prefs.ModelDisabled = true
-	prefs.AnalysisEnabled, prefs.EnhancedAudioEnabled, prefs.IntentAssistEnabled = false, false, false
+	prefs.AnalysisEnabled, prefs.EnhancedAudioEnabled = false, false
 	disabled := false
-	prefs.MERTSimilarityEnabled, prefs.IntentExtractorEnabled = &disabled, &disabled
+	prefs.MERTSimilarityEnabled = &disabled
 	if err = prefs.Save(root); err != nil {
 		return err
 	}

@@ -37,11 +37,11 @@ func TestSetupStatusPolicy(t *testing.T) {
 		pending, repairs []string
 		needs            bool
 	}{
-		{"fresh all ready", app.SetupReadiness{Catalog: ready, Metadata: ready, Model: ready, Intent: ready, Analysis: ready, Preview: ready}, []string{}, []string{}, true},
-		{"completed upgrade ready", app.SetupReadiness{Onboarded: true, Catalog: ready, Metadata: ready, Model: ready, Intent: ready, Analysis: ready, Preview: ready}, []string{}, []string{}, false},
-		{"new optional assets do not nag", app.SetupReadiness{Onboarded: true, Catalog: ready, Metadata: optional, Model: optional, Intent: optional, Analysis: optional, Preview: ready}, []string{"metadata", "model", "intent", "analysis"}, []string{}, false},
-		{"ordered repairs", app.SetupReadiness{Onboarded: true, Catalog: repair, Metadata: repair, Model: repair, Intent: repair, Analysis: repair, Preview: optional}, []string{"catalog", "metadata", "model", "intent", "analysis", "preview"}, []string{"catalog", "metadata", "model", "intent", "analysis"}, true},
-		{"unsupported optional choices omitted", app.SetupReadiness{Onboarded: true, Catalog: ready, Intent: app.SetupCapability{Required: true}, Analysis: app.SetupCapability{Required: true}, Preview: ready}, []string{}, []string{}, false},
+		{"fresh all ready", app.SetupReadiness{Catalog: ready, Metadata: ready, Model: ready, Analysis: ready, Preview: ready}, []string{}, []string{}, true},
+		{"completed upgrade ready", app.SetupReadiness{Onboarded: true, Catalog: ready, Metadata: ready, Model: ready, Analysis: ready, Preview: ready}, []string{}, []string{}, false},
+		{"new optional assets do not nag", app.SetupReadiness{Onboarded: true, Catalog: ready, Metadata: optional, Model: optional, Analysis: optional, Preview: ready}, []string{"metadata", "model", "analysis"}, []string{}, false},
+		{"ordered repairs", app.SetupReadiness{Onboarded: true, Catalog: repair, Metadata: repair, Model: repair, Analysis: repair, Preview: optional}, []string{"catalog", "metadata", "model", "analysis", "preview"}, []string{"catalog", "metadata", "model", "analysis"}, true},
+		{"unsupported optional choices omitted", app.SetupReadiness{Onboarded: true, Catalog: ready, Analysis: app.SetupCapability{Required: true}, Preview: ready}, []string{}, []string{}, false},
 		{"new MERT optional does not reopen wizard", app.SetupReadiness{Onboarded: true, Analysis: ready, MERT: optional}, []string{"mert"}, []string{}, false},
 		{"MERT repairs follow analysis", app.SetupReadiness{Onboarded: true, Analysis: repair, MERT: repair, Preview: optional}, []string{"analysis", "mert", "preview"}, []string{"analysis", "mert"}, true},
 		{"ready MERT skipped", app.SetupReadiness{Onboarded: true, MERT: ready}, []string{}, []string{}, false},

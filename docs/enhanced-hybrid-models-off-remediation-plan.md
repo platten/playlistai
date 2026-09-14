@@ -10,13 +10,15 @@ keeps output bans out of negative sound affinity, adds reviewed ambient discover
 terms and a gentle-pulse CLAP caption, makes worker mutex waits cancellable,
 shares fixed vocal-query encodings, discovers compatible cached instrumental
 recordings, continues instrumental-tag discovery, reports progress before vocal
-screening, and bounds submitted generation to two minutes. When MusicBrainz,
+screening. The former two-minute whole-generation deadline has since been
+removed; cancellation, shutdown, and bounded provider operations still stop
+work when appropriate. When MusicBrainz,
 Deezer, and local title lookup yield no instrumental lead, one cached, bounded
 Wikipedia links request may propose exact catalog artists; catalog identity and
 CLAP still decide whether any recording is usable.
 
-The reported configuration is Enhanced Hybrid with the local intent language
-model, DistilBERT, and MiniLM disabled. Other modes were not exercised by the
+The reported configuration is Enhanced Hybrid with optional local language
+models disabled. Other modes were not exercised by the
 reporter. For the instrumental request, the reporter waited **300 seconds**
 without a message, error, or candidate. Whether Cancel responded is unknown.
 The follow-up report `Aerosmith only` was investigated on the same date against

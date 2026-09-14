@@ -36,3 +36,8 @@ func recommended(name string) (Distribution, error) {
 func RecommendedMERT(goos, goarch string) (Distribution, error) {
 	return recommended("mert-" + goos + "-" + goarch)
 }
+
+// RecommendedCLAP returns the reviewed, platform-specific music CLAP pack.
+func RecommendedCLAP(goos, goarch string) (Distribution, error) {
+	return recommended("clap-" + goos + "-" + goarch)
+}

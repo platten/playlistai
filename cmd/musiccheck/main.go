@@ -74,8 +74,8 @@ type result struct {
 
 type cachedPreviewsOnly struct{}
 
-func metadataConfig(cachePath, datasetPath string, acousticBrainz bool) musicbrainz.Config {
-	cfg := musicbrainz.Config{UserAgent: "PlaylistAI/0.8 (https://github.com/platten/playlistai)", CachePath: cachePath, DatasetPath: datasetPath}
+func metadataConfig(cachePath string, acousticBrainz bool) musicbrainz.Config {
+	cfg := musicbrainz.Config{UserAgent: "PlaylistAI/0.8 (https://github.com/platten/playlistai)", CachePath: cachePath}
 	if acousticBrainz {
 		cfg.AcousticBrainzURL = musicbrainz.AcousticBrainzURL
 	}
@@ -114,7 +114,6 @@ func run() error {
 	fixture := flag.String("prompts", "internal/evaluation/testdata/music-prompts-v8.json", "prompt expectations JSON")
 	output := flag.String("output", "/tmp/music-prompts-report.json", "report JSON")
 	cache := flag.String("cache", "/tmp/music-prompts-metadata.sqlite", "metadata cache")
-	dataset := flag.String("metadata", "", "optional installed catalog-matched metadata SQLite dataset")
 	minimum := flag.Int("min-tracks", 1, "minimum eligible output tracks required to pass each case")
 	minArtists := flag.Int("min-artists", 0, "minimum distinct artists for non-artist-only requests")
 	online := flag.Bool("online", false, "allow extracted music-term metadata lookups")
@@ -210,11 +209,8 @@ func run() error {
 		engine.WithAnchorProposer(parser.ProposeAnchors)
 	}
 	var mb *musicbrainz.Client
-	if *dataset != "" && !*online && mode != core.DeejAIOnly {
-		return fmt.Errorf("metadata discovery requires -online to permit provider fallback, as in the desktop")
-	}
 	if *online && mode != core.DeejAIOnly {
-		mb, err = musicbrainz.New(metadataConfig(*cache, *dataset, *acousticBrainz))
+		mb, err = musicbrainz.New(metadataConfig(*cache, *acousticBrainz))
 		if err != nil {
 			return err
 		}

@@ -1,11 +1,5 @@
 # Hosting compressed model bundles
 
-MiniLM has been retired. The current application prepares only pinned DistilBERT
-assets through direct verified downloads; it no longer recommends or automatically
-downloads the old combined intent pack. A new DistilBERT-only compressed pack must
-be prepared, measured, verified and published before a hosted registry entry can
-be added. No unpublished manifest URL or compressed size is assumed below.
-
 The `models/` directory contains ready-to-upload, losslessly compressed model
 bundles. It is ignored by Git. These are inference assets, not a music training
 dataset. Original downloads remain under `C:\Users\pawel\Downloads`.
@@ -24,7 +18,6 @@ independent archives. No quantization, pruning, or precision reduction is applie
 | `mert-linux-amd64` | 216,263,779 | Same model with Linux x64 ONNX Runtime |
 | `mert-linux-arm64` | 215,501,193 | Same model with Linux ARM64 ONNX Runtime |
 | `mert-darwin-arm64` | 217,330,896 | Same model with macOS Apple Silicon ONNX Runtime |
-| `intent-encoders-v1` (retired; historical) | 324,060,693 | Former combined intent pack; no longer used by default setup |
 
 These measured bundles each contain two parts. `models/inventory.json` records
 every part's size/checksum and the uncompressed totals; `models/SHA256SUMS`
@@ -33,16 +26,8 @@ file compared against its recorded source hash after packaging.
 
 MERT bundles preserve their existing `mert-bundle.json`, parity/health metadata
 and license notices. MERT is **CC-BY-NC-4.0**, including its noncommercial
-restriction. Compression does not change that license. DistilBERT and MiniLM
-are Apache-2.0; the intent bundle includes the full license and pinned source
-inventory. Intent assets are platform-independent. Their existing setup path
-installs the matching native ONNX Runtime and packaged Windows dependencies.
-Users do not need Python to download, decompress, verify, or run these models.
-
-The DistilBERT file here is the pinned base encoder already used by setup. It
-does not enable the experimental trained extractor or change its calibration.
-Training-only SafeTensors duplicates, GLiNER experiments and review data are
-excluded from deployment, and remain in the original downloads.
+restriction. Compression does not change that license. Users do not need Python
+to download, decompress, verify, or run these models.
 
 ## Upload to Cloudflare R2
 
@@ -72,8 +57,6 @@ manifest; do not paste a Drive preview page as a manifest URL.
 
 ## Install in the desktop
 
-![Compressed intent model installation](images/intent-model-pack.png)
-
 These segmented manifests require the application changes accompanying this
 guide; v0.12.0 cannot import them directly. In the updated application:
 
@@ -83,14 +66,8 @@ guide; v0.12.0 cannot import them directly. In the updated application:
   Advanced manifest and uncompressed directory imports remain supported.
   Installation runs the existing native parity check before switching the
   active MERT bundle.
-- In **Intent language models**, choose **Prepare DistilBERT**. Setup verifies
-  the pinned DistilBERT files and matching platform runtime independently.
-  Advanced imports accept a manifest URL or local path and copy only the current
-  pinned DistilBERT setup files. Base preparation does not claim trained extractor
-  health or enable suggestions. Import a reviewed calibrated extractor separately.
-
-The wizard uses the same installers. Its intent step offers explicit optional DistilBERT preparation; the optional MERT step offers the matching platform
-pack with its license notice and a download button. Healthy installed models
+The wizard uses the same installers. Its optional MERT step offers the matching
+platform pack with its license notice and a download button. Healthy installed models
 are skipped. Use **Enable bounded preview analysis** on that step to opt into
 using enhanced audio evidence; downloading alone does not change this preference.
 Missing runtime repair reuses verified encoders, and adding this
@@ -109,17 +86,28 @@ Host: `https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/`
 
 | Bundle | Manifest path |
 | --- | --- |
+| CLAP Windows x86-64 | `clap-windows-amd64/manifest.json` |
+| CLAP Windows ARM64 | `clap-windows-arm64/manifest.json` |
+| CLAP Linux x86-64 | `clap-linux-amd64/manifest.json` |
+| CLAP Linux ARM64 | `clap-linux-arm64/manifest.json` |
+| CLAP macOS Apple Silicon | `clap-darwin-arm64/manifest.json` |
 | MERT Windows x86-64 | `mert-windows-amd64/manifest.json` |
 | MERT Windows ARM64 | `mert-windows-arm64/manifest.json` |
 | MERT Linux x86-64 | `mert-linux-amd64/manifest.json` |
 | MERT Linux ARM64 | `mert-linux-arm64/manifest.json` |
 | MERT macOS Apple Silicon | `mert-darwin-arm64/manifest.json` |
 
-Historically, all six hosted manifests (including the now-retired combined
-intent pack) matched the prepared originals, and all hosted segments
-were downloaded through the native Go transport, decompressed and verified.
-Native Windows checks passed for the downloaded MERT pack and the intent
-reference cases. These checks do not claim native execution on other hosts.
+The hosted manifests and segments are downloaded through the native Go transport,
+decompressed, and verified. Native Windows checks passed for the downloaded MERT
+pack. These checks do not claim native execution on other hosts.
+
+The CLAP packs contain the same original LAION HTSAT-base music checkpoint
+converted to paired FP32 ONNX graphs and the ONNX Runtime library for the target
+OS and architecture. The wizard and Settings select a pinned platform manifest,
+download its four ordered parts, verify their hashes, reconstruct the compressed
+stream, verify all extracted files, and run native CLAP health checks before
+changing the active model. macOS Intel remains unsupported because ONNX Runtime
+1.26.0 does not publish an x86-64 macOS library.
 
 Cancel preserves already downloaded compressed segments. Retrying verifies and
 reuses them. The segment cache is under the application's data directory in
@@ -139,26 +127,23 @@ The command verifies transport and file integrity. It does not activate a model;
 the desktop installer separately enforces its model-specific compatibility and
 health checks.
 
-## Historical prepared upload sizes and verification
+## Prepared upload sizes and verification
 
-All six bundles contain two segments. The first is 190 MB (decimal); the second
+Each MERT bundle contains two segments. The first is 190 MB (decimal); the second
 contains the remainder. `models/inventory.json` records exact sizes and hashes.
 
 | Bundle | Total compressed bytes | Total MB |
 | --- | ---: | ---: |
-| Retired DistilBERT + MiniLM | 324,060,693 | 324.06 |
 | MERT Windows x86-64 | 213,882,011 | 213.88 |
 | MERT Windows ARM64 | 214,013,811 | 214.01 |
 | MERT Linux x86-64 | 216,263,779 | 216.26 |
 | MERT Linux ARM64 | 215,501,193 | 215.50 |
 | MERT macOS Apple Silicon | 217,330,896 | 217.33 |
 
-All six archives were independently streamed back through decompression and
-compared with every listed file hash. The new Go transport also unpacked the
-actual intent and Windows x86-64 MERT archives. The extracted MERT pack passed
-native Windows parity, cancellation and restart checks. MiniLM passed 17 native
-embedding/tokenizer cases; DistilBERT passed 17 tokenizer cases. These checks
-establish packaging compatibility, not calibrated intent accuracy or native
+All archives were independently streamed back through decompression and compared
+with every listed file hash. The Go transport also unpacked the Windows x86-64
+MERT archive. The extracted MERT pack passed native Windows parity, cancellation,
+and restart checks. These checks establish packaging compatibility, not native
 execution on other operating systems.
 
 ## Reproduce the bundles
@@ -177,21 +162,9 @@ foreach ($platform in @('windows-amd64', 'windows-arm64', 'linux-amd64', 'linux-
     --name "mert-$platform" --output "models/mert-$platform"
 }
 
-# Prepare the new DistilBERT-only pack from current pinned setup sources.
-# This creates a local artifact; it does not publish or update the app registry.
-.\.venv-model-pack\Scripts\python.exe python/prepare_model_distribution.py `
-  --source C:/Users/pawel/Downloads/playlistai-intent-nlu-v1 `
-  --intent-sources internal/intent/nlu/sources.json `
-  --license internal/intent/nlu/licenses.txt `
-  --name distilbert-assets-v2 --output models/distilbert-assets-v2
-
 .\.venv-model-pack\Scripts\python.exe -m unittest discover `
   -s python -p test_prepare_model_distribution.py
 ```
-
-The current retained DistilBERT setup payload totals 261,535,276 bytes before
-compression and platform runtime files. MiniLM's retired setup payload was
-91,114,788 bytes; this is not a measured compressed-download or installer saving.
 
 Run from the repository root. Every output directory must be empty; the script
 refuses to overwrite existing bundles. Select a fresh directory to reproduce

@@ -26,7 +26,7 @@ foreach ($arch in $architectures) {
     $buildInfo = (& go version -m (Join-Path $RepoRoot "bin\playlist-ai.exe") | Out-String)
     if ($LASTEXITCODE -ne 0 -or $buildInfo -notmatch 'CGO_ENABLED=1' -or $buildInfo -notmatch "GOARCH=$arch") { throw "Packaged application lacks the expected native build configuration" }
     if ($arch -eq "amd64" -or $env:PROCESSOR_ARCHITECTURE -eq "ARM64") {
-        foreach ($capability in @("--check-audio-worker", "--check-intent-worker")) {
+        foreach ($capability in @("--check-audio-worker")) {
             $check = Start-Process -FilePath (Join-Path $RepoRoot "bin\playlist-ai.exe") -ArgumentList $capability -WindowStyle Hidden -PassThru
             try {
                 if (-not $check.WaitForExit(15000)) { $check.Kill(); throw "Native capability check timed out: $capability" }

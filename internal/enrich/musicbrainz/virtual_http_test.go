@@ -23,9 +23,8 @@ func virtualClientConfig(t *testing.T, cachePath string) Config {
 	base := "http://" + host
 	t.Cleanup(func() {
 		applicationLimiters.Delete(host)
-		discogsThrottles.Delete(base)
 	})
-	return Config{UserAgent: "PlaylistAI fixture", MirrorURL: base, DeezerURL: base, DiscogsURL: base, CachePath: cachePath, Interval: time.Second}
+	return Config{UserAgent: "PlaylistAI fixture", MirrorURL: base, DeezerURL: base, CachePath: cachePath, Interval: time.Second}
 }
 
 // Preserve both production retry wrappers. Deezer loopback requests bypass its

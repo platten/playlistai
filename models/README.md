@@ -11,15 +11,15 @@ HTTPS manifest URL in the updated application's model settings.
 - mert-linux-arm64: 215.50 MB.
 - mert-darwin-arm64: 217.33 MB.
 
-The former `intent-encoders-v1` combined pack is retired and is no longer a
-recommended download. The app prepares only pinned DistilBERT assets directly.
-The replacement `distilbert-assets-v2` compressed pack has not been prepared or
-published; measure and verify it before adding a hosted registry entry. Any old
-combined-pack files and inventory measurements in this local directory are
-historical artifacts, not current distribution recommendations.
+The CLAP platform subdirectories contain four compressed segments each and the
+manifest selected by the corresponding desktop build:
+
+- clap-windows-amd64: 722.85 MB.
+- clap-windows-arm64: 722.80 MB.
+- clap-linux-amd64: 725.76 MB.
+- clap-linux-arm64: 724.89 MB.
+- clap-darwin-arm64: 726.86 MB.
 
 See [preparation, installation, licensing and upload instructions](../docs/model-distribution.md).
 Exact sizes and hashes are in inventory.json; SHA256SUMS lists manifest hashes.
 Generated archives and inventories are local artifacts and are not committed.
-The DistilBERT trained pilot remains inactive. Existing v0.12.0 cannot directly
-consume these segmented manifests; use the accompanying code changes.

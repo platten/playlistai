@@ -97,8 +97,6 @@ export function PlaylistScreen({
   const engineOnly = recommendationMode === "deejai_only";
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const discogsSources = [...new Set((result?.intent ?? request.intent)?.knowledge?.sources ?? [])]
-    .filter((source) => /^https:\/\/www\.discogs\.com\/release\/[0-9]+$/.test(source));
   const acousticByTrack = useMemo(() => new Map(
     ((result?.intent ?? request.intent)?.knowledge?.tracks ?? [])
       .filter((track) => track.matched && track.identityStatus === "resolved")
@@ -423,17 +421,6 @@ export function PlaylistScreen({
         </div>
       ))}
 
-      {discogsSources.length > 0 && (
-        <details className="mt-3 text-[12px] text-muted">
-          <summary className="cursor-pointer">Data provided by Discogs</summary>
-          <p className="mt-1">Release tracklists helped find catalog candidates; musical fit is assessed separately.</p>
-          <div className="mt-1 flex flex-wrap gap-3">
-            {discogsSources.map((source, i) => (
-              <a key={source} href={source} target="_blank" rel="noreferrer" className="text-accent hover:underline">Data provided by Discogs · release {i + 1}</a>
-            ))}
-          </div>
-        </details>
-      )}
 
       {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} className="mt-3" />}
 

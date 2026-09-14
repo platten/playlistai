@@ -260,9 +260,6 @@ jobs:
         shell: pwsh
         run: .\scripts\install-clap-toolchain.ps1
 
-      - name: Stage native text runtime dependencies
-        run: python scripts/stage-nlu-runtime.py --arch ${{ matrix.arch }} --seven-zip "C:/Program Files/7-Zip/7z.exe"
-
       - name: Package (NSIS installer, ${{ matrix.arch }})
         shell: pwsh
         run: .\scripts\build.ps1 -Architecture ${{ matrix.arch }}

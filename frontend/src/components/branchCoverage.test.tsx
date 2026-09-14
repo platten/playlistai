@@ -103,7 +103,7 @@ it("does not change recommendation selection before successful persistence", asy
   expect((screen.getByRole("radio", { name: /CLAP first/ }) as HTMLInputElement).checked).toBe(true);
 });
 
-const availableStatus = { installed: false, available: false, recommendedAvailable: true, recommendedInstalled: false, storage: { bytes: 0, records: 0 }, detail: "Model optional" };
+const availableStatus = { installed: false, available: false, recommendedAvailable: true, recommendedInstalled: false, recommendedBytes: 722852693, storage: { bytes: 0, records: 0 }, detail: "Model optional" };
 it("shows unavailable analysis guidance without offering a download or cache clear", async () => {
   mocks.api.GetAnalysisStatus.mockImplementation(() => completed({ ...availableStatus, recommendedAvailable: false, recommendedDetail: "Use a native-analysis-enabled build" }));
   render(<MusicAnalysisCard />);
@@ -121,7 +121,7 @@ it("renders optional artifact defaults and reports determinate download progress
   mocks.progress = { done: 1e6, total: 2e6, note: "Verifying models" };
   render(<MusicAnalysisCard />);
   await screen.findByText(/Recommended update/);
-  expect(screen.getByText(/0.0 MB download/)).toBeTruthy();
+  expect(screen.getByText(/722.9 MB compressed download/)).toBeTruthy();
   expect(screen.queryByRole("checkbox")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Download and validate CLAP" }));
   expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50");
@@ -170,13 +170,13 @@ it("ignores metadata status completion after departure", async () => {
     mocks.api.GetMetadataStatus.mockReturnValueOnce(pending.promise);
     const view = render(<MusicMetadataCard />);
     view.unmount();
-    await act(async () => reject ? pending.reject(new Error("late metadata")) : pending.resolve({ discogsConfigured: true }));
+    await act(async () => reject ? pending.reject(new Error("late metadata")) : pending.resolve({ musicBrainzSnapshot: "20260912" }));
     expect(screen.queryByRole("alert")).toBeNull();
   }
 });
 
 it("shows pending metadata cache clearing and keeps errors visible if status refresh fails", async () => {
-  mocks.api.GetMetadataStatus.mockImplementationOnce(() => completed({ discogsConfigured: false })).mockRejectedValueOnce(new Error("refresh failed"));
+  mocks.api.GetMetadataStatus.mockImplementationOnce(() => completed({})).mockRejectedValueOnce(new Error("refresh failed"));
   const clear = deferred();
   mocks.api.ClearMusicMetadataCache.mockReturnValueOnce(clear.promise);
   vi.spyOn(window, "confirm").mockReturnValue(true);

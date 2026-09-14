@@ -16,8 +16,8 @@ GetSetupStatus:()=>scenario==='repair'?{onboarded:true,needsSetup:true,pendingSt
  {onboarded:false,needsSetup:true,pendingSteps:scenario==='mert'?['mert']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:[]},
 SetMERTSimilarityEnabled:enabled=>{window.__enhancedEnabled=enabled},
 GetEnhancedAnalysisStatus:()=>({installed:false,dspAvailable:true,enabled:false,mertEnabled:window.__enhancedEnabled,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
-GetMetadataBundleInfo:()=>({configured:true,installed:window.__installed,catalogReady:true}),
-InstallMetadataBundle:()=>{window.__installed=true},
+GetMetadataBundleInfo:()=>({musicBrainzConfigured:true,musicBrainzInstalled:window.__installed}),
+InstallMusicBrainzBundle:()=>{window.__installed=true},
 GetModelStatus:()=>({backend:'rules',ready:true}),GetLlamaRuntime:()=>({available:false,builds:[]}),
 GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{gpuAvailable:false}}),
 CompleteOnboarding:()=>{},
@@ -36,13 +36,13 @@ try {
     if (scenario === "mert") {
       await page.getByRole("button", { name: "Get started" }).click();
       await page.getByRole("heading", { name: "MERT audio similarity" }).waitFor();
-      await page.getByRole("button", { name: "Download MERT for this device" }).waitFor();
+      await page.getByRole("button", { name: "Download MERT from Cloudflare R2" }).waitFor();
       assert.equal(await page.getByRole("checkbox").isChecked(), false);
       await page.getByRole("checkbox",{name:"Use MERT to find similar tracks"}).check();
       await page.waitForFunction(()=>window.__enhancedEnabled);
     } else if (scenario === "partial") {
       await page.getByRole("button", { name: "Get started" }).click();
-      await page.getByRole("button", { name: "Download music metadata" }).waitFor();
+      await page.getByRole("button", { name: "Download offline music data" }).waitFor();
     } else if (scenario === "repair") {
       await page.getByRole("heading", { name: "Install llama.cpp" }).waitFor();
       assert.equal(await page.getByRole("button", { name: "Get started" }).count(), 0);
@@ -60,7 +60,7 @@ try {
       }
     }
     if (scenario === "repair") await page.getByRole("button", { name: "Skip for now" }).click();
-    if (scenario === "partial") await page.getByRole("button", { name: "Download music metadata" }).click();
+    if (scenario === "partial") await page.getByRole("button", { name: "Download offline music data" }).click();
     if (scenario === "mert") await page.getByRole("button", { name: "Continue" }).click();
     const finish = page.getByRole("button", { name: "Start using Playlist AI" });
     await finish.waitFor();
@@ -68,7 +68,7 @@ try {
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__done === 1);
     const calls = await page.evaluate(() => window.__calls);
-    assert.ok(!calls.includes("InstallIntentModels") && !calls.includes("SetPreviewProvider"), "ready or unselected optional steps must not run");
+    assert.ok(!calls.includes("SetPreviewProvider"), "ready or unselected optional steps must not run");
     assert.ok(!calls.includes("InstallRecommendedMERT"), "MERT requires an explicit download action");
     assert.equal(calls.filter(call => call === "CompleteOnboarding").length, 1);
   }

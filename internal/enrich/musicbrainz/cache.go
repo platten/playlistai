@@ -10,7 +10,6 @@ import (
 )
 
 const musicBrainzTTL = 7 * 24 * time.Hour
-const discogsTTL = 6 * time.Hour
 const memoryCacheEntries = 256
 const memoryCacheBytes = 32 << 20
 
@@ -42,29 +41,6 @@ func (c *Client) readCache(ctx context.Context, key string) cachedResponse {
 	var entry cachedResponse
 	_ = c.db.QueryRowContext(ctx, "SELECT json,fetched_at FROM mb_cache WHERE key=?", key).Scan(&entry.body, &entry.fetched)
 	return entry
-}
-
-// Reads always reject expired Discogs content. Prune at startup and at most
-// once per minute on provider access; never delete saved catalog identities.
-func (c *Client) expireDiscogs(ctx context.Context) {
-	c.dbMu.Lock()
-	defer c.dbMu.Unlock()
-	now := time.Now()
-	if now.Before(c.nextDiscogsCleanup) {
-		return
-	}
-	cutoff := now.Add(-discogsTTL).Unix()
-	if c.db != nil {
-		if _, err := c.db.ExecContext(ctx, "DELETE FROM mb_cache WHERE key LIKE 'response-v2:discogs-v1:%' AND fetched_at<=?", cutoff); err != nil {
-			return // retry cleanup on the next access
-		}
-	}
-	c.nextDiscogsCleanup = now.Add(time.Minute)
-	for key, entry := range c.memory {
-		if strings.HasPrefix(key, "response-v2:discogs-v1:") && entry.fetched <= cutoff {
-			delete(c.memory, key)
-		}
-	}
 }
 
 func (c *Client) writeCache(ctx context.Context, key string, raw []byte, epoch uint64) {
@@ -121,7 +97,7 @@ func (c *Client) finishFetch(key string) {
 }
 
 // ClearCache clears provider lookups, including legacy projections, but not
-// history, audio features, feedback, models, credentials or rate-limit state.
+// history, audio features, feedback, models, or rate-limit state.
 func (c *Client) ClearCache(ctx context.Context) error {
 	c.dbMu.Lock()
 	defer c.dbMu.Unlock()

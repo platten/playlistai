@@ -15,7 +15,6 @@ exclusions and genuinely strict requirements must remain binding.
 | Component | Current request representation | What it contributes | Important limitation |
 | --- | --- | --- | --- |
 | MusicBrainz discovery | Exact positive genre strings and essential genre/style strings | Artist search, catalog-resolved recordings, attributed metadata | Soft `preferences.styles` is omitted from iterative discovery; mood, texture, instrumentation and energy do not create its searches |
-| Local Discogs metadata | Same genre strings, lowercased/whitespace-normalized | Release-derived candidate discovery, with catalog identity checks | No shared genre alias expansion; release tags are correctly not promoted to recording suitability |
 | AcousticBrainz | Per-clause kind/text to a small, exact classifier-label map | Archived classifier margins, optional veto of essential/strict clauses | Most subgenres, synonyms, instruments and production descriptions are unmapped; its scores are not calibrated musical truth |
 | CLAP | Structured clauses, each usually raw text plus a short caption | Preview/text cosine ranking; special instrumental screening | The full prompt is only a fallback when no structured clauses/references exist; lost LLM concepts generally stay lost |
 | MERT | Audio from identity-checked previews; positive/negative reference vectors or feedback centroids | Audio similarity and transition preference | No text encoder, genre classifier, or direct mood classifier is used; prompt words cannot be translated into a MERT text query |
@@ -58,8 +57,7 @@ of a 2–4-word genre and requires all words as tags
 but an adjective/category compound such as `relaxing electronic` can demand a
 `relaxing` artist tag rather than use electronic discovery plus relaxed audio
 ranking. Genre graph alias resolution later in evidence matching cannot repair
-an empty earlier retrieval query. Local metadata also uses exact normalized
-genre keys (`internal/metadata/store.go:88`).
+an empty earlier retrieval query.
 
 Use reviewed equivalence aliases, directional parent relationships and separate
 facets. A broader parent is a candidate source, not proof of the child's genre.

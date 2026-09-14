@@ -13,7 +13,6 @@ import (
 
 type metadataFixture struct {
 	cleared bool
-	token   string
 }
 
 func (m *metadataFixture) ResolveMusic(_ context.Context, intent core.MusicIntent, _ ports.Catalog, _ ports.ReferenceResolver, _ ports.Progress) (core.MusicIntent, error) {
@@ -21,12 +20,11 @@ func (m *metadataFixture) ResolveMusic(_ context.Context, intent core.MusicInten
 }
 func (m *metadataFixture) ClearCache(context.Context) error { m.cleared = true; return nil }
 func (m *metadataFixture) MetadataStatus() musicbrainz.MetadataStatus {
-	return musicbrainz.MetadataStatus{DiscogsConfigured: m.token != ""}
+	return musicbrainz.MetadataStatus{}
 }
-func (m *metadataFixture) SetDiscogsToken(token string) error { m.token = token; return nil }
 
 func TestMetadataSettingsClearInvalidatesActiveAndLateWork(t *testing.T) {
-	m := &metadataFixture{token: "kept"}
+	m := &metadataFixture{}
 	a := New(&app.Container{Knowledge: m}, nil)
 	var contexts []context.Context
 	for _, group := range []string{"intent-preview", generationOperation} {
@@ -39,7 +37,7 @@ func TestMetadataSettingsClearInvalidatesActiveAndLateWork(t *testing.T) {
 	if err := a.ClearMusicMetadataCache(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !m.cleared || m.token != "kept" {
+	if !m.cleared {
 		t.Fatal("cache clear scope incorrect")
 	}
 	for _, ctx := range contexts {
@@ -50,12 +48,5 @@ func TestMetadataSettingsClearInvalidatesActiveAndLateWork(t *testing.T) {
 	a.intentCache.put(oldKey, parsedIntentEntry{}) // simulate a late parser response
 	if _, ok := a.intentCache.get(a.intentCache.scopedKey("prompt")); ok {
 		t.Fatal("old metadata parse became reusable")
-	}
-	if err := a.SetDiscogsToken(""); err != nil {
-		t.Fatal(err)
-	}
-	status, err := a.GetMetadataStatus()
-	if err != nil || status.DiscogsConfigured {
-		t.Fatal("settings did not disable fallback")
 	}
 }

@@ -52,7 +52,7 @@ go build -o /tmp/playlist-ai-musiccheck ./cmd/musiccheck
 /tmp/playlist-ai-musiccheck \
   -prompts internal/evaluation/testdata/varied-prompts-v1.json \
   -model /path/to/model.gguf -runtime /path/to/llama \
-  -catalog /path/to/catalog -metadata /path/to/metadata/discogs.sqlite \
+  -catalog /path/to/catalog \
   -bundle /path/to/validated/clap-bundle -online \
   -min-tracks 5 -min-artists 3 \
   -analysis-dir /path/to/evaluation-analysis \

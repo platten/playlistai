@@ -3,11 +3,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FirstRunWizard } from "./FirstRunWizard";
 const api = vi.hoisted(() => Object.fromEntries([
-  "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMetadataBundle", "InstallMusicBrainzBundle", "GetModelStatus",
+  "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetModelStatus",
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
-  "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
+  "GetEnhancedAnalysisStatus", "InstallRecommendedMERT",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
@@ -21,9 +21,8 @@ function deferred() {
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset().mockImplementation(() => completed(null)));
   api.GetCatalogInfo.mockImplementation(() => completed({ loaded: true }));
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: false }));
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: false }));
   api.GetPreviewProviderName.mockImplementation(() => completed("off"));
-  api.GetIntentAssistStatus.mockImplementation(() => completed({ installed: true, enabled: false, downloadBytes: 430000000 }));
 });
 afterEach(cleanup);
 function setupStatus(pendingSteps: string[], repairSteps: string[] = [], onboarded = false) {
@@ -40,7 +39,7 @@ it("skips every ready asset screen without changing saved choices or downloading
   render(<FirstRunWizard onDone={vi.fn()} />);
   await screen.findByText("You're set up");
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  for (const method of ["DownloadCatalog", "GetModelRecommendations", "InstallIntentModels", "GetAnalysisStatus", "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "SetPreviewProvider"]) {
+  for (const method of ["DownloadCatalog", "GetModelRecommendations", "GetAnalysisStatus", "GetEnhancedAnalysisStatus", "InstallRecommendedMERT", "SetPreviewProvider"]) {
     expect(api[method]).not.toHaveBeenCalled();
   }
 });
@@ -51,7 +50,7 @@ it("offers missing MERT as an optional explicit download and cancels it when con
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   await start();
-  fireEvent.click(await screen.findByRole("button", { name: /Download MERT for this device/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" }));
   expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("You're set up");
@@ -60,30 +59,28 @@ it("offers missing MERT as an optional explicit download and cancels it when con
 });
 
 it("repairs only the missing selected feature without repeating welcome or optional setup", async () => {
-  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["model", "intent", "analysis"], ["model"], true)));
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["model", "analysis"], ["model"], true)));
   render(<FirstRunWizard onDone={vi.fn()} />);
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(screen.getByText(/Only the affected steps are shown/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
   await screen.findByText("You're set up");
-  expect(api.InstallIntentModels).not.toHaveBeenCalled();
   expect(api.SetPreviewProvider).not.toHaveBeenCalled();
 });
 
 it("rechecks remaining steps after installation and skips assets that became ready", async () => {
-  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["metadata", "intent", "analysis"])));
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: true }));
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["metadata", "analysis"])));
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: true, musicBrainzInstalled: false }));
   await start();
   await screen.findByRole("button", { name: "Download offline music data" });
-  api.InstallMetadataBundle.mockImplementation(() => {
+  api.InstallMusicBrainzBundle.mockImplementation(() => {
     api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
     return completed(null);
   });
   fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByText("You're set up");
-  expect(api.InstallMetadataBundle).toHaveBeenCalledOnce();
-  expect(api.InstallIntentModels).not.toHaveBeenCalled();
+  expect(api.InstallMusicBrainzBundle).toHaveBeenCalledOnce();
   expect(api.GetAnalysisStatus).not.toHaveBeenCalled();
 });
 
@@ -105,8 +102,6 @@ it("supports catalog-only onboarding, migrates off previews and advances only af
   const onDone = vi.fn();
   await start(onDone);
   fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
-  await screen.findByRole("heading", { name: "Intent language models" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });
@@ -148,8 +143,8 @@ it("retries a failed catalog download and auto-advances after success", async ()
 
 it("downloads optional metadata and cancels its pending work when closed", async () => {
   const pending = deferred();
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: true }));
-  api.InstallMetadataBundle.mockReturnValueOnce(pending.promise);
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: true, musicBrainzInstalled: false }));
+  api.InstallMusicBrainzBundle.mockReturnValueOnce(pending.promise);
   const view = render(<FirstRunWizard onDone={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   fireEvent.click(await screen.findByRole("button", { name: "Download offline music data" }));
@@ -159,18 +154,8 @@ it("downloads optional metadata and cancels its pending work when closed", async
   await act(async () => pending.reject(new Error("cancelled")));
 });
 
-it("offers a skip when the catalog required by optional metadata is absent", async () => {
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, installed: false, catalogReady: false }));
-  await start();
-  expect((screen.getByRole("button", { name: "Download offline music data" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Continue without download" }));
-  await screen.findByRole("heading", { name: "Install llama.cpp" });
-});
-
 it("downloads MusicBrainz metadata without requiring the recommendation catalog", async () => {
   api.GetMetadataBundleInfo.mockImplementation(() => completed({
-    configured: false,
-    catalogReady: false,
     musicBrainzConfigured: true,
     musicBrainzInstalled: false,
   }));
@@ -181,7 +166,6 @@ it("downloads MusicBrainz metadata without requiring the recommendation catalog"
   fireEvent.click(button);
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(api.InstallMusicBrainzBundle).toHaveBeenCalledOnce();
-  expect(api.InstallMetadataBundle).not.toHaveBeenCalled();
 });
 
 it("installs runtime then selects a recommended model, retaining errors for retry", async () => {
@@ -202,8 +186,6 @@ it("installs runtime then selects a recommended model, retaining errors for retr
   api.GetModelStatus.mockImplementation(() => completed({ backend: "llama", modelId: "small" }));
   fireEvent.click(screen.getByRole("button", { name: "Download & use" }));
   await screen.findByRole("button", { name: "In use" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "Intent language models" });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
 });
@@ -260,24 +242,22 @@ it("keeps metadata and model-status read failures recoverable without requiring 
   expect(api.GetModelRecommendations).toHaveBeenCalledTimes(2);
 });
 
-it("retries optional metadata installation and advances after the acknowledged install", async () => {
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: true, catalogReady: true }));
-  api.InstallMetadataBundle.mockRejectedValueOnce(new Error("metadata download failed"));
+it("retries MusicBrainz installation and advances after the acknowledged install", async () => {
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: true, musicBrainzInstalled: false }));
+  api.InstallMusicBrainzBundle.mockRejectedValueOnce(new Error("metadata download failed"));
   await start();
   fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByText(/metadata download failed/);
   fireEvent.click(screen.getByLabelText("Dismiss error"));
   fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByRole("heading", { name: "Install llama.cpp" });
-  expect(api.InstallMetadataBundle).toHaveBeenCalledTimes(2);
+  expect(api.InstallMusicBrainzBundle).toHaveBeenCalledTimes(2);
 });
 
 it("keeps preview selection available after its initial read fails", async () => {
   api.GetPreviewProviderName.mockRejectedValueOnce(new Error("preference unavailable"));
   await start();
   fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
-  await screen.findByRole("heading", { name: "Intent language models" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });

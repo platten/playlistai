@@ -20,6 +20,7 @@ Bundle assembly has been ported to `go run ./cmd/audiopack`; it requires no Pyth
 | `parity_playlist.py` | Stdlib-only reimplementation of upstream `backend/deejai.py` (`make_playlist` / `most_similar` / `join_the_dots`, `noise=0`) run over `internal/catalog/testdata` → golden playlist fixtures under `internal/reco/deejai/testdata/golden/` for the Go parity test. |
 | `build_semantic_sidecar.py` | Validate grounded JSONL against a real catalog, embed descriptions with an already-local model, and write the bounded semantic sidecar plus coverage report. |
 | `validate_clap_export.py` | Maintainer-only PyTorch-to-ONNX export and comparison with reference CLAP inference. Produces graphs consumed by the native Go worker; none of this Python environment is shipped. |
+| `prepare_laion_clap.py` | One-command, checksummed download and FP32 conversion of the original music-trained LAION HTSAT-base checkpoint, followed by native bundle assembly and sub-200 MB multipart R2 packaging. Uses `requirements-laion-clap-pack.txt`; see `docs/laion-clap-model-preparation.md`. |
 
 ## Regenerating the test fixtures
 

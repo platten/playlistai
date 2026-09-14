@@ -6,11 +6,9 @@ import { useProgress } from "./useProgress";
 
 type Status = Awaited<ReturnType<typeof API.GetEnhancedAnalysisStatus>>;
 type Pending = Promise<unknown> & { cancel: (reason?: string) => unknown };
-const size = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
 export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false }: { trackIds?: string[]; setup?: boolean; dspOnly?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
-  const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [error, setError] = useState("");
@@ -72,29 +70,10 @@ export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false }: 
     </label>
     <p className="text-[12px] text-muted">{status ? `${status.searchableTracks ?? 0} tracks with compatible cached embeddings.` : error ? "MERT status unavailable." : "Checking MERT…"}</p>
     {status && !(status.searchableTracks > 0) && <p className="text-[12px] text-muted">The similarity cache is empty for this catalog and model. Generation starts with catalog candidates and adds available preview comparisons. Missing previews keep their existing recommendation scores.</p>}
-    <div className="rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
-      <p className="font-medium text-text">MERT-v1-95M · optional</p>
-      <p>{!status ? error ? "Status unavailable" : "Checking model…" : status.mertAvailable ? `Ready${status.mertEnabled ? " · enabled" : " · disabled"}` : status.installed ? "Installed · unavailable" : "Not installed"} · CC-BY-NC-4.0 noncommercial model license</p>
-      {status?.revision && <p className="break-all">Revision: {status.revision}</p>}
-      {!!status?.downloadBytes && <p>Pack assets: {size(status.downloadBytes)} · cached representations: {size(status.mertStorage?.bytes ?? 0)}</p>}
-      <p className="mt-2">MERT compares audio with audio. It does not understand the text prompt directly. Preview audio is processed in memory; embeddings stay on this device.</p>
-      {status?.unsupportedReason && <p className="mt-2">{status.unsupportedReason}</p>}
-      {!status?.installed && status?.recommendedManifestUrl && !status.unsupportedReason && <div className="mt-3 flex flex-col gap-2">
-        <p>Download the verified compressed pack for this device. Installation keeps your similarity preference unchanged.</p>
-        {!!status.recommendedDownloadBytes && <p>Download size: {size(status.recommendedDownloadBytes)}</p>}
-        <Button size="sm" disabled={busy} onClick={() => void run(() => API.InstallRecommendedMERT(), false, true)}>Download MERT for this device</Button>
-      </div>}
-      {installing && <div className="mt-3"><ProgressBar label="Installing MERT" done={modelProgress?.done ?? 0} total={modelProgress?.total ?? 0} note={modelProgress?.note} /></div>}
-      <label className="mt-3 block" htmlFor="mert-pack">MERT pack directory or manifest</label>
-      <input id="mert-pack" value={path} disabled={busy} onChange={(e) => setPath(e.target.value)}
-        className="mt-1 w-full rounded-control border border-line bg-surface px-3 py-2 text-text" spellCheck={false} />
-      <p className="mt-1 text-faint">Enter a prepared directory, an HTTPS manifest URL, or a local manifest JSON path. Compressed segments are downloaded or read, verified, and extracted for this OS and architecture. No Python is needed to install or run it.</p>
-      <p className="mt-1 text-faint">Review LICENSES.txt in the pack before installing. Installation accepts its model and runtime terms, including the Microsoft runtime terms in Windows packs.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy || !status || !path.trim()} onClick={() => void run(() => API.InstallMERT(path.trim()), false, true)}>Install MERT pack</Button>
-        <Button size="sm" variant="ghost" disabled={busy || !status?.installed} onClick={() => void run(() => API.RemoveMERT())}>Remove MERT</Button>
-      </div>
-    </div>
+    {status?.unsupportedReason && !status.mertAvailable && <p className="text-[12px] text-muted">{status.unsupportedReason}</p>}
+    {!status?.installed && status?.recommendedManifestUrl && !status.unsupportedReason &&
+      <Button size="sm" disabled={busy} onClick={() => void run(() => API.InstallRecommendedMERT(), false, true)}>Download MERT from Cloudflare R2</Button>}
+    {installing && <ProgressBar label="Installing MERT" done={modelProgress?.done ?? 0} total={modelProgress?.total ?? 0} note={modelProgress?.note} />}
     {!setup && <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={busy || !status?.mertEnabled || !status.mertAvailable} onClick={() => void run(() => API.AnalyzeEnhancedTracks([], true), true)}>Analyze liked tracks</Button>
       {trackIds && <Button size="sm" disabled={busy || !status?.mertEnabled || !status.mertAvailable || !trackIds.length} onClick={() => void run(() => API.AnalyzeEnhancedTracks(trackIds, false), true)}>Analyze candidates</Button>}
