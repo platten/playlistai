@@ -6,7 +6,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "GetCatalogInfo", "DownloadCatalog", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetModelStatus",
   "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations", "InstallLlamaRuntime", "ReinstallLlamaRuntime",
   "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
-  "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
+  "SetAnalysisEnabled", "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
   "GetEnhancedAnalysisStatus", "InstallRecommendedMERT",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
@@ -102,14 +102,20 @@ it("offers retry on readiness errors and ignores a late response after unmount",
   expect(api.CompleteOnboarding).not.toHaveBeenCalled();
 });
 
-it("requires analysis and MERT before saving the preview provider", async () => {
+it("enables an installed analysis model before continuing to MERT", async () => {
   const onDone = vi.fn();
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["analysis", "mert", "preview"])));
-  api.GetAnalysisStatus.mockImplementation(() => completed({ available: true, installed: true, enabled: true, generalFitAvailable: true, detail: "Ready", downloadBytes: 0, memoryBytes: 0, storage: { bytes: 0, records: 0 } }));
+  api.GetAnalysisStatus
+    .mockImplementationOnce(() => completed({ available: true, installed: true, enabled: false, generalFitAvailable: true, recommendedAvailable: true, recommendedInstalled: false, detail: "Ready", downloadBytes: 0, memoryBytes: 0, storage: { bytes: 0, records: 0 } }))
+    .mockImplementation(() => completed({ available: true, installed: true, enabled: true, generalFitAvailable: true, recommendedAvailable: true, recommendedInstalled: false, detail: "Ready", downloadBytes: 0, memoryBytes: 0, storage: { bytes: 0, records: 0 } }));
+  api.SetAnalysisEnabled.mockImplementation(() => completed(null));
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: true, mertAvailable: true, mertEnabled: true, dspAvailable: true, searchableTracks: 0, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } }));
   await start(onDone);
   await screen.findByText("Music analysis");
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(api.SetAnalysisEnabled).toHaveBeenCalledWith(true);
+  expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Download and validate CLAP" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
@@ -258,6 +264,17 @@ it("retries MusicBrainz installation and advances after the acknowledged install
   fireEvent.click(screen.getByRole("button", { name: "Download offline music data" }));
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(api.InstallMusicBrainzBundle).toHaveBeenCalledTimes(2);
+});
+
+it("accepts an installed uncalibrated analysis model without offering another download", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["analysis"])));
+  api.GetAnalysisStatus.mockImplementation(() => completed({ available: true, installed: true, enabled: false, generalFitAvailable: false, recommendedAvailable: true, recommendedInstalled: false, detail: "Ready", downloadBytes: 0, memoryBytes: 0, storage: { bytes: 0, records: 0 } }));
+  await start();
+  await screen.findByText(/enabled automatically/);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
+  expect(api.SetAnalysisEnabled).not.toHaveBeenCalled();
+  expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: "Download and validate CLAP" })).toBeNull();
 });
 
 it("keeps preview selection available after its initial read fails", async () => {
