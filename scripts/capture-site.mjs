@@ -42,14 +42,15 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 13 || downloads.some(url => !url.includes('/v0.12.1/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.12.1')) throw Error('Latest release missing');
-  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.12.1')) throw Error('Public download version unclear');
+  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.14.1/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.14.1')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.14.1')) throw Error('Public download version unclear');
   if (await page.locator('#new .release-list article').count() !== 4) throw Error('Release highlights missing');
+  if (await page.locator('#recommendations .signal-path li').count() !== 5) throw Error('Recommendation architecture missing');
   await page.locator('.mode-options > summary').click();
   if (await page.locator('#recommendations .mode-card').count() !== 4) throw Error('Recommendation modes missing');
   if (!(await page.locator('#recommendations').innerText()).includes('DEFAULT FOR NEW SETUPS')) throw Error('Enhanced Hybrid default missing');
-  await page.getByRole('link', {name:'Read the 0.12.1 release notes'}).waitFor();
+  await page.getByRole('link', {name:'Read the 0.14.1 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); document.activeElement?.blur(); window.scrollTo({top:0,behavior:'instant'}); });
@@ -100,5 +101,5 @@ try {
     await page.screenshot({path:path.join(directory,'og.png')});
   }
   if (errors.length) throw Error(errors.join('\n'));
-  console.log('PASS: five viewports, keyboard examples and navigation, 13 versioned downloads, release highlights, four modes, FAQ, anchors, reduced motion, no-JS content, no external requests, no browser errors');
+  console.log('PASS: five viewports, keyboard examples and navigation, 16 versioned downloads, release highlights, five recommendation stages, four modes, FAQ, anchors, reduced motion, no-JS content, no external requests, no browser errors');
 } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
