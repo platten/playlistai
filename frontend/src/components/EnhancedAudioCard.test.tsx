@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EnhancedAudioCard } from "./EnhancedAudioCard";
 const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "SetMERTSimilarityEnabled", "InstallRecommendedMERT", "ClearMERTSimilarityCache", "ClearDSPAnalysisCache", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
@@ -17,14 +17,14 @@ beforeEach(() => {
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed(status));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
-it("downloads the recommended device pack explicitly without enabling analysis", async () => {
+it("downloads the recommended device pack without exposing feature toggles", async () => {
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, mertEnabled: false, mertAvailable: false, installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   const view = render(<EnhancedAudioCard setup />);
   const button = await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" });
   expect(api.InstallRecommendedMERT).not.toHaveBeenCalled();
-  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
   fireEvent.click(button);
   expect(api.InstallRecommendedMERT).toHaveBeenCalledWith();
   expect(screen.getByRole("progressbar", { name: "Installing MERT" })).toBeTruthy();
@@ -35,16 +35,14 @@ it("downloads the recommended device pack explicitly without enabling analysis",
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
   expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
 });
-it("allows setup to enable installed MERT without exposing bulk analysis actions", async () => {
-  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, mertEnabled: false }));
-  render(<EnhancedAudioCard setup />);
-  const checkbox = await screen.findByRole("checkbox", { name: "Use MERT to find similar tracks" });
-  await act(async () => {});
-  expect((checkbox as HTMLInputElement).checked).toBe(false);
+it("reports installed MERT as ready without exposing setup analysis controls", async () => {
+  const onReadyChange = vi.fn();
+  render(<EnhancedAudioCard setup onReadyChange={onReadyChange} />);
+  await screen.findByText("2 tracks with compatible cached embeddings.");
+  expect(onReadyChange).toHaveBeenCalledWith(true);
+  expect(screen.queryByRole("checkbox")).toBeNull();
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
-  fireEvent.click(checkbox);
-  await waitFor(() => expect(api.SetMERTSimilarityEnabled).toHaveBeenCalledWith(true));
-  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
+  expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Analyze liked tracks" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Clear similarity cache" })).toBeNull();
 });
@@ -67,14 +65,14 @@ it("shows only the hosted download for missing supported models", async () => {
   expect(screen.queryByText("12af15")).toBeNull();
   expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
 });
-it("changes MERT independently of DSP without exposing manual model management", async () => {
+it("keeps MERT always on without exposing manual model management", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
   expect(screen.getByText("2 tracks with compatible cached embeddings.")).toBeTruthy();
   expect(screen.queryByLabelText("MERT pack directory or manifest")).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove MERT" })).toBeNull();
   expect(api.AnalyzeEnhancedTracks).not.toHaveBeenCalled();
-  await act(async () => { fireEvent.click(screen.getByRole("checkbox")); });
-  expect(api.SetMERTSimilarityEnabled).toHaveBeenCalledWith(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
 });
 it("reports bounded candidate outcomes and cancels ongoing work on close", async () => {
@@ -102,11 +100,12 @@ it("requires cache-clear confirmation", async () => {
   expect(api.ClearDSPAnalysisCache).not.toHaveBeenCalled();
 });
 
-it("keeps DSP settings and cache clearing separate from MERT", async () => {
+it("keeps always-on DSP cache clearing separate from MERT", async () => {
   await act(async () => { render(<EnhancedAudioCard dspOnly />); });
   expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole("checkbox", { name: "Use DSP preview measurements" })); });
-  expect(api.SetEnhancedAnalysisEnabled).toHaveBeenCalledWith(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  expect(screen.getByText(/used automatically/)).toBeTruthy();
+  expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
   expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
   vi.spyOn(window, "confirm").mockReturnValue(true);
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Clear DSP cache" })); });
@@ -114,19 +113,16 @@ it("keeps DSP settings and cache clearing separate from MERT", async () => {
   expect(api.ClearMERTSimilarityCache).not.toHaveBeenCalled();
 });
 
-it("shows loading, cold-cache fallback and failed preference saves without claiming success", async () => {
+it("shows loading and the cold-cache fallback without a MERT toggle", async () => {
   const pending = deferred();
   api.GetEnhancedAnalysisStatus.mockReturnValueOnce(pending.promise);
   render(<EnhancedAudioCard />);
   expect(screen.getByText("Checking MERT…")).toBeTruthy();
   expect(screen.queryByText(/Not installed/)).toBeNull();
-  expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(true);
-  await act(async () => pending.resolve({ ...status, mertEnabled: false, searchableTracks: 0 }));
+  expect(screen.queryByRole("checkbox")).toBeNull();
+  await act(async () => pending.resolve({ ...status, searchableTracks: 0 }));
   expect(screen.getByText(/The similarity cache is empty/)).toBeTruthy();
-  api.SetMERTSimilarityEnabled.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("save failed")), { cancel: vi.fn() }));
-  await act(async () => { fireEvent.click(screen.getByRole("checkbox")); });
-  expect(screen.getByRole("alert").textContent).toContain("save failed");
-  expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
+  expect(screen.queryByRole("checkbox")).toBeNull();
 });
 
 it("reports a failed hosted install and cancels a retry on close", async () => {

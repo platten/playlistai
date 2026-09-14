@@ -59,7 +59,7 @@ beforeEach(() => {
   clipboard.mockReset().mockResolvedValue(undefined);
   for (const mock of Object.values(bridge)) mock.mockReset().mockImplementation(() => completed(null));
   bridge.GetOnboarded.mockImplementation(() => completed(true));
-  bridge.GetStatus.mockImplementation(() => completed({ parserBackend: "llama" }));
+  bridge.GetStatus.mockImplementation(() => completed({ parserBackend: "llama", version: "0.14.0" }));
   bridge.GetCatalogInfo.mockImplementation(() => completed({ loaded: true }));
   bridge.ListSavedPlaylists.mockImplementation(() => completed([]));
   bridge.GetRecommendationMode.mockImplementation(() => completed("acousticbrainz_first"));
@@ -141,7 +141,10 @@ describe("active playlist navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     const resetButton = await screen.findByRole("button", { name: "Reset models and datasets" });
     const resetSection = resetButton.closest("section");
-    expect(resetSection?.parentElement?.lastElementChild).toBe(resetSection);
+    expect(resetSection?.nextElementSibling?.tagName).toBe("FOOTER");
+    expect(screen.getByText("Playlist AI 0.14.0")).toBeTruthy();
+    expect(screen.getByText("Paul Pietkiewicz")).toBeTruthy();
+    expect(screen.getByText("GPL-3.0")).toBeTruthy();
     fireEvent.click(resetButton);
     expect(bridge.ResetAssets).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Reset models and datasets" }));
@@ -667,23 +670,17 @@ it("supports UUID-less hosts and deduplicates display acknowledgment through Str
   await screen.findByLabelText("Your description");
 });
 
-it("opens setup when catalog loading fails and completes onboarding without trapping the user", async () => {
+it("opens setup when catalog loading fails and keeps the required catalog step blocked", async () => {
   bridge.GetStatus.mockRejectedValueOnce(new Error("status unavailable"));
-  bridge.GetCatalogInfo.mockRejectedValueOnce(new Error("catalog unavailable"));
+  bridge.GetCatalogInfo.mockImplementation(() => Promise.reject(new Error("catalog unavailable")));
   bridge.ListSavedPlaylists.mockRejectedValueOnce(new Error("history unavailable"));
   render(<App />);
   fireEvent.click(await screen.findByRole("button", { name: "Open setup" }));
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
-  await screen.findByText("Music analysis");
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "MERT audio similarity" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
-  await screen.findByLabelText("Your description");
-  expect(bridge.CompleteOnboarding).toHaveBeenCalledOnce();
+  expect(await screen.findByText(/No catalog source is configured/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(bridge.CompleteOnboarding).not.toHaveBeenCalled();
 });
 
 it("leaves Generate available when the onboarding read fails", async () => {
@@ -707,14 +704,15 @@ it("opens a completed installation directly when startup assets are ready", asyn
   expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
 });
 
-it("runs only the startup repair step when a configured model is missing", async () => {
+it("requires the startup repair step when a configured model is missing", async () => {
   bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: true, pendingSteps: ["model", "analysis"], repairSteps: ["model"] }));
   render(<App />);
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
-  await screen.findByLabelText("Your description");
+  expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Start using Playlist AI" })).toBeNull();
+  expect(bridge.CompleteOnboarding).not.toHaveBeenCalled();
 });
 
 it("reports failed playlist rebuilds without recording their display, then retries", async () => {

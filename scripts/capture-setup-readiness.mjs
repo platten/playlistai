@@ -9,13 +9,13 @@ const output = process.argv[4];
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-window.__calls=[];window.__done=0;window.__installed=false;window.__enhancedEnabled=false;
+window.__calls=[];window.__done=0;window.__installed=false;
 const scenario=new URLSearchParams(location.search).get('scenario');
 const methods={
 GetSetupStatus:()=>scenario==='repair'?{onboarded:true,needsSetup:true,pendingSteps:['model','intent','analysis'],repairSteps:['model']}:
  {onboarded:false,needsSetup:true,pendingSteps:scenario==='mert'?['mert']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:[]},
-SetMERTSimilarityEnabled:enabled=>{window.__enhancedEnabled=enabled},
-GetEnhancedAnalysisStatus:()=>({installed:false,dspAvailable:true,enabled:false,mertEnabled:window.__enhancedEnabled,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
+GetEnhancedAnalysisStatus:()=>({installed:window.__installed,dspAvailable:true,enabled:true,mertEnabled:true,mertAvailable:window.__installed,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
+InstallRecommendedMERT:()=>{window.__installed=true},
 GetMetadataBundleInfo:()=>({musicBrainzConfigured:true,musicBrainzInstalled:window.__installed}),
 InstallMusicBrainzBundle:()=>{window.__installed=true},
 GetModelStatus:()=>({backend:'rules',ready:true}),GetLlamaRuntime:()=>({available:false,builds:[]}),
@@ -37,9 +37,11 @@ try {
       await page.getByRole("button", { name: "Get started" }).click();
       await page.getByRole("heading", { name: "MERT audio similarity" }).waitFor();
       await page.getByRole("button", { name: "Download MERT from Cloudflare R2" }).waitFor();
-      assert.equal(await page.getByRole("checkbox").isChecked(), false);
-      await page.getByRole("checkbox",{name:"Use MERT to find similar tracks"}).check();
-      await page.waitForFunction(()=>window.__enhancedEnabled);
+      assert.equal(await page.getByRole("checkbox").count(), 0);
+      assert.equal(await page.getByRole("button", { name: "Continue" }).isDisabled(), true);
+      await page.getByRole("button", { name: "Download MERT from Cloudflare R2" }).click();
+      await page.getByText("0 tracks with compatible cached embeddings.").waitFor();
+      assert.equal(await page.getByRole("button", { name: "Continue" }).isEnabled(), true);
     } else if (scenario === "partial") {
       await page.getByRole("button", { name: "Get started" }).click();
       await page.getByRole("button", { name: "Download offline music data" }).waitFor();
@@ -59,7 +61,11 @@ try {
         await page.screenshot({ path: path.join(output, `setup-${scenario}-${theme}-${width}.png`), fullPage: true });
       }
     }
-    if (scenario === "repair") await page.getByRole("button", { name: "Skip for now" }).click();
+    if (scenario === "repair") {
+      assert.equal(await page.getByRole("button", { name: "Skip for now" }).count(), 0);
+      assert.equal(await page.getByRole("button", { name: "Continue" }).isDisabled(), true);
+      continue;
+    }
     if (scenario === "partial") await page.getByRole("button", { name: "Download offline music data" }).click();
     if (scenario === "mert") await page.getByRole("button", { name: "Continue" }).click();
     const finish = page.getByRole("button", { name: "Start using Playlist AI" });
@@ -68,10 +74,10 @@ try {
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__done === 1);
     const calls = await page.evaluate(() => window.__calls);
-    assert.ok(!calls.includes("SetPreviewProvider"), "ready or unselected optional steps must not run");
-    assert.ok(!calls.includes("InstallRecommendedMERT"), "MERT requires an explicit download action");
+    assert.ok(!calls.includes("SetPreviewProvider"), "ready or unselected steps must not run");
+    assert.equal(calls.filter(call => call === "InstallRecommendedMERT").length, scenario === "mert" ? 1 : 0);
     assert.equal(calls.filter(call => call === "CompleteOnboarding").length, 1);
   }
   assert.deepEqual(errors, []);
-  console.log("PASS: ready/repair/partial setup; dark/light390/1000; keyboard finish; no redundant asset work");
+  console.log("PASS: required ready/repair/partial/MERT setup; dark/light 390/1000; keyboard finish; no redundant asset work");
 } finally { await browser.close(); }
