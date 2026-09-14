@@ -107,6 +107,9 @@ func (m *Manager) Install(parent context.Context, progress func(int64, int64, st
 	}()
 	stagingParent := filepath.Dir(i.Target)
 	if i.Kind == "windows-installer" {
+		if err := checkOtherInstances(i.Target); err != nil {
+			return err
+		}
 		var err error
 		stagingParent, err = installerStagingRoot()
 		if err != nil {
@@ -170,6 +173,11 @@ func (m *Manager) Install(parent context.Context, progress func(int64, int64, st
 	}
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if i.Kind == "windows-installer" {
+		if err := checkOtherInstances(i.Target); err != nil {
+			return err
+		}
 	}
 	cmd := exec.Command(helper, "--app-update-worker", jobPath)
 	cmd.Env = cleanEnvironment()

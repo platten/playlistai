@@ -20,7 +20,7 @@ in `RELEASING.md`; there is no additional version constant to maintain.
 | Linux AppImage | Replace the original `APPIMAGE` file, not the temporary mounted executable. |
 | Linux portable archive | Replace the executable in its writable installation folder. |
 | Windows portable ZIP | Replace the executable after exit, retrying short-lived file locks. |
-| Windows NSIS installation | Detect `uninstall.exe`, download the matching installer, close the app, request Windows UAC approval, install silently into the existing folder and relaunch. |
+| Windows NSIS installation | Detect `uninstall.exe`, check for other running copies, download the matching installer, close the app, request Windows UAC approval, install into the existing folder, verify the installed version and relaunch. |
 | macOS `.app` | Replace the complete bundle; use the release ZIP or the arm64 DMG fallback. Verify architecture and code signature, preserving the signing team when the current app has one. |
 | OS-managed Linux packages or protected portable/macOS folders | Explain the restriction and offer the release page. Do not overwrite package-manager-owned files or change folder permissions. |
 
@@ -72,6 +72,18 @@ the helper independently rechecks its digest against GitHub's latest release
 and Windows launches it. This second check requires connectivity and aborts if
 the release changed after download. No command shell or Python runtime is involved.
 
+Before downloading and again before handoff, Windows checks for other processes
+running the same executable path (excluding the current process and its directly
+owned audio workers, which close during normal shutdown). Other portable
+installations do not block the update. Close other Playlist AI windows and let
+background analysis finish before retrying. Inaccessible processes can escape
+this non-elevated check, so the installer also checks the actual file write.
+The installer stops on a failed executable replacement before changing shortcuts
+or uninstall metadata. Interactive installation offers Retry/Cancel; silent
+installation returns a nonzero exit code. After a zero exit code, the helper
+runs the installed executable's headless `--version` command with a 15-second
+timeout and requires the verified release version before recording success.
+
 Update outcomes are saved beside the staged job and failures are shown at the
 next startup. Successful staging folders older than one minute are cleaned on a
 subsequent startup; failed jobs retain recovery files. Direct updates stage next
@@ -108,6 +120,35 @@ Playlist AI and run the matching Windows installer from the
 manually, using the existing installation folder. This bypasses the old updater;
 models, settings and history do not need to be reset. Keep the reported
 `previous.exe` backup until the updated application opens successfully.
+
+### Windows keeps offering an update after UAC approval
+
+The old NSIS script could silently skip an executable that another running copy
+held open, continue updating installer metadata, and exit with code zero. The
+helper interpreted that exit code as success and relaunched the unchanged app.
+This was reproduced on Windows with a locked target: exit zero, unchanged bytes,
+and execution continuing past the failed copy. The fixed script checks the
+[NSIS File error flag](https://nsis.sourceforge.io/Reference/File), aborts on a
+failed replacement, and preserves the locked executable. The helper additionally
+checks the installed version rather than trusting the installer exit code alone.
+
+For an existing affected installation, save your work, close every Playlist AI
+window, and run the release installer in the existing installation directory.
+If copies remain in Task Manager after closing the windows, restart Windows
+before installing. Do not reset settings, downloaded models or playlist history.
+The installer-side fix takes effect when downloading a release built with it,
+even when the initiating app has an older helper. The preflight/version checks
+take effect after installing the updated application.
+
+`scripts/test-windows-installer.ps1` compiles and runs native NSIS fixtures using
+the production file-copy macros. It proves the legacy silent false success,
+checks that a locked target fails without continuing or changing old bytes,
+and verifies successful replacement after releasing the lock, including a target
+directory containing spaces. Fixtures run without elevation and never write
+registry entries, shortcuts or real application data. The Windows repository
+gate runs this test when NSIS is installed. Go tests also exercise another
+running copy, a different installation path, process exit and installed version
+verification (correct, unchanged, wrong, invalid, empty and missing executable).
 
 ### Checks
 

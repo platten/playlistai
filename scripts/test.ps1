@@ -46,6 +46,11 @@ Invoke-TestStep "PowerShell syntax" {
 
 Invoke-TestStep "pnpm installer failure handling" { & (Join-Path $PSScriptRoot "test-pnpm-installer.ps1") }
 Invoke-TestStep "CLAP compiler installer" { & (Join-Path $PSScriptRoot "test-clap-toolchain.ps1") }
+if (Test-Command "makensis") {
+    Invoke-TestStep "Windows installer replacement" { & (Join-Path $PSScriptRoot "test-windows-installer.ps1") }
+} else {
+    Write-Skip "makensis not installed - native installer replacement checks were not run"
+}
 
 if ((Test-Command "node") -and (Test-Command "pnpm")) {
     Invoke-TestStep "CI timing helper" { & node (Join-Path $PSScriptRoot "go-test.test.mjs") }

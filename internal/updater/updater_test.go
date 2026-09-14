@@ -26,6 +26,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(os.Getenv("PLAYLISTAI_TEST_INSTALLED_VERSION"))
+		os.Exit(0)
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--app-update-worker" {
 		if err := RunWorker(os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
