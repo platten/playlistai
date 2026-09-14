@@ -84,17 +84,11 @@ func TestRecommendedMERTStatusAndInstallPreconditions(t *testing.T) {
 	if err = c.InstallRecommendedMERT(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled recommended install: %v", err)
 	}
-	if err = c.InstallIntentModels(ctx, nil); !errors.Is(err, context.Canceled) {
-		t.Fatalf("canceled default intent install: %v", err)
-	}
 	if err = c.InstallMERT(ctx, "does-not-exist", nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled local install: %v", err)
 	}
 	if audio.NativeInferenceAvailable() {
 		return
-	}
-	if err = c.InstallIntentModels(context.Background(), nil); err == nil {
-		t.Fatal("non-native build attempted intent installation")
 	}
 }
 

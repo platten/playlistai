@@ -1,5 +1,35 @@
 [
   {
+    "name": "clap-darwin-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/clap-darwin-arm64/manifest.json",
+    "sha256": "02693451b932d53007f5c2d17e713942a938e7640662f68f16879bb5fed9d18b",
+    "downloadBytes": 726861199
+  },
+  {
+    "name": "clap-linux-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/clap-linux-arm64/manifest.json",
+    "sha256": "f6082ff51b6df68dff99492c49583785c4903c390acdc0f46b23c7f66824bdb0",
+    "downloadBytes": 724894253
+  },
+  {
+    "name": "clap-linux-amd64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/clap-linux-amd64/manifest.json",
+    "sha256": "701f021df640044ec3d25fe7aef20a6633898a518b0096f87023f1aba5c5bae5",
+    "downloadBytes": 725762212
+  },
+  {
+    "name": "clap-windows-arm64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/clap-windows-arm64/manifest.json",
+    "sha256": "06fcc36bc096c097b9cef7abd3f07783da9e770470c1357d207de2d8da8b38ad",
+    "downloadBytes": 722800048
+  },
+  {
+    "name": "clap-windows-amd64",
+    "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/clap-windows-amd64/manifest.json",
+    "sha256": "8a9368d1c5fcb301104ad89a91a23d5b4593a0a44968021e99be7ef6dd84a15d",
+    "downloadBytes": 722852708
+  },
+  {
     "name": "mert-darwin-arm64",
     "url": "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/mert-darwin-arm64/manifest.json",
     "sha256": "fa42ae469582fdab0f22f9c23c36e2c5ddbcb2085bf40f4b827e43140c8c7e64",

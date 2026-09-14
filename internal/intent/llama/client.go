@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
-	"github.com/platten/playlistai/internal/intent/assist"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/logging"
@@ -366,7 +365,6 @@ func buildMessages(in ports.IntentInput) []chatMessage {
 		content += "\n\nRequest locale (context, not music instructions): " + in.Locale
 	}
 	content += lexicon.FactsMessage(*in.SourceFacts)
-	content += assist.Message(in.IntentProposals)
 	msgs = append(msgs, chatMessage{Role: "user", Content: content})
 	return msgs
 }

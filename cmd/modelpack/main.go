@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 
@@ -12,27 +13,49 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil && err != flag.ErrHelp {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
-	manifest := flag.String("manifest", "", "HTTPS URL or local manifest.json path")
-	checksum := flag.String("manifest-sha256", "", "optional pinned manifest SHA-256")
-	cache := flag.String("cache", "", "resumable compressed segment cache")
-	out := flag.String("out", "", "new destination directory (must not exist)")
-	flag.Parse()
-	if *manifest == "" || *cache == "" || *out == "" {
-		flag.Usage()
-		return fmt.Errorf("manifest, cache and out are required")
+func run(args []string, stdout, stderr io.Writer) error {
+	flags := flag.NewFlagSet("modelpack", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	manifest := flags.String("manifest", "", "HTTPS URL or local manifest.json path")
+	checksum := flags.String("manifest-sha256", "", "optional pinned manifest SHA-256")
+	cache := flags.String("cache", "", "resumable compressed segment cache")
+	out := flags.String("out", "", "new destination directory (must not exist)")
+	source := flags.String("pack-source", "", "directory to package into a segmented tar.zst stream")
+	bundle := flags.String("pack-output", "", "new or empty directory for upload-ready parts")
+	name := flags.String("name", "", "portable model pack identifier")
+	partBytes := flags.Int64("part-bytes", modelpack.DefaultPartBytes, "maximum part size; must be below 200000000")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	packMode := *source != "" || *bundle != "" || *name != ""
+	if packMode {
+		if *source == "" || *bundle == "" || *name == "" || *manifest != "" || *cache != "" || *out != "" {
+			flags.Usage()
+			return fmt.Errorf("provide manifest, cache and out to unpack; or pack-source, pack-output and name to package")
+		}
+	} else if *manifest == "" || *cache == "" || *out == "" {
+		flags.Usage()
+		return fmt.Errorf("provide manifest, cache and out to unpack; or pack-source, pack-output and name to package")
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+	if packMode {
+		m, err := modelpack.Package(ctx, *name, *source, *bundle, *partBytes)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "Created %d model pack parts in %s\n", len(m.Parts), *bundle)
+		return nil
+	}
 	if err := modelpack.FetchPinned(ctx, *manifest, *checksum, *cache, *out, nil); err != nil {
 		return err
 	}
-	fmt.Println("Verified and unpacked model pack:", *out)
+	fmt.Fprintln(stdout, "Verified and unpacked model pack:", *out)
 	return nil
 }

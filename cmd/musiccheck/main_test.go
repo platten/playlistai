@@ -21,8 +21,8 @@ import (
 
 func TestMetadataConfigAcousticBrainzParity(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
-		cfg := metadataConfig("cache.sqlite", "metadata.sqlite", enabled)
-		if (cfg.AcousticBrainzURL == musicbrainz.AcousticBrainzURL) != enabled || cfg.CachePath != "cache.sqlite" || cfg.DatasetPath != "metadata.sqlite" {
+		cfg := metadataConfig("cache.sqlite", enabled)
+		if (cfg.AcousticBrainzURL == musicbrainz.AcousticBrainzURL) != enabled || cfg.CachePath != "cache.sqlite" {
 			t.Fatalf("incorrect runner configuration: %+v", cfg)
 		}
 		if !enabled && cfg.AcousticBrainzURL != "" {

@@ -25,7 +25,6 @@ import (
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/deezerhttp"
 	"github.com/platten/playlistai/internal/mbindex"
-	"github.com/platten/playlistai/internal/metadata"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -38,7 +37,6 @@ const defaultBase = "https://musicbrainz.org"
 type Config struct {
 	// AcousticBrainzURL enables optional archived acoustic evidence; empty disables.
 	AcousticBrainzURL string
-	DatasetPath       string // optional catalog-matched bulk metadata, separate from API cache
 	OfflineIndexPath  string // optional catalog-independent MusicBrainz dump index
 	// UserAgent identifies the app with a contact URL (MusicBrainz requirement).
 	UserAgent string
@@ -51,10 +49,6 @@ type Config struct {
 	// WikidataURL and WikipediaURL override context endpoints for loopback tests.
 	WikidataURL  string
 	WikipediaURL string
-	// DiscogsURL overrides the fallback endpoint for local tests only.
-	DiscogsURL string
-	// CredentialPath holds the optional Discogs personal token (not ordinary preferences).
-	CredentialPath string
 	// MinScore: lower-scoring results remain unmatched; exact artist/title
 	// identity is also required. Default 85.
 	MinScore int
@@ -68,11 +62,7 @@ type Config struct {
 
 // Client implements ports.Enricher.
 type Client struct {
-	datasetMu        sync.RWMutex
-	datasetPath      string
-	retiredDatasets  []*metadata.Store // immutable readers retained until shutdown
-	dataset          *metadata.Store
-	datasetError     bool
+	indexMu          sync.RWMutex
 	offlinePath      string
 	retiredOffline   []*mbindex.Store
 	offline          *mbindex.Store
@@ -84,7 +74,6 @@ type Client struct {
 	hc               *http.Client
 	deezerBase       string
 	deezerClient     *http.Client
-	discogs          *discogsClient
 	acoustic         *acousticClient
 	wikidataBase     string
 	wikipediaBase    string
@@ -93,17 +82,34 @@ type Client struct {
 
 	limiter *requestLimiter
 
-	dbMu               sync.Mutex
-	db                 *sql.DB
-	cacheEpoch         uint64
-	memory             map[string]cachedResponse
-	inflight           map[string]chan struct{}
-	nextDiscogsCleanup time.Time
+	dbMu       sync.Mutex
+	db         *sql.DB
+	cacheEpoch uint64
+	memory     map[string]cachedResponse
+	inflight   map[string]chan struct{}
 }
 
 type requestLimiter struct {
 	gate chan struct{}
 	last time.Time
+}
+
+type MetadataStatus struct {
+	MusicBrainzSnapshot   string `json:"musicBrainzSnapshot"`
+	MusicBrainzRecordings int64  `json:"musicBrainzRecordings"`
+	MusicBrainzIndexError bool   `json:"musicBrainzIndexError"`
+}
+
+func (c *Client) MetadataStatus() MetadataStatus {
+	c.indexMu.RLock()
+	defer c.indexMu.RUnlock()
+	status := MetadataStatus{MusicBrainzIndexError: c.offlineError}
+	if c.offline != nil {
+		info := c.offline.Info()
+		status.MusicBrainzSnapshot = info.Snapshot
+		status.MusicBrainzRecordings = info.Recordings
+	}
+	return status
 }
 
 var applicationLimiters sync.Map
@@ -159,10 +165,6 @@ func New(cfg Config) (*Client, error) {
 		c.deezerBase = "https://api.deezer.com"
 	}
 	c.deezerClient = deezerhttp.Client(&http.Client{Timeout: 8 * time.Second})
-	c.discogs, err = newDiscogs(cfg.DiscogsURL, cfg.CredentialPath)
-	if err != nil {
-		return nil, err
-	}
 	if cfg.AcousticBrainzURL != "" {
 		c.acoustic, err = newAcousticClient(cfg.AcousticBrainzURL)
 		if err != nil {
@@ -187,19 +189,6 @@ func New(cfg Config) (*Client, error) {
 			return nil, err
 		}
 	}
-	c.expireDiscogs(context.Background())
-	if cfg.DatasetPath != "" {
-		if filepath.Base(cfg.DatasetPath) == "discogs.sqlite" {
-			cfg.DatasetPath = metadata.ActivePath(filepath.Dir(cfg.DatasetPath))
-		}
-		if _, err := os.Stat(cfg.DatasetPath); err == nil {
-			c.dataset, err = metadata.Open(cfg.DatasetPath)
-			c.datasetPath = cfg.DatasetPath
-			c.datasetError = err != nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			c.datasetError = true
-		}
-	}
 	if cfg.OfflineIndexPath != "" {
 		if filepath.Base(cfg.OfflineIndexPath) == "musicbrainz.sqlite" {
 			cfg.OfflineIndexPath = mbindex.ActivePath(filepath.Dir(cfg.OfflineIndexPath))
@@ -220,15 +209,9 @@ func (c *Client) Name() string { return "musicbrainz" }
 
 // Close releases the cache handle.
 func (c *Client) Close() error {
-	c.datasetMu.Lock()
-	defer c.datasetMu.Unlock()
+	c.indexMu.Lock()
+	defer c.indexMu.Unlock()
 	var err error
-	if c.dataset != nil {
-		err = c.dataset.Close()
-	}
-	for _, s := range c.retiredDatasets {
-		err = errors.Join(err, s.Close())
-	}
 	if c.offline != nil {
 		err = errors.Join(err, c.offline.Close())
 	}
@@ -242,8 +225,8 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) localMusicBrainz() *mbindex.Store {
-	c.datasetMu.RLock()
-	defer c.datasetMu.RUnlock()
+	c.indexMu.RLock()
+	defer c.indexMu.RUnlock()
 	return c.offline
 }
 
@@ -253,8 +236,8 @@ func (c *Client) ActivateOfflineIndex(path string) error {
 	if err != nil {
 		return err
 	}
-	c.datasetMu.Lock()
-	defer c.datasetMu.Unlock()
+	c.indexMu.Lock()
+	defer c.indexMu.Unlock()
 	if c.offline != nil && c.offlinePath == path {
 		return s.Close()
 	}
@@ -264,32 +247,6 @@ func (c *Client) ActivateOfflineIndex(path string) error {
 	c.offline = s
 	c.offlinePath = path
 	c.offlineError = false
-	return nil
-}
-
-func (c *Client) localDataset() *metadata.Store {
-	c.datasetMu.RLock()
-	defer c.datasetMu.RUnlock()
-	return c.dataset
-}
-
-// ActivateDataset keeps in-flight requests on their immutable previous reader.
-func (c *Client) ActivateDataset(path string) error {
-	s, err := metadata.Open(path)
-	if err != nil {
-		return err
-	}
-	c.datasetMu.Lock()
-	defer c.datasetMu.Unlock()
-	if c.dataset != nil && c.datasetPath == path {
-		return s.Close()
-	}
-	if c.dataset != nil {
-		c.retiredDatasets = append(c.retiredDatasets, c.dataset)
-	}
-	c.dataset = s
-	c.datasetPath = path
-	c.datasetError = false
 	return nil
 }
 
@@ -311,13 +268,7 @@ func (c *Client) Enrich(ctx context.Context, refs []core.TrackRef, p ports.Progr
 }
 
 func (c *Client) one(ctx context.Context, ref core.TrackRef) core.EnrichedTrack {
-	track := c.query(ctx, ref)
-	if dataset := c.localDataset(); dataset != nil {
-		if credits, err := dataset.Composers(ctx, ref.ID); err == nil {
-			track.ComposerCredits = credits
-		}
-	}
-	return track
+	return c.query(ctx, ref)
 }
 
 type mbRecording struct {

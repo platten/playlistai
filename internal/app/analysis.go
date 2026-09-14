@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/modelpack"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 )
@@ -32,6 +34,8 @@ type AnalysisStatus struct {
 	RecommendedAvailable bool                      `json:"recommendedAvailable"`
 	RecommendedInstalled bool                      `json:"recommendedInstalled"`
 	RecommendedDetail    string                    `json:"recommendedDetail"`
+	RecommendedManifest  string                    `json:"recommendedManifest"`
+	RecommendedBytes     int64                     `json:"recommendedBytes"`
 	Installed            bool                      `json:"installed"`
 	Available            bool                      `json:"available"`
 	GeneralFitAvailable  bool                      `json:"generalFitAvailable"`
@@ -147,9 +151,14 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	defer s.mu.Unlock()
 	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
 	recommended, recommendedErr := audio.RecommendedBundle()
-	status.RecommendedAvailable = recommendedErr == nil
+	distribution, distributionErr := modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
+	status.RecommendedAvailable = recommendedErr == nil && distributionErr == nil
 	status.RecommendedInstalled = recommendedErr == nil && s.manifest != nil && s.manifest.Model == recommended.Model
-	if recommendedErr != nil {
+	if distributionErr == nil {
+		status.RecommendedManifest = distribution.URL
+		status.RecommendedBytes = distribution.DownloadBytes
+	}
+	if !status.RecommendedAvailable {
 		status.RecommendedDetail = "No recommended music analysis bundle is available for this platform. Choose a compatible custom bundle, or continue without analysis."
 		if !audio.NativeInferenceAvailable() {
 			status.RecommendedDetail = "This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker."
@@ -199,11 +208,35 @@ func (c *Container) InstallAnalysisBundle(ctx context.Context, path string, p po
 }
 
 func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p ports.Progress) error {
-	manifest, err := audio.RecommendedBundle()
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.analysis.store == nil {
+		return fmt.Errorf("analysis storage unavailable")
+	}
+	recommended, err := audio.RecommendedBundle()
 	if err != nil {
 		return err
 	}
-	return c.installAnalysisManifest(ctx, manifest, p)
+	distribution, err := modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	directory, cleanup, err := c.prepareRecommendedModelPack(ctx, distribution, "analysis-model", p)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	manifest, err := audio.ReadBundle(directory)
+	if err != nil {
+		return err
+	}
+	if manifest.ID != recommended.ID || manifest.Model != recommended.Model || manifest.EmbeddingFingerprint() != recommended.EmbeddingFingerprint() {
+		return fmt.Errorf("downloaded analysis model does not match the recommended CLAP identity")
+	}
+	return c.installAnalysisDirectoryPrepared(ctx, directory, p)
 }
 
 func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.BundleManifest, p ports.Progress) error {
@@ -216,6 +249,19 @@ func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.
 		return fmt.Errorf("analysis storage unavailable")
 	}
 	if _, err := c.analysis.bundles.Install(ctx, manifest, p); err != nil {
+		return err
+	}
+	return c.loadAnalysis(ctx)
+}
+
+func (c *Container) installAnalysisDirectoryPrepared(ctx context.Context, directory string, p ports.Progress) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.analysis.store == nil {
+		return fmt.Errorf("analysis storage unavailable")
+	}
+	if _, err := c.analysis.bundles.InstallDirectory(ctx, directory, p); err != nil {
 		return err
 	}
 	return c.loadAnalysis(ctx)

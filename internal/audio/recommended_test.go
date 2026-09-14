@@ -3,18 +3,20 @@ package audio
 import (
 	"bytes"
 	"context"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestRecommendedBundleAndCustomEmbeddingIdentity(t *testing.T) {
 	m, err := RecommendedBundle()
-	if _, supported := recommendedRuntimes[runtime.GOOS+"/"+runtime.GOARCH]; !supported || !nativeInferenceAvailable {
+	platform := runtime.GOOS + "/" + runtime.GOARCH
+	runtimeDownload, supported := recommendedRuntimes[platform]
+	if !supported || !nativeInferenceAvailable {
 		if err == nil {
 			t.Fatal("unsupported platform offered a recommended runtime")
 		}
@@ -23,10 +25,10 @@ func TestRecommendedBundleAndCustomEmbeddingIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Version != 2 || m.ID != "clap-music-fp32-v1" || m.Label != "CLAP Music · full precision" || m.Policy.Valid() || m.Model.Dimension != 512 || m.DownloadBytes() < 778209534 {
+	if m.Version != 2 || m.ID != "custom-clap-cpu-v2" || m.Label != "LAION original HTSAT-base music checkpoint · CPU" || m.Policy.Valid() || m.Model.Dimension != 512 || m.DownloadBytes() != 784350703+runtimeDownload.UnpackedSize {
 		t.Fatalf("invalid recommendation: %+v", m)
 	}
-	if m.Model.Model != "laion/larger_clap_music" || m.Model.Revision != publicCLAPRevision || m.TextUnpadded || m.ONNXOutputNames[0] != "embedding" || m.ONNXOutputNames[1] != "embedding" {
+	if m.Model.Model != "LAION original HTSAT-base music checkpoint" || m.Model.Revision != originalCLAPRevision || m.Model.Weights != "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d" || m.TextUnpadded || m.ONNXOutputNames[0] != "embedding" || m.ONNXOutputNames[1] != "embedding" {
 		t.Fatalf("wrong music-only encoder contract: %+v", m)
 	}
 	if (&Service{Policy: m.Policy}).Ready() {
@@ -44,7 +46,11 @@ func TestRecommendedBundleAndCustomEmbeddingIdentity(t *testing.T) {
 			t.Fatal("unsafe or incompatible custom manifest accepted")
 		}
 	}
-	m.Artifacts[0].SHA256 = m.Artifacts[1].SHA256
+	for i := range m.Artifacts {
+		if m.Artifacts[i].Role == "audio_model" {
+			m.Artifacts[i].SHA256 = m.Artifacts[0].SHA256
+		}
+	}
 	if m.Validate() == nil {
 		t.Fatal("changed encoder retained old cache identity")
 	}
@@ -55,6 +61,27 @@ func TestRecommendedBundleAndCustomEmbeddingIdentity(t *testing.T) {
 	m.Model.Dimension = 768
 	if m.Validate() == nil {
 		t.Fatal("incompatible embedding dimension accepted")
+	}
+}
+
+func TestRecommendedBundleCoversPublishedPlatforms(t *testing.T) {
+	t.Parallel()
+	for _, platform := range []string{"darwin/arm64", "linux/arm64", "linux/amd64", "windows/arm64", "windows/amd64"} {
+		m, err := recommendedBundle(platform)
+		if err != nil {
+			t.Fatal(platform, err)
+		}
+		runtimeDownload := recommendedRuntimes[platform]
+		if m.Platform != platform || m.Artifacts[0].Name != filepath.Base(runtimeDownload.ArchiveMember) || m.Artifacts[0].Size != runtimeDownload.UnpackedSize || m.Artifacts[0].SHA256 != runtimeDownload.UnpackedSHA256 {
+			t.Fatalf("%s selected wrong runtime: %+v", platform, m.Artifacts[0])
+		}
+		wantURL := "/clap-" + strings.ReplaceAll(platform, "/", "-") + "/manifest.json"
+		if !strings.HasSuffix(m.Artifacts[0].URL, wantURL) || m.Model.Weights != "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d" {
+			t.Fatalf("%s selected wrong pack or embedding identity: %+v", platform, m)
+		}
+	}
+	if _, err := recommendedBundle("darwin/amd64"); err == nil {
+		t.Fatal("unpublished macOS Intel runtime accepted")
 	}
 }
 
@@ -70,31 +97,6 @@ func TestRecommendedNativeInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 	directory := t.TempDir()
-	version := m.ID + "-" + Fingerprint(m)[:16]
-	dir := filepath.Join(directory, version)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, artifact := range m.Artifacts {
-		if len(artifact.Data) > 0 {
-			continue
-		}
-		input := filepath.Join(source, artifact.Name)
-		if artifact.Role == "runtime" {
-			input = os.Getenv("PLAYLISTAI_TEST_ORT_ARCHIVE")
-			if input == "" {
-				input = filepath.Join(source, "ort.tgz")
-			}
-		}
-		output := filepath.Join(dir, artifact.Name)
-		// Reuse files without copying when possible. A Windows test may read
-		// Linux-hosted fixtures over WSL while staging onto its native C: drive.
-		if err := os.Link(input, output); err != nil {
-			if err := copyNativeFixture(input, output); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
 	executable := os.Getenv("PLAYLISTAI_TEST_AUDIO_WORKER")
 	if executable == "" {
 		executable = filepath.Join(source, "audioworker")
@@ -104,7 +106,8 @@ func TestRecommendedNativeInstallation(t *testing.T) {
 		defer worker.Close()
 		return worker.Health(ctx)
 	}}
-	if _, err := manager.Install(context.Background(), m, nil); err != nil {
+	dir, err := manager.InstallDirectory(context.Background(), source, nil)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, installed, err := manager.Active(); err != nil || installed.Model != m.Model {
@@ -133,22 +136,4 @@ func TestRecommendedNativeInstallation(t *testing.T) {
 			t.Fatalf("desktop inference validation failed: %+v", response)
 		}
 	}
-}
-
-func copyNativeFixture(source, dest string) error {
-	in, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(out, in)
-	closeErr := out.Close()
-	if err != nil {
-		return err
-	}
-	return closeErr
 }

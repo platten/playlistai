@@ -2,11 +2,10 @@ package core
 
 // EnrichedTrack is a TrackRef augmented with cross-service metadata resolved by
 // an Enricher. Recording-match fields remain zero when no confident online match
-// was found; local source-scoped composer credits can still be available.
+// was found.
 type EnrichedTrack struct {
 	FullRecordingDuration *RecordingDuration       `json:"fullRecordingDuration,omitempty"`
 	Acoustic              *AcousticCharacteristics `json:"acoustic,omitempty"`
-	ComposerCredits       []ComposerCredit         `json:"composerCredits,omitempty"`
 	CompositionStartYear  int                      `json:"compositionStartYear"`
 	CompositionEndYear    int                      `json:"compositionEndYear"`
 	WorkID                string                   `json:"workId"`

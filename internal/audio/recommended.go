@@ -1,71 +1,60 @@
 package audio
 
 import (
-	"crypto/sha256"
-	"embed"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 )
 
-// These contain synthetic reference outputs and license/configuration text,
-// never model weights or music recordings.
-//
-//go:embed resources/*
-var recommendedResources embed.FS
-
-const publicCLAPRevision = "a0b4534a14f58e20944452dff00a22a06ce629d1"
-const publicCLAPSource = "https://huggingface.co/laion/larger_clap_music/resolve/" + publicCLAPRevision + "/"
-const publicCLAPExport = "https://github.com/platten/playlistai/releases/download/v0.9.0/"
+const originalCLAPRevision = "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt"
+const hostedCLAPRoot = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/"
 
 // NativeInferenceAvailable reports compiled worker support, not installed models
 // or successful runtime health. Pure-Go builds can still use legacy workers.
 func NativeInferenceAvailable() bool { return nativeInferenceAvailable }
 
-// RecommendedBundle chooses the largest precision variant of the supported
-// public music CLAP family. Other checkpoints require their own paired export.
+// RecommendedBundle describes the reviewed original LAION music checkpoint
+// contained by the pinned hosted model pack. Its artifact URLs are not used by
+// the recommended installer; modelpack downloads and verifies the parts first.
 func RecommendedBundle() (BundleManifest, error) {
 	if !nativeInferenceAvailable {
 		return BundleManifest{}, fmt.Errorf("this application build has no native CLAP worker; use a cgo-enabled desktop build or a legacy custom bundle with its own worker")
 	}
-	platform := runtime.GOOS + "/" + runtime.GOARCH
-	ort, ok := recommendedRuntimes[platform]
+	return recommendedBundle(runtime.GOOS + "/" + runtime.GOARCH)
+}
+
+func recommendedBundle(platform string) (BundleManifest, error) {
+	runtimeDownload, ok := recommendedRuntimes[platform]
 	if !ok {
-		return BundleManifest{}, fmt.Errorf("no recommended CLAP runtime is published for %s; choose a compatible custom bundle", platform)
+		return BundleManifest{}, fmt.Errorf("no hosted CLAP model pack is published for %s; choose a compatible custom bundle", platform)
 	}
+	packURL := hostedCLAPRoot + "clap-" + strings.ReplaceAll(platform, "/", "-") + "/manifest.json"
 	m := BundleManifest{
-		Version: 2, ID: "clap-music-fp32-v1", Label: "CLAP Music · full precision",
-		Platform: platform, MemoryBytes: 2 << 30, License: "Apache-2.0 model; MIT ONNX Runtime; GPL-3.0 application worker",
-		SourceURL: "https://huggingface.co/laion/larger_clap_music", ONNXOutputNames: []string{"embedding", "embedding"}, TextUnpadded: false,
-		Model: core.AudioModelIdentity{Model: "laion/larger_clap_music", Revision: publicCLAPRevision, Preprocessing: PreprocessingVersion, Runtime: "onnxruntime/1.26.0/cpu", Dimension: 512},
+		Version: 2, ID: "custom-clap-cpu-v2", Label: "LAION original HTSAT-base music checkpoint · CPU",
+		Platform: platform, MemoryBytes: 2 << 30, License: "CC0-1.0 checkpoint; MIT runtime; GPL-3.0 application worker",
+		SourceURL:       "https://huggingface.co/lukewys/laion_clap/blob/4226474e38defca6fc9272a7848bb7b0355ccd7a/music_audioset_epoch_15_esc_90.14.pt",
+		ONNXOutputNames: []string{"embedding", "embedding"}, TextUnpadded: false,
+		Parity: ParityReport{ReferenceRevision: originalCLAPRevision, Fixtures: 10, MaximumAbsoluteError: 0.0000024596229195594788, MinimumCosine: 0.9999999403953552, TokenizerCases: 7, TokenizerExact: true, PreprocessingCases: 3, PreprocessingWithinTolerance: true},
+		Model:  core.AudioModelIdentity{Model: "LAION original HTSAT-base music checkpoint", Revision: originalCLAPRevision, Preprocessing: PreprocessingVersion, Runtime: "onnxruntime/1.26.0/cpu", Dimension: 512},
 		Artifacts: []BundleArtifact{
-			{Role: "audio_model", Name: "audio.onnx", URL: publicCLAPExport + "audio.onnx", Size: 277309194, SHA256: "7131b29d5b39ead85411813af31fd6220749201517cc634e33c00cef5758ec85"},
-			{Role: "text_model", Name: "text.onnx", URL: publicCLAPExport + "text.onnx", Size: 500900340, SHA256: "5b89901693b1c9554e02749cead92db619d700334c67abf247e531e78081084b"},
-			{Role: "vocabulary", Name: "vocab.json", URL: publicCLAPSource + "vocab.json", Size: 798293, SHA256: "ed19656ea1707df69134c4af35c8ceda2cc9860bf2c3495026153a133670ab5e"},
-			{Role: "merges", Name: "merges.txt", URL: publicCLAPSource + "merges.txt", Size: 456318, SHA256: "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5"},
-			ort,
+			{Role: "runtime", Name: filepath.Base(runtimeDownload.ArchiveMember), URL: packURL, Size: runtimeDownload.UnpackedSize, SHA256: runtimeDownload.UnpackedSHA256},
+			{Role: "audio_model", Name: "audio.onnx", URL: packURL, Size: 281357899, SHA256: "22fbaee1757ef4ca03010cc0c27cadff34bf91453fe1963965e2a85cc5d9514b"},
+			{Role: "text_model", Name: "text.onnx", URL: packURL, Size: 501364988, SHA256: "0c7502bb27f7ae9605483d81eae198693dcd9683c220ba7366aea8a58f20df16"},
+			{Role: "vocabulary", Name: "vocab.json", URL: packURL, Size: 1049622, SHA256: "078c509073469aae3ed14de5dee8f1a36cf4555abe6e88d840e6266b599492eb"},
+			{Role: "merges", Name: "merges.txt", URL: packURL, Size: 506319, SHA256: "84809de545b2f3e79275acfaefa4af5055438ddb13d9eed9cff02eacf5cc19fc"},
+			{Role: "preprocessing", Name: "preprocessing.json", URL: packURL, Size: 314, SHA256: "df7723e9a726fefb06b95fed9e13f390a19b2a9bc92b65d19fddd5eab4a8711e"},
+			{Role: "license", Name: "licenses.txt", URL: packURL, Size: 48668, SHA256: "26ec02e08d6d7f5f39612ecd389b84c1afd2f5ad91a8195d4a879b553f1cf343"},
+			{Role: "health", Name: "health.json", URL: packURL, Size: 22893, SHA256: "d79cc3202677519be86e9be19a13f9a26b74534046b06dd5713b11dcf819ba44"},
 		},
 	}
-	for _, item := range []struct{ role, name string }{{"health", "health.json"}, {"preprocessing", "preprocessing.json"}, {"license", "licenses.txt"}} {
-		data, err := recommendedResources.ReadFile("resources/" + item.name)
-		if err != nil {
-			return m, err
-		}
-		hash := sha256.Sum256(data)
-		m.Artifacts = append(m.Artifacts, BundleArtifact{Role: item.role, Name: item.name, Size: int64(len(data)), SHA256: hex.EncodeToString(hash[:]), Data: data})
-	}
-	parity, err := recommendedResources.ReadFile("resources/parity.json")
-	if err != nil {
-		return m, err
-	}
-	if err := json.Unmarshal(parity, &m.Parity); err != nil {
-		return m, err
-	}
 	m.Model.Weights = m.EmbeddingFingerprint()
-	return m, m.Validate()
+	if m.Model.Weights != "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d" {
+		return BundleManifest{}, fmt.Errorf("recommended CLAP embedding identity is inconsistent")
+	}
+	return m, m.validateRuntimeForPlatform(platform)
 }
 
 func runtimeArtifact(target, extension, archiveHash, library, libraryHash string, archiveSize, librarySize int64) BundleArtifact {

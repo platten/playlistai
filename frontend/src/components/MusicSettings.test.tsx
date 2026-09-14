@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MusicMetadataCard } from "./MusicMetadataCard";
 import { MusicAnalysisCard } from "./MusicAnalysisCard";
 const api = vi.hoisted(() => Object.fromEntries([
-  "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "SetDiscogsToken", "ClearMusicMetadataCache", "GetAnalysisStatus", "GetRecommendedAnalysisBundle",
+  "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "ClearMusicMetadataCache", "GetAnalysisStatus", "GetRecommendedAnalysisBundle",
   "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "SetAnalysisEnabled", "RemoveAnalysisModel", "ClearAnalysis",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
@@ -20,8 +20,8 @@ const bundle = { label: "Test CLAP", artifacts: [{ size: 1000000000 }], memoryBy
 const installedStatus = { installed: true, available: true, generalFitAvailable: true, enabled: true, model: "Test CLAP", storage: { records: 2, bytes: 2000000 }, downloadBytes: 1000000000, memoryBytes: 2000000000 };
 beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset().mockImplementation(() => completed(null)));
-  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: false }));
-  api.GetMetadataBundleInfo.mockImplementation(() => completed({ configured: false, musicBrainzConfigured: false }));
+  api.GetMetadataStatus.mockImplementation(() => completed({}));
+  api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: false }));
   api.GetAnalysisStatus.mockImplementation(() => completed(installedStatus));
   api.GetRecommendedAnalysisBundle.mockImplementation(() => completed(bundle));
   api.InspectAnalysisBundle.mockImplementation(() => completed(bundle));
@@ -29,57 +29,9 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-// These tests verify acknowledgment ordering, not wall-clock performance. Allow
-// cold jsdom/accessibility initialization on slower hosted Windows runners.
-const credentialTestTimeout = 15_000;
-
-it("saves metadata credentials only after acknowledgment and clears the input", async () => {
-  await act(async () => { render(<MusicMetadataCard />); });
-  const input = screen.getByLabelText("Discogs personal API token");
-  expect((input as HTMLInputElement).disabled).toBe(false);
-  fireEvent.change(input, { target: { value: "  private-token  " } });
-  const pending = deferred();
-  api.SetDiscogsToken.mockReturnValueOnce(pending.promise);
-  fireEvent.click(screen.getByRole("button", { name: "Save token" }));
-  expect(api.SetDiscogsToken).toHaveBeenCalledWith("private-token");
-  expect((input as HTMLInputElement).disabled).toBe(true);
-  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: true, datasetDate: "20260101", datasetTracks: 1234, datasetError: "unreadable", credentialError: "permission denied" }));
-  await act(async () => pending.resolve(null));
-  expect((input as HTMLInputElement).value).toBe("");
-  expect(screen.getByText(/Discogs token saved/)).toBeTruthy();
-  expect(screen.getByText(/Snapshot 2026-01-01/)).toBeTruthy();
-}, credentialTestTimeout);
-
-it("removes metadata credentials only after acknowledgment and clears the input", async () => {
-  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: true }));
-  await act(async () => { render(<MusicMetadataCard />); });
-  const input = screen.getByLabelText("Discogs personal API token") as HTMLInputElement;
-  fireEvent.change(input, { target: { value: "replacement-token" } });
-  const pending = deferred();
-  api.SetDiscogsToken.mockReturnValueOnce(pending.promise);
-  fireEvent.click(screen.getByRole("button", { name: "Remove token" }));
-  expect(api.SetDiscogsToken).toHaveBeenLastCalledWith("");
-  expect(input.disabled).toBe(true);
-  expect(input.value).toBe("replacement-token");
-  expect(screen.queryByText(/Discogs token removed/)).toBeNull();
-  api.GetMetadataStatus.mockImplementation(() => completed({ discogsConfigured: false }));
-  await act(async () => pending.resolve(null));
-  expect(screen.getByText(/Discogs token removed/)).toBeTruthy();
-  expect(input.value).toBe("");
-  expect(input.disabled).toBe(false);
-  expect(screen.queryByRole("button", { name: "Remove token" })).toBeNull();
-}, credentialTestTimeout);
-
-it("reports metadata write failures and requires confirmation to clear cached metadata", async () => {
+it("requires confirmation to clear cached metadata", async () => {
   render(<MusicMetadataCard />);
-  const input = screen.getByLabelText("Discogs personal API token");
-  await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
-  fireEvent.change(input, { target: { value: "token" } });
-  api.SetDiscogsToken.mockRejectedValueOnce(new Error("write rejected"));
-  fireEvent.click(screen.getByRole("button", { name: "Save token" }));
-  await screen.findByText(/write rejected/);
-  expect((input as HTMLInputElement).value).toBe("token");
-  fireEvent.click(screen.getByLabelText("Dismiss error"));
+  await screen.findByRole("button", { name: "Clear metadata cache" });
   vi.mocked(window.confirm).mockReturnValueOnce(false);
   fireEvent.click(screen.getByRole("button", { name: "Clear metadata cache" }));
   expect(api.ClearMusicMetadataCache).not.toHaveBeenCalled();
@@ -92,7 +44,6 @@ it("surfaces metadata status read failures", async () => {
   api.GetMetadataStatus.mockRejectedValueOnce(new Error("status unavailable"));
   render(<MusicMetadataCard />);
   await screen.findByText(/status unavailable/);
-  expect((screen.getByLabelText("Discogs personal API token") as HTMLInputElement).disabled).toBe(true);
 });
 
 it("downloads the configured offline MusicBrainz index from settings", async () => {
@@ -125,11 +76,13 @@ it("changes analysis settings, confirms cache removal and removes installed mode
   fireEvent.click(screen.getByLabelText("Dismiss error"));
 });
 
-it("downloads a recommended model, keeps errors retryable and cancels on unmount", async () => {
-  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installed: false, available: false, recommendedAvailable: true }));
+it("downloads the recommended R2 model pack, keeps errors retryable and cancels on unmount", async () => {
+  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installed: false, available: false, recommendedAvailable: true, recommendedBytes: 722852693 }));
   const pending = deferred();
   api.InstallRecommendedAnalysisBundle.mockReturnValueOnce(pending.promise);
   const { unmount } = render(<MusicAnalysisCard />);
+  expect(await screen.findByText(/722.9 MB compressed download/)).toBeTruthy();
+  expect(screen.getByText(/segmented model pack from Cloudflare R2/)).toBeTruthy();
   fireEvent.click(await screen.findByRole("button", { name: "Download and validate CLAP" }));
   expect(screen.getByRole("progressbar")).toBeTruthy();
   await act(async () => pending.reject(new Error("download failed")));

@@ -18,7 +18,6 @@ import (
 	"github.com/platten/playlistai/internal/export/soundiizcsv"
 	"github.com/platten/playlistai/internal/export/soundiizhandoff"
 	"github.com/platten/playlistai/internal/history"
-	"github.com/platten/playlistai/internal/intent/assist"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/modelmgr"
@@ -36,7 +35,6 @@ import (
 type Container struct {
 	catalogLoadMu     sync.Mutex
 	metadataInstallMu sync.Mutex
-	intentAssist      intentAssistState
 	analysis          analysisState
 	enhanced          enhancedState
 	cfg               config.Config
@@ -137,7 +135,6 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	c.wireEnhanced(ctx)
 	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
-	c.wireIntentAssist()
 
 	log.Info("container initialized",
 		"data_dir", cfg.DataDir,
@@ -159,13 +156,11 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 func (c *Container) wireEnrichExport() {
 	mb, err := musicbrainz.New(musicbrainz.Config{
 		AcousticBrainzURL:        musicbrainz.AcousticBrainzURL,
-		DatasetPath:              filepath.Join(c.cfg.DataDir, "metadata", "discogs.sqlite"),
 		OfflineIndexPath:         mbindex.ActivePath(filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")),
 		UserAgent:                c.cfg.Enrich.UserAgent,
 		CachePath:                c.cfg.Enrich.CachePath,
 		MirrorURL:                c.cfg.Enrich.MirrorURL,
 		MinScore:                 c.cfg.Enrich.MinScore,
-		CredentialPath:           filepath.Join(c.cfg.DataDir, "credentials", "discogs-token"),
 		CandidatePreviewResolver: deezer.New(deezer.Config{}),
 	})
 	if err != nil {
@@ -352,9 +347,6 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 	requested := active.Info().Backend
 	source := lexicon.Extract(in.Prompt)
 	in.SourceFacts = &source
-	if requested == "llama" {
-		in.IntentProposals = c.intentSuggestions(ctx, in.Prompt, &source)
-	}
 	if err := ctx.Err(); err != nil {
 		return ParseOutcome{}, err
 	}
@@ -367,10 +359,6 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 		m, err = active.Parse(ctx, in)
 	}
 	if err == nil {
-		m = assist.KeepAdvisory(m, in.IntentProposals)
-		if m.Translation != nil {
-			m.Translation.Proposals = append([]core.IntentProposal(nil), in.IntentProposals...)
-		}
 		return ParseOutcome{Intent: m, Backend: active.Info().Backend, RequestedBackend: requested}, nil
 	}
 	if ctx.Err() != nil {
@@ -426,7 +414,7 @@ func (c *Container) ParserIdentity() string {
 		sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|%d", modelID, modelPath, size, modified)))
 		modelVersion = fmt.Sprintf("%x", sum[:])
 	}
-	return fmt.Sprintf("%s|%s|%s|%d|%s", info.Backend, info.Version, modelVersion, info.ContractVersion, c.intentAssistIdentity())
+	return fmt.Sprintf("%s|%s|%s|%d", info.Backend, info.Version, modelVersion, info.ContractVersion)
 }
 
 // SuggestTitle asks the active model for a short playlist name for prompt,

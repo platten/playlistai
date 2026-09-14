@@ -43,9 +43,6 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 	if namespace == "deezer-seeds-v1:" {
 		ttl = 24 * time.Hour
 	}
-	if namespace == "discogs-v1:" {
-		ttl = discogsTTL
-	}
 	var cached cachedResponse
 	var epoch uint64
 	for {
@@ -59,10 +56,6 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 		age := time.Since(time.Unix(cached.fetched, 0))
 		if cached.body != "" && age >= 0 && age < ttl {
 			return []byte(cached.body), nil
-		}
-		// Discogs content must not be served after its separate freshness limit.
-		if namespace == "discogs-v1:" {
-			cached = cachedResponse{}
 		}
 		if only, _ := ctx.Value(cacheOnlyKey{}).(bool); only {
 			if cached.body != "" {
@@ -153,15 +146,6 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 	if !validMetadata(path, namespace, raw) {
 		return fallback(fmt.Errorf("invalid metadata response"))
 	}
-	// Cache only the public fields used by the Discogs fallback, not images,
-	// marketplace data or user information returned alongside release metadata.
-	if namespace == "discogs-v1:" {
-		var err error
-		raw, err = sanitizeDiscogs(path, raw)
-		if err != nil {
-			return fallback(err)
-		}
-	}
 	c.writeCache(ctx, key, raw, epoch)
 	return raw, nil
 }
@@ -186,14 +170,10 @@ func validMetadata(path, namespace string, raw []byte) bool {
 	if strings.HasSuffix(namespace, "context-v1:") || namespace == "wikipedia-discovery-v1:" {
 		return validContextMetadata(path, namespace, raw)
 	}
-	if namespace == "discogs-v1:" && strings.HasPrefix(path, "/releases/") {
-		_, err := sanitizeDiscogs(path, raw)
-		return err == nil
-	}
 	// Endpoint envelopes must be present. A successful empty array is valid;
 	// an unrelated JSON object or provider error is not a negative result.
 	endpoint, _, _ := strings.Cut(path, "?")
-	field := map[string]string{"/ws/2/recording": "recordings", "/ws/2/artist": "artists", "/ws/2/release-group": "release-groups", "/database/search": "results"}[endpoint]
+	field := map[string]string{"/ws/2/recording": "recordings", "/ws/2/artist": "artists", "/ws/2/release-group": "release-groups"}[endpoint]
 	if field != "" {
 		var values []json.RawMessage
 		value, ok := object[field]
@@ -203,9 +183,6 @@ func validMetadata(path, namespace string, raw []byte) bool {
 }
 
 func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
-	if data := c.localDataset(); data != nil && data.HasGenre(ctx, name) {
-		return true
-	}
 	graph, err := c.GenreNames(context.WithValue(ctx, cacheOnlyKey{}, true))
 	if err != nil {
 		return false
@@ -222,11 +199,6 @@ func (c *Client) IsCachedGenre(ctx context.Context, name string) bool {
 // GenreNames loads identity only. Slow relationship pages must not consume the
 // discovery budget before a counted genre has even been classified.
 func (c *Client) GenreNames(ctx context.Context) (core.GenreGraph, error) {
-	if data := c.localDataset(); data != nil {
-		if graph, err := data.Genres(ctx); err == nil && len(graph.Nodes) > 0 {
-			return graph, nil
-		}
-	}
 	return c.onlineGenreNames(ctx)
 }
 
@@ -281,7 +253,7 @@ func (c *Client) Graph(ctx context.Context, names []string) (core.GenreGraph, er
 	seen := map[string]bool{}
 	for _, name := range names {
 		id := graph.ID(name)
-		if id == core.NormalizeIdentityPart(name) || seen[id] || strings.HasPrefix(id, "discogs-dump:") {
+		if id == core.NormalizeIdentityPart(name) || seen[id] {
 			continue
 		}
 		seen[id] = true
@@ -334,9 +306,6 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 	// provider genre identity before treating a bare category as an artist.
 	if name := rules.BareGenreQuery(intent.OriginalDescription); name != "" && len(intent.EssentialCriteria) == 0 && len(intent.Preferences.Genres) == 0 && len(intent.Preferences.Styles) == 0 {
 		graph, err := c.GenreNames(ctx)
-		if err == nil && c.localDataset() != nil && graph.ID(name) == core.NormalizeIdentityPart(name) {
-			graph, err = c.onlineGenreNames(ctx)
-		}
 		if err == nil {
 			for _, node := range graph.Nodes {
 				if node.ID == graph.ID(name) {
@@ -389,9 +358,6 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 				continue
 			}
 			seen[key] = true
-			if data := c.localDataset(); data != nil && data.Compatible(resolver.CatalogVersion()) && data.HasGenre(ctx, genre) {
-				continue
-			}
 			p.Report("generation", 0, 0, "Finding artists for the requested genre")
 			pool := c.genreArtists(ctx, genre)
 			snapshot.ArtistPools = append(snapshot.ArtistPools, pool)
@@ -684,11 +650,6 @@ func (c *Client) resolveAlbum(ctx context.Context, ref core.IntentReference, cat
 	path := "/ws/2/release-group?" + url.Values{"query": {query}, "fmt": {"json"}, "limit": {"100"}}.Encode()
 	raw, err := c.knowledgeGet(mbCtx, path, false)
 	if err != nil {
-		if c.MetadataStatus().DiscogsConfigured && ctx.Err() == nil {
-			if found, ok := c.resolveDiscogsAlbum(ctx, ref, cat, resolver, snapshot); ok {
-				return found
-			}
-		}
 		snapshot.Notices = append(snapshot.Notices, fmt.Sprintf("MusicBrainz album lookup for %q was unavailable: %v. Trying Deezer album metadata.", ref.Query, err))
 		return c.resolveDeezerAlbum(ctx, ref, cat, resolver, snapshot)
 	}

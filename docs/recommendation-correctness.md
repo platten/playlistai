@@ -177,8 +177,8 @@ provider evidence. Changed seed, controls, references or musical criteria
 resample candidates without discarding the shared provider response cache.
 Unkeyed legacy streams retain offline replay behavior; bridge control changes
 explicitly invalidate their old sample. Legacy provenance is reported as
-generic metadata discovery, not guessed to be MusicBrainz. Discogs and
-MusicBrainz attribution survive snapshot serialization.
+generic metadata discovery, not guessed to be MusicBrainz. MusicBrainz
+provenance survives snapshot serialization.
 
 Exact rebuilds load the recorded taste snapshot by ID, checking profile,
 catalog and recommendation versions. Changed intent/context/control inputs
@@ -190,21 +190,21 @@ no profile snapshot retain current-profile defaults.
 Regression coverage includes later higher-ranked candidates, lazy retrieval,
 blocked discovery cancellation, changed-input invalidation, exact profile
 replay after new exposures, missing snapshots, provider provenance, realistic
-full Discogs pages, buffered releases, expired caches and batched artist lookup.
+MusicBrainz pages, expired caches and batched artist lookup.
 The repository gate passes, including race tests, pure-Go compilation, lint,
 generated bindings, TypeScript and production frontend build. Algorithm tests
 are deterministic fixtures, not listening-quality evidence. Executed lookup
 measurements and reproduction commands are in
 [the performance report](performance-and-model-evaluation.md#artist-discovery-lookup-2026-09-08).
 
-## Metadata cache and provider fallback (2026-09-08)
+## Metadata cache and provider discovery (2026-09-08)
 
 All MusicBrainz lookups now share a one-week cache, including successful empty
 queries and recording enrichment. Settings can clear provider caches without
-deleting playlists, taste profiles or audio analysis. Optional, token-configured
-Discogs fallback supplies catalog-matched genre candidates and artist/album
-references during MusicBrainz outages, capped at 25 requests/minute including
-retries. Release-level metadata never bypasses recording-level musical checks.
+deleting playlists, taste profiles or audio analysis. MusicBrainz discovery
+supplies catalog-matched genre candidates and artist/album references within
+the configured request budget. Provider metadata never bypasses recording-level
+musical checks.
 See [cache policy, setup, boundaries and executed regression results](music-metadata.md).
 
 ## Correctness contract
@@ -1479,9 +1479,7 @@ frontend checks and pure-Go core compilation) and the Linux desktop build passed
 The `multichannel/v14` strategy treats positive genre/style requests as artist
 exploration within the eligible musical category:
 
-- Local Discogs discovery rotates the seeded shuffle across normalized catalog
-  artists, so prolific artists do not monopolize the bounded checking budget.
-- Online discovery windows scale from 4 to at most 20 artists/releases with the
+- Online discovery windows scale from 4 to at most 20 artists with the
   requested count. Existing response caches, rate limits and total page budgets
   remain in force; records are consumed round-robin after that window.
 - Selection prefers less-used artists (including required output tracks) among

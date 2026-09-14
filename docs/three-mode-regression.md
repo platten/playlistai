@@ -146,7 +146,7 @@ In another terminal, run each enhanced mode (set `-mode` to
   -server-url http://127.0.0.1:45314 -mode acousticbrainz_first \
   -replay docs/data/three-mode-inputs-2026-09-09.json -replay-parsed \
   -prompts internal/evaluation/testdata/varied-prompts-v1.json \
-  -catalog /path/to/catalog -metadata /path/to/metadata/discogs.sqlite \
+  -catalog /path/to/catalog \
   -bundle /path/to/validated/clap-bundle -online \
   -min-tracks 5 -min-artists 3 \
   -analysis-dir /path/to/evaluation-analysis \

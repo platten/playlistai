@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -70,7 +72,11 @@ func (m BundleManifest) Validate() error {
 }
 
 func (m BundleManifest) validateRuntime() error {
-	if (m.Version != 1 && m.Version != 2) || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model == "" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
+	return m.validateRuntimeForPlatform(runtime.GOOS + "/" + runtime.GOARCH)
+}
+
+func (m BundleManifest) validateRuntimeForPlatform(platform string) error {
+	if (m.Version != 1 && m.Version != 2) || !safeName(m.ID) || m.Platform != platform || m.Model.Model == "" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
 		return fmt.Errorf("audio: bundle requires compatible platform, provenance, CPU runtime, preprocessing, and parity")
 	}
 	if m.Version == 2 && (len(m.ONNXOutputNames) != 2 || m.ONNXOutputNames[0] == "" || m.ONNXOutputNames[1] == "") {
@@ -157,6 +163,23 @@ type BundleManager struct {
 func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.Progress) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.installLocked(ctx, m, "", p)
+}
+
+// InstallDirectory copies an already verified, extracted model pack into the
+// managed model directory. The source remains untouched. Activation still
+// occurs only after the normal native worker health check succeeds.
+func (b *BundleManager) InstallDirectory(ctx context.Context, source string, p ports.Progress) (string, error) {
+	m, err := ReadBundle(source)
+	if err != nil {
+		return "", err
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.installLocked(ctx, m, source, p)
+}
+
+func (b *BundleManager) installLocked(ctx context.Context, m BundleManifest, source string, p ports.Progress) (string, error) {
 	if err := m.Validate(); err != nil {
 		return "", err
 	}
@@ -176,7 +199,12 @@ func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.P
 		target := filepath.Join(dir, a.Name)
 		if !downloadValid(dir, a) {
 			base := done
-			if len(a.Data) > 0 {
+			if source != "" {
+				if err := copyBundleArtifact(source, dir, a); err != nil {
+					return "", err
+				}
+				p.Report("analysis-model", base+a.Size, m.DownloadBytes(), "Installing music analysis")
+			} else if len(a.Data) > 0 {
 				if err := os.WriteFile(target, a.Data, 0o600); err != nil {
 					return "", err
 				}
@@ -230,6 +258,43 @@ func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.P
 	}
 	p.Report("analysis-model", done, done, "Music analysis ready")
 	return dir, nil
+}
+
+func copyBundleArtifact(source, destination string, artifact BundleArtifact) error {
+	if !downloadValid(source, artifact) {
+		return fmt.Errorf("audio: extracted model artifact integrity check failed")
+	}
+	input, err := os.Open(filepath.Join(source, artifact.Name))
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	info, err := input.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("audio: extracted model artifact is not a regular file")
+	}
+	output, err := os.CreateTemp(destination, ".artifact-*")
+	if err != nil {
+		return err
+	}
+	temporary := output.Name()
+	defer os.Remove(temporary)
+	_, copyErr := io.Copy(output, input)
+	closeErr := output.Close()
+	if err := errors.Join(copyErr, closeErr); err != nil {
+		return err
+	}
+	target := filepath.Join(destination, artifact.Name)
+	if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(temporary, target); err != nil {
+		return err
+	}
+	if !downloadValid(destination, artifact) {
+		return fmt.Errorf("audio: copied model artifact integrity check failed")
+	}
+	return nil
 }
 
 func artifactValid(dir string, a BundleArtifact) bool {

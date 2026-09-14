@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -31,6 +32,9 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 		t.Fatal("uninstalled recommended model reported as installed")
 	}
 	if recommendationErr == nil {
+		if !status.RecommendedAvailable || !strings.HasSuffix(status.RecommendedManifest, "/clap-"+runtime.GOOS+"-"+runtime.GOARCH+"/manifest.json") || status.RecommendedBytes <= 0 {
+			t.Fatalf("hosted recommendation missing from status: %+v", status)
+		}
 		legacy := recommended
 		legacy.Model.Model = "laion/larger_clap_music_and_speech"
 		c.analysis.manifest = &legacy

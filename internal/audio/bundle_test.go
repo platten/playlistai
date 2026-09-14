@@ -98,3 +98,47 @@ func TestInterruptedBundleResumesAndHealthFailureKeepsActive(t *testing.T) {
 		t.Fatal("healthy bundle not activated")
 	}
 }
+
+func TestInstallDirectoryCopiesVerifiedPackAndKeepsSource(t *testing.T) {
+	source := t.TempDir()
+	m := fixtureBundle("https://example.invalid")
+	for _, artifact := range m.Artifacts {
+		if err := os.WriteFile(filepath.Join(source, artifact.Name), []byte("synthetic-bundle-control-fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBundleManifest(t, source, m)
+	managed := filepath.Join(t.TempDir(), "managed")
+	healthChecks := 0
+	manager := &BundleManager{Directory: managed, healthCheck: func(_ context.Context, dir string, got BundleManifest) error {
+		healthChecks++
+		if got.Model != m.Model || dir == source {
+			t.Fatal("health check did not use the managed copy")
+		}
+		return nil
+	}}
+	dir, err := manager.InstallDirectory(context.Background(), source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if healthChecks != 1 {
+		t.Fatalf("health checks=%d", healthChecks)
+	}
+	if _, err := os.Stat(filepath.Join(source, m.Artifacts[0].Name)); err != nil {
+		t.Fatal("source pack was modified", err)
+	}
+	activeDir, active, err := manager.Active()
+	if err != nil || activeDir != dir || active.Model != m.Model {
+		t.Fatalf("active directory=%s model=%+v error=%v", activeDir, active.Model, err)
+	}
+	if err := os.WriteFile(filepath.Join(source, m.Artifacts[0].Name), []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.InstallDirectory(context.Background(), source, nil); err == nil {
+		t.Fatal("corrupt extracted pack accepted")
+	}
+	activeDir, _, err = manager.Active()
+	if err != nil || activeDir != dir {
+		t.Fatal("failed replacement displaced active model")
+	}
+}

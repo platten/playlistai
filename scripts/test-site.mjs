@@ -83,7 +83,7 @@ test('examples and recommendation claims explain practical limits', () => {
 
 test('local-first copy discloses external lookups and model licensing', () => {
   const privacy = section('privacy');
-  for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'AcousticBrainz', 'Deezer', 'Discogs', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
+  for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'AcousticBrainz', 'Deezer', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
   assert.match(privacy, /No cloud language model receives your prompt/);
   assert.match(html, /MERT includes a noncommercial restriction/);
 });

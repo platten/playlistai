@@ -30,7 +30,6 @@ window.__buildCalls=0;
 window.__generationCalls=0;
 window.__parseCalls=0;
 window.__metadataClears=0;
-window.__discogsConfigured=false;
 const emit = (data) => window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:data}));
 const methods = {
 GetOnboarded:()=> !window.location.search.includes('wizard'), GetStatus:()=>({parserBackend:'llama'}), GetCatalogInfo:()=>({loaded:true}), ListSavedPlaylists:()=>[],
@@ -41,10 +40,8 @@ DownloadModel:(id)=>{window.__downloadedModel=id;},
 GetPreviewURL:(id)=>new Promise(resolve=>{window.__previewTrackId=id;window.__resolvePreview=resolve;}),
 GetAnalysisStatus:()=>({available:false,enabled:false,model:'Music CLAP · CPU',detail:'Music CLAP is awaiting a validated model bundle. Catalog recommendations remain available.',storage:{records:0,bytes:16384},downloadBytes:0,memoryBytes:0}),
 GetTasteProfile:()=>({coldStart:true,exposureCount:0}),
-GetMetadataStatus:()=>({discogsConfigured:window.__discogsConfigured,credentialError:false,datasetDate:'20260901',datasetTracks:12345,datasetError:false}),
-GetMetadataBundleInfo:()=>window.__metadataBundle??({configured:false,installed:false,catalogReady:true}),
-InstallMetadataBundle:()=>new Promise((resolve,reject)=>{window.__finishMetadataInstall=resolve;window.__failMetadataInstall=()=>reject(new Error('Metadata checksum mismatch.'));}),
-SetDiscogsToken:(token)=>{window.__discogsConfigured=Boolean(token);},
+GetMetadataStatus:()=>({musicBrainzSnapshot:'20260901',musicBrainzRecordings:12345,musicBrainzIndexError:false}),
+GetMetadataBundleInfo:()=>window.__metadataBundle??({musicBrainzConfigured:false,musicBrainzInstalled:true,musicBrainzSnapshot:'20260901',musicBrainzRecordings:12345}),
 ClearMusicMetadataCache:()=>{window.__metadataClears++;return new Promise((resolve,reject)=>{window.__finishMetadataClear=resolve;window.__failMetadataClear=()=>reject(new Error('Metadata cache could not be cleared.'));});},
 InspectAnalysisBundle:()=>({label:'Reviewed fixture bundle',artifacts:[{size:780000000}],memoryBytes:2000000000,license:'Apache-2.0'}),
 InstallAnalysisBundle:()=>{emit({op:'analysis-model',done:320000000,total:780000000,note:'Downloading music analysis'}); return new Promise((resolve,reject)=>{window.__failDownload=()=>reject(new Error('Download interrupted. Retry to resume.'));});},
@@ -538,14 +535,7 @@ try {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const metadata = page.getByRole('region', {name:'Music metadata'});
   await metadata.getByRole('heading',{name:'Music metadata',exact:true}).scrollIntoViewIfNeeded();
-  const tokenInput=metadata.getByLabel('Discogs personal API token');
-  assert.equal(await tokenInput.getAttribute('type'),'password','Token input is masked');
-  await tokenInput.fill('fixture-token');
-  await metadata.getByRole('button',{name:'Save token',exact:true}).click();
-  await metadata.getByText('Token saved. Fallback is enabled.',{exact:false}).waitFor();
   await metadata.getByText('Snapshot 2026-09-01', {exact:false}).waitFor();
-  await metadata.getByRole('link',{name:'Build and install a local dataset'}).waitFor();
-  assert.equal(await tokenInput.inputValue(),'','Saved token is not left in the input');
   page.once('dialog',dialog=>dialog.dismiss());
   await metadata.getByRole('button',{name:'Clear metadata cache',exact:true}).click();
   assert.equal(await page.evaluate(()=>window.__metadataClears),0,'Cancel leaves the cache untouched');
@@ -555,15 +545,11 @@ try {
   assert.equal(await metadata.getByRole('button',{name:'Clearing…',exact:true}).isDisabled(),true,'Clear stays disabled in flight');
   await page.evaluate(()=>window.__finishMetadataClear());
   await metadata.getByRole('status').getByText('Metadata cache cleared.',{exact:false}).waitFor();
-  assert.equal(await page.evaluate(()=>window.__discogsConfigured),true,'Clearing metadata keeps the token');
   page.once('dialog',dialog=>dialog.accept());
   await metadata.getByRole('button',{name:'Clear metadata cache',exact:true}).click();
   await page.waitForFunction(()=>window.__metadataClears===2);
   await page.evaluate(()=>window.__failMetadataClear());
   await metadata.getByText('Metadata cache could not be cleared.',{exact:false}).waitFor();
-  await metadata.getByRole('button',{name:'Remove token',exact:true}).click();
-  await metadata.getByRole('status').getByText('Discogs token removed.',{exact:false}).waitFor();
-  assert.equal(await page.evaluate(()=>window.__discogsConfigured),false,'Removing the token disables fallback');
   await page.screenshot({path:path.join(output,'metadata-settings.png'),fullPage:true,animations:"disabled"});
   await page.getByRole("heading", { name: "Music analysis", exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(output, "analysis-settings.png"), fullPage: true, animations: "disabled" });
@@ -629,9 +615,6 @@ try {
     await smallest.getByRole('button',{name:'Download & use',exact:true}).click();
     await page.waitForFunction(()=>window.__downloadedModel==='qwen2.5-3b-instruct-q4km');
   }
-  await page.getByRole("button", {name:"Continue",exact:true}).click();
-  await page.getByRole("heading", {name:"Intent language models",exact:true}).waitFor();
-  await page.screenshot({path:path.join(output,"wizard-intent-distilbert.png"),fullPage:true,animations:"disabled"});
   await page.getByRole("button", {name:"Continue",exact:true}).click();
   await page.getByRole("heading", {name:"Music analysis",exact:true}).waitFor();
   await page.screenshot({path:path.join(output,"wizard-analysis.png"),fullPage:true,animations:"disabled"});

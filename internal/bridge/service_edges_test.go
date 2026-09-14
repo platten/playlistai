@@ -105,7 +105,6 @@ type failingMetadataService struct {
 }
 
 func (m *failingMetadataService) ClearCache(context.Context) error { return m.failure }
-func (m *failingMetadataService) SetDiscogsToken(string) error     { return m.failure }
 
 func TestServiceEdgesMetadataFailureDoesNotDiscardReusableParse(t *testing.T) {
 	failure := errors.New("metadata persistence failed")
@@ -119,15 +118,9 @@ func TestServiceEdgesMetadataFailureDoesNotDiscardReusableParse(t *testing.T) {
 	if _, exists := a.intentCache.get(key); !exists {
 		t.Fatal("failed clear discarded valid cached parse")
 	}
-	if err := a.SetDiscogsToken("not-a-real-token"); !errors.Is(err, failure) {
-		t.Fatalf("credential persistence failure: %v", err)
-	}
 	a.app.Knowledge = nil
 	if _, err := a.GetMetadataStatus(); err == nil {
 		t.Fatal("missing metadata status reported available")
-	}
-	if err := a.SetDiscogsToken(""); err == nil {
-		t.Fatal("missing metadata service accepted token")
 	}
 	if err := a.ClearMusicMetadataCache(context.Background()); err == nil {
 		t.Fatal("missing metadata service cleared cache")

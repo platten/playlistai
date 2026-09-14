@@ -35,7 +35,7 @@ details expose measured, proxy, embedding and unknown evidence separately.
 - **Local-first core.** An optional local llama.cpp model or built-in rules parser
   interprets the prompt, and compiled Go resolves, retrieves, ranks, selects,
   and sequences catalog tracks. Enabled metadata discovery and audio-analysis
-  policies can use cached MusicBrainz/Discogs/AcousticBrainz results and download
+  policies can use cached MusicBrainz/AcousticBrainz results and download
   previews during generation. Large assets are installed through setup; export
   and playback are separate user actions. Deej-AI-only generation needs neither
   online musical evidence nor a semantic model.

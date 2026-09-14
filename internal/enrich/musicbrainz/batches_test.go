@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -110,79 +109,4 @@ func TestMusicBrainzRecordingPagesDrainBufferBeforeFetching(t *testing.T) {
 	if calls.Load() != 3 || cat.reads != 2 {
 		t.Fatalf("cache/resolver reuse: requests=%d catalog scans=%d", calls.Load(), cat.reads)
 	}
-}
-
-func TestDiscogsLargePagesLazyIterationAndCrossPageDedup(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		calls := 0
-		c := discogsFixture(t, func(r *http.Request) *http.Response {
-			calls++
-			if r.URL.Path == "/database/search" {
-				if r.URL.Query().Get("per_page") != "100" {
-					t.Error("small search page")
-				}
-				if r.URL.Query().Get("page") == "1" {
-					return jsonResponse(r, 200, `{"pagination":{"items":101,"pages":2},"results":[{"id":1,"type":"release"}]}`)
-				}
-				return jsonResponse(r, 200, `{"pagination":{"items":101,"pages":2},"results":[{"id":1,"type":"release"},{"id":2,"type":"release"}]}`)
-			}
-			if r.URL.Path == "/releases/1" {
-				return jsonResponse(r, 200, `{"id":1,"artists":[{"name":"Artist"}],"tracklist":[{"type_":"track","title":"One"},{"type_":"track","title":"Two"}]}`)
-			}
-			return jsonResponse(r, 200, `{"id":2,"artists":[{"name":"Artist"}],"tracklist":[{"type_":"track","title":"Later"}]}`)
-		})
-		c.hc = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) { return jsonResponse(r, 403, `{}`), nil })}
-		cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "one", Display: "Artist - One"}, fakes.CatalogTrack{ID: "two", Display: "Artist - Two"}, fakes.CatalogTrack{ID: "later", Display: "Artist - Later"})
-		intent := core.MusicIntent{Seed: "42", Preferences: core.SemanticPreferences{Genres: []core.IntentPreference{{Value: "ambient", Influence: core.InfluencePositive}}}}
-		for run := 0; run < 2; run++ {
-			stream := c.OpenCandidates(intent, cat, cat)
-			for i := 0; i < 3; i++ {
-				track, err := stream.Next(context.Background())
-				if err != nil {
-					t.Fatal(err)
-				}
-				if i == 2 && track.ID != "later" {
-					t.Fatal("missed later search page")
-				}
-				if run == 0 && i < 2 && calls != 2 {
-					t.Fatal("eagerly fetched more pages")
-				}
-			}
-			if _, err := stream.Next(context.Background()); err != io.EOF {
-				t.Fatal(err)
-			}
-		}
-		if calls != 4 {
-			t.Fatalf("duplicate release/page not cached: %d calls", calls)
-		}
-	})
-}
-
-func TestDiscogsPaginationBoundsRepeatedResults(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		searches, releases := 0, 0
-		c := discogsFixture(t, func(r *http.Request) *http.Response {
-			if r.URL.Path == "/database/search" {
-				searches++
-				return jsonResponse(r, 200, `{"pagination":{"items":10000,"pages":100},"results":[{"id":1,"type":"release"}]}`)
-			}
-			releases++
-			return jsonResponse(r, 200, `{"id":1,"artists":[],"tracklist":[]}`)
-		})
-		c.hc = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) { return jsonResponse(r, 403, `{}`), nil })}
-		cat := fakes.NewCatalog(2)
-		intent := core.MusicIntent{Seed: "42", Preferences: core.SemanticPreferences{Genres: []core.IntentPreference{{Value: "ambient", Influence: core.InfluencePositive}}}}
-		stream := c.OpenCandidates(intent, cat, cat)
-		if _, err := stream.Next(context.Background()); err != io.EOF {
-			t.Fatal(err)
-		}
-		if searches != 3 || releases != 1 {
-			t.Fatalf("unbounded/redundant pagination: %d searches, %d releases", searches, releases)
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		if _, err := stream.Next(ctx); err != context.Canceled {
-			t.Fatal("cancellation ignored")
-		}
-	})
 }

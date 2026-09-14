@@ -129,8 +129,7 @@ PLAYLISTAI_BENCH_CATALOG=/path/to/catalog go test ./internal/catalog \
 
 Other changes remove eager retrieval when provider discovery suffices and
 replace per-lookup cache-wide expiry scans with an expiry index and at most
-one cleanup per minute on access. Expired Discogs responses remain ineligible
-on every read. Live-provider latency and the extra CLAP cost of overcomplete
+one cleanup per minute on access. Live-provider latency and the extra CLAP cost of overcomplete
 selection have not been benchmarked; no end-to-end speedup is claimed.
 
 ## Scope and acceptance criteria

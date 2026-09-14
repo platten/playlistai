@@ -112,9 +112,9 @@ Acceptance: unchanged case cardinalities and assertions, equivalent persisted co
 
 **4. Replace real waits with deterministic time**
 
-Owner: provider-test implementer; independent of catalog/semantic edits. Relevant files under [MusicBrainz tests](C:/Users/pawel/Documents/GitHub/playlistai/internal/enrich/musicbrainz): `instrumental_test.go`, `albums_test.go`, `discogs_cache_test.go`, and `transport_test.go`.
+Owner: provider-test implementer; independent of catalog/semantic edits. Relevant files under [MusicBrainz tests](C:/Users/pawel/Documents/GitHub/playlistai/internal/enrich/musicbrainz): `instrumental_test.go`, `albums_test.go`, and `transport_test.go`.
 
-A local uncached JSON run took 48.44s for this package. Five tests accounted for 47.20s: instrumental fallback 23.77s, two album cases 8.46s and 8.16s, persistent Discogs cache 4.81s, and production spacing 2.00s. Several paths use real exponential retry delays despite local fake responses; the persistent-cache test makes three requests with real throttling.
+A local uncached JSON run found that instrumental fallback, album cases, and production spacing spent substantial time in real retry waits despite local fake responses.
 
 Use `testing/synctest` with synchronous in-process `http.RoundTripper` fakes for policy tests. Assert attempt counts, retry timing, `Retry-After` handling, fallback selection, cancellation, and spacing against virtual time. Keep representative real HTTP transport integration tests. Network sockets do not become virtual merely by wrapping `httptest.Server` in a synctest bubble; construct timers and limiter state inside each isolated test. [Go synctest documentation](https://pkg.go.dev/testing/synctest)
 

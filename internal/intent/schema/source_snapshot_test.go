@@ -14,7 +14,6 @@ func TestSuppliedSourceSnapshotIsImmutableAcrossAttempts(t *testing.T) {
 	prompt := "12 songs like Nine Inch Nails; include Hurt by Nine Inch Nails exactly once."
 	source := lexicon.Extract(prompt)
 	source.Version = "frozen-test-source/v1"
-	source.Proposals = []core.IntentProposal{{Kind: "entity", Value: "Nine Inch Nails", Advisory: true}}
 	before := copySource(source)
 	raw, _ := json.Marshal(Wire{Genres: []WirePreference{}, Mode: "similar", TotalCount: 30,
 		EssentialCriteria: []WireCriterion{{Kind: "genre", Value: "invented", Scope: "playlist", Span: "invented"}}})
@@ -23,14 +22,13 @@ func TestSuppliedSourceSnapshotIsImmutableAcrossAttempts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if m.Count != 12 || len(m.RequiredTracks) != 1 || m.RequiredTracks[0].Query != "Hurt by Nine Inch Nails" || m.Translation.Version != source.Version || len(m.Translation.Proposals) != 1 {
+		if m.Count != 12 || len(m.RequiredTracks) != 1 || m.RequiredTracks[0].Query != "Hurt by Nine Inch Nails" || m.Translation.Version != source.Version {
 			t.Fatalf("frozen source replaced: %+v", m)
 		}
 		if !reflect.DeepEqual(source, before) {
 			t.Fatal("compilation mutated the supplied source")
 		}
 		m.Translation.Atoms[0].Evidence[0].Text = "mutated returned result"
-		m.Translation.Proposals[0].Value = "mutated returned proposal"
 		if !reflect.DeepEqual(source, before) {
 			t.Fatal("compiled intent aliases the source snapshot")
 		}

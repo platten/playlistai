@@ -66,18 +66,10 @@ pre-parser protects compound durations, negation and journey roles before and
 after the LLM step. See [implementation and validation](docs/music-context-implementation-results.md)
 and the [larger-model evaluation guide](docs/music-context-and-preparser-plan.md).
 
-Settings and optional first-run setup can prepare verified DistilBERT assets
-and import a reviewed, calibrated DistilBERT intent extractor. The extractor
-assists the local LLM; explicit source instructions remain authoritative.
-Preparation and import never enable suggestions automatically. The generic base
-encoder cannot extract playlist intent. MiniLM has been removed.
-See [native setup and packaging](docs/intent-nlu-implementation.md)
-and [annotation review and offline training](docs/intent-nlu-review.md).
-
 Artist spelling suggestions ask for confirmation before changing the selected
 artist. Duration-only requests allow a variable track count and use full-recording
 metadata to seek the target within 60 seconds; missing duration evidence stays
-unverified. See [approved interpretations and pilot results](docs/intent-nlu-approved-review.md).
+unverified.
 
 The header's theme button cycles through **System** (computer), **Light** (sun),
 and **Dark** (moon). Hover for the current mode; your choice is saved locally.
@@ -216,20 +208,15 @@ Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
 MusicBrainz metadata, linked Wikidata/Wikipedia context in Enhanced hybrid, a
 bounded Wikipedia artist-lead fallback for seedless instrumental searches,
-optional Discogs fallback, and Soundiiz handoff. Context requests contain public
+and Soundiiz handoff. Context requests contain public
 entity names, identifiers and catalog recording titles; they do not send the full
 prompt or listening history. MusicBrainz
-queries reuse a one-week cache; **Settings → Music metadata** can clear it and
-configure the Discogs token. Fallback requests are capped at 25/minute and still
-pass the normal musical-fit checks. An optional [local Discogs dataset](docs/local-metadata-dataset.md)
-uses monthly bulk dumps for catalog-matched genre discovery. A separate
-[offline MusicBrainz index](docs/musicbrainz-offline-index.md) packages artist
+queries reuse a one-week cache; **Settings → Music metadata** can clear it.
+An [offline MusicBrainz index](docs/musicbrainz-offline-index.md) packages artist
 and recording JSON dumps into sub-200 MB R2 objects for wizard and Settings
 downloads before online requests. Its packer uses parallel decoding, a tunable
 `-sqlite-cache-mib` budget (64 MiB per database by default), and simultaneous
 hashing/compression; see [benchmarks and memory tradeoffs](docs/musicbrainzpack-performance.md).
-For Discogs wizard downloads, [build and host
-a compressed runtime bundle](docs/metadata-distribution.md).
 See [metadata setup and cache policy](docs/music-metadata.md).
 Recommendation exposure is stored
 separately from positive feedback, and a generated or briefly previewed track

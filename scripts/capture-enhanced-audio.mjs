@@ -11,8 +11,7 @@ const fixture = `
 let enabled=true,mertEnabled=true,installed=false;
 window.__installs=[];window.__analyses=[];
 const status=()=>({enabled,mertEnabled,installed,searchableTracks:installed?2:0,recommendedManifestUrl:"https://models.example/mert/manifest.json",recommendedDownloadBytes:213882011,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
-const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},SetMERTSimilarityEnabled:v=>{mertEnabled=v},InstallMERT:p=>{window.__installs.push(p);return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},RemoveMERT:()=>{installed=false},ClearMERTSimilarityCache:()=>{},ClearDSPAnalysisCache:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
-methods.InstallRecommendedMERT=()=>methods.InstallMERT("recommended");
+const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},SetMERTSimilarityEnabled:v=>{mertEnabled=v},InstallRecommendedMERT:()=>{window.__installs.push('recommended');return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},ClearMERTSimilarityCache:()=>{},ClearDSPAnalysisCache:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve(o[k](...args));p.cancel=()=>window.__cancel?.();return p;}});
 `;
 const runtime = `window.__progressCallbacks=[];export const Events={On:(name,callback)=>{window.__progressCallbacks.push(callback);return ()=>{}}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
@@ -28,6 +27,9 @@ try {
   await page.getByRole('heading',{name:'MERT audio similarity'}).waitFor();
   await page.getByRole('heading',{name:'DSP preview measurements'}).waitFor();
   await page.getByText(/The similarity cache is empty/).waitFor();
+  assert.equal(await page.getByText('MERT-v1-95M · optional').count(),0,'model detail box removed');
+  assert.equal(await page.getByLabel('MERT pack directory or manifest').count(),0,'manual pack field removed');
+  assert.equal(await page.getByRole('button',{name:'Remove MERT'}).count(),0,'per-model removal removed');
   for (const theme of ['dark','light']) {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     await page.screenshot({path:path.join(output,`enhanced-${theme}.png`),fullPage:true});
@@ -37,7 +39,7 @@ try {
     await page.setViewportSize({width:1000,height:1000});
   }
 
-  await page.getByRole('button',{name:'Download MERT for this device'}).click();
+  await page.getByRole('button',{name:'Download MERT from Cloudflare R2'}).click();
   await page.getByRole('button',{name:'Cancel model installation'}).waitFor();
   await page.evaluate(()=>window.__progressCallbacks.forEach(callback=>callback({data:{op:'mert-model',done:1,total:2,note:'Downloading segment 1 of 2'}})));
   await page.getByRole('progressbar',{name:'Installing MERT'}).waitFor();
@@ -46,10 +48,11 @@ try {
   await page.getByRole('button',{name:'Cancel model installation'}).click();
   await page.getByRole('alert').filter({hasText:'Model pack cancelled'}).waitFor();
   await page.screenshot({path:path.join(output,'mert-pack-cancelled.png'),fullPage:true});
-  await page.getByRole('button',{name:'Download MERT for this device'}).click();
+  await page.getByRole('button',{name:'Download MERT from Cloudflare R2'}).click();
   await page.waitForFunction(()=>window.__installs.length===2);
   await page.evaluate(()=>window.__finish());
-  await page.getByText(/Revision: 12af/).waitFor();
+  await page.getByText('2 tracks with compatible cached embeddings.').waitFor();
+  assert.equal(await page.getByText(/Revision: 12af/).count(),0,'revision detail remains hidden');
   assert.deepEqual(await page.evaluate(()=>window.__installs),['recommended','recommended']);
   await page.getByRole('button',{name:'Analyze candidates'}).click();
   await page.getByRole('button',{name:'Cancel analysis'}).click();
@@ -58,10 +61,8 @@ try {
   await page.evaluate(()=>window.__finish());
   await page.getByRole('status').filter({hasText:'1 unavailable'}).waitFor();
   assert.deepEqual(await page.evaluate(()=>window.__analyses),[{ids:['one','two'],liked:false},{ids:[],liked:true}]);
-  await page.getByRole('button',{name:'Remove MERT'}).click();
-  await page.getByText(/Not installed · CC-BY-NC/).waitFor();
   assert.deepEqual(errors,[]);
   await page.getByRole('checkbox',{name:'Use DSP preview measurements'}).uncheck();
   assert.equal(await page.getByRole('checkbox',{name:'Use MERT to find similar tracks'}).isChecked(),true,'DSP changes must leave MERT preference unchanged');
-  console.log('Recommendation model UI: dark/light, narrow/wide, separate DSP/MERT settings, install/remove, bounded analysis and cancellation passed');
+  console.log('Recommendation model UI: dark/light, narrow/wide, hosted R2 install, hidden model details, separate DSP/MERT settings, bounded analysis and cancellation passed');
 } finally {await browser.close();}

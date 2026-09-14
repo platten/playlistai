@@ -37,8 +37,7 @@ representative real requests. See [behavior and compatibility details](recommend
 Implemented `multichannel/v13`: bounded overcomplete candidate selection,
 stop-aware provider I/O, lazy catalog continuation, input-keyed discovery
 replay, provider-specific pick evidence and exact taste-snapshot loading.
-MusicBrainz/Discogs use four-lookup buffering windows; Discogs reserves detail
-budget for subsequent full search pages. Cache expiration remains strict while
+MusicBrainz uses four-lookup buffering windows. Cache expiration remains strict while
 indexed cleanup runs at most once per minute on access. Existing read-only
 catalogs get an in-memory artist-to-row index; new catalogs also get a SQL
 artist/row index. No runtime dependency or model change was added.

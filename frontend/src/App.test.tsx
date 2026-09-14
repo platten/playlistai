@@ -20,7 +20,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "InstallLlamaRuntime", "ReinstallLlamaRuntime", "DownloadModel", "UseModelFile", "SetModelDevice", "ClearModel",
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
   "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
-  "GetPreviewURL", "GetEnhancedAnalysisStatus", "GetIntentAssistStatus", "InstallIntentModels", "SetIntentAssistEnabled",
+  "GetPreviewURL", "GetEnhancedAnalysisStatus",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
   API: bridge,
@@ -610,7 +610,7 @@ it.each(["clap_first", "acousticbrainz_first"])("shows grounded evidence and con
   bridge.GenerateFromPromptWithContext.mockImplementationOnce((_text, context) => {
     const value = fixture();
     const richIntent = { ...value.playlist.intent, controls: { ...controls, recommendationMode: mode }, knowledge: {
-      sources: ["https://www.discogs.com/release/123", "https://untrusted.invalid"], tracks: [
+      sources: ["https://untrusted.invalid"], tracks: [
         { ref: { id: "Original-0" }, matched: true, identityStatus: "resolved", acoustic: { low: { bpm: 123.4, key: "C", scale: "major", analyzedSeconds: 28 }, predictions: { mood_relaxed: { value: "relaxed" }, voice: null } } },
         { ref: { id: "unknown" }, matched: false, identityStatus: "ambiguous" },
       ] },
@@ -630,8 +630,6 @@ it.each(["clap_first", "acousticbrainz_first"])("shows grounded evidence and con
   expect(screen.getByText(/Preview: compared; fit is unverified/)).toBeTruthy();
   expect(screen.getByText(/123 BPM \(estimated\)/)).toBeTruthy();
   expect(screen.getByText(/mood relaxed: relaxed/)).toBeTruthy();
-  fireEvent.click(screen.getByText("Data provided by Discogs"));
-  expect(screen.getByRole("link", { name: /Data provided by Discogs · release/ }).getAttribute("href")).toBe("https://www.discogs.com/release/123");
   expect(screen.queryByRole("link", { name: /untrusted/ })).toBeNull();
   fireEvent.click(screen.getByLabelText("Dismiss playlist message"));
   expect(screen.queryByText(/Some musical attributes remain uncertain/)).toBeNull();
@@ -677,8 +675,6 @@ it("opens setup when catalog loading fails and completes onboarding without trap
   fireEvent.click(await screen.findByRole("button", { name: "Open setup" }));
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
-  await screen.findByRole("heading", { name: "Intent language models" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("Music analysis");
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });
@@ -704,23 +700,21 @@ it("leaves Generate available when the onboarding read fails", async () => {
 });
 
 it("opens a completed installation directly when startup assets are ready", async () => {
-  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: false, pendingSteps: ["intent", "analysis"], repairSteps: [] }));
+  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: false, pendingSteps: ["analysis"], repairSteps: [] }));
   render(<App />);
   await screen.findByLabelText("Your description");
   expect(bridge.GetOnboarded).not.toHaveBeenCalled();
-  expect(bridge.InstallIntentModels).not.toHaveBeenCalled();
   expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
 });
 
 it("runs only the startup repair step when a configured model is missing", async () => {
-  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: true, pendingSteps: ["model", "intent", "analysis"], repairSteps: ["model"] }));
+  bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: true, pendingSteps: ["model", "analysis"], repairSteps: ["model"] }));
   render(<App />);
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
   fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
   await screen.findByLabelText("Your description");
-  expect(bridge.InstallIntentModels).not.toHaveBeenCalled();
 });
 
 it("reports failed playlist rebuilds without recording their display, then retries", async () => {

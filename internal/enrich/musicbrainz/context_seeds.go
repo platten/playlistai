@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/url"
 	"sort"
-	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -203,7 +202,7 @@ func (c *Client) genreContext(ctx context.Context, intent core.MusicIntent, snap
 	for _, genre := range genres[:min(len(genres), 2)] {
 		id := graph.ID(genre)
 		for _, node := range graph.Nodes {
-			if node.ID != id || strings.HasPrefix(id, "discogs-dump:") || !contextMBID.MatchString(id) {
+			if node.ID != id || !contextMBID.MatchString(id) {
 				continue
 			}
 			profile := core.ContextProfile{Kind: "genre", EntityKey: "musicbrainz:genre:" + id, Query: genre, Name: node.Name, Genres: []string{node.Name}, ExtractorVersion: core.ContextProfileVersion,
