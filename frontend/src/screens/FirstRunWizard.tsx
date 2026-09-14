@@ -31,8 +31,8 @@ function fmtGB(bytes: number): string {
 
 /**
  * Shows missing supported setup steps, or repairs to previously selected
- * capabilities. Rechecks local readiness between steps. Every step can be
- * skipped; completed installations do not revisit healthy capabilities.
+ * capabilities. Rechecks local readiness between steps. Required installations
+ * must finish before continuing; completed installations are not revisited.
  */
 export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; initialStatus?: SetupStatus | null }) {
   const [steps, setSteps] = useState<Step[]>([]);
@@ -72,7 +72,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
     const id = ++request.current;
     setChecking(true);
     // Installation may have satisfied later steps too. Recheck availability
-    // without revisiting completed/skipped steps or adding new optional steps.
+    // without revisiting completed steps or adding newly introduced steps.
     const remaining = steps.slice(steps.indexOf(step) + 1);
     try {
       const status = await API.GetSetupStatus();
@@ -127,8 +127,8 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "catalog" && <CatalogStep onNext={next} />}
         {step === "metadata" && <MetadataStep onNext={next} />}
         {step === "model" && <ModelStep onNext={next} />}
-        {step === "analysis" && <div className="flex flex-1 flex-col gap-4"><MusicAnalysisCard /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional. You can use catalog recommendations and install music analysis later.</p></div>}
-        {step === "mert" && <div className="flex flex-1 flex-col gap-4"><p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</p><EnhancedAudioCard setup /><Button variant="primary" onClick={() => void next()}>Continue</Button><p className="text-[12px] text-muted">Optional for Enhanced hybrid. The download comes from Playlist AI’s verified Cloudflare R2 archive. Continue to skip or stop an active download.</p></div>}
+        {step === "analysis" && <RequiredAnalysisStep onNext={next} />}
+        {step === "mert" && <RequiredMERTStep onNext={next} />}
         {step === "preview" && <PreviewStep onNext={next} />}
         {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
       </div>
@@ -140,10 +140,12 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
   const [info, setInfo] = useState<Awaited<ReturnType<typeof API.GetMetadataBundleInfo>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
   const pending = useRef<ReturnType<typeof API.InstallMusicBrainzBundle> | null>(null);
   const musicBrainzProgress = useProgress("musicbrainz-metadata");
   useEffect(() => {
     let disposed = false;
+    setError(null);
     void API.GetMetadataBundleInfo().then((value) => {
       if (disposed) return;
       const musicBrainzMissing = value?.musicBrainzConfigured && !value.musicBrainzInstalled;
@@ -151,7 +153,7 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
       else setInfo(value);
     }).catch((e: unknown) => { if (!disposed) setError(String(e)); });
     return () => { disposed = true; void pending.current?.cancel(); };
-  }, [onNext]);
+  }, [onNext, refreshToken]);
   const download = async () => {
     if (pending.current) return;
     setBusy(true); setError(null);
@@ -174,9 +176,27 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
     <p className="text-[13px] text-muted">Metadata proposes candidates. Preview analysis and exclusion checks still decide whether a recording fits your request.</p>
     {busy ? <ProgressBar label="Preparing local music metadata" done={progress?.done ?? 0} total={progress?.total ?? 0} note={progress?.note} /> :
       <Button variant="primary" disabled={!canDownload} iconLeft={<Icon.Download size={14} />} onClick={() => void download()}>Download offline music data</Button>}
-    {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
-    <StepFooter><Button variant="subtle" size="sm" disabled={busy} onClick={onNext}>Continue without download</Button></StepFooter>
+    {error && <ErrorState variant="inline" message={error} onRetry={() => setRefreshToken((value) => value + 1)} onDismiss={() => setError(null)} />}
   </StepShell>;
+}
+
+function RequiredAnalysisStep({ onNext }: { onNext: () => void }) {
+  const [ready, setReady] = useState(false);
+  return <div className="flex flex-1 flex-col gap-4">
+    <MusicAnalysisCard onReadyChange={setReady} />
+    <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
+    {!ready && <p className="text-[12px] text-muted">Install and enable music analysis to continue.</p>}
+  </div>;
+}
+
+function RequiredMERTStep({ onNext }: { onNext: () => void }) {
+  const [ready, setReady] = useState(false);
+  return <div className="flex flex-1 flex-col gap-4">
+    <p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</p>
+    <EnhancedAudioCard setup onReadyChange={setReady} />
+    <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
+    {!ready && <p className="text-[12px] text-muted">Install MERT to continue. The download comes from Playlist AI’s verified Cloudflare R2 archive.</p>}
+  </div>;
 }
 
 function WelcomeStep({ onNext }: { onNext: () => void }) {
@@ -264,7 +284,7 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
           <Icon.Warn size={15} className="flex-none text-faint" />
           No catalog source is configured for this build. See the project's
           docs (<code className="font-mono text-[12px]">catalog.archive_url</code>).
-          Skip for now; the rest of the app still works.
+          A catalog source is required to finish setup.
         </div>
       ) : downloading ? (
         <ProgressBar
@@ -283,15 +303,9 @@ function CatalogStep({ onNext }: { onNext: () => void }) {
       )}
 
       <StepFooter>
-        {!info.configured ? (
-          <Button variant="subtle" size="sm" onClick={onNext}>
-            Skip for now
-          </Button>
-        ) : (
-          <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
-            Continue
-          </Button>
-        )}
+        <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
+          Continue
+        </Button>
       </StepFooter>
     </StepShell>
   );
@@ -415,7 +429,7 @@ function ModelStep({ onNext }: { onNext: () => void }) {
     return (
       <StepShell
         title="Install llama.cpp"
-        description="The optional local engine that turns a typed prompt into a structured request and can infer a catalog starting point. A GPU build is installed when available, plus a CPU fallback. Skip it to keep using Generate in catalog-only mode, where each request must name a seed artist or track."
+        description="The local engine that turns a typed prompt into a structured request and can infer a catalog starting point. A GPU build is installed when available, plus a CPU fallback."
       >
         <div className="flex flex-col gap-3">
           <Button variant="primary" iconLeft={<Icon.Download size={14} />} onClick={() => void installRuntime()}>
@@ -450,9 +464,6 @@ function ModelStep({ onNext }: { onNext: () => void }) {
         </div>
 
         <StepFooter>
-          <Button variant="subtle" size="sm" onClick={onNext}>
-            Skip for now
-          </Button>
           <Button variant="primary" size="sm" iconRight={<Icon.ArrowRight size={14} />} disabled onClick={onNext}>
             Continue
           </Button>
@@ -606,14 +617,11 @@ function ModelStep({ onNext }: { onNext: () => void }) {
 
       {!usingLocal && !busy && (
         <p className="text-[12px] text-faint">
-          Pick a model for seed-optional intent parsing, or continue with catalog-only generation.
+          Pick a model to finish language-understanding setup.
         </p>
       )}
 
       <StepFooter>
-        <Button variant="subtle" size="sm" disabled={busy !== null} onClick={onNext}>
-          Skip for now
-        </Button>
         <Button
           variant="primary"
           size="sm"
@@ -713,8 +721,8 @@ function DoneStep({ finishing, onFinish }: { finishing: boolean; onFinish: () =>
       <div className="flex flex-col gap-2">
         <h1 className="text-[20px] font-semibold">You're set up</h1>
         <p className="max-w-[42ch] text-[14px] text-muted">
-          Describe what you want to hear in Generate. You can change
-          any of this later in Settings.
+          Describe what you want to hear in Generate. You can manage models,
+          previews, and local data later in Settings.
         </p>
       </div>
       <Button variant="primary" disabled={finishing} onClick={onFinish}>

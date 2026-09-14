@@ -7,7 +7,7 @@ import { useProgress } from "./useProgress";
 type Status = Awaited<ReturnType<typeof API.GetEnhancedAnalysisStatus>>;
 type Pending = Promise<unknown> & { cancel: (reason?: string) => unknown };
 
-export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false }: { trackIds?: string[]; setup?: boolean; dspOnly?: boolean }) {
+export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false, onReadyChange }: { trackIds?: string[]; setup?: boolean; dspOnly?: boolean; onReadyChange?: (ready: boolean) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -21,9 +21,14 @@ export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false }: 
     mounted.current = true;
     let current = true;
     const call = API.GetEnhancedAnalysisStatus();
-    void call.then((value) => { if (current) setStatus(value); }).catch((e) => { if (current) setError(String(e)); });
+    void call.then((value) => {
+      if (current) {
+        setStatus(value);
+        onReadyChange?.(Boolean(value?.installed && value?.mertAvailable && value?.mertEnabled));
+      }
+    }).catch((e) => { if (current) setError(String(e)); });
     return () => { current = false; mounted.current = false; void call.cancel("settings closed"); void pending.current?.cancel("settings closed"); };
-  }, []);
+  }, [onReadyChange]);
   const run = async (operation: () => Pending, report = false, modelInstallation = false) => {
     if (pending.current) return;
     setBusy(true); setInstalling(modelInstallation); setError(""); setNotice("");
@@ -35,39 +40,33 @@ export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false }: 
         setNotice(`${value.analyzed} tracks analyzed or reused; ${value.unavailable} unavailable. Regenerate to use newly cached evidence.`);
       }
       const updated = await API.GetEnhancedAnalysisStatus();
-      if (mounted.current) setStatus(updated);
+      if (mounted.current) {
+        setStatus(updated);
+        onReadyChange?.(Boolean(updated?.installed && updated?.mertAvailable && updated?.mertEnabled));
+      }
     } catch (e) { if (mounted.current) setError(String(e)); }
     finally { pending.current = null; if (mounted.current) { setBusy(false); setInstalling(false); } }
   };
   if (dspOnly) return <section className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4" aria-label="DSP preview measurements" aria-busy={busy || (!status && !error)}>
     <h2 className="text-[15px] font-semibold">DSP preview measurements</h2>
-    <p className="text-[12px] text-muted">Optional measured audio preferences for Enhanced hybrid. No model download is needed.</p>
-    <label className="flex items-center gap-2 text-[13px]">
-      <input type="checkbox" checked={status?.enabled ?? false} disabled={busy || !status?.dspAvailable}
-        onChange={(e) => void run(() => API.SetEnhancedAnalysisEnabled(e.target.checked))} />
-      Use DSP preview measurements
-    </label>
+    <p className="text-[12px] text-muted">Measured audio preferences are used automatically by Enhanced hybrid. No model download is needed.</p>
     <p className="text-[12px] text-muted">{status ? `${status.dspStorage?.records ?? 0} cached previews. ${status.dspAvailable ? "Available on this device." : "Local analysis storage is unavailable."}` : error ? "DSP status unavailable." : "Checking DSP measurements…"}</p>
     <div className="flex flex-wrap gap-2">
-      <Button size="sm" disabled={busy || !status?.enabled} onClick={() => void run(() => API.AnalyzeEnhancedTracks([], true), true)}>Measure liked track previews</Button>
+      <Button size="sm" disabled={busy || !status?.dspAvailable} onClick={() => void run(() => API.AnalyzeEnhancedTracks([], true), true)}>Measure liked track previews</Button>
       <Button size="sm" variant="ghost" disabled={busy || !status?.dspAvailable} onClick={() => {
         if (window.confirm("Clear cached DSP measurements? MERT similarities and model files are kept.")) void run(() => API.ClearDSPAnalysisCache());
       }}>Clear DSP cache</Button>
     </div>
     {busy && <Button size="sm" variant="ghost" onClick={() => void pending.current?.cancel("analysis cancelled")}>Cancel analysis</Button>}
     <p role="status" className="text-[12px] text-muted">{busy ? progress?.note || "Working…" : notice}</p>
-    <p className="text-[12px] text-faint">Preview measurements cover the analyzed interval. MERT similarity is controlled separately under Recommendation models.</p>
+    <p className="text-[12px] text-faint">Preview measurements cover the analyzed interval. MERT similarity uses its installed model and compatible cache.</p>
     {error && <p role="alert" className="text-[12px] text-warn">{error}</p>}
     {error && !status && <Button size="sm" disabled={busy} onClick={() => void run(() => API.GetEnhancedAnalysisStatus())}>Retry status</Button>}
   </section>;
   return <section className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4" aria-label="MERT audio similarity" aria-busy={busy || (!status && !error)}>
     <h2 className="text-[15px] font-semibold">MERT audio similarity</h2>
     <p className="text-[12px] text-muted">Find tracks with audio similar to your references in Enhanced hybrid. Searches use compatible cached previews, with bounded analysis of missing references and candidates.</p>
-    <label className="flex items-center gap-2 text-[13px]">
-      <input type="checkbox" checked={status?.mertEnabled ?? false} disabled={busy || !status?.dspAvailable || (!!status?.unsupportedReason && !status.mertAvailable)}
-        onChange={(e) => void run(() => API.SetMERTSimilarityEnabled(e.target.checked))} />
-      Use MERT to find similar tracks
-    </label>
+    <p className="text-[12px] text-muted">MERT similarity is enabled automatically when the model is installed.</p>
     <p className="text-[12px] text-muted">{status ? `${status.searchableTracks ?? 0} tracks with compatible cached embeddings.` : error ? "MERT status unavailable." : "Checking MERT…"}</p>
     {status && !(status.searchableTracks > 0) && <p className="text-[12px] text-muted">The similarity cache is empty for this catalog and model. Generation starts with catalog candidates and adds available preview comparisons. Missing previews keep their existing recommendation scores.</p>}
     {status?.unsupportedReason && !status.mertAvailable && <p className="text-[12px] text-muted">{status.unsupportedReason}</p>}

@@ -16,7 +16,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-func TestEnhancedAnalysisOptionalPreferencesAndResponsiveStatus(t *testing.T) {
+func TestEnhancedAnalysisDefaultsAndResponsiveStatus(t *testing.T) {
 	ctx := context.Background()
 	c, err := New(ctx, testConfig(t), nil)
 	if err != nil {
@@ -24,8 +24,8 @@ func TestEnhancedAnalysisOptionalPreferencesAndResponsiveStatus(t *testing.T) {
 	}
 	defer c.Close()
 	s, err := c.GetEnhancedAnalysisStatus(ctx)
-	if err != nil || s.Enabled || !s.DSPAvailable || s.Installed || s.MERTAvailable {
-		t.Fatalf("optional status %+v %v", s, err)
+	if err != nil || !s.Enabled || !s.MERTEnabled || !s.DSPAvailable || s.Installed || s.MERTAvailable {
+		t.Fatalf("default status %+v %v", s, err)
 	}
 	if err := c.SetRecommendationMode(core.EnhancedHybrid); err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestRecommendedMERTStatusAndInstallPreconditions(t *testing.T) {
 	}
 }
 
-func TestMERTAndDSPPreferencesRemainIndependentAfterLegacyMigration(t *testing.T) {
+func TestMERTAndDSPDefaultOnDespiteLegacyPreferences(t *testing.T) {
 	for _, legacy := range []bool{false, true} {
 		t.Run(map[bool]string{false: "opted out", true: "opted in"}[legacy], func(t *testing.T) {
 			cfg := testConfig(t)
@@ -105,8 +105,8 @@ func TestMERTAndDSPPreferencesRemainIndependentAfterLegacyMigration(t *testing.T
 			}
 			defer c.Close()
 			status, err := c.GetEnhancedAnalysisStatus(context.Background())
-			if err != nil || status.Enabled != legacy || status.MERTEnabled != legacy {
-				t.Fatalf("migration: %+v %v", status, err)
+			if err != nil || !status.Enabled || !status.MERTEnabled {
+				t.Fatalf("legacy preferences disabled always-on features: %+v %v", status, err)
 			}
 			if err := c.SetEnhancedAnalysisEnabled(!legacy); err != nil {
 				t.Fatal(err)
@@ -133,7 +133,7 @@ func TestMERTAndDSPPreferencesRemainIndependentAfterLegacyMigration(t *testing.T
 	}
 }
 
-func TestMERTPreviewServiceDoesNotRequireCLAPOrDSP(t *testing.T) {
+func TestAlwaysOnDSPAndMERTPreviewServiceDoesNotRequireCLAP(t *testing.T) {
 	c, err := New(context.Background(), testConfig(t), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -145,14 +145,14 @@ func TestMERTPreviewServiceDoesNotRequireCLAPOrDSP(t *testing.T) {
 	c.enhanced.worker = &audio.MERTWorker{}
 	c.enhanced.manifest = &audio.MERTBundleManifest{}
 	service := c.EnhancedPreviewService()
-	if c.AudioService() != nil || service == nil || service.MERT == nil || service.DSPStore != nil {
-		t.Fatalf("MERT acquired a CLAP/DSP dependency: %+v", service)
+	if c.AudioService() != nil || service == nil || service.MERT == nil || service.DSPStore == nil {
+		t.Fatalf("always-on MERT and DSP service unavailable: %+v", service)
 	}
 	if err := c.SetMERTSimilarityEnabled(false); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.EnhancedPreviewService(); got != nil {
-		t.Fatal("disabled MERT remained attached")
+	if got := c.EnhancedPreviewService(); got == nil || got.MERT != nil || got.DSPStore == nil {
+		t.Fatalf("disabling MERT removed always-on DSP or retained MERT: %+v", got)
 	}
 }
 

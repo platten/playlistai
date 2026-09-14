@@ -30,6 +30,7 @@ try {
   assert.equal(await page.getByText('MERT-v1-95M · optional').count(),0,'model detail box removed');
   assert.equal(await page.getByLabel('MERT pack directory or manifest').count(),0,'manual pack field removed');
   assert.equal(await page.getByRole('button',{name:'Remove MERT'}).count(),0,'per-model removal removed');
+  assert.equal(await page.getByRole('checkbox').count(),0,'MERT and DSP stay enabled without user toggles');
   for (const theme of ['dark','light']) {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     await page.screenshot({path:path.join(output,`enhanced-${theme}.png`),fullPage:true});
@@ -62,7 +63,5 @@ try {
   await page.getByRole('status').filter({hasText:'1 unavailable'}).waitFor();
   assert.deepEqual(await page.evaluate(()=>window.__analyses),[{ids:['one','two'],liked:false},{ids:[],liked:true}]);
   assert.deepEqual(errors,[]);
-  await page.getByRole('checkbox',{name:'Use DSP preview measurements'}).uncheck();
-  assert.equal(await page.getByRole('checkbox',{name:'Use MERT to find similar tracks'}).isChecked(),true,'DSP changes must leave MERT preference unchanged');
-  console.log('Recommendation model UI: dark/light, narrow/wide, hosted R2 install, hidden model details, separate DSP/MERT settings, bounded analysis and cancellation passed');
+  console.log('Recommendation model UI: dark/light, narrow/wide, hosted R2 install, always-on DSP/MERT, bounded analysis and cancellation passed');
 } finally {await browser.close();}

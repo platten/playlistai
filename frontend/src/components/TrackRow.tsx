@@ -106,11 +106,9 @@ export function TrackRow({
         </div>
       </div>
       {previewError && onDismissPreviewError && <ErrorState variant="inline" message={previewError} onDismiss={onDismissPreviewError} className="mx-2 mb-2" />}
-      {(fitTier === "strong" || fitTier === "close") && (
+      {fitTier === "strong" && (
         <p className="ml-[38px] mr-2 pb-2 text-[12px] text-muted sm:ml-[42px]">
-          <span className={cn("mr-2 font-medium", fitTier === "close" ? "text-warn" : "text-accent")}>
-            {fitTier === "close" ? "Close match" : "Strong match"}
-          </span>
+          <span className="mr-2 font-medium text-accent">Strong match</span>
           {matchDetail}
         </p>
       )}

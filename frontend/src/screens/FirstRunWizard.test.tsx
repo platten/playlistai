@@ -34,7 +34,7 @@ async function start(onDone = vi.fn()) {
   await act(async () => {});
 }
 
-it("skips every ready asset screen without changing saved choices or downloading", async () => {
+it("omits every ready asset screen without changing saved choices or downloading", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
   render(<FirstRunWizard onDone={vi.fn()} />);
   await screen.findByText("You're set up");
@@ -44,28 +44,32 @@ it("skips every ready asset screen without changing saved choices or downloading
   }
 });
 
-it("offers missing MERT as an optional explicit download and cancels it when continuing", async () => {
+it("requires MERT installation before continuing", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["mert"])));
-  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, mertAvailable: false, mertEnabled: true, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   await start();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" }));
   expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: true, mertAvailable: true, mertEnabled: true, searchableTracks: 0, dspAvailable: true }));
+  await act(async () => pending.resolve(null));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("You're set up");
-  expect(pending.promise.cancel).toHaveBeenCalledWith("settings closed");
-  await act(async () => pending.resolve(null));
 });
 
-it("repairs only the missing selected feature without repeating welcome or optional setup", async () => {
+it("requires a missing repair feature without repeating welcome or unrelated setup", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["model", "analysis"], ["model"], true)));
   render(<FirstRunWizard onDone={vi.fn()} />);
   await screen.findByRole("heading", { name: "Install llama.cpp" });
   expect(screen.getByText(/Only the affected steps are shown/)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
-  await screen.findByText("You're set up");
+  expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByText("You're set up")).toBeNull();
   expect(api.SetPreviewProvider).not.toHaveBeenCalled();
 });
 
@@ -98,13 +102,17 @@ it("offers retry on readiness errors and ignores a late response after unmount",
   expect(api.CompleteOnboarding).not.toHaveBeenCalled();
 });
 
-it("supports catalog-only onboarding, migrates off previews and advances only after acknowledged save", async () => {
+it("requires analysis and MERT before saving the preview provider", async () => {
   const onDone = vi.fn();
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["analysis", "mert", "preview"])));
+  api.GetAnalysisStatus.mockImplementation(() => completed({ available: true, installed: true, enabled: true, generalFitAvailable: true, detail: "Ready", downloadBytes: 0, memoryBytes: 0, storage: { bytes: 0, records: 0 } }));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: true, mertAvailable: true, mertEnabled: true, dspAvailable: true, searchableTracks: 0, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } }));
   await start(onDone);
-  fireEvent.click(await screen.findByRole("button", { name: "Skip for now" }));
   await screen.findByText("Music analysis");
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /Deezer \(recommended\)/ }).getAttribute("aria-pressed")).toBe("true"));
   const pending = deferred();
@@ -123,12 +131,13 @@ it("supports catalog-only onboarding, migrates off previews and advances only af
   await waitFor(() => expect(onDone).toHaveBeenCalledOnce());
 });
 
-it("allows builds without a configured catalog to skip setup", async () => {
+it("blocks setup when the catalog is not configured", async () => {
   api.GetCatalogInfo.mockRejectedValueOnce(new Error("catalog unavailable"));
   await start();
   expect(screen.getByText(/No catalog source is configured/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
-  await screen.findByRole("heading", { name: "Install llama.cpp" });
+  expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("heading", { name: "Install llama.cpp" })).toBeNull();
 });
 
 it("retries a failed catalog download and auto-advances after success", async () => {
@@ -141,14 +150,14 @@ it("retries a failed catalog download and auto-advances after success", async ()
   expect(api.DownloadCatalog).toHaveBeenCalledTimes(2);
 });
 
-it("downloads optional metadata and cancels its pending work when closed", async () => {
+it("downloads required metadata and cancels its pending work when closed", async () => {
   const pending = deferred();
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: true, musicBrainzInstalled: false }));
   api.InstallMusicBrainzBundle.mockReturnValueOnce(pending.promise);
   const view = render(<FirstRunWizard onDone={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   fireEvent.click(await screen.findByRole("button", { name: "Download offline music data" }));
-  expect((screen.getByRole("button", { name: "Continue without download" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Continue without download" })).toBeNull();
   view.unmount();
   expect(pending.promise.cancel).toHaveBeenCalled();
   await act(async () => pending.reject(new Error("cancelled")));
@@ -180,7 +189,8 @@ it("installs runtime then selects a recommended model, retaining errors for retr
   const pending = deferred();
   api.DownloadModel.mockReturnValueOnce(pending.promise);
   fireEvent.click(within(screen.getByRole("group", { name: "Small model" })).getByRole("button"));
-  expect((screen.getByRole("button", { name: "Skip for now" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.queryByRole("button", { name: "Skip for now" })).toBeNull();
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
   await act(async () => pending.reject(new Error("model failed")));
   await screen.findByText(/model failed/);
   api.GetModelStatus.mockImplementation(() => completed({ backend: "llama", modelId: "small" }));
@@ -228,18 +238,14 @@ it("lets multi-GPU systems choose a GPU or CPU and refreshes fitting models", as
   await waitFor(() => expect(api.GetModelRecommendations).toHaveBeenCalledTimes(2));
 });
 
-it("keeps metadata and model-status read failures recoverable without requiring installation", async () => {
-  api.GetMetadataBundleInfo.mockRejectedValueOnce(new Error("metadata info unavailable"));
-  for (const method of ["GetModelStatus", "GetLlamaRuntime", "GetInstalledModels", "GetModelRecommendations"]) api[method].mockRejectedValueOnce(new Error("unavailable"));
+it("keeps a required metadata status failure recoverable", async () => {
+  api.GetMetadataBundleInfo.mockImplementationOnce(() => Promise.reject(new Error("metadata info unavailable"))).mockImplementation(() => completed({ musicBrainzConfigured: true, musicBrainzInstalled: false }));
   await start();
   expect(screen.getByText(/metadata info unavailable/)).toBeTruthy();
-  fireEvent.click(screen.getByLabelText("Dismiss error"));
-  fireEvent.click(screen.getByRole("button", { name: "Continue without download" }));
-  await screen.findByRole("heading", { name: "Install llama.cpp" });
-  api.GetLlamaRuntime.mockImplementation(() => completed({ available: true, builds: [] }));
-  fireEvent.click(screen.getByRole("button", { name: "Re-check" }));
-  await screen.findByRole("heading", { name: "Language understanding" });
-  expect(api.GetModelRecommendations).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("button", { name: "Continue without download" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("button", { name: "Download offline music data" })).toBeTruthy();
+  expect(api.GetMetadataBundleInfo).toHaveBeenCalledTimes(2);
 });
 
 it("retries MusicBrainz installation and advances after the acknowledged install", async () => {
@@ -255,13 +261,9 @@ it("retries MusicBrainz installation and advances after the acknowledged install
 });
 
 it("keeps preview selection available after its initial read fails", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["preview"])));
   api.GetPreviewProviderName.mockRejectedValueOnce(new Error("preference unavailable"));
   await start();
-  fireEvent.click(screen.getByRole("button", { name: "Skip for now" }));
-  await screen.findByText("Music analysis");
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  await screen.findByRole("heading", { name: "MERT audio similarity" });
-  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() => expect(screen.getByRole("button", { name: /^Deezer/ }).getAttribute("aria-pressed")).toBe("true"));
   expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
 });

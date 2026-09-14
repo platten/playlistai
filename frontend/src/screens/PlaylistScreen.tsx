@@ -483,7 +483,7 @@ export function PlaylistScreen({
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "enhanced_hybrid" ? "Audio and metadata evidence are compared for each requested characteristic. Close matches identify remaining gaps." : result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
+                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "enhanced_hybrid" ? "Audio and metadata evidence are compared for each requested characteristic." : result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
                   </div>
                 )}
                 {expanded.has(i) && acoustic && (acoustic.low || Object.keys(acoustic.predictions ?? {}).length > 0) && (

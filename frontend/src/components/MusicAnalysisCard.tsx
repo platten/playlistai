@@ -9,7 +9,7 @@ type AnalysisStatus = Awaited<ReturnType<typeof API.GetAnalysisStatus>>;
 type Bundle = Awaited<ReturnType<typeof API.InspectAnalysisBundle>>;
 const size = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
-export function MusicAnalysisCard() {
+export function MusicAnalysisCard({ onReadyChange }: { onReadyChange?: (ready: boolean) => void } = {}) {
   const [status, setStatus] = useState<AnalysisStatus | null>(null);
   const [path, setPath] = useState("");
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -20,7 +20,10 @@ export function MusicAnalysisCard() {
   const [busy, setBusy] = useState(false);
   const download = useRef<ReturnType<typeof API.InstallAnalysisBundle> | null>(null);
   const progress = useProgress("analysis-model");
-  const refresh = useCallback(() => API.GetAnalysisStatus().then(setStatus).catch((e) => setError(String(e))), []);
+  const refresh = useCallback(() => API.GetAnalysisStatus().then((value) => {
+    setStatus(value);
+    onReadyChange?.(Boolean(value?.available && value?.enabled));
+  }).catch((e) => setError(String(e))), [onReadyChange]);
   useEffect(() => { void refresh(); return () => { void download.current?.cancel("analysis card closed"); }; }, [refresh]);
   useEffect(() => {
     let disposed = false;

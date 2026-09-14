@@ -46,6 +46,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [tasteProfile, setTasteProfile] = useState<TasteProfileSummary | null>(null);
   const [debugLogging, setDebugLogging] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
 
   const refresh = useCallback(() => {
     API.GetModelStatus()
@@ -63,6 +64,9 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
     API.GetTasteProfile("", "")
       .then((profile) => setTasteProfile(profile ?? null))
       .catch(() => setTasteProfile(null));
+    API.GetStatus()
+      .then((value) => setAppVersion(value?.version || ""))
+      .catch(() => setAppVersion(""));
   }, []);
 
   useEffect(() => {
@@ -478,6 +482,12 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
           finally { resetPending.current = false; setBusy(null); }
         }}>{busy === "reset" ? "Resetting…" : "Reset models and datasets"}</Button>
       </section>
+
+      <footer className="border-t border-line pt-5 text-center text-[11.5px] leading-relaxed text-faint">
+        <p>Playlist AI{appVersion ? ` ${appVersion}` : ""}</p>
+        <p>Paul Pietkiewicz</p>
+        <p>GPL-3.0</p>
+      </footer>
     </div>
   );
 }

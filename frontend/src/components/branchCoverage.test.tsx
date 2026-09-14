@@ -89,18 +89,18 @@ it("keeps recommendation choices disabled on load failure and ignores responses 
 });
 
 it("does not change recommendation selection before successful persistence", async () => {
-  mocks.api.GetRecommendationMode.mockImplementation(() => completed("acousticbrainz_first"));
+  mocks.api.GetRecommendationMode.mockImplementation(() => completed("enhanced_hybrid"));
   const save = deferred();
   mocks.api.SetRecommendationMode.mockReturnValueOnce(save.promise);
   render(<RecommendationSettings />);
-  const old = screen.getByRole("radio", { name: /AcousticBrainz first/ }) as HTMLInputElement;
+  const old = screen.getByRole("radio", { name: /Enhanced hybrid/ }) as HTMLInputElement;
   await waitFor(() => expect(old.checked).toBe(true));
-  fireEvent.click(screen.getByRole("radio", { name: /CLAP first/ }));
+  fireEvent.click(screen.getByRole("radio", { name: /Deej-AI only/ }));
   expect(screen.getByRole("status").textContent).toBe("Saving…");
   expect(old.checked).toBe(true);
   expect((screen.getByRole("group") as HTMLFieldSetElement).disabled).toBe(true);
   await act(async () => save.resolve(null));
-  expect((screen.getByRole("radio", { name: /CLAP first/ }) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole("radio", { name: /Deej-AI only/ }) as HTMLInputElement).checked).toBe(true);
 });
 
 const availableStatus = { installed: false, available: false, recommendedAvailable: true, recommendedInstalled: false, recommendedBytes: 722852693, storage: { bytes: 0, records: 0 }, detail: "Model optional" };

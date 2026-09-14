@@ -6,10 +6,10 @@ import { TrackRow } from "./TrackRow";
 afterEach(cleanup);
 
 describe("musical match disclosure", () => {
-  it("shows close-match uncertainty without opening track details", () => {
+  it("does not show close-match labels or evidence-gap copy", () => {
     render(<TrackRow title="A recording" artist="An artist" fitTier="close" matchDetail="Similar sound; piano instrumentation is unverified." />);
-    expect(screen.getByText("Close match")).toBeTruthy();
-    expect(screen.getByText(/piano instrumentation is unverified/)).toBeTruthy();
+    expect(screen.queryByText("Close match")).toBeNull();
+    expect(screen.queryByText(/piano instrumentation is unverified/)).toBeNull();
     expect(screen.queryByText("Strong match")).toBeNull();
   });
   it("does not invent a match tier for old history", () => {

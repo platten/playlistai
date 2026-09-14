@@ -12,7 +12,7 @@ const fixture = `
 window.__calls=[];
 let modelDevice='CUDA0';
 const intent={preferences:{},journey:{waypoints:[],energyCurve:[]},references:[],essentialCriteria:[],hardConstraints:[],controls:{totalTrackCount:10}};
-const methods={GetOnboarded:()=>true,GetStatus:()=>({parserBackend:'llama'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'acousticbrainz_first',GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
+const methods={GetOnboarded:()=>true,GetStatus:()=>({parserBackend:'llama',version:'0.14.2'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'enhanced_hybrid',GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
 export const RecommendationMode={AcousticBrainzFirst:'acousticbrainz_first',CLAPFirst:'clap_first',DeejAIOnly:'deejai_only',EnhancedHybrid:'enhanced_hybrid'};
 export const FeedbackScope={};export const FeedbackType={};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{window.__calls.push([k,...args]);const p=Promise.resolve().then(()=>o[k]?.(...args)??null);p.cancel=()=>{window.__calls.push(['cancel',k])};return p;}});`;
@@ -48,6 +48,12 @@ try {
   }
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   await page.getByRole('button',{name:'Reset models and datasets',exact:true}).waitFor();
+  assert.equal(await page.getByRole('radio',{name:/AcousticBrainz first/}).count(),0);
+  assert.equal(await page.getByRole('radio',{name:/CLAP first/}).count(),0);
+  assert.equal(await page.getByRole('radio',{name:/Enhanced hybrid/}).isChecked(),true);
+  await page.getByText('Playlist AI 0.14.2').waitFor();
+  await page.getByText('Paul Pietkiewicz').waitFor();
+  await page.getByText('GPL-3.0').waitFor();
   const device=page.getByRole('combobox',{name:'Model compute device'});
   await device.waitFor();
   assert.equal(await device.inputValue(),'CUDA0');

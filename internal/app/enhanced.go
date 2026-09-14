@@ -60,11 +60,13 @@ type EnhancedAnalysisReport struct {
 
 func (c *Container) wireEnhanced(ctx context.Context) {
 	e := &c.enhanced
-	prefs := config.LoadPrefs(c.cfg.DataDir)
-	e.enabled = prefs.EnhancedAudioEnabled
-	e.mertEnabled = prefs.MERTSimilarityEnabledValue()
+	// DSP preview measurements and MERT similarity are part of Enhanced hybrid.
+	// They no longer have user-facing opt-outs, including for preferences saved
+	// by older releases where either feature was disabled.
+	e.enabled = true
+	e.mertEnabled = true
 	e.bundles = &audio.MERTBundleManager{Directory: filepath.Join(c.cfg.DataDir, "mert-analysis")}
-	e.detail = "MERT finds similar tracks in Enhanced hybrid using available preview embeddings. DSP measurements are enabled separately."
+	e.detail = "MERT finds similar tracks in Enhanced hybrid using available preview embeddings. DSP measurements are enabled automatically."
 	if c.analysis.store == nil {
 		return
 	}

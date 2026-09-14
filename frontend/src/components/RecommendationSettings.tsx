@@ -5,17 +5,7 @@ const options = [
   {
     mode: RecommendationMode.EnhancedHybrid,
     title: "Enhanced hybrid",
-    detail: "Find similar tracks through the catalog and optional MERT preview embeddings, then combine CLAP, archive evidence and optional DSP measurements. Missing previews keep existing recommendation scores.",
-  },
-  {
-    mode: RecommendationMode.AcousticBrainzFirst,
-    title: "AcousticBrainz first",
-    detail: "Prefer decisive archived predictions for supported characteristics. CLAP covers missing or uncertain evidence.",
-  },
-  {
-    mode: RecommendationMode.CLAPFirst,
-    title: "CLAP first",
-    detail: "Prefer preview-to-description comparisons. AcousticBrainz adds evidence for characteristics the preview could not score.",
+    detail: "Find similar tracks through the catalog and MERT preview embeddings, then combine CLAP, archive evidence and DSP measurements. Missing previews keep existing recommendation scores.",
   },
   {
     mode: RecommendationMode.DeejAIOnly,
@@ -68,7 +58,7 @@ export function RecommendationSettings() {
       <p className="text-[12px] text-faint" role="status">{saving ? "Saving…" : "Applies to new playlists and Regenerate. Saved playlists keep their original mode; active generations are unchanged."}</p>
       <p className="text-[12px] text-muted">{mode === RecommendationMode.DeejAIOnly
         ? "Descriptions are still parsed locally, but a catalog reference is needed. Genre and mood fit are unverified. Unsupported strict requirements return an explanation, not an unchecked playlist. The artist-diversity slider does not affect the original walk."
-        : "Priority changes ranking, not hard requirements. Both sources may still be checked, and disagreements remain visible. Evidence availability varies by recording."}</p>
+        : "Enhanced hybrid combines every available compatible source while preserving hard requirements. Evidence availability varies by recording."}</p>
       {error && <p role="alert" className="text-[12px] text-warn">{error}</p>}
     </section>
   );
