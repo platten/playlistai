@@ -4,7 +4,8 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+(\.\d+\.\d+)?$')]
-    [string]$Version = "9.15.9"
+    [string]$Version = "9.15.9",
+    [ValidateRange(1, 10)][int]$DownloadAttempts = 3
 )
 
 Set-StrictMode -Version Latest
@@ -28,7 +29,17 @@ try {
     $env:PNPM_VERSION = $Version
     [Net.ServicePointManager]::SecurityProtocol = $previousTLS -bor [Net.SecurityProtocolType]::Tls12
     Write-Host "==> Install pnpm $Version with https://get.pnpm.io/install.ps1"
-    Invoke-WebRequest -Uri "https://get.pnpm.io/install.ps1" -UseBasicParsing -OutFile $installerFile
+    for ($attempt = 1; $attempt -le $DownloadAttempts; $attempt++) {
+        Remove-Item -LiteralPath $installerFile -Force -ErrorAction SilentlyContinue
+        try {
+            Invoke-WebRequest -Uri "https://get.pnpm.io/install.ps1" -UseBasicParsing -OutFile $installerFile
+            break
+        } catch {
+            if ($attempt -eq $DownloadAttempts) { throw }
+            Write-Warning "pnpm installer download attempt $attempt of $DownloadAttempts failed: $($_.Exception.Message). Retrying."
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
     # Isolate the upstream script from our strict mode and caller variables.
     # Use this PowerShell edition, including 5.1 on contributor machines.
     $powerShellExe = (Get-Process -Id $PID).Path
