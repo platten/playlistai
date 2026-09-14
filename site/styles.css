@@ -113,7 +113,7 @@ h3 { font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.5px;
 .signal-path span { display: block; margin-bottom: 18px; font: 9px var(--mono); letter-spacing: 1px; color: var(--accent); }
 .signal-path strong { display: block; margin-bottom: 7px; color: #dedced; font-size: 14px; font-weight: 500; }
 .signal-path small { display: block; color: var(--muted); font-size: 10px; line-height: 1.55; }
-.mode-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin: 32px 0; }
+.mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 32px 0; }
 .mode-label { display: block; font: 9px var(--mono); letter-spacing: 1px; color: var(--accent); margin-bottom: 25px; }
 .section-note { max-width: 85ch; color: var(--muted); font-size: 13px; margin: 0 0 24px; }
 #recommendations + .section { padding-top: 0; }
