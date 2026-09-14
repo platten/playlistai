@@ -42,6 +42,35 @@ func TestPlaylistDiagnosticsGoToSessionLogs(t *testing.T) {
 	}
 }
 
+func TestPlaylistSelectionAndOptionalContextNoticesStayOutOfPresentation(t *testing.T) {
+	store := &logging.Store{}
+	api := New(nil, slog.New(logging.NewHandler(slog.NewTextHandler(io.Discard, nil), store)))
+	hidden := []PlaylistNotice{
+		{Code: "enhanced_close_matches", Detail: "Strong matches were preferred during selection; close suggestions are labeled with incomplete evidence.", Requested: 20, Actual: 20},
+		{Code: "music_lookup_2", Detail: optionalContextUnavailableNotice},
+	}
+	visible := PlaylistNotice{Code: "music_lookup_3", Detail: "A requested artist was not found."}
+	all := append(append([]PlaylistNotice{}, hidden...), visible)
+	result := PlaylistResult{GenerationID: "notice-filter-test", Notices: all, Status: GenerationStatus{PartialReasons: all}}
+
+	api.presentPlaylistNotices(&result)
+
+	for _, presented := range [][]PlaylistNotice{result.Notices, result.Status.PartialReasons} {
+		if len(presented) != 1 || presented[0] != visible {
+			t.Fatalf("unexpected presented notices: %+v", presented)
+		}
+	}
+	entries := store.Read(0)
+	if len(entries) != len(hidden) {
+		t.Fatalf("expected hidden notices in diagnostics, got %+v", entries)
+	}
+	for i, entry := range entries {
+		if !strings.Contains(entry.Text, hidden[i].Detail) || !strings.Contains(entry.Text, "generation_id=notice-filter-test") {
+			t.Fatalf("hidden notice missing from diagnostics: %s", entry.Text)
+		}
+	}
+}
+
 type partialOutcomeEngine struct {
 	actual int
 	state  core.GenerationOutcomeState
