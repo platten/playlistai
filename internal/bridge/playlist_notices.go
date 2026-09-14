@@ -1,5 +1,9 @@
 package bridge
 
+import "strings"
+
+const optionalContextUnavailableNotice = "Optional artist or album context was unavailable; using the resolved references and existing musical evidence."
+
 // Partial fulfillment can mean missing musical evidence, not missing tracks.
 // Counts are attached only when the returned playlist is actually shorter.
 func partialResultNotice(result PlaylistResult) PlaylistNotice {
@@ -21,6 +25,10 @@ func partialResultNotice(result PlaylistResult) PlaylistNotice {
 // presentPlaylistNotice keeps engine diagnostics out of the playlist UI while
 // retaining plain-language explanations of limitations that affect the result.
 func presentPlaylistNotice(notice PlaylistNotice) (PlaylistNotice, bool, bool) {
+	if notice.Code == "enhanced_close_matches" ||
+		(strings.HasPrefix(notice.Code, "music_lookup_") && notice.Detail == optionalContextUnavailableNotice) {
+		return notice, false, true
+	}
 	switch notice.Code {
 	case "inferred_anchor_rejected", "semantic_constraints_enforced":
 		return notice, false, true
