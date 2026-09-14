@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const root = new URL('../', import.meta.url);
 const html = readFileSync(new URL('site/index.html', root), 'utf8');
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
-const release = '0.12.1';
+const release = '0.14.1';
 const section = id => html.match(new RegExp(`<section[^>]+id="${id}"[\\s\\S]*?<\\/section>`))?.[0];
 
 test('hero, downloads and sharing metadata announce the current release', () => {
@@ -17,13 +17,13 @@ test('hero, downloads and sharing metadata announce the current release', () => 
     assert.ok(metadata?.includes(release), name);
   }
   assert.ok(links.includes(`https://github.com/platten/playlistai/releases/tag/v${release}`));
-  assert.doesNotMatch(html, /untagged-|COMING IN VERSION|awaiting publication|0\.11\.1/);
+  assert.doesNotMatch(html, /untagged-|COMING IN VERSION|awaiting publication|0\.12\.1|0\.12\.0|0\.11\.1/);
 });
 
 test('downloads retain exact published asset names and platforms', () => {
   const approved = new Set(readFileSync(new URL('build/release-assets.txt', root), 'utf8').trim().split(/\r?\n/));
   const downloads = links.filter(link => link.includes('/releases/download/'));
-  assert.equal(downloads.length, 13);
+  assert.equal(downloads.length, 16);
   assert.equal(new Set(downloads).size, downloads.length);
   for (const link of downloads) {
     assert.ok(link.startsWith(`https://github.com/platten/playlistai/releases/download/v${release}/`));
@@ -49,26 +49,32 @@ test('documentation links refer to existing files', () => {
   }
 });
 
-test('highlights distinguish cumulative features from the patch release', () => {
+test('v0.14.1 highlights explain architecture changes since v0.13', () => {
   const highlights = section('new');
-  assert.match(highlights, /since v0\.11\.0/);
-  for (const text of ['More of what you meant', 'Strong matches first', 'Setup does the heavy lifting', 'Pick up where you left off']) assert.ok(highlights.includes(text), text);
-  for (const version of ['0.12.0', release]) {
+  assert.match(highlights, /Since v0\.13/);
+  for (const text of ['One verified CLAP space', 'One metadata backbone', 'A leaner intent path', 'Evidence-heavy searches can finish']) assert.ok(highlights.includes(text), text);
+  for (const version of ['0.13.0', release]) {
     assert.ok(highlights.includes(`/releases/tag/v${version}`));
-    assert.ok(existsSync(new URL(`docs/releases/v${version}.md`, root)));
   }
-  assert.match(highlights, /No Python required/);
-  assert.match(highlights, /Verified download parts can be reused on retry/);
+  assert.ok(existsSync(new URL('docs/releases/v0.13.0.md', root)));
+  assert.match(highlights, /original LAION HTSAT-base music checkpoint/);
+  assert.match(highlights, /MusicBrainz now anchors track identity/);
+  assert.match(highlights, /DistilBERT path/);
+  assert.match(highlights, /two-minute cutoff/);
 });
 
-test('four modes present the correct default and preserve optional analysis', () => {
+test('recommendation architecture and four modes preserve distinct evidence roles', () => {
   const modes = section('recommendations');
   assert.match(modes, /ENHANCED HYBRID \/ DEFAULT FOR NEW SETUPS/);
+  assert.equal([...modes.matchAll(/<li><span>0\d<\/span>/g)].length, 5);
+  for (const stage of ['Interpret', 'Discover', 'Verify', 'Rank', 'Sequence']) assert.ok(modes.includes(`<strong>${stage}</strong>`), stage);
+  assert.match(modes, /CLAP connects text with audio, MERT compares audio with audio/);
+  assert.match(modes, /Essential criteria need affirmative evidence/);
   assert.equal([...modes.matchAll(/class="mode-card"/g)].length, 4);
   for (const name of ['Enhanced Hybrid', 'AcousticBrainz first', 'CLAP first', 'Deej-AI only']) assert.ok(modes.includes(name), name);
   assert.match(modes, /Your saved mode choice is respected/);
   assert.match(modes, /does not require MERT/);
-  assert.match(html, /Downloading a model does not automatically enable preview analysis or experimental suggestions/);
+  assert.match(html, /Deterministic prompt interpretation works without a language model/);
 });
 
 test('examples and recommendation claims explain practical limits', () => {
@@ -76,6 +82,7 @@ test('examples and recommendation claims explain practical limits', () => {
   assert.match(section('experience'), /Targets use known track lengths/);
   assert.match(html, /Essential requirements and exclusions still apply/);
   assert.match(html, /Missing evidence can mean a shorter playlist/);
+  assert.match(html, /may return a shorter playlist instead of treating track count as proof/);
   assert.match(html, /not a listening-quality study/);
   assert.match(html, /Earlier desktop version shown/);
   assert.doesNotMatch(html, /data-result=|\d+\/40<\/td>|\d+% (?:accuracy|musical quality)/);
@@ -86,4 +93,5 @@ test('local-first copy discloses external lookups and model licensing', () => {
   for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'AcousticBrainz', 'Deezer', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
   assert.match(privacy, /No cloud language model receives your prompt/);
   assert.match(html, /MERT includes a noncommercial restriction/);
+  assert.doesNotMatch(privacy, /Discogs/);
 });
