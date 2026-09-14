@@ -26,6 +26,7 @@ func newLoadedContainer(t *testing.T) *app.Container {
 	if !c.Ready() {
 		t.Fatal("container should be Ready with the fixture catalog")
 	}
+	disableEnhancedForTest(t, c)
 	// Ordinary bridge unit tests are offline. Online-recovery tests explicitly
 	// install a knowledge client backed by local HTTP fixtures.
 	c.Knowledge = nil

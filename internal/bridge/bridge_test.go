@@ -18,6 +18,19 @@ func useRecommendationEngine(api *API, engine ports.RecommendationEngine) {
 	api.runtime = func() app.RuntimeSnapshot { return snapshot }
 }
 
+func disableEnhancedForTest(t *testing.T, c *app.Container) {
+	t.Helper()
+	// Bridge tests use a real preview resolver. Keep shared fixtures offline and
+	// fast unless a test explicitly enables enhanced analysis; app package tests
+	// cover the user-facing always-on defaults.
+	if err := c.SetEnhancedAnalysisEnabled(false); err != nil {
+		t.Fatalf("disable DSP analysis in bridge fixture: %v", err)
+	}
+	if err := c.SetMERTSimilarityEnabled(false); err != nil {
+		t.Fatalf("disable MERT similarity in bridge fixture: %v", err)
+	}
+}
+
 func newTestContainer(t *testing.T) *app.Container {
 	t.Helper()
 	cfg := config.Default()
@@ -29,6 +42,7 @@ func newTestContainer(t *testing.T) *app.Container {
 	if err != nil {
 		t.Fatalf("app.New: %v", err)
 	}
+	disableEnhancedForTest(t, c)
 	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
