@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -15,6 +17,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"github.com/platten/playlistai/internal/process"
 )
 
 type shellExecuteInfo struct {
@@ -81,9 +85,34 @@ func runInstaller(installer, targetDir, expectedHash string) error {
 	if err != nil {
 		return err
 	}
-	return withInstallerCOM(func() error {
+	if err := withInstallerCOM(func() error {
 		return executeInstaller(verb, name, parameters)
-	})
+	}); err != nil {
+		return err
+	}
+	return verifyInstalledVersion(filepath.Join(targetDir, "playlist-ai.exe"), offer.Version)
+}
+
+// NSIS exit code zero alone does not establish that the executable was replaced.
+// Use the installed app's headless version command, before any normal relaunch.
+func verifyInstalledVersion(target, expected string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, target, "--version")
+	cmd.Dir = filepath.Dir(target)
+	cmd.Env = cleanEnvironment()
+	process.Background(cmd)
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("could not verify the installed application version: %w", err)
+	}
+	actual := strings.TrimSpace(string(output))
+	got, valid := versionParts(actual)
+	want, expectedValid := versionParts(expected)
+	if !valid || !expectedValid || got != want {
+		return fmt.Errorf("installer finished but the installed application reports %q instead of %s; close all Playlist AI windows and retry, or restart Windows and run the release installer", actual, expected)
+	}
+	return nil
 }
 
 // withInstallerCOM keeps initialization, shell execution and cleanup on the
