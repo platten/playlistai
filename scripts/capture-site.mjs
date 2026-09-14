@@ -42,15 +42,15 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.14.1/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.14.1')) throw Error('Latest release missing');
-  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.14.1')) throw Error('Public download version unclear');
+  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.14.2/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.14.2')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.14.2')) throw Error('Public download version unclear');
   if (await page.locator('#new .release-list article').count() !== 4) throw Error('Release highlights missing');
   if (await page.locator('#recommendations .signal-path li').count() !== 5) throw Error('Recommendation architecture missing');
   await page.locator('.mode-options > summary').click();
-  if (await page.locator('#recommendations .mode-card').count() !== 4) throw Error('Recommendation modes missing');
+  if (await page.locator('#recommendations .mode-card').count() !== 2) throw Error('Recommendation modes missing');
   if (!(await page.locator('#recommendations').innerText()).includes('DEFAULT FOR NEW SETUPS')) throw Error('Enhanced Hybrid default missing');
-  await page.getByRole('link', {name:'Read the 0.14.1 release notes'}).waitFor();
+  await page.getByRole('link', {name:'Read the 0.14.2 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); document.activeElement?.blur(); window.scrollTo({top:0,behavior:'instant'}); });
@@ -73,10 +73,10 @@ try {
   if (await page.locator('#navigation').evaluate(e => e.classList.contains('open'))) throw Error('Navigation did not close');
   await page.emulateMedia({reducedMotion:'reduce'});
   if (await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior) !== 'auto') throw Error('Reduced motion ignored');
-  await page.getByText('Do I need every model?', {exact:true}).click();
+  await page.getByText('Why does setup require every shown model?', {exact:true}).click();
   if (await page.locator('.faq-list details[open]').count() !== 1) throw Error('FAQ did not open');
   await page.locator('.mode-options > summary').click();
-  if (!(await page.locator('.mode-options').innerText()).includes('Your saved mode choice is respected')) throw Error('Mode details missing');
+  if (!(await page.locator('.mode-options').innerText()).includes('MERT similarity and DSP measurements are enabled automatically')) throw Error('Mode details missing');
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded mode overflow');
   await page.getByText('Packages & portable downloads', {exact:true}).click();
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw Error('Expanded download overflow');
@@ -87,7 +87,7 @@ try {
   await noJS.goto(origin);
   await noJS.getByRole('link', {name:'Download for Windows',exact:false}).waitFor();
   if (await noJS.locator('.experience-grid .feature').count() !== 4) throw Error('Content missing without JavaScript');
-  if (await noJS.locator('#recommendations .mode-card').count() !== 4) throw Error('Modes missing without JavaScript');
+  if (await noJS.locator('#recommendations .mode-card').count() !== 2) throw Error('Modes missing without JavaScript');
   await noJS.getByRole('link', {name:'The experience', exact:true}).click();
   if (new URL(noJS.url()).hash !== '#experience') throw Error('Navigation unavailable without JavaScript');
   await noJS.locator('.mode-options > summary').focus();
@@ -101,5 +101,5 @@ try {
     await page.screenshot({path:path.join(directory,'og.png')});
   }
   if (errors.length) throw Error(errors.join('\n'));
-  console.log('PASS: five viewports, keyboard examples and navigation, 16 versioned downloads, release highlights, five recommendation stages, four modes, FAQ, anchors, reduced motion, no-JS content, no external requests, no browser errors');
+  console.log('PASS: five viewports, keyboard examples and navigation, 16 versioned downloads, release highlights, five recommendation stages, two modes, FAQ, anchors, reduced motion, no-JS content, no external requests, no browser errors');
 } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
