@@ -183,9 +183,9 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
 function RequiredAnalysisStep({ onNext }: { onNext: () => void }) {
   const [ready, setReady] = useState(false);
   return <div className="flex flex-1 flex-col gap-4">
-    <MusicAnalysisCard onReadyChange={setReady} />
+    <MusicAnalysisCard setup onReadyChange={setReady} />
     <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
-    {!ready && <p className="text-[12px] text-muted">Install and enable music analysis to continue.</p>}
+    {!ready && <p className="text-[12px] text-muted">Install music analysis to continue.</p>}
   </div>;
 }
 

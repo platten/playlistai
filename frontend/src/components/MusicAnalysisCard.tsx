@@ -9,7 +9,7 @@ type AnalysisStatus = Awaited<ReturnType<typeof API.GetAnalysisStatus>>;
 type Bundle = Awaited<ReturnType<typeof API.InspectAnalysisBundle>>;
 const size = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
-export function MusicAnalysisCard({ onReadyChange }: { onReadyChange?: (ready: boolean) => void } = {}) {
+export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyChange?: (ready: boolean) => void; setup?: boolean } = {}) {
   const [status, setStatus] = useState<AnalysisStatus | null>(null);
   const [path, setPath] = useState("");
   const [bundle, setBundle] = useState<Bundle | null>(null);
@@ -20,17 +20,27 @@ export function MusicAnalysisCard({ onReadyChange }: { onReadyChange?: (ready: b
   const [busy, setBusy] = useState(false);
   const download = useRef<ReturnType<typeof API.InstallAnalysisBundle> | null>(null);
   const progress = useProgress("analysis-model");
-  const refresh = useCallback(() => API.GetAnalysisStatus().then((value) => {
-    setStatus(value);
-    onReadyChange?.(Boolean(value?.available && value?.enabled));
-  }).catch((e) => setError(String(e))), [onReadyChange]);
+  const refresh = useCallback(async () => {
+    try {
+      let value = await API.GetAnalysisStatus();
+      if (setup && value?.available && value?.generalFitAvailable && !value?.enabled) {
+        await API.SetAnalysisEnabled(true);
+        value = await API.GetAnalysisStatus();
+      }
+      setStatus(value);
+      onReadyChange?.(Boolean(value?.available));
+    } catch (e) {
+      setError(String(e));
+      onReadyChange?.(false);
+    }
+  }, [onReadyChange, setup]);
   useEffect(() => { void refresh(); return () => { void download.current?.cancel("analysis card closed"); }; }, [refresh]);
   useEffect(() => {
     let disposed = false;
-    if (!status?.recommendedAvailable) { setRecommended(null); return; }
+    if (!status?.recommendedAvailable || (setup && status.installed)) { setRecommended(null); return; }
     void API.GetRecommendedAnalysisBundle().then((value) => { if (!disposed) setRecommended(value); }).catch((e: unknown) => { if (!disposed) setRecommendationError(String(e)); });
     return () => { disposed = true; };
-  }, [status?.recommendedAvailable]);
+  }, [setup, status?.installed, status?.recommendedAvailable]);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true); setError(null);
     try { await fn(); await refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
@@ -54,14 +64,15 @@ export function MusicAnalysisCard({ onReadyChange }: { onReadyChange?: (ready: b
       {(status?.installed || status?.available) && (
         <>
           <p className="text-[12px] text-faint">{status.model} · {size(status.downloadBytes)} installed artifacts · {size(status.memoryBytes)} memory budget</p>
-          {status.generalFitAvailable && <label className="flex items-center gap-2 text-[13px]">
+          {setup && <p className="text-[13px] text-muted">Music analysis is enabled automatically for description ranking and no-vocals checks.</p>}
+          {!setup && status.generalFitAvailable && <label className="flex items-center gap-2 text-[13px]">
             <input type="checkbox" className="accent-accent" checked={status.enabled} disabled={busy} onChange={(e) => void run(() => API.SetAnalysisEnabled(e.target.checked))} />
             Check other musical qualities during generation
           </label>}
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => API.RemoveAnalysisModel())}>Remove analysis model</Button>
         </>
       )}
-      {recommended && (!status?.installed || !status.recommendedInstalled) && (
+      {recommended && (!status?.installed || (!setup && !status.recommendedInstalled)) && (
         <div className="flex flex-col gap-2 rounded-control border border-accent/30 p-3">
           <h3 className="text-[13px] font-medium">{recommended.label} <span className="text-accent">· {status?.installed ? "Recommended update" : "Recommended"}</span></h3>
           <p className="text-[12px] text-muted">Full-precision audio and text encoders · {size(status?.recommendedBytes || (recommended.artifacts ?? []).reduce((n, a) => n + a.size, 0))} compressed download · {size(recommended.memoryBytes)} memory budget</p>
