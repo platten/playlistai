@@ -17,6 +17,8 @@ import platform
 import shutil
 import time
 
+from export_environment import check_environment
+
 import numpy as np
 import onnx
 import onnxruntime as ort
@@ -141,6 +143,7 @@ def main():
     args = parser.parse_args()
     if args.threads < 1 or args.threads > 32:
         parser.error("threads must be 1..32")
+    check_environment(Path(__file__).with_name("requirements-mert.txt"))
     source = verify_source(args.source_root.resolve())
     out = args.out.resolve()
     repo = Path(__file__).resolve().parents[1]
@@ -223,7 +226,7 @@ def main():
               "parameterCount": sum(p.numel() for p in model.parameters()), "platform": platform.platform(),
               "processor": platform.processor(), "threads": args.threads, "memoryBudgetBytes": 2147483648, "memoryBudgetIsMeasured": False,
               "versions": {name: importlib.metadata.version(name) for name in ["torch", "transformers", "onnx", "onnxruntime", "numpy"]},
-              "limitations": ["Synthetic numerical parity only; no held-out musical-quality measurement", "No native non-Windows execution or peak memory measurement in this report", "Go resampling/preprocessing parity is a separate native test"]}
+              "limitations": ["Synthetic numerical parity only; no held-out musical-quality measurement", "Native parity is limited to the recorded host platform; peak memory was not measured", "Go resampling/preprocessing parity is a separate native test"]}
     write_json(out / "parity-report.json", report)
     if args.runtime_library:
         if not args.runtime_license:

@@ -11,10 +11,12 @@ const browser = await chromium.launch({ executablePath: process.argv[3], headles
 const runtime = `
 export const Events={On(){return ()=>{};}};export const System={IsMac:()=>false};
 export const Clipboard={SetText:async()=>{}};export const Call={};export const CancellablePromise=Promise;
+export const Browser={OpenURL:async()=>{}};
 `;
 const api = `
 ${bridgeEnums}
 window.__acks=[];window.__parses=[];window.__builds=[];
+window.__exports=[];
 const controls={audioWeight:.5,cooccurrenceWeight:.5,discovery:.1,artistDiversity:.7,transitionSmoothness:.2,totalTrackCount:2,recommendationMode:'clap_first'};
 function fixture(name,count=2){
  const intent={controls:{...controls,totalTrackCount:count},mode:'similar',count,seed:'18446744073709551615',originalDescription:name,references:[],requiredTracks:[],constraints:{excludeSeedArtists:false},preferences:{},knowledge:{}};
@@ -31,6 +33,8 @@ const methods={
  BuildPlaylist:request=>{window.__builds.push(request);return fixture('Adjusted',request.overrides.totalTrackCount).result;},
  AcknowledgePlaylistDisplayed:id=>{window.__acks.push(id);},
  PrepareExport:ids=>ids.map(id=>({id,title:id,artist:'Artist',album:''})),
+ RecordTrackAcceptance:()=>new Promise(resolve=>{window.__acceptExport=()=>resolve();}),
+ OpenSoundiizHandoff:(name,tracks)=>{window.__exports.push({name,tracks});return new Promise(resolve=>{window.__finishExport=()=>resolve({url:'https://soundiiz.com/import/fixture',count:tracks.length,opened:false});});},
  GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetTasteProfile:()=>null,GetDebugLogging:()=>false,
 };
 export const API=new Proxy(methods,{get(target,key){return (...args)=>{let value;try{value=target[key]?.(...args);}catch(e){value=Promise.reject(e);}const promise=Promise.resolve(value);promise.cancel=async()=>{};return promise;};}});
@@ -46,7 +50,7 @@ try {
   await page.getByRole("radio", { name: "a past playlist" }).check();
   await page.getByRole("combobox", { name: "Previous playlist" }).selectOption("A");
   await page.getByRole("button", { name: "Generate playlist" }).waitFor({ state: "visible" });
-  await page.getByRole("combobox").selectOption("B");
+  await page.getByRole("combobox", { name: "Previous playlist" }).selectOption("B");
   await page.getByText("Loading saved playlist…").waitFor();
   assert.equal(await page.getByRole("button", { name: "Generate playlist" }).isDisabled(), true);
   await page.getByRole("textbox", { name: "Your description" }).press("Enter");
@@ -55,7 +59,7 @@ try {
     await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
     await page.screenshot({ path: output + `/saved-loading-${theme}.png`, fullPage: true });
   }
-  await page.getByRole("combobox").selectOption("A");
+  await page.getByRole("combobox", { name: "Previous playlist" }).selectOption("A");
   await page.evaluate(() => window.__finishB());
   await page.getByRole("textbox", { name: "Your description" }).fill("Original A, exclude Artist 1");
   await page.getByText(/Your edited description will generate a new playlist/).waitFor();
@@ -82,11 +86,36 @@ try {
   await page.getByRole("button", { name: "Review & export" }).click();
   assert.equal(await page.getByRole("textbox").inputValue(), "Retained export title");
   assert.equal(await page.getByRole("checkbox").first().isChecked(), false);
+  await page.getByRole("button", { name: "Open Soundiiz handoff" }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Export", exact: true }).click();
+  assert.equal(await page.getByRole("button", { name: "Open Soundiiz handoff" }).isDisabled(), true);
+  await page.getByRole("textbox").fill("Next export title");
+  await page.getByRole("checkbox").nth(1).uncheck();
+  await page.evaluate(() => window.__acceptExport());
+  await page.waitForFunction(() => window.__exports.length === 1);
+  assert.equal(await page.evaluate(() => window.__exports[0].name), "Retained export title");
+  assert.equal(await page.evaluate(() => window.__exports[0].tracks.length), 3);
+  assert.equal(await page.getByRole("progressbar", { name: "Sending to Soundiiz" }).getAttribute("aria-valuetext"), "0 / 3");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(theme => document.documentElement.dataset.theme = theme, theme);
+    await page.screenshot({ path: output + `/export-pending-${theme}-narrow.png`, fullPage: true });
+  }
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  const exportBounds = await page.getByRole("button", { name: "Open Soundiiz handoff" }).boundingBox();
+  assert.ok(exportBounds.x >= 0 && exportBounds.x + exportBounds.width <= 390, "Export action must remain fully visible at narrow widths");
+  assert.ok((await page.getByRole("textbox", { name: "Playlist name" }).boundingBox()).height >= 34, "Playlist name input must retain its usable height");
+  await page.getByRole("button", { name: "Playlist", exact: true }).click();
+  await page.evaluate(() => window.__finishExport());
+  await page.getByRole("button", { name: "Review & export" }).click();
+  await page.getByText("Soundiiz import ready for 3 tracks", { exact: false }).waitFor();
+  assert.equal(await page.getByRole("textbox").inputValue(), "Next export title");
+  await page.screenshot({ path: output + "/export-completed-after-navigation.png", fullPage: true });
   assert.deepEqual(await page.evaluate(() => window.__acks), ["Edited", "Adjusted"]);
   assert.equal(await page.evaluate(() => window.__builds.length), 1);
   assert.equal(await page.evaluate(() => window.__builds[0].overrides.seed), "18446744073709551615");
   assert.deepEqual(errors, []);
-  console.log("PASS: saved-selection loading/races, edited descriptions, retained playlist/export drafts, lossless seeds, display acknowledgments, themes and narrow layout");
+  console.log("PASS: saved-selection races, retained drafts, immutable pending export across navigation, completion while unmounted, lossless seeds, acknowledgments, themes and narrow layout");
 } finally {
   await browser.close();
 }

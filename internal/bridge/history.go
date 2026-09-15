@@ -39,7 +39,7 @@ func (a *API) ListSavedPlaylists() ([]SavedPlaylistSummary, error) {
 	if a.app.History == nil {
 		return []SavedPlaylistSummary{}, nil
 	}
-	recs, err := a.app.History.List(a.context(), 50)
+	recs, err := a.app.History.ListSummaries(a.context(), 50)
 	if err != nil {
 		return nil, err
 	}

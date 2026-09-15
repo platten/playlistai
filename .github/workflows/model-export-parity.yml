@@ -1,0 +1,85 @@
+name: Model export parity (manual)
+
+# This expensive validation is explicitly dispatched by a maintainer. It is
+# separate from PR checks and never builds or publishes an installable model.
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Models to export and validate (CLAP downloads about 2.35 GB)
+        type: choice
+        options: [both, clap, mert]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  export-parity:
+    name: Export and validate ${{ matrix.model }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        model: ${{ fromJSON(inputs.model == 'both' && '["clap","mert"]' || inputs.model == 'clap' && '["clap"]' || '["mert"]') }}
+    env:
+      PARITY_MODEL: ${{ matrix.model }}
+      PYTHONNOUSERSITE: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      HF_HUB_OFFLINE: '1'
+      OMP_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27'
+          cache: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Check lightweight driver contracts and pinned input selection
+        run: |
+          python -m unittest discover -s python -p test_run_model_export_parity.py -v
+          python python/run_model_export_parity.py --model "$PARITY_MODEL" --describe
+
+      - name: Create isolated export environment
+        run: |
+          python -m venv "$RUNNER_TEMP/model-export-venv"
+          echo "$RUNNER_TEMP/model-export-venv/bin" >> "$GITHUB_PATH"
+          echo "HF_HOME=$RUNNER_TEMP/model-parity-huggingface" >> "$GITHUB_ENV"
+
+      - name: Install the selected pinned CPU environment
+        run: |
+          if [ "$PARITY_MODEL" = clap ]; then
+            requirements=python/requirements-laion-clap-pack.txt
+          else
+            requirements=python/requirements-mert.txt
+          fi
+          torch_pin=$(python -c "import sys; sys.path.insert(0, 'python'); from export_environment import pinned_versions; print('torch==' + pinned_versions(sys.argv[1])['torch'])" "$requirements")
+          python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "$torch_pin"
+          python -m pip install --no-cache-dir -r "$requirements"
+          python -m pip check
+
+      - name: Acquire verified sources and run real numerical parity
+        run: |
+          python python/run_model_export_parity.py \
+            --model "$PARITY_MODEL" \
+            --work-dir "$RUNNER_TEMP/model-parity-work" \
+            --report-dir "$RUNNER_TEMP/model-parity-reports" \
+            --threads 2
+
+      - name: Retain validation reports only
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: model-export-parity-${{ matrix.model }}
+          path: ${{ runner.temp }}/model-parity-reports/*.json
+          if-no-files-found: warn
+          retention-days: 14

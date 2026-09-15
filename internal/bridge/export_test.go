@@ -74,11 +74,12 @@ func TestExportCSVFallbackPath(t *testing.T) {
 
 func TestExportCSVAlwaysHasCSVExtension(t *testing.T) {
 	t.Parallel()
-	c := newLoadedContainer(t)
-	api := New(c, nil)
 	rows := []ExportTrackDTO{{ID: "seed0001", Artist: "Justice", Title: "Genesis"}}
 
 	for _, name := range []string{"weekend jams", "weekend jams.csv", "weekend jams.CSV", "mix.2026"} {
+		// Each filename check owns its destination; headless exports no longer
+		// silently overwrite a previous file with the same normalized name.
+		api := New(newLoadedContainer(t), nil)
 		res, err := api.ExportCSV(name, rows)
 		if err != nil {
 			t.Fatalf("ExportCSV(%q): %v", name, err)

@@ -61,6 +61,21 @@ it("requires MERT installation before continuing", async () => {
   await screen.findByText("You're set up");
 });
 
+it("keeps checking installed models while native validation is pending", async () => {
+  api.GetSetupStatus
+    .mockImplementationOnce(() => completed({ ...setupStatus([]), pending: true }))
+    .mockImplementation(() => completed(setupStatus([])));
+  render(<FirstRunWizard onDone={vi.fn()} />);
+  await screen.findByText("Checking existing setup…");
+  expect(screen.queryByText("You're set up")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
+  await screen.findByText("You're set up");
+  expect(api.GetSetupStatus).toHaveBeenCalledTimes(2);
+  expect(api.GetAnalysisStatus).not.toHaveBeenCalled();
+  expect(api.GetEnhancedAnalysisStatus).not.toHaveBeenCalled();
+  expect(api.CompleteOnboarding).not.toHaveBeenCalled();
+});
+
 it("requires a missing repair feature without repeating welcome or unrelated setup", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["model", "analysis"], ["model"], true)));
   render(<FirstRunWizard onDone={vi.fn()} />);
@@ -134,7 +149,37 @@ it("enables an installed analysis model before continuing to MERT", async () => 
   expect(api.SetPreviewProvider).toHaveBeenLastCalledWith("spotify");
   api.CompleteOnboarding.mockRejectedValueOnce(new Error("disk unavailable"));
   fireEvent.click(screen.getByRole("button", { name: "Start using Playlist AI" }));
+  await screen.findByText(/disk unavailable/);
+  expect(onDone).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   await waitFor(() => expect(onDone).toHaveBeenCalledOnce());
+});
+
+it("returns to missing required setup after completion validation fails", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
+  api.CompleteOnboarding.mockRejectedValueOnce(new Error("setup is incomplete: mert"));
+  const onDone = vi.fn();
+  render(<FirstRunWizard onDone={onDone} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
+  await screen.findByText(/setup is incomplete/);
+  expect(onDone).not.toHaveBeenCalled();
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["mert"])));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, mertAvailable: false, mertEnabled: true, recommendedManifestUrl: "https://example.invalid/mert" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check required setup" }));
+  await screen.findByRole("heading", { name: "MERT audio similarity" });
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
+it("does not finish a closed wizard when its save completes later", async () => {
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));
+  const pending = deferred();
+  api.CompleteOnboarding.mockReturnValueOnce(pending.promise);
+  const onDone = vi.fn();
+  const view = render(<FirstRunWizard onDone={onDone} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Start using Playlist AI" }));
+  view.unmount();
+  await act(async () => pending.resolve(null));
+  expect(onDone).not.toHaveBeenCalled();
 });
 
 it("blocks setup when the catalog is not configured", async () => {

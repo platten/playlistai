@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
@@ -26,10 +27,11 @@ const (
 
 // Catalog is an open catalog directory.
 type Catalog struct {
-	vec   *vectorStore
-	db    *sql.DB
-	dim   int
-	count int
+	release func() error
+	vec     *vectorStore
+	db      *sql.DB
+	dim     int
+	count   int
 
 	ids        []string         // row -> track id
 	rowOf      map[string]int   // track id -> row
@@ -49,6 +51,16 @@ type Catalog struct {
 // catalog.sqlite (as produced by python/convert_pickles.py). The returned
 // Catalog must be Closed.
 func Open(dir string) (*Catalog, error) {
+	release, err := dataset.ReadLease(dir)
+	if err != nil {
+		return nil, err
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			_ = release()
+		}
+	}()
 	vec, err := openVectors(filepath.Join(dir, VectorsFile))
 	if err != nil {
 		return nil, err
@@ -94,6 +106,8 @@ func Open(dir string) (*Catalog, error) {
 	c.metaStmt = stmt
 	c.loadResolutionMetadata()
 
+	c.release = release
+	opened = true
 	return c, nil
 }
 
@@ -167,6 +181,9 @@ func (c *Catalog) Close() error {
 	}
 	if c.vec != nil {
 		errs = append(errs, c.vec.close())
+	}
+	if c.release != nil {
+		errs = append(errs, c.release())
 	}
 	return errors.Join(errs...)
 }

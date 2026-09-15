@@ -32,7 +32,7 @@ CPU PyTorch wheel first, followed by the pinned export dependencies:
 py -3.13 -m venv .venv-clappack
 .\.venv-clappack\Scripts\python.exe -m pip install --upgrade pip
 .\.venv-clappack\Scripts\python.exe -m pip install `
-  --index-url https://download.pytorch.org/whl/cpu torch==2.9.1
+  --index-url https://download.pytorch.org/whl/cpu torch==2.13.0
 .\.venv-clappack\Scripts\python.exe -m pip install `
   -r python\requirements-laion-clap-pack.txt
 ```
@@ -40,7 +40,29 @@ py -3.13 -m venv .venv-clappack
 On Linux or macOS, use `.venv-clappack/bin/python` in place of the Windows
 executable.
 
+Preflight reads the same exact requirements file used by pip, before model
+downloads or export. The validated core is torch 2.13.0 (CPU build tags accepted),
+Transformers 5.10.1, ONNX 1.22.0, ONNX Runtime 1.26.0 and NumPy 2.3.4.
+Use a short venv path on Windows if wheel installation exceeds path-length limits.
+The older Transformers 4.57.1 environment is historical, not the supported setup.
+
+On 2026-09-15, a fresh Windows CPU environment exported the retained, hash-pinned
+checkpoint and passed ten synthetic fixtures: maximum absolute error
+2.125278115272522e-6 and minimum cosine 0.9999999403953552. Seven tokenizer
+fixtures matched exactly; three preprocessing fixtures stayed within tolerance.
+This validates export compatibility, not musical quality. Generated graph hashes
+and manifests identify each new export; existing distributed packs were not
+replaced or recalibrated. See the
+[remediation results](codebase-remediation-results-2026-09-15.md).
+
 ## Build an upload bundle
+
+For explicitly enabled export-only CI, dispatch **Model export parity (manual)**
+and select CLAP, MERT, or both. It creates fresh CPU environments, downloads only
+the selected pinned model sources, and runs the real exporters. Only bounded
+JSON provenance and parity reports are retained as workflow artifacts. It never
+publishes or activates a model and does not run on pull requests. This new
+workflow has been checked locally but has not yet run on a hosted runner.
 
 Choose the target that will run the model and the final public directory URL.
 The URL should be the directory containing `manifest.json` after publication.

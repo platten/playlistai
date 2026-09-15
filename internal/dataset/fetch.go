@@ -1,9 +1,11 @@
 package dataset
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -26,8 +28,16 @@ const partSuffix = ".part"
 // Status reports whether every file in the manifest is already present in dir
 // with the right size and checksum, and lists the ones that are not.
 func Status(dir string, m *Manifest) (complete bool, missing []string) {
+	return StatusContext(context.Background(), dir, m)
+}
+
+// StatusContext checks integrity without making long hashing passes uncancelable.
+func StatusContext(ctx context.Context, dir string, m *Manifest) (complete bool, missing []string) {
+	if m.Validate() != nil {
+		return false, []string{"invalid manifest"}
+	}
 	for _, f := range m.Files {
-		if verifyFile(filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
+		if verifyFileContext(ctx, filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
 			missing = append(missing, f.Name)
 		}
 	}
@@ -45,15 +55,27 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 	if p == nil {
 		p = ports.NopProgress{}
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	c, err := beginCatalogInstall(dir)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+	if err := c.prepare(); err != nil {
 		return err
 	}
 
 	total := m.TotalBytes()
 	var done int64
+	var changed []string
 
 	for _, f := range m.Files {
 		target := filepath.Join(dir, f.Name)
+		if _, err := regularOrAbsent(c.root, f.Name); err != nil {
+			return err
+		}
 
 		if verifyFileContext(ctx, target, f.Size, f.SHA256) == nil {
 			done += f.Size
@@ -63,17 +85,56 @@ func Fetch(ctx context.Context, dir string, m *Manifest, p ports.Progress) error
 
 		p.Report(ProgressOp, done, total, "downloading "+f.Name)
 		base := done
-		n, err := Download(ctx, m.fileURL(f), target, f.Size, f.SHA256, func(fileDone, _ int64) {
-			p.Report(ProgressOp, base+fileDone, total, f.Name)
-		})
+		staged := filepath.Join(c.stage, f.Name)
+		if present, err := regularOrAbsent(c.root, f.Name+partSuffix); err != nil {
+			return err
+		} else if present {
+			if err := c.root.Rename(f.Name+partSuffix, staged+partSuffix); err != nil {
+				return err
+			}
+		}
+		var n int64
+		var err error
+		if f.Size == 0 {
+			err = writeSynced(c.root, staged, nil)
+			if err == nil {
+				err = verifyFileContext(ctx, filepath.Join(dir, staged), 0, f.SHA256)
+			}
+		} else {
+			n, err = Download(ctx, m.fileURL(f), filepath.Join(dir, staged), f.Size, f.SHA256, func(fileDone, _ int64) {
+				p.Report(ProgressOp, base+fileDone, total, f.Name)
+			})
+		}
 		done = base + n
 		if err != nil {
+			// Preserve only this operation's resumable regular part. A checksum
+			// failure already removes it; installed files remain untouched.
+			if present, _ := regularOrAbsent(c.root, staged+partSuffix); present {
+				_ = c.root.Rename(staged+partSuffix, f.Name+partSuffix)
+			}
 			return fmt.Errorf("fetch %s: %w", f.Name, err)
 		}
+		changed = append(changed, f.Name)
 	}
 
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	previousManifest, readErr := readCatalogMetadata(c.root, manifestEntryName)
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
+	}
+	if len(changed) > 0 || !bytes.Equal(previousManifest, raw) {
+		if err := writeSynced(c.root, filepath.Join(c.stage, manifestEntryName), raw); err != nil {
+			return err
+		}
+		if err := c.publish(append(changed, manifestEntryName)); err != nil {
+			return err
+		}
 	}
 	p.Report(ProgressOp, total, total, "ready")
 	return nil
@@ -251,10 +312,6 @@ func copyHashed(dst io.Writer, h hash.Hash, src io.Reader, startAt int64, onProg
 			return written, err
 		}
 	}
-}
-
-func verifyFile(path string, size int64, wantHex string) error {
-	return verifyFileContext(context.Background(), path, size, wantHex)
 }
 
 func verifyFileContext(ctx context.Context, path string, size int64, wantHex string) error {

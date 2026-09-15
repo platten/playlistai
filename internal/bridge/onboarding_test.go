@@ -18,6 +18,13 @@ func TestOnboardingFlow(t *testing.T) {
 	if api.GetOnboarded() {
 		t.Fatal("a fresh container should not be onboarded")
 	}
+	if err := api.CompleteOnboarding(); err == nil || api.GetOnboarded() {
+		t.Fatal("incomplete first setup was marked done")
+	}
+	// Existing deliberate rules-only setup remains a supported upgrade path.
+	if err := api.app.SetOnboarded(); err != nil {
+		t.Fatal(err)
+	}
 	if err := api.CompleteOnboarding(); err != nil {
 		t.Fatalf("CompleteOnboarding: %v", err)
 	}
@@ -45,10 +52,12 @@ func TestSetupStatusPolicy(t *testing.T) {
 		{"new MERT optional does not reopen wizard", app.SetupReadiness{Onboarded: true, Analysis: ready, MERT: optional}, []string{"mert"}, []string{}, false},
 		{"MERT repairs follow analysis", app.SetupReadiness{Onboarded: true, Analysis: repair, MERT: repair, Preview: optional}, []string{"analysis", "mert", "preview"}, []string{"analysis", "mert"}, true},
 		{"ready MERT skipped", app.SetupReadiness{Onboarded: true, MERT: ready}, []string{}, []string{}, false},
+		{"fresh validation pending", app.SetupReadiness{Pending: true, Analysis: repair, MERT: repair}, []string{}, []string{}, true},
+		{"completed validation pending", app.SetupReadiness{Onboarded: true, Pending: true, Analysis: repair, MERT: repair}, []string{}, []string{}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := setupStatus(tc.readiness)
-			if got.Onboarded != tc.readiness.Onboarded || got.NeedsSetup != tc.needs || !reflect.DeepEqual(got.PendingSteps, tc.pending) || !reflect.DeepEqual(got.RepairSteps, tc.repairs) {
+			if got.Pending != tc.readiness.Pending || got.Onboarded != tc.readiness.Onboarded || got.NeedsSetup != tc.needs || !reflect.DeepEqual(got.PendingSteps, tc.pending) || !reflect.DeepEqual(got.RepairSteps, tc.repairs) {
 				t.Fatalf("status=%+v; pending=%v repairs=%v needs=%v", got, tc.pending, tc.repairs, tc.needs)
 			}
 		})
@@ -59,6 +68,9 @@ func TestSetupStatusRealContainerPreservesSkippedDefaultsAndPreferences(t *testi
 	t.Parallel()
 	c := newTestContainer(t)
 	api := New(c, nil)
+	if err := c.SetOnboarded(); err != nil {
+		t.Fatal(err)
+	}
 	if err := api.CompleteOnboarding(); err != nil {
 		t.Fatal(err)
 	}

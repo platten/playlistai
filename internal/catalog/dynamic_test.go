@@ -2,12 +2,55 @@ package catalog_test
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
 )
+
+func TestDynamicSearchSnapshotInvalidatesAndPreservesStableOrder(t *testing.T) {
+	base := fakes.NewCatalog(1)
+	path := filepath.Join(t.TempDir(), "tracks.sqlite")
+	d, err := catalog.OpenDynamic(base, base, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if got := d.Resolve("", 20); len(got) != 0 {
+		t.Fatal(got)
+	}
+	for _, id := range []string{"deezer:3", "deezer:1", "deezer:2"} {
+		if err := d.RegisterDynamicTrack(core.TrackMeta{Ref: core.TrackRef{ID: id, Artist: "Björk", Title: "Old song"}, PreviewURL: "https://example.invalid/p"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := d.Resolve("BJÖRK", 2)
+	if len(before) != 2 || before[0].ID != "deezer:1" || before[1].ID != "deezer:2" {
+		t.Fatalf("unstable limited search: %+v", before)
+	}
+	if err := d.RegisterDynamicTrack(core.TrackMeta{Ref: core.TrackRef{ID: "deezer:1", Artist: "Other artist", Title: "New song"}, PreviewURL: "https://example.invalid/p"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := d.Resolve("new song", 20); len(got) != 1 || got[0].ID != "deezer:1" {
+		t.Fatalf("stale updated search: %+v", got)
+	}
+	if before[0].Title != "Old song" {
+		t.Fatal("previous search result mutated")
+	}
+	reopened, err := catalog.OpenDynamic(base, base, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if got, want := reopened.Resolve("", 20), d.Resolve("", 20); !reflect.DeepEqual(got, want) {
+		t.Fatalf("reload search differs: %v / %v", got, want)
+	}
+	if d.Len() != 0 {
+		t.Fatal("search cache added dense rows")
+	}
+}
 
 func TestDynamicCatalogPersistsMetadataWithoutAddingDenseRows(t *testing.T) {
 	base := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "spotify1", Display: "Base - Song", Audio: []float32{1, 0}, Track: []float32{0, 1}})

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EnhancedAudioCard } from "./EnhancedAudioCard";
 const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "SetMERTSimilarityEnabled", "InstallRecommendedMERT", "ClearMERTSimilarityCache", "ClearDSPAnalysisCache", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
@@ -17,6 +17,28 @@ beforeEach(() => {
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed(status));
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it("waits for installed MERT validation before offering downloads or reporting readiness", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, loading: true, installed: false, mertAvailable: false, recommendedManifestUrl: "https://models.example/mert/manifest.json" }));
+  const onReadyChange = vi.fn();
+  render(<EnhancedAudioCard setup onReadyChange={onReadyChange} />);
+  await screen.findByText("Validating the installed MERT model…");
+  expect(onReadyChange).toHaveBeenLastCalledWith(false);
+  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  await waitFor(() => expect(onReadyChange).toHaveBeenLastCalledWith(true));
+  expect(api.GetEnhancedAnalysisStatus).toHaveBeenCalledTimes(2);
+  expect(api.InstallRecommendedMERT).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+});
+it("can retry a failed status poll without remaining disabled as loading", async () => {
+  api.GetEnhancedAnalysisStatus
+    .mockImplementationOnce(() => completed({ ...status, loading: true }))
+    .mockImplementationOnce(() => Object.assign(Promise.reject(new Error("status read interrupted")), { cancel: vi.fn() }));
+  const onReadyChange = vi.fn();
+  render(<EnhancedAudioCard setup onReadyChange={onReadyChange} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Retry status" }));
+  await waitFor(() => expect(onReadyChange).toHaveBeenLastCalledWith(true));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
 it("downloads the recommended device pack without exposing feature toggles", async () => {
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, mertEnabled: false, mertAvailable: false, installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
   const pending = deferred();

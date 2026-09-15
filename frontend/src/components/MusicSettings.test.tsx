@@ -29,6 +29,31 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+it("waits for CLAP validation before looking up downloads or enabling setup", async () => {
+  api.GetAnalysisStatus.mockImplementationOnce(() => completed({ ...installedStatus, loading: true, installed: false, available: false, recommendedAvailable: true }));
+  const onReadyChange = vi.fn();
+  render(<MusicAnalysisCard setup onReadyChange={onReadyChange} />);
+  await screen.findByText("Validating the installed music analysis model…");
+  expect(onReadyChange).toHaveBeenLastCalledWith(false);
+  expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
+  expect(screen.queryByRole("button", { name: /Download and validate/ })).toBeNull();
+  expect((screen.getByRole("button", { name: "Clear analysis" }) as HTMLButtonElement).disabled).toBe(true);
+  await waitFor(() => expect(onReadyChange).toHaveBeenLastCalledWith(true));
+  expect(api.GetAnalysisStatus).toHaveBeenCalledTimes(2);
+  expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
+  expect(api.InstallRecommendedAnalysisBundle).not.toHaveBeenCalled();
+});
+it("can retry a failed music model status poll", async () => {
+  api.GetAnalysisStatus
+    .mockImplementationOnce(() => completed({ ...installedStatus, loading: true }))
+    .mockRejectedValueOnce(new Error("status read interrupted"));
+  const onReadyChange = vi.fn();
+  render(<MusicAnalysisCard setup onReadyChange={onReadyChange} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(onReadyChange).toHaveBeenLastCalledWith(true));
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
 it("requires confirmation to clear cached metadata", async () => {
   render(<MusicMetadataCard />);
   await screen.findByRole("button", { name: "Clear metadata cache" });

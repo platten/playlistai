@@ -170,7 +170,7 @@ func (b *BundleManager) Install(ctx context.Context, m BundleManifest, p ports.P
 // managed model directory. The source remains untouched. Activation still
 // occurs only after the normal native worker health check succeeds.
 func (b *BundleManager) InstallDirectory(ctx context.Context, source string, p ports.Progress) (string, error) {
-	m, err := ReadBundle(source)
+	m, err := ReadBundleContext(ctx, source)
 	if err != nil {
 		return "", err
 	}
@@ -197,10 +197,10 @@ func (b *BundleManager) installLocked(ctx context.Context, m BundleManifest, sou
 			return "", err
 		}
 		target := filepath.Join(dir, a.Name)
-		if !downloadValid(dir, a) {
+		if !downloadValidContext(ctx, dir, a) {
 			base := done
 			if source != "" {
-				if err := copyBundleArtifact(source, dir, a); err != nil {
+				if err := copyBundleArtifactContext(ctx, source, dir, a); err != nil {
 					return "", err
 				}
 				p.Report("analysis-model", base+a.Size, m.DownloadBytes(), "Installing music analysis")
@@ -208,14 +208,14 @@ func (b *BundleManager) installLocked(ctx context.Context, m BundleManifest, sou
 				if err := os.WriteFile(target, a.Data, 0o600); err != nil {
 					return "", err
 				}
-				if !downloadValid(dir, a) {
+				if !downloadValidContext(ctx, dir, a) {
 					return "", fmt.Errorf("audio: bundled fixture integrity mismatch")
 				}
 			} else if _, err := dataset.Download(ctx, a.URL, target, a.Size, a.SHA256, func(n, _ int64) { p.Report("analysis-model", base+n, m.DownloadBytes(), "Downloading music analysis") }); err != nil {
 				return "", err
 			}
 		}
-		if a.ArchiveMember != "" && !artifactValid(dir, a) {
+		if a.ArchiveMember != "" && !artifactValidContext(ctx, dir, a) {
 			if err := unpackRuntime(ctx, dir, a); err != nil {
 				return "", err
 			}
@@ -260,8 +260,11 @@ func (b *BundleManager) installLocked(ctx context.Context, m BundleManifest, sou
 	return dir, nil
 }
 
-func copyBundleArtifact(source, destination string, artifact BundleArtifact) error {
-	if !downloadValid(source, artifact) {
+func copyBundleArtifactContext(ctx context.Context, source, destination string, artifact BundleArtifact) error {
+	if !downloadValidContext(ctx, source, artifact) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return fmt.Errorf("audio: extracted model artifact integrity check failed")
 	}
 	input, err := os.Open(filepath.Join(source, artifact.Name))
@@ -279,7 +282,7 @@ func copyBundleArtifact(source, destination string, artifact BundleArtifact) err
 	}
 	temporary := output.Name()
 	defer os.Remove(temporary)
-	_, copyErr := io.Copy(output, input)
+	_, copyErr := io.Copy(output, &contextReader{ctx: ctx, reader: input})
 	closeErr := output.Close()
 	if err := errors.Join(copyErr, closeErr); err != nil {
 		return err
@@ -291,30 +294,37 @@ func copyBundleArtifact(source, destination string, artifact BundleArtifact) err
 	if err := os.Rename(temporary, target); err != nil {
 		return err
 	}
-	if !downloadValid(destination, artifact) {
+	if !downloadValidContext(ctx, destination, artifact) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		return fmt.Errorf("audio: copied model artifact integrity check failed")
 	}
 	return nil
 }
 
-func artifactValid(dir string, a BundleArtifact) bool {
-	if !downloadValid(dir, a) {
+func artifactValidContext(ctx context.Context, dir string, a BundleArtifact) bool {
+	if !downloadValidContext(ctx, dir, a) {
 		return false
 	}
 	if a.ArchiveMember != "" {
-		ok, _ := dataset.Status(dir, &dataset.Manifest{Files: []dataset.File{{Name: filepath.Base(a.ArchiveMember), Size: a.UnpackedSize, SHA256: a.UnpackedSHA256}}})
+		ok, _ := dataset.StatusContext(ctx, dir, &dataset.Manifest{Files: []dataset.File{{Name: filepath.Base(a.ArchiveMember), Size: a.UnpackedSize, SHA256: a.UnpackedSHA256}}})
 		return ok
 	}
 	return true
 }
 
-func downloadValid(dir string, a BundleArtifact) bool {
-	ok, _ := dataset.Status(dir, &dataset.Manifest{Files: []dataset.File{{Name: a.Name, Size: a.Size, SHA256: a.SHA256}}})
+func downloadValidContext(ctx context.Context, dir string, a BundleArtifact) bool {
+	ok, _ := dataset.StatusContext(ctx, dir, &dataset.Manifest{Files: []dataset.File{{Name: a.Name, Size: a.Size, SHA256: a.SHA256}}})
 	return ok
 }
 
 func ReadBundle(dir string) (BundleManifest, error) {
-	m, err := ReadRuntimeBundle(dir)
+	return ReadBundleContext(context.Background(), dir)
+}
+
+func ReadBundleContext(ctx context.Context, dir string) (BundleManifest, error) {
+	m, err := ReadRuntimeBundleContext(ctx, dir)
 	if err != nil {
 		return m, err
 	}
@@ -324,10 +334,25 @@ func ReadBundle(dir string) (BundleManifest, error) {
 // ReadRuntimeBundle permits developer parity checks before policy calibration.
 // Desktop installation and activation always call Validate as well.
 func ReadRuntimeBundle(dir string) (BundleManifest, error) {
+	return ReadRuntimeBundleContext(context.Background(), dir)
+}
+
+func ReadRuntimeBundleContext(ctx context.Context, dir string) (BundleManifest, error) {
 	var m BundleManifest
-	raw, err := os.ReadFile(filepath.Join(dir, "bundle.json"))
+	if err := ctx.Err(); err != nil {
+		return m, err
+	}
+	file, err := os.Open(filepath.Join(dir, "bundle.json"))
 	if err != nil {
 		return m, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: file}, (4<<20)+1))
+	if err != nil {
+		return m, err
+	}
+	if len(raw) > 4<<20 {
+		return m, fmt.Errorf("audio: bundle manifest exceeds size limit")
 	}
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return m, err
@@ -336,7 +361,10 @@ func ReadRuntimeBundle(dir string) (BundleManifest, error) {
 		return m, err
 	}
 	for _, a := range m.Artifacts {
-		if !artifactValid(dir, a) {
+		if !artifactValidContext(ctx, dir, a) {
+			if err := ctx.Err(); err != nil {
+				return m, err
+			}
 			return m, fmt.Errorf("audio: bundle artifact integrity check failed")
 		}
 	}
@@ -344,8 +372,15 @@ func ReadRuntimeBundle(dir string) (BundleManifest, error) {
 }
 
 func (b *BundleManager) Active() (string, BundleManifest, error) {
+	return b.ActiveContext(context.Background())
+}
+
+func (b *BundleManager) ActiveContext(ctx context.Context) (string, BundleManifest, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", BundleManifest{}, err
+	}
 	raw, err := os.ReadFile(filepath.Join(b.Directory, "active.json"))
 	if err != nil {
 		return "", BundleManifest{}, err
@@ -355,7 +390,7 @@ func (b *BundleManager) Active() (string, BundleManifest, error) {
 		return "", BundleManifest{}, fmt.Errorf("audio: invalid active bundle")
 	}
 	dir := filepath.Join(b.Directory, name)
-	m, err := ReadBundle(dir)
+	m, err := ReadBundleContext(ctx, dir)
 	return dir, m, err
 }
 

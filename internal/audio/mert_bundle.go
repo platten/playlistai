@@ -112,15 +112,25 @@ func (m MERTBundleManifest) DownloadBytes() int64 {
 	return (BundleManifest{Artifacts: m.Artifacts}).DownloadBytes()
 }
 func ReadMERTBundle(dir string) (MERTBundleManifest, error) {
+	return ReadMERTBundleContext(context.Background(), dir)
+}
+
+func ReadMERTBundleContext(ctx context.Context, dir string) (MERTBundleManifest, error) {
 	var m MERTBundleManifest
+	if err := ctx.Err(); err != nil {
+		return m, err
+	}
 	f, err := os.Open(filepath.Join(dir, "mert-bundle.json"))
 	if err != nil {
 		return m, err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, 4<<20))
+	raw, err := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: f}, (4<<20)+1))
 	if err != nil {
 		return m, err
+	}
+	if len(raw) > 4<<20 {
+		return m, fmt.Errorf("audio: MERT manifest exceeds size limit")
 	}
 	if err = json.Unmarshal(raw, &m); err != nil {
 		return m, err
@@ -129,7 +139,10 @@ func ReadMERTBundle(dir string) (MERTBundleManifest, error) {
 		return m, err
 	}
 	for _, a := range m.Artifacts {
-		if !artifactValid(dir, a) {
+		if !artifactValidContext(ctx, dir, a) {
+			if err := ctx.Err(); err != nil {
+				return m, err
+			}
 			return m, fmt.Errorf("audio: MERT artifact integrity failed")
 		}
 	}
@@ -149,7 +162,7 @@ func (b *MERTBundleManager) Install(ctx context.Context, m MERTBundleManifest, p
 // InstallLocal imports a maintainer-prepared asset pack using the same checksum
 // and actual native parity gate as network installation. Source assets remain.
 func (b *MERTBundleManager) InstallLocal(ctx context.Context, source string, p ports.Progress) (string, error) {
-	m, err := ReadMERTBundle(source)
+	m, err := ReadMERTBundleContext(ctx, source)
 	if err != nil {
 		return "", err
 	}
@@ -174,7 +187,7 @@ func (b *MERTBundleManager) install(ctx context.Context, m MERTBundleManifest, s
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		if !downloadValid(dir, a) {
+		if !downloadValidContext(ctx, dir, a) {
 			target := filepath.Join(dir, a.Name)
 			switch {
 			case source != "":
@@ -192,11 +205,11 @@ func (b *MERTBundleManager) install(ctx context.Context, m MERTBundleManifest, s
 			default:
 				return "", fmt.Errorf("audio: local MERT asset requires importing its prepared bundle")
 			}
-			if !downloadValid(dir, a) {
+			if !downloadValidContext(ctx, dir, a) {
 				return "", fmt.Errorf("audio: MERT artifact integrity failed")
 			}
 		}
-		if a.ArchiveMember != "" && !artifactValid(dir, a) {
+		if a.ArchiveMember != "" && !artifactValidContext(ctx, dir, a) {
 			if err := unpackRuntime(ctx, dir, a); err != nil {
 				return "", err
 			}
@@ -257,8 +270,15 @@ func copyMERTArtifact(ctx context.Context, source, target string, size int64) er
 	return nil
 }
 func (b *MERTBundleManager) Active() (string, MERTBundleManifest, error) {
+	return b.ActiveContext(context.Background())
+}
+
+func (b *MERTBundleManager) ActiveContext(ctx context.Context) (string, MERTBundleManifest, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return "", MERTBundleManifest{}, err
+	}
 	raw, err := os.ReadFile(filepath.Join(b.Directory, "active.json"))
 	if err != nil {
 		return "", MERTBundleManifest{}, err
@@ -268,7 +288,7 @@ func (b *MERTBundleManager) Active() (string, MERTBundleManifest, error) {
 		return "", MERTBundleManifest{}, fmt.Errorf("audio: invalid active MERT bundle")
 	}
 	dir := filepath.Join(b.Directory, name)
-	m, err := ReadMERTBundle(dir)
+	m, err := ReadMERTBundleContext(ctx, dir)
 	return dir, m, err
 }
 func (b *MERTBundleManager) Remove() error {

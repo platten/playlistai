@@ -140,8 +140,8 @@ func (c *Container) ModelVRAMReserve() int64 { return modelVRAMReserve }
 
 // InstallLlamaRuntime runs ggml-org's official installer, staging a
 // GPU-capable build (CUDA / ROCm / Vulkan / Metal) and — on Linux/Windows — a
-// CPU fallback build entirely under the app's data dir. When reinstall is
-// true any existing install is deleted first. Progress is reported via p
+// CPU fallback build entirely under the app's data dir. Reinstallation keeps
+// the current runtime until its replacement is ready. Progress is reported via p
 // under op "llama-install" as an indeterminate ("bouncing") bar with the
 // current phase + installer output as the note.
 func (c *Container) InstallLlamaRuntime(ctx context.Context, p ports.Progress, reinstall bool) error {
@@ -154,8 +154,7 @@ func (c *Container) InstallLlamaRuntime(ctx context.Context, p ports.Progress, r
 		p = ports.NopProgress{}
 	}
 	if reinstall {
-		p.Report("llama-install", 0, -1, "removing the current llama.cpp…")
-		llama.CleanStaged(c.llamaStageDir())
+		p.Report("llama-install", 0, -1, "preparing a replacement llama.cpp…")
 	}
 	ictx, cancel := context.WithTimeout(ctx, llamaInstallTimeout)
 	defer cancel()

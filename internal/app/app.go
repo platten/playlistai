@@ -101,6 +101,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	if prefsErr != nil {
 		log.Warn("preferences unavailable; original file preserved", "err", prefsErr)
 	}
+	if migrated := currentRecommendationMode(core.RecommendationMode(prefs.RecommendationMode)); prefsErr == nil && string(migrated) != prefs.RecommendationMode {
+		prefs.RecommendationMode = string(migrated)
+		if err := prefs.Save(cfg.DataDir); err != nil {
+			log.Warn("recommendation preference migration could not be saved; will retry on restart", "err", err)
+		}
+	}
 	if prefs.ModelDisabled {
 		cfg.AI.ModelPath, cfg.AI.ModelID = "", ""
 	} else if prefs.ModelPath != "" {
@@ -444,6 +450,9 @@ func (c *Container) Logger() *slog.Logger { return c.log }
 // Ready reports whether the core recommendation path (catalog + similarity +
 // engine) is fully wired.
 func (c *Container) Ready() bool {
+	if c.AudioStartupPending() {
+		return false
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed {

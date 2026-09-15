@@ -88,6 +88,10 @@ func Open(dataDir string) (*Store, error) {
 			return nil, fmt.Errorf("taste: initialize store: %w", err)
 		}
 	}
+	if err := ensureFeedbackSequence(db); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("taste: migrate event order: %w", err)
+	}
 	s := &Store{db: db, now: time.Now}
 	// One retention sweep per launch keeps the file from growing without bound.
 	// Deliberately best-effort: stale rows cost space, not correctness, and
@@ -95,6 +99,58 @@ func Open(dataDir string) (*Store, error) {
 	// app from starting.
 	_ = s.PruneExposures(context.Background(), s.now().Add(-ExposureRetention))
 	return s, nil
+}
+
+// Persist the old insertion order before VACUUM or other maintenance can change
+// implicit SQLite rowids. The additive migration is atomic and leaves all event
+// IDs/payloads and saved profile snapshots intact. A trigger also assigns order
+// to writes from older app versions that do not know the new column.
+func ensureFeedbackSequence(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.Query(`PRAGMA table_info(feedback_events)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &kind, &notNull, &defaultValue, &pk); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		found = found || name == "sequence"
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil {
+		return err
+	}
+	if !found {
+		if _, err := tx.Exec(`ALTER TABLE feedback_events ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE feedback_events SET sequence = rowid`); err != nil {
+			return err
+		}
+	}
+	for _, statement := range []string{
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_feedback_sequence ON feedback_events(sequence)`,
+		`CREATE TRIGGER IF NOT EXISTS assign_feedback_sequence AFTER INSERT ON feedback_events
+		 WHEN NEW.sequence = 0 BEGIN
+		 UPDATE feedback_events SET sequence = (SELECT COALESCE(MAX(sequence), 0) + 1 FROM feedback_events)
+		 WHERE id = NEW.id; END`,
+	} {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // PruneExposures deletes exposure rows older than before. Explicit feedback is
@@ -121,7 +177,7 @@ func (s *Store) RecordFeedback(ctx context.Context, event core.FeedbackEvent) (c
 	if err := event.Validate(); err != nil {
 		return core.FeedbackEvent{}, err
 	}
-	if err := insertEvent(ctx, s.db, event); err != nil {
+	if err := insertEvent(ctx, s.db, &event); err != nil {
 		return core.FeedbackEvent{}, err
 	}
 	return event, nil
@@ -144,7 +200,7 @@ func (s *Store) RecordFeedbackBatch(ctx context.Context, events []core.FeedbackE
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, event := range prepared {
-		if err := insertEvent(ctx, tx, event); err != nil {
+		if err := insertEvent(ctx, tx, &event); err != nil {
 			return err
 		}
 	}
@@ -155,10 +211,10 @@ func (s *Store) RecordFeedbackBatch(ctx context.Context, events []core.FeedbackE
 }
 
 type eventExecer interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-func insertEvent(ctx context.Context, execer eventExecer, event core.FeedbackEvent) error {
+func insertEvent(ctx context.Context, execer eventExecer, event *core.FeedbackEvent) error {
 	contextJSON, err := json.Marshal(event.Context)
 	if err != nil {
 		return err
@@ -167,11 +223,11 @@ func insertEvent(ctx context.Context, execer eventExecer, event core.FeedbackEve
 	if err != nil {
 		return err
 	}
-	_, err = execer.ExecContext(ctx, `INSERT INTO feedback_events
-		(id, version, occurred_at, type, scope, track_id, request_id, session_id, context_json, versions_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	err = execer.QueryRowContext(ctx, `INSERT INTO feedback_events
+		(id, version, occurred_at, type, scope, track_id, request_id, session_id, context_json, versions_json, sequence)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM feedback_events)) RETURNING sequence`,
 		event.ID, event.Version, event.OccurredAt.UnixNano(), event.Type, event.Scope,
-		event.TrackID, event.RequestID, event.SessionID, contextJSON, versionsJSON)
+		event.TrackID, event.RequestID, event.SessionID, contextJSON, versionsJSON).Scan(&event.Sequence)
 	if err != nil {
 		return fmt.Errorf("taste: record feedback: %w", err)
 	}
@@ -193,7 +249,7 @@ func (s *Store) prepare(event core.FeedbackEvent) core.FeedbackEvent {
 	return event
 }
 
-const selectFeedbackColumns = `SELECT id, version, occurred_at, type, scope, track_id,
+const selectFeedbackColumns = `SELECT id, sequence, version, occurred_at, type, scope, track_id,
 		request_id, session_id, context_json, versions_json FROM feedback_events`
 
 // scopeClause matches events belonging to this profile's context. An empty
@@ -213,14 +269,14 @@ const scopeClause = `(
 // the last; the projection is recency-weighted, so the newest rows are the
 // ones that matter.
 //
-// Ties on occurred_at break by rowid, which is insertion order in this
-// append-only table. Breaking them by id instead returns a different
-// permutation on every read, because ids are random hex. Timestamps tie
+// Ties on occurred_at break by persisted sequence, which retains insertion
+// order across reopening, migrations and VACUUM. Random event IDs cannot decide
+// which opposing preference was acknowledged last. Timestamps tie
 // whenever a batch is written faster than the platform clock advances — routine
 // on Windows, and possible anywhere.
 func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]core.FeedbackEvent, error) {
 	events, err := s.queryFeedback(ctx,
-		selectFeedbackColumns+` WHERE type <> ? AND `+scopeClause+` ORDER BY occurred_at, rowid`,
+		selectFeedbackColumns+` WHERE type <> ? AND `+scopeClause+` ORDER BY occurred_at, sequence`,
 		core.FeedbackExposure,
 		query.RequestID, query.SessionID,
 		query.RequestID, query.RequestID,
@@ -230,7 +286,7 @@ func (s *Store) ListFeedback(ctx context.Context, query ports.FeedbackQuery) ([]
 	}
 	exposures, err := s.queryFeedback(ctx,
 		selectFeedbackColumns+` WHERE type = ? AND occurred_at >= ? AND (? OR `+scopeClause+`)
-		ORDER BY occurred_at DESC, rowid DESC LIMIT ?`,
+		ORDER BY occurred_at DESC, sequence DESC LIMIT ?`,
 		core.FeedbackExposure, s.now().Add(-ExposureRetention).UnixNano(), query.IncludeExposures,
 		query.RequestID, query.SessionID,
 		query.RequestID, query.RequestID,
@@ -253,7 +309,7 @@ func (s *Store) queryFeedback(ctx context.Context, statement string, args ...any
 		var event core.FeedbackEvent
 		var occurred int64
 		var contextJSON, versionsJSON []byte
-		if err := rows.Scan(&event.ID, &event.Version, &occurred, &event.Type, &event.Scope,
+		if err := rows.Scan(&event.ID, &event.Sequence, &event.Version, &occurred, &event.Type, &event.Scope,
 			&event.TrackID, &event.RequestID, &event.SessionID, &contextJSON, &versionsJSON); err != nil {
 			return nil, err
 		}

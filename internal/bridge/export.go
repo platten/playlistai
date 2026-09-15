@@ -64,8 +64,8 @@ type ExportSaveResult struct {
 }
 
 // ExportCSV writes the playlist as a Soundiiz-compatible CSV. When the app has a
-// window it shows a native Save dialog; otherwise (and when the dialog is
-// dismissed with no window) it falls back to <DataDir>/exports/<name>.csv.
+// window it shows a native Save dialog; without one it falls back to
+// <DataDir>/exports/<name>.csv without overwriting an existing file.
 func (a *API) ExportCSV(name string, tracks []ExportTrackDTO) (ExportSaveResult, error) {
 	exp, ok := a.app.Exporter("csv")
 	if !ok {
@@ -77,18 +77,14 @@ func (a *API) ExportCSV(name string, tracks []ExportTrackDTO) (ExportSaveResult,
 		return ExportSaveResult{}, err
 	}
 
-	target, canceled, err := a.chooseCSVPath(res.Location)
+	target, canceled, overwrite, err := a.chooseCSVPath(res.Location)
 	if err != nil {
 		return ExportSaveResult{}, err
 	}
 	if canceled {
 		return ExportSaveResult{Canceled: true, Count: res.Count}, nil
 	}
-	// The OS save dialog lets the user type a name with no extension (or the
-	// wrong one); make sure what lands on disk is still a .csv.
-	target = soundiizcsv.EnsureCSVExt(target)
-
-	if err := os.WriteFile(target, res.Data, 0o644); err != nil {
+	if err := writeCSVFile(target, res.Data, overwrite); err != nil {
 		return ExportSaveResult{}, fmt.Errorf("write %s: %w", target, err)
 	}
 	a.log.Info("exported CSV", "path", target, "tracks", res.Count)
@@ -96,26 +92,110 @@ func (a *API) ExportCSV(name string, tracks []ExportTrackDTO) (ExportSaveResult,
 }
 
 // chooseCSVPath asks the OS for a save location, falling back to the data dir.
-func (a *API) chooseCSVPath(suggestedName string) (path string, canceled bool, err error) {
+func (a *API) chooseCSVPath(suggestedName string) (path string, canceled, overwrite bool, err error) {
 	if appInst := application.Get(); appInst != nil && appInst.Dialog != nil {
-		chosen, derr := appInst.Dialog.SaveFile().
-			SetFilename(suggestedName).
-			SetMessage("Save playlist CSV").
-			PromptForSingleSelection()
-		if derr != nil {
-			return "", false, derr
-		}
-		if chosen == "" {
-			return "", true, nil
-		}
-		return chosen, false, nil
+		return chooseCSVTarget(suggestedName, func(name, dir, message string) (string, error) {
+			return appInst.Dialog.SaveFile().SetFilename(name).SetDirectory(dir).
+				AddFilter("CSV playlists", "*.csv").SetMessage(message).PromptForSingleSelection()
+		})
 	}
 
 	dir := filepath.Join(a.app.Config().DataDir, "exports")
 	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
-		return "", false, mkErr
+		return "", false, false, mkErr
 	}
-	return filepath.Join(dir, suggestedName), false, nil
+	// Without a native confirmation the publication always uses no-replace.
+	return filepath.Join(dir, soundiizcsv.EnsureCSVExt(suggestedName)), false, false, nil
+}
+
+// Wails does not report whether its native picker actually asked to overwrite.
+// Any existing destination therefore needs another prompt after we observe it;
+// only the same exact path and file identity can inherit that confirmation.
+// Headless exports never overwrite an existing file without a dialog.
+func chooseCSVTarget(name string, pick func(name, directory, message string) (string, error)) (path string, canceled, overwrite bool, err error) {
+	dir, message := "", "Save playlist CSV"
+	var expectedTarget string
+	var expectedFile os.FileInfo
+	for attempts := 0; attempts < 10; attempts++ {
+		selected, err := pick(name, dir, message)
+		if err != nil {
+			return "", false, false, err
+		}
+		if selected == "" {
+			return "", true, false, nil
+		}
+		target := soundiizcsv.EnsureCSVExt(selected)
+		info, statErr := csvTargetIdentity(target)
+		if os.IsNotExist(statErr) {
+			return target, false, false, nil
+		}
+		if statErr != nil {
+			return "", false, false, statErr
+		}
+		if selected == target && target == expectedTarget && expectedFile != nil && os.SameFile(expectedFile, info) {
+			return target, false, true, nil
+		}
+		// A file may have appeared after the picker accepted an absent path.
+		// Observe its identity before using the native overwrite/close handling
+		// for a second prompt. Normalization or a changed identity needs the same
+		// check; message-dialog close callbacks vary by platform.
+		expectedTarget, expectedFile = target, info
+		name, dir = filepath.Base(target), filepath.Dir(target)
+		message = "The CSV destination already exists. Confirm this filename to replace it, or choose another name."
+	}
+	return "", false, false, errors.New("the CSV destination kept changing; choose a new filename and try again")
+}
+
+func csvTargetIdentity(path string) (os.FileInfo, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("CSV destination must be a regular file")
+	}
+	// On Windows Lstat's identity is resolved lazily by SameFile using its
+	// saved path. Stat on an open handle captures the current file ID now,
+	// before a subsequent picker can replace the file at that path.
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err = file.Stat()
+	if err == nil && !info.Mode().IsRegular() {
+		return nil, errors.New("CSV destination must be a regular file")
+	}
+	return info, err
+}
+
+// Write and sync the complete export before publishing it. The platform helper
+// refuses to replace an unconfirmed destination, including a file created after
+// the dialog closes. Rename replaces only an explicitly approved file.
+func writeCSVFile(target string, data []byte, overwrite bool) error {
+	return publishCSVFile(target, data, overwrite, os.Rename)
+}
+
+func publishCSVFile(target string, data []byte, overwrite bool, replace func(string, string) error) error {
+	file, err := os.CreateTemp(filepath.Dir(target), ".playlist-export-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	defer file.Close()
+	if _, err := file.Write(data); err != nil {
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if overwrite {
+		return replace(file.Name(), target)
+	}
+	return publishCSVNoReplace(file.Name(), target)
 }
 
 // SoundiizHandoffResult is the outcome of OpenSoundiizHandoff.
@@ -139,13 +219,19 @@ func (a *API) OpenSoundiizHandoff(name string, tracks []ExportTrackDTO) (Soundii
 		return SoundiizHandoffResult{}, err
 	}
 
+	return a.presentSoundiizHandoff(res, browser.OpenURL), nil
+}
+
+func (a *API) presentSoundiizHandoff(res ports.ExportResult, open func(string) error) SoundiizHandoffResult {
 	opened := true
-	if oerr := browser.OpenURL(res.Location); oerr != nil {
+	if oerr := open(res.Location); oerr != nil {
 		opened = false
-		a.log.Warn("soundiiz handoff ready but no browser could be launched", "err", oerr, "url", res.Location)
+		// Opener errors can contain the full URL. Keep the share capability out
+		// of ordinary logs; it is returned only to the requesting export UI.
+		a.log.Warn("soundiiz handoff ready but no browser could be launched")
 	}
-	a.log.Info("soundiiz handoff ready", "url", res.Location, "tracks", res.Count, "browserOpened", opened)
-	return SoundiizHandoffResult{URL: res.Location, Count: res.Count, Opened: opened}, nil
+	a.log.Info("soundiiz handoff ready", "tracks", res.Count, "browserOpened", opened)
+	return SoundiizHandoffResult{URL: res.Location, Count: res.Count, Opened: opened}
 }
 
 // OpenExternalURL re-opens an already-issued Soundiiz share URL in the browser.

@@ -348,7 +348,7 @@ func (o *Orchestrator) prepareIterativeCandidate(ctx context.Context, candidate 
 // and ordering constraints must also be able to produce the requested count.
 func (o *Orchestrator) iterativeComplete(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) (bool, error) {
 	assembly, err := o.assembleCandidates(ctx, candidates, intent, request, references, required, waypoints, seed)
-	if errors.Is(err, core.ErrRequiredTrackConflict) {
+	if errors.Is(err, core.ErrRequiredTrackConflict) || errors.Is(err, errJourneySearchExhausted) {
 		return false, nil
 	}
 	// Soft diversity preferences rank the available pool; they must not prolong

@@ -44,6 +44,18 @@ type Record struct {
 	ResultJSON  []byte
 }
 
+// Summary is the metadata needed to choose a saved playlist. Generation
+// evidence remains in Get/List and is never read for the history dropdown.
+type Summary struct {
+	ID         string
+	CreatedAt  time.Time
+	Name       string
+	Prompt     string
+	Notes      string
+	Mode       string
+	TrackCount int
+}
+
 // Open opens (creating if needed) the history database under dataDir.
 func Open(dataDir string) (*Store, error) {
 	dsn, err := sqliteuri.Writable(filepath.Join(dataDir, FileName))
@@ -131,6 +143,31 @@ func (s *Store) List(ctx context.Context, limit int) ([]Record, error) {
 			return nil, err
 		}
 		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+// ListSummaries uses the same ordering and default limit as List without
+// materializing intent, request, track, or complete-result JSON payloads.
+func (s *Store) ListSummaries(ctx context.Context, limit int) ([]Summary, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id, created_at, name, prompt, notes, mode, track_count
+		FROM playlists ORDER BY created_at DESC, id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("history: list summaries: %w", err)
+	}
+	defer rows.Close()
+	var out []Summary
+	for rows.Next() {
+		var row Summary
+		var created int64
+		if err := rows.Scan(&row.ID, &created, &row.Name, &row.Prompt, &row.Notes, &row.Mode, &row.TrackCount); err != nil {
+			return nil, err
+		}
+		row.CreatedAt = time.Unix(created, 0)
+		out = append(out, row)
 	}
 	return out, rows.Err()
 }

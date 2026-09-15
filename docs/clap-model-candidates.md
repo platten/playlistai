@@ -191,8 +191,9 @@ graphs and passed native health checks. The desktop executable also passed in
 Reproduce with downloaded artifacts outside the repository:
 
 ```sh
-# Developer-only reference environment: torch 2.9.1+cpu,
-# transformers 4.57.1, onnxruntime 1.26.0.
+# Current developer-only pins: python/requirements-clap-validation.txt.
+# Earlier recorded reports used torch 2.9.1+cpu and transformers 4.57.1;
+# use the patched environment documented in laion-clap-model-preparation.md.
 python python/validate_clap_export.py --music-and-speech --reuse-export \
   --source /path/to/upstream-checkpoint --go-fixtures /path/to/fixtures.json \
   --output /path/to/public-export

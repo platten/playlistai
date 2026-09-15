@@ -247,15 +247,24 @@ INSERT OR REPLACE INTO artist_tags(tag_key,artist_mbid,tag,votes) SELECT tag_key
 	if err = db.Close(); err != nil {
 		return info, err
 	}
-	if o.Replace {
-		if err = os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return info, err
-		}
-	}
-	if err = os.Rename(tmpPath, abs); err != nil {
+	if err = publishBuild(tmpPath, abs, o.Replace); err != nil {
 		return info, err
 	}
 	return info, nil
+}
+
+// Replacement never deletes the old output before its successor is ready.
+// Rename replaces a closed destination atomically where supported; an open-file
+// or filesystem error retains the old output. A no-replace build uses a hard
+// link so an output that appeared during the build cannot be overwritten.
+func publishBuild(staged, target string, replace bool) error {
+	if replace {
+		return os.Rename(staged, target)
+	}
+	if err := os.Link(staged, target); err != nil {
+		return err
+	}
+	return nil // Build's deferred staging cleanup removes the other link.
 }
 
 func buildStageWithCache(ctx context.Context, path string, cacheMiB int, load func(*sql.DB) error) (err error) {

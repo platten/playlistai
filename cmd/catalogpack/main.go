@@ -33,17 +33,9 @@ import (
 	"path/filepath"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/platten/playlistai/internal/dataset"
 )
-
-type manifestFile struct {
-	Name   string `json:"name"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-}
-
-type manifest struct {
-	Files []manifestFile `json:"files"`
-}
 
 func main() {
 	flag := flag.NewFlagSet("catalogpack", flag.ExitOnError)
@@ -62,12 +54,12 @@ func run(inDir, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w (run python/convert_pickles.py first)", manifestPath, err)
 	}
-	var m manifest
+	var m dataset.Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return fmt.Errorf("parse %s: %w", manifestPath, err)
 	}
-	if len(m.Files) == 0 {
-		return fmt.Errorf("%s lists no files", manifestPath)
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("%s: %w", manifestPath, err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {

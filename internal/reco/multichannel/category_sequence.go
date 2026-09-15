@@ -31,6 +31,9 @@ type categoryNode struct {
 // transition objective. It returns a safe partial path when selected candidates
 // cannot all be placed; it never fills a gap by reversing musical direction.
 func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.SequenceRequest) ([]sequenceItem, bool, error) {
+	if requiredCategoryOrderConflicts(request) {
+		return nil, true, fmt.Errorf("%w: no evidence-backed category ordering could include every required track in order while respecting hard artist spacing", core.ErrRequiredTrackConflict)
+	}
 	pool := make([]sequenceItem, 0, len(request.Required)+len(request.Candidates))
 	requiredOrder, waypointOrder := map[string]int{}, map[string]int{}
 	for index, track := range request.Required {
@@ -202,7 +205,7 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 	}
 	if best == nil {
 		if len(request.Required) > 0 {
-			return nil, true, fmt.Errorf("%w: no evidence-backed category ordering could include every required track in order while respecting hard artist spacing", core.ErrRequiredTrackConflict)
+			return nil, true, fmt.Errorf("%w: no evidence-backed category ordering was found containing every required track in order while respecting hard artist spacing", errJourneySearchExhausted)
 		}
 		return nil, true, nil
 	}
@@ -211,6 +214,32 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 		items[index] = pool[nodes[node].item]
 	}
 	return items, complete == nil || best.length < len(pool), nil
+}
+
+// Greedily taking the earliest admissible stage proves whether known required
+// memberships force a reversal. Missing membership is left to the search;
+// failure to find a path through the bounded candidate pool is not this proof.
+func requiredCategoryOrderConflicts(request ports.SequenceRequest) bool {
+	stage := 0
+	for _, track := range request.Required {
+		found := false
+		for next := stage; next < len(request.CategoryStages); next++ {
+			if request.CategoryStages[next][track.ID] {
+				stage, found = next, true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		for earlier := range stage {
+			if request.CategoryStages[earlier][track.ID] {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 func betterCategoryBeam(left, right categoryPath) bool {

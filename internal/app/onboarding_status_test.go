@@ -113,6 +113,13 @@ func TestSetupReadinessOptionalPoliciesAndPreviewOff(t *testing.T) {
 	cfg := testConfig(t)
 	c := &Container{cfg: cfg, previewName: config.PreviewOff}
 	status := setupRead(t, c)
+	if status.Preview.Ready {
+		t.Fatal("fresh setup accepted preview off")
+	}
+	if err := (config.Prefs{OnboardingDone: true}).Save(cfg.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	status = setupRead(t, c)
 	if status.Catalog.Required || status.Catalog.Supported || status.Metadata.Required || status.Analysis.Required || !status.Preview.Ready {
 		t.Fatalf("never-installed defaults or intentional preview off: %+v", status)
 	}

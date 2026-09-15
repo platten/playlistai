@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ type SetupCapability struct {
 
 type SetupReadiness struct {
 	Onboarded bool
+	Pending   bool
 	Catalog   SetupCapability
 	Metadata  SetupCapability
 	Model     SetupCapability
@@ -45,7 +47,10 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	}
 	rt, modelPath, previewName, preview := c.runtime, c.modelPath, c.previewName, c.preview
 	c.mu.Unlock()
-	status := SetupReadiness{Onboarded: prefs.OnboardingDone}
+	status := SetupReadiness{Onboarded: prefs.OnboardingDone, Pending: c.AudioStartupPending()}
+	if status.Pending {
+		return status, nil
+	}
 	cat := c.cfg.Catalog
 	catalogReady := rt.Catalog != nil && rt.Resolver != nil
 	// A bare default directory is not evidence of a prior install or opt-in.
@@ -104,7 +109,45 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	status.Analysis = SetupCapability{Ready: analysisReady, Supported: analysisSupported, Required: prefs.AnalysisEnabled || analysisPrior}
 	status.MERT = c.setupMERTReadiness()
 	status.Preview = SetupCapability{Ready: isValidPreviewProvider(previewName) && (previewName == config.PreviewOff || preview != nil), Supported: true}
+	// An existing explicit preview-off choice is retained. Fresh setup asks
+	// for a usable provider, just as it requires every supported module.
+	if !prefs.OnboardingDone && previewName == config.PreviewOff {
+		status.Preview.Ready = false
+	}
 	return status, nil
+}
+
+// CompletionSteps checks every supported capability on first setup and only
+// repairs to existing choices for already-onboarded users. Unsupported native
+// features must never create an impossible completion loop.
+func (r SetupReadiness) CompletionSteps() []string {
+	missing := []string{}
+	for _, step := range []struct {
+		name       string
+		capability SetupCapability
+	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"model", r.Model}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"preview", r.Preview}} {
+		if step.capability.Supported && !step.capability.Ready && (!r.Onboarded || step.capability.Required) {
+			missing = append(missing, step.name)
+		}
+	}
+	return missing
+}
+
+// CompleteSetup is the user-facing completion boundary. SetOnboarded remains
+// the preference writer; callers must not report success before this check and
+// the subsequent atomic preference save have both completed.
+func (c *Container) CompleteSetup() error {
+	readiness, err := c.SetupReadiness()
+	if err != nil {
+		return err
+	}
+	if readiness.Pending {
+		return fmt.Errorf("installed music models are still being validated; try again when checking finishes")
+	}
+	if missing := readiness.CompletionSteps(); len(missing) > 0 {
+		return fmt.Errorf("setup is incomplete: %s", strings.Join(missing, ", "))
+	}
+	return c.SetOnboarded()
 }
 
 func (c *Container) setupMERTReadiness() SetupCapability {

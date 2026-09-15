@@ -48,6 +48,7 @@ __pycache__/
 /build/catalog-dist/
 
 # Local dev
+.catalog.lock
 /.tmp/
 /datasets/
 /.pnpm-store/

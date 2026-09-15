@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -22,6 +23,7 @@ const EnhancedAnalysisLimit = audio.EnhancedTrackLimit
 type enhancedState struct {
 	mu          sync.Mutex
 	opMu        sync.Mutex
+	startup     audioStartup
 	enabled     bool
 	mertEnabled bool
 	bundles     *audio.MERTBundleManager
@@ -32,6 +34,7 @@ type enhancedState struct {
 }
 
 type EnhancedAnalysisStatus struct {
+	Loading                  bool                                 `json:"loading"`
 	RecommendedManifestURL   string                               `json:"recommendedManifestUrl"`
 	RecommendedDownloadBytes int64                                `json:"recommendedDownloadBytes"`
 	UnsupportedReason        string                               `json:"unsupportedReason,omitempty"`
@@ -70,11 +73,6 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 	if c.analysis.store == nil {
 		return
 	}
-	if _, _, err := e.bundles.Active(); err == nil {
-		if err := c.loadMERT(ctx); err != nil {
-			e.detail = "Installed MERT failed its health check. DSP remains available."
-		}
-	}
 	c.RegisterCloser(func() error {
 		e.mu.Lock()
 		defer e.mu.Unlock()
@@ -86,11 +84,22 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 		}
 		return nil
 	})
+	if _, err := os.Stat(filepath.Join(e.bundles.Directory, "active.json")); err == nil {
+		e.startup.start(c, ctx, func(ctx context.Context) {
+			e.opMu.Lock()
+			defer e.opMu.Unlock()
+			if err := c.loadMERT(ctx); err != nil && ctx.Err() == nil {
+				e.mu.Lock()
+				e.detail = "Installed MERT failed its health check. DSP remains available."
+				e.mu.Unlock()
+			}
+		})
+	}
 }
 
 func (c *Container) loadMERT(ctx context.Context) error {
 	e := &c.enhanced
-	dir, manifest, err := e.bundles.Active()
+	dir, manifest, err := e.bundles.ActiveContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -104,6 +113,10 @@ func (c *Container) loadMERT(ctx context.Context) error {
 	pool := audio.NewMERTWorkerPool(worker, audio.AnalysisParallelism())
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		_ = pool.Close()
+		return err
+	}
 	if e.pool != nil {
 		_ = e.pool.Close()
 	} else if e.worker != nil {
@@ -122,6 +135,7 @@ func (c *Container) GetEnhancedAnalysisStatus(ctx context.Context) (EnhancedAnal
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s := EnhancedAnalysisStatus{Enabled: e.enabled, MERTEnabled: e.mertEnabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
+	s.Loading = e.startup.loading()
 	if distribution, err := c.recommendedMERT(); err != nil {
 		s.UnsupportedReason = err.Error()
 	} else {
@@ -216,6 +230,7 @@ func (c *Container) InstallMERT(ctx context.Context, directory string, p ports.P
 	ctx, release := c.OperationContext(ctx)
 	defer release()
 	e := &c.enhanced
+	e.startup.stop()
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
 	return c.installMERTLocked(ctx, directory, p)
@@ -259,6 +274,7 @@ func (c *Container) recommendedMERT() (modelpack.Distribution, error) {
 func (c *Container) InstallRecommendedMERT(ctx context.Context, p ports.Progress) error {
 	ctx, release := c.OperationContext(ctx)
 	defer release()
+	c.enhanced.startup.stop()
 	c.enhanced.opMu.Lock()
 	defer c.enhanced.opMu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -278,6 +294,7 @@ func (c *Container) InstallRecommendedMERT(ctx context.Context, p ports.Progress
 
 func (c *Container) RemoveMERT() error {
 	e := &c.enhanced
+	e.startup.stop()
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
 	e.mu.Lock()

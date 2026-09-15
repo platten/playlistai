@@ -19,6 +19,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from export_environment import check_environment
+
 
 CHECKPOINT = {
     "url": "https://huggingface.co/lukewys/laion_clap/resolve/4226474e38defca6fc9272a7848bb7b0355ccd7a/music_audioset_epoch_15_esc_90.14.pt",
@@ -194,20 +196,11 @@ def load_original_model(checkpoint, assets):
 
 
 def export_and_validate(checkpoint, assets, fixtures_path, output, reuse_graphs=False):
+    check_environment(Path(__file__).with_name("requirements-laion-clap-pack.txt"))
     import numpy as np
     import onnxruntime as ort
     import torch
     from transformers import ClapFeatureExtractor, RobertaTokenizer, __version__ as transformers_version
-
-    versions = {
-        "torch": torch.__version__.split("+")[0],
-        "transformers": transformers_version,
-        "onnxruntime": ort.__version__,
-        "numpy": np.__version__,
-    }
-    expected_versions = {"torch": "2.9.1", "transformers": "4.57.1", "onnxruntime": "1.26.0", "numpy": "2.3.4"}
-    if versions != expected_versions:
-        raise ValueError(f"CLAP pack environment mismatch: expected {expected_versions}, got {versions}")
 
     class AudioExport(torch.nn.Module):
         def __init__(self, model):
@@ -215,7 +208,10 @@ def export_and_validate(checkpoint, assets, fixtures_path, output, reuse_graphs=
             self.model = model
 
         def forward(self, input_features):
-            return self.model.get_audio_features(input_features=input_features)
+            # Use the stable projected/normalized embedding contract explicitly;
+            # Transformers 5 feature helpers can return structured model output.
+            pooled = self.model.audio_model(input_features=input_features, return_dict=True).pooler_output
+            return torch.nn.functional.normalize(self.model.audio_projection(pooled), dim=-1)
 
     class TextExport(torch.nn.Module):
         def __init__(self, model):
@@ -223,7 +219,8 @@ def export_and_validate(checkpoint, assets, fixtures_path, output, reuse_graphs=
             self.model = model
 
         def forward(self, input_ids, attention_mask):
-            return self.model.get_text_features(input_ids=input_ids, attention_mask=attention_mask)
+            pooled = self.model.text_model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True).pooler_output
+            return torch.nn.functional.normalize(self.model.text_projection(pooled), dim=-1)
 
     output.mkdir(parents=True, exist_ok=True)
     model, conversion = load_original_model(checkpoint, assets)
@@ -336,6 +333,8 @@ def main(argv=None):
         parser.error("--part-bytes must be between 1024 and 199999999")
     if args.reuse_export and args.replace_export:
         parser.error("choose either --reuse-export or --replace-export")
+    # Fail before creating output directories or downloading any model bytes.
+    check_environment(Path(__file__).with_name("requirements-laion-clap-pack.txt"))
     work = args.work_dir.resolve()
     downloads, assets, export = work / "downloads", work / "assets", work / "export"
     downloads.mkdir(parents=True, exist_ok=True)

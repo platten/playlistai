@@ -9,8 +9,16 @@ opt-in threshold check, and behavioral tests without hiding untested modules.
 
 The normal contributor gate and CI run frontend unit tests. Coverage is a
 separate check while the coverage backlog remains; CI does not currently enforce
-95%. The refactor adds behavioral fixes and coverage together; baseline musical-
+95%. Remediation adds behavioral fixes and coverage together; baseline musical-
 quality fixtures were not weakened to increase the reported percentage.
+
+The [2026-09-15 implementation results](codebase-remediation-results-2026-09-15.md)
+are the current measured status: Windows Go 1.27 race/all-package coverage
+20,862/25,320 statements (82.3934%); frontend statements 94.83%, branches 89.21%,
+functions 93.39%, lines 97.26%. All 216 frontend tests and the ordinary repository
+gate passed; both separate aggregate threshold checks failed. Those results
+refer to the uncommitted remediation worktree based on 9053ee3, not hosted CI.
+The results document records flags, compiler and inclusive denominator details.
 
 ## Reproduce
 
@@ -59,8 +67,9 @@ Frontend reports: `frontend/coverage/index.html`, `lcov.info`, and
 CI's host build matrix additionally uploads backend profiles, production-tag
 packaging coverage and `GOOS`/`GOARCH`/`CGO_ENABLED`/`CC` provenance. A Windows arm64
 cross-build is not an arm64 test run, and worker preflight tests do not execute
-valid-model inference. These new hosted reports have not run for the unpushed
-refactor. `scripts/coverage.sh` and `.ps1` still enforce the full 95% target when
+valid-model inference. Hosted results must be tied to their exact workflow run;
+local validation does not establish hosted success. `scripts/coverage.sh` and
+`.ps1` still enforce the full 95% target when
 invoked; they do not hide this backlog behind a passing threshold.
 
 ## Earlier measurements (2026-09-10; narrower backend scope)

@@ -87,6 +87,14 @@ jobs:
       - name: CI timing helper
         run: node --test scripts/go-test.test.mjs
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Offline export tooling contracts (no model downloads)
+        working-directory: python
+        run: python -m unittest test_export_environment test_prepare_laion_clap test_run_model_export_parity
+
       - name: go vet
         run: go vet ./...
 

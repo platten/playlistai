@@ -17,22 +17,25 @@ try {
     import App from '/src/App.tsx'; import {ReviewExport} from '/src/screens/ReviewExport.tsx';
     import {FirstRunWizard} from '/src/screens/FirstRunWizard.tsx'; import '/src/design/tokens.css';
     const mode=location.search;
-    const component=mode.includes('review')?React.createElement(ReviewExport,{trackIds:['one','two'],heading:'Local mix',requestId:'request',sessionId:'session',onBack:()=>{}}):mode.includes('wizard')?React.createElement(FirstRunWizard,{onDone:()=>{}}):React.createElement(App);
+    const component=mode.includes('review')?React.createElement(ReviewExport,{trackIds:['one','two'],heading:'Local mix',requestId:'request',sessionId:'session',onBack:()=>{}}):mode.includes('wizard')?React.createElement(FirstRunWizard,{onDone:()=>{window.__done=true;}}):React.createElement(App);
     ReactDOM.createRoot(document.getElementById('root')).render(component);
   ` }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: `
     export const Events={On(){return ()=>{};}}; export const Clipboard={SetText:async()=>{}};
     export const Call={}; export const CancellablePromise=Promise;
     export const System={IsMac:()=>false};
+    export const Browser={OpenURL:async()=>{}};
   ` }));
   await page.route("**/src/lib/api.ts", route => route.fulfill({ contentType: "application/javascript", body: `
     ${bridgeEnums}
     const rows=[{id:'one',artist:'Local artist',title:'First track',album:'Local album'},{id:'two',artist:'Second artist',title:'Second track',album:''}];
-    let failed=false;
+    let failed=false, completionAttempts=0;
     const methods={
       GetOnboarded:()=>true,GetStatus:()=>({parserBackend:'rules'}),GetCatalogInfo:()=>({loaded:!location.search.includes('missing')}),ListSavedPlaylists:()=>[],
       GetModelStatus:()=>({backend:'llama',modelId:'fixture'}),GetLlamaRuntime:()=>({available:true,builds:['cpu']}),GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{}}),
-      GetAnalysisStatus:()=>({installed:false,available:false,storage:{bytes:0,records:0}}),
+      GetSetupStatus:()=>location.search.includes('completion')?{pending:!window.__nativeValidated,onboarded:false,pendingSteps:[],repairSteps:[]}:location.search.includes('wizard')?{onboarded:false,pendingSteps:['model','analysis','preview'],repairSteps:[]}:null,
+      GetAnalysisStatus:()=>({installed:true,available:true,enabled:true,storage:{bytes:0,records:0}}),
+      CompleteOnboarding:()=>{if(++completionAttempts===1)throw Error('Could not save setup completion');},
       GetPreviewProviderName:()=>location.search.includes('spotify')?'spotify':'off',
       SetPreviewProvider:p=>{window.__savedProvider=p;if(!failed){failed=true;throw Error('Could not save preview preference');}},
       PrepareExport:()=>{if(!failed){failed=true;throw Error('Local read failed');}return location.search.includes('empty')?[]:rows;},
@@ -93,6 +96,20 @@ try {
     await page.getByRole("heading", {name:"You're set up",exact:true}).waitFor();
     if(await page.evaluate(()=>window.__savedProvider)!==expected.toLowerCase()) throw Error("Preview selection not saved");
   }
+  await page.goto("http://127.0.0.1:9245/?wizard-completion");
+  await page.getByText("Checking existing setup…", { exact: true }).waitFor();
+  if(await page.getByRole("button", {name:/Download|Start using/}).count()) throw Error("Pending model validation enabled setup completion or downloads");
+  await page.evaluate(()=>{window.__nativeValidated=true;});
+  await page.getByRole("button", {name:"Start using Playlist AI",exact:true}).click();
+  await page.getByText("Error: Could not save setup completion", {exact:true}).waitFor();
+  if(await page.evaluate(()=>Boolean(window.__done))) throw Error("Failed completion left the wizard");
+  for(const theme of ["light","dark"]) {
+    await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
+    await page.screenshot({path:output+'/completion-retry-'+theme+'.png',fullPage:true});
+  }
+  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)) throw Error("Completion retry horizontal overflow");
+  await page.getByRole("button", {name:"Try again",exact:true}).click();
+  await page.waitForFunction(()=>window.__done);
   if(errors.length) throw Error(errors.join('\n'));
   console.log('PASS: no catalog navigation, setup recovery, local export/retry/selection/empty states, both preview choices, off migration and save failure, themes and narrow layout');
 } finally { await browser.close(); }

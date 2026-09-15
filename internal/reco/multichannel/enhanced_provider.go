@@ -65,9 +65,9 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 	tracks := append([]core.TrackRef(nil), references...)
 	tracks = append(tracks, required...)
 	tracks = append(tracks, waypoints...)
-	for _, reference := range negativeReferenceVectors(o.cat, intent) {
+	for _, reference := range intentReferenceTracks(o.cat, intent, core.InfluenceNegative, false) {
 		for _, rep := range reference.reps {
-			if meta, ok := o.cat.Meta(rep.id); ok {
+			if meta, ok := o.cat.Meta(rep.TrackID); ok {
 				tracks = append(tracks, meta.Ref)
 			}
 		}

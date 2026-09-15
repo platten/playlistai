@@ -1,11 +1,10 @@
 package llama
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
+
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -211,6 +210,7 @@ func stagedName(label string) string { return exeName("llama-" + label) }
 // StagedRuntimes returns the runtimes InstallOfficial staged into stageDir,
 // GPU/primary first. Empty if none are staged.
 func StagedRuntimes(stageDir string) []Runtime {
+	stageDir = activeRuntimeDirectory(stageDir)
 	var out []Runtime
 	for _, lab := range []struct{ file, label string }{{"primary", "gpu"}, {"cpu", "cpu"}} {
 		p := filepath.Join(stageDir, stagedName(lab.file))
@@ -219,151 +219,4 @@ func StagedRuntimes(stageDir string) []Runtime {
 		}
 	}
 	return out
-}
-
-// installerScratch is the directory a single installer run downloads into.
-// We run with SKIP_INSTALL so the installer never copies out of it, then move
-// the binary into the app's data dir ourselves and delete this.
-func installerScratch() string {
-	home, _ := os.UserHomeDir()
-	if runtime.GOOS == "windows" {
-		la := os.Getenv("LOCALAPPDATA")
-		if la == "" && home != "" {
-			la = filepath.Join(home, "AppData", "Local")
-		}
-		return filepath.Join(la, "llama-app")
-	}
-	return filepath.Join(home, ".llama-app")
-}
-
-func installerSource() string { return filepath.Join(installerScratch(), exeName("llama")) }
-
-// CleanStaged removes every trace of an app-installed llama.cpp: the staged
-// runtimes under stageDir and the installer's scratch dir. Used before a
-// reinstall.
-func CleanStaged(stageDir string) {
-	_ = os.RemoveAll(stageDir)
-	_ = os.RemoveAll(installerScratch())
-}
-
-// InstallOfficial runs ggml-org's official cross-platform installer
-// (https://llama.app/install.sh / install.ps1) and stages the result entirely
-// under stageDir (the app's data dir) — it runs with SKIP_INSTALL so the
-// installer never touches ~/.local/bin or %WindowsApps%, and its scratch dir
-// is deleted afterward. Two builds are staged:
-//
-//   - "primary" — GPU build (CUDA / ROCm / Vulkan / Metal) when one is
-//     available on this machine, else CPU.
-//   - "cpu"     — a CPU-only build, always (Linux/Windows), so the app can
-//     fall back to it if the GPU build won't run a given model. macOS has
-//     only the Metal build, so no separate CPU stage there.
-//
-// report is called with (step, totalSteps, line) as each phase runs and as
-// the installer streams output.
-func InstallOfficial(ctx context.Context, stageDir string, report func(step, steps int, line string)) error {
-	if report == nil {
-		report = func(int, int, string) {}
-	}
-	if err := os.MkdirAll(stageDir, 0o755); err != nil {
-		return err
-	}
-	defer os.RemoveAll(installerScratch()) //nolint:errcheck // best-effort cleanup
-
-	steps := 2
-	if runtime.GOOS == "darwin" {
-		steps = 1 // Metal only
-	}
-
-	// Step 1: default install (GPU-capable when possible).
-	report(1, steps, "installing GPU-capable build")
-	if err := runInstaller(ctx, nil, func(l string) { report(1, steps, l) }); err != nil {
-		return fmt.Errorf("primary install: %w", err)
-	}
-	if err := stageBinary(installerSource(), filepath.Join(stageDir, stagedName("primary"))); err != nil {
-		return err
-	}
-
-	if steps == 2 {
-		// Step 2: force CPU by skipping every GPU backend probe.
-		report(2, steps, "installing CPU fallback build")
-		cpuEnv := []string{"SKIP_CUDA=1", "SKIP_ROCM=1", "SKIP_VULKAN=1"}
-		if err := runInstaller(ctx, cpuEnv, func(l string) { report(2, steps, l) }); err != nil {
-			return fmt.Errorf("cpu install: %w", err)
-		}
-		if err := stageBinary(installerSource(), filepath.Join(stageDir, stagedName("cpu"))); err != nil {
-			return err
-		}
-	}
-
-	report(steps, steps, "ready")
-	return nil
-}
-
-func runInstaller(ctx context.Context, extraEnv []string, onLine func(string)) error {
-	// SKIP_INSTALL: the installer downloads to its scratch dir but does not
-	// copy the binary anywhere on PATH — the app moves it into its data dir.
-	env := append([]string{"SKIP_INSTALL=1"}, extraEnv...)
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		var b strings.Builder
-		for _, e := range env {
-			k, v, _ := strings.Cut(e, "=")
-			fmt.Fprintf(&b, "$env:%s='%s'; ", k, v)
-		}
-		b.WriteString("irm https://llama.app/install.ps1 | iex")
-		cmd = exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", b.String())
-	} else {
-		cmd = exec.CommandContext(ctx, "sh", "-c", "curl -fsSL https://llama.app/install.sh | sh")
-		cmd.Env = append(os.Environ(), env...)
-	}
-
-	process.Background(cmd)
-	pr, pw := io.Pipe()
-	cmd.Stdout = pw
-	cmd.Stderr = pw
-	if err := cmd.Start(); err != nil {
-		_ = pw.Close()
-		return err
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		sc := bufio.NewScanner(pr)
-		sc.Buffer(make([]byte, 0, 8<<10), 1<<20)
-		for sc.Scan() {
-			if line := strings.TrimRight(sc.Text(), "\r"); line != "" && onLine != nil {
-				onLine(line)
-			}
-		}
-	}()
-	err := cmd.Wait()
-	_ = pw.Close()
-	<-done
-	return err
-}
-
-func stageBinary(src, dst string) error {
-	if !isFile(src) {
-		return fmt.Errorf("llama: installer produced no binary at %s", src)
-	}
-	in, err := os.Open(src) //nolint:gosec // src is the installer's fixed output path
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	tmp := dst + ".tmp"
-	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755) //nolint:gosec
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		out.Close()
-		os.Remove(tmp) //nolint:errcheck
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp, dst)
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -84,5 +85,49 @@ func TestRecommendationSettingsConcurrentReadsAndWrites(t *testing.T) {
 	saved := config.LoadPrefs(c.cfg.DataDir)
 	if !saved.OnboardingDone || saved.RecommendationMode != string(core.CLAPFirst) {
 		t.Fatal("concurrent settings clobbered one another")
+	}
+}
+
+func TestStartupMigratesOnlyCurrentRecommendationPreference(t *testing.T) {
+	for _, legacy := range []core.RecommendationMode{core.CLAPFirst, core.AcousticBrainzFirst} {
+		t.Run(string(legacy), func(t *testing.T) {
+			cfg := testConfig(t)
+			prefs := config.Prefs{RecommendationMode: string(legacy), OnboardingDone: true, ModelDisabled: true, PreviewProvider: "off", DebugLogging: true}
+			if err := prefs.Save(cfg.DataDir); err != nil {
+				t.Fatal(err)
+			}
+			c, err := New(context.Background(), cfg, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.RecommendationMode() != core.EnhancedHybrid {
+				t.Fatal("legacy current mode remains active")
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
+			got, err := config.LoadPrefsChecked(cfg.DataDir)
+			if err != nil || got.RecommendationMode != string(core.EnhancedHybrid) || !got.OnboardingDone || !got.ModelDisabled || got.PreviewProvider != "off" || !got.DebugLogging {
+				t.Fatalf("migration lost settings: %+v %v", got, err)
+			}
+			before, err := os.ReadFile(filepath.Join(cfg.DataDir, "prefs.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, err = New(context.Background(), cfg, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := c.Close(); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(filepath.Join(cfg.DataDir, "prefs.json"))
+			if err != nil || string(after) != string(before) {
+				t.Fatal("restart changed migrated preferences", err)
+			}
+			if !legacy.Valid() {
+				t.Fatal("historical mode contract was removed")
+			}
+		})
 	}
 }

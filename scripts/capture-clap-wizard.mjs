@@ -21,6 +21,7 @@ try {
     export const Events={On(name,fn){ const handler=e=>fn({data:e.detail});window.addEventListener(name,handler);return ()=>window.removeEventListener(name,handler);}};
     export const Clipboard={}; export const Call={}; export const CancellablePromise=Promise;
     export const System={IsMac:()=>false};
+    export const Browser={OpenURL:async()=>{}};
   ` }));
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     let installed=false; let attempts=0;
@@ -34,6 +35,7 @@ try {
       p.cancel=()=>{rejectCall(new Error('Download stopped'));return Promise.resolve();};return p;
     };
     const methods={
+      GetSetupStatus:()=>({onboarded:false,pendingSteps:window.__unsupported?['model','preview']:['model','analysis','preview'],repairSteps:[]}),
       GetCatalogInfo:()=>({loaded:true}),GetModelStatus:()=>({backend:'llama',modelId:'qwen9'}),GetLlamaRuntime:()=>({available:true,builds:['cpu']}),GetInstalledModels:()=>[],
       GetModelRecommendations:()=>({models:[{id:'qwen3',label:'Qwen2.5 3B',params:'3B',sizeApprox:1929903264,ramGb:4,recommended:true,installed:true}],hardware:{gpuAvailable:false}}),
       GetRecommendedAnalysisBundle:()=>{window.__recommendationCalls=(window.__recommendationCalls||0)+1;return bundle;},
@@ -88,12 +90,11 @@ try {
   await page.getByRole("button", {name:"Get started"}).click();
   await page.getByRole("heading", {name:"Language understanding"}).waitFor();
   await page.getByRole("button", {name:"Continue",exact:true}).click();
-  await page.getByText("Models alone cannot add the missing application worker.", {exact:false}).waitFor();
+  await page.getByRole("heading", {name:"Track previews",exact:true}).waitFor();
   if(await page.getByRole("button",{name:"Download and validate CLAP",exact:true}).count()) throw Error("Unsupported build offered a download");
   if(await page.evaluate(()=>window.__recommendationCalls||0)) throw Error("Unsupported build attempted bundle discovery");
   await page.screenshot({path:output+"/unsupported-build.png",fullPage:true});
-  await page.getByRole("button", {name:"Continue",exact:true}).click();
-  await page.getByRole("heading", {name:"Music analysis",exact:true}).waitFor({state:"hidden"});
+  if(await page.getByRole("heading",{name:"Music analysis",exact:true}).count()) throw Error("Unsupported model created an impossible wizard step");
   if(errors.length) throw Error(errors.join("\n"));
   console.log("PASS: one language recommendation, recommended/custom CLAP, download/retry/validation/cancel, calibration state, documentation links, themes and narrow window");
 } finally { await browser.close(); }

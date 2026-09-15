@@ -1,4 +1,5 @@
 import type { PlaylistResult } from "./api";
+import type { PlaylistFeedback } from "./playlistFeedback";
 
 export interface PlaylistControls {
   audioWeight: number;
@@ -13,6 +14,7 @@ export interface PlaylistControls {
 }
 
 export interface PlaylistDraft {
+  feedback?: PlaylistFeedback;
   controls: PlaylistControls;
   accepted?: { controls: PlaylistControls; result: PlaylistResult };
 }
