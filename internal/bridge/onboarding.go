@@ -7,6 +7,7 @@ import "github.com/platten/playlistai/internal/app"
 // application version do not reopen a completed wizard.
 type SetupStatus struct {
 	Onboarded    bool     `json:"onboarded"`
+	Pending      bool     `json:"pending"`
 	NeedsSetup   bool     `json:"needsSetup"`
 	PendingSteps []string `json:"pendingSteps"`
 	RepairSteps  []string `json:"repairSteps"`
@@ -23,7 +24,11 @@ func (a *API) GetSetupStatus() (SetupStatus, error) {
 }
 
 func setupStatus(r app.SetupReadiness) SetupStatus {
-	status := SetupStatus{Onboarded: r.Onboarded, PendingSteps: []string{}, RepairSteps: []string{}}
+	status := SetupStatus{Onboarded: r.Onboarded, Pending: r.Pending, PendingSteps: []string{}, RepairSteps: []string{}}
+	if r.Pending {
+		status.NeedsSetup = !r.Onboarded
+		return status
+	}
 	for _, step := range []struct {
 		name       string
 		capability app.SetupCapability
@@ -50,5 +55,5 @@ func (a *API) GetOnboarded() bool {
 // CompleteOnboarding marks the first-run wizard done. Readiness may still
 // identify a later repair to a capability the user selected.
 func (a *API) CompleteOnboarding() error {
-	return a.app.SetOnboarded()
+	return a.app.CompleteSetup()
 }

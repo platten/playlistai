@@ -18,7 +18,7 @@ import (
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-// DynamicCatalog overlays a bounded persistent set of preview-resolved tracks
+// DynamicCatalog overlays a persistent set of preview-resolved tracks
 // on the immutable Deej-AI catalog. Its row/vector methods deliberately expose
 // only the base catalog so the two identity spaces cannot corrupt dense search.
 type DynamicCatalog struct {
@@ -27,6 +27,12 @@ type DynamicCatalog struct {
 	db       *sql.DB
 	mu       sync.RWMutex
 	tracks   map[string]core.TrackMeta
+	search   []dynamicSearchTrack // immutable snapshot, invalidated after a successful write
+}
+
+type dynamicSearchTrack struct {
+	ref        core.TrackRef
+	normalized string
 }
 
 func OpenDynamic(base ports.Catalog, resolver ports.ReferenceResolver, path string) (*DynamicCatalog, error) {
@@ -92,6 +98,10 @@ func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	if meta.FullRecordingDuration != nil {
 		duration, source, recording = meta.FullRecordingDuration.Milliseconds, meta.FullRecordingDuration.Source, meta.FullRecordingDuration.RecordingID
 	}
+	// Serialize persistence and publication so concurrent updates to one ID
+	// cannot leave the in-memory view older than the database.
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	_, err := d.db.Exec(`INSERT INTO dynamic_tracks(id,artist,title,preview_url,album,duration_ms,duration_source,recording_id,updated_at)
 		VALUES(?,?,?,?,?,?,?,?,unixepoch()) ON CONFLICT(id) DO UPDATE SET artist=excluded.artist,title=excluded.title,
 		preview_url=excluded.preview_url,album=excluded.album,duration_ms=excluded.duration_ms,
@@ -100,9 +110,8 @@ func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	if err != nil {
 		return err
 	}
-	d.mu.Lock()
 	d.tracks[id] = meta
-	d.mu.Unlock()
+	d.search = nil
 	return nil
 }
 
@@ -130,23 +139,34 @@ func (d *DynamicCatalog) Resolve(query string, max int) []core.TrackRef {
 		return out
 	}
 	q := core.NormalizeIdentityPart(query)
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	ids := make([]string, 0, len(d.tracks))
-	for id := range d.tracks {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		meta := d.tracks[id]
-		if q == "" || strings.Contains(core.NormalizeIdentityPart(meta.Ref.Display()), q) {
-			out = append(out, meta.Ref)
+	for _, entry := range d.searchSnapshot() {
+		if q == "" || strings.Contains(entry.normalized, q) {
+			out = append(out, entry.ref)
 			if len(out) == max {
 				break
 			}
 		}
 	}
 	return out
+}
+
+func (d *DynamicCatalog) searchSnapshot() []dynamicSearchTrack {
+	d.mu.RLock()
+	snapshot := d.search
+	d.mu.RUnlock()
+	if snapshot != nil {
+		return snapshot
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.search == nil {
+		d.search = make([]dynamicSearchTrack, 0, len(d.tracks))
+		for _, meta := range d.tracks {
+			d.search = append(d.search, dynamicSearchTrack{ref: meta.Ref, normalized: core.NormalizeIdentityPart(meta.Ref.Display())})
+		}
+		sort.Slice(d.search, func(i, j int) bool { return d.search[i].ref.ID < d.search[j].ref.ID })
+	}
+	return d.search
 }
 
 func (d *DynamicCatalog) CatalogVersion() string { return d.resolver.CatalogVersion() }

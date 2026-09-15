@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   API,
   FeedbackScope,
@@ -22,6 +22,8 @@ import { hasFixedTrackCount, playlistOutcomeMessage } from "../lib/playlistOutco
 import { PlaylistDuration } from "../components/PlaylistDuration";
 import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
 import { EnhancedAudioEvidence } from "../components/EnhancedAudioEvidence";
+import { createPlaylistFeedback, feedbackPendingKey } from "../lib/playlistFeedback";
+import { recommendationModeLabel } from "../lib/recommendationMode";
 
 const KIND_TO_PROVENANCE: Record<string, Provenance> = {
   seed: "seed",
@@ -109,7 +111,8 @@ export function PlaylistScreen({
     (result?.assessments ?? []).map((assessment) => [assessment.trackId, assessment]),
   ), [result?.assessments]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [feedback, setFeedback] = useState<Record<string, string[]>>({});
+  const [feedbackSession] = useState(() => restored?.feedback ?? createPlaylistFeedback());
+  const feedback = useSyncExternalStore(feedbackSession.subscribe, feedbackSession.getSnapshot);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const player = usePreviewPlayer();
 
@@ -130,7 +133,7 @@ export function PlaylistScreen({
       `request-${sessionId}-${randomSeed()}`,
     [initialResult?.reproducibility?.id, request.requestId, requestKey, sessionId],
   );
-  useEffect(() => { onDraft?.({ controls, accepted: accepted.current }); }, [controls, result, onDraft]);
+  useEffect(() => { onDraft?.({ controls, accepted: accepted.current, feedback: feedbackSession }); }, [controls, result, onDraft, feedbackSession]);
   useEffect(() => {
     let current = true;
     if (result?.presentationId) void onDisplayed?.(result.presentationId).catch((error: unknown) => {
@@ -247,21 +250,14 @@ export function PlaylistScreen({
     scope: FeedbackScope,
   ) => {
     setFeedbackError(null);
-    API.RecordFeedback({
+    void feedbackSession.record({
       type,
       scope,
       trackId: track.id,
       requestId: feedbackRequestId,
       sessionId,
       context: { surface: "playlist", position, rationaleKind: track.kind },
-    })
-      .then(() =>
-        setFeedback((current) => ({
-          ...current,
-          [track.id]: [...(current[track.id] ?? []), type],
-        })),
-      )
-      .catch((feedbackFailure) => setFeedbackError(String(feedbackFailure)));
+    });
   };
 
   return (
@@ -279,7 +275,7 @@ export function PlaylistScreen({
           <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] break-words">{heading}</h1>
           <p className="mt-1.5 text-[12px] text-muted">
             {isJourney ? "journey" : "similarity walk"} · {tracks.length} tracks
-            {` · ${engineOnly ? "Deej-AI only" : recommendationMode === "clap_first" ? "CLAP first" : "AcousticBrainz first"}`}
+            {` · ${recommendationModeLabel(recommendationMode)}`}
             {result ? ` · seed ${result.seed}` : ""}
           </p>
           <PlaylistDuration duration={result?.duration} />
@@ -422,7 +418,7 @@ export function PlaylistScreen({
       ))}
 
 
-      {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} className="mt-3" />}
+      {(feedbackError || feedback.error) && <ErrorState variant="inline" message={feedbackError || feedback.error!} onDismiss={() => { setFeedbackError(null); feedbackSession.dismissError(); }} className="mt-3" />}
 
       <p className="mt-4 text-[12px] text-muted">Listen to a short preview of each song. Availability depends on your preview provider.</p>
       <div className="mt-2 divide-y divide-line rounded-card border border-line bg-surface p-2">
@@ -437,7 +433,7 @@ export function PlaylistScreen({
           />
         ) : (
           tracks.map((t, i) => {
-            const recorded = feedback[t.id] ?? [];
+            const recorded = feedback.preferences[t.id] ?? {};
             const acoustic = acousticByTrack.get(t.id);
             const comparisons = comparisonsByTrack.get(t.id) ?? [];
             const fit = fitByTrack.get(t.id);
@@ -509,7 +505,8 @@ export function PlaylistScreen({
                     <FeedbackButton
                       label="Like"
                       durable
-                      disabled={recorded.includes("like")}
+                      selected={recorded.durable === "like"}
+                      pending={feedback.pending[feedbackPendingKey(t.id, "durable")]}
                       onClick={() =>
                         recordFeedback(
                           t,
@@ -522,7 +519,8 @@ export function PlaylistScreen({
                     <FeedbackButton
                       label="Dislike"
                       durable
-                      disabled={recorded.includes("dislike")}
+                      selected={recorded.durable === "dislike"}
+                      pending={feedback.pending[feedbackPendingKey(t.id, "durable")]}
                       onClick={() =>
                         recordFeedback(
                           t,
@@ -534,7 +532,8 @@ export function PlaylistScreen({
                     />
                     <FeedbackButton
                       label="More like this"
-                      disabled={recorded.includes("more_like")}
+                      selected={recorded.request === "more_like"}
+                      pending={feedback.pending[feedbackPendingKey(t.id, "request")]}
                       onClick={() =>
                         recordFeedback(
                           t,
@@ -546,7 +545,8 @@ export function PlaylistScreen({
                     />
                     <FeedbackButton
                       label="Less for this playlist"
-                      disabled={recorded.includes("less_like")}
+                      selected={recorded.request === "less_like"}
+                      pending={feedback.pending[feedbackPendingKey(t.id, "request")]}
                       onClick={() =>
                         recordFeedback(
                           t,
@@ -570,23 +570,26 @@ export function PlaylistScreen({
 function FeedbackButton({
   label,
   durable,
-  disabled,
+  selected,
+  pending,
   onClick,
 }: {
   label: string;
   durable?: boolean;
-  disabled: boolean;
+  selected: boolean;
+  pending?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={selected || pending}
+      aria-pressed={selected}
       onClick={onClick}
       title={durable ? "Saved as a durable taste preference" : "Applies only to this playlist request"}
       className="rounded-control border border-line px-2 py-1 text-muted hover:border-line-strong hover:text-text disabled:border-accent/30 disabled:bg-accent-quiet disabled:text-accent"
     >
-      {disabled ? `${label} recorded` : label}
+      {pending ? `${label}: saving…` : selected ? `${label} recorded` : label}
     </button>
   );
 }

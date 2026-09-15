@@ -17,7 +17,7 @@ import (
 
 const (
 	ProfileContractVersion  = 2
-	ProfileAlgorithmVersion = "taste-profile/v2"
+	ProfileAlgorithmVersion = "taste-profile/v3"
 	profileHalfLife         = 30 * 24 * time.Hour
 	exposureHalfLife        = 7 * 24 * time.Hour
 	maxTasteClusters        = 4
@@ -64,13 +64,13 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 		return profile, nil
 	}
 
-	ordered := append([]core.FeedbackEvent(nil), events...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].OccurredAt.Equal(ordered[j].OccurredAt) {
-			return ordered[i].ID < ordered[j].ID
-		}
-		return ordered[i].OccurredAt.Before(ordered[j].OccurredAt)
-	})
+	ordered := orderedFeedback(events)
+	// Both dense and content projections consume the same corrected preference
+	// state. Preserve every exposure separately; showing music is not a vote.
+	effective, err := effectiveFeedback(ctx, ordered, options)
+	if err != nil {
+		return core.TasteProfile{}, err
+	}
 	var contributing, exposures []core.FeedbackEvent
 	for index, event := range ordered {
 		if index&255 == 0 {
@@ -88,13 +88,11 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 					profile.AsOf = event.OccurredAt.UTC()
 				}
 			}
-			continue
 		}
-		if event.Scope == core.FeedbackScopeRequest && !matchesRequest(event, options) {
-			continue
-		}
-		if _, _, ok := feedbackWeight(event.Type); !ok {
-			continue
+	}
+	for index, event := range effective {
+		if index&255 == 0 && ctx.Err() != nil {
+			return core.TasteProfile{}, ctx.Err()
 		}
 		if _, ok := catalog.Vectors(event.TrackID); !ok {
 			continue

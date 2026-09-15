@@ -45,8 +45,11 @@ type FeedbackVersions struct {
 // FeedbackEvent is an append-only local record. Exposure is deliberately a
 // separate type and never implies positive preference.
 type FeedbackEvent struct {
-	Version    int              `json:"version"`
-	ID         string           `json:"id"`
+	Version int    `json:"version"`
+	ID      string `json:"id"`
+	// Sequence is the store-assigned insertion order. Zero means an older
+	// serialized event without that field; timestamps remain the primary order.
+	Sequence   int64            `json:"sequence,omitempty"`
 	OccurredAt time.Time        `json:"occurredAt"`
 	Type       FeedbackType     `json:"type"`
 	Scope      FeedbackScope    `json:"scope"`

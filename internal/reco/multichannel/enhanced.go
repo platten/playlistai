@@ -127,8 +127,8 @@ func (r *TransparentRanker) enhancedScores(candidates []core.Candidate, intent c
 		return
 	}
 	clauses := enhancedClauses(intent)
-	positive := r.enhancedReferences(input, positiveReferenceVectors(r.cat, intent))
-	negative := r.enhancedReferences(input, negativeReferenceVectors(r.cat, intent))
+	positive := r.enhancedReferences(input, intentReferenceTracks(r.cat, intent, core.InfluencePositive, false))
+	negative := r.enhancedReferences(input, intentReferenceTracks(r.cat, intent, core.InfluenceNegative, false))
 	if len(positive) == 0 {
 		positive = append(positive, []enhancedReference{{input.PositiveCentroid, 1}})
 	}
@@ -174,13 +174,13 @@ type enhancedReference struct {
 	weight float64
 }
 
-func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, refs []referenceVectors) [][]enhancedReference {
+func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, refs []referenceTracks) [][]enhancedReference {
 	var out [][]enhancedReference
 	for _, group := range refs {
 		var weight float64
 		var representatives []enhancedReference
 		for _, rep := range group.reps {
-			meta, ok := r.cat.Meta(rep.id)
+			meta, ok := r.cat.Meta(rep.TrackID)
 			if !ok {
 				continue
 			}
@@ -188,8 +188,8 @@ func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, re
 			if !ok {
 				continue
 			}
-			weight += rep.weight
-			representatives = append(representatives, enhancedReference{vector, rep.weight})
+			weight += rep.Weight
+			representatives = append(representatives, enhancedReference{vector, rep.Weight})
 		}
 		if weight > 0 {
 			for index := range representatives {

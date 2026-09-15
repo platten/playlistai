@@ -8,6 +8,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/history"
+	"github.com/platten/playlistai/internal/taste"
 )
 
 func TestDeriveTitle(t *testing.T) {
@@ -207,7 +208,7 @@ func TestGenerateFromPromptSavesToHistory(t *testing.T) {
 		t.Fatalf("saved generation is not replayable without rebuilding: %+v", loaded)
 	}
 	if loaded.Request.SessionID != "history-session" || loaded.Request.RequestID == "" ||
-		loaded.Result.Reproducibility.ProfileVersion != "taste-profile/v2" || loaded.Result.Reproducibility.ProfileSnapshot == "" {
+		loaded.Result.Reproducibility.ProfileVersion != taste.ProfileAlgorithmVersion || loaded.Result.Reproducibility.ProfileSnapshot == "" {
 		t.Fatalf("saved generation lost request or profile context: %+v", loaded)
 	}
 

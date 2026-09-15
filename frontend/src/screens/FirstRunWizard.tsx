@@ -11,6 +11,7 @@ import {
 import { AppIcon, Button, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { waitForSetupStatus } from "../lib/setupReadiness";
 
 type Step = "welcome" | "catalog" | "metadata" | "model" | "analysis" | "mert" | "preview" | "done";
 const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "analysis", "mert", "preview", "done"];
@@ -38,6 +39,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
   const [steps, setSteps] = useState<Step[]>([]);
   const [step, setStep] = useState<Step | null>(null);
   const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState("");
   const [checking, setChecking] = useState(true);
   const [checkError, setCheckError] = useState("");
   const [repair, setRepair] = useState(false);
@@ -49,7 +51,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
     const id = ++request.current;
     setChecking(true); setCheckError("");
     try {
-      const status = initialStatus ?? await API.GetSetupStatus();
+      const status = await waitForSetupStatus(() => alive.current && request.current === id, initialStatus);
       if (!alive.current || request.current !== id) return;
       const selected = setupSteps(status);
       setSteps(selected); setStep(selected[0]);
@@ -75,7 +77,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
     // without revisiting completed steps or adding newly introduced steps.
     const remaining = steps.slice(steps.indexOf(step) + 1);
     try {
-      const status = await API.GetSetupStatus();
+      const status = await waitForSetupStatus(() => alive.current && request.current === id);
       if (!alive.current || request.current !== id) return;
       const pending = status ? (repair ? status.repairSteps : status.pendingSteps) ?? [] : remaining;
       const selected = remaining.filter((candidate) => candidate === "done" || pending.includes(candidate));
@@ -90,11 +92,29 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
   }, [step, steps, repair]);
 
   const finish = useCallback(() => {
+    if (advancing.current) return;
+    advancing.current = true;
     setFinishing(true);
-    API.CompleteOnboarding()
-      .catch(() => undefined)
-      .finally(onDone); // local-first: don't get stuck here over a write error
+    setFinishError("");
+    void API.CompleteOnboarding()
+      .then(() => { if (alive.current) onDone(); })
+      .catch((error: unknown) => { if (alive.current) setFinishError(String(error)); })
+      .finally(() => { advancing.current = false; if (alive.current) setFinishing(false); });
   }, [onDone]);
+
+  const reviewMissingSetup = async () => {
+    setChecking(true);
+    try {
+      const status = await waitForSetupStatus(() => alive.current);
+      if (!alive.current) return;
+      const selected = setupSteps(status).filter((candidate) => candidate !== "welcome");
+      setSteps(selected); setStep(selected[0] ?? "done");
+      setRepair(Boolean(status?.onboarded && status.needsSetup));
+      setFinishError("");
+    } catch (error) {
+      if (alive.current) setFinishError(String(error));
+    } finally { if (alive.current) setChecking(false); }
+  };
 
   const stepIndex = step ? steps.indexOf(step) : 0;
 
@@ -130,7 +150,13 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "analysis" && <RequiredAnalysisStep onNext={next} />}
         {step === "mert" && <RequiredMERTStep onNext={next} />}
         {step === "preview" && <PreviewStep onNext={next} />}
-        {step === "done" && <DoneStep finishing={finishing} onFinish={finish} />}
+        {step === "done" && <>
+          {finishError && <div className="mb-4 flex flex-col gap-2">
+            <ErrorState variant="inline" message={finishError} onRetry={finish} onDismiss={() => setFinishError("")} />
+            <Button size="sm" variant="ghost" onClick={() => void reviewMissingSetup()}>Check required setup</Button>
+          </div>}
+          <DoneStep finishing={finishing} onFinish={finish} />
+        </>}
       </div>
     </div>
   );
@@ -207,8 +233,10 @@ function WelcomeStep({ onNext }: { onNext: () => void }) {
         <h1 className="text-[22px] font-semibold tracking-[-0.01em]">Welcome to Playlist AI</h1>
         <p className="max-w-[46ch] text-[14px] text-muted">
           Local-first playlist recommendations over a ~957k-track embedding catalog.
-          Nothing you type or play leaves your machine except optional, explicit lookups —
-          MusicBrainz for metadata, Deezer for previews, Soundiiz if you choose to export.
+          Your descriptions and taste profile stay on this device. Recommendations
+          can look up artist, album, and track identifiers with MusicBrainz and
+          Deezer for metadata and previews. Export sends your selected playlist
+          to Soundiiz only when you choose its handoff.
         </p>
         <p className="text-[12px] text-faint">Free and open source, licensed GPL-3.0.</p>
       </div>

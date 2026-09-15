@@ -1,6 +1,7 @@
 package taste
 
 import (
+	"context"
 	"math"
 	"sort"
 
@@ -10,26 +11,62 @@ import (
 // ContentFeedback keeps the latest explicit preference per catalog track ID, with
 // matching request feedback ahead of durable history. Exposure is never a vote.
 func ContentFeedback(events []core.FeedbackEvent, profile core.TasteProfile) []core.FeedbackEvent {
+	out, _ := effectiveFeedback(context.Background(), orderedFeedback(events), ProfileOptions{RequestID: profile.RequestID, SessionID: profile.SessionID})
+	return out
+}
+
+func orderedFeedback(events []core.FeedbackEvent) []core.FeedbackEvent {
 	ordered := append([]core.FeedbackEvent(nil), events...)
 	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].OccurredAt.Equal(ordered[j].OccurredAt) {
-			return ordered[i].ID < ordered[j].ID
+		if !ordered[i].OccurredAt.Equal(ordered[j].OccurredAt) {
+			return ordered[i].OccurredAt.Before(ordered[j].OccurredAt)
 		}
-		return ordered[i].OccurredAt.Before(ordered[j].OccurredAt)
+		// Legacy unstored fixtures retain input order on ties. Persisted events
+		// always have a stable sequence, including those migrated from old stores.
+		return ordered[i].Sequence < ordered[j].Sequence
 	})
-	durable, request := map[string]core.FeedbackEvent{}, map[string]core.FeedbackEvent{}
-	for _, e := range ordered {
+	return ordered
+}
+
+// Direct preference (like/dislike, more/less) is state, not an accumulating
+// tally. Acceptance/removal is separate review state and contributes its weaker
+// signal only when there is no direct preference in that scope. Matching
+// request state overrides durable state for the same track, in both models.
+func effectiveFeedback(ctx context.Context, ordered []core.FeedbackEvent, options ProfileOptions) ([]core.FeedbackEvent, error) {
+	type states struct {
+		direct, review map[string]core.FeedbackEvent
+	}
+	newStates := func() states { return states{map[string]core.FeedbackEvent{}, map[string]core.FeedbackEvent{}} }
+	durableState, requestState := newStates(), newStates()
+	for i, e := range ordered {
+		if i&255 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if _, _, ok := feedbackWeight(e.Type); !ok {
 			continue
 		}
-		if e.Scope == core.FeedbackScopeDurable {
-			durable[e.TrackID] = e
+		var state states
+		switch {
+		case e.Scope == core.FeedbackScopeDurable:
+			state = durableState
+		case e.Scope == core.FeedbackScopeRequest && matchesRequest(e, options):
+			state = requestState
+		default:
 			continue
 		}
-		if e.Scope == core.FeedbackScopeRequest && matchesRequest(e, ProfileOptions{RequestID: profile.RequestID, SessionID: profile.SessionID}) {
-			request[e.TrackID] = e
+		if e.Type == core.FeedbackAccepted || e.Type == core.FeedbackRemoved {
+			state.review[e.TrackID] = e
+		} else {
+			state.direct[e.TrackID] = e
 		}
 	}
+	collapse := func(state states) map[string]core.FeedbackEvent {
+		for id, event := range state.direct {
+			state.review[id] = event
+		}
+		return state.review
+	}
+	durable, request := collapse(durableState), collapse(requestState)
 	for id, e := range request {
 		durable[id] = e
 	}
@@ -38,7 +75,7 @@ func ContentFeedback(events []core.FeedbackEvent, profile core.TasteProfile) []c
 		out = append(out, e)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].TrackID < out[j].TrackID })
-	return out
+	return out, ctx.Err()
 }
 
 // ContentCentroids projects cached compatible representations only. It neither

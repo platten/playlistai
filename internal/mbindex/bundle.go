@@ -19,6 +19,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/platten/playlistai/internal/dataset"
+	"github.com/platten/playlistai/internal/installlock"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -300,7 +301,7 @@ func LoadBundle(ctx context.Context, source string) (BundleManifest, error) {
 	return m, m.Validate()
 }
 
-func Install(ctx context.Context, source, dir string, p ports.Progress) (string, error) {
+func Install(ctx context.Context, source, dir string, p ports.Progress) (installed string, err error) {
 	if p == nil {
 		p = ports.NopProgress{}
 	}
@@ -311,22 +312,56 @@ func Install(ctx context.Context, source, dir string, p ports.Progress) (string,
 	if err = os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	lock, err := os.OpenFile(filepath.Join(dir, "install.lock"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return "", errors.New("MusicBrainz install is already running or has an interrupted lock")
+		return "", err
 	}
-	defer func() { _ = lock.Close(); _ = os.Remove(lock.Name()) }()
+	defer root.Close()
+	lockFile, err := root.OpenFile("install.lock", os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return "", err
+	}
+	release, err := installlock.TryAcquireFile(lockFile)
+	if err != nil {
+		return "", fmt.Errorf("MusicBrainz install: %w", err)
+	}
+	defer func() { err = errors.Join(err, release()) }()
 	name := "musicbrainz-" + strings.ToLower(m.Index.SHA256) + ".sqlite"
 	target := filepath.Join(dir, name)
-	if verifyArtifact(ctx, target, m.Index) == nil {
-		if err := activate(dir, name); err != nil {
-			return "", err
+	// Repairs may use a fresh sibling when the hash-named file is corrupt and
+	// still open by another reader. Reuse an already repaired active copy too.
+	for _, candidate := range []string{target, ActivePath(dir)} {
+		if verifyArtifact(ctx, candidate, m.Index) == nil {
+			if err := ctx.Err(); err != nil {
+				return "", err
+			}
+			if err := activate(dir, filepath.Base(candidate)); err != nil {
+				return "", err
+			}
+			return candidate, nil
 		}
-		return target, nil
 	}
-	if _, err := os.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-		return "", errors.New("existing MusicBrainz index failed validation")
+	if err := ctx.Err(); err != nil {
+		return "", err
 	}
+	// Never unlink or overwrite a mapped corrupt database. Always own a fresh
+	// target, including the first install, so cancellation cleanup cannot delete
+	// a file created by another writer after our initial validation.
+	fresh, err := os.CreateTemp(dir, "musicbrainz-"+strings.ToLower(m.Index.SHA256)+"-*.sqlite")
+	if err != nil {
+		return "", err
+	}
+	target, name = fresh.Name(), filepath.Base(fresh.Name())
+	if err := fresh.Close(); err != nil {
+		_ = os.Remove(target)
+		return "", err
+	}
+	activated := false
+	defer func() {
+		if !activated {
+			err = errors.Join(err, removeIfPresent(target))
+		}
+	}()
 	u, _ := validateBundleURL(source)
 	paths := make([]string, len(m.Parts))
 	total := int64(0)
@@ -353,14 +388,26 @@ func Install(ctx context.Context, source, dir string, p ports.Progress) (string,
 	if err = expandParts(ctx, paths, target, m, p, nil); err != nil {
 		return "", err
 	}
+	if err = ctx.Err(); err != nil {
+		return "", err
+	}
 	if err = activate(dir, name); err != nil {
 		return "", err
 	}
+	activated = true
 	for _, path := range paths {
 		_ = os.Remove(path)
 	}
 	p.Report(ProgressOp, 1, 1, "Offline MusicBrainz index ready")
 	return target, nil
+}
+
+func removeIfPresent(path string) error {
+	err := os.Remove(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
 }
 
 func expandParts(ctx context.Context, paths []string, target string, m BundleManifest, p ports.Progress, progress func(done, total int64)) error {

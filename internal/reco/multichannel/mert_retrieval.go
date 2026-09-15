@@ -32,16 +32,20 @@ func (o *Orchestrator) WithMERTSimilaritySearchProvider(provider MERTSimilarityS
 }
 
 func mertSimilarityQueries(cat ports.Catalog, intent core.MusicIntent) []core.MERTSimilarityQuery {
-	groups := positiveReferenceVectors(cat, intent)
+	groups := intentReferenceTracks(cat, intent, core.InfluencePositive, false)
 	if len(groups) == 0 {
-		groups = requiredFallbackVectors(cat, intent)
+		for i, ref := range intent.RequiredTracks {
+			if reps := referenceTrackIdentities(cat, ref, false); len(reps) > 0 {
+				groups = append(groups, referenceTracks{id: "required:" + itoa(i), reps: reps})
+			}
+		}
 	}
 	var out []core.MERTSimilarityQuery
 	for _, group := range groups {
 		var total float64
 		for _, rep := range group.reps {
-			if rep.weight > 0 {
-				total += rep.weight
+			if rep.Weight > 0 {
+				total += rep.Weight
 			}
 		}
 		if total <= 0 {
@@ -51,12 +55,12 @@ func mertSimilarityQueries(cat ports.Catalog, intent core.MusicIntent) []core.ME
 			if len(out) == maxMERTSimilarityQueries {
 				return out
 			}
-			meta, ok := cat.Meta(rep.id)
-			if !ok || rep.weight <= 0 {
+			meta, ok := cat.Meta(rep.TrackID)
+			if !ok || rep.Weight <= 0 {
 				continue
 			}
 			out = append(out, core.MERTSimilarityQuery{
-				GroupID: group.id, Track: meta.Ref, Weight: rep.weight / total,
+				GroupID: group.id, Track: meta.Ref, Weight: rep.Weight / total,
 			})
 		}
 	}

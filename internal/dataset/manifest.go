@@ -5,6 +5,7 @@ package dataset
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,12 @@ import (
 
 	"github.com/platten/playlistai/internal/httpretry"
 )
+
+// Catalog manifests are small, flat collections. These bounds exceed shipped
+// catalogs while preventing an untrusted declaration from overflowing budgets.
+const maxManifestBytes = 1 << 20
+const maxCatalogBytes int64 = 128 << 30
+const maxManifestFiles = 64
 
 // File is one downloadable artifact in a Manifest.
 type File struct {
@@ -57,27 +64,79 @@ func LoadManifest(ctx context.Context, location string) (*Manifest, error) {
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("manifest %s: HTTP %d", location, resp.StatusCode)
 		}
-		raw, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		raw, err = io.ReadAll(io.LimitReader(contextReader{ctx, resp.Body}, maxManifestBytes+1))
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		b, err := os.ReadFile(location) //nolint:gosec // operator-supplied config path
+		f, err := os.Open(location) //nolint:gosec // operator-supplied config path
 		if err != nil {
 			return nil, err
 		}
-		raw = b
+		defer f.Close()
+		raw, err = io.ReadAll(io.LimitReader(contextReader{ctx, f}, maxManifestBytes+1))
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(raw) > maxManifestBytes {
+		return nil, fmt.Errorf("manifest exceeds %d bytes", maxManifestBytes)
 	}
 
 	var m Manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, fmt.Errorf("manifest %s: %w", location, err)
 	}
-	if len(m.Files) == 0 {
-		return nil, fmt.Errorf("manifest %s: no files listed", location)
+	if err := m.Validate(); err != nil {
+		return nil, fmt.Errorf("manifest %s: %w", location, err)
 	}
 	m.baseURL = location
 	return &m, nil
+}
+
+// Validate checks the complete manifest before any filesystem mutation. Names
+// follow the same portable flat-file policy on every supported platform.
+func (m *Manifest) Validate() error {
+	if m == nil || len(m.Files) == 0 || len(m.Files) > maxManifestFiles {
+		return fmt.Errorf("manifest must list 1–%d files", maxManifestFiles)
+	}
+	seen := make(map[string]bool, len(m.Files))
+	var total int64
+	for _, f := range m.Files {
+		name := strings.ToLower(f.Name)
+		if !validArtifactName(f.Name) || name == manifestEntryName || strings.HasSuffix(name, partSuffix) || seen[name] {
+			return fmt.Errorf("invalid or duplicate manifest filename %q", f.Name)
+		}
+		seen[name] = true
+		if f.Size < 0 || f.Size > maxCatalogBytes-total {
+			return fmt.Errorf("manifest exceeds catalog size budget")
+		}
+		total += f.Size
+		digest, err := hex.DecodeString(f.SHA256)
+		if err != nil || len(digest) != 32 {
+			return fmt.Errorf("invalid SHA-256 for %q", f.Name)
+		}
+	}
+	return nil
+}
+
+func validArtifactName(name string) bool {
+	if len(name) == 0 || len(name) > 255 || name[0] == '.' || strings.HasSuffix(name, ".") {
+		return false
+	}
+	for _, c := range name {
+		allowed := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.'
+		if !allowed {
+			return false
+		}
+	}
+	base, _, _ := strings.Cut(strings.ToUpper(name), ".")
+	switch base {
+	case "CON", "PRN", "AUX", "NUL", "CLOCK$", "CONIN$", "CONOUT$":
+		return false
+	}
+	device := len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '0' && base[3] <= '9'
+	return !device
 }
 
 // fileURL resolves the download URL for a file entry.

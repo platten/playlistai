@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Clipboard } from "@wailsio/runtime";
 import { API, FeedbackScope, FeedbackType, type ExportTrackDTO } from "../lib/api";
+import { createExportOperation, type ExportKind, type ExportOperation, type SavedExport } from "../lib/exportOperation";
 import {
   Button,
   EmptyState,
@@ -16,16 +17,11 @@ interface Row {
   include: boolean;
 }
 
-type Saved =
-  | { kind: "handoff"; url: string; count: number; opened: boolean }
-  | { kind: "csv"; path: string; count: number }
-  | { kind: "csv-canceled" };
-
 export interface ExportDraft {
   rows: Row[] | null;
   name: string;
-  saved: Saved | null;
-  accepted: boolean;
+  saved: SavedExport | null;
+  operation?: ExportOperation;
 }
 
 /** Review local playlist details, then hand off to Soundiiz or download a CSV. */
@@ -52,9 +48,11 @@ export function ReviewExport({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [name, setName] = useState(restored?.name ?? heading);
-  const [exporting, setExporting] = useState<null | "handoff" | "csv">(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<Saved | null>(restored?.saved ?? null);
+  const [operation] = useState(() => restored?.operation ?? createExportOperation(restored?.saved));
+  const operationState = useSyncExternalStore(operation.subscribe, operation.getSnapshot);
+  const { pending: exporting, saved } = operationState;
+  const [localExportError, setExportError] = useState<string | null>(null);
+  const exportError = localExportError ?? operationState.error;
   const [copied, setCopied] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
@@ -68,17 +66,15 @@ export function ReviewExport({
   };
 
   const exportProgress = useProgress("export");
-  const acceptanceRecorded = useRef(restored?.accepted ?? false);
   useEffect(() => {
-    onDraft?.({ rows, name, saved, accepted: acceptanceRecorded.current });
-  }, [rows, name, saved, exporting, onDraft]);
+    onDraft?.({ rows, name, saved, operation });
+  }, [rows, name, saved, operation, onDraft]);
 
   const loadSequence = useRef(0);
   const loadTracks = useCallback(() => {
     const sequence = ++loadSequence.current;
     setLoading(true);
     setLoadError(null);
-    setSaved(null);
     API.PrepareExport(trackIds)
       .then((res) => {
         if (sequence !== loadSequence.current) return;
@@ -125,38 +121,9 @@ export function ReviewExport({
     }).catch((feedbackFailure) => setFeedbackError(String(feedbackFailure)));
   };
 
-  const doExport = (kind: "handoff" | "csv") => {
-    if (includedTracks.length === 0) return;
-    setExporting(kind);
+  const doExport = (kind: ExportKind) => {
     setExportError(null);
-    setSaved(null);
-    const recordAcceptance = acceptanceRecorded.current
-      ? Promise.resolve()
-      : API.RecordTrackAcceptance({
-          trackIds: includedTracks.map((track) => track.id),
-          requestId,
-          sessionId,
-        })
-          .then(() => {
-            acceptanceRecorded.current = true;
-          })
-          .catch((feedbackFailure) => {
-            setFeedbackError(String(feedbackFailure));
-          });
-    const call = recordAcceptance.then(() =>
-      kind === "handoff"
-        ? API.OpenSoundiizHandoff(name.trim() || "Playlist", includedTracks).then((res) =>
-            setSaved({ kind: "handoff", url: res.url, count: res.count, opened: res.opened }),
-          )
-        : API.ExportCSV(name.trim() || "Playlist", includedTracks).then((res) =>
-            setSaved(
-              res.canceled
-                ? { kind: "csv-canceled" }
-                : { kind: "csv", path: res.path, count: res.count },
-            ),
-          ),
-    );
-    call.catch((e) => setExportError(String(e))).finally(() => setExporting(null));
+    void operation.start(kind, { name, tracks: includedTracks, requestId, sessionId });
   };
 
   return (
@@ -243,13 +210,13 @@ export function ReviewExport({
           </div>
 
           <div className="mt-4 flex flex-col gap-3 rounded-card border border-line bg-surface px-4 py-4">
-            {feedbackError && <ErrorState variant="inline" message={feedbackError} onDismiss={() => setFeedbackError(null)} />}
-            <label className="flex items-center gap-3 text-[13px]">
-              <span className="w-28 shrink-0 text-muted">Playlist name</span>
+            {(feedbackError || operationState.feedbackError) && <ErrorState variant="inline" message={feedbackError || operationState.feedbackError!} onDismiss={() => { setFeedbackError(null); operation.dismissFeedbackError(); }} />}
+            <label className="flex flex-col gap-2 text-[13px] sm:flex-row sm:items-center sm:gap-3">
+              <span className="shrink-0 text-muted sm:w-28">Playlist name</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="h-9 flex-1 rounded-control border border-line bg-bg px-3 text-text outline-none focus:border-accent"
+                className="h-9 min-w-0 rounded-control border border-line bg-bg px-3 text-text outline-none focus:border-accent sm:flex-1"
               />
             </label>
 
@@ -257,12 +224,13 @@ export function ReviewExport({
               <ProgressBar
                 label={exporting === "handoff" ? "Sending to Soundiiz" : "Building CSV"}
                 done={exportProgress?.done ?? 0}
-                total={exportProgress?.total ?? includedTracks.length}
+                total={exportProgress?.total ?? operationState.payload?.tracks.length ?? 0}
                 note={exportProgress?.note}
               />
             )}
+            {operationState.payload && (exporting || saved) && <p className="break-words text-[12px] text-muted">{exporting ? "Exporting" : "Last export"}: {operationState.payload.name} · {operationState.payload.tracks.length} tracks. Changes to the selection apply to your next export.</p>}
 
-            {exportError && <ErrorState variant="inline" message={exportError} onDismiss={() => setExportError(null)} />}
+            {exportError && <ErrorState variant="inline" message={exportError} onDismiss={() => { setExportError(null); operation.dismissError(); }} />}
 
             {saved?.kind === "handoff" && (
               <div className="flex flex-col gap-2 rounded-lg border border-accent/30 bg-accent-quiet px-3 py-2.5 text-[12.5px]">
@@ -307,11 +275,11 @@ export function ReviewExport({
               <p className="text-[12.5px] text-faint">CSV save canceled.</p>
             )}
 
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex flex-col items-stretch gap-3 pt-1 sm:flex-row sm:items-center">
               <span className="text-[12px] text-faint">
                 {includedTracks.length} of {rows.length} selected
               </span>
-              <div className="flex-1" />
+              <div className="hidden flex-1 sm:block" />
               <Button
                 variant="ghost"
                 iconLeft={<Icon.Download size={14} />}

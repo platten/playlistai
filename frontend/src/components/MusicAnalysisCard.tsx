@@ -18,30 +18,48 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
   const [installKind, setInstallKind] = useState<"recommended" | "custom" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
   const download = useRef<ReturnType<typeof API.InstallAnalysisBundle> | null>(null);
+  const mounted = useRef(true);
+  const revision = useRef(0);
   const progress = useProgress("analysis-model");
   const refresh = useCallback(async () => {
+    const current = ++revision.current;
     try {
       let value = await API.GetAnalysisStatus();
-      if (setup && value?.available && value?.generalFitAvailable && !value?.enabled) {
+      if (!mounted.current || current !== revision.current) return false;
+      if (setup && !value?.loading && value?.available && value?.generalFitAvailable && !value?.enabled) {
         await API.SetAnalysisEnabled(true);
         value = await API.GetAnalysisStatus();
       }
+      if (!mounted.current || current !== revision.current) return false;
       setStatus(value);
-      onReadyChange?.(Boolean(value?.available));
+      onReadyChange?.(Boolean(value?.available && !value?.loading));
+      return Boolean(value?.loading);
     } catch (e) {
+      if (!mounted.current || current !== revision.current) return false;
+      setStatus(null);
       setError(String(e));
       onReadyChange?.(false);
+      return false;
     }
   }, [onReadyChange, setup]);
-  useEffect(() => { void refresh(); return () => { void download.current?.cancel("analysis card closed"); }; }, [refresh]);
+  useEffect(() => {
+    mounted.current = true;
+    let active = true;
+    let timer: number | undefined;
+    const poll = async () => { if (await refresh() && active) timer = window.setTimeout(() => void poll(), 500); };
+    void poll();
+    return () => { active = false; mounted.current = false; revision.current++; window.clearTimeout(timer); void download.current?.cancel("analysis card closed"); };
+  }, [refresh, refreshToken]);
   useEffect(() => {
     let disposed = false;
-    if (!status?.recommendedAvailable || (setup && status.installed)) { setRecommended(null); return; }
+    if (status?.loading || !status?.recommendedAvailable || (setup && status.installed)) { setRecommended(null); return; }
     void API.GetRecommendedAnalysisBundle().then((value) => { if (!disposed) setRecommended(value); }).catch((e: unknown) => { if (!disposed) setRecommendationError(String(e)); });
     return () => { disposed = true; };
-  }, [setup, status?.installed, status?.recommendedAvailable]);
+  }, [setup, status?.loading, status?.installed, status?.recommendedAvailable]);
   const run = async (fn: () => Promise<unknown>) => {
+    if (busy || status?.loading) return;
     setBusy(true); setError(null);
     try { await fn(); await refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
@@ -59,9 +77,9 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
         <p className="mt-1 text-[13px] text-muted">Check musical fit against your description using previews.</p>
       </div>
       <p className="text-[12.5px] text-muted">The installed CLAP model compares previews with your description for ranking and screens no-vocals requests. Deezer receives artist, track, or recording identifiers to retrieve previews. Your descriptions and taste profile stay on this device. Preview audio is processed in memory; reusable features remain until you clear them.</p>
-      <p role="status" className="text-[12.5px] text-muted">{status?.detail || "Checking music analysis availability…"}</p>
+      <p role="status" className="text-[12.5px] text-muted">{status?.loading ? "Validating the installed music analysis model…" : status?.detail || "Checking music analysis availability…"}</p>
       {status && !status.recommendedAvailable && <p role="note" className="rounded-control border border-line p-3 text-[12.5px] text-muted">{status.recommendedDetail}</p>}
-      {(status?.installed || status?.available) && (
+      {!status?.loading && (status?.installed || status?.available) && (
         <>
           <p className="text-[12px] text-faint">{status.model} · {size(status.downloadBytes)} installed artifacts · {size(status.memoryBytes)} memory budget</p>
           {setup && <p className="text-[13px] text-muted">Music analysis is enabled automatically for description ranking and no-vocals checks.</p>}
@@ -85,9 +103,9 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
       {recommendationError && <ErrorState variant="inline" message={recommendationError} onDismiss={() => setRecommendationError(null)} />}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12px] text-muted">
         <span>{status ? `${size(status.storage.bytes)} · ${status.storage.records} cached recordings` : "Local analysis storage"}</span>
-        <Button size="sm" variant="ghost" disabled={busy || !status || status.storage.records === 0} onClick={() => { if (window.confirm("Clear local audio features and their request assessments? Saved playlists and taste data are kept.")) void run(() => API.ClearAnalysis()); }}>Clear analysis</Button>
+        <Button size="sm" variant="ghost" disabled={busy || !status || status.loading || status.storage.records === 0} onClick={() => { if (window.confirm("Clear local audio features and their request assessments? Saved playlists and taste data are kept.")) void run(() => API.ClearAnalysis()); }}>Clear analysis</Button>
       </div>
-      <details className="text-[12px] text-muted">
+      {!status?.loading && <details className="text-[12px] text-muted">
         <summary className="cursor-pointer">Use a custom CLAP model bundle</summary>
         <p className="mt-2">Use paired audio and text encoders producing normalized 512-dimensional embeddings, with the matching tokenizer, preprocessing and reference tests. Different checkpoints keep separate feature caches. No-vocals requests use preview screening; similarities guide ranking, while categorical musical-fit judgments require a calibrated policy.</p>
         <p className="mt-2"><a className="text-accent underline" href="https://github.com/LAION-AI/CLAP#reproducibility" target="_blank" rel="noreferrer">Train or fine-tune CLAP</a>{" · "}<a className="text-accent underline" href="https://huggingface.co/docs/optimum-onnx/onnx/usage_guides/export_a_model" target="_blank" rel="noreferrer">Export a model to ONNX</a></p>
@@ -99,7 +117,7 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
           {bundle && <Button size="sm" variant="primary" disabled={busy} onClick={() => void install(true)}>{error ? "Retry custom download" : "Download and validate custom bundle"}</Button>}
         </div>
         {bundle && <p className="mt-2">{bundle.label} · {size((bundle.artifacts ?? []).reduce((n, a) => n + a.size, 0))} download · {size(bundle.memoryBytes)} memory · {bundle.license}</p>}
-      </details>
+      </details>}
       {installKind && <><ProgressBar
         label={progress?.note || "Preparing CLAP download…"}
         done={progress?.done ?? 0}
@@ -108,7 +126,7 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
           ? `${size(progress.done)} / ${size(progress.total)}`
           : `${size(progress?.done ?? 0)} downloaded`}
       /><Button size="sm" variant="ghost" onClick={() => void download.current?.cancel("download stopped")}>Stop download</Button></>}
-      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} />}
+      {error && <ErrorState variant="inline" message={error} onDismiss={() => setError(null)} onRetry={!status ? () => { setError(null); setRefreshToken((value) => value + 1); } : undefined} />}
     </section>
   );
 }

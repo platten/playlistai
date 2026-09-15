@@ -19,6 +19,15 @@ func (c *Container) RecommendationMode() core.RecommendationMode {
 	return core.EnhancedHybrid
 }
 
+// Legacy policies remain valid for explicit callers and saved requests. Startup
+// migrates old current preferences to the supported desktop settings only.
+func currentRecommendationMode(mode core.RecommendationMode) core.RecommendationMode {
+	if mode == core.AcousticBrainzFirst || mode == core.CLAPFirst {
+		return core.EnhancedHybrid
+	}
+	return mode
+}
+
 func (c *Container) SetRecommendationMode(mode core.RecommendationMode) error {
 	if mode == "" || !mode.Valid() {
 		return fmt.Errorf("unknown recommendation mode %q", mode)

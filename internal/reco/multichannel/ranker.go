@@ -55,10 +55,19 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			}
 		}
 		result[index].Scores.AcousticIntent, result[index].Available.AcousticIntent = acousticIntentScore(comparisons)
+		candidate := &result[index]
+		// Exposure is recording metadata, independent of any embedding space.
+		// Dynamic preview-resolved recordings deliberately have no dense vectors.
+		candidate.Scores.RecentExposure, candidate.Available.RecentExposure = 0, false
+		if exposure, available := recentExposures[core.ProvisionalRecordingKey(candidate.Track)]; available {
+			candidate.Scores.RecentExposure = clamp(exposure, 0, 1)
+			candidate.Available.RecentExposure = true
+		} else if request.Profile.ExposureCount > 0 {
+			candidate.Available.RecentExposure = true
+		}
 		if !ok {
 			continue
 		}
-		candidate := &result[index]
 		candidate.Scores.AudioSeedAffinity, candidate.Available.AudioSeedAffinity =
 			weightedSpaceSimilarity(vectors.Audio, positiveRefs, true)
 		candidate.Scores.CooccurrenceAffinity, candidate.Available.CooccurrenceAffinity =
@@ -83,12 +92,6 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			requestNegative, requestNegativeAvailable,
 			historyNegative, historyNegativeAvailable,
 		)
-		if exposure, available := recentExposures[core.ProvisionalRecordingKey(candidate.Track)]; available {
-			candidate.Scores.RecentExposure = clamp(exposure, 0, 1)
-			candidate.Available.RecentExposure = true
-		} else if request.Profile.ExposureCount > 0 {
-			candidate.Available.RecentExposure = true
-		}
 		if historyAvailable {
 			candidate.Scores.Novelty = clamp((1-historyPositive)/2, 0, 1)
 			candidate.Available.Novelty = true

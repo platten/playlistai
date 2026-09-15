@@ -86,6 +86,89 @@ async function generate() {
   await screen.findByText("Original song 1");
 }
 
+it("waits for native model validation before routing into setup or generation", async () => {
+  bridge.GetSetupStatus
+    .mockImplementationOnce(() => completed({ pending: true, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }))
+    .mockImplementation(() => completed({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }));
+  render(<App />);
+  await screen.findByText("Checking installed models and setup…");
+  expect(screen.queryByLabelText("Your description")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
+  await screen.findByLabelText("Your description");
+  expect(bridge.GetSetupStatus).toHaveBeenCalledTimes(2);
+});
+
+it("retains a pending export across navigation and exports its captured selection", async () => {
+  await generate();
+  fireEvent.click(screen.getByRole("button", { name: "Review & export" }));
+  const acceptance = deferred();
+  const handoff = deferred();
+  bridge.RecordTrackAcceptance.mockReturnValueOnce(acceptance.promise);
+  bridge.OpenSoundiizHandoff.mockReturnValueOnce(handoff.promise);
+  fireEvent.click(await screen.findByRole("button", { name: "Open Soundiiz handoff" }));
+  await waitFor(() => expect(bridge.RecordTrackAcceptance).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "Export" }));
+  const exportButton = await screen.findByRole("button", { name: "Open Soundiiz handoff" });
+  expect((exportButton as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText("Playlist name"), { target: { value: "Next export" } });
+  fireEvent.click(screen.getAllByRole("checkbox")[0]);
+  expect(screen.getByRole("progressbar", { name: "Sending to Soundiiz" }).getAttribute("aria-valuetext")).toBe("0 / 2");
+  await act(async () => acceptance.resolve(null));
+  await waitFor(() => expect(bridge.OpenSoundiizHandoff).toHaveBeenCalledOnce());
+  expect(bridge.OpenSoundiizHandoff.mock.calls[0][0]).toBe("Original");
+  expect(bridge.OpenSoundiizHandoff.mock.calls[0][1]).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Playlist" }));
+  await act(async () => handoff.resolve({ url: "https://soundiiz.com/go/import-playlist/fixture", count: 2, opened: false }));
+  fireEvent.click(screen.getByRole("button", { name: "Export" }));
+  await screen.findByText(/Soundiiz import ready for 2 tracks/);
+  expect((screen.getByLabelText("Playlist name") as HTMLInputElement).value).toBe("Next export");
+  expect(bridge.OpenSoundiizHandoff).toHaveBeenCalledOnce();
+  bridge.ExportCSV.mockImplementationOnce(() => completed({ path: "next.csv", count: 1 }));
+  fireEvent.click(screen.getByRole("button", { name: "Download CSV" }));
+  await waitFor(() => expect(bridge.ExportCSV).toHaveBeenCalledWith("Next export", [expect.objectContaining({ id: "Original-1" })]));
+});
+
+it("shows latest acknowledged feedback and keeps a pending correction across navigation", async () => {
+  await generate();
+  fireEvent.click(screen.getByRole("button", { name: "Track details: Artist 1 — Original song 1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Like" }));
+  await screen.findByRole("button", { name: "Like recorded" });
+  const pending = deferred();
+  bridge.RecordFeedback.mockReturnValueOnce(pending.promise);
+  fireEvent.click(screen.getByRole("button", { name: "Dislike" }));
+  expect((screen.getByRole("button", { name: "Like: saving…" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  await act(async () => pending.resolve(null));
+  fireEvent.click(screen.getByRole("button", { name: "Playlist" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Track details: Artist 1 — Original song 1" }));
+  await screen.findByRole("button", { name: "Dislike recorded" });
+  expect((screen.getByRole("button", { name: "Like" }) as HTMLButtonElement).disabled).toBe(false);
+  bridge.RecordFeedback.mockRejectedValueOnce(new Error("feedback write failed"));
+  fireEvent.click(screen.getByRole("button", { name: "Like" }));
+  await screen.findByText(/feedback write failed/);
+  expect(screen.getByRole("button", { name: "Dislike recorded" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Like" }));
+  await screen.findByRole("button", { name: "Like recorded" });
+  expect((screen.getByRole("button", { name: "Dislike" }) as HTMLButtonElement).disabled).toBe(false);
+  for (const choice of ["More like this", "Less for this playlist", "More like this"]) {
+    fireEvent.click(screen.getByRole("button", { name: choice }));
+    await screen.findByRole("button", { name: `${choice} recorded` });
+  }
+});
+
+it("labels an Enhanced hybrid playlist correctly", async () => {
+  bridge.GenerateFromPromptWithContext.mockImplementation((_prompt, context) => {
+    const value = fixture();
+    value.request.intent.controls.recommendationMode = "enhanced_hybrid";
+    value.playlist.intent.controls.recommendationMode = "enhanced_hybrid";
+    return completed({ ...value, playlist: { ...value.playlist, generationId: context.generationId } });
+  });
+  await generate();
+  expect(screen.getByText(/similarity walk · 2 tracks · Enhanced hybrid/)).toBeTruthy();
+  expect(screen.queryByText(/similarity walk · 2 tracks · AcousticBrainz first/)).toBeNull();
+});
+
 describe("active playlist navigation", () => {
   it("keeps Settings open on background completion and presents the result on return", async () => {
     const pending = deferred();

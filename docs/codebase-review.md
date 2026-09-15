@@ -1,5 +1,10 @@
 # Correctness and maintainability review
 
+This is the historical 2026-09-11 review. For the subsequent audit and current
+implementation evidence, see the [2026-09-15 remediation plan](codebase-remediation-plan-2026-09-15.md)
+and [remediation results](codebase-remediation-results-2026-09-15.md).
+Measurements below retain their original scope and date.
+
 ## Baseline and scope
 
 Reviewed `main` at `b79c031` on 2026-09-11. The implementation is being revised

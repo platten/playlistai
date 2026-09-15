@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -60,7 +61,13 @@ func TestIndexedCategorySearchMatchesFrozenReference(t *testing.T) {
 		sequencer := NewSequencer(cat, DefaultConfig())
 		got, exhausted, err := sequencer.categoryJourney(context.Background(), request)
 		want, wantExhausted, wantErr := sequencer.referenceCategoryJourney(context.Background(), request)
-		if fmt.Sprint(err) != fmt.Sprint(wantErr) || exhausted != wantExhausted || !reflect.DeepEqual(got, want) {
+		errorsMatch := fmt.Sprint(err) == fmt.Sprint(wantErr)
+		if !errorsMatch && errors.Is(wantErr, core.ErrRequiredTrackConflict) {
+			// Path selection retains parity; the old beam mislabeled a search
+			// failure as proof of a user-constraint conflict.
+			errorsMatch = errors.Is(err, errJourneySearchExhausted) && !errors.Is(err, core.ErrRequiredTrackConflict)
+		}
+		if !errorsMatch || exhausted != wantExhausted || !reflect.DeepEqual(got, want) {
 			t.Fatalf("scenario %d changed path, ties or exhaustion:\ngot=%+v exhausted=%v err=%v\nwant=%+v exhausted=%v err=%v", scenario, got, exhausted, err, want, wantExhausted, wantErr)
 		}
 	}

@@ -2,12 +2,70 @@ package catalog
 
 import (
 	"database/sql"
+	"errors"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/platten/playlistai/internal/installlock"
 )
+
+func TestCatalogHoldsInstallationLeaseUntilClose(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{VectorsFile, DBFile} {
+		data, err := os.ReadFile(filepath.Join("testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	tryWrite := func() (func() error, error) {
+		f, err := os.OpenFile(filepath.Join(dir, ".catalog.lock"), os.O_RDWR, 0)
+		if err != nil {
+			return nil, err
+		}
+		return installlock.TryAcquireFile(f)
+	}
+	if release, err := tryWrite(); !errors.Is(err, installlock.ErrBusy) {
+		if release != nil {
+			_ = release()
+		}
+		t.Fatalf("open catalog did not block writer: %v", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatal(err)
+	}
+	release, err := tryWrite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	// Failure before a Catalog is constructed must also release the lease.
+	if err := os.Remove(filepath.Join(dir, VectorsFile)); err != nil {
+		t.Fatal(err)
+	}
+	if failed, err := Open(dir); err == nil {
+		_ = failed.Close()
+		t.Fatal("missing vectors accepted")
+	}
+	release, err = tryWrite()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = release()
+}
 
 func openTestdata(t *testing.T) *Catalog {
 	t.Helper()

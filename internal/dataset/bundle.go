@@ -83,7 +83,7 @@ func FindBundledArchive(explicit string) (string, bool) {
 // Unpack decompresses a catalog.tar.zst archive (written by cmd/catalogpack)
 // into dir, verifying each extracted file's size + SHA-256 against the
 // catalog-manifest.json entry embedded in the archive before promoting it
-// (via the same target+".part" -> rename dance Download uses). Progress is
+// as one recoverable catalog transaction. Progress is
 // reported under BundleOp as bytes of the *compressed* archive consumed —
 // the same approximation Fetch makes for downloads (proportional, not exact,
 // but monotonic and cheap).
@@ -94,7 +94,7 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 	if p == nil {
 		p = ports.NopProgress{}
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := Recover(dir); err != nil {
 		return err
 	}
 
@@ -105,6 +105,19 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c, err := beginCatalogInstall(dir)
+	if err != nil {
+		return err
+	}
+	defer c.close()
+	// Another installer may have completed while this call acquired the lock.
+	if m, err := LoadManifest(ctx, filepath.Join(dir, manifestEntryName)); err == nil && allPresentContext(ctx, dir, m) {
+		p.Report(BundleOp, 1, 1, "ready")
+		return nil
+	}
+	if err := c.prepare(); err != nil {
 		return err
 	}
 
@@ -124,27 +137,15 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 		p.Report(BundleOp, n, total, "Decompressing dataset")
 	}}
 
-	zr, err := zstd.NewReader(cr)
+	zr, err := zstd.NewReader(contextReader{ctx, cr}, zstd.WithDecoderMaxMemory(256<<20), zstd.WithDecoderMaxWindow(128<<20))
 	if err != nil {
 		return fmt.Errorf("unpack: %w", err)
 	}
 	defer zr.Close()
 
 	var m *Manifest
-	extracted := make(map[string]string) // manifest file name -> ".part" path written
-
-	// Whatever happens, never leave a ".part" file behind: either every
-	// extracted file gets verified + promoted (success=true below suppresses
-	// this), or none of them do.
-	success := false
-	defer func() {
-		if success {
-			return
-		}
-		for _, part := range extracted {
-			os.Remove(part) //nolint:errcheck
-		}
-	}()
+	extracted := make(map[string]bool)
+	declared := make(map[string]File)
 
 	tr := tar.NewReader(zr)
 	for {
@@ -158,10 +159,16 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 		if err != nil {
 			return fmt.Errorf("unpack: %w", err)
 		}
-		name := filepath.Base(hdr.Name) // defend against any directory components
+		name := hdr.Name
+		if !validArtifactName(name) || hdr.Typeflag != tar.TypeReg {
+			return fmt.Errorf("unpack: invalid regular-file entry %q", name)
+		}
 
 		if name == manifestEntryName {
-			raw, err := io.ReadAll(tr)
+			if m != nil || hdr.Size < 0 || hdr.Size > maxManifestBytes {
+				return fmt.Errorf("unpack: invalid manifest entry")
+			}
+			raw, err := io.ReadAll(io.LimitReader(contextReader{ctx, tr}, maxManifestBytes+1))
 			if err != nil {
 				return fmt.Errorf("unpack: read manifest entry: %w", err)
 			}
@@ -169,29 +176,45 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 			if err := json.Unmarshal(raw, &mm); err != nil {
 				return fmt.Errorf("unpack: parse manifest entry: %w", err)
 			}
+			if err := mm.Validate(); err != nil {
+				return fmt.Errorf("unpack: %w", err)
+			}
 			m = &mm
-			// Drop the manifest in dir so a later Unpack/LoadCatalog can tell
-			// the catalog is already unpacked without touching the archive.
-			_ = os.WriteFile(filepath.Join(dir, manifestEntryName), raw, 0o644) //nolint:gosec
+			for _, f := range m.Files {
+				declared[f.Name] = f
+			}
+			if err := writeSynced(c.root, filepath.Join(c.stage, manifestEntryName), raw); err != nil {
+				return err
+			}
 			continue
 		}
 
-		if m == nil || !m.has(name) {
+		want, listed := declared[name]
+		if !listed || extracted[name] {
 			return fmt.Errorf("unpack: %s: not listed in the archive's manifest", name)
 		}
-		target := filepath.Join(dir, name+partSuffix)
-		out, err := os.Create(target) //nolint:gosec
+		if hdr.Size != want.Size {
+			return fmt.Errorf("unpack: %s: header size does not match manifest", name)
+		}
+		target := filepath.Join(c.stage, name)
+		out, err := c.root.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
 			return fmt.Errorf("unpack: %w", err)
 		}
-		_, cerr := io.Copy(out, tr) //nolint:gosec // tar entry size bounded by the manifest check below
+		extracted[name] = true // the entire owned stage is cleaned even on a short copy
+		n, cerr := io.Copy(out, io.LimitReader(contextReader{ctx, tr}, want.Size))
+		if cerr == nil && n != want.Size {
+			cerr = io.ErrUnexpectedEOF
+		}
+		if cerr == nil {
+			cerr = out.Sync()
+		}
 		if err := out.Close(); err != nil && cerr == nil {
 			cerr = err
 		}
 		if cerr != nil {
 			return fmt.Errorf("unpack %s: %w", name, cerr)
 		}
-		extracted[name] = target
 	}
 
 	if m == nil {
@@ -199,47 +222,32 @@ func Unpack(ctx context.Context, archivePath, dir string, p ports.Progress) erro
 	}
 
 	for _, want := range m.Files {
-		part, ok := extracted[want.Name]
-		if !ok {
+		if !extracted[want.Name] {
 			return fmt.Errorf("unpack: archive's manifest lists %s but the archive had no such entry", want.Name)
 		}
-		if err := verifyFileContext(ctx, part, want.Size, want.SHA256); err != nil {
+		if err := verifyFileContext(ctx, filepath.Join(dir, c.stage, want.Name), want.Size, want.SHA256); err != nil {
 			return fmt.Errorf("unpack: %s: %w", want.Name, err)
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	names := make([]string, 0, len(m.Files)+1)
 	for _, want := range m.Files {
-		if err := os.Rename(extracted[want.Name], filepath.Join(dir, want.Name)); err != nil {
-			return fmt.Errorf("unpack: %s: %w", want.Name, err)
-		}
+		names = append(names, want.Name)
 	}
-
-	success = true
+	if err := c.publish(append(names, manifestEntryName)); err != nil {
+		return fmt.Errorf("unpack: activate catalog: %w", err)
+	}
 	p.Report(BundleOp, total, total, "ready")
 	return nil
-}
-
-// has reports whether name is one of m's listed files.
-func (m *Manifest) has(name string) bool {
-	for _, f := range m.Files {
-		if f.Name == name {
-			return true
-		}
-	}
-	return false
 }
 
 // allPresent reports whether every file m lists already exists in dir with the
 // right size + SHA-256.
 func allPresentContext(ctx context.Context, dir string, m *Manifest) bool {
-	if m == nil || len(m.Files) == 0 {
-		return false
-	}
-	for _, f := range m.Files {
-		if verifyFileContext(ctx, filepath.Join(dir, f.Name), f.Size, f.SHA256) != nil {
-			return false
-		}
-	}
-	return true
+	complete, _ := StatusContext(ctx, dir, m)
+	return complete
 }
 
 type countingReader struct {

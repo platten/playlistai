@@ -1017,6 +1017,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 
 	if err != nil {
+		if errors.Is(err, errJourneySearchExhausted) {
+			return outcomePlaylist(intent, seed, core.OutcomePartial, []core.OutcomeReason{{Code: "journey_order_search_exhausted", Detail: "The bounded ordering search did not find a sequence preserving every required waypoint, journey direction, and applicable hard artist spacing.", Action: "Try more fitting references or a shorter playlist."}}), nil
+		}
 		if errors.Is(err, core.ErrRequiredTrackConflict) {
 			action := "change the required-track order, choose a fitting waypoint, or relax hard artist spacing"
 			if genreArtistDiversity(intent) {
@@ -1243,12 +1246,12 @@ func (o *Orchestrator) categoryMembership(ctx context.Context, candidates []core
 }
 
 func resolvedReferenceTracks(cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {
-	refs := positiveReferenceVectors(cat, intent)
+	refs := intentReferenceTracks(cat, intent, core.InfluencePositive, false)
 	seen := map[string]struct{}{}
 	result := make([]core.TrackRef, 0)
 	for _, reference := range refs {
 		for _, representative := range reference.reps {
-			meta, ok := cat.Meta(representative.id)
+			meta, ok := cat.Meta(representative.TrackID)
 			if !ok {
 				continue
 			}

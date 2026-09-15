@@ -43,7 +43,7 @@ func matchesContextReference(plan core.ContextSeedPlan, reference core.IntentRef
 // It must never replace an explicit recording, alter required endpoints, or
 // cross over into the other recommendation policies. Missing/old context keeps
 // the ordinary catalog representatives, including for old saved histories.
-func contextualReferenceVectors(cat ports.Catalog, intent core.MusicIntent, reference core.IntentReference) []weightedVectors {
+func contextualReferenceTracks(cat ports.Catalog, intent core.MusicIntent, reference core.IntentReference, dense bool) []core.WeightedTrack {
 	if intent.Controls.RecommendationMode != core.EnhancedHybrid || intent.Knowledge == nil ||
 		(reference.Kind != core.ReferenceArtist && reference.Kind != core.ReferenceAlbum) {
 		return nil
@@ -65,8 +65,10 @@ func contextualReferenceVectors(cat ports.Catalog, intent core.MusicIntent, refe
 			if seen[key] {
 				continue
 			}
-			if vectors, ok := cat.Vectors(seed.TrackID); !ok || !vectorAvailable(vectors.Audio) && !vectorAvailable(vectors.Track) {
-				continue
+			if dense {
+				if vectors, ok := cat.Vectors(seed.TrackID); !ok || !vectorAvailable(vectors.Audio) && !vectorAvailable(vectors.Track) {
+					continue
+				}
 			}
 			seen[key] = true
 			tracks = append(tracks, seed)
@@ -79,7 +81,7 @@ func contextualReferenceVectors(cat ports.Catalog, intent core.MusicIntent, refe
 			for i := range tracks {
 				tracks[i].Weight /= total
 			}
-			return trackVectors(cat, tracks)
+			return tracks
 		}
 	}
 	return nil

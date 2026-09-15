@@ -49,8 +49,7 @@ the best layer for every musical attribute. No learned layer aggregator is used.
 
 ## Prepare the environment and notices
 
-Use CPython **3.12** (3.11 also has the required wheels, but was not executed in
-this run). Python 3.13 is incompatible with the pinned tokenizer build. From the
+Use CPython **3.12**, the version exercised in the current validation. From the
 repository root, with `python` resolving to 3.12:
 
 ```powershell
@@ -67,9 +66,21 @@ Get-Content "$ortPackage\LICENSE", "$ortPackage\ThirdPartyNotices.txt" | Set-Con
 & $mertPython -m pip freeze | Set-Content -Encoding utf8 "$assetRoot\derived-mert\python-environment.txt"
 ```
 
-The current retained environment used the bundled CPython 3.12 executable at
+The original retained environment used the bundled CPython 3.12 executable at
 `C:\Users\pawel\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe`
 to create the venv. The application does not depend on this path.
+
+The 2026-09-15 isolated environment uses torch 2.13.0+cpu, Transformers 5.10.1,
+tokenizers 0.22.2, ONNX 1.22.0, ONNX Runtime 1.26.0 and NumPy 2.3.4. Preflight
+derives its versions from the same requirements file used for installation.
+The former tokenizers 0.19.1 pin was incompatible with Transformers 5.10.1.
+Use a short venv path on Windows if pip encounters the filesystem path limit.
+
+Actual export of the retained hash-pinned custom implementation passed eight
+synthetic cases, including duration-weighted pooling: maximum absolute error
+1.0561197996139526e-6 and minimum cosine 0.9999999999826559. Model identity,
+dimension, source verification and artifact hashing remain enforced. The new
+graphs are validation outputs only; no installed or published model pack changed.
 
 Weights and the derived graph remain **CC-BY-NC-4.0**, separate from the GPL app.
 The generated `LICENSES.txt` includes attribution, source revision, a description

@@ -10,6 +10,7 @@ import type { PlaylistDraft } from "./lib/playlistDraft";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { FirstRunWizard } from "./screens/FirstRunWizard";
 import { UpdatePrompt } from "./components/UpdatePrompt";
+import { waitForSetupStatus } from "./lib/setupReadiness";
 
 type Screen = "generate" | "playlist" | "reviewexport" | "settings";
 
@@ -79,7 +80,7 @@ function AppContent() {
     let active = true;
     void (async () => {
       try {
-        const status = await API.GetSetupStatus();
+        const status = await waitForSetupStatus(() => active);
         if (status) {
           if (active) { setSetupStatus(status); setOnboarded(!status.needsSetup); }
           return;
@@ -121,7 +122,7 @@ function AppContent() {
   if (onboarded === null) {
     // Avoid a flash of the wizard (or the main shell) while the one check
     // resolves — this is a local read, effectively instant.
-    return <div className="h-full bg-bg" />;
+    return <div role="status" className="flex h-full items-center justify-center bg-bg p-8 text-sm text-muted">Checking installed models and setup…</div>;
   }
   if (!onboarded) {
     return <div className="h-full overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"><FirstRunWizard initialStatus={setupStatus} onDone={() => setOnboarded(true)} /></div>;

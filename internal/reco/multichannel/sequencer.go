@@ -69,6 +69,13 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		items = append(items, sequenceItem{track: end, required: true, fixed: true})
 	} else if (request.Intent.Mode == core.ModeJourney || request.Intent.Destination != nil || genreArtistDiversity(request.Intent)) && len(request.Required) >= 2 {
 		items, hardExhausted = s.journeyWithRequiredAnchors(ctx, request)
+		if request.Intent.Constraints.NoRepeatArtistBackToBack && (hardExhausted || !s.hardSpacingValid(items, request)) {
+			var err error
+			items, hardExhausted, err = s.repairRequiredJourney(ctx, request, items, journeySearchLimit)
+			if err != nil {
+				return ports.SequenceResult{}, err
+			}
+		}
 	} else {
 		items, hardExhausted = s.greedyFromPrefix(ctx, request)
 	}
@@ -117,7 +124,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		})
 	}
 	if hardExhausted {
-		code, detail := "hard_artist_spacing_exhausted", "Not enough suitable tracks from different artists to avoid consecutive repeats. Try more fitting references or a shorter playlist."
+		code, detail := "hard_artist_spacing_exhausted", "The bounded ordering search could not place all selected tracks while preserving hard artist spacing. Try more fitting references or a shorter playlist."
 		if len(request.CategoryStages) > 0 {
 			code, detail = "category_journey_exhausted", "the bounded ordering search could not place all selected tracks while preserving category direction, required order, and hard artist spacing"
 		}
@@ -160,6 +167,24 @@ func (s *GreedySequencer) journeyWithRequiredAnchors(ctx context.Context, reques
 	items := make([]sequenceItem, 0, len(request.Required)+len(request.Candidates))
 	remaining := append([]core.Candidate(nil), request.Candidates...)
 	perSegment := distribute(len(remaining), len(request.Required)-1)
+	reserved := map[string]int{}
+	if request.Intent.Constraints.NoRepeatArtistBackToBack {
+		minimum := make([]int, len(perSegment))
+		needed := 0
+		for segment := range minimum {
+			if sameArtist(request.Required[segment], request.Required[segment+1]) {
+				minimum[segment] = 1
+				needed++
+			}
+		}
+		if needed <= len(remaining) {
+			perSegment = distribute(len(remaining)-needed, len(perSegment))
+			for segment := range perSegment {
+				perSegment[segment] += minimum[segment]
+			}
+			reserved = reserveJourneySeparators(request.Required, remaining)
+		}
+	}
 	previous := s.startAnchor(request, nil)
 	hardExhausted := false
 	for segment := 0; segment < len(request.Required)-1; segment++ {
@@ -173,19 +198,64 @@ func (s *GreedySequencer) journeyWithRequiredAnchors(ctx context.Context, reques
 			if index == perSegment[segment]-1 {
 				avoidNext = end
 			}
-			candidate, next, ok := s.pick(ctx, remaining, previous, avoidNext, items, request, len(items))
+			// A later same-artist segment must retain an eligible separator.
+			// Other candidates remain available for the current musical ordering.
+			available := make([]core.Candidate, 0, len(remaining))
+			for _, candidate := range remaining {
+				if owner, exists := reserved[candidate.Track.ID]; !exists || owner <= segment {
+					available = append(available, candidate)
+				}
+			}
+			candidate, _, ok := s.pick(ctx, available, previous, avoidNext, items, request, len(items))
 			if !ok {
 				hardExhausted = true
 				break
 			}
 			items = append(items, sequenceItem{track: candidate.Track, candidate: &candidate})
-			remaining = next
+			for i := range remaining {
+				if remaining[i].Track.ID == candidate.Track.ID {
+					remaining = append(remaining[:i], remaining[i+1:]...)
+					break
+				}
+			}
 			previous = candidate.Track
 		}
 		items = append(items, sequenceItem{track: end, required: true, fixed: true})
 		previous = end
 	}
 	return items, hardExhausted
+}
+
+// Match scarce candidates to the required gaps before greedy sequencing can
+// spend them elsewhere. An augmenting path avoids assigning a versatile
+// separator to the only gap that a more restricted candidate can satisfy.
+func reserveJourneySeparators(required []core.TrackRef, candidates []core.Candidate) map[string]int {
+	owners := make(map[int]int)
+	var assign func(int, map[int]bool) bool
+	assign = func(segment int, seen map[int]bool) bool {
+		for i, candidate := range candidates {
+			if seen[i] || sameArtist(required[segment], candidate.Track) {
+				continue
+			}
+			seen[i] = true
+			previous, used := owners[i]
+			if !used || assign(previous, seen) {
+				owners[i] = segment
+				return true
+			}
+		}
+		return false
+	}
+	for segment := 0; segment < len(required)-1; segment++ {
+		if sameArtist(required[segment], required[segment+1]) && !assign(segment, map[int]bool{}) {
+			return nil // bounded fallback distinguishes search limits from a conflict
+		}
+	}
+	reserved := make(map[string]int, len(owners))
+	for index, segment := range owners {
+		reserved[candidates[index].Track.ID] = segment
+	}
+	return reserved
 }
 
 func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate, previous, avoidNext core.TrackRef, items []sequenceItem, request ports.SequenceRequest, position int) (core.Candidate, []core.Candidate, bool) {

@@ -20,6 +20,8 @@ import (
 
 type analysisState struct {
 	mu       sync.Mutex
+	opMu     sync.Mutex
+	startup  audioStartup
 	store    *audio.Store
 	bundles  *audio.BundleManager
 	worker   *audio.Worker
@@ -31,6 +33,7 @@ type analysisState struct {
 }
 
 type AnalysisStatus struct {
+	Loading              bool                      `json:"loading"`
 	RecommendedAvailable bool                      `json:"recommendedAvailable"`
 	RecommendedInstalled bool                      `json:"recommendedInstalled"`
 	RecommendedDetail    string                    `json:"recommendedDetail"`
@@ -59,11 +62,6 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 	}
 	s.store = store
 	c.RegisterCloser(store.Close)
-	if _, _, err := s.bundles.Active(); err == nil {
-		if err := c.loadAnalysis(ctx); err != nil {
-			s.detail = "The installed analysis bundle failed its health check. Retry installation."
-		}
-	}
 	c.RegisterCloser(func() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -75,11 +73,22 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 		}
 		return nil
 	})
+	if _, err := os.Stat(filepath.Join(s.bundles.Directory, "active.json")); err == nil {
+		s.startup.start(c, ctx, func(ctx context.Context) {
+			s.opMu.Lock()
+			defer s.opMu.Unlock()
+			if err := c.loadAnalysis(ctx); err != nil && ctx.Err() == nil {
+				s.mu.Lock()
+				s.detail = "The installed analysis bundle failed its health check. Retry installation."
+				s.mu.Unlock()
+			}
+		})
+	}
 }
 
 func (c *Container) loadAnalysis(ctx context.Context) error {
 	s := &c.analysis
-	dir, manifest, err := s.bundles.Active()
+	dir, manifest, err := s.bundles.ActiveContext(ctx)
 	if err != nil {
 		return err
 	}
@@ -97,6 +106,10 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		_ = pool.Close()
+		return err
+	}
 	if s.pool != nil {
 		_ = s.pool.Close()
 	} else if s.worker != nil {
@@ -150,6 +163,7 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
+	status.Loading = s.startup.loading()
 	recommended, recommendedErr := audio.RecommendedBundle()
 	distribution, distributionErr := modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
 	status.RecommendedAvailable = recommendedErr == nil && distributionErr == nil
@@ -210,6 +224,9 @@ func (c *Container) InstallAnalysisBundle(ctx context.Context, path string, p po
 func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p ports.Progress) error {
 	ctx, release := c.OperationContext(ctx)
 	defer release()
+	c.analysis.startup.stop()
+	c.analysis.opMu.Lock()
+	defer c.analysis.opMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -229,7 +246,7 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 		return err
 	}
 	defer cleanup()
-	manifest, err := audio.ReadBundle(directory)
+	manifest, err := audio.ReadBundleContext(ctx, directory)
 	if err != nil {
 		return err
 	}
@@ -242,6 +259,9 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.BundleManifest, p ports.Progress) error {
 	ctx, release := c.OperationContext(ctx)
 	defer release()
+	c.analysis.startup.stop()
+	c.analysis.opMu.Lock()
+	defer c.analysis.opMu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -302,6 +322,9 @@ func (c *Container) ClearAnalysis(ctx context.Context) error {
 }
 
 func (c *Container) RemoveAnalysisModel() error {
+	c.analysis.startup.stop()
+	c.analysis.opMu.Lock()
+	defer c.analysis.opMu.Unlock()
 	if err := c.SetAnalysisEnabled(false); err != nil {
 		return err
 	}
