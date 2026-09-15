@@ -42,15 +42,15 @@ try {
   const missingAnchors = await page.evaluate(() => [...document.querySelectorAll('a[href^="#"]')].filter(a => !document.getElementById(a.hash.slice(1))).map(a => a.hash));
   if (missingAnchors.length) throw Error('Missing anchor targets: '+missingAnchors.join(','));
   const downloads = await page.locator('a[href*="/releases/download/"]').evaluateAll(links => links.map(a => a.href));
-  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.14.2/'))) throw Error('Incorrect release downloads');
-  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.14.2')) throw Error('Latest release missing');
-  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.14.2')) throw Error('Public download version unclear');
+  if (downloads.length !== 16 || downloads.some(url => !url.includes('/v0.15.0/'))) throw Error('Incorrect release downloads');
+  if (!(await page.locator('.release-link').innerText()).includes('NOW AVAILABLE / VERSION 0.15.0')) throw Error('Latest release missing');
+  if (!(await page.locator('.version-label').innerText()).includes('LATEST RELEASE / 0.15.0')) throw Error('Public download version unclear');
   if (await page.locator('#new .release-list article').count() !== 4) throw Error('Release highlights missing');
   if (await page.locator('#recommendations .signal-path li').count() !== 5) throw Error('Recommendation architecture missing');
   await page.locator('.mode-options > summary').click();
   if (await page.locator('#recommendations .mode-card').count() !== 2) throw Error('Recommendation modes missing');
   if (!(await page.locator('#recommendations').innerText()).includes('DEFAULT FOR NEW SETUPS')) throw Error('Enhanced Hybrid default missing');
-  await page.getByRole('link', {name:'Read the 0.14.2 release notes'}).waitFor();
+  await page.getByRole('link', {name:'Read the 0.15.0 release notes'}).waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({width,height:1000});
     await page.evaluate(() => { document.querySelectorAll('details').forEach(d => d.open = false); document.activeElement?.blur(); window.scrollTo({top:0,behavior:'instant'}); });
@@ -62,6 +62,7 @@ try {
       const style = '.site-header,.skip-link{visibility:hidden!important}';
       await page.locator('#recommendations').screenshot({path:path.join(output,`modes-${width}.png`),style});
       await page.locator('#new').screenshot({path:path.join(output,`release-${width}.png`),style});
+      await page.locator('#download').screenshot({path:path.join(output,`downloads-${width}.png`),style});
     }
   }
   await page.getByRole('button', {name:'Open navigation'}).click();
@@ -73,7 +74,7 @@ try {
   if (await page.locator('#navigation').evaluate(e => e.classList.contains('open'))) throw Error('Navigation did not close');
   await page.emulateMedia({reducedMotion:'reduce'});
   if (await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior) !== 'auto') throw Error('Reduced motion ignored');
-  await page.getByText('Why does setup require every shown model?', {exact:true}).click();
+  await page.getByText('Why is every component required?', {exact:true}).click();
   if (await page.locator('.faq-list details[open]').count() !== 1) throw Error('FAQ did not open');
   await page.locator('.mode-options > summary').click();
   if (!(await page.locator('.mode-options').innerText()).includes('MERT similarity and DSP measurements are enabled automatically')) throw Error('Mode details missing');
