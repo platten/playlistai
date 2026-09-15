@@ -191,5 +191,6 @@ reports remain historical evidence.
   short sample. Reproduce with bin/remediation-ui/profile-playback.mjs.
 - **Providers/model quality:** live metadata providers, held-out musical quality,
   native inference on other hosts and cold-cache GUI paint remain unmeasured.
-- **Delivery:** hosted CI and the manual export workflow have not yet run for
-  this pull request. Model artifacts were neither uploaded nor activated.
+- **Delivery:** hosted CI results are reported by the pull request checks and
+  are separate from the local evidence above. The manual model-export workflow
+  has not been dispatched. Model artifacts were neither uploaded nor activated.
