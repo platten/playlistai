@@ -106,6 +106,78 @@ func TestParallelBuildFailureKeepsExistingOutput(t *testing.T) {
 	}
 }
 
+func TestCanceledImportsReleaseStagesAndKeepExistingOutput(t *testing.T) {
+	t.Parallel()
+	for _, entity := range []string{"artists", "recordings"} {
+		t.Run(entity, func(t *testing.T) {
+			dir := t.TempDir()
+			output := filepath.Join(dir, "index.sqlite")
+			if err := os.WriteFile(output, []byte("previous index"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			artist := filepath.Join(dir, "artist.tar.xz")
+			recording := filepath.Join(dir, "recording.tar.xz")
+			writeDump(t, artist, "artist", []any{map[string]any{"id": "a", "name": "A"}})
+			writeDump(t, recording, "recording", []any{map[string]any{"id": "r", "title": "R"}})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			_, err := Build(ctx, BuildOptions{
+				Output: output, ArtistArchive: artist, RecordingArchive: recording,
+				Snapshot: "20260912-001001", Replace: true,
+				Progress: func(p BuildProgress) {
+					// This callback runs after the stage has opened its transaction.
+					if p.Entity == entity {
+						cancel()
+					}
+				},
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancellation was not preserved: %v", err)
+			}
+			raw, err := os.ReadFile(output)
+			if err != nil || string(raw) != "previous index" {
+				t.Fatalf("previous output changed: %q %v", raw, err)
+			}
+			files, err := filepath.Glob(filepath.Join(dir, ".musicbrainz-*.sqlite"))
+			if err != nil || len(files) != 0 {
+				t.Fatalf("stages retained after cancellation: %v %v", files, err)
+			}
+		})
+	}
+}
+
+func TestImportTransactionCancellationPreventsBeginAndCommit(t *testing.T) {
+	t.Parallel()
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "stage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := beginImportTransaction(ctx, db); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled context began a transaction: %v", err)
+	}
+	tx, err := beginImportTransaction(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("CREATE TABLE unpublished(id INTEGER)"); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitImportTransaction(ctx, tx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled import committed: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("import no longer owns rollback: %v", err)
+	}
+	var count int
+	if err := db.QueryRow("SELECT count(*) FROM sqlite_master WHERE name='unpublished'").Scan(&count); err != nil || count != 0 {
+		t.Fatalf("canceled transaction persisted changes: count=%d err=%v", count, err)
+	}
+}
+
 func TestRepeatedArtistsKeepFirstFallbackAndAuthoritativeNames(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
