@@ -1,11 +1,11 @@
 # Remediation implementation and validation — 2026-09-15
 
-This records implementation of the [accepted audit plan](codebase-remediation-plan-2026-09-15.md).
-Changes are uncommitted on **codex/codebase-remediation**, based on
-9053ee316ffc811d4f069e990d69c3deecaaf7c6. That baseline has the same source tree
-as merged main 923318942464a6ade836472d96457a69d1c8f0a3
-(tree a240937a06362acf513c005b2c0532dab2ec519b).
-No changes have been committed, pushed, released, deployed, or applied to user data.
+This records implementation of the [accepted audit plan](codebase-remediation-plan-2026-09-15.md)
+in the v0.15.0 remediation pull request. Work is based on merged main
+923318942464a6ade836472d96457a69d1c8f0a3. The original audit baseline
+9053ee316ffc811d4f069e990d69c3deecaaf7c6 has the same source tree
+(a240937a06362acf513c005b2c0532dab2ec519b). No release was published or deployed,
+and validation did not modify user data.
 
 ## Implemented behavior
 
@@ -61,7 +61,7 @@ No changes have been committed, pushed, released, deployed, or applied to user d
 Host: Windows amd64, Go 1.27.0, Intel Core Ultra 9 285H, 16 logical CPUs,
 approximately 32 GiB RAM. The race gate selects LLVM-MinGW
 20260908-ucrt-x86_64 with CGO_ENABLED=1; the ordinary shell defaults to CGO_ENABLED=0.
-Results refer to this uncommitted remediation worktree, not a hosted CI run.
+Results refer to the local remediation checkout before PR delivery, not a hosted CI run.
 
 The complete repository gate passed:
 
@@ -191,5 +191,5 @@ reports remain historical evidence.
   short sample. Reproduce with bin/remediation-ui/profile-playback.mjs.
 - **Providers/model quality:** live metadata providers, held-out musical quality,
   native inference on other hosts and cold-cache GUI paint remain unmeasured.
-- **Delivery:** hosted CI and the manual export workflow have not run for these
-  unpushed changes. Model artifacts were neither uploaded nor activated.
+- **Delivery:** hosted CI and the manual export workflow have not yet run for
+  this pull request. Model artifacts were neither uploaded nor activated.

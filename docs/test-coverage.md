@@ -17,7 +17,7 @@ are the current measured status: Windows Go 1.27 race/all-package coverage
 20,862/25,320 statements (82.3934%); frontend statements 94.83%, branches 89.21%,
 functions 93.39%, lines 97.26%. All 216 frontend tests and the ordinary repository
 gate passed; both separate aggregate threshold checks failed. Those results
-refer to the uncommitted remediation worktree based on 9053ee3, not hosted CI.
+refer to the local remediation checkout based on main 9233189, not hosted CI.
 The results document records flags, compiler and inclusive denominator details.
 
 ## Reproduce
