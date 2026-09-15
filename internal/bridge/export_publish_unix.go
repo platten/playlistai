@@ -11,7 +11,7 @@ import (
 
 func publishCSVNoReplace(source, target string) error {
 	err := os.Link(source, target)
-	if err == nil || !(errors.Is(err, syscall.EPERM) || errors.Is(err, syscall.EOPNOTSUPP)) {
+	if err == nil || !errors.Is(err, syscall.EPERM) && !errors.Is(err, syscall.EOPNOTSUPP) {
 		return err
 	}
 	// Some removable filesystems lack hard links. Exclusive creation still
