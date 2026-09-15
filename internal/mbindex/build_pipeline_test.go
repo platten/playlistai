@@ -162,7 +162,7 @@ func TestImportTransactionCancellationPreventsBeginAndCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec("CREATE TABLE unpublished(id INTEGER)"); err != nil {
 		t.Fatal(err)
 	}
