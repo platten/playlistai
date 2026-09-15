@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const root = new URL('../', import.meta.url);
 const html = readFileSync(new URL('site/index.html', root), 'utf8');
 const links = [...html.matchAll(/\bhref="([^"]+)"/g)].map(match => match[1]);
-const release = '0.14.2';
+const release = '0.15.0';
 const section = id => html.match(new RegExp(`<section[^>]+id="${id}"[\\s\\S]*?<\\/section>`))?.[0];
 
 test('hero, downloads and sharing metadata announce the current release', () => {
@@ -30,7 +30,7 @@ test('downloads retain exact published asset names and platforms', () => {
     assert.ok(approved.has(link.split('/').at(-1)), link);
   }
   assert.match(section('download'), /Apple Silicon only; no Intel Mac build/);
-  assert.match(section('download'), /Models and recommendation data download separately during setup/);
+  assert.match(section('download'), /All models and recommendation data are required and download during setup/);
 });
 
 test('local navigation, accessibility references and assets resolve', () => {
@@ -49,15 +49,13 @@ test('documentation links refer to existing files', () => {
   }
 });
 
-test('v0.14.2 highlights explain required setup and cleaner results', () => {
+test('v0.15.0 highlights explain updates, startup, journeys and exports', () => {
   const highlights = section('new');
-  for (const text of ['Setup that means ready', 'Audio tools switched on', 'Two clear approaches', 'Less commentary, more music']) assert.ok(highlights.includes(text), text);
-  for (const version of ['0.14.1', release]) {
-    assert.ok(highlights.includes(`/releases/tag/v${version}`));
-  }
-  assert.match(highlights, /Already-installed analysis is recognized/);
-  assert.match(highlights, /MERT similarity and DSP preview measurements are active automatically/);
-  assert.match(highlights, /Actionable lookup failures and true partial-result notices remain visible/);
+  for (const text of ['Updates you can trust', 'A smoother start', 'Keep your musical direction', 'Pick up where you left off']) assert.ok(highlights.includes(text), text);
+  assert.ok(highlights.includes(`/releases/tag/v${release}`));
+  assert.match(highlights, /compare\/v0\.14\.2\.\.\.v0\.15\.0/);
+  assert.match(highlights, /reuses compatible assets/);
+  assert.match(highlights, /every required component/);
 });
 
 test('recommendation architecture and two modes preserve distinct evidence roles', () => {
@@ -66,12 +64,12 @@ test('recommendation architecture and two modes preserve distinct evidence roles
   assert.equal([...modes.matchAll(/<li><span>0\d<\/span>/g)].length, 5);
   for (const stage of ['Interpret', 'Discover', 'Verify', 'Rank', 'Sequence']) assert.ok(modes.includes(`<strong>${stage}</strong>`), stage);
   assert.match(modes, /CLAP connects text with audio, MERT compares audio with audio/);
-  assert.match(modes, /Essential criteria need affirmative evidence/);
+  assert.match(modes, /Complete every setup step/);
   assert.equal([...modes.matchAll(/class="mode-card"/g)].length, 2);
   for (const name of ['Enhanced Hybrid', 'Deej-AI only']) assert.ok(modes.includes(name), name);
   for (const removed of ['AcousticBrainz first', 'CLAP first']) assert.ok(!modes.includes(removed), removed);
   assert.match(modes, /MERT similarity and DSP measurements are enabled automatically/);
-  assert.match(html, /complete each supported step the setup wizard shows/);
+  assert.match(html, /complete every step in the setup wizard/);
 });
 
 test('examples and recommendation claims explain practical limits', () => {
@@ -79,7 +77,6 @@ test('examples and recommendation claims explain practical limits', () => {
   assert.match(section('experience'), /Targets use known track lengths/);
   assert.match(html, /Essential requirements and exclusions still apply/);
   assert.match(html, /Missing evidence can mean a shorter playlist/);
-  assert.match(html, /may return a shorter playlist instead of treating track count as proof/);
   assert.match(html, /not a listening-quality study/);
   assert.match(html, /Earlier desktop version shown/);
   assert.doesNotMatch(html, /data-result=|\d+\/40<\/td>|\d+% (?:accuracy|musical quality)/);
@@ -87,8 +84,10 @@ test('examples and recommendation claims explain practical limits', () => {
 
 test('local-first copy discloses external lookups and model licensing', () => {
   const privacy = section('privacy');
-  for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'AcousticBrainz', 'Deezer', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
+  for (const provider of ['MusicBrainz', 'Wikipedia', 'Wikidata', 'Soundiiz']) assert.ok(privacy.includes(provider), provider);
+  assert.match(privacy, /audio-preview lookups also contact external music services/);
   assert.match(privacy, /No cloud language model receives your prompt/);
   assert.match(html, /MERT includes a noncommercial restriction/);
-  assert.doesNotMatch(privacy, /Discogs/);
+  assert.doesNotMatch(html, /Discogs|Deezer|optional|Uncertainty (?:stays|remains) visible/i);
+  assert.match(html, /class="platform-symbol linux-symbol"[^>]*><svg/);
 });

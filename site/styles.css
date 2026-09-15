@@ -132,6 +132,8 @@ h3 { font-size: 20px; line-height: 1.3; font-weight: 500; letter-spacing: -.5px;
 .platform { padding: 28px; background: #eeedf6; border: 1px solid #bcbbcd; border-radius: 9px; min-width: 0; }
 .platform-symbol { display: block; font-size: 38px; line-height: 1; margin-bottom: 29px; }
 .mac-symbol { font-size: 32px; padding-top: 3px; padding-bottom: 3px; }
+.linux-symbol { height: 38px; }
+.linux-symbol svg { height: 40px; width: 40px; transform: translateY(-2px); }
 .platform h3 { font-size: 23px; margin-bottom: 7px; }
 .platform > p { font-size: 12px; color: #656173; margin: 0 0 23px; }
 .platform .button { width: 100%; background: #242331; color: #f3f0ff; font-size: 12px; gap: 10px; justify-content: space-between; padding: 15px; }
