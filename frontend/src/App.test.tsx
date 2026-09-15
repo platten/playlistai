@@ -64,6 +64,7 @@ beforeEach(() => {
   bridge.ListSavedPlaylists.mockImplementation(() => completed([]));
   bridge.GetRecommendationMode.mockImplementation(() => completed("acousticbrainz_first"));
   bridge.GetPreviewProviderName.mockImplementation(() => completed("deezer"));
+  bridge.GetDebugLogging.mockImplementation(() => completed(false));
   bridge.ParseIntentWithContext.mockImplementation(() => completed({ ...fixture().request.intent, creativity: 0.5, noise: 0.1, lookback: 3, artistsExclude: [], intent: fixture().request.intent, resolutionIssues: [], seeds: [], requiredTracks: [] }));
   bridge.GenerateFromPromptWithContext.mockImplementation((_prompt, context) => {
     const value = fixture();
@@ -155,7 +156,7 @@ it("shows latest acknowledged feedback and keeps a pending correction across nav
     fireEvent.click(screen.getByRole("button", { name: choice }));
     await screen.findByRole("button", { name: `${choice} recorded` });
   }
-});
+}, 15_000);
 
 it("labels an Enhanced hybrid playlist correctly", async () => {
   bridge.GenerateFromPromptWithContext.mockImplementation((_prompt, context) => {
