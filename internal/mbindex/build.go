@@ -286,7 +286,7 @@ func configureBuildDB(ctx context.Context, db *sql.DB, cacheMiB int) error {
 }
 
 func importArtists(ctx context.Context, db *sql.DB, path string, progress func(BuildProgress)) error {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := beginImportTransaction(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -335,11 +335,11 @@ func importArtists(ctx context.Context, db *sql.DB, path string, progress func(B
 	if err != nil {
 		return fmt.Errorf("import artists: %w", err)
 	}
-	return tx.Commit()
+	return commitImportTransaction(ctx, tx)
 }
 
 func importRecordings(ctx context.Context, db *sql.DB, path string, progress func(BuildProgress)) error {
-	tx, err := db.BeginTx(ctx, nil)
+	tx, err := beginImportTransaction(ctx, db)
 	if err != nil {
 		return err
 	}
@@ -421,6 +421,26 @@ func importRecordings(ctx context.Context, db *sql.DB, path string, progress fun
 	})
 	if err != nil {
 		return fmt.Errorf("import recordings: %w", err)
+	}
+	return commitImportTransaction(ctx, tx)
+}
+
+func beginImportTransaction(ctx context.Context, db *sql.DB) (*sql.Tx, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	// Each stage exclusively owns its database. Keep rollback with the importer's
+	// deferred Rollback: BeginTx(ctx) would also start an automatic rollback on
+	// cancellation. That goroutine can mark the transaction done before releasing
+	// its file handle, so our Rollback and DB.Close could return before Windows
+	// can remove the staging file. Reads, statements and the commit guard still
+	// use the original cancellable context; only transaction cleanup is detached.
+	return db.BeginTx(context.WithoutCancel(ctx), nil)
+}
+
+func commitImportTransaction(ctx context.Context, tx *sql.Tx) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
