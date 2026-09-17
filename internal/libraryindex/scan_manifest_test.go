@@ -44,7 +44,7 @@ func TestScanManifestFreezesInventoryAndPendingDiff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.InventoryCount != 2 || report.DiffCount != 1 {
+	if report.Version != ScanManifestVersion || report.InventoryCount != 1 || report.DiffCount != 1 || report.JobCount != 1 {
 		t.Fatalf("manifest report=%+v", report)
 	}
 	for relative, wantHash := range map[string]string{report.InventoryPath: report.InventoryHash, report.DiffPath: report.DiffHash} {
@@ -65,8 +65,79 @@ func TestScanManifestFreezesInventoryAndPendingDiff(t *testing.T) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(string(raw))), &diff); err != nil {
 		t.Fatal(err)
 	}
-	if diff.RootAlias != "archive" || diff.Size <= 0 || diff.JobKind != "metadata" {
+	if diff.RootAlias != "archive" || diff.Size <= 0 || len(diff.Jobs) != 1 || diff.Jobs[0].Kind != "metadata" {
 		t.Fatalf("diff=%+v", diff)
+	}
+}
+
+func TestScanManifestAndProgressCountUniquePendingAudioFiles(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	if err := os.Mkdir(filepath.Join(rootPath, "directory-only"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "song.flac"), []byte("audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "notes.txt"), []byte("not audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := t.TempDir()
+	state, err := OpenState(ctx, stateDir, "unique-audio-manifest-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	semantic := map[string]string{"metadata": "probe/v1", "audio": "mert/v1"}
+	scan, err := state.Scan(ctx, ScanOptions{Roots: []Root{root}, Workers: 1, QueueDepth: 1, SemanticJobs: semantic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scan.Files != 1 || scan.AudioFiles != 1 {
+		t.Fatalf("scan counted non-processing entries: %+v", scan)
+	}
+	manifest, err := state.WriteScanManifest(ctx, scan.Epoch, semantic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.InventoryCount != 1 || manifest.DiffCount != 1 || manifest.JobCount != 2 {
+		t.Fatalf("manifest counts=%+v", manifest)
+	}
+	inventoryRaw, err := os.ReadFile(filepath.Join(stateDir, filepath.FromSlash(manifest.InventoryPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(inventoryRaw), "notes.txt") || strings.Contains(string(inventoryRaw), "directory-only") || !strings.Contains(string(inventoryRaw), "song.flac") {
+		t.Fatalf("inventory contains a non-processing entry: %s", inventoryRaw)
+	}
+	diffRaw, err := os.ReadFile(filepath.Join(stateDir, filepath.FromSlash(manifest.DiffPath)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var diff scanDiffFile
+	if err := json.Unmarshal([]byte(strings.TrimSpace(string(diffRaw))), &diff); err != nil {
+		t.Fatal(err)
+	}
+	if diff.Path != "song.flac" || len(diff.Jobs) != 2 || diff.Jobs[0].Kind != "audio" || diff.Jobs[1].Kind != "metadata" {
+		t.Fatalf("diff=%+v", diff)
+	}
+	progress, err := state.ScanDiffProgress(ctx, scan.Epoch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress.Files != 1 || progress.Total != 1 || progress.Queued != 1 {
+		t.Fatalf("progress counted stage jobs instead of the audio file: %+v", progress)
+	}
+	status, err := state.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Files != 1 || status.QueuedFiles != 1 || status.JobsByState["pending"] != 2 {
+		t.Fatalf("status did not separate file and stage-job counts: %+v", status)
 	}
 }
 

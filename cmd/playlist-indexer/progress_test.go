@@ -30,7 +30,7 @@ func (r failingProgressReader) Progress(context.Context, map[string]string) (lib
 func TestProgressTitleReportsDurableState(t *testing.T) {
 	snapshot := libraryindex.ProgressSnapshot{Files: 12, Total: 20, Finished: 9, Queued: 7, Leased: 4, Failed: 2, Retries: 3}
 	title := progressTitle("Scanning & analyzing", snapshot, progressJobs)
-	for _, want := range []string{"Scanning & analyzing", "12 files", "7 queued", "4 active", "9/20 finished", "2 failed", "3 retries"} {
+	for _, want := range []string{"Scanning & analyzing", "12 audio files", "7 queued", "4 active", "9/20 finished", "2 failed", "3 retries"} {
 		if !strings.Contains(title, want) {
 			t.Fatalf("title %q does not contain %q", title, want)
 		}
@@ -40,7 +40,7 @@ func TestProgressTitleReportsDurableState(t *testing.T) {
 func TestScanProgressDoesNotClaimQueuedAnalysisFinished(t *testing.T) {
 	snapshot := libraryindex.ProgressSnapshot{Files: 12, Total: 12, Queued: 12}
 	title := progressTitle("Complete", snapshot, progressScan)
-	if title != "Complete • 12 files discovered • 12 jobs queued for analysis" {
+	if title != "Complete • 12 audio files queued for processing" {
 		t.Fatalf("scan completion title = %q", title)
 	}
 }
@@ -166,6 +166,20 @@ func TestProgressBarSurvivesGrowingTotalAndRedrawDeadline(t *testing.T) {
 	now := time.Now()
 	if progressRedrawDue(now.Add(-29*time.Second), now) || !progressRedrawDue(now.Add(-30*time.Second), now) {
 		t.Fatal("30-second redraw deadline changed")
+	}
+}
+
+func TestScanProgressBarUsesPendingAudioFileCount(t *testing.T) {
+	output := &bytes.Buffer{}
+	bar, err := pterm.DefaultProgressbar.WithWriter(output).WithTotal(1).WithCurrent(0).WithShowTitle(false).WithShowElapsedTime(false).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = bar.Stop() }()
+	_ = latestProgressLine(output)
+	line := pterm.RemoveColorFromString(updateProgressBar(bar, output, libraryindex.ProgressSnapshot{Total: 17}, progressScan))
+	if bar.Total != 17 || bar.Current != 0 || !strings.Contains(line, "0/17") {
+		t.Fatalf("scan progress did not use pending audio file count: total=%d current=%d line=%q", bar.Total, bar.Current, line)
 	}
 }
 

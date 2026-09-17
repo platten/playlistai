@@ -52,22 +52,35 @@ type progressSnapshotReader interface {
 }
 
 type scopedProgressReader struct {
-	mu    sync.RWMutex
-	state *libraryindex.State
-	epoch int64
+	mu     sync.RWMutex
+	state  *libraryindex.State
+	epoch  int64
+	frozen bool
 }
 
-func (r *scopedProgressReader) SetEpoch(epoch int64) {
+func (r *scopedProgressReader) SetScanEpoch(epoch int64) {
 	r.mu.Lock()
 	r.epoch = epoch
+	r.frozen = false
+	r.mu.Unlock()
+}
+
+func (r *scopedProgressReader) FreezeEpoch(epoch int64) {
+	r.mu.Lock()
+	r.epoch = epoch
+	r.frozen = true
 	r.mu.Unlock()
 }
 
 func (r *scopedProgressReader) Progress(ctx context.Context, semanticJobs map[string]string) (libraryindex.ProgressSnapshot, error) {
 	r.mu.RLock()
 	epoch := r.epoch
+	frozen := r.frozen
 	r.mu.RUnlock()
 	if epoch > 0 {
+		if !frozen {
+			return r.state.ScanCandidateProgress(ctx, epoch, semanticJobs)
+		}
 		return r.state.ScanDiffProgress(ctx, epoch)
 	}
 	return r.state.Progress(ctx, semanticJobs)
@@ -284,8 +297,10 @@ func progressActivityBox(title, detail string, warning bool) string {
 
 func updateProgressBar(bar *pterm.ProgressbarPrinter, output *bytes.Buffer, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
 	total, current := int64(1), int64(0)
-	if mode == progressJobs {
+	if mode != progressActivity {
 		total = max(int64(1), snapshot.Total)
+	}
+	if mode == progressJobs {
 		current = min(snapshot.Finished, total)
 	}
 	bar.Total = boundedProgressInt(total)
@@ -358,14 +373,14 @@ func progressActivityAge(activity progressDisplayActivity, now time.Time) int64 
 func progressTitle(phase string, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
 	if mode == progressScan {
 		if phase == "Complete" {
-			return fmt.Sprintf("Complete • %d files discovered • %d jobs queued for analysis", snapshot.Files, snapshot.Queued)
+			return fmt.Sprintf("Complete • %d audio files queued for processing", snapshot.Total)
 		}
-		return fmt.Sprintf("%s • %d files discovered • %d jobs queued", phase, snapshot.Files, snapshot.Queued)
+		return fmt.Sprintf("%s • %d audio files queued for processing", phase, snapshot.Total)
 	}
 	if mode == progressActivity {
 		return fmt.Sprintf("%s • %d library files", phase, snapshot.Files)
 	}
-	title := fmt.Sprintf("%s • %d files • %d queued • %d active • %d/%d finished", phase, snapshot.Files, snapshot.Queued, snapshot.Leased, snapshot.Finished, snapshot.Total)
+	title := fmt.Sprintf("%s • %d audio files • %d queued • %d active • %d/%d finished", phase, snapshot.Files, snapshot.Queued, snapshot.Leased, snapshot.Finished, snapshot.Total)
 	if snapshot.Failed > 0 {
 		title += fmt.Sprintf(" • %d failed", snapshot.Failed)
 	}

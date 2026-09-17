@@ -973,15 +973,16 @@ func (s *State) FinishEpoch(ctx context.Context, epoch int64) (bool, error) {
 }
 
 type SourceFile struct {
-	ID             string
-	RootID         string
-	RelativePath   string
-	Device         uint64
-	Inode          uint64
-	Size           int64
-	MTimeNS        int64
-	SourceRevision string
-	Extension      string
+	ID              string
+	RootID          string
+	RelativePath    string
+	Device          uint64
+	Inode           uint64
+	Size            int64
+	MTimeNS         int64
+	SourceRevision  string
+	Extension       string
+	needsProcessing bool
 }
 
 type FileRecord struct {
@@ -1085,15 +1086,19 @@ func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, s
 			if _, err = tx.ExecContext(ctx, `UPDATE jobs SET state='superseded',fence='',lease_until=NULL,updated_at=? WHERE kind=? AND file_id=? AND semantic_key<>? AND state<>'superseded'`, time.Now().UTC().Format(time.RFC3339Nano), kind, file.ID, key); err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
+			var jobState string
+			err = tx.QueryRowContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
 				ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
 				state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
 				fence='',lease_until=NULL,
 				error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
 				error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
-				updated_at=excluded.updated_at`, kind, file.ID, file.SourceRevision, key, time.Now().UTC().Format(time.RFC3339Nano))
+				updated_at=excluded.updated_at RETURNING state`, kind, file.ID, file.SourceRevision, key, time.Now().UTC().Format(time.RFC3339Nano)).Scan(&jobState)
 			if err != nil {
 				return err
+			}
+			if jobState == "pending" {
+				file.needsProcessing = true
 			}
 		}
 		return nil
@@ -1423,6 +1428,9 @@ type Status struct {
 	Files         int64                       `json:"files"`
 	Present       int64                       `json:"present"`
 	Tombstoned    int64                       `json:"tombstoned"`
+	QueuedFiles   int64                       `json:"queuedFiles"`
+	ActiveFiles   int64                       `json:"activeFiles"`
+	FailedFiles   int64                       `json:"failedFiles"`
 	Metadata      int64                       `json:"metadata"`
 	DSP           int64                       `json:"dsp"`
 	MERT          int64                       `json:"mert"`
@@ -1447,44 +1455,80 @@ type ProgressSnapshot struct {
 
 func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (ProgressSnapshot, error) {
 	var snapshot ProgressSnapshot
-	if err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM files WHERE status='present'`).Scan(&snapshot.Files); err != nil {
-		return snapshot, err
-	}
 	kinds := make([]string, 0, len(semanticJobs))
 	for kind := range semanticJobs {
 		kinds = append(kinds, kind)
 	}
 	sort.Strings(kinds)
-	for _, kind := range kinds {
-		var total, finished, queued, leased, failed, retries int64
-		if err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*),
-			COALESCE(SUM(state IN ('completed','failed')),0),
-			COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='leased'),0),
-			COALESCE(SUM(state='failed'),0),COALESCE(SUM(retry_count),0)
-			FROM jobs WHERE kind=? AND semantic_key=? AND state<>'superseded'`, kind, semanticJobs[kind]).Scan(&total, &finished, &queued, &leased, &failed, &retries); err != nil {
-			return snapshot, err
-		}
-		snapshot.Total += total
-		snapshot.Finished += finished
-		snapshot.Queued += queued
-		snapshot.Leased += leased
-		snapshot.Failed += failed
-		snapshot.Retries += retries
+	if len(kinds) == 0 {
+		return snapshot, nil
 	}
-	return snapshot, nil
+	clauses := make([]string, 0, len(kinds))
+	args := make([]any, 0, len(kinds)*2)
+	for _, kind := range kinds {
+		clauses = append(clauses, `(j.kind=? AND j.semantic_key=?)`)
+		args = append(args, kind, semanticJobs[kind])
+	}
+	query := `WITH per_file AS (
+		SELECT j.file_id,
+			MIN(j.state IN ('completed','failed')) AS finished,
+			MAX(j.state='pending') AS pending,
+			MAX(j.state='leased') AS leased,
+			MAX(j.state='failed') AS failed,
+			SUM(j.retry_count) AS retries
+		FROM jobs j JOIN files f ON f.id=j.file_id
+		WHERE f.status='present' AND j.state<>'superseded' AND (` + strings.Join(clauses, ` OR `) + `)
+		GROUP BY j.file_id
+	) SELECT COUNT(*),COUNT(*),COALESCE(SUM(finished),0),
+		COALESCE(SUM(pending AND NOT leased),0),COALESCE(SUM(leased),0),
+		COALESCE(SUM(failed),0),COALESCE(SUM(retries),0) FROM per_file`
+	err := s.reader.QueryRowContext(ctx, query, args...).Scan(&snapshot.Files, &snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
+	return snapshot, err
+}
+
+// ScanCandidateProgress counts only unique audio files from this enumeration
+// that still have compatible pending work. Directory-frontier tasks and
+// unsupported filesystem entries are never processing units.
+func (s *State) ScanCandidateProgress(ctx context.Context, epoch int64, semanticJobs map[string]string) (ProgressSnapshot, error) {
+	var snapshot ProgressSnapshot
+	kinds := make([]string, 0, len(semanticJobs))
+	for kind := range semanticJobs {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	if epoch <= 0 || len(kinds) == 0 {
+		return snapshot, nil
+	}
+	clauses := make([]string, 0, len(kinds))
+	args := make([]any, 0, 1+len(kinds)*2)
+	args = append(args, epoch)
+	for _, kind := range kinds {
+		clauses = append(clauses, `(j.kind=? AND j.semantic_key=?)`)
+		args = append(args, kind, semanticJobs[kind])
+	}
+	err := s.reader.QueryRowContext(ctx, `SELECT COUNT(DISTINCT j.file_id)
+		FROM jobs j JOIN files f ON f.id=j.file_id
+		WHERE f.status='present' AND f.last_seen_epoch=? AND j.state='pending' AND (`+strings.Join(clauses, ` OR `)+`)`, args...).Scan(&snapshot.Total)
+	snapshot.Files = snapshot.Total
+	snapshot.Queued = snapshot.Total
+	return snapshot, err
 }
 
 func (s *State) ScanDiffProgress(ctx context.Context, epoch int64) (ProgressSnapshot, error) {
 	var snapshot ProgressSnapshot
-	if err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM files WHERE status='present' AND last_seen_epoch=?`, epoch).Scan(&snapshot.Files); err != nil {
-		return snapshot, err
-	}
-	err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*),
-		COALESCE(SUM(j.state IN ('completed','failed')),0),
-		COALESCE(SUM(j.state='pending'),0),COALESCE(SUM(j.state='leased'),0),
-		COALESCE(SUM(j.state='failed'),0),COALESCE(SUM(j.retry_count),0)
-		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
-		WHERE d.epoch_id=?`, epoch).Scan(&snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
+	err := s.reader.QueryRowContext(ctx, `WITH per_file AS (
+		SELECT j.file_id,
+			MIN(j.state IN ('completed','failed')) AS finished,
+			MAX(j.state='pending') AS pending,
+			MAX(j.state='leased') AS leased,
+			MAX(j.state='failed') AS failed,
+			SUM(j.retry_count) AS retries
+		FROM scan_diff_jobs d
+		JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
+		WHERE d.epoch_id=? GROUP BY j.file_id
+	) SELECT COUNT(*),COUNT(*),COALESCE(SUM(finished),0),
+		COALESCE(SUM(pending AND NOT leased),0),COALESCE(SUM(leased),0),
+		COALESCE(SUM(failed),0),COALESCE(SUM(retries),0) FROM per_file`, epoch).Scan(&snapshot.Files, &snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
 	return snapshot, err
 }
 
@@ -1514,6 +1558,13 @@ func queryStatus(ctx context.Context, db *sql.DB) (Status, error) {
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(status='present'),0),COALESCE(SUM(tombstoned_at IS NOT NULL),0),
 		(SELECT COUNT(*) FROM track_metadata),(SELECT COUNT(*) FROM dsp_results),(SELECT COUNT(*) FROM mert_results) FROM files`).Scan(&status.Files, &status.Present, &status.Tombstoned, &status.Metadata, &status.DSP, &status.MERT)
 	if err != nil {
+		return status, err
+	}
+	if err := db.QueryRowContext(ctx, `WITH per_file AS (
+		SELECT file_id,MAX(state='pending') AS pending,MAX(state='leased') AS leased,MAX(state='failed') AS failed
+		FROM jobs j JOIN files f ON f.id=j.file_id
+		WHERE f.status='present' AND j.state<>'superseded' GROUP BY file_id
+	) SELECT COALESCE(SUM(pending AND NOT leased),0),COALESCE(SUM(leased),0),COALESCE(SUM(failed),0) FROM per_file`).Scan(&status.QueuedFiles, &status.ActiveFiles, &status.FailedFiles); err != nil {
 		return status, err
 	}
 	rows, err := db.QueryContext(ctx, `SELECT kind,state,COUNT(*),COALESCE(SUM(retry_count),0),COALESCE(SUM(state='leased' AND lease_until < ?),0) FROM jobs GROUP BY kind,state`, time.Now().UTC().Format(time.RFC3339Nano))

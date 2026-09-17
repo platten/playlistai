@@ -58,10 +58,13 @@ semantic job keys keep unchanged completed analysis out of the claim queue,
 while new or changed files become pending.
 
 Every `run` completes enumeration before any file-analysis claim. It atomically
-publishes a privacy-safe manifest generation under `STATE/manifests`: the full
+publishes a privacy-safe manifest generation under `STATE/manifests`. Both
+streams contain only unique audio files with compatible pending work: the
 inventory records logical root aliases, relative paths, sizes, and source
-revisions, and the separate diff records only pending jobs for that completed
-epoch. Analysis is restricted to that diff. Size, mtime, and native identity
+revisions, while each diff row nests the file's stage jobs. Directories,
+non-audio entries, and unchanged files with settled work remain in their proper
+durable catalog/frontier state but are not processing-manifest rows. Analysis is
+restricted to that diff. Size, mtime, and native identity
 are checked against the frozen revision before and after
 probe/integrity/decode; native operations also fence Linux change time across
 their own reads. A mismatch is persisted as

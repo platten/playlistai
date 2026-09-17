@@ -90,9 +90,11 @@ durable directory frontier -> complete inventory -> immutable manifest + pending
 ```
 
 Each `run` completes discovery before analysis. The barrier publishes an
-`inventory.jsonl` containing every discovered audio path and size plus a
-`diff.jsonl` containing only pending compatible jobs, and freezes those jobs in
-`scan_diff_jobs`. Analysis can claim only that epoch's diff. A directory is read
+`inventory.jsonl` containing one row for each unique audio file with compatible
+pending work plus a `diff.jsonl` with the same file rows and nested stage jobs.
+Directories, non-audio entries, and already-settled files are excluded from both
+manifest streams and from progress totals. The stage jobs are frozen in
+`scan_diff_jobs`; analysis can claim only that epoch's diff. A directory is read
 in 256-entry chunks; each child batch is idempotently committed to the durable
 frontier before the parent is completed. Pool-level heartbeats renew directory
 and analysis leases. A full in-memory queue therefore cannot lose or deadlock
@@ -172,9 +174,11 @@ its fence and source-revision predicate inside the shared transaction. If one
 item is stale, the batch rolls back and retries items individually, so it cannot
 discard unrelated valid commits.
 
-Schema v3 stores each immutable epoch diff in `scan_diff_jobs`. Manifest
-generations are atomically renamed under `STATE/manifests`, and include hashes
-for their inventory and diff JSONL streams. Operational problems are appended
+Schema v3 stores each immutable epoch's stage work in `scan_diff_jobs`.
+Manifest format v2 groups that work into one diff row per audio file and records
+the stage-job count separately from the file count. Manifest generations are
+atomically renamed under `STATE/manifests`, and include hashes for their
+inventory and diff JSONL streams. Operational problems are appended
 to the private `STATE/issues.jsonl`; structured locations contain aliases and
 relative paths. Native diagnostic detail can contain physical paths, so this is
 an administrator log rather than a shareable report.

@@ -74,17 +74,19 @@ Two unrelated folders can also be appended in one invocation:
 Each alias is an independent stable identity. A later run naming only one alias
 rescans that folder while retaining compatible results from the other aliases.
 
-Interactive runs show a PTerm progress bar on stderr with discovered files and
-compatible queued, active, finished, and failed jobs. A PTerm box above the bar
-shows each directory while enumeration is looking for audio, then the most
-recent file to begin scanning or analysis (several files may be active under
-concurrent plans). Activity updates remain visible even when a durable status
-read is briefly busy, and long-running work shows a once-per-second active-time
-heartbeat. The summary is kept on a separate line so growing file/job counts
-cannot consume the bar width, and the complete bar is regenerated at least
-every 30 seconds. FLAC sources larger than 500 MB use red activity text when
-terminal color is enabled (`NO_COLOR` remains respected). Redirected/non-TTY
-runs remain plain and
+Interactive runs show a PTerm progress bar on stderr whose total is the number
+of unique audio files that still require compatible processing. A file with
+both metadata and audio work counts once; directories, non-audio files, and
+already-settled audio do not enter the total. A PTerm box above the bar shows
+each directory while enumeration is looking for audio, then the most recent
+file to begin scanning or analysis (several files may be active under concurrent
+plans). Directory names are traversal activity, not queued processing items.
+Activity updates remain visible even when a durable status read is briefly busy,
+and long-running work shows a once-per-second active-time heartbeat. The summary
+is kept on a separate line so growing file counts cannot consume the bar width,
+and the complete bar is regenerated at least every 30 seconds. FLAC sources
+larger than 500 MB use red activity text when terminal color is enabled
+(`NO_COLOR` remains respected). Redirected/non-TTY runs remain plain and
 machine-safe, and `--no-progress` disables the live display explicitly. `--json`
 continues to reserve stdout for the final JSON document.
 
@@ -97,11 +99,13 @@ stored directory revision changed. Resume never wipes prior state.
 
 `run` always completes that inventory scan before it starts file analysis. It
 then writes a checksummed snapshot under
-`STATE/manifests/scan-EPOCH/`: `inventory.jsonl` records every discovered audio
-file's root alias, relative path, and size, while `diff.jsonl` records only the
-compatible jobs that still need processing. The analyzer is restricted to that
-frozen diff. The standalone `analyze` administration command remains available
-for already-queued state and does not perform a new filesystem scan.
+`STATE/manifests/scan-EPOCH/`: `inventory.jsonl` records only unique audio files
+that still require compatible work, including their root alias, relative path,
+and size. `diff.jsonl` has the same one-row-per-file shape and nests that file's
+metadata/audio stage jobs. Directories and unrelated files are never written to
+either stream. The analyzer is restricted to that frozen diff. The standalone
+`analyze` administration command remains available for already-queued state and
+does not perform a new filesystem scan.
 
 After the bounded metadata probe, actual FLAC and MP3 streams receive a full
 decode-to-discard integrity pass through the packaged FFmpeg runtime before
