@@ -117,6 +117,62 @@ func TestDurableScanBoundsFrontierAndIgnoresNonRegularFiles(t *testing.T) {
 	}
 }
 
+func TestScanFollowsNestedDirectorySymlinksAndStopsAncestorCycles(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	externalPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootPath, "collection"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(externalPath, "song.flac"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(rootPath, filepath.Join(externalPath, "back-to-root")); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(externalPath, filepath.Join(rootPath, "collection", "linked-album")); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(filepath.Join(externalPath, "song.flac"), filepath.Join(rootPath, "collection", "linked-file.flac")); err != nil {
+		t.Skipf("file symlinks unavailable: %v", err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "symlink-scan-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var issues []ProcessingIssue
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots:          []Root{root},
+		Workers:        1,
+		QueueDepth:     1,
+		FollowSymlinks: true,
+		SemanticJobs:   map[string]string{"metadata": "probe/v1"},
+		OnIssue:        func(issue ProcessingIssue) { issues = append(issues, issue) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Complete || report.Files != 1 || report.AudioFiles != 1 || report.Directories != 3 || report.Errors != 0 {
+		t.Fatalf("unexpected report: %+v", report)
+	}
+	var relative string
+	if err := state.Reader().QueryRowContext(ctx, `SELECT relative_path FROM files WHERE status='present'`).Scan(&relative); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join("collection", "linked-album", "song.flac")
+	if relative != want {
+		t.Fatalf("relative path = %q, want %q", relative, want)
+	}
+	if len(issues) != 1 || issues[0].Code != "symlink_cycle" || issues[0].Path != filepath.Join("collection", "linked-album", "back-to-root") {
+		t.Fatalf("cycle issues = %+v", issues)
+	}
+}
+
 func TestScanReportsDirectoryActivityBeforeAudioDiscovery(t *testing.T) {
 	ctx := context.Background()
 	rootPath := t.TempDir()
@@ -485,6 +541,47 @@ func TestChangedScanScopeDoesNotClaimStaleDirectoryEpoch(t *testing.T) {
 	}
 	if epochStatus != "interrupted" || frontierState != "abandoned" {
 		t.Fatalf("stale epoch status=%q frontier=%q", epochStatus, frontierState)
+	}
+}
+
+func TestChangedSymlinkPolicyDoesNotResumeStaleDirectoryEpoch(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, "song.flac"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "symlink-policy-change-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleEpoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots:          []Root{root},
+		Workers:        1,
+		QueueDepth:     1,
+		FollowSymlinks: true,
+		SemanticJobs:   map[string]string{"metadata": "probe/v1"},
+	})
+	if err != nil || !report.Complete || report.Resumed || report.Epoch == staleEpoch || report.AudioFiles != 1 {
+		t.Fatalf("replacement scan=%+v err=%v", report, err)
+	}
+	var status, detail, frontier string
+	if err := state.Reader().QueryRowContext(ctx, `SELECT status,error FROM scan_epochs WHERE id=?`, staleEpoch).Scan(&status, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Reader().QueryRowContext(ctx, `SELECT state FROM directory_frontier WHERE epoch_id=? AND relative_path='.'`, staleEpoch).Scan(&frontier); err != nil {
+		t.Fatal(err)
+	}
+	if status != "interrupted" || detail != "directory symlink policy changed before resume" || frontier != "abandoned" {
+		t.Fatalf("stale epoch status=%q detail=%q frontier=%q", status, detail, frontier)
 	}
 }
 

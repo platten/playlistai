@@ -27,7 +27,7 @@ import (
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-const stateSchemaVersion = 3
+const stateSchemaVersion = 4
 
 var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 		return err
 	}
 	_ = conn.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version)
-	if version != "" && version != "1" && version != "2" && version != strconv.Itoa(stateSchemaVersion) {
+	if version != "" && version != "1" && version != "2" && version != "3" && version != strconv.Itoa(stateSchemaVersion) {
 		return fmt.Errorf("library indexer: unsupported state schema %q", version)
 	}
 	_, err := conn.ExecContext(ctx, `
@@ -156,7 +156,7 @@ CREATE TABLE IF NOT EXISTS roots (
 );
 CREATE TABLE IF NOT EXISTS scan_epochs (
  id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, finished_at TEXT,
- status TEXT NOT NULL, error TEXT NOT NULL DEFAULT ''
+ status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '', follow_directory_symlinks INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS scan_scopes (
  epoch_id INTEGER NOT NULL REFERENCES scan_epochs(id), root_id TEXT NOT NULL REFERENCES roots(id),
@@ -217,18 +217,20 @@ CREATE TABLE IF NOT EXISTS runs (
 	// idempotent so a process interrupted between ALTER TABLE and the version
 	// update can safely continue on its next start.
 	for _, column := range []struct {
+		table      string
 		name       string
 		definition string
 	}{
-		{name: "completed_mtime_ns", definition: "INTEGER NOT NULL DEFAULT -1"},
-		{name: "completed_size", definition: "INTEGER NOT NULL DEFAULT -1"},
+		{table: "directory_frontier", name: "completed_mtime_ns", definition: "INTEGER NOT NULL DEFAULT -1"},
+		{table: "directory_frontier", name: "completed_size", definition: "INTEGER NOT NULL DEFAULT -1"},
+		{table: "scan_epochs", name: "follow_directory_symlinks", definition: "INTEGER NOT NULL DEFAULT 0"},
 	} {
-		exists, err := sqliteColumnExists(ctx, conn, "directory_frontier", column.name)
+		exists, err := sqliteColumnExists(ctx, conn, column.table, column.name)
 		if err != nil {
 			return err
 		}
 		if !exists {
-			if _, err := conn.ExecContext(ctx, `ALTER TABLE directory_frontier ADD COLUMN `+column.name+` `+column.definition); err != nil {
+			if _, err := conn.ExecContext(ctx, `ALTER TABLE `+column.table+` ADD COLUMN `+column.name+` `+column.definition); err != nil {
 				return err
 			}
 		}
@@ -478,6 +480,10 @@ func (s *State) ensureRoot(ctx context.Context, path, alias string, allowPathUpd
 }
 
 func (s *State) BeginEpoch(ctx context.Context, roots []Root) (int64, error) {
+	return s.beginEpoch(ctx, roots, false)
+}
+
+func (s *State) beginEpoch(ctx context.Context, roots []Root, followDirectorySymlinks bool) (int64, error) {
 	var epoch int64
 	err := s.write(ctx, true, func(conn *sql.Conn) error {
 		tx, err := conn.BeginTx(ctx, nil)
@@ -485,7 +491,7 @@ func (s *State) BeginEpoch(ctx context.Context, roots []Root) (int64, error) {
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
-		res, err := tx.ExecContext(ctx, `INSERT INTO scan_epochs(started_at,status) VALUES(?, 'enumerating')`, time.Now().UTC().Format(time.RFC3339Nano))
+		res, err := tx.ExecContext(ctx, `INSERT INTO scan_epochs(started_at,status,follow_directory_symlinks) VALUES(?,'enumerating',?)`, time.Now().UTC().Format(time.RFC3339Nano), followDirectorySymlinks)
 		if err != nil {
 			return err
 		}
@@ -506,11 +512,12 @@ func (s *State) BeginEpoch(ctx context.Context, roots []Root) (int64, error) {
 	return epoch, err
 }
 
-func (s *State) BeginOrResumeEpoch(ctx context.Context, roots []Root) (int64, bool, int64, error) {
+func (s *State) BeginOrResumeEpoch(ctx context.Context, roots []Root, followDirectorySymlinks bool) (int64, bool, int64, error) {
 	var epoch int64
+	var storedFollowDirectorySymlinks bool
 	var resumable bool
 	err := s.write(ctx, true, func(conn *sql.Conn) error {
-		if err := conn.QueryRowContext(ctx, `SELECT id FROM scan_epochs WHERE status='enumerating' ORDER BY id DESC LIMIT 1`).Scan(&epoch); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := conn.QueryRowContext(ctx, `SELECT id,follow_directory_symlinks FROM scan_epochs WHERE status='enumerating' ORDER BY id DESC LIMIT 1`).Scan(&epoch, &storedFollowDirectorySymlinks); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		if epoch == 0 {
@@ -537,19 +544,23 @@ func (s *State) BeginOrResumeEpoch(ctx context.Context, roots []Root) (int64, bo
 			expected[i] = roots[i].ID
 		}
 		sort.Strings(expected)
-		if !slices.Equal(found, expected) {
+		if !slices.Equal(found, expected) || storedFollowDirectorySymlinks != followDirectorySymlinks {
+			detail := "scan scope changed before resume"
+			if slices.Equal(found, expected) {
+				detail = "directory symlink policy changed before resume"
+			}
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			if _, err := conn.ExecContext(ctx, `UPDATE scan_epochs
-				SET status='interrupted',finished_at=?,error='scan scope changed before resume'
-				WHERE id=? AND status='enumerating'`, now, epoch); err != nil {
+				SET status='interrupted',finished_at=?,error=?
+				WHERE id=? AND status='enumerating'`, now, detail, epoch); err != nil {
 				return err
 			}
 			if _, err := conn.ExecContext(ctx, `UPDATE scan_scopes SET status='interrupted' WHERE epoch_id=? AND status='enumerating'`, epoch); err != nil {
 				return err
 			}
 			if _, err := conn.ExecContext(ctx, `UPDATE directory_frontier
-				SET state='abandoned',fence='',lease_until=NULL,error='scan scope changed before resume'
-				WHERE epoch_id=? AND state IN ('pending','leased')`, epoch); err != nil {
+				SET state='abandoned',fence='',lease_until=NULL,error=?
+				WHERE epoch_id=? AND state IN ('pending','leased')`, detail, epoch); err != nil {
 				return err
 			}
 			epoch = 0
@@ -569,7 +580,7 @@ func (s *State) BeginOrResumeEpoch(ctx context.Context, roots []Root) (int64, bo
 		rescanned, err := s.requeueChangedDirectories(ctx, epoch, roots)
 		return epoch, true, rescanned, err
 	}
-	epoch, err = s.BeginEpoch(ctx, roots)
+	epoch, err = s.beginEpoch(ctx, roots, followDirectorySymlinks)
 	return epoch, false, 0, err
 }
 

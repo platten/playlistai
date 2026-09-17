@@ -41,11 +41,14 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	if err := state.Reader().QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "3" {
+	if version != "4" {
 		t.Fatalf("schema version = %q", version)
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT completed_mtime_ns,completed_size FROM directory_frontier LIMIT 1`); err != nil {
 		t.Fatalf("directory revision columns were not migrated: %v", err)
+	}
+	if _, err := state.Reader().ExecContext(ctx, `SELECT follow_directory_symlinks FROM scan_epochs LIMIT 1`); err != nil {
+		t.Fatalf("scan policy column was not migrated: %v", err)
 	}
 }
 

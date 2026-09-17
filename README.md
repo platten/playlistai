@@ -74,6 +74,16 @@ Two unrelated folders can also be appended in one invocation:
 Each alias is an independent stable identity. A later run naming only one alias
 rescans that folder while retaining compatible results from the other aliases.
 
+Directory symlinks below a configured root are ignored by default. Pass
+`--follow-directory-symlinks` (or set `followDirectorySymlinks` to `true` in the
+JSON configuration) to traverse them. Linked directories may resolve outside
+the physical root, but discovered files retain the symlink's logical
+root-relative path. Links to files and broken links remain ignored. Ancestor
+cycles are skipped and recorded as `symlink_cycle` scan issues. Exclusions are
+matched against the logical path through the link. Changing this option while
+an inventory scan is interrupted starts a fresh epoch instead of mixing the two
+traversal policies.
+
 Interactive runs show a PTerm progress bar on stderr whose total is the number
 of unique audio files that still require compatible processing. A file with
 both metadata and audio work counts once; directories, non-audio files, and
