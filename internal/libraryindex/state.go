@@ -1360,6 +1360,7 @@ type ProgressSnapshot struct {
 	Queued   int64
 	Leased   int64
 	Failed   int64
+	Retries  int64
 }
 
 func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (ProgressSnapshot, error) {
@@ -1373,12 +1374,12 @@ func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (P
 	}
 	sort.Strings(kinds)
 	for _, kind := range kinds {
-		var total, finished, queued, leased, failed int64
+		var total, finished, queued, leased, failed, retries int64
 		if err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*),
 			COALESCE(SUM(state IN ('completed','failed')),0),
 			COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='leased'),0),
-			COALESCE(SUM(state='failed'),0)
-			FROM jobs WHERE kind=? AND semantic_key=? AND state<>'superseded'`, kind, semanticJobs[kind]).Scan(&total, &finished, &queued, &leased, &failed); err != nil {
+			COALESCE(SUM(state='failed'),0),COALESCE(SUM(retry_count),0)
+			FROM jobs WHERE kind=? AND semantic_key=? AND state<>'superseded'`, kind, semanticJobs[kind]).Scan(&total, &finished, &queued, &leased, &failed, &retries); err != nil {
 			return snapshot, err
 		}
 		snapshot.Total += total
@@ -1386,6 +1387,7 @@ func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (P
 		snapshot.Queued += queued
 		snapshot.Leased += leased
 		snapshot.Failed += failed
+		snapshot.Retries += retries
 	}
 	return snapshot, nil
 }

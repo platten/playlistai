@@ -18,7 +18,11 @@ import (
 	"github.com/platten/playlistai/internal/libraryindex"
 )
 
-const progressRefreshInterval = 250 * time.Millisecond
+const (
+	progressRefreshInterval = 250 * time.Millisecond
+	progressFullRedraw      = 30 * time.Second
+	largeFLACWarningBytes   = int64(500_000_000)
+)
 
 type progressMode uint8
 
@@ -40,6 +44,7 @@ type progressDisplayActivity struct {
 	title   string
 	path    string
 	started time.Time
+	warning bool
 }
 
 type progressSnapshotReader interface {
@@ -64,7 +69,9 @@ func startPipelineProgress(ctx context.Context, state *libraryindex.State, seman
 		WithTotal(1).
 		WithCurrent(0).
 		WithMaxWidth(110).
+		WithShowTitle(false).
 		WithShowElapsedTime(false).
+		WithBarFiller("░").
 		WithRemoveWhenDone(false).
 		Start(initialPhase)
 	if err != nil {
@@ -98,8 +105,17 @@ func (p *pipelineProgress) SetPhase(phase string) {
 // SetCurrentFile updates the live box without blocking a scan or analysis
 // worker. With concurrent workers the box intentionally shows the most recent
 // file to begin processing rather than implying that only one file is active.
-func (p *pipelineProgress) SetCurrentFile(name string) {
-	p.setActivity(progressDisplayActivity{title: "Currently processing", path: name})
+func (p *pipelineProgress) SetCurrentFile(file libraryindex.FileActivity) {
+	p.setActivity(progressActivityForFile(file))
+}
+
+func progressActivityForFile(file libraryindex.FileActivity) progressDisplayActivity {
+	warning := strings.EqualFold(file.Extension, ".flac") && file.Size > largeFLACWarningBytes
+	return progressDisplayActivity{title: "Currently processing", path: file.RelativePath, warning: warning}
+}
+
+func (p *pipelineProgress) SetCurrentOperation(name string) {
+	p.setActivity(progressDisplayActivity{title: "Current operation", path: name})
 }
 
 // SetCurrentDirectory keeps long directory enumeration visibly alive before an
@@ -145,48 +161,57 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 	defer cursor.SetTarget(os.Stdout)
 	ticker := time.NewTicker(progressRefreshInterval)
 	defer ticker.Stop()
-	last := libraryindex.ProgressSnapshot{Total: -1}
+	last := libraryindex.ProgressSnapshot{}
 	activity := progressDisplayActivity{}
 	lastActivitySecond := int64(-1)
 	barLine := latestProgressLine(barOutput)
+	summaryLine := progressTitle(phase, last, mode)
+	lastBarRedraw := time.Time{}
 	updateArea := func() {
-		content := barLine
+		content := summaryLine + "\n" + barLine
 		if mode != progressActivity {
 			title, detail := progressActivityDisplay(activity, phase, last)
-			box := pterm.DefaultBox.WithTitle(title).Sprint(detail)
-			content = box + "\n" + barLine
+			content = progressActivityBox(title, detail, activity.warning) + "\n" + content
 		}
 		area.Update(strings.TrimRight(content, "\n") + "\n")
 		lastActivitySecond = progressActivityAge(activity, time.Now())
 	}
+	redrawBar := func(snapshot libraryindex.ProgressSnapshot, now time.Time) {
+		line := updateProgressBar(bar, barOutput, snapshot, mode)
+		if line != "" {
+			barLine = line
+		}
+		lastBarRedraw = now
+	}
 	render := func(force bool) {
+		now := time.Now()
 		queryCtx, cancel := context.WithTimeout(context.Background(), progressRefreshInterval)
 		snapshot, err := state.Progress(queryCtx, semanticJobs)
 		cancel()
 		if err != nil {
 			// Activity updates must not depend on a read connection becoming
 			// available while the durable writer is busy.
-			if force || progressActivityAge(activity, time.Now()) != lastActivitySecond {
+			summaryLine = progressTitle(phase, last, mode)
+			redrawDue := progressRedrawDue(lastBarRedraw, now)
+			if force || redrawDue {
+				redrawBar(last, now)
+			}
+			if force || progressActivityAge(activity, now) != lastActivitySecond || redrawDue {
 				updateArea()
 			}
 			return
 		}
-		if !force && snapshot == last {
-			if progressActivityAge(activity, time.Now()) != lastActivitySecond {
-				updateArea()
-			}
+		snapshotChanged := snapshot != last
+		activityChanged := progressActivityAge(activity, now) != lastActivitySecond
+		redrawDue := progressRedrawDue(lastBarRedraw, now)
+		if !force && !snapshotChanged && !activityChanged && !redrawDue {
 			return
 		}
 		last = snapshot
-		total, current := int64(1), int64(0)
-		if mode == progressJobs {
-			total = max(int64(1), snapshot.Total)
-			current = min(snapshot.Finished, total)
+		summaryLine = progressTitle(phase, snapshot, mode)
+		if force || snapshotChanged || redrawDue {
+			redrawBar(snapshot, now)
 		}
-		bar.Total = boundedProgressInt(total)
-		bar.Current = boundedProgressInt(current)
-		bar.UpdateTitle(progressTitle(phase, snapshot, mode))
-		barLine = latestProgressLine(barOutput)
 		updateArea()
 	}
 	render(true)
@@ -202,18 +227,22 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			if success {
 				bar.Total = max(1, bar.Total)
 				bar.Current = bar.Total
-				bar.UpdateTitle(progressTitle("Complete", last, mode))
+				summaryLine = progressTitle("Complete", last, mode)
 			} else {
-				bar.UpdateTitle(progressTitle("Stopped", last, mode))
+				summaryLine = progressTitle("Stopped", last, mode)
 			}
-			barLine = latestProgressLine(barOutput)
+			if line := refreshProgressBar(bar, barOutput); line != "" {
+				barLine = line
+			}
 			updateArea()
 			_, _ = bar.Stop()
 			return
 		case <-ctx.Done():
 			render(true)
-			bar.UpdateTitle(progressTitle("Interrupted", last, mode))
-			barLine = latestProgressLine(barOutput)
+			summaryLine = progressTitle("Interrupted", last, mode)
+			if line := refreshProgressBar(bar, barOutput); line != "" {
+				barLine = line
+			}
 			updateArea()
 			_, _ = bar.Stop()
 			return
@@ -221,6 +250,34 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			render(false)
 		}
 	}
+}
+
+func progressActivityBox(title, detail string, warning bool) string {
+	boxPrinter := pterm.DefaultBox.WithTitle(title)
+	if warning {
+		boxPrinter = boxPrinter.WithTextStyle(pterm.NewStyle(pterm.FgRed))
+	}
+	return boxPrinter.Sprint(detail)
+}
+
+func updateProgressBar(bar *pterm.ProgressbarPrinter, output *bytes.Buffer, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
+	total, current := int64(1), int64(0)
+	if mode == progressJobs {
+		total = max(int64(1), snapshot.Total)
+		current = min(snapshot.Finished, total)
+	}
+	bar.Total = boundedProgressInt(total)
+	bar.Current = boundedProgressInt(current)
+	return refreshProgressBar(bar, output)
+}
+
+func refreshProgressBar(bar *pterm.ProgressbarPrinter, output *bytes.Buffer) string {
+	bar.UpdateTitle("")
+	return latestProgressLine(output)
+}
+
+func progressRedrawDue(last, now time.Time) bool {
+	return last.IsZero() || now.Sub(last) >= progressFullRedraw
 }
 
 func latestProgressLine(output *bytes.Buffer) string {
@@ -289,6 +346,9 @@ func progressTitle(phase string, snapshot libraryindex.ProgressSnapshot, mode pr
 	title := fmt.Sprintf("%s • %d files • %d queued • %d active • %d/%d finished", phase, snapshot.Files, snapshot.Queued, snapshot.Leased, snapshot.Finished, snapshot.Total)
 	if snapshot.Failed > 0 {
 		title += fmt.Sprintf(" • %d failed", snapshot.Failed)
+	}
+	if snapshot.Retries > 0 {
+		title += fmt.Sprintf(" • %d retries", snapshot.Retries)
 	}
 	return title
 }

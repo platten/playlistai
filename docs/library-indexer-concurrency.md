@@ -41,7 +41,12 @@ audio file is found, then the most recent file admitted by scan or analysis.
 Activity rendering does not wait on the SQLite progress snapshot, so a briefly
 busy read connection cannot leave the box stuck at its initial message. A
 once-per-second active-time heartbeat makes a long decode or inference request
-visibly live even when durable counts have not changed. With multiple workers
+visibly live even when durable counts have not changed. Counts render on a
+separate summary line, leaving stable width for the PTerm count/percentage bar;
+the bar is regenerated every 30 seconds even when the snapshot is unchanged.
+A growing job total can reduce the displayed percentage, but cannot remove the
+bar or retain an obsolete denominator. FLAC activity over 500,000,000 bytes is
+styled red when color is enabled. `NO_COLOR` is honored. With multiple workers
 this is intentionally an activity indicator, not a claim that only one file is
 active. Non-TTY stderr never receives cursor-control output. Effective values
 are printed and included in JSON.
@@ -91,14 +96,21 @@ interrupted epoch stats completed frontier entries in bounded batches and
 requeues only changed or unavailable directories, incrementing the durable
 scope barrier for each successful transition. Enumeration compares the
 directory revision before and after reading; a concurrently changing directory
-is retried up to the bounded attempt limit rather than committed as complete.
-Regular rescans create a new epoch, while unchanged per-file semantic jobs
-remain completed and are never claimed again.
+is retried through a fenced durable transition up to eight attempts rather than
+committed as complete. Counts from abandoned attempts do not inflate the scan
+report. Regular rescans create a new epoch, while unchanged per-file semantic
+jobs remain completed and are never claimed again.
 
 Each MERT session is a long-lived child with exactly one active request,
 independent mutable tensors, explicit ONNX Runtime intra-op threads, sequential
 graph execution, and disabled idle spinning. The fixed batch-1 graph is never
-given a larger batch. FFmpeg children use absolute argv paths, a private process
+given a larger batch. A request that produces no framed response for 30 seconds
+is treated as a transient native failure: the child is killed and reaped before
+its slot returns, and the durable analysis job receives at most two automatic
+retries, each able to launch a fresh process. Caller cancellation remains a
+separate outcome. Initial session warmup also makes at most two restart attempts
+for errors explicitly classified as native-worker failures; model/configuration
+errors fail immediately. FFmpeg children use absolute argv paths, a private process
 group, and Linux parent-death behavior. MERT workers likewise use their own
 process group and Linux parent-death signal, in addition to framed pipes,
 explicit close/kill/reap, deadlines, and durable fencing.

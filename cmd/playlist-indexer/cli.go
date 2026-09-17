@@ -465,13 +465,13 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	var fitResult libraryindex.FitResult
 	var packManifest any
 	if command == "run" && *outPath != "" {
-		progress.SetCurrentFile("Library fitting (no source file)")
+		progress.SetCurrentOperation("Library fitting (no source file)")
 		progress.SetPhase("Fitting library")
 		fitResult, err = state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), TrainingSample: *trainingSample, Clusters: *clusters, Refit: *refit, Plan: plan})
 		if err != nil {
 			return 1, err
 		}
-		progress.SetCurrentFile("Library export (no source file)")
+		progress.SetCurrentOperation("Library export (no source file)")
 		progress.SetPhase("Exporting library pack")
 		manifest, err := state.ExportPack(ctx, *outPath)
 		if err != nil {
@@ -525,7 +525,7 @@ func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest au
 	}
 	if plan.Mode == libraryindex.ConcurrencyAuto && plan.InferenceWorkers > 1 {
 		probe := makePool(1)
-		if err := probe.Warm(ctx); err != nil {
+		if err := warmMERTWithRetries(ctx, probe, stderr); err != nil {
 			_ = probe.Close()
 			return nil, plan, err
 		}
@@ -540,7 +540,7 @@ func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest au
 		_ = probe.Close()
 	}
 	pool := makePool(plan.InferenceWorkers)
-	if err := pool.Warm(ctx); err != nil {
+	if err := warmMERTWithRetries(ctx, pool, stderr); err != nil {
 		_ = pool.Close()
 		return nil, plan, err
 	}
@@ -550,6 +550,24 @@ func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest au
 	}
 	plan.ResidentMERTBytes = pool.ResidentBytes()
 	return pool, plan, nil
+}
+
+type mertPoolWarmer interface {
+	Warm(context.Context) error
+}
+
+func warmMERTWithRetries(ctx context.Context, pool mertPoolWarmer, stderr io.Writer) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = pool.Warm(ctx)
+		if err == nil || ctx.Err() != nil || !errors.Is(err, audio.ErrNativeWorker) {
+			return err
+		}
+		if attempt < 2 {
+			fmt.Fprintf(stderr, "MERT warmup worker failed; restarting native sessions (attempt %d/3)\n", attempt+2)
+		}
+	}
+	return err
 }
 
 func completionCode(failures int64) int {

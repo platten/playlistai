@@ -5,13 +5,26 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/libraryindex"
 )
+
+type scriptedMERTWarmer struct {
+	errors []error
+	calls  int
+}
+
+func (w *scriptedMERTWarmer) Warm(context.Context) error {
+	index := min(w.calls, len(w.errors)-1)
+	w.calls++
+	return w.errors[index]
+}
 
 func TestCLIValidationAndSizeUnits(t *testing.T) {
 	if got, err := parseSize("8GiB"); err != nil || got != 8<<30 {
@@ -46,6 +59,21 @@ func TestParseAppendRootRequiresStableAlias(t *testing.T) {
 	}
 	if _, _, err := parseNamedRoot("--append-root", "/mnt/without-alias"); err == nil || !strings.Contains(err.Error(), "ALIAS=PATH") {
 		t.Fatalf("invalid append root error = %v", err)
+	}
+}
+
+func TestMERTWarmupRetriesTransientNativeFailure(t *testing.T) {
+	warmer := &scriptedMERTWarmer{errors: []error{audio.ErrNativeWorker, audio.ErrNativeWorker, nil}}
+	var log bytes.Buffer
+	if err := warmMERTWithRetries(context.Background(), warmer, &log); err != nil {
+		t.Fatal(err)
+	}
+	if warmer.calls != 3 || strings.Count(log.String(), "restarting native sessions") != 2 {
+		t.Fatalf("calls=%d log=%q", warmer.calls, log.String())
+	}
+	permanent := &scriptedMERTWarmer{errors: []error{errors.New("invalid model")}}
+	if err := warmMERTWithRetries(context.Background(), permanent, io.Discard); err == nil || permanent.calls != 1 {
+		t.Fatalf("permanent failure was retried: calls=%d err=%v", permanent.calls, err)
 	}
 }
 

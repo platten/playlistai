@@ -66,7 +66,11 @@ shows each directory while enumeration is looking for audio, then the most
 recent file to begin scanning or analysis (several files may be active under
 concurrent plans). Activity updates remain visible even when a durable status
 read is briefly busy, and long-running work shows a once-per-second active-time
-heartbeat. Redirected/non-TTY runs remain plain and
+heartbeat. The summary is kept on a separate line so growing file/job counts
+cannot consume the bar width, and the complete bar is regenerated at least
+every 30 seconds. FLAC sources larger than 500 MB use red activity text when
+terminal color is enabled (`NO_COLOR` remains respected). Redirected/non-TTY
+runs remain plain and
 machine-safe, and `--no-progress` disables the live display explicitly. `--json`
 continues to reserve stdout for the final JSON document.
 
@@ -76,6 +80,16 @@ epoch; unchanged files retain compatible completed metadata, DSP, and MERT jobs,
 so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
+
+Directories that change while they are being enumerated are fenced and retried
+up to eight times; counts from discarded attempts are not added to the final
+scan report. Source revision checks before and after decoding prevent a file
+being modified from receiving a stale committed result. A silent MERT request
+has a 30-second watchdog: the owned native process is killed and reaped, the
+failure is classified as transient, and the durable job is retried up to the
+bounded retry limit with a fresh worker process. Initial MERT warmup likewise
+restarts failed native sessions up to two times before failing setup. Retry
+counts appear in live progress and `status`.
 
 Use `bench concurrency --root PATH --sample-tracks N` for isolated real-audio
 serial/2-worker/4-worker/auto equivalence and resource measurements. Use
