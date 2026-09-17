@@ -421,6 +421,17 @@ type Root struct {
 }
 
 func (s *State) EnsureRoot(ctx context.Context, path, alias string) (Root, error) {
+	return s.ensureRoot(ctx, path, alias, true)
+}
+
+// EnsureAdditionalRoot adds an independently named source without allowing an
+// existing logical root to be silently repointed. Repointing is a remount and
+// must use EnsureRoot explicitly.
+func (s *State) EnsureAdditionalRoot(ctx context.Context, path, alias string) (Root, error) {
+	return s.ensureRoot(ctx, path, alias, false)
+}
+
+func (s *State) ensureRoot(ctx context.Context, path, alias string, allowPathUpdate bool) (Root, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return Root{}, err
@@ -440,11 +451,22 @@ func (s *State) EnsureRoot(ctx context.Context, path, alias string) (Root, error
 	rootSum := sha256.Sum256([]byte("playlist-indexer-root-alias/v1\x00" + alias))
 	root := Root{ID: "root:" + hex.EncodeToString(rootSum[:16]), Path: abs, Alias: alias}
 	err = s.write(ctx, true, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, `INSERT INTO roots(id,path,alias,created_at) VALUES(?,?,?,?) ON CONFLICT(alias) DO UPDATE SET path=excluded.path`, root.ID, root.Path, root.Alias, time.Now().UTC().Format(time.RFC3339Nano))
+		conflict := "DO NOTHING"
+		if allowPathUpdate {
+			conflict = "DO UPDATE SET path=excluded.path"
+		}
+		_, err := conn.ExecContext(ctx, `INSERT INTO roots(id,path,alias,created_at) VALUES(?,?,?,?) ON CONFLICT(alias) `+conflict, root.ID, root.Path, root.Alias, time.Now().UTC().Format(time.RFC3339Nano))
 		if err != nil {
 			return err
 		}
-		return conn.QueryRowContext(ctx, `SELECT id,path,alias FROM roots WHERE alias=?`, root.Alias).Scan(&root.ID, &root.Path, &root.Alias)
+		requestedPath := root.Path
+		if err := conn.QueryRowContext(ctx, `SELECT id,path,alias FROM roots WHERE alias=?`, root.Alias).Scan(&root.ID, &root.Path, &root.Alias); err != nil {
+			return err
+		}
+		if !allowPathUpdate && filepath.Clean(root.Path) != requestedPath {
+			return fmt.Errorf("library indexer: append root alias %q already maps to %q; use --root-alias %s=%s to update its mount path", root.Alias, root.Path, root.Alias, requestedPath)
+		}
+		return nil
 	})
 	return root, err
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -120,6 +121,32 @@ func TestStableRootAliasSurvivesRemountAndRootOrderChanges(t *testing.T) {
 	var roots int
 	if err := state.Reader().QueryRowContext(ctx, "SELECT COUNT(*) FROM roots").Scan(&roots); err != nil || roots != 2 {
 		t.Fatalf("remount created a duplicate root: count=%d err=%v", roots, err)
+	}
+}
+
+func TestAdditionalRootDoesNotSilentlyRemountExistingAlias(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "additional-root-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	firstPath := filepath.Join(t.TempDir(), "first")
+	secondPath := filepath.Join(t.TempDir(), "second")
+	first, err := state.EnsureAdditionalRoot(ctx, firstPath, "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := state.EnsureAdditionalRoot(ctx, firstPath, "archive")
+	if err != nil || again != first {
+		t.Fatalf("same append root was not idempotent: first=%+v again=%+v err=%v", first, again, err)
+	}
+	if _, err := state.EnsureAdditionalRoot(ctx, secondPath, "archive"); err == nil || !strings.Contains(err.Error(), "--root-alias") {
+		t.Fatalf("append root silently remounted alias: %v", err)
+	}
+	remounted, err := state.EnsureRoot(ctx, secondPath, "archive")
+	if err != nil || remounted.Path != secondPath {
+		t.Fatalf("explicit root remount failed: root=%+v err=%v", remounted, err)
 	}
 }
 

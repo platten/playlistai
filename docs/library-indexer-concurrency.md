@@ -36,11 +36,15 @@ Implemented flags are `--workers`, `--scan-workers`, `--metadata-workers`,
 `--inference-workers`, `--inference-threads`, `--fit-workers`,
 `--index-workers`, `--queue-depth`, `--max-ram`, `--max-open-files`, and
 `--shutdown-timeout`. `--no-progress` disables the TTY-only PTerm progress bar;
-the same live area contains a PTerm box showing the most recent file admitted by
-scan or analysis. With multiple workers this is intentionally an activity
-indicator, not a claim that only one file is active. Non-TTY stderr never
-receives cursor-control output. Effective values are printed and included in
-JSON.
+the same live area contains a PTerm box showing directory enumeration until an
+audio file is found, then the most recent file admitted by scan or analysis.
+Activity rendering does not wait on the SQLite progress snapshot, so a briefly
+busy read connection cannot leave the box stuck at its initial message. A
+once-per-second active-time heartbeat makes a long decode or inference request
+visibly live even when durable counts have not changed. With multiple workers
+this is intentionally an activity indicator, not a claim that only one file is
+active. Non-TTY stderr never receives cursor-control output. Effective values
+are printed and included in JSON.
 `--config` accepts the bounded JSON shape in
 [library-indexer-config.example.json](library-indexer-config.example.json).
 Precedence is command-line flag, then configuration value, then automatic
@@ -51,6 +55,14 @@ remountable library. The logical alias determines root/file identity; later
 runs may change its physical path without reindexing unchanged files. Plain
 `--root` remains compatible, but its generated aliases are unsuitable when
 mount ordering can change.
+
+`--append-root ALIAS=PATH` is the explicit incremental-source interface. A run
+using it enumerates only the named additional roots while retaining inventory
+and compatible completed jobs for roots already present in the state. It is
+repeatable and may be rerun with the same alias to discover additions. Root
+aliases remain the identity boundary, so independently mounted folders need
+distinct aliases; a deliberate remount/path update continues to use
+`--root-alias`.
 
 ## Pipeline and ownership
 

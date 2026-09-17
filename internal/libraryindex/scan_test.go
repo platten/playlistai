@@ -48,6 +48,45 @@ func TestDurableScanBoundsFrontierAndIgnoresNonRegularFiles(t *testing.T) {
 	}
 }
 
+func TestScanReportsDirectoryActivityBeforeAudioDiscovery(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootPath, "empty", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "empty", "nested", "song.flac"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "scan-activity-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var directories []string
+	var files []string
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots:        []Root{root},
+		Workers:      1,
+		QueueDepth:   1,
+		SemanticJobs: map[string]string{"metadata": "v1"},
+		OnDirectory:  func(path string) { directories = append(directories, path) },
+		OnFile:       func(path string) { files = append(files, path) },
+	})
+	if err != nil || !report.Complete {
+		t.Fatalf("scan=%+v err=%v", report, err)
+	}
+	if len(directories) < 3 || directories[0] != "archive" || !slices.Contains(directories, filepath.Join("archive", "empty", "nested")) {
+		t.Fatalf("directory activity = %v", directories)
+	}
+	if !slices.Equal(files, []string{filepath.Join("empty", "nested", "song.flac")}) {
+		t.Fatalf("file activity = %v", files)
+	}
+}
+
 func TestPartialScanNeverTombstonesPriorInventory(t *testing.T) {
 	ctx := context.Background()
 	rootPath := t.TempDir()
@@ -175,6 +214,67 @@ func TestRescanDiscoversAddedFilesWithoutReprocessingCompletedJobs(t *testing.T)
 	want := []jobState{{path: "added.flac", state: "pending", attempt: 0}, {path: "existing.mp3", state: "completed", attempt: 1}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("rescan reprocessed completed work or missed new work: got=%+v want=%+v", got, want)
+	}
+}
+
+func TestAdditionalRootAppendsInventoryWithoutReprocessingCompletedRoot(t *testing.T) {
+	ctx := context.Background()
+	firstPath := t.TempDir()
+	secondPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(firstPath, "first.mp3"), []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secondPath, "second.flac"), []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "append-root-test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	firstRoot, err := state.EnsureRoot(ctx, firstPath, "primary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := map[string]string{"metadata": "probe/v1"}
+	if _, err := state.Scan(ctx, ScanOptions{Roots: []Root{firstRoot}, Workers: 1, QueueDepth: 1, SemanticJobs: jobs}); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := state.ClaimJobs(ctx, "metadata", 1, time.Minute)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("initial claim=%+v err=%v", claimed, err)
+	}
+	if err := state.CommitJob(ctx, JobResult{Job: claimed[0], Contract: "probe/v1", Metadata: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+
+	secondRoot, err := state.EnsureRoot(ctx, secondPath, "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := state.Scan(ctx, ScanOptions{Roots: []Root{secondRoot}, Workers: 1, QueueDepth: 1, SemanticJobs: jobs})
+	if err != nil || !report.Complete || report.AudioFiles != 1 {
+		t.Fatalf("append scan=%+v err=%v", report, err)
+	}
+	rows, err := state.Reader().QueryContext(ctx, `SELECT r.alias,f.relative_path,j.state,j.attempt
+		FROM jobs j JOIN files f ON f.id=j.file_id JOIN roots r ON r.id=f.root_id
+		ORDER BY r.alias`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var alias, relative, jobState string
+		var attempt int
+		if err := rows.Scan(&alias, &relative, &jobState, &attempt); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%s:%s:%s:%d", alias, relative, jobState, attempt))
+	}
+	want := []string{"archive:second.flac:pending:0", "primary:first.mp3:completed:1"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("append root changed completed work: got=%v want=%v", got, want)
 	}
 }
 
