@@ -74,6 +74,25 @@ func TestMERTWorkerKillsReapsAndRestarts(t *testing.T) {
 		t.Fatal("closed worker restarted")
 	}
 }
+
+func TestMERTWorkerWatchdogRestartsSilentNativeProcess(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &MERTWorker{Executable: exe, BundleDir: "test:mert-hang", Model: mertTestModel(), ResponseTimeout: 50 * time.Millisecond}
+	defer w.Close()
+	if _, err = w.EmbedAudio(context.Background(), make([]float32, 400)); !errors.Is(err, ErrNativeWorker) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("watchdog error = %v", err)
+	}
+	if w.cmd != nil {
+		t.Fatal("silent native child was not killed and reaped")
+	}
+	w.BundleDir = "test:mert-healthy"
+	if err = w.Health(context.Background()); err != nil {
+		t.Fatalf("fresh worker did not restart after watchdog: %v", err)
+	}
+}
 func TestMERTPreparedPreprocessingReference(t *testing.T) {
 	path := os.Getenv("PLAYLISTAI_MERT_PREPROCESSING_REFERENCE")
 	if path == "" {

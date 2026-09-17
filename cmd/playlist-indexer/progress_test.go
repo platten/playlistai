@@ -28,9 +28,9 @@ func (r failingProgressReader) Progress(context.Context, map[string]string) (lib
 }
 
 func TestProgressTitleReportsDurableState(t *testing.T) {
-	snapshot := libraryindex.ProgressSnapshot{Files: 12, Total: 20, Finished: 9, Queued: 7, Leased: 4, Failed: 2}
+	snapshot := libraryindex.ProgressSnapshot{Files: 12, Total: 20, Finished: 9, Queued: 7, Leased: 4, Failed: 2, Retries: 3}
 	title := progressTitle("Scanning & analyzing", snapshot, progressJobs)
-	for _, want := range []string{"Scanning & analyzing", "12 files", "7 queued", "4 active", "9/20 finished", "2 failed"} {
+	for _, want := range []string{"Scanning & analyzing", "12 files", "7 queued", "4 active", "9/20 finished", "2 failed", "3 retries"} {
 		if !strings.Contains(title, want) {
 			t.Fatalf("title %q does not contain %q", title, want)
 		}
@@ -124,6 +124,51 @@ func TestProgressActivityDisplayShowsHeartbeatForLongWork(t *testing.T) {
 	}
 }
 
+func TestLargeFLACActivityUsesWarningStyle(t *testing.T) {
+	for _, test := range []struct {
+		file libraryindex.FileActivity
+		want bool
+	}{
+		{file: libraryindex.FileActivity{RelativePath: "large.flac", Size: largeFLACWarningBytes + 1, Extension: ".FLAC"}, want: true},
+		{file: libraryindex.FileActivity{RelativePath: "boundary.flac", Size: largeFLACWarningBytes, Extension: ".flac"}, want: false},
+		{file: libraryindex.FileActivity{RelativePath: "large.mp3", Size: largeFLACWarningBytes + 1, Extension: ".mp3"}, want: false},
+	} {
+		if got := progressActivityForFile(test.file).warning; got != test.want {
+			t.Errorf("file %+v warning=%v want %v", test.file, got, test.want)
+		}
+	}
+	previous := pterm.PrintColor
+	pterm.EnableColor()
+	defer func() { pterm.PrintColor = previous }()
+	box := progressActivityBox("Currently processing", "large.flac", true)
+	if !strings.Contains(box, "\x1b[31m") {
+		t.Fatalf("large FLAC box did not use red text: %q", box)
+	}
+}
+
+func TestProgressBarSurvivesGrowingTotalAndRedrawDeadline(t *testing.T) {
+	output := &bytes.Buffer{}
+	bar, err := pterm.DefaultProgressbar.WithWriter(output).WithTotal(1).WithCurrent(0).WithShowTitle(false).WithShowElapsedTime(false).Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _, _ = bar.Stop() }()
+	_ = latestProgressLine(output)
+	first := updateProgressBar(bar, output, libraryindex.ProgressSnapshot{Total: 1, Finished: 1}, progressJobs)
+	if !strings.Contains(first, "100%") {
+		t.Fatalf("completed initial bar = %q", first)
+	}
+	grown := updateProgressBar(bar, output, libraryindex.ProgressSnapshot{Total: 3, Finished: 1}, progressJobs)
+	plain := pterm.RemoveColorFromString(grown)
+	if grown == "" || !strings.Contains(plain, "33%") || !strings.Contains(plain, "1/3") {
+		t.Fatalf("growing total hid or stuck the bar: %q", grown)
+	}
+	now := time.Now()
+	if progressRedrawDue(now.Add(-29*time.Second), now) || !progressRedrawDue(now.Add(-30*time.Second), now) {
+		t.Fatal("30-second redraw deadline changed")
+	}
+}
+
 func TestActivityRendersWhenDurableProgressQueryIsBusy(t *testing.T) {
 	progress := &pipelineProgress{
 		phase:   make(chan string, 1),
@@ -145,7 +190,7 @@ func TestActivityRendersWhenDurableProgressQueryIsBusy(t *testing.T) {
 	reader := failingProgressReader{calls: make(chan struct{}, 2)}
 	go progress.run(context.Background(), reader, nil, bar, barOutput, &area, "Scanning", progressScan)
 	<-reader.calls // initial render
-	progress.SetCurrentFile("Artist/Track.flac")
+	progress.SetCurrentFile(libraryindex.FileActivity{RelativePath: "Artist/Track.flac", Size: 123, Extension: ".flac"})
 	<-reader.calls // activity render
 	progress.Stop(false)
 	if _, err := display.Seek(0, io.SeekStart); err != nil {

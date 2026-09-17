@@ -39,7 +39,7 @@ type Analyzer struct {
 	Plan      ResourcePlan
 	Admission *Admission
 	Profile   SamplingProfile
-	OnFile    func(string)
+	OnFile    func(FileActivity)
 	stageOnce sync.Once
 	dspSlots  chan struct{}
 }
@@ -229,7 +229,7 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		return err
 	}
 	if a.OnFile != nil {
-		a.OnFile(file.RelativePath)
+		a.OnFile(FileActivity{RelativePath: file.RelativePath, Size: file.Size, Extension: file.Extension})
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
@@ -415,7 +415,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		return err
 	}
 	if a.OnFile != nil {
-		a.OnFile(file.RelativePath)
+		a.OnFile(FileActivity{RelativePath: file.RelativePath, Size: file.Size, Extension: file.Extension})
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
@@ -689,14 +689,14 @@ func downmixPowerRatio(pcm audio.DecodedPCM) float64 {
 
 func classifyAnalysisError(err error) string {
 	switch {
+	case errors.Is(err, audio.ErrNativeWorker):
+		return "native_worker_transient"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return "canceled"
 	case errors.Is(err, localaudio.ErrSourceChanged):
 		return "source_changed"
 	case errors.Is(err, localaudio.ErrUnsupported):
 		return "unsupported"
-	case errors.Is(err, audio.ErrNativeWorker):
-		return "native_worker_transient"
 	case errors.Is(err, sql.ErrNoRows):
 		return "missing_prerequisite"
 	default:

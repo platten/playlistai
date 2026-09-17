@@ -13,7 +13,10 @@ import (
 	"github.com/platten/playlistai/internal/process"
 )
 
-const MERTWorkerProtocol = 1
+const (
+	MERTWorkerProtocol        = 1
+	MERTWorkerResponseTimeout = 30 * time.Second
+)
 
 type MERTWorkerRequest struct {
 	Protocol int
@@ -36,11 +39,14 @@ type MERTWorker struct {
 	// InferenceThreads is the explicit native intra-operation budget. Zero
 	// retains the conservative legacy default of two threads.
 	InferenceThreads int
-	mu               sync.Mutex
-	closed           bool
-	cmd              *exec.Cmd
-	stdin            io.WriteCloser
-	stdout           io.ReadCloser
+	// ResponseTimeout bounds a silent native request. Zero uses the production
+	// 30-second watchdog. It is configurable for deterministic process tests.
+	ResponseTimeout time.Duration
+	mu              sync.Mutex
+	closed          bool
+	cmd             *exec.Cmd
+	stdin           io.WriteCloser
+	stdout          io.ReadCloser
 }
 
 func (w *MERTWorker) Identity() core.AudioRepresentationIdentity { return w.Model }
@@ -67,7 +73,12 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	if w.closed {
 		return nil, fmt.Errorf("audio: worker is closed")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	parent := ctx
+	timeout := w.ResponseTimeout
+	if timeout <= 0 {
+		timeout = MERTWorkerResponseTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -122,7 +133,10 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	case <-ctx.Done():
 		w.stopLocked()
 		<-done
-		return nil, ctx.Err()
+		if parent.Err() != nil {
+			return nil, parent.Err()
+		}
+		return nil, fmt.Errorf("%w: no response for %s: %w", ErrNativeWorker, timeout, context.DeadlineExceeded)
 	case result := <-done:
 		if result.err != nil || result.response.Error != "" || result.response.Protocol != MERTWorkerProtocol || result.response.Model != w.Model {
 			w.stopLocked()

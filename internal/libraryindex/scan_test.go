@@ -74,7 +74,7 @@ func TestScanReportsDirectoryActivityBeforeAudioDiscovery(t *testing.T) {
 		QueueDepth:   1,
 		SemanticJobs: map[string]string{"metadata": "v1"},
 		OnDirectory:  func(path string) { directories = append(directories, path) },
-		OnFile:       func(path string) { files = append(files, path) },
+		OnFile:       func(file FileActivity) { files = append(files, file.RelativePath) },
 	})
 	if err != nil || !report.Complete {
 		t.Fatalf("scan=%+v err=%v", report, err)
@@ -180,9 +180,9 @@ func TestRescanDiscoversAddedFilesWithoutReprocessingCompletedJobs(t *testing.T)
 		Workers:      2,
 		QueueDepth:   1,
 		SemanticJobs: jobs,
-		OnFile: func(name string) {
+		OnFile: func(file FileActivity) {
 			observedMu.Lock()
-			observed = append(observed, name)
+			observed = append(observed, file.RelativePath)
 			observedMu.Unlock()
 		},
 	})
@@ -214,6 +214,54 @@ func TestRescanDiscoversAddedFilesWithoutReprocessingCompletedJobs(t *testing.T)
 	want := []jobState{{path: "added.flac", state: "pending", attempt: 0}, {path: "existing.mp3", state: "completed", attempt: 1}}
 	if !slices.Equal(got, want) {
 		t.Fatalf("rescan reprocessed completed work or missed new work: got=%+v want=%+v", got, want)
+	}
+}
+
+func TestScanRetriesDirectoryChangedDuringEnumerationWithoutDoubleCounting(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	if err := os.WriteFile(filepath.Join(rootPath, "first.flac"), []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "live-directory-change-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var addOnce sync.Once
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots:        []Root{root},
+		Workers:      1,
+		QueueDepth:   1,
+		SemanticJobs: map[string]string{"metadata": "probe/v1"},
+		OnFile: func(file FileActivity) {
+			if file.RelativePath == "first.flac" {
+				addOnce.Do(func() {
+					if writeErr := os.WriteFile(filepath.Join(rootPath, "added-while-scanning.flac"), []byte("added"), 0o600); writeErr != nil {
+						t.Errorf("add file during scan: %v", writeErr)
+						return
+					}
+					future := time.Now().Add(2 * time.Second)
+					if changeErr := os.Chtimes(rootPath, future, future); changeErr != nil {
+						t.Errorf("advance directory revision: %v", changeErr)
+					}
+				})
+			}
+		},
+	})
+	if err != nil || !report.Complete {
+		t.Fatalf("live-change scan=%+v err=%v", report, err)
+	}
+	if report.Directories != 1 || report.Files != 2 || report.AudioFiles != 2 {
+		t.Fatalf("retry double-counted or missed live additions: %+v", report)
+	}
+	status, err := state.Status(ctx)
+	if err != nil || status.Files != 2 || status.JobsByState["pending"] != 2 {
+		t.Fatalf("status=%+v err=%v", status, err)
 	}
 }
 

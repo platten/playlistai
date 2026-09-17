@@ -49,6 +49,27 @@ workspace from remaining release gates.
   two present files and two completed metadata jobs. Race tests additionally
   verify that the original job attempt remains unchanged, a repeated append is
   idempotent, and an append alias cannot silently remount an existing root.
+- The current source launcher was executed in a real pseudo-terminal against a
+  500,000,001-byte sparse FLAC and a second file. Directory/file activity, the
+  summary, count bar, and percentage remained present while discovered and
+  queued totals advanced from zero to two. The validation shell exports
+  `NO_COLOR=1`, so red pixels are not claimed from that run; focused tests verify
+  that only FLAC files strictly over the decimal 500 MB threshold select the
+  PTerm warning style. A deterministic bar test advances a completed 1/1 bar to
+  a growing 1/3 total and observes a nonempty 33% rendering, and verifies the
+  30-second forced-redraw boundary.
+- A process-isolation test runs a deliberately silent MERT child with a shortened
+  watchdog, verifies an error matching both `ErrNativeWorker` and deadline
+  exceeded, verifies that the child is killed/reaped, then successfully starts
+  a fresh healthy worker. A concurrent-directory test adds a FLAC from the scan
+  callback, forces a directory revision change, and verifies a complete two-file
+  inventory/report without retry double-counting.
+- The rebuilt offline executable completed a fresh serial fast-profile run over
+  a real FLAC after the 30-second production watchdog was enabled. One native
+  session warmed in 4.132 seconds with measured 661,131,264-byte RSS, and the run
+  committed one metadata, DSP, and real 768-dimensional MERT result with zero
+  failures or retries. This verifies normal inference on this host; it is not a
+  general latency guarantee.
 - The opt-in real-audio concurrency benchmark executed on an identical
   deterministic two-track sample. Serial, 2-worker, 4-worker, and auto runs all
   committed two metadata and two audio results with semantic digest
@@ -99,11 +120,11 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          dc0d2de7432e1f7d686a6da148d665cc0e63212babe2755390dd58372200a8dc
-bin/playlist-indexer-offline  9a9de0a6b8517a174cb5ddc545bc46830b698aedf43c1042f8f8ff113cfd9815
+bin/playlist-indexer          ef1229b737a37ce6fad600638c7cdcb4f7712b90e34f593db509201341cf51b5
+bin/playlist-indexer-offline  96754772e806d688207ce535141bd0cd8de7b9d36445d330a3686448e5675273
 ```
 
-The standard file is 23,936,013 bytes and the offline file is 425,405,581
+The standard file is 23,946,781 bytes and the offline file is 425,416,349
 bytes. `./scripts/test.sh` passed after the September 17 production-readiness,
 live activity rendering, and append-root changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and

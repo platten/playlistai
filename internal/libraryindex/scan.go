@@ -22,8 +22,16 @@ type ScanOptions struct {
 	Exclusions     []string
 	SemanticJobs   map[string]string
 	Admission      *Admission
-	OnFile         func(string)
+	OnFile         func(FileActivity)
 	OnDirectory    func(string)
+}
+
+// FileActivity is bounded progress metadata. It never includes an absolute
+// source path and is not part of the durable analysis contract.
+type FileActivity struct {
+	RelativePath string
+	Size         int64
+	Extension    string
 }
 
 type ScanReport struct {
@@ -40,6 +48,8 @@ type ScanReport struct {
 var audioExtensions = map[string]struct{}{`.flac`: {}, `.mp3`: {}, `.aac`: {}, `.m4a`: {}, `.mp4`: {}}
 
 var errDirectoryChanged = errors.New("library indexer: directory changed during enumeration")
+
+const maxDirectoryChangeAttempts = 8
 
 type directoryLeaseTracker struct {
 	mu    sync.Mutex
@@ -156,11 +166,8 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 				}
 				children, count, audioCount, revision, scanErr := s.scanDirectory(ctx, task, root, options)
 				release()
-				atomic.AddInt64(&report.Directories, 1)
-				atomic.AddInt64(&report.Files, count)
-				atomic.AddInt64(&report.AudioFiles, audioCount)
 				if scanErr != nil {
-					if errors.Is(scanErr, errDirectoryChanged) && task.Attempt < 3 {
+					if errors.Is(scanErr, errDirectoryChanged) && task.Attempt < maxDirectoryChangeAttempts {
 						if err := s.RetryDirectory(ctx, task, scanErr.Error()); err != nil {
 							recordFatal(err)
 						}
@@ -176,7 +183,12 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 				}
 				if err := s.CompleteDirectory(ctx, task, children, revision); err != nil {
 					recordFatal(err)
+					leases.remove(task)
+					continue
 				}
+				atomic.AddInt64(&report.Directories, 1)
+				atomic.AddInt64(&report.Files, count)
+				atomic.AddInt64(&report.AudioFiles, audioCount)
 				leases.remove(task)
 			}
 		}()
@@ -291,7 +303,7 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 				continue
 			}
 			if options.OnFile != nil {
-				options.OnFile(childRel)
+				options.OnFile(FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
 			}
 			device, inode := fileIdentity(info)
 			_, err = s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)

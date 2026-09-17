@@ -86,7 +86,7 @@ func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 	pool := &MERTWorkerPool{workers: make([]*MERTWorker, 0, parallelism), available: make(chan *MERTWorker, parallelism)}
 	pool.workers = append(pool.workers, primary)
 	for range parallelism - 1 {
-		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, InferenceThreads: primary.InferenceThreads})
+		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, InferenceThreads: primary.InferenceThreads, ResponseTimeout: primary.ResponseTimeout})
 	}
 	for _, worker := range pool.workers {
 		pool.available <- worker
