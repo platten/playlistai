@@ -212,6 +212,11 @@ func (g *Generation) close() error {
 
 func extractArchive(ctx context.Context, archivePath, destination string, limits Limits) (Manifest, string, error) {
 	limits = limits.normalized()
+	destinationRoot, err := os.OpenRoot(destination)
+	if err != nil {
+		return Manifest{}, "", fmt.Errorf("librarypack: open extraction root: %w", err)
+	}
+	defer destinationRoot.Close()
 	info, err := os.Stat(archivePath)
 	if err != nil {
 		return Manifest{}, "", err
@@ -271,7 +276,7 @@ func extractArchive(ctx context.Context, archivePath, destination string, limits
 			for _, f := range manifest.Files {
 				expected[f.Name] = f
 			}
-			if err := writeInstalledManifest(destination, manifest); err != nil {
+			if err := writeInstalledManifest(destinationRoot, manifest); err != nil {
 				return Manifest{}, "", err
 			}
 			continue
@@ -280,8 +285,10 @@ func extractArchive(ctx context.Context, archivePath, destination string, limits
 		if !ok || want.Size != header.Size {
 			return Manifest{}, "", fmt.Errorf("librarypack: undeclared or mismatched member %q", header.Name)
 		}
-		target := filepath.Join(destination, header.Name)
-		out, createErr := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		// Root.OpenFile enforces containment at the filesystem operation, in
+		// addition to the lexical basename check above. Archive-controlled names
+		// therefore cannot escape through traversal or a future symlink change.
+		out, createErr := destinationRoot.OpenFile(header.Name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if createErr != nil {
 			return Manifest{}, "", createErr
 		}
@@ -526,12 +533,12 @@ func checkedVectorSize(dim, count int) (int64, bool) {
 	return 32 + int64(dim)*4*int64(count), true
 }
 
-func writeInstalledManifest(dir string, manifest Manifest) error {
+func writeInstalledManifest(root *os.Root, manifest Manifest) error {
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(filepath.Join(dir, ManifestName), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	f, err := root.OpenFile(ManifestName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
