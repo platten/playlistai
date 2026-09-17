@@ -89,6 +89,10 @@ func TestMERTWorkerWatchdogRestartsSilentNativeProcess(t *testing.T) {
 		t.Fatal("silent native child was not killed and reaped")
 	}
 	w.BundleDir = "test:mert-healthy"
+	// Keep the failure watchdog deliberately tiny above, but allow process
+	// startup under the Windows race detector before asserting the replacement
+	// worker is healthy.
+	w.ResponseTimeout = 5 * time.Second
 	if err = w.Health(context.Background()); err != nil {
 		t.Fatalf("fresh worker did not restart after watchdog: %v", err)
 	}
