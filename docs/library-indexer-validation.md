@@ -158,11 +158,11 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          d98f935d868a11012c3372f1932d23e5248c1d6f674795f5e3b92a2e78ff831f
-bin/playlist-indexer-offline  03b52d66d4ef5b3fbe0a1c128efee0176e87699bff892d53b9b8f0090a707b5e
+bin/playlist-indexer          141153dbc78cabd7298db538dcd3a4bcfe52f7ed163f97cfc6d1ff06c3162cd6
+bin/playlist-indexer-offline  1de2b506699cf0af4abe4c40f02dd0aaf8d2b6b0f7e214ff49e2b684cfedb366
 ```
 
-The standard file is 24,038,845 bytes and the offline file is 425,508,413
+The standard file is 24,038,821 bytes and the offline file is 425,508,389
 bytes. `./scripts/test.sh` passed after the September 17 scan-manifest,
 live activity rendering, and append-root changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and
