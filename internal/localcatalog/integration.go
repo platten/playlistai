@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/ports"
 )
 
@@ -111,6 +112,14 @@ func (c *CompositeCatalog) Meta(id string) (core.TrackMeta, bool) {
 			Ref:   core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity},
 			Album: track.Album, AlbumReliable: track.Album != "", SourceIdentity: track.SourceIdentity,
 			ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+		}
+		if track.AudioFingerprint != nil {
+			fingerprint := track.AudioFingerprint
+			meta.AudioFingerprint = &core.AudioFingerprint{
+				Contract: fingerprint.Contract, Format: fingerprint.Format, Algorithm: fingerprint.Algorithm,
+				Fingerprint: fingerprint.Fingerprint, FingerprintSHA256: fingerprint.FingerprintSHA256,
+				Scope: fingerprint.Scope, DecoderRuntimeID: fingerprint.DecoderRuntimeID,
+			}
 		}
 		if track.DurationReliable && track.DurationMilliseconds > 0 {
 			recordingID := track.RecordingIdentity
@@ -332,7 +341,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		return nil, err
 	}
 	queries := recommendationQueries(request)
-	localByID := map[string]*core.Candidate{}
+	localByID := map[string]*Candidate{}
 	for _, query := range queries {
 		result, queryErr := executor.Query(ctx, query)
 		if queryErr != nil {
@@ -345,49 +354,59 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 			if _, excluded := request.AttemptedIDs[candidate.Track.ID]; excluded {
 				continue
 			}
-			converted := localByID[candidate.Track.ID]
-			if converted == nil {
-				converted = &core.Candidate{Track: core.TrackRef{ID: candidate.Track.ID, Artist: candidate.Track.Artist, Title: candidate.Track.Title, RecordingIdentity: candidate.Track.RecordingIdentity}}
-				localByID[candidate.Track.ID] = converted
+			merged := localByID[candidate.Track.ID]
+			if merged == nil {
+				merged = &Candidate{Track: candidate.Track}
+				localByID[candidate.Track.ID] = merged
 			}
-			for _, evidence := range candidate.Evidence {
-				converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: evidence.Channel, QueryID: evidence.QueryID, Rank: evidence.Rank, Score: evidence.Score, QueryWeight: 1})
-			}
-			if candidate.Track.Cluster != nil && !hasRetrievalChannel(converted.Sources, ClusterChannel) {
+			merged.Evidence = append(merged.Evidence, candidate.Evidence...)
+			if candidate.Track.Cluster != nil && !hasEvidenceChannel(merged.Evidence, ClusterChannel) {
 				rank := 1
 				if len(candidate.Evidence) > 0 {
 					rank = max(1, candidate.Evidence[0].Rank)
 				}
-				converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: ClusterChannel, QueryID: fmt.Sprintf("cluster:%d", *candidate.Track.Cluster), Rank: rank, Score: candidate.Track.ClusterScore, QueryWeight: .25})
+				merged.Evidence = append(merged.Evidence, Evidence{Channel: ClusterChannel, QueryID: fmt.Sprintf("cluster:%d", *candidate.Track.Cluster), Rank: rank, Score: candidate.Track.ClusterScore, Provenance: candidate.Track.Provenance})
 			}
-		}
-	}
-	for id, candidate := range localByID {
-		if score, ok := r.local.DSPPreferenceScore(ctx, id, request.Intent); ok {
-			candidate.Sources = append(candidate.Sources, core.RetrievalEvidence{Channel: DSPChannel, QueryID: "reviewed-dsp-percentiles", Rank: percentileRank(score), Score: score, QueryWeight: .25})
 		}
 	}
 	for _, required := range request.Intent.RequiredTracks {
 		if strings.HasPrefix(required.TrackID, "local:") {
 			if track, ok, _ := r.local.Lookup(ctx, required.TrackID); ok {
-				localByID[track.ID] = &core.Candidate{Track: core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity}, Sources: []core.RetrievalEvidence{{Channel: "required_local", QueryID: track.ID, Rank: 1, Score: 1, QueryWeight: 1}}}
+				localByID[track.ID] = &Candidate{Track: track, Evidence: []Evidence{{Channel: "required_local", QueryID: track.ID, Rank: 1, Score: 1, Provenance: track.Provenance}}}
 			}
 		}
 	}
-	all := append([]core.Candidate(nil), baseCandidates...)
-	seenRecordings := make(map[string]struct{}, len(baseCandidates))
-	for _, candidate := range baseCandidates {
-		if candidate.Track.RecordingIdentity != "" {
-			seenRecordings[core.ProvisionalRecordingKey(candidate.Track)] = struct{}{}
-		}
-	}
+	localCandidates := make([]Candidate, 0, len(localByID))
 	for _, candidate := range localByID {
-		if candidate.Track.RecordingIdentity != "" {
-			if _, duplicate := seenRecordings[core.ProvisionalRecordingKey(candidate.Track)]; duplicate {
-				continue
+		sort.SliceStable(candidate.Evidence, func(i, j int) bool { return evidenceLess(candidate.Evidence[i], candidate.Evidence[j]) })
+		localCandidates = append(localCandidates, *candidate)
+	}
+	sort.Slice(localCandidates, func(i, j int) bool { return candidateLess(localCandidates[i], localCandidates[j]) })
+	localCandidates = deduplicateCandidates(localCandidates)
+	all := append([]core.Candidate(nil), baseCandidates...)
+	for _, candidate := range localCandidates {
+		duplicate := false
+		for _, base := range baseCandidates {
+			if coreIdentityMatchesLocal(base.Track, candidate.Track) {
+				duplicate = true
+				break
 			}
 		}
-		all = append(all, *candidate)
+		if duplicate {
+			continue
+		}
+		converted := core.Candidate{Track: core.TrackRef{ID: candidate.Track.ID, Artist: candidate.Track.Artist, Title: candidate.Track.Title, RecordingIdentity: candidate.Track.RecordingIdentity}}
+		for _, evidence := range candidate.Evidence {
+			weight := 1.0
+			if evidence.Channel == ClusterChannel {
+				weight = .25
+			}
+			converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: evidence.Channel, QueryID: evidence.QueryID, Rank: evidence.Rank, Score: evidence.Score, QueryWeight: weight})
+		}
+		if score, ok := r.local.DSPPreferenceScore(ctx, candidate.Track.ID, request.Intent); ok {
+			converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: DSPChannel, QueryID: "reviewed-dsp-percentiles", Rank: percentileRank(score), Score: score, QueryWeight: .25})
+		}
+		all = append(all, converted)
 	}
 	clusterPopulation := map[string]int{}
 	for _, candidate := range all {
@@ -423,13 +442,35 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	return all, baseErr
 }
 
-func hasRetrievalChannel(evidence []core.RetrievalEvidence, channel string) bool {
+func hasEvidenceChannel(evidence []Evidence, channel string) bool {
 	for _, item := range evidence {
 		if item.Channel == channel {
 			return true
 		}
 	}
 	return false
+}
+
+func coreIdentityMatchesLocal(ref core.TrackRef, track Track) bool {
+	identity := strings.ToLower(strings.TrimSpace(ref.RecordingIdentity))
+	if identity == "" {
+		return false
+	}
+	local := packTrack(track)
+	localIdentity := strings.ToLower(strings.TrimSpace(track.RecordingIdentity))
+	if value, ok := strings.CutPrefix(identity, "isrc:"); ok {
+		if local.ISRC == "" {
+			local.ISRC, _ = strings.CutPrefix(localIdentity, "isrc:")
+		}
+		return librarypack.SameRecording(local, librarypack.Track{ISRC: value})
+	}
+	if value, ok := strings.CutPrefix(identity, "musicbrainz:"); ok {
+		if local.MusicBrainzRecording == "" {
+			local.MusicBrainzRecording, _ = strings.CutPrefix(localIdentity, "musicbrainz:")
+		}
+		return librarypack.SameRecording(local, librarypack.Track{MusicBrainzRecording: value})
+	}
+	return identity == localIdentity
 }
 
 func percentileRank(score float64) int {

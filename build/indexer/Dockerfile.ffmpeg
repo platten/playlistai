@@ -4,12 +4,14 @@ FROM debian:12.12-slim@sha256:a1363ada3b45cb3ebc74c78943558f8b0c2b59aaa194d8224e
 ARG DEBIAN_SNAPSHOT=20260901T000000Z
 ARG FFMPEG_URL=https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz
 ARG FFMPEG_SHA256=464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c
+ARG CHROMAPRINT_URL=https://github.com/acoustid/chromaprint/archive/refs/tags/v1.6.1.tar.gz
+ARG CHROMAPRINT_SHA256=7065ec9db48ac1fa929ec6c42afcd966605b1bfe48b6d5e64c25378a05f4fb02
 
 RUN rm -f /etc/apt/sources.list.d/* \
  && printf 'deb [check-valid-until=no] http://snapshot.debian.org/archive/debian/%s bookworm main\n' "$DEBIAN_SNAPSHOT" > /etc/apt/sources.list \
  && apt-get -o Acquire::Check-Valid-Until=false update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      build-essential ca-certificates curl xz-utils \
+      build-essential ca-certificates cmake curl pkg-config xz-utils \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
@@ -17,14 +19,19 @@ RUN curl -fL --proto '=https' --tlsv1.2 "$FFMPEG_URL" -o ffmpeg.tar.xz \
  && printf '%s  %s\n' "$FFMPEG_SHA256" ffmpeg.tar.xz | sha256sum -c - \
  && tar -xJf ffmpeg.tar.xz \
  && test "$(cat ffmpeg-8.1.2/VERSION)" = '8.1.2'
+RUN curl -fL --proto '=https' --tlsv1.2 "$CHROMAPRINT_URL" -o chromaprint.tar.gz \
+ && printf '%s  %s\n' "$CHROMAPRINT_SHA256" chromaprint.tar.gz | sha256sum -c - \
+ && tar -xzf chromaprint.tar.gz \
+ && grep -q 'chromaprint_VERSION_PATCH 1' chromaprint-1.6.1/CMakeLists.txt
 
 FROM source AS runtime-build
 COPY configure-runtime.sh /work/configure-runtime.sh
 COPY generate-manifest.sh /work/generate-manifest.sh
 RUN cd /work/ffmpeg-8.1.2 \
- && /work/configure-runtime.sh /opt/ffmpeg \
- && /work/generate-manifest.sh /work/ffmpeg-8.1.2 /opt/ffmpeg /opt/payload \
+ && /work/configure-runtime.sh /opt/ffmpeg /work/chromaprint-1.6.1 /opt/chromaprint \
+ && /work/generate-manifest.sh /work/ffmpeg-8.1.2 /work/chromaprint-1.6.1 /opt/ffmpeg /opt/payload \
  && test "$(/opt/payload/ffmpeg -protocols | sed -n '/^Input:/,/^Output:/p' | grep -Ec '^  (file|pipe)$')" -eq 2 \
+ && /opt/payload/ffmpeg -hide_banner -muxers | grep -Eq ' E +chromaprint ' \
  && ! /opt/payload/ffmpeg -protocols | grep -Eq '^  (http|https|tcp|udp)$'
 
 FROM scratch AS payload

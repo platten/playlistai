@@ -20,12 +20,14 @@ func testArtifact(name, role string, data []byte, executable bool) Artifact {
 
 func testManifest(files map[string][]byte) Manifest {
 	return Manifest{
-		SchemaVersion: 1, ID: "ffmpeg-8.1.2-linux-amd64-test-v1", Platform: runtime.GOOS + "/" + runtime.GOARCH,
+		SchemaVersion: 2, ID: "ffmpeg-8.1.2-chromaprint-1.6.1-test-v2", Platform: runtime.GOOS + "/" + runtime.GOARCH,
 		FFmpegVersion: "8.1.2", SourceURL: "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
-		SourceSHA256: "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
-		License:      "LGPL-2.1-or-later", NetworkDisabled: true,
+		SourceSHA256:       "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
+		ChromaprintVersion: "1.6.1", ChromaprintSourceURL: "https://github.com/acoustid/chromaprint/archive/refs/tags/v1.6.1.tar.gz",
+		ChromaprintSourceSHA256: "7065ec9db48ac1fa929ec6c42afcd966605b1bfe48b6d5e64c25378a05f4fb02", ChromaprintLicense: "MIT",
+		License: "LGPL-2.1-or-later", NetworkDisabled: true,
 		EnabledProtocols: []string{"file", "pipe"}, EnabledDemuxers: []string{"flac", "mp3", "aac", "mov", "wav"},
-		EnabledDecoders: []string{"flac", "mp3float", "aac", "pcm_f32le"},
+		EnabledDecoders: []string{"flac", "mp3float", "aac", "pcm_f32le"}, EnabledMuxers: []string{"pcm_f32le", "chromaprint"},
 		Artifacts: []Artifact{
 			testArtifact("ffmpeg", "ffmpeg", files["ffmpeg"], true),
 			testArtifact("ffprobe", "ffprobe", files["ffprobe"], true),

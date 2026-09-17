@@ -2,11 +2,15 @@ package localaudio
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const IntegrityValidationVersion = "ffmpeg-full-decode-flac-mp3/v1"
+const AudioFingerprintVersion = "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1"
 
 // RequiresIntegrityValidation reports whether the selected stream has the
 // explicit full-decode validation contract. Selection is based on the probed
@@ -48,4 +52,67 @@ func (r *Runtime) ValidateIntegrity(ctx context.Context, probe ProbeResult) erro
 		return validationErr
 	}
 	return fmt.Errorf("%w: %v", ErrCorrupt, validationErr)
+}
+
+// AudioFingerprint fully decodes the selected stream through the packaged,
+// network-disabled FFmpeg/Chromaprint runtime and returns AcoustID's compressed
+// base64 Chromaprint representation. The output is bounded; source audio is
+// never accumulated in memory or sent to the AcoustID service.
+func (r *Runtime) AudioFingerprint(ctx context.Context, probe ProbeResult) (AudioFingerprint, error) {
+	var fingerprint AudioFingerprint
+	if probe.ProbeRuntimeID != r.ID() || probe.SelectedStream.Index < 0 {
+		return fingerprint, fmt.Errorf("localaudio: incompatible probe/runtime or stream")
+	}
+	before, err := sourceRevision(probe.Path)
+	if err != nil || before != probe.Revision {
+		return fingerprint, ErrSourceChanged
+	}
+	args := []string{
+		"-v", "error", "-xerror", "-nostdin", "-protocol_whitelist", "file,pipe", "-threads", "1",
+		"-err_detect", "explode", "-i", probe.Path,
+		"-map", fmt.Sprintf("0:%d", probe.SelectedStream.Index), "-vn", "-sn", "-dn", "-map_metadata", "-1",
+	}
+	if probe.SelectedStream.Channels > 2 {
+		args = append(args, "-ac", "2")
+	}
+	args = append(args, "-c:a", "pcm_s16le", "-f", "chromaprint", "-algorithm", "1", "-fp_format", "base64", "pipe:1")
+	output := &boundedBuffer{limit: 8 << 20}
+	_, fingerprintErr := runStreaming(ctx, r.limits.IntegrityTimeout, r.limits.IntegrityStall, r.ffmpeg, args, output, r.limits.MaxStderrBytes)
+	after, statErr := sourceRevision(probe.Path)
+	if statErr != nil || after != before {
+		return fingerprint, ErrSourceChanged
+	}
+	if fingerprintErr != nil || output.over {
+		if output.over {
+			fingerprintErr = ErrOutputLimit
+		}
+		if errors.Is(fingerprintErr, context.Canceled) || errors.Is(fingerprintErr, context.DeadlineExceeded) || errors.Is(fingerprintErr, ErrOutputLimit) || errors.Is(fingerprintErr, ErrProcessStalled) {
+			return fingerprint, fingerprintErr
+		}
+		return fingerprint, fmt.Errorf("%w: %v", ErrFingerprint, fingerprintErr)
+	}
+	value := strings.TrimSpace(output.String())
+	if !validChromaprint(value) {
+		return fingerprint, fmt.Errorf("%w: runtime returned an invalid or empty Chromaprint value", ErrFingerprint)
+	}
+	digest := sha256.Sum256([]byte(value))
+	fingerprint = AudioFingerprint{
+		Contract: AudioFingerprintVersion, Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "full_selected_stream",
+		DecoderRuntimeID: r.ID(),
+	}
+	return fingerprint, nil
+}
+
+func validChromaprint(value string) bool {
+	if len(value) < 8 || len(value) > 8<<20 {
+		return false
+	}
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '+' || r == '/' || r == '=' {
+			continue
+		}
+		return false
+	}
+	return true
 }

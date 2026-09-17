@@ -184,6 +184,52 @@ func (c *Catalog) Lookup(ctx context.Context, id string) (Track, bool, error) {
 	return c.convertTrack(track), true, nil
 }
 
+// AudioDuplicates returns exact compatible Chromaprint duplicates from the
+// pinned generation. Results are namespace-qualified and canonical by ID.
+func (c *Catalog) AudioDuplicates(ctx context.Context, id string, limit int) ([]Track, error) {
+	localID, err := c.localID(id)
+	if err != nil {
+		return nil, err
+	}
+	generation, done, err := c.withGeneration()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	tracks, err := generation.AudioDuplicates(ctx, localID, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Track, len(tracks))
+	for index := range tracks {
+		result[index] = c.convertTrack(tracks[index])
+	}
+	return result, nil
+}
+
+// Duplicates returns high-confidence recording duplicates based on valid ISRC,
+// recording MBID, or locally corroborated AcoustID/Chromaprint evidence.
+func (c *Catalog) Duplicates(ctx context.Context, id string, limit int) ([]Track, error) {
+	localID, err := c.localID(id)
+	if err != nil {
+		return nil, err
+	}
+	generation, done, err := c.withGeneration()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	tracks, err := generation.Duplicates(ctx, localID, limit)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Track, len(tracks))
+	for index := range tracks {
+		result[index] = c.convertTrack(tracks[index])
+	}
+	return result, nil
+}
+
 // ArtistRecordings uses the generation's exact normalized artist index. It is
 // intentionally separate from fuzzy free-text resolution so artist-only
 // requests do not depend on dense catalog row iteration.
@@ -223,11 +269,17 @@ func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.T
 func (c *Catalog) convertTrack(track librarypack.Track) Track {
 	capabilities := append([]string(nil), track.Capabilities...)
 	missingness := append([]byte(nil), track.Missingness...)
+	var fingerprint *librarypack.AudioFingerprint
+	if track.AudioFingerprint != nil {
+		copy := *track.AudioFingerprint
+		fingerprint = &copy
+	}
 	return Track{
 		ID: c.NamespacedID(track.ID), LocalID: track.ID, Artist: track.Artist, Title: track.Title,
 		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
 		SourceIdentity: track.SourceIdentity, RecordingIdentity: track.RecordingIdentity,
 		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+		AudioFingerprint:     fingerprint,
 		DurationMilliseconds: track.DurationMilliseconds, DurationProvenance: track.DurationProvenance, DurationReliable: track.DurationReliable,
 		Cluster: track.Cluster, ClusterScore: track.ClusterScore, AlternativeCluster: track.Alternative, AlternativeScore: track.AltScore,
 		AlbumArtist: track.AlbumArtist, Album: track.Album, Capabilities: capabilities,

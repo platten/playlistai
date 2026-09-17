@@ -30,6 +30,7 @@ func (r *Runtime) Manifest() Manifest {
 	manifest.EnabledProtocols = append([]string(nil), r.manifest.EnabledProtocols...)
 	manifest.EnabledDemuxers = append([]string(nil), r.manifest.EnabledDemuxers...)
 	manifest.EnabledDecoders = append([]string(nil), r.manifest.EnabledDecoders...)
+	manifest.EnabledMuxers = append([]string(nil), r.manifest.EnabledMuxers...)
 	manifest.Configure = append([]string(nil), r.manifest.Configure...)
 	manifest.Artifacts = append([]Artifact(nil), r.manifest.Artifacts...)
 	return manifest

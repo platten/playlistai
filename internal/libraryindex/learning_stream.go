@@ -11,8 +11,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -26,6 +28,11 @@ import (
 const (
 	assignmentStoreName = "assignments.sqlite"
 	streamBatchRows     = 4096
+)
+
+var (
+	isrcIdentityPattern = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$`)
+	mbidIdentityPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
 type frozenStore struct {
@@ -699,21 +706,23 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 	}
 	isrc := ""
 	if metadata.ISRC != nil {
-		isrc = normalizeEntity(metadata.ISRC.Value)
+		isrc = normalizeISRC(metadata.ISRC.Value)
 	}
 	mbRecording := musicBrainzRecordingID(metadata.MusicBrainzIDs)
-	recordingIdentity := ""
-	if mbRecording != "" {
-		recordingIdentity = "musicbrainz:" + strings.ToLower(mbRecording)
-	} else if isrc != "" {
-		recordingIdentity = "isrc:" + strings.ToUpper(strings.ReplaceAll(isrc, "-", ""))
-	}
 	packed := librarypack.Track{
 		ID: id, Artist: artist, Title: title, NormalizedArtist: normalizeEntity(artist), NormalizedTitle: normalizeEntity(title),
-		SourceIdentity: "library:" + id, RecordingIdentity: recordingIdentity, ISRC: isrc, MusicBrainzRecording: mbRecording,
+		SourceIdentity: "library:" + id, ISRC: isrc, MusicBrainzRecording: mbRecording,
 		Album: album, AlbumArtist: albumArtist, RootAlias: rootAlias, RelativePath: filepath.ToSlash(relativePath),
 		RawTags: rawTags, DSP: append(json.RawMessage(nil), dsp...), Missingness: missingness, Failure: failure, Unsupported: unsupported,
 	}
+	if fingerprint := record.AudioFingerprint.Value; record.AudioFingerprint.Status == "available" && fingerprint != nil {
+		packed.AudioFingerprint = &librarypack.AudioFingerprint{
+			Contract: fingerprint.Contract, Format: fingerprint.Format, Algorithm: fingerprint.Algorithm,
+			Fingerprint: fingerprint.Fingerprint, FingerprintSHA256: fingerprint.FingerprintSHA256,
+			Scope: fingerprint.Scope, DecoderRuntimeID: fingerprint.DecoderRuntimeID,
+		}
+	}
+	packed.RecordingIdentity = recordingIdentity(mbRecording, isrc, artist, title, packed.AudioFingerprint)
 	if record.Probe.Duration.Reliable && record.Probe.Duration.Seconds > 0 {
 		packed.DurationMilliseconds = int64(math.Round(record.Probe.Duration.Seconds * 1000))
 		packed.DurationProvenance = record.Probe.Duration.Provenance
@@ -750,6 +759,59 @@ func musicBrainzRecordingID(values map[string]string) string {
 		}
 	}
 	return ""
+}
+
+func normalizeISRC(value string) string {
+	trimmed := strings.TrimSpace(value)
+	compact := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(trimmed))
+	if len(compact) == 12 {
+		valid := true
+		for _, r := range compact {
+			if (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return compact
+		}
+	}
+	return trimmed
+}
+
+func recordingIdentity(mbid, isrc, artist, title string, fingerprint *librarypack.AudioFingerprint) string {
+	if normalized := strings.ToLower(strings.TrimSpace(mbid)); mbidIdentityPattern.MatchString(normalized) {
+		return "musicbrainz:" + normalized
+	}
+	if normalized := normalizeISRC(isrc); isrcIdentityPattern.MatchString(normalized) {
+		return "isrc:" + normalized
+	}
+	if fingerprint == nil || fingerprint.Contract == "" || fingerprint.FingerprintSHA256 == "" {
+		return ""
+	}
+	metadata := normalizeDedupMetadata(artist) + "\x00" + normalizeDedupMetadata(title)
+	if metadata == "\x00" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(metadata))
+	return "acoustid:" + fingerprint.Contract + ":" + fingerprint.FingerprintSHA256 + ":metadata:" + fmt.Sprintf("%x", digest[:12])
+}
+
+func normalizeDedupMetadata(value string) string {
+	var normalized strings.Builder
+	space := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if space && normalized.Len() > 0 {
+				normalized.WriteByte(' ')
+			}
+			normalized.WriteRune(r)
+			space = false
+		} else {
+			space = true
+		}
+	}
+	return normalized.String()
 }
 
 func (s *frozenPackSource) Close() error {
@@ -869,8 +931,10 @@ func sampleLearningItem(id string, record MetadataRecord) librarylearn.SampleIte
 		artist = entityID("artist", values[0])
 	}
 	group := ""
-	if metadata.ISRC != nil && strings.TrimSpace(metadata.ISRC.Value) != "" {
-		group = "isrc:" + normalizeEntity(metadata.ISRC.Value)
+	if mbid := strings.ToLower(strings.TrimSpace(musicBrainzRecordingID(metadata.MusicBrainzIDs))); mbidIdentityPattern.MatchString(mbid) {
+		group = "musicbrainz:" + mbid
+	} else if metadata.ISRC != nil && isrcIdentityPattern.MatchString(normalizeISRC(metadata.ISRC.Value)) {
+		group = "isrc:" + normalizeISRC(metadata.ISRC.Value)
 	} else {
 		title := ""
 		if metadata.Title != nil {

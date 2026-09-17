@@ -63,24 +63,35 @@ func runBounded(ctx context.Context, timeout time.Duration, executable string, a
 	return append([]byte(nil), stdout.Bytes()...), stderr.String(), nil
 }
 
-type activityDiscard struct {
-	activity chan<- struct{}
+type activityWriter struct {
+	activity    chan<- struct{}
+	destination io.Writer
 }
 
-func (w activityDiscard) Write(p []byte) (int, error) {
+func (w activityWriter) Write(p []byte) (int, error) {
 	select {
 	case w.activity <- struct{}{}:
 	default:
 	}
-	return len(p), nil
+	return w.destination.Write(p)
 }
 
 // runDiscarding bounds diagnostics and process lifetime while streaming stdout
 // directly to a sink. Integrity validation can decode very large files without
 // retaining their PCM output in memory.
 func runDiscarding(ctx context.Context, timeout, stallTimeout time.Duration, executable string, args []string, stderrLimit int64) (string, error) {
+	return runStreaming(ctx, timeout, stallTimeout, executable, args, io.Discard, stderrLimit)
+}
+
+// runStreaming bounds diagnostics and process lifetime while sending stdout to
+// destination. The destination must consume writes promptly; child-process
+// backpressure is intentional and remains cancelable through the owned process.
+func runStreaming(ctx context.Context, timeout, stallTimeout time.Duration, executable string, args []string, destination io.Writer, stderrLimit int64) (string, error) {
 	if timeout <= 0 {
 		return "", fmt.Errorf("localaudio: subprocess timeout must be positive")
+	}
+	if destination == nil {
+		return "", fmt.Errorf("localaudio: subprocess destination is required")
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -90,9 +101,9 @@ func runDiscarding(ctx context.Context, timeout, stallTimeout time.Duration, exe
 	stderr := &boundedBuffer{limit: stderrLimit}
 	activity := make(chan struct{}, 1)
 	if stallTimeout > 0 {
-		cmd.Stdout = activityDiscard{activity: activity}
+		cmd.Stdout = activityWriter{activity: activity, destination: destination}
 	} else {
-		cmd.Stdout = io.Discard
+		cmd.Stdout = destination
 	}
 	cmd.Stderr = stderr
 	watchDone := make(chan struct{})

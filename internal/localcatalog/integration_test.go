@@ -222,6 +222,27 @@ func TestCombinedRetrieverDeduplicatesOnlyAuthoritativeCrossCatalogIdentity(t *t
 	}
 }
 
+func TestCombinedRetrieverMatchesEitherLocalAuthoritativeIdentity(t *testing.T) {
+	local, manager := openTestCatalog(t, []librarypack.Track{{
+		ID: "local-edition", Artist: "Artist", Title: "Song",
+		RecordingIdentity:    "musicbrainz:11111111-2222-3333-4444-555555555555",
+		MusicBrainzRecording: "11111111-2222-3333-4444-555555555555", ISRC: "USAAA2600001",
+	}}, nil)
+	defer manager.Close()
+	defer local.Close()
+	retriever, err := NewCombinedRetriever(identityBaseRetriever{track: core.TrackRef{ID: "bundled", Artist: "Artist", Title: "Song", RecordingIdentity: "isrc:USAAA2600001"}}, local, ModeCombined, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := retriever.Retrieve(context.Background(), ports.RetrievalRequest{Intent: core.MusicIntent{References: []core.IntentReference{{Query: "Artist Song", Influence: core.InfluencePositive}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Track.ID != "bundled" {
+		t.Fatalf("ISRC duplicate was not collapsed when local primary identity was MBID: %+v", candidates)
+	}
+}
+
 func containsCandidate(values []core.Candidate, id string) bool {
 	for _, value := range values {
 		if value.Track.ID == id {

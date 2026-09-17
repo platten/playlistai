@@ -58,6 +58,12 @@ MusicBrainz
   terms. Every request identifies this application with a contact URL as those
   terms require.
 
+Chromaprint  https://github.com/acoustid/chromaprint                    (MIT)
+  The playlist indexer's private FFmpeg runtime statically links the pinned
+  Chromaprint library to generate AcoustID-compatible fingerprints locally.
+  Fingerprints are retained for duplicate detection and are not submitted to
+  AcoustID or AcousticBrainz. The runtime payload includes the MIT license.
+
 Deezer
   https://developers.deezer.com
 
