@@ -125,7 +125,7 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 		}
 	}()
 	defer func() { cancel(nil); <-heartbeatDone }()
-	epoch, resumed, rescanned, err := s.BeginOrResumeEpoch(ctx, options.Roots)
+	epoch, resumed, rescanned, err := s.BeginOrResumeEpoch(ctx, options.Roots, options.FollowSymlinks)
 	if err != nil {
 		return ScanReport{}, err
 	}
@@ -308,16 +308,34 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 			if excludedPath(childRel, options.Exclusions) {
 				continue
 			}
+			if entry.Type()&os.ModeSymlink != 0 {
+				if !options.FollowSymlinks {
+					continue
+				}
+				targetInfo, statErr := os.Stat(filepath.Join(root.Path, childRel))
+				if statErr != nil || !targetInfo.IsDir() {
+					// Directory links are opt-in. Broken links and links to files
+					// remain non-source entries, matching the default scan policy.
+					continue
+				}
+				cycle, cycleErr := directorySymlinkCreatesCycle(root.Path, childRel, targetInfo)
+				if cycleErr != nil {
+					return nil, files, audio, DirectoryRevision{}, cycleErr
+				}
+				if cycle {
+					if options.OnIssue != nil {
+						options.OnIssue(NewProcessingIssue("scan", root.Alias, childRel, "symlink_cycle", errors.New("directory symlink resolves to an ancestor"), false))
+					}
+					continue
+				}
+				children = append(children, childRel)
+				continue
+			}
 			info, err := entry.Info()
 			if err != nil {
 				return nil, files, audio, DirectoryRevision{}, err
 			}
 			mode := info.Mode()
-			if mode&os.ModeSymlink != 0 {
-				// Following symlinks requires cycle/out-of-root handling and is kept
-				// disabled until explicitly implemented; never follow implicitly.
-				continue
-			}
 			if info.IsDir() {
 				children = append(children, childRel)
 				continue
@@ -355,6 +373,34 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 		return nil, files, audio, DirectoryRevision{}, errDirectoryChanged
 	}
 	return nil, files, audio, DirectoryRevision{MTimeNS: endInfo.ModTime().UnixNano(), Size: endInfo.Size()}, nil
+}
+
+// directorySymlinkCreatesCycle compares the resolved target with every logical
+// ancestor. This permits links to directories outside the physical root while
+// preventing self-links and longer ancestor cycles from expanding forever.
+func directorySymlinkCreatesCycle(rootPath, childRelative string, targetInfo os.FileInfo) (bool, error) {
+	parent := filepath.Dir(filepath.Clean(childRelative))
+	for {
+		ancestorPath := rootPath
+		if parent != "." {
+			ancestorPath = filepath.Join(rootPath, parent)
+		}
+		ancestorInfo, err := os.Stat(ancestorPath)
+		if err != nil {
+			return false, err
+		}
+		if os.SameFile(targetInfo, ancestorInfo) {
+			return true, nil
+		}
+		if parent == "." {
+			return false, nil
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			return false, errors.New("library indexer: invalid directory symlink ancestry")
+		}
+		parent = next
+	}
 }
 
 func excludedPath(relative string, exclusions []string) bool {

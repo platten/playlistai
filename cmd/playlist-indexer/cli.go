@@ -50,6 +50,7 @@ func (s *stringList) Set(value string) error {
 type commonFlags struct {
 	config, state, runtimeDir, concurrency, workers, ioProfile, maxRAM, shutdown string
 	jsonOutput, offline, acceptModel, retryFailed, noProgress                    bool
+	followDirectorySymlinks                                                      bool
 	seed                                                                         int64
 	scanWorkers, metadataWorkers, decodeWorkers, dspWorkers                      int
 	inferenceWorkers, inferenceThreads, fitWorkers, indexWorkers                 int
@@ -97,28 +98,30 @@ func addCommon(flags *flag.FlagSet, values *commonFlags) {
 	flags.BoolVar(&values.acceptModel, "accept-model-license", false, "accept the MERT CC-BY-NC-4.0 license")
 	flags.BoolVar(&values.retryFailed, "retry-failed", false, "requeue bounded recoverable failures")
 	flags.BoolVar(&values.noProgress, "no-progress", false, "disable the interactive PTerm progress bar")
+	flags.BoolVar(&values.followDirectorySymlinks, "follow-directory-symlinks", values.followDirectorySymlinks, "follow directory symlinks encountered below a source root")
 }
 
 type commonConfig struct {
-	State            string `json:"state"`
-	RuntimeDir       string `json:"runtimeDir"`
-	Concurrency      string `json:"concurrency"`
-	Workers          string `json:"workers"`
-	IOProfile        string `json:"ioProfile"`
-	MaxRAM           string `json:"maxRam"`
-	Shutdown         string `json:"shutdownTimeout"`
-	ScanWorkers      int    `json:"scanWorkers"`
-	MetadataWorkers  int    `json:"metadataWorkers"`
-	DecodeWorkers    int    `json:"decodeWorkers"`
-	DSPWorkers       int    `json:"dspWorkers"`
-	InferenceWorkers int    `json:"inferenceWorkers"`
-	InferenceThreads int    `json:"inferenceThreads"`
-	FitWorkers       int    `json:"fitWorkers"`
-	IndexWorkers     int    `json:"indexWorkers"`
-	IOWorkers        int    `json:"ioWorkers"`
-	QueueDepth       int    `json:"queueDepth"`
-	MaxOpenFiles     int    `json:"maxOpenFiles"`
-	Seed             int64  `json:"seed"`
+	State                   string `json:"state"`
+	RuntimeDir              string `json:"runtimeDir"`
+	Concurrency             string `json:"concurrency"`
+	Workers                 string `json:"workers"`
+	IOProfile               string `json:"ioProfile"`
+	MaxRAM                  string `json:"maxRam"`
+	Shutdown                string `json:"shutdownTimeout"`
+	ScanWorkers             int    `json:"scanWorkers"`
+	MetadataWorkers         int    `json:"metadataWorkers"`
+	DecodeWorkers           int    `json:"decodeWorkers"`
+	DSPWorkers              int    `json:"dspWorkers"`
+	InferenceWorkers        int    `json:"inferenceWorkers"`
+	InferenceThreads        int    `json:"inferenceThreads"`
+	FitWorkers              int    `json:"fitWorkers"`
+	IndexWorkers            int    `json:"indexWorkers"`
+	IOWorkers               int    `json:"ioWorkers"`
+	QueueDepth              int    `json:"queueDepth"`
+	MaxOpenFiles            int    `json:"maxOpenFiles"`
+	Seed                    int64  `json:"seed"`
+	FollowDirectorySymlinks bool   `json:"followDirectorySymlinks"`
 }
 
 func (c *commonFlags) preloadConfig(args []string) error {
@@ -149,6 +152,7 @@ func (c *commonFlags) preloadConfig(args []string) error {
 	c.scanWorkers, c.metadataWorkers, c.decodeWorkers, c.dspWorkers = cfg.ScanWorkers, cfg.MetadataWorkers, cfg.DecodeWorkers, cfg.DSPWorkers
 	c.inferenceWorkers, c.inferenceThreads, c.fitWorkers, c.indexWorkers = cfg.InferenceWorkers, cfg.InferenceThreads, cfg.FitWorkers, cfg.IndexWorkers
 	c.ioWorkers, c.queueDepth, c.maxOpenFiles, c.seed = cfg.IOWorkers, cfg.QueueDepth, cfg.MaxOpenFiles, cfg.Seed
+	c.followDirectorySymlinks = cfg.FollowDirectorySymlinks
 	return nil
 }
 
@@ -413,7 +417,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			resolvedRoots = append(resolvedRoots, root)
 		}
 		if scanErr == nil {
-			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch, StopAdmission: gracefulStopFromContext(ctx)})
+			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, FollowSymlinks: common.followDirectorySymlinks, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch, StopAdmission: gracefulStopFromContext(ctx)})
 			if scanErr == nil {
 				progress.SetPhase("Building scan manifest and diff")
 				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)

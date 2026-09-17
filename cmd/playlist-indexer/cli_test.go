@@ -80,13 +80,16 @@ func TestMERTWarmupRetriesTransientNativeFailure(t *testing.T) {
 
 func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "indexer.json")
-	if err := os.WriteFile(path, []byte(`{"concurrency":"manual","workers":"4","ioWorkers":1,"inferenceThreads":1,"maxRam":"4GiB","seed":7}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"concurrency":"manual","workers":"4","ioWorkers":1,"inferenceThreads":1,"maxRam":"4GiB","seed":7,"followDirectorySymlinks":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var values commonFlags
-	args := []string{"--config", path, "--workers", "2"}
+	args := []string{"--config", path, "--workers", "2", "--follow-directory-symlinks=false"}
 	if err := values.preloadConfig(args); err != nil {
 		t.Fatal(err)
+	}
+	if !values.followDirectorySymlinks {
+		t.Fatal("configuration did not enable directory symlinks")
 	}
 	flags := flag.NewFlagSet("test", flag.ContinueOnError)
 	addCommon(flags, &values)
@@ -97,7 +100,7 @@ func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.HeavyWorkers != 2 || plan.IOWorkers != 1 || values.seed != 7 {
+	if plan.HeavyWorkers != 2 || plan.IOWorkers != 1 || values.seed != 7 || values.followDirectorySymlinks {
 		t.Fatalf("CLI/config precedence failed: %+v seed=%d", plan, values.seed)
 	}
 }

@@ -177,7 +177,9 @@ its fence and source-revision predicate inside the shared transaction. If one
 item is stale, the batch rolls back and retries items individually, so it cannot
 discard unrelated valid commits.
 
-Schema v3 stores each immutable epoch's stage work in `scan_diff_jobs`.
+Schema v4 stores each immutable epoch's stage work in `scan_diff_jobs` and its
+directory-symlink traversal policy on the scan epoch, preventing a resumed
+frontier from mixing enabled and disabled traversal.
 Manifest format v2 groups that work into one diff row per audio file and records
 the stage-job count separately from the file count. Manifest generations are
 atomically renamed under `STATE/manifests`, and include hashes for their
