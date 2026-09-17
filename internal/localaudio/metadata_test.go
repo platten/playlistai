@@ -28,3 +28,15 @@ func TestParseMetadataEnforcesLimit(t *testing.T) {
 		t.Fatal("oversized metadata accepted")
 	}
 }
+
+func TestParseMetadataFindsCommonISRCTagAliases(t *testing.T) {
+	for _, key := range []string{"ISRC", "TSRC", "WM/ISRC", "com.apple.iTunes:ISRC", "----:com.apple.iTunes:ISRC"} {
+		metadata, err := parseMetadata(map[string]string{key: "US-ABC-26-00001"}, nil, 4096)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if metadata.ISRC == nil || metadata.ISRC.Value != "US-ABC-26-00001" || metadata.ISRC.SourceKey != key || metadata.ISRC.Provenance != "embedded_tag" {
+			t.Fatalf("%s: ISRC = %+v", key, metadata.ISRC)
+		}
+	}
+}

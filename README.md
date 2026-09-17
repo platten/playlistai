@@ -115,16 +115,21 @@ either stream. The analyzer is restricted to that frozen diff. The standalone
 `analyze` administration command remains available for already-queued state and
 does not perform a new filesystem scan.
 
-After the bounded metadata probe, actual FLAC and MP3 streams receive a full
-decode-to-discard integrity pass through the packaged FFmpeg runtime before
-DSP/MERT processing. The decoded validation output is never retained. A corrupt
+After the bounded metadata probe, supported streams receive a full decode that
+retains only a bounded AcoustID-compatible Chromaprint fingerprint. The
+fingerprint is used locally for high-confidence duplicate detection and is
+never submitted to AcoustID or AcousticBrainz. Embedded ISRC and MusicBrainz
+recording IDs are preserved when available. For FLAC and MP3 this successful
+pass also satisfies full-decode integrity; a decode-to-discard fallback keeps
+integrity validation available if fingerprint generation fails. Decoded audio
+is never retained. A corrupt
 stream keeps its usable metadata but is recorded as `corrupt_media` and is not
 sent to DSP/MERT or automatically retried. Source revision is checked around
 the integrity pass and again around sampled decoding; the before/after checks
 include file size. A file whose revision changed after the manifest was created
 is skipped as `source_changed_after_manifest`, never committed or re-admitted in
 that run, and becomes eligible when the next scan observes its new revision.
-This full validation adds one sequential source read and decode for new or
+This fingerprint/integrity pass adds one sequential source read and decode for new or
 semantically revalidated FLAC/MP3 files; unchanged compatible completed jobs
 remain resumable and are skipped on later runs.
 

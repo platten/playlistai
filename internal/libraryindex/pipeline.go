@@ -100,16 +100,23 @@ func (a *Analyzer) initializeStageLimits() {
 }
 
 type MetadataRecord struct {
-	Probe       localaudio.ProbeResult `json:"probe"`
-	Contract    string                 `json:"contract"`
-	Unsupported string                 `json:"unsupported,omitempty"`
-	Integrity   IntegrityRecord        `json:"integrity"`
+	Probe            localaudio.ProbeResult `json:"probe"`
+	Contract         string                 `json:"contract"`
+	Unsupported      string                 `json:"unsupported,omitempty"`
+	Integrity        IntegrityRecord        `json:"integrity"`
+	AudioFingerprint FingerprintRecord      `json:"audioFingerprint"`
 }
 
 type IntegrityRecord struct {
 	Status string `json:"status"`
 	Method string `json:"method,omitempty"`
 	Error  string `json:"error,omitempty"`
+}
+
+type FingerprintRecord struct {
+	Status string                       `json:"status"`
+	Value  *localaudio.AudioFingerprint `json:"value,omitempty"`
+	Error  string                       `json:"error,omitempty"`
 }
 
 type DSPWindowRecord struct {
@@ -290,13 +297,13 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		return err
 	}
 	integrity := IntegrityRecord{Status: "not_required"}
-	if probeErr == nil && localaudio.RequiresIntegrityValidation(probe) {
-		integrity = IntegrityRecord{Status: "valid", Method: localaudio.IntegrityValidationVersion}
+	fingerprintRecord := FingerprintRecord{Status: "unavailable"}
+	if probeErr == nil {
 		release, err = a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
 		if err != nil {
 			return err
 		}
-		validationErr := a.Runtime.ValidateIntegrity(ctx, probe)
+		fingerprint, validationErr := a.Runtime.AudioFingerprint(ctx, probe)
 		release()
 		if errors.Is(validationErr, localaudio.ErrSourceChanged) {
 			if a.FreezeManifest {
@@ -307,13 +314,40 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 			}
 			return validationErr
 		}
-		if validationErr != nil {
-			if !errors.Is(validationErr, localaudio.ErrCorrupt) {
-				return validationErr
+		if errors.Is(validationErr, context.Canceled) || errors.Is(validationErr, context.DeadlineExceeded) || errors.Is(validationErr, localaudio.ErrOutputLimit) || errors.Is(validationErr, localaudio.ErrProcessStalled) {
+			return validationErr
+		}
+		if validationErr == nil {
+			fingerprintRecord = FingerprintRecord{Status: "available", Value: &fingerprint}
+			if localaudio.RequiresIntegrityValidation(probe) {
+				integrity = IntegrityRecord{Status: "valid", Method: localaudio.IntegrityValidationVersion}
 			}
-			integrity.Status = "corrupt"
-			integrity.Error = boundedAnalysisDetail(validationErr.Error())
-			a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "corrupt_media", validationErr, false))
+		} else {
+			fingerprintRecord.Error = boundedAnalysisDetail(validationErr.Error())
+			if localaudio.RequiresIntegrityValidation(probe) {
+				release, err = a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
+				if err != nil {
+					return err
+				}
+				integrityErr := a.Runtime.ValidateIntegrity(ctx, probe)
+				release()
+				if errors.Is(integrityErr, localaudio.ErrSourceChanged) {
+					if a.FreezeManifest {
+						return errors.Join(errSourceChangedAfterManifest, integrityErr)
+					}
+					return integrityErr
+				}
+				if integrityErr != nil {
+					if !errors.Is(integrityErr, localaudio.ErrCorrupt) {
+						return integrityErr
+					}
+					integrity = IntegrityRecord{Status: "corrupt", Method: localaudio.IntegrityValidationVersion, Error: boundedAnalysisDetail(integrityErr.Error())}
+					a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "corrupt_media", integrityErr, false))
+				} else {
+					integrity = IntegrityRecord{Status: "valid", Method: localaudio.IntegrityValidationVersion}
+				}
+			}
+			a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "fingerprint_unavailable", validationErr, false))
 		}
 		if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 			return err
@@ -325,7 +359,7 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		unsupported = probeErr.Error()
 		a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "unsupported", probeErr, false))
 	}
-	raw, err := json.Marshal(MetadataRecord{Probe: probe, Contract: job.SemanticKey, Unsupported: unsupported, Integrity: integrity})
+	raw, err := json.Marshal(MetadataRecord{Probe: probe, Contract: job.SemanticKey, Unsupported: unsupported, Integrity: integrity, AudioFingerprint: fingerprintRecord})
 	if err != nil {
 		return err
 	}
@@ -854,7 +888,7 @@ func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, 
 }
 
 func MetadataSemanticKey(runtimeID string) string {
-	return fmt.Sprintf("ffprobe-json-tags/v2;%s;%s", localaudio.IntegrityValidationVersion, runtimeID)
+	return fmt.Sprintf("ffprobe-json-tags/v3;%s;%s;%s", localaudio.AudioFingerprintVersion, localaudio.IntegrityValidationVersion, runtimeID)
 }
 
 func boundedAnalysisDetail(value string) string {

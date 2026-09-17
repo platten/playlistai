@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/platten/playlistai/internal/librarypack"
@@ -220,17 +221,106 @@ func mergeHits(channels [][]Hit) []Candidate {
 		})
 		result = append(result, *candidate)
 	}
-	sort.Slice(result, func(i, j int) bool {
-		left, right := result[i].Evidence[0], result[j].Evidence[0]
-		if channelOrder(left.Channel) != channelOrder(right.Channel) {
-			return channelOrder(left.Channel) < channelOrder(right.Channel)
+	sort.Slice(result, func(i, j int) bool { return candidateLess(result[i], result[j]) })
+	return deduplicateCandidates(result)
+}
+
+func candidateLess(left, right Candidate) bool {
+	leftEvidence, rightEvidence := left.Evidence[0], right.Evidence[0]
+	if channelOrder(leftEvidence.Channel) != channelOrder(rightEvidence.Channel) {
+		return channelOrder(leftEvidence.Channel) < channelOrder(rightEvidence.Channel)
+	}
+	if leftEvidence.Rank != rightEvidence.Rank {
+		return leftEvidence.Rank < rightEvidence.Rank
+	}
+	return left.Track.ID < right.Track.ID
+}
+
+func deduplicateCandidates(input []Candidate) []Candidate {
+	if len(input) < 2 {
+		return input
+	}
+	parents := make([]int, len(input))
+	for index := range parents {
+		parents[index] = index
+	}
+	var find func(int) int
+	find = func(index int) int {
+		if parents[index] != index {
+			parents[index] = find(parents[index])
 		}
-		if left.Rank != right.Rank {
-			return left.Rank < right.Rank
+		return parents[index]
+	}
+	join := func(left, right int) {
+		left, right = find(left), find(right)
+		if left == right {
+			return
 		}
-		return result[i].Track.ID < result[j].Track.ID
-	})
-	return result
+		if left < right {
+			parents[right] = left
+		} else {
+			parents[left] = right
+		}
+	}
+	identifierBuckets := map[string][]int{}
+	fingerprintBuckets := map[string][]int{}
+	for index := range input {
+		track := packTrack(input[index].Track)
+		isrc := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(track.ISRC)))
+		mbid := strings.ToLower(strings.TrimSpace(track.MusicBrainzRecording))
+		keys := make([]string, 0, 2)
+		if isrc != "" {
+			keys = append(keys, "isrc:"+isrc)
+		}
+		if mbid != "" {
+			keys = append(keys, "mbid:"+mbid)
+		}
+		for _, key := range keys {
+			for _, other := range identifierBuckets[key] {
+				if librarypack.SameRecording(track, packTrack(input[other].Track)) {
+					join(index, other)
+				}
+			}
+			identifierBuckets[key] = append(identifierBuckets[key], index)
+		}
+		if fingerprint := track.AudioFingerprint; fingerprint != nil && fingerprint.Fingerprint != "" {
+			key := fingerprint.Contract + "\x00" + fingerprint.FingerprintSHA256 + "\x00" + fingerprint.Fingerprint
+			for _, other := range fingerprintBuckets[key] {
+				if librarypack.SameRecording(track, packTrack(input[other].Track)) {
+					join(index, other)
+				}
+			}
+			fingerprintBuckets[key] = append(fingerprintBuckets[key], index)
+		}
+	}
+	output := make([]Candidate, 0, len(input))
+	positions := map[int]int{}
+	for index := range input {
+		root := find(index)
+		position, exists := positions[root]
+		if !exists {
+			copy := input[index]
+			copy.Evidence = append([]Evidence(nil), input[index].Evidence...)
+			positions[root] = len(output)
+			output = append(output, copy)
+			continue
+		}
+		output[position].Evidence = append(output[position].Evidence, input[index].Evidence...)
+		sort.SliceStable(output[position].Evidence, func(i, j int) bool {
+			return evidenceLess(output[position].Evidence[i], output[position].Evidence[j])
+		})
+	}
+	return output
+}
+
+func packTrack(track Track) librarypack.Track {
+	return librarypack.Track{
+		Artist: track.Artist, Title: track.Title,
+		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
+		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+		AudioFingerprint: track.AudioFingerprint, DurationMilliseconds: track.DurationMilliseconds,
+		DurationReliable: track.DurationReliable,
+	}
 }
 
 func evidenceLess(left, right Evidence) bool {
@@ -248,6 +338,8 @@ func evidenceLess(left, right Evidence) bool {
 
 func channelOrder(channel string) int {
 	switch channel {
+	case "required_local":
+		return -1
 	case MetadataChannel:
 		return 0
 	case MERTChannel:

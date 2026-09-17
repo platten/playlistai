@@ -120,6 +120,46 @@ func TestMetadataAndMERTTracksAreIndependentlyRetrievable(t *testing.T) {
 	}
 }
 
+func TestAudioDuplicatesUsePinnedFingerprintIndex(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xlocalduplicate"
+	digest := sha256.Sum256([]byte(value))
+	fingerprint := &librarypack.AudioFingerprint{
+		Contract: "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "full_selected_stream", DecoderRuntimeID: "codec/v2",
+	}
+	catalog, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "copy-a", Artist: "Artist", Title: "Song", AudioFingerprint: fingerprint},
+		{ID: "copy-b", Artist: "Artist", Title: "Song copy", AudioFingerprint: fingerprint},
+		{ID: "other", Artist: "Other", Title: "Other"},
+	}, nil)
+	defer manager.Close()
+	defer catalog.Close()
+	duplicates, err := catalog.AudioDuplicates(context.Background(), catalog.NamespacedID("copy-a"), 10)
+	if err != nil || len(duplicates) != 1 || duplicates[0].ID != catalog.NamespacedID("copy-b") {
+		t.Fatalf("duplicates = %+v, %v", duplicates, err)
+	}
+}
+
+func TestDuplicatesRequireMetadataToCorroborateFingerprint(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xcorroborated"
+	digest := sha256.Sum256([]byte(value))
+	fingerprint := &librarypack.AudioFingerprint{
+		Contract: "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "full_selected_stream", DecoderRuntimeID: "codec/v2",
+	}
+	catalog, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "original", Artist: "The Artist", Title: "A Long Song Title", AudioFingerprint: fingerprint},
+		{ID: "same", Artist: "The Artist", Title: "A Long Song Title!", AudioFingerprint: fingerprint},
+		{ID: "unrelated", Artist: "Other", Title: "Different", AudioFingerprint: fingerprint},
+	}, nil)
+	defer manager.Close()
+	defer catalog.Close()
+	duplicates, err := catalog.Duplicates(context.Background(), catalog.NamespacedID("original"), 10)
+	if err != nil || len(duplicates) != 1 || duplicates[0].ID != catalog.NamespacedID("same") {
+		t.Fatalf("duplicates = %+v, %v", duplicates, err)
+	}
+}
+
 func TestUnicodeSearchFoldsAccents(t *testing.T) {
 	catalog, manager := openTestCatalog(t, testTracks(), nil)
 	defer manager.Close()
@@ -291,6 +331,24 @@ func TestExecutorMergeIgnoresChannelCompletionOrder(t *testing.T) {
 	}
 	if len(first.Candidates) != 2 || first.Candidates[0].Track.LocalID != "near" || len(first.Candidates[0].Evidence) != 2 || first.Candidates[1].Track.LocalID != "far" {
 		t.Fatalf("canonical candidates = %#v", first.Candidates)
+	}
+}
+
+func TestExecutorMergeDeduplicatesHighConfidenceRecordings(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xexecutor"
+	digest := sha256.Sum256([]byte(value))
+	fingerprint := &librarypack.AudioFingerprint{
+		Contract: "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "full_selected_stream", DecoderRuntimeID: "codec/v2",
+	}
+	hits := [][]Hit{{
+		{Track: Track{ID: "first", Artist: "The Artist", Title: "A Long Song Title", AudioFingerprint: fingerprint}, Evidence: Evidence{Channel: MetadataChannel, Rank: 1}},
+		{Track: Track{ID: "second", Artist: "The Artist", Title: "A Long Song Title!", AudioFingerprint: fingerprint}, Evidence: Evidence{Channel: MetadataChannel, Rank: 2}},
+		{Track: Track{ID: "unrelated", Artist: "Other", Title: "Different", AudioFingerprint: fingerprint}, Evidence: Evidence{Channel: MetadataChannel, Rank: 3}},
+	}}
+	candidates := mergeHits(hits)
+	if len(candidates) != 2 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 || candidates[1].Track.ID != "unrelated" {
+		t.Fatalf("deduplicated candidates = %+v", candidates)
 	}
 }
 

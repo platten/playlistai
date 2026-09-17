@@ -14,12 +14,13 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
 const (
 	Format              = "playlist-ai-library-pack"
-	FormatVersion       = 3
+	FormatVersion       = 4
 	ManifestName        = "manifest.json"
 	MetadataName        = "metadata.sqlite"
 	MERTVectorsName     = "mert.f32"
@@ -31,6 +32,8 @@ var (
 	ErrNoActiveGeneration = errors.New("librarypack: no active library generation")
 	ErrManagerClosed      = errors.New("librarypack: manager is closed")
 	identifierPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`)
+	isrcPattern           = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$`)
+	mbidPattern           = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
 // Limits bounds untrusted archive expansion, SQLite records, and allocations.
@@ -156,6 +159,7 @@ type Track struct {
 	RecordingIdentity    string
 	ISRC                 string
 	MusicBrainzRecording string
+	AudioFingerprint     *AudioFingerprint
 	DurationMilliseconds int64
 	DurationProvenance   string
 	DurationReliable     bool
@@ -176,6 +180,136 @@ type Track struct {
 	AltScore             float64
 }
 
+// AudioFingerprint is an interoperable AcoustID Chromaprint value. The SHA-256
+// is a lookup accelerator for exact equality and is always verified against
+// Fingerprint while writing a pack.
+type AudioFingerprint struct {
+	Contract          string
+	Format            string
+	Algorithm         int
+	Fingerprint       string
+	FingerprintSHA256 string
+	Scope             string
+	DecoderRuntimeID  string
+}
+
+// SameRecording reports whether two pack rows carry high-confidence evidence
+// for the same recording. Valid ISRC and recording MBID values are
+// authoritative. An exact compatible AcoustID/Chromaprint value is accepted
+// only when artist and title metadata also match or are very similar.
+func SameRecording(left, right Track) bool {
+	if leftISRC, rightISRC := canonicalISRC(left.ISRC), canonicalISRC(right.ISRC); leftISRC != "" && leftISRC == rightISRC {
+		return true
+	}
+	if leftMBID, rightMBID := canonicalMBID(left.MusicBrainzRecording), canonicalMBID(right.MusicBrainzRecording); leftMBID != "" && leftMBID == rightMBID {
+		return true
+	}
+	if !sameFingerprint(left.AudioFingerprint, right.AudioFingerprint) || !similarRecordingMetadata(left, right) {
+		return false
+	}
+	if left.DurationReliable && right.DurationReliable && left.DurationMilliseconds > 0 && right.DurationMilliseconds > 0 {
+		difference := left.DurationMilliseconds - right.DurationMilliseconds
+		if difference < 0 {
+			difference = -difference
+		}
+		tolerance := max(int64(3000), max(left.DurationMilliseconds, right.DurationMilliseconds)/50)
+		if difference > tolerance {
+			return false
+		}
+	}
+	return true
+}
+
+func canonicalISRC(value string) string {
+	value = strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(value)))
+	if !isrcPattern.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
+func canonicalMBID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if !mbidPattern.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
+func sameFingerprint(left, right *AudioFingerprint) bool {
+	return left != nil && right != nil &&
+		left.Contract != "" && left.Contract == right.Contract &&
+		left.Format == "acoustid-chromaprint-base64" && left.Format == right.Format &&
+		left.Algorithm == 1 && left.Algorithm == right.Algorithm &&
+		left.Fingerprint != "" && left.Fingerprint == right.Fingerprint
+}
+
+func similarRecordingMetadata(left, right Track) bool {
+	leftArtist, rightArtist := comparableMetadata(left.Artist), comparableMetadata(right.Artist)
+	leftTitle, rightTitle := comparableMetadata(left.Title), comparableMetadata(right.Title)
+	return verySimilarText(leftArtist, rightArtist) && verySimilarText(leftTitle, rightTitle)
+}
+
+func comparableMetadata(raw string) string {
+	var out strings.Builder
+	space := false
+	for _, r := range strings.ToLower(strings.TrimSpace(raw)) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			if space && out.Len() > 0 {
+				out.WriteByte(' ')
+			}
+			out.WriteRune(r)
+			space = false
+		} else {
+			space = true
+		}
+	}
+	return out.String()
+}
+
+func verySimilarText(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	if left == right {
+		return true
+	}
+	leftRunes, rightRunes := []rune(left), []rune(right)
+	longest := max(len(leftRunes), len(rightRunes))
+	if longest < 8 {
+		return false
+	}
+	if longest > 512 {
+		return false
+	}
+	maximumDistance := max(1, longest/20)
+	if difference := len(leftRunes) - len(rightRunes); difference > maximumDistance || difference < -maximumDistance {
+		return false
+	}
+	previous := make([]int, len(rightRunes)+1)
+	current := make([]int, len(rightRunes)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for i, leftRune := range leftRunes {
+		current[0] = i + 1
+		rowMinimum := current[0]
+		for j, rightRune := range rightRunes {
+			cost := 0
+			if leftRune != rightRune {
+				cost = 1
+			}
+			current[j+1] = min(previous[j+1]+1, current[j]+1, previous[j]+cost)
+			rowMinimum = min(rowMinimum, current[j+1])
+		}
+		if rowMinimum > maximumDistance {
+			return false
+		}
+		previous, current = current, previous
+	}
+	return previous[len(rightRunes)] <= maximumDistance
+}
+
 func trackCapabilities(track Track) []string {
 	capabilities := []string{"metadata"}
 	if len(track.MERT) > 0 {
@@ -186,6 +320,9 @@ func trackCapabilities(track Track) []string {
 	}
 	if track.RelativePath != "" {
 		capabilities = append(capabilities, "local_path")
+	}
+	if track.AudioFingerprint != nil {
+		capabilities = append(capabilities, "audio_fingerprint")
 	}
 	return capabilities
 }

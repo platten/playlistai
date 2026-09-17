@@ -8,21 +8,30 @@ never searches `PATH` and it never asks the user to install FFmpeg.
 
 ## Pinned build
 
-The Linux amd64 payload is built from the official FFmpeg 8.1.2 source archive:
+The Linux amd64 payload is built from the official FFmpeg 8.1.2 and
+Chromaprint 1.6.1 source archives:
 
 - URL: `https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz`
 - byte length: `11710924`
 - SHA-256: `464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c`
 - license for the selected build: LGPL-2.1-or-later
 
+Chromaprint is pinned to
+`https://github.com/acoustid/chromaprint/archive/refs/tags/v1.6.1.tar.gz`
+with SHA-256
+`7065ec9db48ac1fa929ec6c42afcd966605b1bfe48b6d5e64c25378a05f4fb02` and
+is MIT-licensed. It is statically linked into the private FFmpeg binary. The
+Chromaprint muxer emits the base64-compressed algorithm-1 representation used
+by AcoustID; no fingerprint is submitted to AcoustID or AcousticBrainz.
+
 `build/indexer/source.lock.json` pins the Debian builder image by digest and a
 dated Debian package snapshot. `build/indexer/Dockerfile.ffmpeg` verifies the
 source archive before unpacking it. `configure-runtime.sh` disables network,
 autodetection, assembly variants, and every component not then explicitly
 enabled. The resulting programs expose only `file` and `pipe` protocols. The
-payload manifest records the complete configure command, source identity, and
+payload manifest records the complete configure command, both source identities, and
 the size and SHA-256 of every installed artifact. It includes the upstream
-LGPL text, FFmpeg's license overview, and the emitted build configuration.
+LGPL and MIT texts, FFmpeg's license overview, and the emitted build configuration.
 
 The enabled input surface is deliberately small:
 
@@ -58,11 +67,12 @@ acquired before any state/coordinator lock by callers that need both.
 
 The executed build produced dynamically linked x86-64-baseline PIE programs
 with a Linux 3.2 ABI note and a maximum referenced symbol version of
-`GLIBC_2.35`. Their only `ldd` dependencies were the platform loader, `libc`,
-and `libm`. Accordingly this payload requires Linux amd64, an x86-64-baseline
-CPU, and glibc 2.35 or newer. `--disable-shared` applies to FFmpeg libraries; it
-does not statically link libc. Linux arm64 and musl/Alpine are not supported by
-this build. A runtime directory mounted `noexec` will fail native startup; the
+`GLIBC_2.36`. Their only `ldd` dependencies were the platform loader, `libc`,
+and `libm`; the C++ support libraries required by the statically linked
+Chromaprint archive are also linked statically. Accordingly this payload
+requires Linux amd64, an x86-64-baseline CPU, and glibc 2.36 or newer.
+`--disable-shared` applies to FFmpeg libraries; it does not statically link libc.
+Linux arm64 and musl/Alpine are not supported by this build. A runtime directory mounted `noexec` will fail native startup; the
 CLI should report that error and let the user select an executable local
 directory with `--runtime-dir`, never suggest changing mount security.
 
@@ -84,7 +94,15 @@ ffprobe's dictionary cannot represent repeated identical tag keys; that is a
 known preservation limit. Raw AAC duration is retained as an unreliable
 container estimate rather than promoted to an exact seek basis.
 
-Decode emits interleaved float32 PCM at the selected stream's original sample
+The metadata stage fully decodes the selected stream to Chromaprint's required
+16-bit PCM boundary and stores the resulting AcoustID-compatible compressed
+fingerprint with its algorithm, runtime, scope, and SHA-256 lookup digest. The
+fingerprint pass also establishes full-decode integrity for formats covered by
+that contract. If fingerprinting is unavailable for a FLAC or MP3, the existing
+decode-to-discard integrity check still runs so fingerprint availability never
+weakens corruption detection.
+
+Sampled analysis decode emits interleaved float32 PCM at the selected stream's original sample
 rate and channel count. No ReplayGain, normalization, resampling, downmix,
 clipping, or 16-bit quantization is applied. Finite values outside `[-1, 1]`
 are preserved. Windows are decoded one at a time, and `DecodeWindows` clears a
@@ -107,16 +125,17 @@ race detector against actual FFmpeg processes. Fixtures cover 16-bit/44.1 and
 48 kHz, 24-bit/96 kHz, and anti-phase 24-bit/192 kHz FLAC; CBR and VBR MP3; raw ADTS
 AAC-LC; M4A/AAC-LC; source levels above float full scale; metadata; unusual
 Unicode/quote/newline/leading-dash paths; truncated input; source mutation;
-output limits; and process-group cancellation. It hashes source fixtures before
+output limits; AcoustID-compatible fingerprint generation; and process-group cancellation. It hashes source fixtures before
 and after decode.
 
-On September 16, 2026, this command passed all tests under `go test -race`.
-The executed payload was 3.5 MiB total. Its native executable identities were:
+On September 17, 2026, this command passed all tests under `go test -race`,
+including a real AcoustID/Chromaprint fingerprint. The executed payload's two
+native programs totaled 4,034,960 bytes. Their identities were:
 
-- `ffmpeg` (1,879,576 bytes):
-  `a7809838d1734189d4b7ea2266bc97132f9d39acc20dd279406b9c70971f0400`
-- `ffprobe` (1,699,192 bytes):
-  `58d016a1214432ee7c936a04628e653db20a144c58f04a7e9a9c045994ddcc2c`
+- `ffmpeg` (2,105,624 bytes):
+  `16f1cbbcc7df33aa7cc792350884846107d48997703845d61ed970ca91165ae5`
+- `ffprobe` (1,929,336 bytes):
+  `bc0a40d45c9312454797e63974f2de59a72d6b6ff9bba55b50ae6ad8e2d7a0b3`
 
 The release build must publish the hashes from its generated manifest rather
 than assuming these evidence-build hashes without rerunning the pinned build.

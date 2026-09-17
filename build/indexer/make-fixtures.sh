@@ -4,7 +4,7 @@ set -eu
 output=${1:?fixture output directory required}
 mkdir -p "$output"
 
-ffmpeg -hide_banner -loglevel error -nostdin -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=1' \
+ffmpeg -hide_banner -loglevel error -nostdin -f lavfi -i 'sine=frequency=440:sample_rate=44100:duration=12' \
   -metadata title='AC/DC & R&B – 東京' -metadata artist='AC/DC' -metadata album_artist='Various Artists' \
   -metadata album='Fixture Album' -metadata genre='R&B' -metadata track='2/9' -metadata disc='1/2' \
   -metadata MUSICBRAINZ_TRACKID='00000000-0000-0000-0000-000000000001' -metadata ISRC='USTST2600001' \

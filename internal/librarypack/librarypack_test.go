@@ -25,6 +25,12 @@ import (
 )
 
 func fixturePack(generation string) Pack {
+	fingerprintValue := "AQADtNQYhYkYnGhw7Xfixture"
+	fingerprintDigest := sha256.Sum256([]byte(fingerprintValue))
+	fingerprint := &AudioFingerprint{
+		Contract: "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: fingerprintValue, FingerprintSHA256: hex.EncodeToString(fingerprintDigest[:]), Scope: "full_selected_stream", DecoderRuntimeID: "decoder/v1",
+	}
 	return Pack{
 		CreatedAt:          time.Unix(1_700_000_000, 0),
 		CorpusGeneration:   "corpus-" + generation,
@@ -38,8 +44,8 @@ func fixturePack(generation string) Pack {
 		},
 		Tracks: []Track{
 			{ID: "local:main:z", Artist: "東京", Title: "夜明け", RawTags: json.RawMessage(`{"genre":["電子音楽"]}`), Missingness: json.RawMessage(`{"dsp":"unsupported"}`), RootAlias: "music-main", RelativePath: "東京/夜明け.flac"},
-			{ID: "local:main:a", Artist: "Artist", Title: "Alpha", Album: "Album", RawTags: json.RawMessage(`{"genre":["R&B"]}`), DSP: json.RawMessage(`{"sample_peak_dbfs":-1.2}`), Missingness: json.RawMessage(`{}`), MERT: []float32{1, 0}},
-			{ID: "local:main:b", Artist: "AC/DC", Title: "Beta", Failure: "", Unsupported: "", MERT: []float32{0, 1}},
+			{ID: "local:main:a", Artist: "Artist", Title: "Alpha", Album: "Album", AudioFingerprint: fingerprint, RawTags: json.RawMessage(`{"genre":["R&B"]}`), DSP: json.RawMessage(`{"sample_peak_dbfs":-1.2}`), Missingness: json.RawMessage(`{}`), MERT: []float32{1, 0}},
+			{ID: "local:main:b", Artist: "AC/DC", Title: "Beta", AudioFingerprint: fingerprint, Failure: "", Unsupported: "", MERT: []float32{0, 1}},
 		},
 	}
 }
@@ -95,6 +101,10 @@ func TestWriteStageActivateRoundTripAndCanonicalOrdering(t *testing.T) {
 	if _, ok, err := g.Vector(context.Background(), "local:main:z"); err != nil || ok {
 		t.Fatalf("missing vector = %v %v", ok, err)
 	}
+	duplicates, err := g.AudioDuplicates(context.Background(), "local:main:a", 10)
+	if err != nil || len(duplicates) != 1 || duplicates[0].ID != "local:main:b" || duplicates[0].AudioFingerprint == nil || duplicates[0].AudioFingerprint.Fingerprint != "AQADtNQYhYkYnGhw7Xfixture" {
+		t.Fatalf("AudioDuplicates = %+v, %v", duplicates, err)
+	}
 
 	// The active record is sufficient to reopen the same verified generation.
 	lease.Release()
@@ -113,6 +123,54 @@ func TestWriteStageActivateRoundTripAndCanonicalOrdering(t *testing.T) {
 	defer reopenedLease.Release()
 	if reopenedLease.Generation().Manifest().PackID != written.PackID {
 		t.Fatal("reopened another generation")
+	}
+}
+
+func TestDuplicatesUseIdentifiersOrCorroboratedFingerprint(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xdedup"
+	digest := sha256.Sum256([]byte(value))
+	fingerprint := &AudioFingerprint{
+		Contract: "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "full_selected_stream", DecoderRuntimeID: "decoder/v1",
+	}
+	pack := Pack{
+		CorpusGeneration: "corpus-dedup", MetadataGeneration: "metadata-dedup",
+		Tracks: []Track{
+			{ID: "source", Artist: "The Artist", Title: "A Long Song Title", ISRC: "USAAA2600001", MusicBrainzRecording: "11111111-2222-3333-4444-555555555555", AudioFingerprint: fingerprint},
+			{ID: "by-isrc", Artist: "Different", Title: "Metadata", ISRC: "US-AAA-26-00001"},
+			{ID: "by-mbid", Artist: "Different", Title: "Again", MusicBrainzRecording: "11111111-2222-3333-4444-555555555555"},
+			{ID: "by-fingerprint", Artist: "The Artist", Title: "A Long Song Title!", AudioFingerprint: fingerprint},
+			{ID: "uncorroborated", Artist: "Another Artist", Title: "Unrelated Recording", AudioFingerprint: fingerprint},
+		},
+	}
+	archive, _ := writePackAt(t, "dedup.paipack", pack)
+	manager, err := OpenManager(context.Background(), t.TempDir(), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	staged, err := manager.Stage(context.Background(), archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := manager.Discard(staged); err != nil {
+			t.Errorf("Discard: %v", err)
+		}
+	}()
+	duplicates, err := staged.Generation().Duplicates(context.Background(), "source", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]string, len(duplicates))
+	for index := range duplicates {
+		ids[index] = duplicates[index].ID
+	}
+	if !reflect.DeepEqual(ids, []string{"by-fingerprint", "by-isrc", "by-mbid"}) {
+		t.Fatalf("duplicates = %v", ids)
+	}
+	if SameRecording(pack.Tracks[0], Track{Artist: "X", Title: "Y", ISRC: "vendor-specific"}) {
+		t.Fatal("invalid identifier became authoritative duplicate evidence")
 	}
 }
 

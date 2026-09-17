@@ -19,6 +19,7 @@ const (
 	artifactMaxSize = 128 << 20
 	payloadMaxSize  = 256 << 20
 	ffmpegSourceSHA = "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c"
+	chromaprintSHA  = "7065ec9db48ac1fa929ec6c42afcd966605b1bfe48b6d5e64c25378a05f4fb02"
 )
 
 type Artifact struct {
@@ -30,19 +31,24 @@ type Artifact struct {
 }
 
 type Manifest struct {
-	SchemaVersion    int        `json:"schemaVersion"`
-	ID               string     `json:"id"`
-	Platform         string     `json:"platform"`
-	FFmpegVersion    string     `json:"ffmpegVersion"`
-	SourceURL        string     `json:"sourceUrl"`
-	SourceSHA256     string     `json:"sourceSha256"`
-	License          string     `json:"license"`
-	NetworkDisabled  bool       `json:"networkDisabled"`
-	EnabledProtocols []string   `json:"enabledProtocols"`
-	EnabledDemuxers  []string   `json:"enabledDemuxers"`
-	EnabledDecoders  []string   `json:"enabledDecoders"`
-	Configure        []string   `json:"configure"`
-	Artifacts        []Artifact `json:"artifacts"`
+	SchemaVersion           int        `json:"schemaVersion"`
+	ID                      string     `json:"id"`
+	Platform                string     `json:"platform"`
+	FFmpegVersion           string     `json:"ffmpegVersion"`
+	SourceURL               string     `json:"sourceUrl"`
+	SourceSHA256            string     `json:"sourceSha256"`
+	ChromaprintVersion      string     `json:"chromaprintVersion"`
+	ChromaprintSourceURL    string     `json:"chromaprintSourceUrl"`
+	ChromaprintSourceSHA256 string     `json:"chromaprintSourceSha256"`
+	ChromaprintLicense      string     `json:"chromaprintLicense"`
+	License                 string     `json:"license"`
+	NetworkDisabled         bool       `json:"networkDisabled"`
+	EnabledProtocols        []string   `json:"enabledProtocols"`
+	EnabledDemuxers         []string   `json:"enabledDemuxers"`
+	EnabledDecoders         []string   `json:"enabledDecoders"`
+	EnabledMuxers           []string   `json:"enabledMuxers"`
+	Configure               []string   `json:"configure"`
+	Artifacts               []Artifact `json:"artifacts"`
 }
 
 func safePayloadName(value string) bool {
@@ -65,9 +71,11 @@ func contains(values []string, want string) bool {
 }
 
 func (m Manifest) Validate() error {
-	if m.SchemaVersion != 1 || !safePayloadName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH ||
+	if m.SchemaVersion != 2 || !safePayloadName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH ||
 		m.FFmpegVersion != "8.1.2" || m.SourceURL != "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz" ||
-		!strings.EqualFold(m.SourceSHA256, ffmpegSourceSHA) || m.License != "LGPL-2.1-or-later" || !m.NetworkDisabled {
+		!strings.EqualFold(m.SourceSHA256, ffmpegSourceSHA) || m.License != "LGPL-2.1-or-later" ||
+		m.ChromaprintVersion != "1.6.1" || m.ChromaprintSourceURL != "https://github.com/acoustid/chromaprint/archive/refs/tags/v1.6.1.tar.gz" ||
+		!strings.EqualFold(m.ChromaprintSourceSHA256, chromaprintSHA) || m.ChromaprintLicense != "MIT" || !m.NetworkDisabled {
 		return fmt.Errorf("localaudio: incompatible codec manifest identity, platform, source, license, or network policy")
 	}
 	protocols := append([]string(nil), m.EnabledProtocols...)
@@ -83,6 +91,11 @@ func (m Manifest) Validate() error {
 	for _, value := range []string{"flac", "mp3float", "aac"} {
 		if !contains(m.EnabledDecoders, value) {
 			return fmt.Errorf("localaudio: required decoder %s is absent", value)
+		}
+	}
+	for _, value := range []string{"pcm_f32le", "chromaprint"} {
+		if !contains(m.EnabledMuxers, value) {
+			return fmt.Errorf("localaudio: required muxer %s is absent", value)
 		}
 	}
 	roles, names := map[string]bool{}, map[string]bool{}

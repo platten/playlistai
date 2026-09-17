@@ -132,6 +132,21 @@ func TestRealCodecIntegrityValidation(t *testing.T) {
 	}
 }
 
+func TestRealCodecAcoustIDFingerprint(t *testing.T) {
+	r, fixtures := requireCodecFixture(t)
+	probe, err := r.Probe(context.Background(), filepath.Join(fixtures, "flac-16-44100.flac"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := r.AudioFingerprint(context.Background(), probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fingerprint.Format != "acoustid-chromaprint-base64" || fingerprint.Algorithm != 1 || len(fingerprint.Fingerprint) < 8 {
+		t.Fatalf("fingerprint = %+v", fingerprint)
+	}
+}
+
 func TestRealCodecTagsPathsAndUnclippedFloat(t *testing.T) {
 	r, fixtures := requireCodecFixture(t)
 	t.Run("tags and unusual path", func(t *testing.T) {

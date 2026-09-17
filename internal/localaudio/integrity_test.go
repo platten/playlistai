@@ -87,3 +87,25 @@ func TestValidateIntegrityUsesCodecNotExtension(t *testing.T) {
 		t.Fatal("MP3 did not select full validation")
 	}
 }
+
+func TestAudioFingerprintReturnsAcoustIDChromaprint(t *testing.T) {
+	r, path := integrityTestRuntime(t, "printf 'AQADtNQYhYkYnGhw7Xabc123'")
+	probe := integrityTestProbe(t, r, path)
+	fingerprint, err := r.AudioFingerprint(context.Background(), probe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fingerprint.Format != "acoustid-chromaprint-base64" || fingerprint.Algorithm != 1 ||
+		fingerprint.Fingerprint != "AQADtNQYhYkYnGhw7Xabc123" || len(fingerprint.FingerprintSHA256) != 64 ||
+		fingerprint.Contract != AudioFingerprintVersion || fingerprint.DecoderRuntimeID != r.ID() {
+		t.Fatalf("fingerprint = %+v", fingerprint)
+	}
+}
+
+func TestAudioFingerprintRejectsInvalidOutput(t *testing.T) {
+	r, path := integrityTestRuntime(t, "printf 'not a chromaprint value'")
+	_, err := r.AudioFingerprint(context.Background(), integrityTestProbe(t, r, path))
+	if !errors.Is(err, ErrFingerprint) {
+		t.Fatalf("fingerprint error = %v", err)
+	}
+}

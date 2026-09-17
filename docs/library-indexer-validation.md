@@ -8,7 +8,9 @@ workspace from remaining release gates.
 - `./scripts/test-indexer-codecs.sh` passed under `go test -race` using actual
   pinned FFmpeg processes. It covered FLAC at 44.1/48/96/192 kHz, CBR/VBR MP3,
   raw AAC-LC, M4A/AAC-LC, anti-phase stereo, over-full-scale float PCM, corrupt
-  input, unusual paths, mutation fences, cancellation, and unchanged hashes.
+  input, unusual paths, mutation fences, cancellation, unchanged hashes, and a
+  real base64-compressed algorithm-1 AcoustID/Chromaprint fingerprint from the
+  statically linked Chromaprint 1.6.1 runtime.
 - `go run ./cmd/mertparity <validated-linux-amd64-pack>` passed against the real
   MERT graph. Observed cold inference was 5.471 s, warm inference 1.602 s, reload
   5.869 s, and worker cancellation passed on this host. These are observations,
@@ -20,7 +22,9 @@ workspace from remaining release gates.
 - `go test -race ./internal/librarypack ./internal/localcatalog` passed. Tests use
   real pack write/stage/activate/read paths and cover checksum/limit failures,
   metadata-only and MERT retrieval, incompatible spaces, channel completion
-  order, cancellation, path escape, replacement/removal, and pinned readers.
+  order, cancellation, path escape, replacement/removal, pinned readers, and
+  ISRC/recording-MBID/fingerprint duplicate detection with metadata
+  corroboration.
 - `GOOS=windows GOARCH=amd64 go test -run '^$' ./...` passed for every package,
   and the available Windows runner executed the changed `librarypack`,
   `librarysearch`, `localcatalog`, and indexer CLI suites successfully. A broader

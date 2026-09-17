@@ -40,30 +40,31 @@ type Provenance struct {
 // Track is local-library metadata. ID is namespace-qualified; LocalID is the
 // stable ID stored in the pack. No Deej-AI or Spotify vector is synthesized.
 type Track struct {
-	ID                   string          `json:"id"`
-	LocalID              string          `json:"localId"`
-	Artist               string          `json:"artist"`
-	Title                string          `json:"title"`
-	NormalizedArtist     string          `json:"normalizedArtist,omitempty"`
-	NormalizedTitle      string          `json:"normalizedTitle,omitempty"`
-	SourceIdentity       string          `json:"sourceIdentity,omitempty"`
-	RecordingIdentity    string          `json:"recordingIdentity,omitempty"`
-	ISRC                 string          `json:"isrc,omitempty"`
-	MusicBrainzRecording string          `json:"musicBrainzRecording,omitempty"`
-	DurationMilliseconds int64           `json:"durationMilliseconds,omitempty"`
-	DurationProvenance   string          `json:"durationProvenance,omitempty"`
-	DurationReliable     bool            `json:"durationReliable"`
-	Cluster              *int            `json:"cluster,omitempty"`
-	ClusterScore         float64         `json:"clusterScore,omitempty"`
-	AlternativeCluster   *int            `json:"alternativeCluster,omitempty"`
-	AlternativeScore     float64         `json:"alternativeScore,omitempty"`
-	AlbumArtist          string          `json:"albumArtist,omitempty"`
-	Album                string          `json:"album,omitempty"`
-	Capabilities         []string        `json:"capabilities"`
-	Missingness          json.RawMessage `json:"missingness"`
-	Failure              string          `json:"failure,omitempty"`
-	Unsupported          string          `json:"unsupported,omitempty"`
-	Provenance           Provenance      `json:"provenance"`
+	ID                   string                        `json:"id"`
+	LocalID              string                        `json:"localId"`
+	Artist               string                        `json:"artist"`
+	Title                string                        `json:"title"`
+	NormalizedArtist     string                        `json:"normalizedArtist,omitempty"`
+	NormalizedTitle      string                        `json:"normalizedTitle,omitempty"`
+	SourceIdentity       string                        `json:"sourceIdentity,omitempty"`
+	RecordingIdentity    string                        `json:"recordingIdentity,omitempty"`
+	ISRC                 string                        `json:"isrc,omitempty"`
+	MusicBrainzRecording string                        `json:"musicBrainzRecording,omitempty"`
+	AudioFingerprint     *librarypack.AudioFingerprint `json:"audioFingerprint,omitempty"`
+	DurationMilliseconds int64                         `json:"durationMilliseconds,omitempty"`
+	DurationProvenance   string                        `json:"durationProvenance,omitempty"`
+	DurationReliable     bool                          `json:"durationReliable"`
+	Cluster              *int                          `json:"cluster,omitempty"`
+	ClusterScore         float64                       `json:"clusterScore,omitempty"`
+	AlternativeCluster   *int                          `json:"alternativeCluster,omitempty"`
+	AlternativeScore     float64                       `json:"alternativeScore,omitempty"`
+	AlbumArtist          string                        `json:"albumArtist,omitempty"`
+	Album                string                        `json:"album,omitempty"`
+	Capabilities         []string                      `json:"capabilities"`
+	Missingness          json.RawMessage               `json:"missingness"`
+	Failure              string                        `json:"failure,omitempty"`
+	Unsupported          string                        `json:"unsupported,omitempty"`
+	Provenance           Provenance                    `json:"provenance"`
 }
 
 // Evidence preserves a channel-native score and its immutable representation.

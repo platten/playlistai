@@ -12,6 +12,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarylearn"
+	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/localaudio"
 )
 
@@ -74,6 +75,49 @@ func TestFrozenStoreDiverseSampleMatchesInMemoryContract(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sample mismatch\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestNormalizeISRCPreservesAvailableIdentity(t *testing.T) {
+	if got := normalizeISRC(" us-abc-26-00001 "); got != "USABC2600001" {
+		t.Fatalf("normalized ISRC = %q", got)
+	}
+	if got := normalizeISRC("vendor-specific"); got != "vendor-specific" {
+		t.Fatalf("nonstandard ISRC was discarded: %q", got)
+	}
+}
+
+func TestRecordingIdentityRequiresAuthoritativeOrCorroboratedEvidence(t *testing.T) {
+	fingerprint := &librarypack.AudioFingerprint{Contract: "acoustid-chromaprint/v1", FingerprintSHA256: "digest"}
+	if got := recordingIdentity("11111111-2222-3333-4444-555555555555", "USAAA2600001", "Artist", "Song", fingerprint); got != "musicbrainz:11111111-2222-3333-4444-555555555555" {
+		t.Fatalf("MBID identity = %q", got)
+	}
+	if got := recordingIdentity("not-an-mbid", "US-AAA-26-00001", "Artist", "Song", fingerprint); got != "isrc:USAAA2600001" {
+		t.Fatalf("ISRC identity = %q", got)
+	}
+	first := recordingIdentity("", "", "The Artist", "A Long Song Title", fingerprint)
+	punctuation := recordingIdentity("", "", "The Artist", "A Long Song Title!", fingerprint)
+	unrelated := recordingIdentity("", "", "Other Artist", "Different Song", fingerprint)
+	if first == "" || first != punctuation || first == unrelated {
+		t.Fatalf("fingerprint identities = %q %q %q", first, punctuation, unrelated)
+	}
+	if got := recordingIdentity("not-an-mbid", "vendor-specific", "Artist", "Song", nil); got != "" {
+		t.Fatalf("invalid tag identity = %q", got)
+	}
+}
+
+func TestSampleLearningItemPrefersValidRecordingMBID(t *testing.T) {
+	metadata := localaudio.Metadata{
+		Title:         &localaudio.TagValue{Value: "Song"},
+		ArtistCredits: []localaudio.TagValue{{Value: "Artist"}},
+		ISRC:          &localaudio.TagValue{Value: "USAAA2600001"},
+		MusicBrainzIDs: map[string]string{
+			"MUSICBRAINZ_TRACKID": "11111111-2222-3333-4444-555555555555",
+		},
+	}
+	item := sampleLearningItem("track", MetadataRecord{Probe: localaudio.ProbeResult{Metadata: metadata}})
+	if want := "musicbrainz:11111111-2222-3333-4444-555555555555"; item.GroupID != want {
+		t.Fatalf("group ID = %q, want %q", item.GroupID, want)
 	}
 }
 

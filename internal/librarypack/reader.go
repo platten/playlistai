@@ -103,7 +103,7 @@ func (g *Generation) Lookup(ctx context.Context, id string) (Track, bool, error)
 	if g == nil || g.db == nil {
 		return Track{}, false, errors.New("librarypack: generation is closed")
 	}
-	row := g.db.QueryRowContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id=?`, id)
+	row := g.db.QueryRowContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id=?`, id)
 	track, err := scanTrack(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Track{}, false, nil
@@ -112,6 +112,130 @@ func (g *Generation) Lookup(ctx context.Context, id string) (Track, bool, error)
 		return Track{}, false, err
 	}
 	return track, true, nil
+}
+
+// AudioDuplicates returns other tracks with the exact same compatible
+// compressed Chromaprint. The indexed digest narrows the lookup; the complete
+// fingerprint is compared as collision defense. This is intentionally an
+// exact duplicate oracle, not AcoustID's approximate raw-fingerprint matcher.
+func (g *Generation) AudioDuplicates(ctx context.Context, id string, limit int) ([]Track, error) {
+	if limit <= 0 {
+		return []Track{}, nil
+	}
+	if limit > 10_000 {
+		limit = 10_000
+	}
+	if g == nil || g.db == nil {
+		return nil, errors.New("librarypack: generation is closed")
+	}
+	var contract, digest, value string
+	if err := g.db.QueryRowContext(ctx, "SELECT fingerprint_contract,fingerprint_sha256,fingerprint_value FROM tracks WHERE id=?", id).Scan(&contract, &digest, &value); errors.Is(err, sql.ErrNoRows) {
+		return []Track{}, nil
+	} else if err != nil {
+		return nil, err
+	}
+	if contract == "" || digest == "" || value == "" {
+		return []Track{}, nil
+	}
+	rows, err := g.db.QueryContext(ctx, "SELECT id FROM tracks WHERE fingerprint_contract=? AND fingerprint_sha256=? AND fingerprint_value=? AND id<>? ORDER BY id LIMIT ?", contract, digest, value, id, limit)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var duplicateID string
+		if err := rows.Scan(&duplicateID); err != nil {
+			return nil, err
+		}
+		ids = append(ids, duplicateID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	duplicates := make([]Track, 0, len(ids))
+	for _, duplicateID := range ids {
+		track, ok, err := g.Lookup(ctx, duplicateID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, errors.New("librarypack: fingerprint index refers to a missing track")
+		}
+		duplicates = append(duplicates, track)
+	}
+	return duplicates, nil
+}
+
+// Duplicates returns other rows that have the same valid ISRC, the same valid
+// MusicBrainz recording MBID, or an exact compatible AcoustID/Chromaprint value
+// corroborated by matching or very similar artist/title metadata.
+func (g *Generation) Duplicates(ctx context.Context, id string, limit int) ([]Track, error) {
+	if limit <= 0 {
+		return []Track{}, nil
+	}
+	if limit > 10_000 {
+		limit = 10_000
+	}
+	source, ok, err := g.Lookup(ctx, id)
+	if err != nil || !ok {
+		return nil, err
+	}
+	isrc := canonicalISRC(source.ISRC)
+	mbid := canonicalMBID(source.MusicBrainzRecording)
+	contract, digest, value := "", "", ""
+	if source.AudioFingerprint != nil {
+		contract = source.AudioFingerprint.Contract
+		digest = source.AudioFingerprint.FingerprintSHA256
+		value = source.AudioFingerprint.Fingerprint
+	}
+	if isrc == "" && mbid == "" && value == "" {
+		return []Track{}, nil
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT id FROM tracks WHERE id<>? AND (
+		(?<>'' AND isrc=?) OR
+		(?<>'' AND musicbrainz_recording=? COLLATE NOCASE) OR
+		(?<>'' AND fingerprint_contract=? AND fingerprint_sha256=? AND fingerprint_value=?))
+		ORDER BY id LIMIT 10000`, id, isrc, isrc, mbid, mbid, value, contract, digest, value)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for rows.Next() {
+		var duplicateID string
+		if err := rows.Scan(&duplicateID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ids = append(ids, duplicateID)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	duplicates := make([]Track, 0, min(limit, len(ids)))
+	for _, duplicateID := range ids {
+		candidate, found, err := g.Lookup(ctx, duplicateID)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, errors.New("librarypack: duplicate index refers to a missing track")
+		}
+		if SameRecording(source, candidate) {
+			duplicates = append(duplicates, candidate)
+			if len(duplicates) == limit {
+				break
+			}
+		}
+	}
+	return duplicates, nil
 }
 
 // Vector returns an owned MERT vector, or ok=false when the track has no
@@ -144,7 +268,7 @@ func (g *Generation) List(ctx context.Context, after string, limit int) ([]Track
 	if limit > 10_000 {
 		limit = 10_000
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id>? ORDER BY id LIMIT ?`, after, limit)
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id>? ORDER BY id LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -165,12 +289,16 @@ type rowScanner interface{ Scan(...any) error }
 func scanTrack(row rowScanner) (Track, error) {
 	var track Track
 	var capabilities, rawTags, dsp, missing string
+	var fingerprint AudioFingerprint
 	var cluster, alternative sql.NullInt64
-	err := row.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore)
+	err := row.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore)
 	if err == nil {
 		err = json.Unmarshal([]byte(capabilities), &track.Capabilities)
 	}
 	track.RawTags, track.DSP, track.Missingness = json.RawMessage(rawTags), json.RawMessage(dsp), json.RawMessage(missing)
+	if fingerprint.Fingerprint != "" {
+		track.AudioFingerprint = &fingerprint
+	}
 	if cluster.Valid {
 		value := int(cluster.Int64)
 		track.Cluster = &value
@@ -442,13 +570,13 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 		return errors.New("librarypack: vector file size does not match manifest")
 	}
 	var preflightCount, maxRecord, maxJSON int
-	if err := g.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(MAX(length(id)+length(artist)+length(title)+length(album_artist)+length(album)+length(root_alias)+length(relative_path)+length(capabilities_json)+length(raw_tags_json)+length(dsp_json)+length(missingness_json)+length(failure)+length(unsupported)),0), COALESCE(MAX(MAX(length(capabilities_json),length(raw_tags_json),length(dsp_json),length(missingness_json))),0) FROM tracks`).Scan(&preflightCount, &maxRecord, &maxJSON); err != nil {
+	if err := g.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(MAX(length(id)+length(artist)+length(title)+length(normalized_artist)+length(normalized_title)+length(source_identity)+length(recording_identity)+length(isrc)+length(musicbrainz_recording)+length(duration_provenance)+length(album_artist)+length(album)+length(root_alias)+length(relative_path)+length(fingerprint_contract)+length(fingerprint_format)+length(fingerprint_value)+length(fingerprint_sha256)+length(fingerprint_scope)+length(fingerprint_decoder)+length(capabilities_json)+length(raw_tags_json)+length(dsp_json)+length(missingness_json)+length(failure)+length(unsupported)),0), COALESCE(MAX(MAX(length(capabilities_json),length(raw_tags_json),length(dsp_json),length(missingness_json))),0) FROM tracks`).Scan(&preflightCount, &maxRecord, &maxJSON); err != nil {
 		return err
 	}
 	if preflightCount < 0 || preflightCount > limits.MaxTracks || maxRecord > limits.MaxRecordBytes || maxJSON > limits.MaxJSONBytes {
 		return errors.New("librarypack: metadata allocation limits exceeded")
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks ORDER BY id`)
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks ORDER BY id`)
 	if err != nil {
 		return err
 	}
@@ -466,21 +594,31 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 			}
 		}
 		var track Track
+		var fingerprint AudioFingerprint
 		var capabilities, rawTags, dsp, missing string
 		var vectorRow sql.NullInt64
 		var cluster, alternative sql.NullInt64
 		var clusterScore, alternativeScore float64
-		if err := rows.Scan(&track.ID, &track.Artist, &track.Title, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &vectorRow, &cluster, &clusterScore, &alternative, &alternativeScore); err != nil {
+		if err := rows.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &vectorRow, &cluster, &clusterScore, &alternative, &alternativeScore); err != nil {
 			return err
 		}
 		if cluster.Valid && (cluster.Int64 < 0 || math.IsNaN(clusterScore) || math.IsInf(clusterScore, 0)) || alternative.Valid && (alternative.Int64 < 0 || math.IsNaN(alternativeScore) || math.IsInf(alternativeScore, 0)) {
 			return errors.New("librarypack: invalid cluster assignment")
 		}
-		if !validIdentifier(track.ID) || track.ID <= previous || strings.TrimSpace(track.Artist) == "" || strings.TrimSpace(track.Title) == "" {
+		if !validIdentifier(track.ID) || track.ID <= previous || strings.TrimSpace(track.Artist) == "" || strings.TrimSpace(track.Title) == "" ||
+			track.NormalizedArtist != normalizePortableIdentity(track.Artist) || track.NormalizedTitle != normalizePortableIdentity(track.Title) ||
+			track.SourceIdentity == "" || track.DurationMilliseconds < 0 || track.DurationMilliseconds > 24*60*60*1000 ||
+			track.DurationReliable && (track.DurationMilliseconds == 0 || strings.TrimSpace(track.DurationProvenance) == "") {
 			return errors.New("librarypack: invalid metadata row identity")
 		}
+		if canonical := canonicalISRC(track.ISRC); canonical != "" && canonical != track.ISRC {
+			return errors.New("librarypack: noncanonical ISRC")
+		}
+		if canonical := canonicalMBID(track.MusicBrainzRecording); canonical != "" && canonical != track.MusicBrainzRecording {
+			return errors.New("librarypack: noncanonical MusicBrainz recording ID")
+		}
 		previous = track.ID
-		if len(track.ID)+len(track.Artist)+len(track.Title)+len(track.AlbumArtist)+len(track.Album)+len(track.RootAlias)+len(track.RelativePath)+len(capabilities)+len(rawTags)+len(dsp)+len(missing)+len(track.Failure)+len(track.Unsupported) > limits.MaxRecordBytes {
+		if len(track.ID)+len(track.Artist)+len(track.Title)+len(track.NormalizedArtist)+len(track.NormalizedTitle)+len(track.SourceIdentity)+len(track.RecordingIdentity)+len(track.ISRC)+len(track.MusicBrainzRecording)+len(track.DurationProvenance)+len(track.AlbumArtist)+len(track.Album)+len(track.RootAlias)+len(track.RelativePath)+len(fingerprint.Contract)+len(fingerprint.Format)+len(fingerprint.Fingerprint)+len(fingerprint.FingerprintSHA256)+len(fingerprint.Scope)+len(fingerprint.DecoderRuntimeID)+len(capabilities)+len(rawTags)+len(dsp)+len(missing)+len(track.Failure)+len(track.Unsupported) > limits.MaxRecordBytes {
 			return errors.New("librarypack: oversized metadata row")
 		}
 		if track.RelativePath != "" && (!aliases[track.RootAlias] || !validateRelativePath(track.RelativePath)) || track.RelativePath == "" && track.RootAlias != "" {
@@ -499,6 +637,15 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 		}
 		if track.RelativePath != "" {
 			expectedCapabilities = append(expectedCapabilities, "local_path")
+		}
+		if fingerprint.Fingerprint != "" {
+			digest := sha256.Sum256([]byte(fingerprint.Fingerprint))
+			if fingerprint.Contract == "" || fingerprint.Format != "acoustid-chromaprint-base64" || fingerprint.Algorithm != 1 || fingerprint.Scope != "full_selected_stream" || fingerprint.DecoderRuntimeID == "" || !strings.EqualFold(hex.EncodeToString(digest[:]), fingerprint.FingerprintSHA256) {
+				return errors.New("librarypack: invalid audio fingerprint")
+			}
+			expectedCapabilities = append(expectedCapabilities, "audio_fingerprint")
+		} else if fingerprint.Contract != "" || fingerprint.Format != "" || fingerprint.Algorithm != 0 || fingerprint.FingerprintSHA256 != "" || fingerprint.Scope != "" || fingerprint.DecoderRuntimeID != "" {
+			return errors.New("librarypack: partial audio fingerprint")
 		}
 		if !slices.Equal(gotCapabilities, expectedCapabilities) {
 			return errors.New("librarypack: capability metadata does not match evidence")

@@ -14,6 +14,7 @@ var (
 	ErrSourceChanged  = errors.New("local audio source changed during processing")
 	ErrUnsupported    = errors.New("local audio stream is unsupported")
 	ErrCorrupt        = errors.New("local audio stream is corrupt")
+	ErrFingerprint    = errors.New("local audio fingerprint is unavailable")
 )
 
 // SourceRevision is a stat-based change detector, not an audio identity or a
@@ -88,6 +89,21 @@ type ProbeResult struct {
 	SelectedStream AudioStream    `json:"selectedStream"`
 	Metadata       Metadata       `json:"metadata"`
 	ProbeRuntimeID string         `json:"probeRuntimeId"`
+}
+
+// AudioFingerprint is the compressed base64 Chromaprint value used by
+// AcoustID. FingerprintSHA256 supports an indexed exact-equality check without
+// replacing the interoperable Fingerprint value. Approximate matching requires
+// decoding/comparing raw Chromaprint items; a matching ISRC alone is never
+// treated as proof that two masters have identical audio.
+type AudioFingerprint struct {
+	Contract          string `json:"contract"`
+	Format            string `json:"format"`
+	Algorithm         int    `json:"algorithm"`
+	Fingerprint       string `json:"fingerprint"`
+	FingerprintSHA256 string `json:"fingerprintSha256"`
+	Scope             string `json:"scope"`
+	DecoderRuntimeID  string `json:"decoderRuntimeId"`
 }
 
 type Window struct {

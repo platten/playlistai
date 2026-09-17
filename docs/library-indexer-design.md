@@ -100,9 +100,11 @@ and merges by score then stable track ID. ANN is not included because no execute
 2M-row measurement justified it; exact search remains the correctness backend.
 
 The `.paipack` format is documented in [paipack-format.md](paipack-format.md).
-Version 3 contains normalized sparse learning/statistics tables, a SQLite
+Version 4 contains normalized sparse learning/statistics tables, a SQLite
 metadata snapshot, and packed float32 vectors, not audio, PCM, absolute paths,
-or giant JSON model/vector arrays. Desktop import builds checksum-verified
+or giant JSON model/vector arrays. It also retains embedded ISRC and recording
+MBID tags and a locally generated AcoustID-compatible Chromaprint value. The
+fingerprint is not submitted to a remote service. Desktop import builds checksum-verified
 metadata/artist and exact-MERT derivative indexes before atomic activation.
 
 ## Distribution
@@ -127,7 +129,7 @@ when bytes are embedded. `--yes` is deliberately absent. Network is used only by
 authorized standard-mode asset setup; `--offline` rejects it.
 
 Linux amd64 with glibc is the validated target. The codec evidence build needs
-glibc 2.35 or newer; the pinned ONNX Runtime also needs its documented C/C++
+glibc 2.36 or newer; the pinned ONNX Runtime also needs its documented C/C++
 runtime libraries. Alpine/musl and arm64 are not claimed. A `noexec` state mount
 can be handled with an executable `--runtime-dir`; the application never asks to
 remount a filesystem or weaken security.
