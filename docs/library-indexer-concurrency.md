@@ -40,9 +40,10 @@ the same live area contains a PTerm box showing directory enumeration until an
 audio file is found, then the most recent file admitted by scan or analysis.
 Activity rendering does not wait on the SQLite progress snapshot, so a briefly
 busy read connection cannot leave the box stuck at its initial message. A
-once-per-second active-time heartbeat makes a long decode or inference request
-visibly live even when durable counts have not changed. Counts render on a
-separate summary line, leaving stable width for the PTerm count/percentage bar;
+file or directory activity event redraws only that transient box; it never
+issues a durable count query. The durable snapshot and active-time heartbeat
+refresh once per second, keeping scan cost linear as the inventory grows. Counts
+render on a separate summary line, leaving stable width for the PTerm count/percentage bar;
 the bar is regenerated every 30 seconds even when the snapshot is unchanged.
 A growing job total can reduce the displayed percentage, but cannot remove the
 bar or retain an obsolete denominator. FLAC activity over 500,000,000 bytes is
@@ -93,8 +94,9 @@ Each `run` completes discovery before analysis. The barrier publishes an
 `inventory.jsonl` containing one row for each unique audio file with compatible
 pending work plus a `diff.jsonl` with the same file rows and nested stage jobs.
 Directories, non-audio entries, and already-settled files are excluded from both
-manifest streams and from progress totals. The stage jobs are frozen in
-`scan_diff_jobs`; analysis can claim only that epoch's diff. A directory is read
+manifest streams. Scan progress reports every supported file observed in the
+current epoch and separately reports the pending-work subset. The stage jobs are
+frozen in `scan_diff_jobs`; analysis can claim only that epoch's diff. A directory is read
 in 256-entry chunks; each child batch is idempotently committed to the durable
 frontier before the parent is completed. Pool-level heartbeats renew directory
 and analysis leases. A full in-memory queue therefore cannot lose or deadlock
@@ -183,7 +185,9 @@ Schema v4 stores each immutable epoch's stage work in `scan_diff_jobs` and its
 directory-symlink traversal policy on the scan epoch, preventing a resumed
 frontier from mixing enabled and disabled traversal.
 Manifest format v2 groups that work into one diff row per audio file and records
-the stage-job count separately from the file count. Manifest generations are
+the stage-job count separately from the file count. Inventory and diff JSONL are
+emitted together from one ordered database cursor, avoiding a second full sort
+and traversal as the manifest grows. Manifest generations are
 atomically renamed under `STATE/manifests`, and include hashes for their
 inventory and diff JSONL streams. Operational problems are appended
 to the private `STATE/issues.jsonl`; structured locations contain aliases and

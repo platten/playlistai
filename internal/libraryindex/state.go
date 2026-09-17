@@ -178,6 +178,7 @@ CREATE TABLE IF NOT EXISTS files (
  UNIQUE(root_id,relative_path)
 );
 CREATE INDEX IF NOT EXISTS files_identity ON files(root_id,device,inode);
+CREATE INDEX IF NOT EXISTS files_scan_epoch ON files(last_seen_epoch,status,id);
 CREATE TABLE IF NOT EXISTS jobs (
  id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, file_id TEXT NOT NULL REFERENCES files(id),
  source_revision TEXT NOT NULL, semantic_key TEXT NOT NULL, state TEXT NOT NULL,
@@ -186,6 +187,7 @@ CREATE TABLE IF NOT EXISTS jobs (
  updated_at TEXT NOT NULL, UNIQUE(kind,file_id,semantic_key)
 );
 CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(kind,state,updated_at,id);
+CREATE INDEX IF NOT EXISTS jobs_file_active ON jobs(file_id,kind,semantic_key,state);
 CREATE TABLE IF NOT EXISTS scan_diff_jobs (
  epoch_id INTEGER NOT NULL REFERENCES scan_epochs(id), job_id INTEGER NOT NULL REFERENCES jobs(id),
  source_revision TEXT NOT NULL, kind TEXT NOT NULL, semantic_key TEXT NOT NULL,

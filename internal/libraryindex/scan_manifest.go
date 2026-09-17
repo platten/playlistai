@@ -150,46 +150,20 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 	if err != nil {
 		return report, err
 	}
-	rows, err := s.reader.QueryContext(ctx, `SELECT DISTINCT f.id,r.alias,f.relative_path,f.size,d.source_revision,f.extension
-		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id
-		JOIN files f ON f.id=j.file_id JOIN roots r ON r.id=f.root_id
-		WHERE d.epoch_id=? ORDER BY r.alias,f.relative_path,f.id`, epoch)
-	if err != nil {
-		_, _ = inventory.close()
-		return report, err
-	}
-	for rows.Next() {
-		var item scanManifestFile
-		if err := rows.Scan(&item.FileID, &item.RootAlias, &item.Path, &item.Size, &item.SourceRevision, &item.Extension); err != nil {
-			rows.Close()
-			_, _ = inventory.close()
-			return report, err
-		}
-		item.Path = filepath.ToSlash(item.Path)
-		if err := inventory.write(item); err != nil {
-			rows.Close()
-			_, _ = inventory.close()
-			return report, err
-		}
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		_, _ = inventory.close()
-		return report, err
-	}
-	inventoryHash, err := inventory.close()
-	if err != nil {
-		return report, err
-	}
-
 	diff, err := newHashedJSONL(filepath.Join(stage, "diff.jsonl"))
 	if err != nil {
+		_, _ = inventory.close()
 		return report, err
 	}
-	rows, err = s.reader.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,f.size,d.source_revision,f.extension,d.kind,d.semantic_key
+	closeOutputs := func() {
+		_, _ = inventory.close()
+		_, _ = diff.close()
+	}
+	rows, err := s.reader.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,f.size,d.source_revision,f.extension,d.kind,d.semantic_key
 		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id JOIN files f ON f.id=j.file_id JOIN roots r ON r.id=f.root_id
 		WHERE d.epoch_id=? ORDER BY r.alias,f.relative_path,f.id,d.kind`, epoch)
 	if err != nil {
-		_, _ = diff.close()
+		closeOutputs()
 		return report, err
 	}
 	var current *scanDiffFile
@@ -197,6 +171,9 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 	flushCurrent := func() error {
 		if current == nil {
 			return nil
+		}
+		if err := inventory.write(current.scanManifestFile); err != nil {
+			return err
 		}
 		if err := diff.write(*current); err != nil {
 			return err
@@ -209,14 +186,14 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 		var job scanDiffJob
 		if err := rows.Scan(&file.FileID, &file.RootAlias, &file.Path, &file.Size, &file.SourceRevision, &file.Extension, &job.Kind, &job.SemanticKey); err != nil {
 			rows.Close()
-			_, _ = diff.close()
+			closeOutputs()
 			return report, err
 		}
 		file.Path = filepath.ToSlash(file.Path)
 		if current == nil || current.FileID != file.FileID {
 			if err := flushCurrent(); err != nil {
 				rows.Close()
-				_, _ = diff.close()
+				closeOutputs()
 				return report, err
 			}
 			current = &scanDiffFile{scanManifestFile: file}
@@ -226,15 +203,16 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 	}
 	if err := flushCurrent(); err != nil {
 		rows.Close()
-		_, _ = diff.close()
+		closeOutputs()
 		return report, err
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		_, _ = diff.close()
+		closeOutputs()
 		return report, err
 	}
+	inventoryHash, inventoryErr := inventory.close()
 	diffHash, err := diff.close()
-	if err != nil {
+	if err := errors.Join(inventoryErr, err); err != nil {
 		return report, err
 	}
 
