@@ -17,6 +17,7 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
+	requestOverlayProvider  RequestOverlayProvider
 	enhancedProvider        EnhancedAudioProvider
 	enhancedRefreshProvider EnhancedAudioRefreshProvider
 	enhancedPreviewProvider func() *audio.Service
@@ -42,6 +43,23 @@ type Orchestrator struct {
 	semantic                ports.SemanticSearcher
 	scorer                  ports.SemanticScorer
 	cfg                     Config
+}
+
+// RequestOverlay pins optional immutable catalog evidence for one complete
+// recommendation. Catalog, resolver, and retriever must describe the same
+// generation. Release is called only after every ranking/sequence reader ends.
+type RequestOverlay struct {
+	Catalog   ports.Catalog
+	Resolver  ports.ReferenceResolver
+	Retriever ports.CandidateRetriever
+	Release   func()
+}
+
+type RequestOverlayProvider func(context.Context, ports.Catalog, ports.ReferenceResolver, ports.CandidateRetriever) (RequestOverlay, error)
+
+func (o *Orchestrator) WithRequestOverlayProvider(provider RequestOverlayProvider) *Orchestrator {
+	o.requestOverlayProvider = provider
+	return o
 }
 
 func (o *Orchestrator) WithCandidateSource(source ports.MusicCandidateSource) *Orchestrator {
@@ -180,6 +198,11 @@ func (o *Orchestrator) unsupportedEssentialReasons(intent core.MusicIntent) []co
 	var reasons []core.OutcomeReason
 	for _, criterion := range intent.EssentialCriteria {
 		supported := o.scorer != nil
+		if catalog, ok := o.cat.(interface {
+			SupportsCriterion(core.MusicalCriterion) bool
+		}); ok && catalog.SupportsCriterion(criterion) {
+			supported = true
+		}
 		if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && o.knowledge != nil && len(o.knowledge.Tracks) > 0 && (criterion.Kind == "genre" || criterion.Kind == "style") {
 			supported = true
 		}
@@ -202,6 +225,11 @@ func (o *Orchestrator) uncoveredEssentialReasons(ctx context.Context, intent cor
 	}
 	var reasons []core.OutcomeReason
 	for _, criterion := range intent.EssentialCriteria {
+		if catalog, ok := o.cat.(interface {
+			SupportsCriterion(core.MusicalCriterion) bool
+		}); ok && catalog.SupportsCriterion(criterion) {
+			continue
+		}
 		if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && o.knowledge != nil && len(o.knowledge.Tracks) > 0 && (criterion.Kind == "genre" || criterion.Kind == "style") {
 			continue
 		}
@@ -592,6 +620,32 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			o.retriever = retriever.withSearchSession()
 		}
 	}
+	if o.requestOverlayProvider != nil {
+		overlay, err := o.requestOverlayProvider(ctx, o.cat, o.resolver, o.retriever)
+		if err != nil {
+			return core.Playlist{}, err
+		}
+		if overlay.Release != nil {
+			defer overlay.Release()
+		}
+		if overlay.Catalog != nil {
+			o.cat = overlay.Catalog
+		}
+		if overlay.Resolver != nil {
+			o.resolver = overlay.Resolver
+		}
+		if overlay.Retriever != nil {
+			o.retriever = overlay.Retriever
+		}
+		// These stages consult catalog metadata and vectors after retrieval, so
+		// rebuild their request-local views over the pinned composite catalog.
+		o.ranker = NewRanker(o.cat, o.cfg)
+		o.selector = NewSelector(o.cat, o.cfg)
+		o.sequencer = NewSequencer(o.cat, o.cfg)
+	}
+	if o.resolver != nil {
+		defer func() { result.EvidenceCatalogVersion = o.resolver.CatalogVersion() }()
+	}
 	intent := request.Intent.Normalized()
 	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		ctx = audio.WithLazyEnhancedBudget(ctx, audio.EnhancedTrackLimit, audio.EnhancedTimeLimit)
@@ -847,7 +901,8 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	positiveSemantic, _ := semanticQueryText(intent)
-	semanticSeeded := len(cachedAudio) > 0 || len(mertAudio) > 0 || discovery != nil || positiveSemantic != "" && o.semantic != nil || o.knowledge != nil && len(o.knowledge.Candidates) > 0
+	_, localMetadata := o.retriever.(interface{ SupportsIntentMetadata() bool })
+	semanticSeeded := len(cachedAudio) > 0 || len(mertAudio) > 0 || discovery != nil || positiveSemantic != "" && (o.semantic != nil || localMetadata) || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
 		if core.WantsInstrumental(intent) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "instrumental_seed_unavailable", Detail: "No suitable instrumental starting point could be found in the catalog or online lookup.", Action: "retry the search or name an instrumental artist or recording"}}), nil

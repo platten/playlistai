@@ -1,0 +1,21 @@
+{
+  "state": "/home/user/.local/share/playlist-indexer",
+  "runtimeDir": "",
+  "concurrency": "auto",
+  "workers": "auto",
+  "ioProfile": "nas",
+  "ioWorkers": 2,
+  "scanWorkers": 2,
+  "metadataWorkers": 2,
+  "decodeWorkers": 2,
+  "dspWorkers": 2,
+  "inferenceWorkers": 0,
+  "inferenceThreads": 0,
+  "fitWorkers": 0,
+  "indexWorkers": 0,
+  "queueDepth": 16,
+  "maxRam": "8GiB",
+  "maxOpenFiles": 512,
+  "shutdownTimeout": "30s",
+  "seed": 42
+}

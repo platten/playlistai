@@ -33,11 +33,14 @@ type MERTWorker struct {
 	Executable string
 	BundleDir  string
 	Model      core.AudioRepresentationIdentity
-	mu         sync.Mutex
-	closed     bool
-	cmd        *exec.Cmd
-	stdin      io.WriteCloser
-	stdout     io.ReadCloser
+	// InferenceThreads is the explicit native intra-operation budget. Zero
+	// retains the conservative legacy default of two threads.
+	InferenceThreads int
+	mu               sync.Mutex
+	closed           bool
+	cmd              *exec.Cmd
+	stdin            io.WriteCloser
+	stdout           io.ReadCloser
 }
 
 func (w *MERTWorker) Identity() core.AudioRepresentationIdentity { return w.Model }
@@ -70,17 +73,21 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		return nil, err
 	}
 	if w.cmd == nil {
-		executable, flag := w.Executable, "--bundle"
+		executable, flag := w.Executable, "--mert-worker"
 		if executable == "" {
 			var err error
 			executable, err = os.Executable()
 			if err != nil {
 				return nil, err
 			}
-			flag = "--mert-worker"
 		}
 		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
-		process.Background(cmd)
+		process.Owned(cmd)
+		threads := w.InferenceThreads
+		if threads <= 0 {
+			threads = 2
+		}
+		cmd.Env = append(os.Environ(), fmt.Sprintf("PLAYLISTAI_MERT_INTRA_THREADS=%d", threads))
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -141,6 +148,15 @@ func (w *MERTWorker) stopLocked() {
 // Unload releases native memory when analysis is disabled. A later enabled
 // request can start this same validated worker again.
 func (w *MERTWorker) Unload() { w.mu.Lock(); defer w.mu.Unlock(); w.stopLocked() }
+
+func (w *MERTWorker) ResidentBytes() int64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.cmd == nil || w.cmd.Process == nil {
+		return 0
+	}
+	return processResidentBytes(w.cmd.Process.Pid)
+}
 
 // Close retires the worker permanently, including references held by a
 // superseded generation during model replacement or application shutdown.

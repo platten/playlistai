@@ -13,6 +13,12 @@ import (
 // Its complete specification is docs/dsp-measurements.md.
 const DSPVersion = "dsp-original-channelpower-hann-pow2ge100ms-hopquarter-band20to12000-rms400ms-p95p10-fluxpower-mad3-refractory100ms/v1"
 
+// LocalDSPVersion retains the same measurement definitions while accepting
+// original float decoder output (including values beyond nominal full scale)
+// and source rates through 192 kHz. It is intentionally distinct from the
+// preview cache contract.
+const LocalDSPVersion = "dsp-local-original-channelpower-float-source8to192k-hann-pow2ge100ms-hopquarter-band20to12000-rms400ms-p95p10-fluxpower-mad3-refractory100ms/v2"
+
 const dspSilencePower = 1e-12
 
 func dspKnown(value float64) core.DSPValue {
@@ -36,10 +42,21 @@ func dspPowerDB(power float64) float64 { return 10 * math.Log10(math.Max(power, 
 // it. It measures channel powers separately, preserving anti-phase stereo. All
 // allocated audio and spectrum buffers are cleared before return.
 func MeasureDSP(ctx context.Context, pcm DecodedPCM) (core.DSPFeatures, error) {
+	return measureDSP(ctx, pcm, 96000, true)
+}
+
+// MeasureLocalDSP measures one contiguous decoded local interval. Callers
+// aggregate disjoint windows independently; sequential flux/onset statistics
+// must never bridge gaps between windows.
+func MeasureLocalDSP(ctx context.Context, pcm DecodedPCM) (core.DSPFeatures, error) {
+	return measureDSP(ctx, pcm, 192000, false)
+}
+
+func measureDSP(ctx context.Context, pcm DecodedPCM, maximumRate int, nominalRangeOnly bool) (core.DSPFeatures, error) {
 	if err := ctx.Err(); err != nil {
 		return core.DSPFeatures{}, err
 	}
-	if pcm.SampleRate < 8000 || pcm.SampleRate > 96000 || pcm.Channels < 1 || pcm.Channels > 8 ||
+	if pcm.SampleRate < 8000 || pcm.SampleRate > maximumRate || pcm.Channels < 1 || pcm.Channels > 8 ||
 		len(pcm.Samples) == 0 || len(pcm.Samples)%pcm.Channels != 0 ||
 		len(pcm.Samples)/pcm.Channels > pcm.SampleRate*MaxPreviewSeconds {
 		return core.DSPFeatures{}, fmt.Errorf("audio: invalid DSP PCM dimensions")
@@ -56,7 +73,7 @@ func MeasureDSP(ctx context.Context, pcm DecodedPCM) (core.DSPFeatures, error) {
 			}
 		}
 		x := float64(sample)
-		if math.IsNaN(x) || math.IsInf(x, 0) || math.Abs(x) > 1 {
+		if math.IsNaN(x) || math.IsInf(x, 0) || nominalRangeOnly && math.Abs(x) > 1 {
 			return core.DSPFeatures{}, fmt.Errorf("audio: invalid DSP PCM sample")
 		}
 		power += x * x

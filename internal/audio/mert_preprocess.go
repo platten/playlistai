@@ -12,11 +12,23 @@ const MERTDimension = 768
 const MERTPreprocessingVersion = "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1"
 const MERTPoolingVersion = "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
 const MERTRevision = "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5"
+const MERTLocalPreprocessingVersion = "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0-source8to192k-float/v2"
 
 // MERTResample uses a windowed low-pass sinc before downsampling. It returns
 // owned mono PCM; the caller clears it. DSP retains the original channel power.
 func MERTResample(ctx context.Context, pcm DecodedPCM) ([]float32, error) {
-	if pcm.SampleRate < 8000 || pcm.SampleRate > 96000 || pcm.Channels < 1 || pcm.Channels > 8 || len(pcm.Samples)%pcm.Channels != 0 || len(pcm.Samples) == 0 || len(pcm.Samples)/pcm.Channels > pcm.SampleRate*MaxPreviewSeconds {
+	return mertResample(ctx, pcm, 96000)
+}
+
+// MERTResampleLocal extends the established sinc64 contract to validated local
+// float PCM through 192 kHz. Its distinct identity prevents old preview-cache
+// parity from being inferred solely from the shared 768-dimensional output.
+func MERTResampleLocal(ctx context.Context, pcm DecodedPCM) ([]float32, error) {
+	return mertResample(ctx, pcm, 192000)
+}
+
+func mertResample(ctx context.Context, pcm DecodedPCM, maximumRate int) ([]float32, error) {
+	if pcm.SampleRate < 8000 || pcm.SampleRate > maximumRate || pcm.Channels < 1 || pcm.Channels > 8 || len(pcm.Samples)%pcm.Channels != 0 || len(pcm.Samples) == 0 || len(pcm.Samples)/pcm.Channels > pcm.SampleRate*MaxPreviewSeconds {
 		return nil, fmt.Errorf("audio: invalid MERT source PCM")
 	}
 	frames := len(pcm.Samples) / pcm.Channels

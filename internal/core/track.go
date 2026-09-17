@@ -28,6 +28,12 @@ func (t TrackRef) Display() string {
 // ProvisionalRecordingKey is the catalog-independent recording identity used
 // until canonical recording IDs are available.
 func ProvisionalRecordingKey(t TrackRef) string {
+	// A local pack preserves editions/masters and has no authoritative link to
+	// a bundled recording. Artist/title equality must not silently collapse it
+	// across catalogs; a future exact linkage can supply a canonical identity.
+	if strings.HasPrefix(t.ID, "local:") {
+		return "local-id\x00" + t.ID
+	}
 	return NormalizeIdentityPart(t.Artist) + "\x00" + NormalizeIdentityPart(t.Title)
 }
 

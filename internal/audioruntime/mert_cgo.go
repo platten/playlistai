@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
 
 	ort "github.com/yalue/onnxruntime_go"
 
@@ -36,7 +37,22 @@ func RunMERT(dir string) error {
 		return err
 	}
 	defer func() { _ = options.Destroy() }()
-	for _, err := range []error{options.SetIntraOpNumThreads(2), options.SetInterOpNumThreads(1), options.SetCpuMemArena(false), options.SetMemPattern(false)} {
+	threads := 2
+	if raw := os.Getenv("PLAYLISTAI_MERT_INTRA_THREADS"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 1 || parsed > 256 {
+			return fmt.Errorf("invalid MERT intra-operation thread budget")
+		}
+		threads = parsed
+	}
+	for _, err := range []error{
+		options.SetIntraOpNumThreads(threads), options.SetInterOpNumThreads(1),
+		options.SetExecutionMode(ort.ExecutionModeSequential),
+		options.AddSessionConfigEntry("session.intra_op.allow_spinning", "0"),
+		options.AddSessionConfigEntry("session.inter_op.allow_spinning", "0"),
+		options.AddSessionConfigEntry("session.force_spinning_stop", "1"),
+		options.SetCpuMemArena(false), options.SetMemPattern(false),
+	} {
 		if err != nil {
 			return err
 		}

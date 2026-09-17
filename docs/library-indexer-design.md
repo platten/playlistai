@@ -1,0 +1,104 @@
+# Playlist indexer implementation contract
+
+This document records the implementation inspected and extended at commit
+`d7f68c36a1e0d4a28d40b80aaad87c581470627c` on September 16, 2026. The work
+was performed in the existing `github.com/platten/playlistai` Go module. The
+command is `cmd/playlist-indexer`; its dependency graph does not import Wails,
+GTK, or WebKit.
+
+## Reused and separated code
+
+The repository already had the real MERT-v1-95M ONNX graph contract, the native
+ONNX Runtime worker, sinc64 mono/24 kHz preprocessing, padding masks, final-layer
+masked pooling, normalized 768-dimensional output, bundle verification, and
+parity fixtures. Those components are reused. The worker protocol now supports
+multiple independently owned warm processes and an explicit intra-op thread
+budget.
+
+The old original-audio input was not a general library decoder. It accepted a
+bounded MP3 preview (8 MiB and at most 60 seconds). It did not decode arbitrary
+FLAC or AAC merely by changing a filename. The library analyzer therefore uses
+`internal/localaudio` and a pinned private FFmpeg 8.1.2 payload. The old preview
+contract remains unchanged.
+
+Likewise, preview DSP rejected float samples outside nominal full scale and
+rates above 96 kHz. Library analysis uses the separately identified local DSP
+and MERT preprocessing contracts. They accept finite float32 decode output,
+preserve values above nominal full scale, and support ordinary mono/stereo input
+through 192 kHz. Original PCM branches before any MERT normalization. No source
+file is rewritten, tagged, normalized, transcoded, or deleted.
+
+## State and identities
+
+SQLite stores roots, durable directory frontiers, scan epochs, file assets,
+fenced jobs, raw metadata, DSP, MERT vectors, and immutable generation pointers.
+WAL uses `synchronous=FULL`; the embedded modernc SQLite is 3.53.4, newer than
+the upstream 3.51.3 WAL-reset correction. Only the dedicated writer connection
+mutates state. Workers never retain SQL transactions during probe, decode, DSP,
+or inference.
+
+Root identities derive from explicit logical aliases, not mount paths. File IDs
+derive from root identity plus safe relative path and remain stable across
+mount-point changes and isolated serial/parallel validation states. Device and
+inode preserve identity across same-root moves when available. Source revisions
+use stat data only as a change fence; they are not described as cryptographic
+audio identity. Full hashes remain an explicit future verification option.
+
+An epoch reconciles absence only after every durable directory task in that
+root finishes successfully. Permission errors, missing mounts, interruption,
+and incomplete frontiers preserve existing inventory and tombstones.
+Completed directory tasks retain a stat revision. When an interrupted epoch is
+resumed, only completed directories whose revision changed (or can no longer be
+statted) are returned to the durable frontier; legacy v1 state is migrated and
+rechecks completed directories once. A new invocation after a completed epoch
+still enumerates the full configured scope. Per-file source revisions and
+semantic job keys keep unchanged completed analysis out of the claim queue,
+while new or changed files become pending.
+
+## Analysis and learning
+
+Fast, balanced, and deep profiles request 3, 6, and 12 five-second windows.
+Balanced centers are 10%, 26%, 42%, 58%, 74%, and 90%. Clamping and interval
+subtraction ensure overlapping decoded time is not counted twice. Each decoded
+window is immutable until its DSP and MERT consumers finish. Backpressure is
+controlled by aggregate CPU, source I/O, descriptor, RAM, and PCM byte
+reservations.
+
+The frozen learning generation contains a distinct-artist/album TF-IDF genre
+baseline, bounded sparse implicit SVD when the data has meaningful rank,
+deterministic diverse MERT sampling, mini-batch spherical k-means, full-corpus
+assignment, and an immutable exact cosine index. Missing embeddings never enter
+the fit as zeros. Exact search splits fixed shards, retains bounded local top-K,
+and merges by score then stable track ID. ANN is not included because no executed
+2M-row measurement justified it; exact search remains the correctness backend.
+
+The `.paipack` format is documented in [paipack-format.md](paipack-format.md).
+It contains a SQLite metadata snapshot and packed float32 vectors, not audio,
+PCM, absolute paths, or giant JSON vector arrays.
+
+## Distribution
+
+`playlist-indexer` is a self-extracting single-file distribution, not a pure-Go
+or guaranteed static ELF. `cmd/indexerpack` appends a deterministic ZIP payload
+and authenticated trailer to the Go launcher. The standard artifact contains
+the codec payload and performs an explicit separately licensed MERT setup/import.
+The offline artifact contains both codec and CPU MERT payloads. Inner manifests
+and hashes are checked again before private, versioned, locked atomic promotion.
+
+Build both variants with:
+
+```sh
+PLAYLIST_INDEXER_CODEC_PAYLOAD=/absolute/codec-payload \
+PLAYLIST_INDEXER_MERT_BUNDLE=/absolute/mert-linux-amd64 \
+./scripts/build-playlist-indexer.sh
+```
+
+MERT remains CC-BY-NC-4.0 and always requires `--accept-model-license`, including
+when bytes are embedded. `--yes` is deliberately absent. Network is used only by
+authorized standard-mode asset setup; `--offline` rejects it.
+
+Linux amd64 with glibc is the validated target. The codec evidence build needs
+glibc 2.35 or newer; the pinned ONNX Runtime also needs its documented C/C++
+runtime libraries. Alpine/musl and arm64 are not claimed. A `noexec` state mount
+can be handled with an executable `--runtime-dir`; the application never asks to
+remount a filesystem or weaken security.

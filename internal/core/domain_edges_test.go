@@ -55,6 +55,9 @@ func TestQualifiedReferencesAndTrackIdentity(t *testing.T) {
 	if ProvisionalRecordingKey(TrackRef{Artist: " ARTIST ", Title: "Some  Song"}) != "artist\x00some song" {
 		t.Fatal("identity was not normalized")
 	}
+	if ProvisionalRecordingKey(TrackRef{ID: "local:main:edition-a", Artist: "Artist", Title: "Song"}) == ProvisionalRecordingKey(TrackRef{ID: "bundled", Artist: "Artist", Title: "Song"}) {
+		t.Fatal("local edition was collapsed with bundled metadata match")
+	}
 	ids := (Playlist{Tracks: []TrackRef{{ID: "b"}, {ID: "a"}, {ID: "b"}}}).IDs()
 	if !reflect.DeepEqual(ids, []string{"b", "a", "b"}) {
 		t.Fatalf("IDs reordered: %v", ids)
