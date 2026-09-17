@@ -97,6 +97,14 @@ so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
 
+On the first Ctrl-C or SIGTERM, the indexer stops admitting new directory and
+analysis claims, then lets the bounded set of already-admitted operations finish
+and commit through the durable writer. It closes native workers, the issue log,
+and SQLite before exiting with code 130; pending frontier/jobs resume on the
+next invocation with the same state. `--shutdown-timeout` bounds that drain
+(default 30 seconds), after which remaining owned work is canceled without being
+marked complete. A second signal is the explicit immediate-force path.
+
 `run` always completes that inventory scan before it starts file analysis. It
 then writes a checksummed snapshot under
 `STATE/manifests/scan-EPOCH/`: `inventory.jsonl` records only unique audio files

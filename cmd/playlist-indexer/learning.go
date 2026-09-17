@@ -19,7 +19,7 @@ import (
 	"github.com/platten/playlistai/internal/librarysearch"
 )
 
-func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
+func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Writer) (code int, runErr error) {
 	command := args[0]
 	if command == "bench" {
 		return runBenchmark(ctx, args[1:], stdout, stderr)
@@ -44,11 +44,18 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 	if err != nil {
 		return 1, err
 	}
+	if gracefulStopRequested(ctx) {
+		return 130, libraryindex.ErrShutdownRequested
+	}
 	state, err := libraryindex.OpenState(ctx, common.state, command, max(2, plan.HeavyWorkers))
 	if err != nil {
 		return 1, err
 	}
-	defer state.Close()
+	defer func() {
+		if closeErr := state.Close(); closeErr != nil {
+			code, runErr = 1, fmt.Errorf("close durable state: %w", closeErr)
+		}
+	}()
 	switch command {
 	case "fit":
 		progress := startPipelineProgress(ctx, state, nil, stderr, common.noProgress, "Fitting library", progressActivity)
@@ -57,6 +64,9 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		result, err := state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), TrainingSample: *trainingSample, Clusters: *clusters, Refit: *refit, Plan: plan})
 		if err != nil {
 			return 1, err
+		}
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
 		}
 		succeeded = true
 		progress.Stop(true)
@@ -69,6 +79,9 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		if err != nil {
 			return 1, err
 		}
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
+		}
 		return 0, json.NewEncoder(stdout).Encode(map[string]any{"trackId": *trackID, "neighbors": hits})
 	case "export":
 		if *out == "" {
@@ -80,6 +93,9 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 		manifest, err := state.ExportPack(ctx, *out)
 		if err != nil {
 			return 1, err
+		}
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
 		}
 		succeeded = true
 		progress.Stop(true)
@@ -168,6 +184,9 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	results := make([]benchmarkResult, 0, len(configs))
 	for _, config := range configs {
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
+		}
 		if config.workers > basePlan.EffectiveCPUSlots {
 			results = append(results, benchmarkResult{Configuration: config.name, Skipped: fmt.Sprintf("requires %d effective CPU slots; available %d", config.workers, basePlan.EffectiveCPUSlots)})
 			continue
@@ -262,7 +281,7 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	result.ColdSetup = time.Since(setupStart)
 	done := make(chan struct{})
 	close(done)
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profile}
+	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profile, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	analysisStart := time.Now()
 	monitorDone := make(chan struct{})
@@ -292,16 +311,25 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	if err == nil {
 		result.SemanticDigest, err = state.SemanticDigest(ctx)
 	}
+	if err == nil && gracefulStopRequested(ctx) {
+		err = libraryindex.ErrShutdownRequested
+	}
 	if err == nil {
 		fitStart := time.Now()
 		_, err = state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), Plan: plan})
 		result.FitDuration = time.Since(fitStart)
+	}
+	if err == nil && gracefulStopRequested(ctx) {
+		err = libraryindex.ErrShutdownRequested
 	}
 	packPath := filepath.Join(scratch, "benchmark.paipack")
 	if err == nil {
 		exportStart := time.Now()
 		_, err = state.ExportPack(ctx, packPath)
 		result.ExportDuration = time.Since(exportStart)
+	}
+	if err == nil && gracefulStopRequested(ctx) {
+		err = libraryindex.ErrShutdownRequested
 	}
 	if err == nil {
 		if info, statErr := os.Stat(packPath); statErr != nil {
@@ -327,6 +355,10 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 			latencies := make([]time.Duration, 0, 25)
 			if queryErr == nil {
 				for range 25 {
+					if gracefulStopRequested(ctx) {
+						queryErr = libraryindex.ErrShutdownRequested
+						break
+					}
 					started := time.Now()
 					_, queryErr = handle.Search(ctx, librarysearch.Query{Vector: vector, Limit: min(50, int(result.Report.AudioCompleted)-1), Workers: plan.IndexWorkers, Exclude: map[string]struct{}{queryID: {}}})
 					latencies = append(latencies, time.Since(started))

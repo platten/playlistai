@@ -42,6 +42,9 @@ type Analyzer struct {
 	Profile   SamplingProfile
 	OnFile    func(FileActivity)
 	OnIssue   func(ProcessingIssue)
+	// StopAdmission closes on graceful shutdown. Dispatchers stop claiming new
+	// jobs while workers drain every job already admitted to their queues.
+	StopAdmission <-chan struct{}
 	// FreezeManifest prevents a file changed after the scan/diff barrier from
 	// being admitted again during this run. The next scan observes and queues it.
 	FreezeManifest bool
@@ -161,7 +164,9 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 			defer wg.Done()
 			if err := a.runMetadata(ctx, discoveryDone, &report); err != nil {
 				fatal <- err
-				cancel(err)
+				if !errors.Is(err, ErrShutdownRequested) {
+					cancel(err)
+				}
 			}
 		}()
 	}
@@ -174,7 +179,9 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 			defer wg.Done()
 			if err := a.runAudio(ctx, discoveryDone, &report, options.Profile); err != nil {
 				fatal <- err
-				cancel(err)
+				if !errors.Is(err, ErrShutdownRequested) {
+					cancel(err)
+				}
 			}
 		}()
 	}
@@ -386,6 +393,9 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone <-chan struct{}, out chan<- Job, leases *jobLeaseTracker) error {
 	discoveryComplete := false
 	for {
+		if shutdownRequested(a.StopAdmission) {
+			return ErrShutdownRequested
+		}
 		if !discoveryComplete {
 			select {
 			case <-discoveryDone:
@@ -427,6 +437,8 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 			select {
 			case <-ctx.Done():
 				return context.Cause(ctx)
+			case <-a.StopAdmission:
+				return ErrShutdownRequested
 			case <-time.After(20 * time.Millisecond):
 			}
 			continue

@@ -73,6 +73,17 @@ workspace from remaining release gates.
   completed file. A real pseudo-terminal run showed a stable `1 audio files`
   total while that FLAC moved from queued to active to finished; the directory
   and text file did not increase the bar total.
+- The rebuilt standard executable was interrupted with SIGINT during real
+  bundled-FFmpeg analysis of 250 FLAC files in serial mode. It stopped new
+  admission, drained and committed its bounded 32-file admitted set, exited
+  130, and reported 32 completed plus 218 pending with zero active/leased or
+  failed files. Reopening the same state queued exactly those 218 files,
+  completed all of them, and ended with 250 metadata records and no pending,
+  active, or failed work. Repeated race tests also interrupt a claimed directory
+  task, verify one completed plus one pending frontier row with no lease, close
+  and reopen SQLite, and resume the same enumeration epoch. The resumed real
+  state returned `ok` from `PRAGMA integrity_check` and no rows from
+  `PRAGMA foreign_key_check`.
 - Race-enabled regressions freeze a diff, change a source's size, verify that it
   cannot re-enter that epoch after being marked
   `source_changed_after_manifest`, and verify that the next scan creates a new
@@ -168,13 +179,13 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          069db9f0d31e1962b3abf5acb6ab7366f0a6348f547fd06733ff1bfd59ce8265
-bin/playlist-indexer-offline  6bfc7f766f0fa3a1c390e7a791d6f36d9699e4c4d9b12c5b20f1fb734bc1e8d4
+bin/playlist-indexer          5825f07eb76b9c32f5d6c40c5aede016b46455b0a4b7e5d1a6dd5d0221fc75e2
+bin/playlist-indexer-offline  d9a055309b09b48377d6c8f1f6cf2c2c6ee1e6fce8e242d7817ab64d20909d46
 ```
 
-The standard file is 24,049,525 bytes and the offline file is 425,519,093
+The standard file is 24,064,453 bytes and the offline file is 425,534,021
 bytes. `./scripts/test.sh` passed after the September 17 scan-manifest,
-live activity rendering, and append-root changes: 221 frontend tests,
+live activity rendering, append-root, and graceful-shutdown changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and
 golangci-lint with zero findings. `GOOS=windows GOARCH=amd64 go test -run '^$'
 ./...` also passed after these changes; this is a cross-compile check, not a

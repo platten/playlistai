@@ -73,6 +73,13 @@ observes the new revision. Issues are durably appended to
 the private `STATE/issues.jsonl`; structured source locations remain logical,
 while native diagnostic detail may contain a physical path.
 
+Graceful shutdown has a separate stop-admission signal. The first interrupt
+prevents new frontier/job claims and later pipeline phases while keeping the
+operation context alive for the bounded claimed set to finish and commit. Only
+the configured timeout or a second signal escalates to cancellation. Reopening
+the state resets any surviving fenced leases to pending and resumes the same
+enumeration epoch or analysis jobs.
+
 ## Analysis and learning
 
 Fast, balanced, and deep profiles request 3, 6, and 12 five-second windows.

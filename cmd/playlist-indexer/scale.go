@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/platten/playlistai/internal/libraryindex"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
 )
@@ -90,6 +91,10 @@ func runScaleBenchmark(ctx context.Context, args []string, stdout, stderr io.Wri
 		finishMonitor()
 		return 1, err
 	}
+	if gracefulStopRequested(ctx) {
+		finishMonitor()
+		return 130, libraryindex.ErrShutdownRequested
+	}
 	result.IndexBytes, err = directoryBytes(indexDir)
 	if err != nil {
 		finishMonitor()
@@ -104,6 +109,10 @@ func runScaleBenchmark(ctx context.Context, args []string, stdout, stderr io.Wri
 	queryVector := syntheticVector(0, *dimension)
 	latencies := make([]time.Duration, 0, *queries)
 	for range *queries {
+		if gracefulStopRequested(ctx) {
+			err = libraryindex.ErrShutdownRequested
+			break
+		}
 		started := time.Now()
 		if _, err = index.Search(ctx, librarysearch.Query{Vector: queryVector, Limit: min(50, *rows), Workers: *workers}); err != nil {
 			break
@@ -116,6 +125,10 @@ func runScaleBenchmark(ctx context.Context, args []string, stdout, stderr io.Wri
 		return 1, err
 	}
 	result.QueryP50, result.QueryP95 = durationPercentile(latencies, .50), durationPercentile(latencies, .95)
+	if gracefulStopRequested(ctx) {
+		finishMonitor()
+		return 130, libraryindex.ErrShutdownRequested
+	}
 
 	packPath := filepath.Join(scratch, "synthetic.paipack")
 	space := librarypack.VectorSpace{
@@ -129,6 +142,9 @@ func runScaleBenchmark(ctx context.Context, args []string, stdout, stderr io.Wri
 		MERTGeneration: "synthetic-mert-v1", MERT: space,
 	}, &syntheticPackSource{rows: *rows, dimension: *dimension}, librarypack.DefaultLimits())
 	result.PackExport = time.Since(exportStart)
+	if err == nil && gracefulStopRequested(ctx) {
+		err = libraryindex.ErrShutdownRequested
+	}
 	if err == nil {
 		var info os.FileInfo
 		info, err = os.Stat(packPath)

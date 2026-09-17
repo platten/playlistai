@@ -2,6 +2,7 @@ package libraryindex
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,74 @@ import (
 	"testing"
 	"time"
 )
+
+func TestGracefulScanStopDrainsClaimedDirectoryAndResumes(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rootPath, "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(rootPath, "nested", "song.flac"), []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := t.TempDir()
+	state, err := OpenState(ctx, stateDir, "graceful-scan-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := state.EnsureRoot(ctx, rootPath, "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		_, scanErr := state.Scan(ctx, ScanOptions{
+			Roots: []Root{root}, Workers: 1, QueueDepth: 1,
+			SemanticJobs: map[string]string{"metadata": "probe/v1"}, StopAdmission: stop,
+			OnDirectory: func(path string) {
+				if path == "music" {
+					close(entered)
+					<-release
+				}
+			},
+		})
+		result <- scanErr
+	}()
+	<-entered
+	close(stop)
+	close(release)
+	if err := <-result; !errors.Is(err, ErrShutdownRequested) {
+		t.Fatalf("scan shutdown error=%v", err)
+	}
+	var completed, pending, leased int
+	if err := state.Reader().QueryRowContext(ctx, `SELECT
+		COALESCE(SUM(state='completed'),0),COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='leased'),0)
+		FROM directory_frontier`).Scan(&completed, &pending, &leased); err != nil {
+		t.Fatal(err)
+	}
+	if completed != 1 || pending != 1 || leased != 0 {
+		t.Fatalf("frontier after drain: completed=%d pending=%d leased=%d", completed, pending, leased)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := OpenState(ctx, stateDir, "graceful-scan-resume-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resumed.Close()
+	report, err := resumed.Scan(ctx, ScanOptions{Roots: []Root{root}, Workers: 1, QueueDepth: 1, SemanticJobs: map[string]string{"metadata": "probe/v1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Complete || !report.Resumed || report.Files != 1 {
+		t.Fatalf("resumed scan=%+v", report)
+	}
+}
 
 func TestDurableScanBoundsFrontierAndIgnoresNonRegularFiles(t *testing.T) {
 	ctx := context.Background()
