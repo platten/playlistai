@@ -91,6 +91,35 @@ func TestStateCoordinatorLockAndFencedCommit(t *testing.T) {
 	}
 }
 
+func TestUnavailableNativeFileIdentityDoesNotCollapsePaths(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "zero-file-identity-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, t.TempDir(), "root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{"first.mp3", "second.flac"} {
+		if _, err := state.ObserveFile(ctx, epoch, SourceFile{RootID: root.ID, RelativePath: relative, Size: 7, MTimeNS: 11, Extension: filepath.Ext(relative)}, map[string]string{"metadata": "v1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, err := state.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Files != 2 || status.JobsByState["pending"] != 2 {
+		t.Fatalf("zero native identities collapsed distinct paths: %+v", status)
+	}
+}
+
 func TestExpiredLeaseSupersedesOldAttempt(t *testing.T) {
 	ctx := context.Background()
 	state, err := OpenState(ctx, t.TempDir(), "test", 1)
