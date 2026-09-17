@@ -277,9 +277,10 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		return 1, err
 	}
 	addCommon(flags, &common)
-	var roots, rootAliases, exclusions stringList
+	var roots, rootAliases, appendRoots, exclusions stringList
 	flags.Var(&roots, "root", "source root; repeatable")
 	flags.Var(&rootAliases, "root-alias", "stable logical root as ALIAS=PATH; repeatable")
+	flags.Var(&appendRoots, "append-root", "additional stable source root as ALIAS=PATH; repeatable")
 	flags.Var(&exclusions, "exclude", "root-relative excluded subtree; repeatable")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
 	analysis := flags.String("analysis", "audio", "metadata or audio")
@@ -309,8 +310,8 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if err := plan.ValidateForAnalysis(metadataOnly); err != nil {
 		return 1, err
 	}
-	if command != "analyze" && len(roots)+len(rootAliases) == 0 {
-		return 1, errors.New("at least one --root is required")
+	if command != "analyze" && len(roots)+len(rootAliases)+len(appendRoots) == 0 {
+		return 1, errors.New("at least one --root, --root-alias, or --append-root is required")
 	}
 	codec, err := resolveCodec(ctx, common)
 	if err != nil {
@@ -381,30 +382,44 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	var scanReport libraryindex.ScanReport
 	var scanErr error
 	if command != "analyze" {
-		resolvedRoots := make([]libraryindex.Root, 0, len(roots)+len(rootAliases))
-		seenAliases := make(map[string]struct{}, len(roots)+len(rootAliases))
-		for _, specification := range rootAliases {
-			alias, rootPath, ok := strings.Cut(specification, "=")
-			alias, rootPath = strings.TrimSpace(alias), strings.TrimSpace(rootPath)
-			if !ok || alias == "" || rootPath == "" {
-				scanErr = errors.New("--root-alias must use ALIAS=PATH")
+		resolvedRoots := make([]libraryindex.Root, 0, len(roots)+len(rootAliases)+len(appendRoots))
+		seenAliases := make(map[string]struct{}, len(roots)+len(rootAliases)+len(appendRoots))
+		for _, namedRoots := range []struct {
+			flag       string
+			items      []string
+			additional bool
+		}{{flag: "--root-alias", items: rootAliases}, {flag: "--append-root", items: appendRoots, additional: true}} {
+			for _, specification := range namedRoots.items {
+				alias, rootPath, parseErr := parseNamedRoot(namedRoots.flag, specification)
+				if parseErr != nil {
+					scanErr = parseErr
+					break
+				}
+				if _, duplicate := seenAliases[alias]; duplicate {
+					scanErr = fmt.Errorf("duplicate root alias %q", alias)
+					break
+				}
+				seenAliases[alias] = struct{}{}
+				pipelineCtx := ctx
+				if analysisLifecycle != nil {
+					pipelineCtx = analysisLifecycle.ctx
+				}
+				var root libraryindex.Root
+				var rootErr error
+				if namedRoots.additional {
+					root, rootErr = state.EnsureAdditionalRoot(pipelineCtx, rootPath, alias)
+				} else {
+					root, rootErr = state.EnsureRoot(pipelineCtx, rootPath, alias)
+				}
+				if rootErr != nil {
+					scanErr = rootErr
+					break
+				}
+				resolvedRoots = append(resolvedRoots, root)
+			}
+			if scanErr != nil {
 				break
 			}
-			if _, duplicate := seenAliases[alias]; duplicate {
-				scanErr = fmt.Errorf("duplicate root alias %q", alias)
-				break
-			}
-			seenAliases[alias] = struct{}{}
-			pipelineCtx := ctx
-			if analysisLifecycle != nil {
-				pipelineCtx = analysisLifecycle.ctx
-			}
-			root, rootErr := state.EnsureRoot(pipelineCtx, rootPath, alias)
-			if rootErr != nil {
-				scanErr = rootErr
-				break
-			}
-			resolvedRoots = append(resolvedRoots, root)
 		}
 		for i, rootPath := range roots {
 			if scanErr != nil {
@@ -435,7 +450,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			if analysisLifecycle != nil {
 				pipelineCtx = analysisLifecycle.ctx
 			}
-			scanReport, scanErr = state.Scan(pipelineCtx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile})
+			scanReport, scanErr = state.Scan(pipelineCtx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory})
 		}
 	}
 	var analysisReport libraryindex.AnalysisReport
@@ -472,6 +487,15 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	fmt.Fprintf(stdout, "files=%d audio=%d metadata=%d analyzed=%d failed=%d\n", scanReport.Files, scanReport.AudioFiles, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.Failed)
 	return completionCode(scanReport.Errors + analysisReport.Failed), nil
+}
+
+func parseNamedRoot(flagName, specification string) (string, string, error) {
+	alias, rootPath, ok := strings.Cut(specification, "=")
+	alias, rootPath = strings.TrimSpace(alias), strings.TrimSpace(rootPath)
+	if !ok || alias == "" || rootPath == "" {
+		return "", "", fmt.Errorf("%s must use ALIAS=PATH", flagName)
+	}
+	return alias, rootPath, nil
 }
 
 func defaultRootAlias(path string) string {

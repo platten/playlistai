@@ -43,11 +43,30 @@ share the global budget; they do not multiply it. Only one mutating coordinator
 may use a state directory, while `status` remains read-only.
 Use repeated `--root-alias ALIAS=PATH` for stable identities across remounts or
 root reordering. Plain repeated `--root` remains supported for compatibility.
+To add another source to an existing state without rescanning the earlier root,
+run against the same state with an explicit new logical alias:
+
+```sh
+./playlist-indexer run \
+  --append-root archive=/mnt/archive \
+  --state "$HOME/.local/share/playlist-indexer" \
+  --profile balanced --device cpu --concurrency auto \
+  --accept-model-license --out ./my-library.paipack
+```
+
+`--append-root ALIAS=PATH` is repeatable. It scans only the roots named by that
+invocation, retains inventory and completed compatible analysis from every
+previous root, and analyzes only new or changed files. Reuse the same alias to
+rescan that source; use `--root-alias` when intentionally changing the physical
+mount path associated with a logical root.
 
 Interactive runs show a PTerm progress bar on stderr with discovered files and
 compatible queued, active, finished, and failed jobs. A PTerm box above the bar
-shows the most recent file to begin scanning or analysis (several files may be
-active under concurrent plans). Redirected/non-TTY runs remain plain and
+shows each directory while enumeration is looking for audio, then the most
+recent file to begin scanning or analysis (several files may be active under
+concurrent plans). Activity updates remain visible even when a durable status
+read is briefly busy, and long-running work shows a once-per-second active-time
+heartbeat. Redirected/non-TTY runs remain plain and
 machine-safe, and `--no-progress` disables the live display explicitly. `--json`
 continues to reserve stdout for the final JSON document.
 

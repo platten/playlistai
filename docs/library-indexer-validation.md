@@ -30,15 +30,25 @@ workspace from remaining release gates.
 - The rebuilt standard executable was run through a real pseudo-terminal. Its
   PTerm bar reported discovered files and durable queued work on stderr. After
   the resume/rescan update, another real TTY run displayed the PTerm
-  `Currently processing` box with `Artist/New Song.flac`. The separately
-  redirected `--json` stdout parsed successfully, and a TTY run with
-  `--no-progress` emitted no cursor/progress output.
+  `Currently processing` box with `Artist/New Song.flac`. The latest source
+  launcher was also run against a real FLAC: before discovery the box advanced
+  through `Scanning directory inventory…`, `primary`, and `primary/Artist`,
+  then displayed `Artist/one.flac`. The separately redirected `--json` stdout
+  parsed successfully, and a TTY run with `--no-progress` emitted no
+  cursor/progress output.
 - A real metadata-only run processed one MP3, then the same state was rerun
   after adding one FLAC. The second run reported two discovered audio files but
   exactly one metadata completion; final state contained two completed jobs.
   A third unchanged run reported zero metadata completions. Focused race tests
   also exercised selective changed-directory resume, v1-to-v2 state migration,
   and preservation of the completed job's attempt count.
+- A separate real metadata-only run completed one FLAC under logical root
+  `primary`, then reused the same state with
+  `--append-root archive=<second-path>` and one M4A/AAC file. The append run
+  reported exactly one discovery and one metadata completion; final status was
+  two present files and two completed metadata jobs. Race tests additionally
+  verify that the original job attempt remains unchanged, a repeated append is
+  idempotent, and an append alias cannot silently remount an existing root.
 - The opt-in real-audio concurrency benchmark executed on an identical
   deterministic two-track sample. Serial, 2-worker, 4-worker, and auto runs all
   committed two metadata and two audio results with semantic digest
@@ -89,14 +99,17 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          ae9fcf5ad669d1663bca72a79cc1fd8f2a039a7e03fe199ea014c67a1f287de4
-bin/playlist-indexer-offline  150ec617321703cd148989a944d82a89035ecd87cf0f67c08b5dab0046e34d9b
+bin/playlist-indexer          dc0d2de7432e1f7d686a6da148d665cc0e63212babe2755390dd58372200a8dc
+bin/playlist-indexer-offline  9a9de0a6b8517a174cb5ddc545bc46830b698aedf43c1042f8f8ff113cfd9815
 ```
 
-The standard file is 23,924,805 bytes and the offline file is 425,394,373
-bytes. `./scripts/test.sh` passed after the September 17 production-readiness and live
-file-box changes: 221 frontend tests, production frontend build, `go vet`, the
-full race-enabled Go suite, and golangci-lint with zero findings.
+The standard file is 23,936,013 bytes and the offline file is 425,405,581
+bytes. `./scripts/test.sh` passed after the September 17 production-readiness,
+live activity rendering, and append-root changes: 221 frontend tests,
+production frontend build, `go vet`, the full race-enabled Go suite, and
+golangci-lint with zero findings. `GOOS=windows GOARCH=amd64 go test -run '^$'
+./...` also passed after these changes; this is a cross-compile check, not a
+native Windows execution claim.
 
 ## Honest limits
 

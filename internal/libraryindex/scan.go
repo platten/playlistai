@@ -23,6 +23,7 @@ type ScanOptions struct {
 	SemanticJobs   map[string]string
 	Admission      *Admission
 	OnFile         func(string)
+	OnDirectory    func(string)
 }
 
 type ScanReport struct {
@@ -233,6 +234,13 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 	rel := task.RelativePath
 	if rel == "." {
 		rel = ""
+	}
+	if options.OnDirectory != nil {
+		display := root.Alias
+		if rel != "" {
+			display = filepath.Join(display, rel)
+		}
+		options.OnDirectory(display)
 	}
 	dir := filepath.Join(root.Path, rel)
 	directory, err := os.Open(dir)
