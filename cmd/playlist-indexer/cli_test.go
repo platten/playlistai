@@ -39,6 +39,16 @@ func TestDefaultRootAliasKeepsUnusualPathsPackSafe(t *testing.T) {
 	}
 }
 
+func TestParseAppendRootRequiresStableAlias(t *testing.T) {
+	alias, path, err := parseNamedRoot("--append-root", " archive = /mnt/second library ")
+	if err != nil || alias != "archive" || path != "/mnt/second library" {
+		t.Fatalf("parse append root: alias=%q path=%q err=%v", alias, path, err)
+	}
+	if _, _, err := parseNamedRoot("--append-root", "/mnt/without-alias"); err == nil || !strings.Contains(err.Error(), "ALIAS=PATH") {
+		t.Fatalf("invalid append root error = %v", err)
+	}
+}
+
 func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "indexer.json")
 	if err := os.WriteFile(path, []byte(`{"concurrency":"manual","workers":"4","ioWorkers":1,"inferenceThreads":1,"maxRam":"4GiB","seed":7}`), 0o600); err != nil {

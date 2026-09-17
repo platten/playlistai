@@ -30,14 +30,24 @@ const (
 
 type pipelineProgress struct {
 	phase   chan string
-	current chan string
+	current chan progressDisplayActivity
 	stop    chan bool
 	done    chan struct{}
 	once    sync.Once
 }
 
+type progressDisplayActivity struct {
+	title   string
+	path    string
+	started time.Time
+}
+
+type progressSnapshotReader interface {
+	Progress(context.Context, map[string]string) (libraryindex.ProgressSnapshot, error)
+}
+
 func startPipelineProgress(ctx context.Context, state *libraryindex.State, semanticJobs map[string]string, writer io.Writer, disabled bool, initialPhase string, mode progressMode) *pipelineProgress {
-	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan string, 1), stop: make(chan bool, 1), done: make(chan struct{})}
+	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
 	file, terminal := writer.(*os.File)
 	if disabled || !terminal || !term.IsTerminal(int(file.Fd())) || os.Getenv("TERM") == "dumb" {
 		close(progress.done)
@@ -89,18 +99,32 @@ func (p *pipelineProgress) SetPhase(phase string) {
 // worker. With concurrent workers the box intentionally shows the most recent
 // file to begin processing rather than implying that only one file is active.
 func (p *pipelineProgress) SetCurrentFile(name string) {
+	p.setActivity(progressDisplayActivity{title: "Currently processing", path: name})
+}
+
+// SetCurrentDirectory keeps long directory enumeration visibly alive before an
+// audio file is discovered. It displays the logical root alias rather than an
+// absolute source path.
+func (p *pipelineProgress) SetCurrentDirectory(name string) {
+	p.setActivity(progressDisplayActivity{title: "Scanning directory", path: name})
+}
+
+func (p *pipelineProgress) setActivity(activity progressDisplayActivity) {
 	if p == nil {
 		return
 	}
+	if activity.started.IsZero() {
+		activity.started = time.Now()
+	}
 	select {
-	case p.current <- name:
+	case p.current <- activity:
 	default:
 		select {
 		case <-p.current:
 		default:
 		}
 		select {
-		case p.current <- name:
+		case p.current <- activity:
 		default:
 		}
 	}
@@ -116,30 +140,41 @@ func (p *pipelineProgress) Stop(success bool) {
 	<-p.done
 }
 
-func (p *pipelineProgress) run(ctx context.Context, state *libraryindex.State, semanticJobs map[string]string, bar *pterm.ProgressbarPrinter, barOutput *bytes.Buffer, area *cursor.Area, phase string, mode progressMode) {
+func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, bar *pterm.ProgressbarPrinter, barOutput *bytes.Buffer, area *cursor.Area, phase string, mode progressMode) {
 	defer close(p.done)
 	defer cursor.SetTarget(os.Stdout)
 	ticker := time.NewTicker(progressRefreshInterval)
 	defer ticker.Stop()
 	last := libraryindex.ProgressSnapshot{Total: -1}
-	currentFile := ""
+	activity := progressDisplayActivity{}
+	lastActivitySecond := int64(-1)
 	barLine := latestProgressLine(barOutput)
 	updateArea := func() {
 		content := barLine
 		if mode != progressActivity {
-			box := pterm.DefaultBox.WithTitle("Currently processing").Sprint(progressFileName(currentFile))
+			title, detail := progressActivityDisplay(activity, phase, last)
+			box := pterm.DefaultBox.WithTitle(title).Sprint(detail)
 			content = box + "\n" + barLine
 		}
 		area.Update(strings.TrimRight(content, "\n") + "\n")
+		lastActivitySecond = progressActivityAge(activity, time.Now())
 	}
 	render := func(force bool) {
 		queryCtx, cancel := context.WithTimeout(context.Background(), progressRefreshInterval)
 		snapshot, err := state.Progress(queryCtx, semanticJobs)
 		cancel()
 		if err != nil {
+			// Activity updates must not depend on a read connection becoming
+			// available while the durable writer is busy.
+			if force || progressActivityAge(activity, time.Now()) != lastActivitySecond {
+				updateArea()
+			}
 			return
 		}
 		if !force && snapshot == last {
+			if progressActivityAge(activity, time.Now()) != lastActivitySecond {
+				updateArea()
+			}
 			return
 		}
 		last = snapshot
@@ -160,7 +195,7 @@ func (p *pipelineProgress) run(ctx context.Context, state *libraryindex.State, s
 		case next := <-p.phase:
 			phase = next
 			render(true)
-		case currentFile = <-p.current:
+		case activity = <-p.current:
 			render(true)
 		case success := <-p.stop:
 			render(true)
@@ -201,9 +236,6 @@ func latestProgressLine(output *bytes.Buffer) string {
 }
 
 func progressFileName(name string) string {
-	if name == "" {
-		return "Waiting for a file…"
-	}
 	quoted := strconv.QuoteToGraphic(name)
 	if len(quoted) >= 2 {
 		quoted = quoted[1 : len(quoted)-1]
@@ -214,6 +246,34 @@ func progressFileName(name string) string {
 		quoted = string(runes[:maxRunes-1]) + "…"
 	}
 	return quoted
+}
+
+func progressActivityDisplay(activity progressDisplayActivity, phase string, snapshot libraryindex.ProgressSnapshot) (string, string) {
+	return progressActivityDisplayAt(activity, phase, snapshot, time.Now())
+}
+
+func progressActivityDisplayAt(activity progressDisplayActivity, phase string, snapshot libraryindex.ProgressSnapshot, now time.Time) (string, string) {
+	if activity.path != "" {
+		detail := progressFileName(activity.path)
+		if age := progressActivityAge(activity, now); age > 0 {
+			detail += fmt.Sprintf("\nActive for %s", (time.Duration(age) * time.Second).String())
+		}
+		return activity.title, detail
+	}
+	if strings.Contains(strings.ToLower(phase), "scann") {
+		return "Current activity", "Scanning directory inventory…"
+	}
+	if snapshot.Queued > 0 {
+		return "Current activity", "Waiting for an available worker…"
+	}
+	return "Current activity", "Waiting for discovered work…"
+}
+
+func progressActivityAge(activity progressDisplayActivity, now time.Time) int64 {
+	if activity.started.IsZero() || now.Before(activity.started) {
+		return -1
+	}
+	return int64(now.Sub(activity.started) / time.Second)
 }
 
 func progressTitle(phase string, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
