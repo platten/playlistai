@@ -95,16 +95,33 @@ so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
 
+`run` always completes that inventory scan before it starts file analysis. It
+then writes a checksummed snapshot under
+`STATE/manifests/scan-EPOCH/`: `inventory.jsonl` records every discovered audio
+file's root alias, relative path, and size, while `diff.jsonl` records only the
+compatible jobs that still need processing. The analyzer is restricted to that
+frozen diff. The standalone `analyze` administration command remains available
+for already-queued state and does not perform a new filesystem scan.
+
 After the bounded metadata probe, actual FLAC and MP3 streams receive a full
 decode-to-discard integrity pass through the packaged FFmpeg runtime before
 DSP/MERT processing. The decoded validation output is never retained. A corrupt
 stream keeps its usable metadata but is recorded as `corrupt_media` and is not
 sent to DSP/MERT or automatically retried. Source revision is checked around
 the integrity pass and again around sampled decoding; the before/after checks
-include file size, so a growing or replaced file is requeued instead of being
-committed mid-write. This full validation adds one sequential source read and
-decode for new or semantically revalidated FLAC/MP3 files; unchanged compatible
-completed jobs remain resumable and are skipped on later runs.
+include file size. A file whose revision changed after the manifest was created
+is skipped as `source_changed_after_manifest`, never committed or re-admitted in
+that run, and becomes eligible when the next scan observes its new revision.
+This full validation adds one sequential source read and decode for new or
+semantically revalidated FLAC/MP3 files; unchanged compatible completed jobs
+remain resumable and are skipped on later runs.
+
+Scan, validation, native-worker, unsupported-media, changed-source, and fatal
+run issues are appended as JSON lines to `STATE/issues.jsonl`. Structured
+location fields use logical root aliases and relative paths. Native and OS error
+detail may contain a physical path, so the log is private to the state owner
+(`0600`) and is not a shareable report. It remains durable across runs so
+skipped or failed files can be audited.
 
 Directories that change while they are being enumerated are fenced and retried
 up to eight times; counts from discarded attempts are not added to the final

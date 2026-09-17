@@ -234,7 +234,7 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	if err != nil {
 		return result, err
 	}
-	pool, resolvedPlan, err := warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr)
+	pool, resolvedPlan, err := warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr, nil)
 	if err != nil {
 		return result, err
 	}

@@ -24,6 +24,7 @@ type ScanOptions struct {
 	Admission      *Admission
 	OnFile         func(FileActivity)
 	OnDirectory    func(string)
+	OnIssue        func(ProcessingIssue)
 }
 
 // FileActivity is bounded progress metadata. It never includes an absolute
@@ -35,14 +36,15 @@ type FileActivity struct {
 }
 
 type ScanReport struct {
-	Epoch                int64 `json:"epoch"`
-	Directories          int64 `json:"directories"`
-	Files                int64 `json:"files"`
-	AudioFiles           int64 `json:"audioFiles"`
-	Errors               int64 `json:"errors"`
-	Complete             bool  `json:"complete"`
-	Resumed              bool  `json:"resumed"`
-	RescannedDirectories int64 `json:"rescannedDirectories"`
+	Epoch                int64              `json:"epoch"`
+	Directories          int64              `json:"directories"`
+	Files                int64              `json:"files"`
+	AudioFiles           int64              `json:"audioFiles"`
+	Errors               int64              `json:"errors"`
+	Complete             bool               `json:"complete"`
+	Resumed              bool               `json:"resumed"`
+	RescannedDirectories int64              `json:"rescannedDirectories"`
+	Manifest             ScanManifestReport `json:"manifest"`
 }
 
 var audioExtensions = map[string]struct{}{`.flac`: {}, `.mp3`: {}, `.aac`: {}, `.m4a`: {}, `.mp4`: {}}
@@ -167,7 +169,15 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 				children, count, audioCount, revision, scanErr := s.scanDirectory(ctx, task, root, options)
 				release()
 				if scanErr != nil {
-					if errors.Is(scanErr, errDirectoryChanged) && task.Attempt < maxDirectoryChangeAttempts {
+					retryable := errors.Is(scanErr, errDirectoryChanged) && task.Attempt < maxDirectoryChangeAttempts
+					if options.OnIssue != nil {
+						code := "directory_error"
+						if errors.Is(scanErr, errDirectoryChanged) {
+							code = "directory_changed"
+						}
+						options.OnIssue(NewProcessingIssue("scan", root.Alias, task.RelativePath, code, scanErr, retryable))
+					}
+					if retryable {
 						if err := s.RetryDirectory(ctx, task, scanErr.Error()); err != nil {
 							recordFatal(err)
 						}

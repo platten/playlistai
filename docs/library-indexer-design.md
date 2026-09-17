@@ -31,7 +31,8 @@ file is rewritten, tagged, normalized, transcoded, or deleted.
 ## State and identities
 
 SQLite stores roots, durable directory frontiers, scan epochs, file assets,
-fenced jobs, raw metadata, DSP, MERT vectors, and immutable generation pointers.
+fenced jobs, frozen `scan_diff_jobs`, raw metadata, DSP, MERT vectors, and
+immutable generation pointers.
 WAL uses `synchronous=FULL`; the embedded modernc SQLite is 3.53.4, newer than
 the upstream 3.51.3 WAL-reset correction. Only the dedicated writer connection
 mutates state. File observations, job results, and failure transitions are
@@ -55,6 +56,19 @@ rechecks completed directories once. A new invocation after a completed epoch
 still enumerates the full configured scope. Per-file source revisions and
 semantic job keys keep unchanged completed analysis out of the claim queue,
 while new or changed files become pending.
+
+Every `run` completes enumeration before any file-analysis claim. It atomically
+publishes a privacy-safe manifest generation under `STATE/manifests`: the full
+inventory records logical root aliases, relative paths, sizes, and source
+revisions, and the separate diff records only pending jobs for that completed
+epoch. Analysis is restricted to that diff. Size, mtime, and native identity
+are checked against the frozen revision before and after
+probe/integrity/decode; native operations also fence Linux change time across
+their own reads. A mismatch is persisted as
+`source_changed_after_manifest` and is not reconsidered until a later scan
+observes the new revision. Issues are durably appended to
+the private `STATE/issues.jsonl`; structured source locations remain logical,
+while native diagnostic detail may contain a physical path.
 
 ## Analysis and learning
 

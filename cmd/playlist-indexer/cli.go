@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/platten/playlistai/internal/audio"
@@ -227,49 +226,7 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 	}
 }
 
-type pipelineAnalysisAnswer struct {
-	report libraryindex.AnalysisReport
-	err    error
-}
-
-// pipelineAnalysisLifecycle owns the cancellation and discovery barrier shared
-// by scanning and analysis. finish must be called before resources used by the
-// analyzer are closed, including when scanning fails or the parent is canceled.
-type pipelineAnalysisLifecycle struct {
-	ctx           context.Context
-	cancel        context.CancelFunc
-	discoveryDone chan struct{}
-	discoveryOnce sync.Once
-	answer        chan pipelineAnalysisAnswer
-}
-
-func startPipelineAnalysis(parent context.Context, run func(context.Context, <-chan struct{}) (libraryindex.AnalysisReport, error)) *pipelineAnalysisLifecycle {
-	ctx, cancel := context.WithCancel(parent)
-	lifecycle := &pipelineAnalysisLifecycle{
-		ctx: ctx, cancel: cancel, discoveryDone: make(chan struct{}), answer: make(chan pipelineAnalysisAnswer, 1),
-	}
-	go func() {
-		report, err := run(ctx, lifecycle.discoveryDone)
-		lifecycle.answer <- pipelineAnalysisAnswer{report: report, err: err}
-	}()
-	return lifecycle
-}
-
-func (l *pipelineAnalysisLifecycle) completeDiscovery() {
-	l.discoveryOnce.Do(func() { close(l.discoveryDone) })
-}
-
-func (l *pipelineAnalysisLifecycle) finish(primary error) (libraryindex.AnalysisReport, error) {
-	l.completeDiscovery()
-	if primary != nil {
-		l.cancel()
-	}
-	result := <-l.answer
-	l.cancel()
-	return result.report, errors.Join(primary, result.err)
-}
-
-func runPipelineCommand(ctx context.Context, command string, args []string, stdout, stderr io.Writer) (int, error) {
+func runPipelineCommand(ctx context.Context, command string, args []string, stdout, stderr io.Writer) (code int, runErr error) {
 	flags := flag.NewFlagSet("playlist-indexer "+command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var common commonFlags
@@ -322,6 +279,18 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		return 1, err
 	}
 	defer state.Close()
+	issues, err := openIssueRecorder(filepath.Dir(state.Path()))
+	if err != nil {
+		return 1, fmt.Errorf("open state issue log: %w", err)
+	}
+	defer func() {
+		if runErr != nil {
+			issues.Record(libraryindex.NewProcessingIssue("run", "", "", "fatal", runErr, false))
+		}
+		if closeErr := issues.Close(); closeErr != nil && runErr == nil {
+			code, runErr = 1, fmt.Errorf("close state issue log: %w", closeErr)
+		}
+	}()
 	if common.retryFailed {
 		requeued, retryErr := state.RetryFailed(ctx)
 		if retryErr != nil {
@@ -340,7 +309,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			return 1, err
 		}
 		warmStart := time.Now()
-		pool, plan, err = warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr)
+		pool, plan, err = warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr, issues.Record)
 		if err != nil {
 			return 1, fmt.Errorf("warm MERT workers: %w", err)
 		}
@@ -363,22 +332,18 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	case "analyze":
 		initialPhase = "Analyzing"
 	default:
-		initialPhase = "Scanning & analyzing"
+		initialPhase = "Scanning directory inventory"
 	}
 	progressMode := progressJobs
 	if command == "scan" {
 		progressMode = progressScan
 	}
-	progress := startPipelineProgress(ctx, state, semanticJobs, stderr, common.noProgress, initialPhase, progressMode)
+	progressReader := &scopedProgressReader{state: state}
+	progress := startPipelineProgress(ctx, progressReader, semanticJobs, stderr, common.noProgress, initialPhase, progressMode)
 	analyzer.OnFile = progress.SetCurrentFile
 	progressComplete := false
 	defer func() { progress.Stop(progressComplete) }()
-	var analysisLifecycle *pipelineAnalysisLifecycle
-	if command != "scan" {
-		analysisLifecycle = startPipelineAnalysis(ctx, func(analysisCtx context.Context, discoveryDone <-chan struct{}) (libraryindex.AnalysisReport, error) {
-			return analyzer.Run(analysisCtx, analysisOptions, discoveryDone)
-		})
-	}
+	analyzer.OnIssue = issues.Record
 	var scanReport libraryindex.ScanReport
 	var scanErr error
 	if command != "analyze" {
@@ -400,16 +365,12 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 					break
 				}
 				seenAliases[alias] = struct{}{}
-				pipelineCtx := ctx
-				if analysisLifecycle != nil {
-					pipelineCtx = analysisLifecycle.ctx
-				}
 				var root libraryindex.Root
 				var rootErr error
 				if namedRoots.additional {
-					root, rootErr = state.EnsureAdditionalRoot(pipelineCtx, rootPath, alias)
+					root, rootErr = state.EnsureAdditionalRoot(ctx, rootPath, alias)
 				} else {
-					root, rootErr = state.EnsureRoot(pipelineCtx, rootPath, alias)
+					root, rootErr = state.EnsureRoot(ctx, rootPath, alias)
 				}
 				if rootErr != nil {
 					scanErr = rootErr
@@ -434,11 +395,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 				break
 			}
 			seenAliases[alias] = struct{}{}
-			pipelineCtx := ctx
-			if analysisLifecycle != nil {
-				pipelineCtx = analysisLifecycle.ctx
-			}
-			root, rootErr := state.EnsureRoot(pipelineCtx, rootPath, alias)
+			root, rootErr := state.EnsureRoot(ctx, rootPath, alias)
 			if rootErr != nil {
 				scanErr = rootErr
 				break
@@ -446,21 +403,38 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			resolvedRoots = append(resolvedRoots, root)
 		}
 		if scanErr == nil {
-			pipelineCtx := ctx
-			if analysisLifecycle != nil {
-				pipelineCtx = analysisLifecycle.ctx
+			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record})
+			if scanErr == nil {
+				progress.SetPhase("Building scan manifest and diff")
+				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)
+				if scanErr == nil {
+					progressReader.SetEpoch(scanReport.Epoch)
+				}
 			}
-			scanReport, scanErr = state.Scan(pipelineCtx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory})
 		}
 	}
+	if scanErr != nil {
+		return 1, scanErr
+	}
+	if err := issues.Err(); err != nil {
+		return 1, fmt.Errorf("write state issue log: %w", err)
+	}
 	var analysisReport libraryindex.AnalysisReport
-	if analysisLifecycle != nil {
-		analysisReport, err = analysisLifecycle.finish(scanErr)
+	if command != "scan" {
+		progress.SetPhase("Analyzing manifest diff")
+		analyzer.FreezeManifest = command != "analyze"
+		if command != "analyze" {
+			analyzer.DiffEpoch = scanReport.Epoch
+		}
+		discoveryDone := make(chan struct{})
+		close(discoveryDone)
+		analysisReport, err = analyzer.Run(ctx, analysisOptions, discoveryDone)
 		if err != nil {
 			return 1, err
 		}
-	} else if scanErr != nil {
-		return 1, scanErr
+		if err := issues.Err(); err != nil {
+			return 1, fmt.Errorf("write state issue log: %w", err)
+		}
 	}
 	var fitResult libraryindex.FitResult
 	var packManifest any
@@ -483,10 +457,10 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	progress.Stop(true)
 	result := map[string]any{"command": command, "resources": plan, "scan": scanReport, "analysis": analysisReport, "fit": fitResult, "pack": packManifest}
 	if common.jsonOutput {
-		return completionCode(scanReport.Errors + analysisReport.Failed), json.NewEncoder(stdout).Encode(result)
+		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d audio=%d metadata=%d analyzed=%d failed=%d\n", scanReport.Files, scanReport.AudioFiles, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.Failed)
-	return completionCode(scanReport.Errors + analysisReport.Failed), nil
+	fmt.Fprintf(stdout, "files=%d audio=%d diff=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.Files, scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
+	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 
 func parseNamedRoot(flagName, specification string) (string, string, error) {
@@ -519,13 +493,13 @@ func defaultRootAlias(path string) string {
 	return value
 }
 
-func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest audio.MERTBundleManifest, plan libraryindex.ResourcePlan, stderr io.Writer) (*audio.MERTWorkerPool, libraryindex.ResourcePlan, error) {
+func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest audio.MERTBundleManifest, plan libraryindex.ResourcePlan, stderr io.Writer, onIssue func(libraryindex.ProcessingIssue)) (*audio.MERTWorkerPool, libraryindex.ResourcePlan, error) {
 	makePool := func(count int) *audio.MERTWorkerPool {
 		return audio.NewMERTWorkerPool(&audio.MERTWorker{Executable: executable, BundleDir: bundleDir, Model: manifest.Model, InferenceThreads: plan.InferenceThreads}, count)
 	}
 	if plan.Mode == libraryindex.ConcurrencyAuto && plan.InferenceWorkers > 1 {
 		probe := makePool(1)
-		if err := warmMERTWithRetries(ctx, probe, stderr); err != nil {
+		if err := warmMERTWithRetries(ctx, probe, stderr, onIssue); err != nil {
 			_ = probe.Close()
 			return nil, plan, err
 		}
@@ -540,7 +514,7 @@ func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest au
 		_ = probe.Close()
 	}
 	pool := makePool(plan.InferenceWorkers)
-	if err := warmMERTWithRetries(ctx, pool, stderr); err != nil {
+	if err := warmMERTWithRetries(ctx, pool, stderr, onIssue); err != nil {
 		_ = pool.Close()
 		return nil, plan, err
 	}
@@ -556,12 +530,15 @@ type mertPoolWarmer interface {
 	Warm(context.Context) error
 }
 
-func warmMERTWithRetries(ctx context.Context, pool mertPoolWarmer, stderr io.Writer) error {
+func warmMERTWithRetries(ctx context.Context, pool mertPoolWarmer, stderr io.Writer, onIssue func(libraryindex.ProcessingIssue)) error {
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
 		err = pool.Warm(ctx)
 		if err == nil || ctx.Err() != nil || !errors.Is(err, audio.ErrNativeWorker) {
 			return err
+		}
+		if onIssue != nil {
+			onIssue(libraryindex.NewProcessingIssue("mert_warmup", "", "", "native_worker_restart", err, attempt < 2))
 		}
 		if attempt < 2 {
 			fmt.Fprintf(stderr, "MERT warmup worker failed; restarting native sessions (attempt %d/3)\n", attempt+2)
