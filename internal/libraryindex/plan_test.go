@@ -51,6 +51,18 @@ func TestResourcePlanRejectsImpossibleInferenceAndDescriptorReservations(t *test
 	}
 }
 
+func TestResourcePlanAcceptsExplicitRAMWhenAvailabilityIsUnknown(t *testing.T) {
+	host := testCapacity()
+	host.AvailableRAM = 0
+	plan, err := resolveResourcePlan(ResourceOverrides{Mode: ConcurrencyManual, Workers: 2, MaxRAM: 4 << 30}, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.MaxRAM != 4<<30 {
+		t.Fatalf("explicit RAM target was not preserved: %+v", plan)
+	}
+}
+
 func TestMetadataPlanDoesNotReserveMERT(t *testing.T) {
 	plan, err := resolveResourcePlanFor(ResourceOverrides{Mode: ConcurrencyAuto, MaxRAM: minimumOperationBytes}, testCapacity(), false)
 	if err != nil {

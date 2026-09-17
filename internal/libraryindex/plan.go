@@ -138,7 +138,8 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	if host.CPUSlots < 1 {
 		host.CPUSlots = max(1, host.GOMAXPROCS)
 	}
-	if host.AvailableRAM <= 0 {
+	memoryKnown := host.AvailableRAM > 0
+	if !memoryKnown {
 		host.AvailableRAM = 2 << 30
 	}
 	if host.OpenFileSoft <= 0 {
@@ -163,7 +164,7 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	if maxRAM == 0 {
 		// Admission uses no more than 75% of currently available/cgroup memory.
 		maxRAM = host.AvailableRAM * 3 / 4
-	} else if host.AvailableRAM > 0 && maxRAM > host.AvailableRAM {
+	} else if memoryKnown && maxRAM > host.AvailableRAM {
 		return ResourcePlan{}, fmt.Errorf("library indexer: max RAM %d exceeds currently available/cgroup memory %d", maxRAM, host.AvailableRAM)
 	}
 	if maxRAM < minimumOperationBytes {

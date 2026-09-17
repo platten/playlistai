@@ -520,7 +520,9 @@ func writeAssignmentStore(ctx context.Context, dir string, source *frozenVectorS
 	if assignErr != nil {
 		return "", assignErr
 	}
-	file, err := os.Open(path)
+	// The assignment store is app-created mutable state. Reopen it with write
+	// access because Windows requires that right for FlushFileBuffers.
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return "", err
 	}

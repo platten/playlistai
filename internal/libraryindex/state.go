@@ -920,7 +920,11 @@ func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, s
 		defer func() { _ = tx.Rollback() }()
 		// Preserve identity across same-filesystem moves within a configured root.
 		var prior string
-		_ = tx.QueryRowContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`, file.RootID, file.Device, file.Inode).Scan(&prior)
+		// A zero pair means that this platform/filesystem could not provide a
+		// native identity. Never let that sentinel collapse unrelated paths.
+		if file.Device != 0 || file.Inode != 0 {
+			_ = tx.QueryRowContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`, file.RootID, file.Device, file.Inode).Scan(&prior)
+		}
 		if prior != "" {
 			file.ID = prior
 		}

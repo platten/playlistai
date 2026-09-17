@@ -76,7 +76,7 @@ func TestInstallPayloadValidatesAndReusesGeneration(t *testing.T) {
 	}
 	for _, name := range []string{"ffmpeg", "ffprobe"} {
 		info, err := os.Stat(filepath.Join(first.Directory(), name))
-		if err != nil || info.Mode().Perm()&0o111 == 0 {
+		if err != nil || runtime.GOOS != "windows" && info.Mode().Perm()&0o111 == 0 {
 			t.Fatalf("executable %s mode: %v %v", name, info, err)
 		}
 	}

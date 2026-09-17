@@ -140,11 +140,3 @@ func writeSynced(path string, data []byte) error {
 	}
 	return errors.Join(writeErr, f.Close())
 }
-
-func syncDirectory(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	return errors.Join(f.Sync(), f.Close())
-}

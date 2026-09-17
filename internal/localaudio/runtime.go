@@ -55,7 +55,7 @@ func validateRegular(path string, artifact Artifact) error {
 	if err != nil {
 		return err
 	}
-	if !info.Mode().IsRegular() || info.Size() != artifact.Size || artifact.Executable && info.Mode().Perm()&0o111 == 0 {
+	if !info.Mode().IsRegular() || info.Size() != artifact.Size || artifact.Executable && !executableModeValid(info) {
 		return fmt.Errorf("localaudio: invalid codec artifact %s", artifact.Name)
 	}
 	file, err := os.Open(path)
@@ -227,12 +227,4 @@ func writeSynced(path string, data []byte, mode os.FileMode) error {
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	return errors.Join(writeErr, syncErr, closeErr)
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	return errors.Join(directory.Sync(), directory.Close())
 }
