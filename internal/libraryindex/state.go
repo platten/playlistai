@@ -532,6 +532,20 @@ func (s *State) BeginOrResumeEpoch(ctx context.Context, roots []Root) (int64, bo
 		}
 		sort.Strings(expected)
 		if !slices.Equal(found, expected) {
+			now := time.Now().UTC().Format(time.RFC3339Nano)
+			if _, err := conn.ExecContext(ctx, `UPDATE scan_epochs
+				SET status='interrupted',finished_at=?,error='scan scope changed before resume'
+				WHERE id=? AND status='enumerating'`, now, epoch); err != nil {
+				return err
+			}
+			if _, err := conn.ExecContext(ctx, `UPDATE scan_scopes SET status='interrupted' WHERE epoch_id=? AND status='enumerating'`, epoch); err != nil {
+				return err
+			}
+			if _, err := conn.ExecContext(ctx, `UPDATE directory_frontier
+				SET state='abandoned',fence='',lease_until=NULL,error='scan scope changed before resume'
+				WHERE epoch_id=? AND state IN ('pending','leased')`, epoch); err != nil {
+				return err
+			}
 			epoch = 0
 			return nil
 		}
@@ -708,8 +722,8 @@ func (s *State) AddDirectoryChildren(ctx context.Context, task DirectoryTask, ch
 // ClaimDirectories leases a small durable frontier batch. Expired tasks are
 // recoverable after a crash; a new fence prevents a late enumerator from
 // completing or extending the superseded attempt.
-func (s *State) ClaimDirectories(ctx context.Context, limit int, lease time.Duration) ([]DirectoryTask, error) {
-	if limit < 1 || limit > 256 || lease <= 0 {
+func (s *State) ClaimDirectories(ctx context.Context, epoch int64, limit int, lease time.Duration) ([]DirectoryTask, error) {
+	if epoch <= 0 || limit < 1 || limit > 256 || lease <= 0 {
 		return nil, errors.New("library indexer: invalid directory claim bounds")
 	}
 	var tasks []DirectoryTask
@@ -721,7 +735,8 @@ func (s *State) ClaimDirectories(ctx context.Context, limit int, lease time.Dura
 		defer func() { _ = tx.Rollback() }()
 		now := time.Now().UTC()
 		rows, err := tx.QueryContext(ctx, `SELECT epoch_id,root_id,relative_path,attempt FROM directory_frontier
-			WHERE state='pending' OR (state='leased' AND lease_until<?) ORDER BY epoch_id,root_id,relative_path LIMIT ?`, now.Format(time.RFC3339Nano), limit)
+			WHERE epoch_id=? AND (state='pending' OR (state='leased' AND lease_until<?))
+			ORDER BY root_id,relative_path LIMIT ?`, epoch, now.Format(time.RFC3339Nano), limit)
 		if err != nil {
 			return err
 		}
@@ -1309,10 +1324,12 @@ func (s *State) FailJob(ctx context.Context, job Job, code, detail string, retry
 	}
 	return s.writeBatch(ctx, func(tx *sql.Tx) error {
 		next := "failed"
+		retryIncrement := 0
 		if retry {
 			next = "pending"
+			retryIncrement = 1
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE jobs SET state=?,retry_count=retry_count+1,error_code=?,error_detail=?,fence='',lease_until=NULL,updated_at=? WHERE id=? AND fence=? AND source_revision=?`, next, code, detail, time.Now().UTC().Format(time.RFC3339Nano), job.ID, job.Fence, job.SourceRevision)
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET state=?,retry_count=retry_count+?,error_code=?,error_detail=?,fence='',lease_until=NULL,updated_at=? WHERE id=? AND fence=? AND source_revision=?`, next, retryIncrement, code, detail, time.Now().UTC().Format(time.RFC3339Nano), job.ID, job.Fence, job.SourceRevision)
 		if err != nil {
 			return err
 		}
@@ -1327,7 +1344,7 @@ func (s *State) RetryFailed(ctx context.Context) (int64, error) {
 	var changed int64
 	err := s.write(ctx, true, func(conn *sql.Conn) error {
 		res, err := conn.ExecContext(ctx, `UPDATE jobs SET state='pending',fence='',lease_until=NULL,error_code='',error_detail='',updated_at=?
-			WHERE state='failed' AND error_code NOT IN ('unsupported','metadata_unavailable') AND retry_count < 5`, time.Now().UTC().Format(time.RFC3339Nano))
+			WHERE state='failed' AND error_code NOT IN ('unsupported','corrupt_media','metadata_unavailable') AND retry_count < 5`, time.Now().UTC().Format(time.RFC3339Nano))
 		if err != nil {
 			return err
 		}

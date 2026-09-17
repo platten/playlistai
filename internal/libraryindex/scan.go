@@ -201,7 +201,7 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			claimed, err := s.ClaimDirectories(ctx, options.QueueDepth, jobLeaseDuration)
+			claimed, err := s.ClaimDirectories(ctx, epoch, options.QueueDepth, jobLeaseDuration)
 			if err != nil {
 				return err
 			}

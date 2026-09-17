@@ -86,6 +86,52 @@ func TestRealCodecRejectsTruncatedInput(t *testing.T) {
 	}
 }
 
+func TestRealCodecIntegrityValidation(t *testing.T) {
+	r, fixtures := requireCodecFixture(t)
+	for _, test := range []struct {
+		name   string
+		offset int64
+	}{
+		{name: "flac-16-44100.flac", offset: 10_000},
+		{name: "mp3-cbr.mp3", offset: 7_000},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source := filepath.Join(fixtures, test.name)
+			probe, err := r.Probe(context.Background(), source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := r.ValidateIntegrity(context.Background(), probe); err != nil {
+				t.Fatalf("valid source failed integrity validation: %v", err)
+			}
+
+			corrupt := filepath.Join(t.TempDir(), test.name)
+			raw, err := os.ReadFile(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(corrupt, raw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(corrupt, os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, writeErr := file.WriteAt(make([]byte, 2048), test.offset)
+			if err := errors.Join(writeErr, file.Close()); err != nil {
+				t.Fatal(err)
+			}
+			probe, err = r.Probe(context.Background(), corrupt)
+			if err != nil {
+				t.Fatalf("fixture must pass the lightweight probe: %v", err)
+			}
+			if err := r.ValidateIntegrity(context.Background(), probe); !errors.Is(err, ErrCorrupt) {
+				t.Fatalf("damaged source error = %v", err)
+			}
+		})
+	}
+}
+
 func TestRealCodecTagsPathsAndUnclippedFloat(t *testing.T) {
 	r, fixtures := requireCodecFixture(t)
 	t.Run("tags and unusual path", func(t *testing.T) {

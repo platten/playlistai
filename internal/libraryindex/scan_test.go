@@ -326,6 +326,99 @@ func TestAdditionalRootAppendsInventoryWithoutReprocessingCompletedRoot(t *testi
 	}
 }
 
+func TestMultipleUnrelatedAppendRootsShareOneInventory(t *testing.T) {
+	ctx := context.Background()
+	firstPath, secondPath := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(firstPath, "first.mp3"), []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secondPath, "second.flac"), []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "two-append-roots-test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	first, err := state.EnsureAdditionalRoot(ctx, firstPath, "primary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := state.EnsureAdditionalRoot(ctx, secondPath, "archive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots: []Root{first, second}, Workers: 2, QueueDepth: 1,
+		SemanticJobs: map[string]string{"metadata": "probe/v1"},
+	})
+	if err != nil || !report.Complete || report.AudioFiles != 2 || report.Directories != 2 {
+		t.Fatalf("two-root scan=%+v err=%v", report, err)
+	}
+	rows, err := state.Reader().QueryContext(ctx, `SELECT r.alias,f.relative_path
+		FROM files f JOIN roots r ON r.id=f.root_id ORDER BY r.alias,f.relative_path`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var alias, relative string
+		if err := rows.Scan(&alias, &relative); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, alias+":"+relative)
+	}
+	if want := []string{"archive:second.flac", "primary:first.mp3"}; !slices.Equal(got, want) {
+		t.Fatalf("inventory=%v want=%v", got, want)
+	}
+}
+
+func TestChangedScanScopeDoesNotClaimStaleDirectoryEpoch(t *testing.T) {
+	ctx := context.Background()
+	firstPath, secondPath := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(firstPath, "first.mp3"), []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secondPath, "second.flac"), []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, t.TempDir(), "scope-change-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	first, err := state.EnsureRoot(ctx, firstPath, "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleEpoch, err := state.BeginEpoch(ctx, []Root{first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := state.EnsureAdditionalRoot(ctx, secondPath, "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots: []Root{second}, Workers: 1, QueueDepth: 1,
+		SemanticJobs: map[string]string{"metadata": "probe/v1"},
+	})
+	if err != nil || !report.Complete || report.AudioFiles != 1 {
+		t.Fatalf("replacement-scope scan=%+v err=%v", report, err)
+	}
+	var epochStatus, frontierState string
+	if err := state.Reader().QueryRowContext(ctx, `SELECT status FROM scan_epochs WHERE id=?`, staleEpoch).Scan(&epochStatus); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Reader().QueryRowContext(ctx, `SELECT state FROM directory_frontier WHERE epoch_id=? AND relative_path='.'`, staleEpoch).Scan(&frontierState); err != nil {
+		t.Fatal(err)
+	}
+	if epochStatus != "interrupted" || frontierState != "abandoned" {
+		t.Fatalf("stale epoch status=%q frontier=%q", epochStatus, frontierState)
+	}
+}
+
 func TestInterruptedResumeRequeuesCompletedDirectoryWhenFilesWereAdded(t *testing.T) {
 	ctx := context.Background()
 	rootPath := t.TempDir()
@@ -353,14 +446,14 @@ func TestInterruptedResumeRequeuesCompletedDirectoryWhenFilesWereAdded(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootTasks, err := state.ClaimDirectories(ctx, 1, time.Minute)
+	rootTasks, err := state.ClaimDirectories(ctx, epoch, 1, time.Minute)
 	if err != nil || len(rootTasks) != 1 {
 		t.Fatalf("root claim=%+v err=%v", rootTasks, err)
 	}
 	if err := state.CompleteDirectory(ctx, rootTasks[0], []string{"completed", "pending"}, testDirectoryRevision(t, rootPath)); err != nil {
 		t.Fatal(err)
 	}
-	completedTasks, err := state.ClaimDirectories(ctx, 1, time.Minute)
+	completedTasks, err := state.ClaimDirectories(ctx, epoch, 1, time.Minute)
 	if err != nil || len(completedTasks) != 1 || completedTasks[0].RelativePath != "completed" {
 		t.Fatalf("completed claim=%+v err=%v", completedTasks, err)
 	}

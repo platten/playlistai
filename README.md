@@ -60,6 +60,20 @@ previous root, and analyzes only new or changed files. Reuse the same alias to
 rescan that source; use `--root-alias` when intentionally changing the physical
 mount path associated with a logical root.
 
+Two unrelated folders can also be appended in one invocation:
+
+```sh
+./playlist-indexer run \
+  --append-root primary=/mnt/music \
+  --append-root archive=/media/archive \
+  --state "$HOME/.local/share/playlist-indexer" \
+  --profile balanced --device cpu --concurrency auto \
+  --accept-model-license --out ./my-library.paipack
+```
+
+Each alias is an independent stable identity. A later run naming only one alias
+rescans that folder while retaining compatible results from the other aliases.
+
 Interactive runs show a PTerm progress bar on stderr with discovered files and
 compatible queued, active, finished, and failed jobs. A PTerm box above the bar
 shows each directory while enumeration is looking for audio, then the most
@@ -81,6 +95,17 @@ so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
 
+After the bounded metadata probe, actual FLAC and MP3 streams receive a full
+decode-to-discard integrity pass through the packaged FFmpeg runtime before
+DSP/MERT processing. The decoded validation output is never retained. A corrupt
+stream keeps its usable metadata but is recorded as `corrupt_media` and is not
+sent to DSP/MERT or automatically retried. Source revision is checked around
+the integrity pass and again around sampled decoding; the before/after checks
+include file size, so a growing or replaced file is requeued instead of being
+committed mid-write. This full validation adds one sequential source read and
+decode for new or semantically revalidated FLAC/MP3 files; unchanged compatible
+completed jobs remain resumable and are skipped on later runs.
+
 Directories that change while they are being enumerated are fenced and retried
 up to eight times; counts from discarded attempts are not added to the final
 scan report. Source revision checks before and after decoding prevent a file
@@ -89,7 +114,10 @@ has a 30-second watchdog: the owned native process is killed and reaped, the
 failure is classified as transient, and the durable job is retried up to the
 bounded retry limit with a fresh worker process. Initial MERT warmup likewise
 restarts failed native sessions up to two times before failing setup. Retry
-counts appear in live progress and `status`.
+counts appear in live progress and `status`. The full FLAC/MP3 integrity child
+also has a 30-second decoded-output watchdog; a stalled FFmpeg process is
+terminated and retried from a fresh process, while a large file that continues
+to produce decoded output remains valid work.
 
 Use `bench concurrency --root PATH --sample-tracks N` for isolated real-audio
 serial/2-worker/4-worker/auto equivalence and resource measurements. Use

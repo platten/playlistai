@@ -49,6 +49,26 @@ workspace from remaining release gates.
   two present files and two completed metadata jobs. Race tests additionally
   verify that the original job attempt remains unchanged, a repeated append is
   idempotent, and an append alias cannot silently remount an existing root.
+- The rebuilt standard executable was run with two unrelated folders supplied
+  together as `--append-root primary=... --append-root archive=...`. It
+  discovered three files and committed three metadata records into one state.
+  The same executable was then exercised across three invocations: the first
+  root completed one record, appending the second root completed only its two
+  records, and an unchanged third scan completed zero metadata jobs. Final
+  status retained all three files and three completed metadata jobs.
+- Real bundled FFmpeg 8.1.2 tests fully decoded valid FLAC and MP3 fixtures, then
+  damaged 2,048 bytes in the middle of each file. Both damaged files still
+  passed the lightweight ffprobe step and both failed the full decode integrity
+  step as `ErrCorrupt`. An actual metadata-only indexer run retained metadata
+  for both damaged files with `integrity.status=corrupt`; an offline audio run
+  warmed the real MERT runtime and recorded both audio jobs as permanent
+  `corrupt_media` failures without entering DSP/MERT. A process regression also
+  changes file size while validation is running and observes
+  `ErrSourceChanged` from the second revision check.
+- A deterministic process test starts an integrity child that produces no
+  decoded output, shortens the production 30-second activity threshold, and
+  verifies controlled termination as retryable `ErrProcessStalled` rather than
+  misclassifying the file as corrupt.
 - The current source launcher was executed in a real pseudo-terminal against a
   500,000,001-byte sparse FLAC and a second file. Directory/file activity, the
   summary, count bar, and percentage remained present while discovered and
@@ -64,12 +84,12 @@ workspace from remaining release gates.
   a fresh healthy worker. A concurrent-directory test adds a FLAC from the scan
   callback, forces a directory revision change, and verifies a complete two-file
   inventory/report without retry double-counting.
-- The rebuilt offline executable completed a fresh serial fast-profile run over
-  a real FLAC after the 30-second production watchdog was enabled. One native
-  session warmed in 4.132 seconds with measured 661,131,264-byte RSS, and the run
-  committed one metadata, DSP, and real 768-dimensional MERT result with zero
-  failures or retries. This verifies normal inference on this host; it is not a
-  general latency guarantee.
+- The current rebuilt offline executable completed a fresh serial fast-profile
+  run over a real FLAC after the integrity and 30-second watchdog changes. One
+  native session warmed in 3.667 seconds with measured 617,033,728-byte RSS, and
+  the run committed one metadata, DSP, and real 768-dimensional MERT result with
+  zero failures or retries. This verifies normal inference on this host; it is
+  not a general latency guarantee.
 - The opt-in real-audio concurrency benchmark executed on an identical
   deterministic two-track sample. Serial, 2-worker, 4-worker, and auto runs all
   committed two metadata and two audio results with semantic digest
@@ -120,11 +140,11 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          ef1229b737a37ce6fad600638c7cdcb4f7712b90e34f593db509201341cf51b5
-bin/playlist-indexer-offline  96754772e806d688207ce535141bd0cd8de7b9d36445d330a3686448e5675273
+bin/playlist-indexer          ad31c1a1142640685c6394ee994967906f0d2645e7695a91326555ed144d5ddf
+bin/playlist-indexer-offline  75b8e3546591140aeb5374fb877457bd99a15c4780dba1591e6beb93e9c29a5a
 ```
 
-The standard file is 23,946,781 bytes and the offline file is 425,416,349
+The standard file is 23,968,357 bytes and the offline file is 425,437,925
 bytes. `./scripts/test.sh` passed after the September 17 production-readiness,
 live activity rendering, and append-root changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and
