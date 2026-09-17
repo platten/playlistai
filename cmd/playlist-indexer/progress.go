@@ -297,7 +297,10 @@ func progressActivityBox(title, detail string, warning bool) string {
 
 func updateProgressBar(bar *pterm.ProgressbarPrinter, output *bytes.Buffer, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
 	total, current := int64(1), int64(0)
-	if mode != progressActivity {
+	if mode == progressScan {
+		total = max(int64(1), snapshot.Files)
+		current = snapshot.Files
+	} else if mode != progressActivity {
 		total = max(int64(1), snapshot.Total)
 	}
 	if mode == progressJobs {
@@ -373,9 +376,9 @@ func progressActivityAge(activity progressDisplayActivity, now time.Time) int64 
 func progressTitle(phase string, snapshot libraryindex.ProgressSnapshot, mode progressMode) string {
 	if mode == progressScan {
 		if phase == "Complete" {
-			return fmt.Sprintf("Complete • %d audio files queued for processing", snapshot.Total)
+			return fmt.Sprintf("Complete • %d audio files discovered • %d queued for processing", snapshot.Files, snapshot.Total)
 		}
-		return fmt.Sprintf("%s • %d audio files queued for processing", phase, snapshot.Total)
+		return fmt.Sprintf("%s • %d audio files discovered • %d queued for processing", phase, snapshot.Files, snapshot.Total)
 	}
 	if mode == progressActivity {
 		return fmt.Sprintf("%s • %d library files", phase, snapshot.Files)

@@ -83,12 +83,13 @@ type TrackMeta struct {
 	SourceIdentity        string             `json:"sourceIdentity,omitempty"`
 	ISRC                  string             `json:"isrc,omitempty"`
 	MusicBrainzRecording  string             `json:"musicBrainzRecording,omitempty"`
+	AcoustID              string             `json:"acoustId,omitempty"`
 	AudioFingerprint      *AudioFingerprint  `json:"audioFingerprint,omitempty"`
 }
 
-// AudioFingerprint is locally computed AcoustID Chromaprint evidence. It is
-// never proof of ownership or listener preference and is not sent to a remote
-// identification service by Playlist AI.
+// AudioFingerprint is tagged or locally computed AcoustID Chromaprint evidence.
+// It is never proof of ownership or listener preference and is not sent to a
+// remote identification service by Playlist AI.
 type AudioFingerprint struct {
 	Contract          string `json:"contract"`
 	Format            string `json:"format"`

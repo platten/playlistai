@@ -5,14 +5,16 @@ import "testing"
 func TestParseMetadataPreservesRawNamesAndDoesNotSplit(t *testing.T) {
 	metadata, err := parseMetadata(map[string]string{
 		"TITLE": "Track", "artist": "AC/DC & Guest", "album_artist": "Various Artists",
-		"genre": "R&B/Pop", "track": "2/9", "discnumber": "1/2", "ISRC": "USTST2600001",
+		"genre": "R&B/Pop", "mood": "Reflective", "style": "Art Rock", "track": "2/9", "discnumber": "1/2", "ISRC": "USTST2600001",
+		"ACOUSTID_ID": "11111111-2222-3333-4444-555555555555", "ACOUSTID_FINGERPRINT": "AQADtNQYhYkYnGhw7Xtagged",
 		"MUSICBRAINZ_TRACKID": "mbid", "REPLAYGAIN_TRACK_GAIN": "-4.0 dB",
 	}, map[string]string{"artist": "stream should not replace format"}, 4096)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(metadata.ArtistCredits) != 1 || metadata.ArtistCredits[0].Value != "AC/DC & Guest" ||
-		len(metadata.Genres) != 1 || metadata.Genres[0].Value != "R&B/Pop" {
+		len(metadata.Genres) != 1 || metadata.Genres[0].Value != "R&B/Pop" || len(metadata.Moods) != 1 || metadata.Moods[0].Value != "Reflective" ||
+		len(metadata.Styles) != 1 || metadata.Styles[0].Value != "Art Rock" {
 		t.Fatalf("artist or genre was split/changed: %+v", metadata)
 	}
 	if metadata.Track.Number != 2 || metadata.Track.Total != 9 || metadata.Disc.Number != 1 || metadata.Disc.Total != 2 {
@@ -20,6 +22,9 @@ func TestParseMetadataPreservesRawNamesAndDoesNotSplit(t *testing.T) {
 	}
 	if metadata.MusicBrainzIDs["MUSICBRAINZ_TRACKID"] != "mbid" || metadata.ReplayGain["REPLAYGAIN_TRACK_GAIN"] != "-4.0 dB" {
 		t.Fatalf("provenance tags lost: %+v", metadata)
+	}
+	if metadata.AcoustID == nil || metadata.AcoustID.Value != "11111111-2222-3333-4444-555555555555" || metadata.AcoustIDFingerprint == nil || metadata.AcoustIDFingerprint.Value != "AQADtNQYhYkYnGhw7Xtagged" {
+		t.Fatalf("AcoustID tags lost: %+v", metadata)
 	}
 }
 

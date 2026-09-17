@@ -268,12 +268,16 @@ func deduplicateCandidates(input []Candidate) []Candidate {
 		track := packTrack(input[index].Track)
 		isrc := strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(track.ISRC)))
 		mbid := strings.ToLower(strings.TrimSpace(track.MusicBrainzRecording))
-		keys := make([]string, 0, 2)
+		acoustID := strings.ToLower(strings.TrimSpace(track.AcoustID))
+		keys := make([]string, 0, 3)
 		if isrc != "" {
 			keys = append(keys, "isrc:"+isrc)
 		}
 		if mbid != "" {
 			keys = append(keys, "mbid:"+mbid)
+		}
+		if acoustID != "" {
+			keys = append(keys, "acoustid:"+acoustID)
 		}
 		for _, key := range keys {
 			for _, other := range identifierBuckets[key] {
@@ -317,7 +321,7 @@ func packTrack(track Track) librarypack.Track {
 	return librarypack.Track{
 		Artist: track.Artist, Title: track.Title,
 		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
-		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		AudioFingerprint: track.AudioFingerprint, DurationMilliseconds: track.DurationMilliseconds,
 		DurationReliable: track.DurationReliable,
 	}

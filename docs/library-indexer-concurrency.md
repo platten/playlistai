@@ -104,13 +104,15 @@ descriptors; decoded bytes require a separate byte reservation. A window is
 cleared only after both branches release it. Native requests own their tensor
 until the framed response or killed/reaped worker completes.
 
-For supported audio streams, the metadata stage reserves one CPU/source-I/O
-slot and runs a full pinned-FFmpeg decode that produces a bounded,
-base64-compressed AcoustID/Chromaprint fingerprint before it completes the
-prerequisite job. The fingerprint is retained locally and never submitted.
-For FLAC and MP3, this successful pass also satisfies the full-decode integrity
-contract. If fingerprinting fails, the existing decode-to-discard integrity
-fallback still runs. Neither path consumes the sampled PCM queue budget. The subprocess has a 30-minute bound for
+For supported audio streams without an embedded AcoustID ID or fingerprint,
+the metadata stage reserves one CPU/source-I/O slot and runs a full
+pinned-FFmpeg decode that produces a bounded, base64-compressed
+AcoustID/Chromaprint fingerprint before it completes the prerequisite job. The
+fingerprint is retained locally and never submitted. Tagged fingerprints are
+copied without regeneration, and no missing MBID is looked up. For FLAC and
+MP3, a generated fingerprint also satisfies the full-decode integrity contract;
+tagged identities or failed generation use the decode-to-discard integrity
+fallback. Neither path consumes the sampled PCM queue budget. The subprocess has a 30-minute bound for
 exceptionally large sources. Its source revision is checked before and after;
 size, mtime, native identity, and Linux change time must remain stable. A media
 decode error is permanent `corrupt_media`, while a changed source is refreshed

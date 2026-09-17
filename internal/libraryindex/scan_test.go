@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -311,11 +312,16 @@ func TestRescanDiscoversAddedFilesWithoutReprocessingCompletedJobs(t *testing.T)
 			observedMu.Unlock()
 		},
 	})
-	if err != nil || !second.Complete || second.Resumed || second.Files != 1 || second.AudioFiles != 1 {
+	if err != nil || !second.Complete || second.Resumed || second.Files != 2 || second.AudioFiles != 2 {
 		t.Fatalf("second scan=%+v err=%v", second, err)
 	}
-	if !slices.Equal(observed, []string{"added.flac"}) {
-		t.Fatalf("file callback included settled or non-processing files: %v", observed)
+	sort.Strings(observed)
+	if !slices.Equal(observed, []string{"added.flac", "existing.mp3"}) {
+		t.Fatalf("file callback did not include every discovered audio file: %v", observed)
+	}
+	progress, err := state.ScanCandidateProgress(ctx, second.Epoch, jobs)
+	if err != nil || progress.Files != 2 || progress.Total != 1 {
+		t.Fatalf("rescan progress=%+v err=%v", progress, err)
 	}
 	rows, err := state.Reader().QueryContext(ctx, `SELECT f.relative_path,j.state,j.attempt
 		FROM jobs j JOIN files f ON f.id=j.file_id ORDER BY f.relative_path`)

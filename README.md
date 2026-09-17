@@ -74,23 +74,25 @@ Two unrelated folders can also be appended in one invocation:
 Each alias is an independent stable identity. A later run naming only one alias
 rescans that folder while retaining compatible results from the other aliases.
 
-Directory symlinks below a configured root are ignored by default. Pass
-`--follow-directory-symlinks` (or set `followDirectorySymlinks` to `true` in the
-JSON configuration) to traverse them. Linked directories may resolve outside
-the physical root, but discovered files retain the symlink's logical
-root-relative path. Links to files and broken links remain ignored. Ancestor
-cycles are skipped and recorded as `symlink_cycle` scan issues. Exclusions are
-matched against the logical path through the link. Changing this option while
-an inventory scan is interrupted starts a fresh epoch instead of mixing the two
+Directory symlinks below a configured root are followed by default, including
+links that resolve outside the physical root. Discovered files retain the
+link's logical root-relative path. Use `--follow-directory-symlinks=false` (or
+set `followDirectorySymlinks` to `false` in JSON configuration) to disable this
+behavior. Links to files and broken links remain ignored. Ancestor cycles are
+skipped and recorded as `symlink_cycle` scan issues. Exclusions are matched
+against the logical path through the link. Changing this option while an
+inventory scan is interrupted starts a fresh epoch instead of mixing the two
 traversal policies.
 
-Interactive runs show a PTerm progress bar on stderr whose total is the number
-of unique audio files that still require compatible processing. A file with
-both metadata and audio work counts once; directories, non-audio files, and
-already-settled audio do not enter the total. A PTerm box above the bar shows
-each directory while enumeration is looking for audio, then the most recent
-file to begin scanning or analysis (several files may be active under concurrent
-plans). Directory names are traversal activity, not queued processing items.
+Interactive runs show a PTerm progress bar on stderr whose scan count is the
+number of unique supported audio files discovered in the current inventory.
+The summary separately reports how many of those files still require compatible
+processing. A file with both metadata and audio work is queued once;
+directories and non-audio files do not enter either file count. A PTerm box
+above the bar shows each directory while enumeration is looking for audio, then
+the most recent supported file discovered or started by analysis (several files
+may be active under concurrent plans). Directory names are traversal activity,
+not queued processing items.
 Activity updates remain visible even when a durable status read is briefly busy,
 and long-running work shows a once-per-second active-time heartbeat. The summary
 is kept on a separate line so growing file counts cannot consume the bar width,
@@ -125,14 +127,19 @@ either stream. The analyzer is restricted to that frozen diff. The standalone
 `analyze` administration command remains available for already-queued state and
 does not perform a new filesystem scan.
 
-After the bounded metadata probe, supported streams receive a full decode that
-retains only a bounded AcoustID-compatible Chromaprint fingerprint. The
-fingerprint is used locally for high-confidence duplicate detection and is
-never submitted to AcoustID or AcousticBrainz. Embedded ISRC and MusicBrainz
-recording IDs are preserved when available. For FLAC and MP3 this successful
-pass also satisfies full-decode integrity; a decode-to-discard fallback keeps
-integrity validation available if fingerprint generation fails. Decoded audio
-is never retained. A corrupt
+After the bounded metadata probe, the indexer copies the embedded title,
+artist, album, track/disc number, genre, mood, style, ISRC, recording MBID,
+AcoustID ID, AcoustID fingerprint, and complete raw tag dictionary when
+available. A tagged AcoustID fingerprint is preserved as-is, and the presence
+of either tagged AcoustID field prevents local fingerprint regeneration. A
+missing MBID is left missing; the indexer performs no metadata lookup. Otherwise
+the selected stream receives a full decode that retains only a bounded
+AcoustID-compatible Chromaprint fingerprint. Fingerprints are used locally for
+high-confidence duplicate detection and are never submitted to AcoustID or
+AcousticBrainz. Valid ISRC, recording MBID, and AcoustID IDs are authoritative
+duplicate evidence. For FLAC and MP3, a generated fingerprint also satisfies
+full-decode integrity; tagged identities still receive the separate
+decode-to-discard integrity check. Decoded audio is never retained. A corrupt
 stream keeps its usable metadata but is recorded as `corrupt_media` and is not
 sent to DSP/MERT or automatically retried. Source revision is checked around
 the integrity pass and again around sampled decoding; the before/after checks

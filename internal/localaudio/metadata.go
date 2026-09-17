@@ -105,9 +105,11 @@ func parseMetadata(format, stream map[string]string, maximum int64) (Metadata, e
 		RawTags: tags,
 		Title:   tagValue(tags, "title"), ArtistCredits: tagValues(tags, "artist"),
 		AlbumArtists: tagValues(tags, "album_artist", "albumartist"), Album: tagValue(tags, "album"),
-		Genres: tagValues(tags, "genre"), Date: tagValue(tags, "date", "year"),
-		ISRC:           tagValue(tags, "isrc", "tsrc", "wm/isrc", "com.apple.itunes:isrc", "----:com.apple.itunes:isrc"),
-		MusicBrainzIDs: map[string]string{}, ReplayGain: map[string]string{},
+		Genres: tagValues(tags, "genre"), Moods: tagValues(tags, "mood"), Styles: tagValues(tags, "style"), Date: tagValue(tags, "date", "year"),
+		ISRC:                tagValue(tags, "isrc", "tsrc", "wm/isrc", "com.apple.itunes:isrc", "----:com.apple.itunes:isrc"),
+		AcoustID:            tagValue(tags, "acoustid_id", "acoustid id"),
+		AcoustIDFingerprint: tagValue(tags, "acoustid_fingerprint", "acoustid fingerprint"),
+		MusicBrainzIDs:      map[string]string{}, ReplayGain: map[string]string{},
 	}
 	if _, value, ok := lookupTag(tags, "track", "tracknumber"); ok {
 		metadata.Track = parseNumberPair(value)

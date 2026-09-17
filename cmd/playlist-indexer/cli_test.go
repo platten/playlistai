@@ -104,3 +104,17 @@ func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 		t.Fatalf("CLI/config precedence failed: %+v seed=%d", plan, values.seed)
 	}
 }
+
+func TestConfigWithoutSymlinkSettingPreservesDefault(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "indexer.json")
+	if err := os.WriteFile(path, []byte(`{"workers":"2"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	values := commonFlags{followDirectorySymlinks: true}
+	if err := values.preloadConfig([]string{"--config", path}); err != nil {
+		t.Fatal(err)
+	}
+	if !values.followDirectorySymlinks {
+		t.Fatal("omitted setting disabled the directory-symlink default")
+	}
+}

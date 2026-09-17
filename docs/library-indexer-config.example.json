@@ -16,7 +16,7 @@
   "queueDepth": 16,
   "maxRam": "8GiB",
   "maxOpenFiles": 512,
-  "followDirectorySymlinks": false,
+  "followDirectorySymlinks": true,
   "shutdownTimeout": "30s",
   "seed": 42
 }

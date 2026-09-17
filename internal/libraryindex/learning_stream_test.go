@@ -89,20 +89,35 @@ func TestNormalizeISRCPreservesAvailableIdentity(t *testing.T) {
 
 func TestRecordingIdentityRequiresAuthoritativeOrCorroboratedEvidence(t *testing.T) {
 	fingerprint := &librarypack.AudioFingerprint{Contract: "acoustid-chromaprint/v1", FingerprintSHA256: "digest"}
-	if got := recordingIdentity("11111111-2222-3333-4444-555555555555", "USAAA2600001", "Artist", "Song", fingerprint); got != "musicbrainz:11111111-2222-3333-4444-555555555555" {
+	if got := recordingIdentity("11111111-2222-3333-4444-555555555555", "USAAA2600001", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "Artist", "Song", fingerprint); got != "musicbrainz:11111111-2222-3333-4444-555555555555" {
 		t.Fatalf("MBID identity = %q", got)
 	}
-	if got := recordingIdentity("not-an-mbid", "US-AAA-26-00001", "Artist", "Song", fingerprint); got != "isrc:USAAA2600001" {
+	if got := recordingIdentity("not-an-mbid", "US-AAA-26-00001", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "Artist", "Song", fingerprint); got != "isrc:USAAA2600001" {
 		t.Fatalf("ISRC identity = %q", got)
 	}
-	first := recordingIdentity("", "", "The Artist", "A Long Song Title", fingerprint)
-	punctuation := recordingIdentity("", "", "The Artist", "A Long Song Title!", fingerprint)
-	unrelated := recordingIdentity("", "", "Other Artist", "Different Song", fingerprint)
+	if got := recordingIdentity("", "", "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", "Artist", "Song", fingerprint); got != "acoustid-id:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" {
+		t.Fatalf("AcoustID identity = %q", got)
+	}
+	first := recordingIdentity("", "", "", "The Artist", "A Long Song Title", fingerprint)
+	punctuation := recordingIdentity("", "", "", "The Artist", "A Long Song Title!", fingerprint)
+	unrelated := recordingIdentity("", "", "", "Other Artist", "Different Song", fingerprint)
 	if first == "" || first != punctuation || first == unrelated {
 		t.Fatalf("fingerprint identities = %q %q %q", first, punctuation, unrelated)
 	}
-	if got := recordingIdentity("not-an-mbid", "vendor-specific", "Artist", "Song", nil); got != "" {
+	if got := recordingIdentity("not-an-mbid", "vendor-specific", "vendor-specific", "Artist", "Song", nil); got != "" {
 		t.Fatalf("invalid tag identity = %q", got)
+	}
+}
+
+func TestSampleLearningItemUsesTaggedAcoustID(t *testing.T) {
+	metadata := localaudio.Metadata{
+		Title:         &localaudio.TagValue{Value: "Song"},
+		ArtistCredits: []localaudio.TagValue{{Value: "Artist"}},
+		AcoustID:      &localaudio.TagValue{Value: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"},
+	}
+	item := sampleLearningItem("track", MetadataRecord{Probe: localaudio.ProbeResult{Metadata: metadata}})
+	if want := "acoustid-id:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"; item.GroupID != want {
+		t.Fatalf("group ID = %q, want %q", item.GroupID, want)
 	}
 }
 

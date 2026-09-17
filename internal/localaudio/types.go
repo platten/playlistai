@@ -42,18 +42,22 @@ type TrackDiscNumber struct {
 // Metadata retains the exact ffprobe tag dictionary and exposes common fields
 // without guessing separators in artist or genre names.
 type Metadata struct {
-	RawTags        map[string]string `json:"rawTags,omitempty"`
-	Title          *TagValue         `json:"title,omitempty"`
-	ArtistCredits  []TagValue        `json:"artistCredits,omitempty"`
-	AlbumArtists   []TagValue        `json:"albumArtists,omitempty"`
-	Album          *TagValue         `json:"album,omitempty"`
-	Genres         []TagValue        `json:"genres,omitempty"`
-	Date           *TagValue         `json:"date,omitempty"`
-	Track          TrackDiscNumber   `json:"track,omitempty"`
-	Disc           TrackDiscNumber   `json:"disc,omitempty"`
-	MusicBrainzIDs map[string]string `json:"musicBrainzIds,omitempty"`
-	ISRC           *TagValue         `json:"isrc,omitempty"`
-	ReplayGain     map[string]string `json:"replayGain,omitempty"`
+	RawTags             map[string]string `json:"rawTags,omitempty"`
+	Title               *TagValue         `json:"title,omitempty"`
+	ArtistCredits       []TagValue        `json:"artistCredits,omitempty"`
+	AlbumArtists        []TagValue        `json:"albumArtists,omitempty"`
+	Album               *TagValue         `json:"album,omitempty"`
+	Genres              []TagValue        `json:"genres,omitempty"`
+	Moods               []TagValue        `json:"moods,omitempty"`
+	Styles              []TagValue        `json:"styles,omitempty"`
+	Date                *TagValue         `json:"date,omitempty"`
+	Track               TrackDiscNumber   `json:"track,omitempty"`
+	Disc                TrackDiscNumber   `json:"disc,omitempty"`
+	MusicBrainzIDs      map[string]string `json:"musicBrainzIds,omitempty"`
+	ISRC                *TagValue         `json:"isrc,omitempty"`
+	AcoustID            *TagValue         `json:"acoustId,omitempty"`
+	AcoustIDFingerprint *TagValue         `json:"acoustIdFingerprint,omitempty"`
+	ReplayGain          map[string]string `json:"replayGain,omitempty"`
 }
 
 type Duration struct {

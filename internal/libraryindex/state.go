@@ -1497,9 +1497,10 @@ func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (P
 	return snapshot, err
 }
 
-// ScanCandidateProgress counts only unique audio files from this enumeration
-// that still have compatible pending work. Directory-frontier tasks and
-// unsupported filesystem entries are never processing units.
+// ScanCandidateProgress reports both the unique supported audio files observed
+// in this enumeration and the subset that still has compatible pending work.
+// Directory-frontier tasks and unsupported filesystem entries are never
+// processing units.
 func (s *State) ScanCandidateProgress(ctx context.Context, epoch int64, semanticJobs map[string]string) (ProgressSnapshot, error) {
 	var snapshot ProgressSnapshot
 	kinds := make([]string, 0, len(semanticJobs))
@@ -1517,10 +1518,13 @@ func (s *State) ScanCandidateProgress(ctx context.Context, epoch int64, semantic
 		clauses = append(clauses, `(j.kind=? AND j.semantic_key=?)`)
 		args = append(args, kind, semanticJobs[kind])
 	}
-	err := s.reader.QueryRowContext(ctx, `SELECT COUNT(DISTINCT j.file_id)
+	query := `SELECT
+		(SELECT COUNT(*) FROM files f WHERE f.status='present' AND f.last_seen_epoch=?),
+		COUNT(DISTINCT j.file_id)
 		FROM jobs j JOIN files f ON f.id=j.file_id
-		WHERE f.status='present' AND f.last_seen_epoch=? AND j.state='pending' AND (`+strings.Join(clauses, ` OR `)+`)`, args...).Scan(&snapshot.Total)
-	snapshot.Files = snapshot.Total
+		WHERE f.status='present' AND f.last_seen_epoch=? AND j.state='pending' AND (` + strings.Join(clauses, ` OR `) + `)`
+	args = append([]any{epoch}, args...)
+	err := s.reader.QueryRowContext(ctx, query, args...).Scan(&snapshot.Files, &snapshot.Total)
 	snapshot.Queued = snapshot.Total
 	return snapshot, err
 }

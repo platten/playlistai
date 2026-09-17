@@ -50,6 +50,7 @@ type Track struct {
 	RecordingIdentity    string                        `json:"recordingIdentity,omitempty"`
 	ISRC                 string                        `json:"isrc,omitempty"`
 	MusicBrainzRecording string                        `json:"musicBrainzRecording,omitempty"`
+	AcoustID             string                        `json:"acoustId,omitempty"`
 	AudioFingerprint     *librarypack.AudioFingerprint `json:"audioFingerprint,omitempty"`
 	DurationMilliseconds int64                         `json:"durationMilliseconds,omitempty"`
 	DurationProvenance   string                        `json:"durationProvenance,omitempty"`

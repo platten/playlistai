@@ -109,3 +109,20 @@ func TestAudioFingerprintRejectsInvalidOutput(t *testing.T) {
 		t.Fatalf("fingerprint error = %v", err)
 	}
 }
+
+func TestEmbeddedAudioFingerprintPreservesTaggedChromaprint(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xtagged"
+	fingerprint, present, err := EmbeddedAudioFingerprint(Metadata{AcoustIDFingerprint: &TagValue{Value: value, SourceKey: "ACOUSTID_FINGERPRINT", Provenance: "embedded_tag"}})
+	if err != nil || !present {
+		t.Fatalf("embedded fingerprint: present=%v err=%v", present, err)
+	}
+	if fingerprint.Fingerprint != value || fingerprint.Contract != EmbeddedAudioFingerprintVersion || fingerprint.Scope != "embedded_tag" || fingerprint.DecoderRuntimeID != "embedded_tag" {
+		t.Fatalf("embedded fingerprint = %+v", fingerprint)
+	}
+	if _, present, err := EmbeddedAudioFingerprint(Metadata{}); err != nil || present {
+		t.Fatalf("missing embedded fingerprint: present=%v err=%v", present, err)
+	}
+	if _, present, err := EmbeddedAudioFingerprint(Metadata{AcoustIDFingerprint: &TagValue{Value: "not a fingerprint"}}); err == nil || !present {
+		t.Fatalf("invalid embedded fingerprint: present=%v err=%v", present, err)
+	}
+}

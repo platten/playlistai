@@ -11,6 +11,7 @@ import (
 
 const IntegrityValidationVersion = "ffmpeg-full-decode-flac-mp3/v1"
 const AudioFingerprintVersion = "acoustid-chromaprint/v1;chromaprint=1.6.1;algorithm=1"
+const EmbeddedAudioFingerprintVersion = "acoustid-chromaprint-tag/v1;algorithm=1"
 
 // RequiresIntegrityValidation reports whether the selected stream has the
 // explicit full-decode validation contract. Selection is based on the probed
@@ -102,6 +103,25 @@ func (r *Runtime) AudioFingerprint(ctx context.Context, probe ProbeResult) (Audi
 		DecoderRuntimeID: r.ID(),
 	}
 	return fingerprint, nil
+}
+
+// EmbeddedAudioFingerprint returns a fingerprint already carried by the file's
+// tags. present remains true for an invalid value so callers do not silently
+// replace user-supplied identity metadata with a newly generated fingerprint.
+func EmbeddedAudioFingerprint(metadata Metadata) (fingerprint AudioFingerprint, present bool, err error) {
+	if metadata.AcoustIDFingerprint == nil {
+		return fingerprint, false, nil
+	}
+	value := strings.TrimSpace(metadata.AcoustIDFingerprint.Value)
+	if !validChromaprint(value) {
+		return fingerprint, true, fmt.Errorf("%w: embedded ACOUSTID_FINGERPRINT is invalid", ErrFingerprint)
+	}
+	digest := sha256.Sum256([]byte(value))
+	return AudioFingerprint{
+		Contract: EmbeddedAudioFingerprintVersion, Format: "acoustid-chromaprint-base64", Algorithm: 1,
+		Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "embedded_tag",
+		DecoderRuntimeID: "embedded_tag",
+	}, true, nil
 }
 
 func validChromaprint(value string) bool {

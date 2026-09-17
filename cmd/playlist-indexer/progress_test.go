@@ -40,7 +40,7 @@ func TestProgressTitleReportsDurableState(t *testing.T) {
 func TestScanProgressDoesNotClaimQueuedAnalysisFinished(t *testing.T) {
 	snapshot := libraryindex.ProgressSnapshot{Files: 12, Total: 12, Queued: 12}
 	title := progressTitle("Complete", snapshot, progressScan)
-	if title != "Complete • 12 audio files queued for processing" {
+	if title != "Complete • 12 audio files discovered • 12 queued for processing" {
 		t.Fatalf("scan completion title = %q", title)
 	}
 }
@@ -169,7 +169,7 @@ func TestProgressBarSurvivesGrowingTotalAndRedrawDeadline(t *testing.T) {
 	}
 }
 
-func TestScanProgressBarUsesPendingAudioFileCount(t *testing.T) {
+func TestScanProgressBarUsesDiscoveredAudioFileCount(t *testing.T) {
 	output := &bytes.Buffer{}
 	bar, err := pterm.DefaultProgressbar.WithWriter(output).WithTotal(1).WithCurrent(0).WithShowTitle(false).WithShowElapsedTime(false).Start()
 	if err != nil {
@@ -177,9 +177,9 @@ func TestScanProgressBarUsesPendingAudioFileCount(t *testing.T) {
 	}
 	defer func() { _, _ = bar.Stop() }()
 	_ = latestProgressLine(output)
-	line := pterm.RemoveColorFromString(updateProgressBar(bar, output, libraryindex.ProgressSnapshot{Total: 17}, progressScan))
-	if bar.Total != 17 || bar.Current != 0 || !strings.Contains(line, "0/17") {
-		t.Fatalf("scan progress did not use pending audio file count: total=%d current=%d line=%q", bar.Total, bar.Current, line)
+	line := pterm.RemoveColorFromString(updateProgressBar(bar, output, libraryindex.ProgressSnapshot{Files: 23, Total: 17}, progressScan))
+	if bar.Total != 23 || bar.Current != 23 || !strings.Contains(line, "23/23") {
+		t.Fatalf("scan progress did not use discovered audio file count: total=%d current=%d line=%q", bar.Total, bar.Current, line)
 	}
 }
 
