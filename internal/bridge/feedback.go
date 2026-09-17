@@ -231,6 +231,9 @@ func (a *API) generationTasteProfile(ctx context.Context, sessionID, requestID s
 
 func (a *API) exposureEvents(request BuildPlaylistRequest, result PlaylistResult) []core.FeedbackEvent {
 	versions := a.feedbackVersions()
+	if result.Reproducibility.CatalogVersion != "" {
+		versions.Catalog = result.Reproducibility.CatalogVersion
+	}
 	versions.Recommendation = a.recommendationVersionFor(result.Intent)
 	events := make([]core.FeedbackEvent, 0, len(result.Tracks))
 	for position, track := range result.Tracks {
@@ -261,7 +264,7 @@ func (a *API) catalogVersion() string {
 	if a.runtime().Resolver == nil {
 		return "unknown"
 	}
-	return a.runtime().Resolver.CatalogVersion()
+	return a.app.LocalLibraryCatalogVersion(a.runtime().Resolver.CatalogVersion())
 }
 
 func (a *API) recommendationVersion() string {

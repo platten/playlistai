@@ -1,0 +1,14 @@
+{
+  "ffmpeg": {
+    "version": "8.1.2",
+    "url": "https://ffmpeg.org/releases/ffmpeg-8.1.2.tar.xz",
+    "size": 11710924,
+    "sha256": "464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c",
+    "released": "2026-06-17"
+  },
+  "builder": {
+    "image": "debian:12.12-slim",
+    "linuxAmd64Digest": "sha256:a1363ada3b45cb3ebc74c78943558f8b0c2b59aaa194d8224e1b02cfd5d78583",
+    "debianSnapshot": "20260901T000000Z"
+  }
+}

@@ -230,7 +230,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 	}
 	catalogVersion := "unknown"
-	if a.runtime().Resolver != nil {
+	if playlist.EvidenceCatalogVersion != "" {
+		catalogVersion = playlist.EvidenceCatalogVersion
+	} else if a.runtime().Resolver != nil {
 		catalogVersion = a.runtime().Resolver.CatalogVersion()
 	}
 	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersionFor(intent), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
@@ -353,7 +355,14 @@ func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, int
 	if err != nil {
 		return core.TasteProfile{}, err
 	}
-	if !found || profile.CatalogVersion != identity.CatalogVersion || profile.AlgorithmVersion != identity.ProfileVersion {
+	profileCatalog := "unknown"
+	if a.runtime().Resolver != nil {
+		profileCatalog = a.runtime().Resolver.CatalogVersion()
+	}
+	// Taste vectors remain in the bundled Deej-AI spaces. The independently
+	// pinned local evidence generation is recorded by identity.CatalogVersion;
+	// it must not make an otherwise identical base-vector profile incompatible.
+	if !found || profile.CatalogVersion != profileCatalog || profile.AlgorithmVersion != identity.ProfileVersion {
 		return core.TasteProfile{}, errors.New("saved taste snapshot is missing or incompatible; regenerate to use current preferences")
 	}
 	return profile, nil

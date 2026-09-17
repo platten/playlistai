@@ -12,6 +12,13 @@ import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
 import { RecommendationSettings } from "../components/RecommendationSettings";
+import {
+  LocalLibraryAPI,
+  type LocalLibraryImportResult,
+  type LocalLibraryMode,
+  type LocalLibraryStatus,
+} from "../lib/localLibrary";
+import type { CancellablePromise } from "@wailsio/runtime";
 
 /** ggml-org's official llama.cpp installer landing page. */
 const LLAMA_INSTALLER_URL = "https://llama.app";
@@ -25,6 +32,184 @@ const PREVIEW_OPTIONS: { id: string; label: string }[] = [
   { id: "deezer", label: "Deezer" },
   { id: "spotify", label: "Spotify" },
 ];
+
+function count(value: number | undefined): string {
+  return (value ?? 0).toLocaleString();
+}
+
+function LocalLibrarySettings() {
+  const [status, setStatus] = useState<LocalLibraryStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [roots, setRoots] = useState<Record<string, string>>({});
+  const pendingImport = useRef<CancellablePromise<LocalLibraryImportResult> | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await LocalLibraryAPI.getStatus();
+      setStatus(next);
+      setRoots(Object.fromEntries((next.roots ?? []).map((root) => [root.alias, root.path ?? ""])));
+      setError(null);
+    } catch (reason) {
+      setError(`Could not read the local library: ${String(reason)}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    return () => { void pendingImport.current?.cancel("settings closed"); };
+  }, [refresh]);
+
+  const importPack = async () => {
+    if (busy) return;
+    setBusy("import");
+    setError(null);
+    const operation = LocalLibraryAPI.choosePack();
+    pendingImport.current = operation;
+    try {
+      const result = await operation;
+      if (!result.canceled) {
+        setStatus(result.status);
+        setRoots(Object.fromEntries((result.status.roots ?? []).map((root) => [root.alias, root.path ?? ""])));
+      }
+    } catch (reason) {
+      if ((reason as { name?: string })?.name !== "CancelError") {
+        setError(`Could not import the library pack: ${String(reason)}`);
+      }
+    } finally {
+      if (pendingImport.current === operation) pendingImport.current = null;
+      setBusy(null);
+    }
+  };
+
+  const cancelImport = async () => {
+    if (!pendingImport.current) return;
+    setBusy("cancel");
+    await pendingImport.current.cancel("library import cancelled");
+    try { await LocalLibraryAPI.cancelImport(); } catch { /* cancellation is best effort */ }
+  };
+
+  const changeMode = async (mode: LocalLibraryMode) => {
+    if (busy || status?.mode === mode) return;
+    setBusy("mode");
+    setError(null);
+    try { setStatus(await LocalLibraryAPI.setMode(mode)); }
+    catch (reason) { setError(`Could not change library mode: ${String(reason)}`); }
+    finally { setBusy(null); }
+  };
+
+  const saveRoot = async (alias: string) => {
+    if (busy) return;
+    setBusy(`root:${alias}`);
+    setError(null);
+    try {
+      const next = await LocalLibraryAPI.setRoot(alias, roots[alias] ?? "");
+      setStatus(next);
+      setRoots(Object.fromEntries((next.roots ?? []).map((root) => [root.alias, root.path ?? ""])));
+    } catch (reason) { setError(`Could not save the ${alias} root: ${String(reason)}`); }
+    finally { setBusy(null); }
+  };
+
+  const remove = async () => {
+    if (busy || !status?.installed || !window.confirm("Remove this imported library from Playlist AI? The original music tree and source pack will not be deleted or changed.")) return;
+    setBusy("remove");
+    setError(null);
+    try {
+      const next = await LocalLibraryAPI.remove();
+      setStatus(next);
+      setRoots({});
+    } catch (reason) { setError(`Could not remove the imported library: ${String(reason)}`); }
+    finally { setBusy(null); }
+  };
+
+  const installed = status?.installed ?? false;
+  const coverage = status?.coverage;
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="local-library-heading">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id="local-library-heading" className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Local music library</h2>
+          <p className="mt-1 text-[12px] text-muted">Attach a verified pack created by playlist-indexer. Packs contain metadata and derived evidence, never audio.</p>
+        </div>
+        <div className="flex gap-2">
+          {busy === "import" || busy === "cancel" ? (
+            <Button size="sm" variant="ghost" disabled={busy === "cancel"} onClick={() => void cancelImport()}>
+              {busy === "cancel" ? "Cancelling…" : "Cancel import"}
+            </Button>
+          ) : (
+            <Button size="sm" variant={installed ? "ghost" : "primary"} disabled={busy !== null || loading} onClick={() => void importPack()}>
+              {installed ? "Update pack" : "Import pack"}
+            </Button>
+          )}
+          {installed && <Button size="sm" variant="subtle" disabled={busy !== null} onClick={() => void remove()}>{busy === "remove" ? "Removing…" : "Remove"}</Button>}
+        </div>
+      </div>
+
+      {(busy === "import" || busy === "cancel") && <ProgressBar label={installed ? "Verifying library update" : "Importing library pack"} note={busy === "cancel" ? "stopping safely…" : "checking schema, vectors, and checksums…"} />}
+      {error && <ErrorState variant="inline" message={error} onRetry={() => void refresh()} retryLabel="Refresh" onDismiss={() => setError(null)} />}
+
+      <div className="rounded-card border border-line bg-surface p-4">
+        {loading && !status ? (
+          <p role="status" className="text-[13px] text-muted">Checking imported library…</p>
+        ) : !installed ? (
+          <div className="flex flex-col gap-1">
+            <p className="text-[13.5px] font-medium">No local library attached</p>
+            <p className="text-[12px] text-faint">Importing copies a verified pack into app-managed storage. Your music files remain where they are and are never rewritten.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-medium">Verified library pack <span className="text-good">ready</span></p>
+                <p className="break-all font-mono text-[11px] text-faint">{status?.packId?.slice(0, 16)}… · format v{status?.version}</p>
+              </div>
+              <p className="text-[12px] text-muted">{count(coverage?.tracks)} tracks</p>
+            </div>
+            <dl className="grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4">
+              <div><dt className="text-faint">Metadata</dt><dd className="font-medium text-text">{count(coverage?.metadata)}</dd></div>
+              <div><dt className="text-faint">MERT audio</dt><dd className="font-medium text-text">{count(coverage?.mert)}</dd></div>
+              <div><dt className="text-faint">DSP</dt><dd className="font-medium text-text">{count(coverage?.dsp)}</dd></div>
+              <div><dt className="text-faint">Unavailable</dt><dd className="font-medium text-text">{count((coverage?.failed ?? 0) + (coverage?.unsupported ?? 0))}</dd></div>
+            </dl>
+            {(coverage?.failed ?? 0) + (coverage?.unsupported ?? 0) > 0 && <p className="text-[11.5px] text-warn">Partial audio coverage: {count(coverage?.failed)} failed and {count(coverage?.unsupported)} unsupported. Their valid metadata remains usable.</p>}
+            {status?.mert?.dimension ? <p className="text-[11.5px] text-faint">Audio evidence: {status.mert.model} · {status.mert.dimension} dimensions · {status.mert.sampling} · {status.mert.scope}</p> : <p className="text-[11.5px] text-faint">This pack has metadata only; no audio vector space is available.</p>}
+          </div>
+        )}
+      </div>
+
+      <fieldset className="flex flex-col gap-2" disabled={busy !== null || loading}>
+        <legend className="text-[12px] font-medium text-muted">Recommendation source</legend>
+        <div className="flex flex-wrap gap-2">
+          {([{ id: "combined", label: "Local + bundled" }, { id: "library_only", label: "Local library only" }] as const).map((choice) => (
+            <button key={choice.id} type="button" aria-pressed={status?.mode === choice.id} disabled={!installed && choice.id === "library_only"} onClick={() => void changeMode(choice.id)} className={"h-8 rounded-control border px-3 text-[12.5px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent " + (status?.mode === choice.id ? "border-accent/50 bg-accent-quiet text-accent" : "border-line bg-surface text-muted hover:border-line-strong hover:text-text")}>{choice.label}</button>
+          ))}
+        </div>
+        <p className="text-[11.5px] text-faint">Importing a library does not count as a like or change your taste profile.</p>
+      </fieldset>
+
+      {installed && (status?.roots?.length ?? 0) > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-[12px] font-medium text-muted">Playback roots on this machine</h3>
+          {status!.roots.map((root) => (
+            <div key={root.alias} className="rounded-card border border-line bg-surface px-4 py-3">
+              <label htmlFor={`library-root-${root.alias}`} className="block text-[12px] font-medium text-text">{root.alias}</label>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input id={`library-root-${root.alias}`} value={roots[root.alias] ?? ""} onChange={(event) => setRoots((current) => ({ ...current, [root.alias]: event.target.value }))} placeholder="/absolute/path/to/music" className="h-9 min-w-0 flex-1 basis-[260px] rounded-control border border-line bg-bg px-3 font-mono text-[12px] text-text placeholder:text-faint focus:border-accent" />
+                <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void saveRoot(root.alias)}>{busy === `root:${root.alias}` ? "Saving…" : "Save root"}</Button>
+              </div>
+              <p className={"mt-2 text-[11.5px] " + (root.available ? "text-good" : "text-faint")}>{root.available ? "Available for local playback" : root.detail || "Not available on this machine"}</p>
+            </div>
+          ))}
+          <p className="text-[11.5px] text-faint">Root mappings stay on this device. Recommendations remain available when a drive or NAS is offline.</p>
+        </div>
+      )}
+    </section>
+  );
+}
 
 /** Local models, playback, metadata providers, and user data controls. */
 export function SettingsScreen({ onReset }: { onReset?: () => void }) {
@@ -153,6 +338,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
       </div>
 
       <RecommendationSettings />
+      <LocalLibrarySettings />
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</h2>
         <EnhancedAudioCard />

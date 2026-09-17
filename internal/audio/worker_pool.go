@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync"
 
 	"github.com/platten/playlistai/internal/core"
 )
@@ -85,7 +86,7 @@ func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 	pool := &MERTWorkerPool{workers: make([]*MERTWorker, 0, parallelism), available: make(chan *MERTWorker, parallelism)}
 	pool.workers = append(pool.workers, primary)
 	for range parallelism - 1 {
-		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model})
+		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, InferenceThreads: primary.InferenceThreads})
 	}
 	for _, worker := range pool.workers {
 		pool.available <- worker
@@ -94,6 +95,36 @@ func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 }
 
 func (p *MERTWorkerPool) Identity() core.AudioRepresentationIdentity { return p.workers[0].Identity() }
+func (p *MERTWorkerPool) Parallelism() int                           { return len(p.workers) }
+func (p *MERTWorkerPool) ResidentBytes() int64 {
+	var total int64
+	for _, worker := range p.workers {
+		total += worker.ResidentBytes()
+	}
+	return total
+}
+
+// Warm starts and validates every independent native session. Automatic
+// planning can measure this operation before admitting duplicate residency.
+func (p *MERTWorkerPool) Warm(ctx context.Context) error {
+	var wg sync.WaitGroup
+	errs := make(chan error, len(p.workers))
+	for _, worker := range p.workers {
+		worker := worker
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs <- worker.Health(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	var joined []error
+	for err := range errs {
+		joined = append(joined, err)
+	}
+	return errors.Join(joined...)
+}
 
 func (p *MERTWorkerPool) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
 	select {

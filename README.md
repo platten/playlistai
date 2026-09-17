@@ -20,6 +20,49 @@ Soundiiz.
 Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
 and Linux, with a React/TypeScript interface.
 
+## Analyze a local music library
+
+The Linux amd64 `playlist-indexer` command scans a read-only FLAC, MP3, raw AAC,
+or M4A/AAC library, performs local DSP and MERT analysis, fits unsupervised
+metadata/audio resources, and writes a portable `.paipack` without Python or a
+system FFmpeg installation:
+
+```sh
+./playlist-indexer run \
+  --root /mnt/music \
+  --state "$HOME/.local/share/playlist-indexer" \
+  --profile balanced --device cpu --concurrency auto \
+  --accept-model-license --out ./my-library.paipack
+```
+
+`auto` is the default bounded resource plan. Use `--concurrency serial` as the
+diagnostic correctness baseline, or `manual` with stage ceilings such as
+`--workers 8 --io-profile nas --io-workers 2 --decode-workers 2
+--inference-workers 2 --inference-threads 2 --max-ram 8GiB`. Stage ceilings
+share the global budget; they do not multiply it. Only one mutating coordinator
+may use a state directory, while `status` remains read-only.
+
+Interactive runs show a PTerm progress bar on stderr with discovered files and
+compatible queued, active, finished, and failed jobs. A PTerm box above the bar
+shows the most recent file to begin scanning or analysis (several files may be
+active under concurrent plans). Redirected/non-TTY runs remain plain and
+machine-safe, and `--no-progress` disables the live display explicitly. `--json`
+continues to reserve stdout for the final JSON document.
+
+Rerun `run` or `scan` with the same roots and state directory to discover files
+added since the prior run. Each completed scan starts a new durable enumeration
+epoch; unchanged files retain compatible completed metadata, DSP, and MERT jobs,
+so only new or changed sources are analyzed. An interrupted scan resumes its
+existing frontier and selectively reopens already-completed directories whose
+stored directory revision changed. Resume never wipes prior state.
+
+The standard executable embeds its private codec runtime and performs explicit
+licensed MERT setup. The larger offline executable embeds both codec and CPU
+MERT payloads; it still requires `--accept-model-license`. See the
+[implementation contract](docs/library-indexer-design.md), [concurrency and
+recovery contract](docs/library-indexer-concurrency.md), [pack format](docs/paipack-format.md),
+and [executed validation](docs/library-indexer-validation.md).
+
 Choose **5, 10, 20, or 40 tracks** beside Generate (default: 20). This explicit
 selection takes precedence over a count in the description; replaying a saved
 playlist retains its original length. Generation keeps running while Settings

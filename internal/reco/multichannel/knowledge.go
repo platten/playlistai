@@ -26,6 +26,13 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 			return state
 		}
 	}
+	if catalog, ok := o.cat.(interface {
+		CriterionEvidence(context.Context, string, core.MusicalCriterion) core.EvidenceState
+	}); ok {
+		if state := catalog.CriterionEvidence(ctx, id, c); state != core.EvidenceUnknown && state != "" {
+			return state
+		}
+	}
 	if o.features != nil {
 		if features, ok, err := o.features.Features(ctx, id); err == nil && ok {
 			if c.Kind == "genre" || o.enhanced && c.Kind == "style" {

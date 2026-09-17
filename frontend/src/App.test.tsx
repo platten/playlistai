@@ -21,6 +21,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
   "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
   "GetPreviewURL", "GetEnhancedAnalysisStatus",
+  "GetLocalLibraryStatus", "ChooseLocalLibraryPack", "CancelLocalLibraryImport", "SetLocalLibraryMode", "SetLocalLibraryRoot", "RemoveLocalLibrary",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
   API: bridge,
@@ -65,6 +66,7 @@ beforeEach(() => {
   bridge.GetRecommendationMode.mockImplementation(() => completed("acousticbrainz_first"));
   bridge.GetPreviewProviderName.mockImplementation(() => completed("deezer"));
   bridge.GetDebugLogging.mockImplementation(() => completed(false));
+  bridge.GetLocalLibraryStatus.mockImplementation(() => completed({ installed: false, mode: "combined", coverage: {}, roots: [] }));
   bridge.ParseIntentWithContext.mockImplementation(() => completed({ ...fixture().request.intent, creativity: 0.5, noise: 0.1, lookback: 3, artistsExclude: [], intent: fixture().request.intent, resolutionIssues: [], seeds: [], requiredTracks: [] }));
   bridge.GenerateFromPromptWithContext.mockImplementation((_prompt, context) => {
     const value = fixture();
