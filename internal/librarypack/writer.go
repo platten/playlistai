@@ -486,7 +486,10 @@ func validUnitVector(vector []float32) bool {
 }
 
 func syncFile(name string) error {
-	f, err := os.Open(name)
+	// Windows requires a handle with write access for FlushFileBuffers, which
+	// os.File.Sync uses there. This file is an app-created pack payload, not a
+	// source music file, so reopen it read/write after SQLite has released it.
+	f, err := os.OpenFile(name, os.O_RDWR, 0)
 	if err != nil {
 		return err
 	}
