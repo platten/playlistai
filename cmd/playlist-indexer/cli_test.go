@@ -65,14 +65,15 @@ func TestParseAppendRootRequiresStableAlias(t *testing.T) {
 func TestMERTWarmupRetriesTransientNativeFailure(t *testing.T) {
 	warmer := &scriptedMERTWarmer{errors: []error{audio.ErrNativeWorker, audio.ErrNativeWorker, nil}}
 	var log bytes.Buffer
-	if err := warmMERTWithRetries(context.Background(), warmer, &log); err != nil {
+	var issues []libraryindex.ProcessingIssue
+	if err := warmMERTWithRetries(context.Background(), warmer, &log, func(issue libraryindex.ProcessingIssue) { issues = append(issues, issue) }); err != nil {
 		t.Fatal(err)
 	}
-	if warmer.calls != 3 || strings.Count(log.String(), "restarting native sessions") != 2 {
-		t.Fatalf("calls=%d log=%q", warmer.calls, log.String())
+	if warmer.calls != 3 || strings.Count(log.String(), "restarting native sessions") != 2 || len(issues) != 2 || issues[0].Code != "native_worker_restart" {
+		t.Fatalf("calls=%d log=%q issues=%+v", warmer.calls, log.String(), issues)
 	}
 	permanent := &scriptedMERTWarmer{errors: []error{errors.New("invalid model")}}
-	if err := warmMERTWithRetries(context.Background(), permanent, io.Discard); err == nil || permanent.calls != 1 {
+	if err := warmMERTWithRetries(context.Background(), permanent, io.Discard, nil); err == nil || permanent.calls != 1 {
 		t.Fatalf("permanent failure was retried: calls=%d err=%v", permanent.calls, err)
 	}
 }
@@ -98,60 +99,5 @@ func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	}
 	if plan.HeavyWorkers != 2 || plan.IOWorkers != 1 || values.seed != 7 {
 		t.Fatalf("CLI/config precedence failed: %+v seed=%d", plan, values.seed)
-	}
-}
-
-func TestPipelineAnalysisLifecycleJoinsBeforeStateCloseOnRootFailure(t *testing.T) {
-	stateDir := filepath.Join(t.TempDir(), "state")
-	state, err := libraryindex.OpenState(context.Background(), stateDir, "lifecycle-test", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = state.Close() })
-	musicRoot := filepath.Join(t.TempDir(), "music")
-	accepted := make(chan error, 1)
-	finished := make(chan struct{})
-	lifecycle := startPipelineAnalysis(context.Background(), func(ctx context.Context, discoveryDone <-chan struct{}) (libraryindex.AnalysisReport, error) {
-		_, err := state.EnsureRoot(ctx, musicRoot, "music")
-		accepted <- err
-		if err != nil {
-			close(finished)
-			return libraryindex.AnalysisReport{}, err
-		}
-		<-discoveryDone
-		<-ctx.Done()
-		close(finished)
-		return libraryindex.AnalysisReport{}, ctx.Err()
-	})
-	if err := <-accepted; err != nil {
-		t.Fatal(err)
-	}
-	rootFailure := errors.New("root enumeration failed")
-	if _, err := lifecycle.finish(rootFailure); !errors.Is(err, rootFailure) || !errors.Is(err, context.Canceled) {
-		t.Fatalf("joined error = %v", err)
-	}
-	// Repeated completion after finish exercises the one-time discovery barrier.
-	lifecycle.completeDiscovery()
-	lifecycle.completeDiscovery()
-	select {
-	case <-finished:
-	default:
-		t.Fatal("finish returned before the analyzer exited")
-	}
-	if err := state.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	reopened, err := libraryindex.OpenState(context.Background(), stateDir, "lifecycle-verify", 2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer reopened.Close()
-	var roots int
-	if err := reopened.Reader().QueryRow(`SELECT COUNT(*) FROM roots WHERE alias='music'`).Scan(&roots); err != nil {
-		t.Fatal(err)
-	}
-	if roots != 1 {
-		t.Fatalf("accepted writer commit was not durable: roots=%d", roots)
 	}
 }

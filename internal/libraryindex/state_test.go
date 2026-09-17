@@ -41,7 +41,7 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	if err := state.Reader().QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "2" {
+	if version != "3" {
 		t.Fatalf("schema version = %q", version)
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT completed_mtime_ns,completed_size FROM directory_frontier LIMIT 1`); err != nil {
@@ -324,6 +324,16 @@ func TestPermanentCorruptionIsNotCountedOrRequeuedAsRetry(t *testing.T) {
 	}
 	if changed, err := state.RetryFailed(ctx); err != nil || changed != 0 {
 		t.Fatalf("permanent corruption requeued: changed=%d err=%v", changed, err)
+	}
+	if _, err := state.ObserveFile(ctx, epoch, SourceFile{RootID: root.ID, RelativePath: "damaged.flac", Size: 10, MTimeNS: 2, Extension: ".flac"}, map[string]string{"metadata": "v1"}); err != nil {
+		t.Fatal(err)
+	}
+	var errorCode string
+	if err := state.Reader().QueryRowContext(ctx, `SELECT state,retry_count,error_code FROM jobs WHERE id=?`, jobs[0].ID).Scan(&jobState, &retryCount, &errorCode); err != nil {
+		t.Fatal(err)
+	}
+	if jobState != "failed" || retryCount != 0 || errorCode != "corrupt_media" {
+		t.Fatalf("unchanged rescan requeued permanent failure: state=%q retry=%d code=%q", jobState, retryCount, errorCode)
 	}
 }
 

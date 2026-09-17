@@ -81,19 +81,23 @@ to a prior interrupted scan.
 The bounded flow is:
 
 ```text
-durable directory frontier -> inventory writer -> probe + FLAC/MP3 integrity workers -> durable jobs
+durable directory frontier -> complete inventory -> immutable manifest + pending-job diff -> barrier
+-> probe + FLAC/MP3 integrity workers -> durable jobs
 -> decode workers -> immutable PCM window -> local DSP + MERT preprocessing
 -> warm one-request/session MERT pool -> ordered track result -> single writer
 -> drain -> online SQLite backup + immutable vector generation
 -> parallel fixed-block fit/assignment/index -> atomic pack publication
 ```
 
-Discovery and analysis overlap across recordings. A directory is read in
-256-entry chunks; each child batch is idempotently committed to the durable
+Each `run` completes discovery before analysis. The barrier publishes an
+`inventory.jsonl` containing every discovered audio path and size plus a
+`diff.jsonl` containing only pending compatible jobs, and freezes those jobs in
+`scan_diff_jobs`. Analysis can claim only that epoch's diff. A directory is read
+in 256-entry chunks; each child batch is idempotently committed to the durable
 frontier before the parent is completed. Pool-level heartbeats renew directory
 and analysis leases. A full in-memory queue therefore cannot lose or deadlock
-frontier work. Scanning shares the source-I/O/descriptor admission controller
-with probing and decoding. Channels contain bounded
+frontier work. Scanning and later analysis both obey the source-I/O/descriptor
+admission controller. Channels contain bounded
 descriptors; decoded bytes require a separate byte reservation. A window is
 cleared only after both branches release it. Native requests own their tensor
 until the framed response or killed/reaped worker completes.
@@ -105,7 +109,9 @@ does not consume the PCM queue budget. The subprocess has a 30-minute bound for
 exceptionally large sources. Its source revision is checked before and after;
 size, mtime, native identity, and Linux change time must remain stable. A media
 decode error is permanent `corrupt_media`, while a changed source is refreshed
-and requeued. The integrity child has a 30-second decoded-output activity
+and requeued. During a manifest-bound `run`, a changed source is instead skipped
+as `source_changed_after_manifest` and can be queued only by a later scan. The
+integrity child has a 30-second decoded-output activity
 watchdog in addition to its 30-minute total bound; a stall is terminated and
 retried with a fresh child. AAC retains the existing probe plus selected-window
 decode checks; full AAC integrity validation is not claimed by this contract.
@@ -165,6 +171,13 @@ use a count/time-bounded writer batch (64 operations or 5 ms). Every item keeps
 its fence and source-revision predicate inside the shared transaction. If one
 item is stale, the batch rolls back and retries items individually, so it cannot
 discard unrelated valid commits.
+
+Schema v3 stores each immutable epoch diff in `scan_diff_jobs`. Manifest
+generations are atomically renamed under `STATE/manifests`, and include hashes
+for their inventory and diff JSONL streams. Operational problems are appended
+to the private `STATE/issues.jsonl`; structured locations contain aliases and
+relative paths. Native diagnostic detail can contain physical paths, so this is
+an administrator log rather than a shareable report.
 
 SIGINT/SIGTERM cancels the shared context, stops discovery and new claims,
 kills/reaps cancelable owned child groups, and leaves uncommitted work durable

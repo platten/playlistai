@@ -51,7 +51,29 @@ type progressSnapshotReader interface {
 	Progress(context.Context, map[string]string) (libraryindex.ProgressSnapshot, error)
 }
 
-func startPipelineProgress(ctx context.Context, state *libraryindex.State, semanticJobs map[string]string, writer io.Writer, disabled bool, initialPhase string, mode progressMode) *pipelineProgress {
+type scopedProgressReader struct {
+	mu    sync.RWMutex
+	state *libraryindex.State
+	epoch int64
+}
+
+func (r *scopedProgressReader) SetEpoch(epoch int64) {
+	r.mu.Lock()
+	r.epoch = epoch
+	r.mu.Unlock()
+}
+
+func (r *scopedProgressReader) Progress(ctx context.Context, semanticJobs map[string]string) (libraryindex.ProgressSnapshot, error) {
+	r.mu.RLock()
+	epoch := r.epoch
+	r.mu.RUnlock()
+	if epoch > 0 {
+		return r.state.ScanDiffProgress(ctx, epoch)
+	}
+	return r.state.Progress(ctx, semanticJobs)
+}
+
+func startPipelineProgress(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, writer io.Writer, disabled bool, initialPhase string, mode progressMode) *pipelineProgress {
 	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
 	file, terminal := writer.(*os.File)
 	if disabled || !terminal || !term.IsTerminal(int(file.Fd())) || os.Getenv("TERM") == "dumb" {

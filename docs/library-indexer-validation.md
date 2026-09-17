@@ -40,7 +40,7 @@ workspace from remaining release gates.
   after adding one FLAC. The second run reported two discovered audio files but
   exactly one metadata completion; final state contained two completed jobs.
   A third unchanged run reported zero metadata completions. Focused race tests
-  also exercised selective changed-directory resume, v1-to-v2 state migration,
+  also exercised selective changed-directory resume, v1-to-v3 state migration,
   and preservation of the completed job's attempt count.
 - A separate real metadata-only run completed one FLAC under logical root
   `primary`, then reused the same state with
@@ -56,6 +56,23 @@ workspace from remaining release gates.
   root completed one record, appending the second root completed only its two
   records, and an unchanged third scan completed zero metadata jobs. Final
   status retained all three files and three completed metadata jobs.
+- The scan-first executable was run against two roots containing three files.
+  It published a three-row inventory and three-row diff with verified SHA-256
+  fields before processing began, then completed all three metadata jobs. An
+  unchanged append-only rerun over one root published a two-row inventory and
+  an empty diff, completed zero metadata jobs, and retained all three records in
+  global status. A missing-root run exited with the documented partial outcome
+  and appended its directory error to `STATE/issues.jsonl`.
+- Race-enabled regressions freeze a diff, change a source's size, verify that it
+  cannot re-enter that epoch after being marked
+  `source_changed_after_manifest`, and verify that the next scan creates a new
+  pending revision. Another regression confirms that an append-only manifest
+  cannot claim pending work belonging to an unscanned root.
+- The rebuilt standard executable was also exercised against 121 test FLAC
+  files while one file was enlarged after manifest publication. The first run
+  completed 120 jobs, reported one `skippedChanged`, exited with the documented
+  partial code, and wrote the expected-size/observed-size issue. The next run's
+  diff contained exactly that one new revision and completed it successfully.
 - Real bundled FFmpeg 8.1.2 tests fully decoded valid FLAC and MP3 fixtures, then
   damaged 2,048 bytes in the middle of each file. Both damaged files still
   passed the lightweight ffprobe step and both failed the full decode integrity
@@ -85,11 +102,12 @@ workspace from remaining release gates.
   callback, forces a directory revision change, and verifies a complete two-file
   inventory/report without retry double-counting.
 - The current rebuilt offline executable completed a fresh serial fast-profile
-  run over a real FLAC after the integrity and 30-second watchdog changes. One
-  native session warmed in 3.667 seconds with measured 617,033,728-byte RSS, and
-  the run committed one metadata, DSP, and real 768-dimensional MERT result with
-  zero failures or retries. This verifies normal inference on this host; it is
-  not a general latency guarantee.
+  run over a real FLAC with the scan/diff barrier. Its manifest contained one
+  inventory row and two pending jobs. One native session warmed in 3.725 seconds
+  with measured 670,334,976-byte RSS, and the run committed one metadata, DSP,
+  and real 768-dimensional MERT result with zero failures or retries. The source
+  SHA-256 was unchanged. This verifies normal inference on this host; it is not
+  a general latency guarantee.
 - The opt-in real-audio concurrency benchmark executed on an identical
   deterministic two-track sample. Serial, 2-worker, 4-worker, and auto runs all
   committed two metadata and two audio results with semantic digest
@@ -140,12 +158,12 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          ad31c1a1142640685c6394ee994967906f0d2645e7695a91326555ed144d5ddf
-bin/playlist-indexer-offline  75b8e3546591140aeb5374fb877457bd99a15c4780dba1591e6beb93e9c29a5a
+bin/playlist-indexer          d98f935d868a11012c3372f1932d23e5248c1d6f674795f5e3b92a2e78ff831f
+bin/playlist-indexer-offline  03b52d66d4ef5b3fbe0a1c128efee0176e87699bff892d53b9b8f0090a707b5e
 ```
 
-The standard file is 23,968,357 bytes and the offline file is 425,437,925
-bytes. `./scripts/test.sh` passed after the September 17 production-readiness,
+The standard file is 24,038,845 bytes and the offline file is 425,508,413
+bytes. `./scripts/test.sh` passed after the September 17 scan-manifest,
 live activity rendering, and append-root changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and
 golangci-lint with zero findings. `GOOS=windows GOARCH=amd64 go test -run '^$'

@@ -30,6 +30,7 @@ type AnalysisReport struct {
 	AudioCompleted    int64 `json:"audioCompleted"`
 	Failed            int64 `json:"failed"`
 	Retried           int64 `json:"retried"`
+	SkippedChanged    int64 `json:"skippedChanged"`
 }
 
 type Analyzer struct {
@@ -40,8 +41,13 @@ type Analyzer struct {
 	Admission *Admission
 	Profile   SamplingProfile
 	OnFile    func(FileActivity)
-	stageOnce sync.Once
-	dspSlots  chan struct{}
+	OnIssue   func(ProcessingIssue)
+	// FreezeManifest prevents a file changed after the scan/diff barrier from
+	// being admitted again during this run. The next scan observes and queues it.
+	FreezeManifest bool
+	DiffEpoch      int64
+	stageOnce      sync.Once
+	dspSlots       chan struct{}
 }
 
 const (
@@ -50,6 +56,7 @@ const (
 )
 
 var errSourceRefreshed = errors.New("library indexer: source revision refreshed")
+var errSourceChangedAfterManifest = errors.New("library indexer: source changed after scan manifest")
 
 type jobLeaseTracker struct {
 	mu   sync.Mutex
@@ -197,17 +204,29 @@ func (a *Analyzer) runMetadata(ctx context.Context, discoveryDone <-chan struct{
 				err := a.processMetadata(workerCtx, job)
 				leases.remove(job)
 				if err != nil {
+					if errors.Is(err, errSourceChangedAfterManifest) {
+						atomic.AddInt64(&report.SkippedChanged, 1)
+						a.emitJobIssue(workerCtx, job, "metadata", "source_changed_after_manifest", err, false)
+						if failErr := a.State.FailJob(workerCtx, job, "source_changed_after_manifest", err.Error(), false); failErr != nil {
+							cancel(failErr)
+							return
+						}
+						continue
+					}
 					if errors.Is(err, errSourceRefreshed) {
 						atomic.AddInt64(&report.Retried, 1)
+						a.emitJobIssue(workerCtx, job, "metadata", "source_refreshed", err, true)
 						continue
 					}
 					retry := retryableAnalysisError(workerCtx, err, job.RetryCount)
+					code := classifyAnalysisError(err)
+					a.emitJobIssue(workerCtx, job, "metadata", code, err, retry)
 					if retry {
 						atomic.AddInt64(&report.Retried, 1)
 					} else {
 						atomic.AddInt64(&report.Failed, 1)
 					}
-					if failErr := a.State.FailJob(workerCtx, job, classifyAnalysisError(err), err.Error(), retry); failErr != nil {
+					if failErr := a.State.FailJob(workerCtx, job, code, err.Error(), retry); failErr != nil {
 						cancel(failErr)
 						return
 					}
@@ -249,6 +268,9 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	release()
 	if probeErr != nil {
 		if errors.Is(probeErr, localaudio.ErrSourceChanged) {
+			if a.FreezeManifest {
+				return errors.Join(errSourceChangedAfterManifest, probeErr)
+			}
 			if verifyErr := a.verifySourceRevision(ctx, job, file, path); verifyErr != nil {
 				return verifyErr
 			}
@@ -270,6 +292,9 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		validationErr := a.Runtime.ValidateIntegrity(ctx, probe)
 		release()
 		if errors.Is(validationErr, localaudio.ErrSourceChanged) {
+			if a.FreezeManifest {
+				return errors.Join(errSourceChangedAfterManifest, validationErr)
+			}
 			if verifyErr := a.verifySourceRevision(ctx, job, file, path); verifyErr != nil {
 				return verifyErr
 			}
@@ -281,6 +306,7 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 			}
 			integrity.Status = "corrupt"
 			integrity.Error = boundedAnalysisDetail(validationErr.Error())
+			a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "corrupt_media", validationErr, false))
 		}
 		if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 			return err
@@ -290,6 +316,7 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	unsupported := ""
 	if probeErr != nil {
 		unsupported = probeErr.Error()
+		a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "unsupported", probeErr, false))
 	}
 	raw, err := json.Marshal(MetadataRecord{Probe: probe, Contract: job.SemanticKey, Unsupported: unsupported, Integrity: integrity})
 	if err != nil {
@@ -315,17 +342,29 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 				err := a.processAudio(workerCtx, job, profile)
 				leases.remove(job)
 				if err != nil {
+					if errors.Is(err, errSourceChangedAfterManifest) {
+						atomic.AddInt64(&report.SkippedChanged, 1)
+						a.emitJobIssue(workerCtx, job, "audio", "source_changed_after_manifest", err, false)
+						if failErr := a.State.FailJob(workerCtx, job, "source_changed_after_manifest", err.Error(), false); failErr != nil {
+							cancel(failErr)
+							return
+						}
+						continue
+					}
 					if errors.Is(err, errSourceRefreshed) {
 						atomic.AddInt64(&report.Retried, 1)
+						a.emitJobIssue(workerCtx, job, "audio", "source_refreshed", err, true)
 						continue
 					}
 					retry := retryableAnalysisError(workerCtx, err, job.RetryCount)
+					code := classifyAnalysisError(err)
+					a.emitJobIssue(workerCtx, job, "audio", code, err, retry)
 					if retry {
 						atomic.AddInt64(&report.Retried, 1)
 					} else {
 						atomic.AddInt64(&report.Failed, 1)
 					}
-					if failErr := a.State.FailJob(workerCtx, job, classifyAnalysisError(err), err.Error(), retry); failErr != nil {
+					if failErr := a.State.FailJob(workerCtx, job, code, err.Error(), retry); failErr != nil {
 						cancel(failErr)
 						return
 					}
@@ -354,24 +393,30 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 			default:
 			}
 		}
-		claimed, err := a.State.ClaimJobs(ctx, kind, max(1, min(a.Plan.QueueDepth, 64)), jobLeaseDuration)
+		var claimed []Job
+		var err error
+		if a.DiffEpoch > 0 {
+			claimed, err = a.State.ClaimScanDiffJobs(ctx, a.DiffEpoch, kind, max(1, min(a.Plan.QueueDepth, 64)), jobLeaseDuration)
+		} else {
+			claimed, err = a.State.ClaimJobs(ctx, kind, max(1, min(a.Plan.QueueDepth, 64)), jobLeaseDuration)
+		}
 		if err != nil {
 			return err
 		}
 		if len(claimed) == 0 {
 			if discoveryComplete {
 				if kind == "audio" {
-					metadataPending, metadataLeased, err := a.State.JobCounts(ctx, "metadata")
+					metadataPending, metadataLeased, err := a.jobCounts(ctx, "metadata")
 					if err != nil {
 						return err
 					}
 					if metadataPending == 0 && metadataLeased == 0 {
-						if err := a.State.FinalizeBlockedAudio(ctx); err != nil {
+						if err := a.finalizeBlockedAudio(ctx); err != nil {
 							return err
 						}
 					}
 				}
-				pending, leased, err := a.State.JobCounts(ctx, kind)
+				pending, leased, err := a.jobCounts(ctx, kind)
 				if err != nil {
 					return err
 				}
@@ -398,6 +443,20 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 	}
 }
 
+func (a *Analyzer) jobCounts(ctx context.Context, kind string) (int64, int64, error) {
+	if a.DiffEpoch > 0 {
+		return a.State.ScanDiffJobCounts(ctx, a.DiffEpoch, kind)
+	}
+	return a.State.JobCounts(ctx, kind)
+}
+
+func (a *Analyzer) finalizeBlockedAudio(ctx context.Context) error {
+	if a.DiffEpoch > 0 {
+		return a.State.FinalizeBlockedScanDiffAudio(ctx, a.DiffEpoch)
+	}
+	return a.State.FinalizeBlockedAudio(ctx)
+}
+
 func (a *Analyzer) heartbeatJobs(ctx context.Context, leases *jobLeaseTracker, cancel context.CancelCauseFunc, done chan<- struct{}) {
 	defer close(done)
 	ticker := time.NewTicker(jobHeartbeatPeriod)
@@ -418,15 +477,24 @@ func (a *Analyzer) heartbeatJobs(ctx context.Context, leases *jobLeaseTracker, c
 func (a *Analyzer) verifySourceRevision(ctx context.Context, job Job, file FileRecord, path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
+		if a.FreezeManifest {
+			return fmt.Errorf("%w: %v", errSourceChangedAfterManifest, err)
+		}
 		return err
 	}
 	if !info.Mode().IsRegular() {
+		if a.FreezeManifest {
+			return fmt.Errorf("%w: source is no longer a regular file", errSourceChangedAfterManifest)
+		}
 		return errors.New("library indexer: source is no longer a regular file")
 	}
 	device, inode := fileIdentity(info)
 	observed := sourceRevision(info.Size(), info.ModTime().UnixNano(), device, inode)
 	if observed == job.SourceRevision {
 		return nil
+	}
+	if a.FreezeManifest {
+		return fmt.Errorf("%w: expected size %d, observed size %d", errSourceChangedAfterManifest, file.Size, info.Size())
 	}
 	refreshed, err := a.State.RefreshFileRevision(ctx, job.FileID, job.SourceRevision, info.Size(), info.ModTime().UnixNano(), device, inode)
 	if err != nil {
@@ -436,6 +504,21 @@ func (a *Analyzer) verifySourceRevision(ctx context.Context, job Job, file FileR
 		return errSourceRefreshed
 	}
 	return localaudio.ErrSourceChanged
+}
+
+func (a *Analyzer) emitJobIssue(ctx context.Context, job Job, stage, code string, err error, retryable bool) {
+	file, fileErr := a.State.File(ctx, job.FileID)
+	if fileErr != nil {
+		a.emitIssue(NewProcessingIssue(stage, "", "", code, errors.Join(err, fileErr), retryable))
+		return
+	}
+	a.emitIssue(NewProcessingIssue(stage, file.RootAlias, file.RelativePath, code, err, retryable))
+}
+
+func (a *Analyzer) emitIssue(issue ProcessingIssue) {
+	if a.OnIssue != nil {
+		a.OnIssue(issue)
+	}
 }
 
 func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile) error {
@@ -509,6 +592,9 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	if err != nil {
 		for i := range decoded {
 			clear(decoded[i].Samples)
+		}
+		if a.FreezeManifest && errors.Is(err, localaudio.ErrSourceChanged) {
+			return errors.Join(errSourceChangedAfterManifest, err)
 		}
 		return err
 	}

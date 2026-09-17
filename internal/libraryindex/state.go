@@ -27,7 +27,7 @@ import (
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-const stateSchemaVersion = 2
+const stateSchemaVersion = 3
 
 var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 		return err
 	}
 	_ = conn.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version)
-	if version != "" && version != "1" && version != strconv.Itoa(stateSchemaVersion) {
+	if version != "" && version != "1" && version != "2" && version != strconv.Itoa(stateSchemaVersion) {
 		return fmt.Errorf("library indexer: unsupported state schema %q", version)
 	}
 	_, err := conn.ExecContext(ctx, `
@@ -186,6 +186,12 @@ CREATE TABLE IF NOT EXISTS jobs (
  updated_at TEXT NOT NULL, UNIQUE(kind,file_id,semantic_key)
 );
 CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(kind,state,updated_at,id);
+CREATE TABLE IF NOT EXISTS scan_diff_jobs (
+ epoch_id INTEGER NOT NULL REFERENCES scan_epochs(id), job_id INTEGER NOT NULL REFERENCES jobs(id),
+ source_revision TEXT NOT NULL, kind TEXT NOT NULL, semantic_key TEXT NOT NULL,
+ PRIMARY KEY(epoch_id,job_id)
+);
+CREATE INDEX IF NOT EXISTS scan_diff_claim ON scan_diff_jobs(epoch_id,kind,job_id);
 CREATE TABLE IF NOT EXISTS track_metadata (
  file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
  data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
@@ -980,15 +986,16 @@ type SourceFile struct {
 
 type FileRecord struct {
 	SourceFile
-	RootPath string
-	Status   string
+	RootPath  string
+	RootAlias string
+	Status    string
 }
 
 func (s *State) File(ctx context.Context, id string) (FileRecord, error) {
 	var record FileRecord
 	record.ID = id
-	err := s.reader.QueryRowContext(ctx, `SELECT f.root_id,r.path,f.relative_path,f.device,f.inode,f.size,f.mtime_ns,f.source_revision,f.extension,f.status
-		FROM files f JOIN roots r ON r.id=f.root_id WHERE f.id=?`, id).Scan(&record.RootID, &record.RootPath, &record.RelativePath, &record.Device, &record.Inode, &record.Size, &record.MTimeNS, &record.SourceRevision, &record.Extension, &record.Status)
+	err := s.reader.QueryRowContext(ctx, `SELECT f.root_id,r.path,r.alias,f.relative_path,f.device,f.inode,f.size,f.mtime_ns,f.source_revision,f.extension,f.status
+		FROM files f JOIN roots r ON r.id=f.root_id WHERE f.id=?`, id).Scan(&record.RootID, &record.RootPath, &record.RootAlias, &record.RelativePath, &record.Device, &record.Inode, &record.Size, &record.MTimeNS, &record.SourceRevision, &record.Extension, &record.Status)
 	return record, err
 }
 
@@ -1080,8 +1087,11 @@ func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, s
 			}
 			_, err = tx.ExecContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
 				ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
-				state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='completed' THEN jobs.state ELSE 'pending' END,
-				fence='',lease_until=NULL,error_code='',error_detail='',updated_at=excluded.updated_at`, kind, file.ID, file.SourceRevision, key, time.Now().UTC().Format(time.RFC3339Nano))
+				state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
+				fence='',lease_until=NULL,
+				error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
+				error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
+				updated_at=excluded.updated_at`, kind, file.ID, file.SourceRevision, key, time.Now().UTC().Format(time.RFC3339Nano))
 			if err != nil {
 				return err
 			}
@@ -1152,6 +1162,61 @@ func (s *State) ClaimJobs(ctx context.Context, kind string, limit int, lease tim
 			}
 			if n, _ := res.RowsAffected(); n != 1 {
 				return errors.New("library indexer: job changed during claim")
+			}
+		}
+		return tx.Commit()
+	})
+	return jobs, err
+}
+
+// ClaimScanDiffJobs leases only work frozen into one scan manifest. A source
+// revision changed after that barrier cannot enter this run's diff.
+func (s *State) ClaimScanDiffJobs(ctx context.Context, epoch int64, kind string, limit int, lease time.Duration) ([]Job, error) {
+	if epoch <= 0 || limit < 1 || limit > 1024 || lease <= 0 {
+		return nil, errors.New("library indexer: invalid scan diff job claim bounds")
+	}
+	var jobs []Job
+	err := s.write(ctx, true, func(conn *sql.Conn) error {
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		now := time.Now().UTC()
+		rows, err := tx.QueryContext(ctx, `SELECT j.id,j.kind,j.file_id,j.source_revision,j.semantic_key,j.attempt,j.retry_count
+			FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id
+			WHERE d.epoch_id=? AND d.kind=? AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
+			AND (j.state='pending' OR (j.state='leased' AND j.lease_until<?))
+			AND (j.kind='metadata' OR EXISTS(SELECT 1 FROM jobs prerequisite WHERE prerequisite.file_id=j.file_id
+				AND prerequisite.kind='metadata' AND prerequisite.state='completed' AND prerequisite.source_revision=j.source_revision))
+			ORDER BY d.job_id LIMIT ?`, epoch, kind, now.Format(time.RFC3339Nano), limit)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var job Job
+			if err := rows.Scan(&job.ID, &job.Kind, &job.FileID, &job.SourceRevision, &job.SemanticKey, &job.Attempt, &job.RetryCount); err != nil {
+				rows.Close()
+				return err
+			}
+			jobs = append(jobs, job)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for i := range jobs {
+			jobs[i].Attempt++
+			jobs[i].Fence, err = randomFence()
+			if err != nil {
+				return err
+			}
+			res, err := tx.ExecContext(ctx, `UPDATE jobs SET state='leased',attempt=?,fence=?,lease_until=?,updated_at=?
+				WHERE id=? AND source_revision=? AND (state='pending' OR (state='leased' AND lease_until<?))`, jobs[i].Attempt, jobs[i].Fence, now.Add(lease).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), jobs[i].ID, jobs[i].SourceRevision, now.Format(time.RFC3339Nano))
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n != 1 {
+				return errors.New("library indexer: scan diff job changed during claim")
 			}
 		}
 		return tx.Commit()
@@ -1409,6 +1474,20 @@ func (s *State) Progress(ctx context.Context, semanticJobs map[string]string) (P
 	return snapshot, nil
 }
 
+func (s *State) ScanDiffProgress(ctx context.Context, epoch int64) (ProgressSnapshot, error) {
+	var snapshot ProgressSnapshot
+	if err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*) FROM files WHERE status='present' AND last_seen_epoch=?`, epoch).Scan(&snapshot.Files); err != nil {
+		return snapshot, err
+	}
+	err := s.reader.QueryRowContext(ctx, `SELECT COUNT(*),
+		COALESCE(SUM(j.state IN ('completed','failed')),0),
+		COALESCE(SUM(j.state='pending'),0),COALESCE(SUM(j.state='leased'),0),
+		COALESCE(SUM(j.state='failed'),0),COALESCE(SUM(j.retry_count),0)
+		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
+		WHERE d.epoch_id=?`, epoch).Scan(&snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
+	return snapshot, err
+}
+
 func (s *State) Status(ctx context.Context) (Status, error) {
 	return queryStatus(ctx, s.reader)
 }
@@ -1464,6 +1543,13 @@ func (s *State) JobCounts(ctx context.Context, kind string) (pending, leased int
 	return
 }
 
+func (s *State) ScanDiffJobCounts(ctx context.Context, epoch int64, kind string) (pending, leased int64, err error) {
+	err = s.reader.QueryRowContext(ctx, `SELECT COALESCE(SUM(j.state='pending'),0),COALESCE(SUM(j.state='leased'),0)
+		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
+		WHERE d.epoch_id=? AND d.kind=?`, epoch, kind).Scan(&pending, &leased)
+	return
+}
+
 func (s *State) Metadata(ctx context.Context, fileID string) ([]byte, string, error) {
 	var data []byte
 	var revision string
@@ -1478,6 +1564,18 @@ func (s *State) FinalizeBlockedAudio(ctx context.Context) error {
 			WHERE audio.kind='audio' AND audio.state='pending' AND NOT EXISTS(
 				SELECT 1 FROM jobs metadata WHERE metadata.file_id=audio.file_id AND metadata.kind='metadata'
 				AND metadata.state='completed' AND metadata.source_revision=audio.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano))
+		return err
+	})
+}
+
+func (s *State) FinalizeBlockedScanDiffAudio(ctx context.Context, epoch int64) error {
+	return s.write(ctx, true, func(conn *sql.Conn) error {
+		_, err := conn.ExecContext(ctx, `UPDATE jobs AS audio SET state='failed',error_code='metadata_unavailable',
+			error_detail='audio analysis prerequisite metadata did not complete',updated_at=?
+			WHERE audio.id IN (SELECT d.job_id FROM scan_diff_jobs d WHERE d.epoch_id=? AND d.kind='audio')
+			AND audio.state='pending' AND audio.source_revision=(SELECT d.source_revision FROM scan_diff_jobs d WHERE d.epoch_id=? AND d.job_id=audio.id)
+			AND NOT EXISTS(SELECT 1 FROM jobs metadata WHERE metadata.file_id=audio.file_id AND metadata.kind='metadata'
+				AND metadata.state='completed' AND metadata.source_revision=audio.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano), epoch, epoch)
 		return err
 	})
 }
