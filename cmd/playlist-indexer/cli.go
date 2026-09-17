@@ -277,8 +277,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		return 1, err
 	}
 	addCommon(flags, &common)
-	var roots, exclusions stringList
+	var roots, rootAliases, exclusions stringList
 	flags.Var(&roots, "root", "source root; repeatable")
+	flags.Var(&rootAliases, "root-alias", "stable logical root as ALIAS=PATH; repeatable")
 	flags.Var(&exclusions, "exclude", "root-relative excluded subtree; repeatable")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
 	analysis := flags.String("analysis", "audio", "metadata or audio")
@@ -308,7 +309,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if err := plan.ValidateForAnalysis(metadataOnly); err != nil {
 		return 1, err
 	}
-	if command != "analyze" && len(roots) == 0 {
+	if command != "analyze" && len(roots)+len(rootAliases) == 0 {
 		return 1, errors.New("at least one --root is required")
 	}
 	codec, err := resolveCodec(ctx, common)
@@ -380,12 +381,44 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	var scanReport libraryindex.ScanReport
 	var scanErr error
 	if command != "analyze" {
-		resolvedRoots := make([]libraryindex.Root, 0, len(roots))
+		resolvedRoots := make([]libraryindex.Root, 0, len(roots)+len(rootAliases))
+		seenAliases := make(map[string]struct{}, len(roots)+len(rootAliases))
+		for _, specification := range rootAliases {
+			alias, rootPath, ok := strings.Cut(specification, "=")
+			alias, rootPath = strings.TrimSpace(alias), strings.TrimSpace(rootPath)
+			if !ok || alias == "" || rootPath == "" {
+				scanErr = errors.New("--root-alias must use ALIAS=PATH")
+				break
+			}
+			if _, duplicate := seenAliases[alias]; duplicate {
+				scanErr = fmt.Errorf("duplicate root alias %q", alias)
+				break
+			}
+			seenAliases[alias] = struct{}{}
+			pipelineCtx := ctx
+			if analysisLifecycle != nil {
+				pipelineCtx = analysisLifecycle.ctx
+			}
+			root, rootErr := state.EnsureRoot(pipelineCtx, rootPath, alias)
+			if rootErr != nil {
+				scanErr = rootErr
+				break
+			}
+			resolvedRoots = append(resolvedRoots, root)
+		}
 		for i, rootPath := range roots {
-			alias := filepath.Base(filepath.Clean(rootPath))
+			if scanErr != nil {
+				break
+			}
+			alias := defaultRootAlias(rootPath)
 			if len(roots) > 1 {
 				alias = fmt.Sprintf("%s-%d", alias, i+1)
 			}
+			if _, duplicate := seenAliases[alias]; duplicate {
+				scanErr = fmt.Errorf("duplicate root alias %q; use --root-alias to disambiguate", alias)
+				break
+			}
+			seenAliases[alias] = struct{}{}
 			pipelineCtx := ctx
 			if analysisLifecycle != nil {
 				pipelineCtx = analysisLifecycle.ctx
@@ -439,6 +472,27 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	fmt.Fprintf(stdout, "files=%d audio=%d metadata=%d analyzed=%d failed=%d\n", scanReport.Files, scanReport.AudioFiles, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.Failed)
 	return completionCode(scanReport.Errors + analysisReport.Failed), nil
+}
+
+func defaultRootAlias(path string) string {
+	base := filepath.Base(filepath.Clean(path))
+	var alias strings.Builder
+	for _, character := range base {
+		allowed := character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '.' || character == '_' || character == ':' || character == '-'
+		if allowed {
+			alias.WriteRune(character)
+		} else if alias.Len() > 0 && !strings.HasSuffix(alias.String(), "-") {
+			alias.WriteByte('-')
+		}
+		if alias.Len() >= 96 {
+			break
+		}
+	}
+	value := strings.Trim(alias.String(), ".-_")
+	if value == "" || value[0] == ':' {
+		return "root"
+	}
+	return value
 }
 
 func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest audio.MERTBundleManifest, plan libraryindex.ResourcePlan, stderr io.Writer) (*audio.MERTWorkerPool, libraryindex.ResourcePlan, error) {

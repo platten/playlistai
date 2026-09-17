@@ -34,8 +34,9 @@ SQLite stores roots, durable directory frontiers, scan epochs, file assets,
 fenced jobs, raw metadata, DSP, MERT vectors, and immutable generation pointers.
 WAL uses `synchronous=FULL`; the embedded modernc SQLite is 3.53.4, newer than
 the upstream 3.51.3 WAL-reset correction. Only the dedicated writer connection
-mutates state. Workers never retain SQL transactions during probe, decode, DSP,
-or inference.
+mutates state. File observations, job results, and failure transitions are
+coalesced by count/time while retaining per-item source/fence checks. Workers
+never retain SQL transactions during probe, decode, DSP, or inference.
 
 Root identities derive from explicit logical aliases, not mount paths. File IDs
 derive from root identity plus safe relative path and remain stable across
@@ -59,8 +60,10 @@ while new or changed files become pending.
 
 Fast, balanced, and deep profiles request 3, 6, and 12 five-second windows.
 Balanced centers are 10%, 26%, 42%, 58%, 74%, and 90%. Clamping and interval
-subtraction ensure overlapping decoded time is not counted twice. Each decoded
-window is immutable until its DSP and MERT consumers finish. Backpressure is
+subtraction ensure overlapping decoded time is not counted twice. Decoded
+windows transfer into one bounded immutable per-recording buffer; the decoder
+then releases source I/O and descriptors before DSP and MERT acquire distinct
+CPU reservations. Each window remains immutable until both consumers finish. Backpressure is
 controlled by aggregate CPU, source I/O, descriptor, RAM, and PCM byte
 reservations.
 
@@ -73,8 +76,10 @@ and merges by score then stable track ID. ANN is not included because no execute
 2M-row measurement justified it; exact search remains the correctness backend.
 
 The `.paipack` format is documented in [paipack-format.md](paipack-format.md).
-It contains a SQLite metadata snapshot and packed float32 vectors, not audio,
-PCM, absolute paths, or giant JSON vector arrays.
+Version 3 contains normalized sparse learning/statistics tables, a SQLite
+metadata snapshot, and packed float32 vectors, not audio, PCM, absolute paths,
+or giant JSON model/vector arrays. Desktop import builds checksum-verified
+metadata/artist and exact-MERT derivative indexes before atomic activation.
 
 ## Distribution
 

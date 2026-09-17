@@ -290,7 +290,7 @@ func (s *generatedTrackSource) Next(ctx context.Context) (Track, bool, error) {
 
 func TestWriteSourceRoundTripPreservesClustersLearningAndReusedBuffers(t *testing.T) {
 	cluster, alternative := 4, 2
-	learning := json.RawMessage(`{"version":1,"metadata":{"version":"tfidf/v1"},"spherical":{"clusters":5}}`)
+	learning := json.RawMessage(`{"version":1,"metadata":{"version":"tfidf/v1"},"spherical":{"version":"spherical/v1","dimension":2,"clusters":5,"centroids":[1,0,0,1,1,0,0,1,1,0],"counts":[1,1,1,1,1]}}`)
 	statistics := json.RawMessage(`{"version":"library-dsp-priority-quantiles/v1","generation":"dspstats-fixture","groups":[{"id":"dsp-a"}]}`)
 	pack := fixturePack("stream")
 	pack.Tracks = nil
@@ -340,12 +340,33 @@ func TestWriteSourceRoundTripPreservesClustersLearningAndReusedBuffers(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !jsonEqual(gotLearning, learning) {
-		t.Fatalf("learning=%s want=%s", gotLearning, learning)
+	var normalized struct {
+		Version  int `json:"version"`
+		Metadata struct {
+			Version string
+		} `json:"metadata"`
+		Spherical *struct {
+			Clusters int
+		} `json:"spherical"`
+	}
+	if err := json.Unmarshal(gotLearning, &normalized); err != nil || normalized.Version != 1 || normalized.Metadata.Version != "tfidf/v1" || normalized.Spherical == nil || normalized.Spherical.Clusters != 5 {
+		t.Fatalf("normalized learning=%s decoded=%+v err=%v", gotLearning, normalized, err)
+	}
+	var legacyRows int
+	if err := lease.Generation().db.QueryRow("SELECT COUNT(*) FROM pack_info WHERE key='learning_json'").Scan(&legacyRows); err != nil || legacyRows != 0 {
+		t.Fatalf("monolithic learning payload remains: rows=%d err=%v", legacyRows, err)
 	}
 	gotStatistics, ok, err := lease.Generation().Statistics(context.Background())
-	if err != nil || !ok || !jsonEqual(gotStatistics, statistics) {
-		t.Fatalf("statistics=%s ok=%v err=%v", gotStatistics, ok, err)
+	var normalizedStatistics struct {
+		Version    string `json:"version"`
+		Generation string `json:"generation"`
+		Groups     []struct {
+			ID string `json:"id"`
+		} `json:"groups"`
+	}
+	decodeErr := json.Unmarshal(gotStatistics, &normalizedStatistics)
+	if err != nil || decodeErr != nil || !ok || normalizedStatistics.Version != "library-dsp-priority-quantiles/v1" || normalizedStatistics.Generation != "dspstats-fixture" || len(normalizedStatistics.Groups) != 1 || normalizedStatistics.Groups[0].ID != "dsp-a" {
+		t.Fatalf("statistics=%s decoded=%+v ok=%v err=%v decode=%v", gotStatistics, normalizedStatistics, ok, err, decodeErr)
 	}
 }
 
@@ -375,11 +396,6 @@ func TestWriteSourceRejectsUnorderedRowsAndPreservesPriorPackOnFailures(t *testi
 			}
 		})
 	}
-}
-
-func jsonEqual(left, right []byte) bool {
-	var a, b any
-	return json.Unmarshal(left, &a) == nil && json.Unmarshal(right, &b) == nil && reflect.DeepEqual(a, b)
 }
 
 type failingWriter struct{ remaining int }
@@ -478,6 +494,40 @@ func TestManagerRejectsOverlappingMutationsAndCanceledActivation(t *testing.T) {
 	}
 	if _, err := os.Stat(stagedDir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("canceled staging not cleaned: %v", err)
+	}
+}
+
+func TestIdenticalStagePinsActiveGenerationForDerivativeRebuild(t *testing.T) {
+	archive, manifest := writeFixture(t, "library.paipack", "same-active")
+	manager, err := OpenManager(context.Background(), t.TempDir(), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	staged, err := manager.Stage(context.Background(), archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Activate(context.Background(), staged); err != nil {
+		t.Fatal(err)
+	}
+	identical, err := manager.Stage(context.Background(), archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identical.Generation() == nil || identical.Generation().Manifest().PackID != manifest.PackID {
+		t.Fatal("identical stage did not pin its active generation")
+	}
+	if err := manager.Discard(identical); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := manager.Pin()
+	if err != nil {
+		t.Fatalf("discarding identical stage closed active generation: %v", err)
+	}
+	defer lease.Release()
+	if _, ok, err := lease.Generation().Lookup(context.Background(), "local:main:a"); err != nil || !ok {
+		t.Fatalf("active generation after identical discard: ok=%v err=%v", ok, err)
 	}
 }
 

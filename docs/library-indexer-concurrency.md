@@ -20,7 +20,11 @@ Each admitted operation atomically reserves the complete tuple:
 (CPU slots, source-I/O slots, RAM bytes, file descriptors, PCM bytes)
 ```
 
-No worker holds a partial set while waiting for another resource. MERT CPU cost
+Decode initially owns source I/O, descriptors, CPU, and bounded PCM bytes. Once
+the decoder closes, it releases source resources and decode CPU while a
+reservation lease retains immutable PCM ownership. DSP and MERT acquire
+separate global CPU reservations; PCM is cleared only after both branches end.
+MERT CPU cost
 is `inference-workers × inference-threads`; auto permits a second warm session
 only with at least four effective slots and session-memory headroom. The plan
 reserves model residency, native input/output, Go heap, PCM, database, snapshot,
@@ -41,6 +45,12 @@ JSON.
 [library-indexer-config.example.json](library-indexer-config.example.json).
 Precedence is command-line flag, then configuration value, then automatic
 default; unknown configuration fields fail closed.
+
+`--root-alias ALIAS=PATH` is repeatable and is the stable-root interface for a
+remountable library. The logical alias determines root/file identity; later
+runs may change its physical path without reindexing unchanged files. Plain
+`--root` remains compatible, but its generated aliases are unsuitable when
+mount ordering can change.
 
 ## Pipeline and ownership
 
@@ -107,6 +117,12 @@ result key in the same transaction. A superseded worker cannot overwrite a newer
 attempt. The guarantee is at-least-once computation with idempotent durable
 commit, not exactly-once physical execution.
 
+File observations, result commits, partial-DSP commits, and failure transitions
+use a count/time-bounded writer batch (64 operations or 5 ms). Every item keeps
+its fence and source-revision predicate inside the shared transaction. If one
+item is stale, the batch rolls back and retries items individually, so it cannot
+discard unrelated valid commits.
+
 SIGINT/SIGTERM cancels the shared context, stops discovery and new claims,
 kills/reaps cancelable owned child groups, and leaves uncommitted work durable
 for lease recovery. The resolved `--shutdown-timeout` bounds process teardown;
@@ -137,6 +153,25 @@ budgets. It reports and compares a semantic digest over identities, metadata,
 DSP, and vectors while excluding leases, timestamps, DB layout, logs, and
 execution settings. Configurations that exceed the measured budget are skipped
 with a reason. Cold setup/warmup and real-audio analysis are timed separately.
+Results include analysis tracks/second and peak aggregate owned RSS on Linux
+(launcher RSS plus resident MERT workers). Other platforms report the Go
+runtime committed-memory fallback and do not label it OS RSS. Each comparable
+run also fits and exports its frozen input, records pack bytes and bytes/track,
+measures 25 exact queries against one pinned index (p50/p95), and times a clean
+state reopen as the resume gate. `ramTargetMet` compares measured peak owned RSS
+with the configured admission target; it does not turn that target into an OS
+hard limit. `serialEquivalent` remains the semantic gate for the 2-worker,
+4-worker, and automatic plans.
+
+`playlist-indexer bench scale --rows 2000000 --dimension 768 --max-ram 8GiB`
+is the explicit synthetic scale gate. It streams canonical rows instead of
+materializing the corpus, builds the durable exact shards, runs repeated pinned
+queries, exports a v3 pack, and reports peak RSS, index size/build time, pack
+size/export time, bytes per track, and p50/p95 query latency. Its vectors are
+declared deterministic four-sparse synthetic data; this exercises storage and
+query scale but is neither decoded audio nor musical-quality evidence. Use a
+dedicated scratch filesystem with at least twice the reported uncompressed
+vector payload plus pack/index overhead.
 
 No throughput or speedup is claimed unless it appears in the executed validation
 report. Synthetic queue/index tests are not audio throughput or musical-quality

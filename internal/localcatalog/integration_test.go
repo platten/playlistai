@@ -43,6 +43,12 @@ func (testBase) RawRow(int) ([]int8, []int8, bool) { return []int8{127, 0}, []in
 func (testBase) Resolve(string, int) []core.TrackRef {
 	return []core.TrackRef{{ID: "bundled", Artist: "Bundled", Title: "Only"}}
 }
+func (testBase) ArtistRecordings(_ context.Context, artist string) ([]core.TrackRef, error) {
+	if artist == "Bundled" {
+		return []core.TrackRef{{ID: "bundled", Artist: "Bundled", Title: "Only"}}, nil
+	}
+	return []core.TrackRef{}, nil
+}
 func (testBase) ResolveReference(core.IntentReference) core.ReferenceResolution {
 	return core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: "base"}
 }
@@ -52,6 +58,12 @@ type baseRetriever struct{}
 
 func (baseRetriever) Retrieve(context.Context, ports.RetrievalRequest) ([]core.Candidate, error) {
 	return []core.Candidate{{Track: core.TrackRef{ID: "bundled", Artist: "Bundled", Title: "Only"}}}, nil
+}
+
+type identityBaseRetriever struct{ track core.TrackRef }
+
+func (r identityBaseRetriever) Retrieve(context.Context, ports.RetrievalRequest) ([]core.Candidate, error) {
+	return []core.Candidate{{Track: r.track}}, nil
 }
 
 type packProvider struct{ manager *librarypack.Manager }
@@ -85,6 +97,9 @@ func TestRecommendationOverlayRetrievesOutOfCatalogTracksAndHonorsLibraryOnly(t 
 	defer manager.Close()
 	staged, err := manager.Stage(ctx, archive)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err = BuildIndexes(ctx, staged.Generation(), IndexBuildOptions{Workers: 2, ShardRows: 2, MaxScratchBytes: 1 << 20}); err != nil {
 		t.Fatal(err)
 	}
 	if err = manager.Activate(ctx, staged); err != nil {
@@ -140,6 +155,70 @@ func TestRecommendationOverlayRetrievesOutOfCatalogTracksAndHonorsLibraryOnly(t 
 	}
 	if len(genrePlaylist.Tracks) != 1 || genrePlaylist.Tracks[0].ID != "local:test:genre-track" {
 		t.Fatalf("genre-only local recommendation=%+v outcome=%+v", genrePlaylist.Tracks, genrePlaylist.Outcome)
+	}
+}
+
+func TestCompositeArtistRecordingsUseIndexesInLibraryOnlyAndCombinedModes(t *testing.T) {
+	local, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "a", Artist: "Local Artist", Title: "One"},
+		{ID: "b", Artist: "Local Artist", Title: "Two"},
+	}, nil)
+	defer manager.Close()
+	defer local.Close()
+
+	libraryOnly := &CompositeCatalog{base: testBase{}, local: local, mode: ModeLibraryOnly}
+	rows, err := libraryOnly.ArtistRecordings(context.Background(), "Local Artist")
+	if err != nil || len(rows) != 2 || libraryOnly.Len() != 0 {
+		t.Fatalf("library-only artist rows=%+v len=%d err=%v", rows, libraryOnly.Len(), err)
+	}
+	combined := &CompositeCatalog{base: testBase{}, local: local, mode: ModeCombined}
+	rows, err = combined.ArtistRecordings(context.Background(), "Bundled")
+	if err != nil || len(rows) != 1 || rows[0].ID != "bundled" || combined.Len() != 1 {
+		t.Fatalf("combined bundled artist rows=%+v len=%d err=%v", rows, combined.Len(), err)
+	}
+	rows, err = combined.ArtistRecordings(context.Background(), "Local Artist")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("combined local artist rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestCompositeMetaPreservesDurationAndAuthoritativeRecordingIdentity(t *testing.T) {
+	local, manager := openTestCatalog(t, []librarypack.Track{{
+		ID: "edition", Artist: "Artist", Title: "Song", RecordingIdentity: "musicbrainz:recording-1",
+		SourceIdentity: "library:edition", MusicBrainzRecording: "recording-1",
+		DurationMilliseconds: 183250, DurationProvenance: "container", DurationReliable: true,
+	}}, nil)
+	defer manager.Close()
+	defer local.Close()
+	composite := &CompositeCatalog{base: testBase{}, local: local, mode: ModeCombined}
+	meta, ok := composite.Meta(local.NamespacedID("edition"))
+	if !ok || meta.Ref.RecordingIdentity != "musicbrainz:recording-1" || meta.SourceIdentity != "library:edition" ||
+		meta.FullRecordingDuration == nil || meta.FullRecordingDuration.Milliseconds != 183250 ||
+		meta.FullRecordingDuration.RecordingID != "musicbrainz:recording-1" {
+		t.Fatalf("local metadata lost identity or duration: %+v ok=%v", meta, ok)
+	}
+	other := core.TrackRef{ID: "deezer:1", Artist: "Artist", Title: "Song", RecordingIdentity: "musicbrainz:recording-1"}
+	if core.ProvisionalRecordingKey(meta.Ref) != core.ProvisionalRecordingKey(other) {
+		t.Fatal("authoritative cross-catalog identity did not deduplicate")
+	}
+}
+
+func TestCombinedRetrieverDeduplicatesOnlyAuthoritativeCrossCatalogIdentity(t *testing.T) {
+	local, manager := openTestCatalog(t, []librarypack.Track{{
+		ID: "local-edition", Artist: "Artist", Title: "Song", RecordingIdentity: "isrc:USAAA0000001",
+	}}, nil)
+	defer manager.Close()
+	defer local.Close()
+	retriever, err := NewCombinedRetriever(identityBaseRetriever{track: core.TrackRef{ID: "bundled", Artist: "Artist", Title: "Song", RecordingIdentity: "isrc:USAAA0000001"}}, local, ModeCombined, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidates, err := retriever.Retrieve(context.Background(), ports.RetrievalRequest{Intent: core.MusicIntent{References: []core.IntentReference{{Query: "Artist Song", Influence: core.InfluencePositive}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 1 || candidates[0].Track.ID != "bundled" {
+		t.Fatalf("authoritative duplicate was not collapsed: %+v", candidates)
 	}
 }
 

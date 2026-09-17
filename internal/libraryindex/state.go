@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -28,9 +29,12 @@ import (
 
 const stateSchemaVersion = 2
 
+var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+
 type writerRequest struct {
 	ctx  context.Context
 	fn   func(*sql.Conn) error
+	txFn func(*sql.Tx) error
 	done chan error
 }
 
@@ -44,6 +48,7 @@ type State struct {
 	reader      *sql.DB
 	control     chan writerRequest
 	results     chan writerRequest
+	batches     chan writerRequest
 	stop        chan struct{}
 	done        chan struct{}
 	releaseLock func() error
@@ -127,7 +132,7 @@ func OpenState(ctx context.Context, dir, command string, readConnections int) (*
 	reader.SetMaxOpenConns(readConnections)
 	reader.SetMaxIdleConns(readConnections)
 	s := &State{dir: abs, path: path, writerDB: db, writer: conn, reader: reader,
-		control: make(chan writerRequest, 32), results: make(chan writerRequest, 64), stop: make(chan struct{}), done: make(chan struct{}), releaseLock: release}
+		control: make(chan writerRequest, 32), results: make(chan writerRequest, 64), batches: make(chan writerRequest, 256), stop: make(chan struct{}), done: make(chan struct{}), releaseLock: release}
 	go s.writerLoop()
 	locked = false
 	return s, nil
@@ -264,6 +269,9 @@ func (s *State) writerLoop() {
 			case <-s.stop:
 				return
 			case req = <-s.control:
+			case req = <-s.batches:
+				s.executeWriterBatch(req)
+				continue
 			case req = <-s.results:
 			}
 		}
@@ -275,6 +283,80 @@ func (s *State) writerLoop() {
 		case req.done <- err:
 		case <-req.ctx.Done():
 		}
+	}
+}
+
+func (s *State) executeWriterBatch(first writerRequest) {
+	const maximum = 64
+	requests := make([]writerRequest, 0, maximum)
+	requests = append(requests, first)
+	timer := time.NewTimer(5 * time.Millisecond)
+dequeue:
+	for len(requests) < maximum {
+		select {
+		case request := <-s.batches:
+			requests = append(requests, request)
+		case <-timer.C:
+			break dequeue
+		default:
+			// Give concurrently completing workers a short coalescing window.
+			select {
+			case request := <-s.batches:
+				requests = append(requests, request)
+			case <-timer.C:
+				break dequeue
+			}
+		}
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	active := requests[:0]
+	for _, request := range requests {
+		if err := request.ctx.Err(); err != nil {
+			request.done <- err
+		} else {
+			active = append(active, request)
+		}
+	}
+	if len(active) == 0 {
+		return
+	}
+	tx, err := s.writer.BeginTx(context.Background(), nil)
+	if err == nil {
+		for _, request := range active {
+			if err = request.txFn(tx); err != nil {
+				break
+			}
+		}
+	}
+	if err == nil {
+		err = tx.Commit()
+	} else if tx != nil {
+		_ = tx.Rollback()
+	}
+	if err == nil {
+		for _, request := range active {
+			request.done <- nil
+		}
+		return
+	}
+	// One stale/canceled item must not prevent independent valid commits. Retry
+	// individually while retaining the same fence/revision predicates.
+	for _, request := range active {
+		individual, beginErr := s.writer.BeginTx(request.ctx, nil)
+		if beginErr == nil {
+			beginErr = request.txFn(individual)
+		}
+		if beginErr == nil {
+			beginErr = individual.Commit()
+		} else if individual != nil {
+			_ = individual.Rollback()
+		}
+		request.done <- beginErr
 	}
 }
 
@@ -298,6 +380,25 @@ func (s *State) write(ctx context.Context, control bool, fn func(*sql.Conn) erro
 		return ctx.Err()
 	case <-s.done:
 		return errors.New("library indexer: state writer stopped before acknowledgment")
+	}
+}
+
+func (s *State) writeBatch(ctx context.Context, fn func(*sql.Tx) error) error {
+	req := writerRequest{ctx: ctx, txFn: fn, done: make(chan error, 1)}
+	select {
+	case s.batches <- req:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.done:
+		return errors.New("library indexer: state writer is closed")
+	}
+	select {
+	case err := <-req.done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-s.done:
+		return errors.New("library indexer: state writer stopped before batch acknowledgment")
 	}
 }
 
@@ -325,20 +426,25 @@ func (s *State) EnsureRoot(ctx context.Context, path, alias string) (Root, error
 		return Root{}, err
 	}
 	abs = filepath.Clean(abs)
+	alias = strings.TrimSpace(alias)
 	if alias == "" {
 		alias = filepath.Base(abs)
+		if !rootAliasPattern.MatchString(alias) {
+			sum := sha256.Sum256([]byte("playlist-indexer-default-root-alias/v1\x00" + abs))
+			alias = "root-" + hex.EncodeToString(sum[:6])
+		}
 	}
-	if alias == "." || alias == string(filepath.Separator) || strings.ContainsAny(alias, `/\`) {
+	if !rootAliasPattern.MatchString(alias) {
 		return Root{}, fmt.Errorf("library indexer: invalid root alias %q", alias)
 	}
 	rootSum := sha256.Sum256([]byte("playlist-indexer-root-alias/v1\x00" + alias))
 	root := Root{ID: "root:" + hex.EncodeToString(rootSum[:16]), Path: abs, Alias: alias}
 	err = s.write(ctx, true, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, `INSERT INTO roots(id,path,alias,created_at) VALUES(?,?,?,?) ON CONFLICT(path) DO UPDATE SET alias=excluded.alias`, root.ID, root.Path, root.Alias, time.Now().UTC().Format(time.RFC3339Nano))
+		_, err := conn.ExecContext(ctx, `INSERT INTO roots(id,path,alias,created_at) VALUES(?,?,?,?) ON CONFLICT(alias) DO UPDATE SET path=excluded.path`, root.ID, root.Path, root.Alias, time.Now().UTC().Format(time.RFC3339Nano))
 		if err != nil {
 			return err
 		}
-		return conn.QueryRowContext(ctx, `SELECT id,path,alias FROM roots WHERE path=?`, root.Path).Scan(&root.ID, &root.Path, &root.Alias)
+		return conn.QueryRowContext(ctx, `SELECT id,path,alias FROM roots WHERE alias=?`, root.Alias).Scan(&root.ID, &root.Path, &root.Alias)
 	})
 	return root, err
 }
@@ -912,12 +1018,8 @@ func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, s
 	if file.ID == "" {
 		file.ID = stableFileID(file.RootID, file.RelativePath)
 	}
-	err := s.write(ctx, false, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
+	err := s.writeBatch(ctx, func(tx *sql.Tx) error {
+		var err error
 		// Preserve identity across same-filesystem moves within a configured root.
 		var prior string
 		// A zero pair means that this platform/filesystem could not provide a
@@ -947,7 +1049,7 @@ func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, s
 				return err
 			}
 		}
-		return tx.Commit()
+		return nil
 	})
 	return file, err
 }
@@ -1110,12 +1212,7 @@ type JobResult struct {
 // It deliberately leaves the owning audio job leased so FailJob can record the
 // missing MERT capability under the same fence.
 func (s *State) CommitPartialDSP(ctx context.Context, job Job, contract string, data []byte) error {
-	return s.write(ctx, false, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
+	return s.writeBatch(ctx, func(tx *sql.Tx) error {
 		var state, fence, source, current string
 		if err := tx.QueryRowContext(ctx, `SELECT state,fence,source_revision FROM jobs WHERE id=?`, job.ID).Scan(&state, &fence, &source); err != nil {
 			return err
@@ -1132,17 +1229,13 @@ func (s *State) CommitPartialDSP(ctx context.Context, job Job, contract string, 
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsp_results(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, job.FileID, source, contract, data); err != nil {
 			return err
 		}
-		return tx.Commit()
+		return nil
 	})
 }
 
 func (s *State) CommitJob(ctx context.Context, result JobResult) error {
-	return s.write(ctx, false, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
+	return s.writeBatch(ctx, func(tx *sql.Tx) error {
+		var err error
 		var source, fence, state string
 		if err := tx.QueryRowContext(ctx, `SELECT source_revision,fence,state FROM jobs WHERE id=?`, result.Job.ID).Scan(&source, &fence, &state); err != nil {
 			return err
@@ -1184,7 +1277,7 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 		if n, _ := res.RowsAffected(); n != 1 {
 			return errors.New("library indexer: commit lost its fence")
 		}
-		return tx.Commit()
+		return nil
 	})
 }
 
@@ -1192,12 +1285,12 @@ func (s *State) FailJob(ctx context.Context, job Job, code, detail string, retry
 	if len(detail) > 4096 {
 		detail = detail[:4096]
 	}
-	return s.write(ctx, true, func(conn *sql.Conn) error {
+	return s.writeBatch(ctx, func(tx *sql.Tx) error {
 		next := "failed"
 		if retry {
 			next = "pending"
 		}
-		res, err := conn.ExecContext(ctx, `UPDATE jobs SET state=?,retry_count=retry_count+1,error_code=?,error_detail=?,fence='',lease_until=NULL,updated_at=? WHERE id=? AND fence=? AND source_revision=?`, next, code, detail, time.Now().UTC().Format(time.RFC3339Nano), job.ID, job.Fence, job.SourceRevision)
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET state=?,retry_count=retry_count+1,error_code=?,error_detail=?,fence='',lease_until=NULL,updated_at=? WHERE id=? AND fence=? AND source_revision=?`, next, code, detail, time.Now().UTC().Format(time.RFC3339Nano), job.ID, job.Fence, job.SourceRevision)
 		if err != nil {
 			return err
 		}

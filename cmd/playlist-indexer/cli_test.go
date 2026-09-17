@@ -27,6 +27,18 @@ func TestCLIValidationAndSizeUnits(t *testing.T) {
 	}
 }
 
+func TestDefaultRootAliasKeepsUnusualPathsPackSafe(t *testing.T) {
+	for input, want := range map[string]string{
+		"/mnt/Music Library": "Music-Library",
+		"/mnt/音楽":            "root",
+		"/mnt/AC_DC":         "AC_DC",
+	} {
+		if got := defaultRootAlias(input); got != want {
+			t.Errorf("defaultRootAlias(%q)=%q want %q", input, got, want)
+		}
+	}
+}
+
 func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "indexer.json")
 	if err := os.WriteFile(path, []byte(`{"concurrency":"manual","workers":"4","ioWorkers":1,"inferenceThreads":1,"maxRam":"4GiB","seed":7}`), 0o600); err != nil {

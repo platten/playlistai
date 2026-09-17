@@ -28,13 +28,20 @@ import (
 // Generation is one immutable, verified extracted pack. Its files remain open
 // while a Manager lease pins it.
 type Generation struct {
-	manifest   Manifest
-	packSHA256 string
-	dir        string
-	db         *sql.DB
-	vectors    *os.File
-	closeOnce  sync.Once
-	closeErr   error
+	manifest     Manifest
+	packSHA256   string
+	dir          string
+	db           *sql.DB
+	vectors      *os.File
+	closeOnce    sync.Once
+	closeErr     error
+	attachmentMu sync.Mutex
+	attachments  map[string]generationAttachment
+}
+
+type generationAttachment struct {
+	value any
+	close func()
 }
 
 func (g *Generation) Manifest() Manifest {
@@ -46,41 +53,48 @@ func (g *Generation) Manifest() Manifest {
 
 func (g *Generation) PackSHA256() string { return g.packSHA256 }
 
+// Directory returns the private, immutable generation directory. Callers may
+// place verified derivative indexes below it while the generation is staged;
+// source pack members themselves must never be modified.
+func (g *Generation) Directory() string {
+	if g == nil {
+		return ""
+	}
+	return g.dir
+}
+
+// CachedAttachment opens a verified generation-scoped derivative at most once.
+// The attachment is closed with the generation, after its final lease releases.
+func (g *Generation) CachedAttachment(key string, open func(string) (any, func(), error)) (any, error) {
+	if g == nil || key == "" || open == nil {
+		return nil, errors.New("librarypack: invalid generation attachment")
+	}
+	g.attachmentMu.Lock()
+	defer g.attachmentMu.Unlock()
+	if attachment, ok := g.attachments[key]; ok {
+		return attachment.value, nil
+	}
+	value, closeAttachment, err := open(g.dir)
+	if err != nil {
+		return nil, err
+	}
+	if g.attachments == nil {
+		g.attachments = make(map[string]generationAttachment)
+	}
+	g.attachments[key] = generationAttachment{value: value, close: closeAttachment}
+	return value, nil
+}
+
 // Learning returns the verified portable fitted-resource payload. The caller
 // receives an owned copy; an empty object means the producer exported no fit.
 func (g *Generation) Learning(ctx context.Context) (json.RawMessage, error) {
-	if g == nil || g.db == nil {
-		return nil, errors.New("librarypack: generation is closed")
-	}
-	var raw string
-	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='learning_json'").Scan(&raw); err != nil {
-		return nil, err
-	}
-	if len(raw) > 64<<20 || !json.Valid([]byte(raw)) {
-		return nil, errors.New("librarypack: invalid learning payload")
-	}
-	return json.RawMessage(append([]byte(nil), raw...)), nil
+	return g.normalizedLearning(ctx)
 }
 
 // Statistics returns the verified DSP statistics payload. Older packs without
 // this resource return ok=false rather than fabricated percentile evidence.
 func (g *Generation) Statistics(ctx context.Context) (payload json.RawMessage, ok bool, err error) {
-	if g == nil || g.db == nil {
-		return nil, false, errors.New("librarypack: generation is closed")
-	}
-	var raw string
-	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='statistics_json'").Scan(&raw); errors.Is(err, sql.ErrNoRows) {
-		return nil, false, nil
-	} else if err != nil {
-		return nil, false, err
-	}
-	if raw == "{}" {
-		return nil, false, nil
-	}
-	if len(raw) > 32<<20 || !json.Valid([]byte(raw)) {
-		return nil, false, errors.New("librarypack: invalid statistics payload")
-	}
-	return json.RawMessage(append([]byte(nil), raw...)), true, nil
+	return g.normalizedStatistics(ctx)
 }
 
 // Lookup returns metadata without loading a vector. The returned JSON values
@@ -89,7 +103,7 @@ func (g *Generation) Lookup(ctx context.Context, id string) (Track, bool, error)
 	if g == nil || g.db == nil {
 		return Track{}, false, errors.New("librarypack: generation is closed")
 	}
-	row := g.db.QueryRowContext(ctx, `SELECT id,artist,title,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id=?`, id)
+	row := g.db.QueryRowContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id=?`, id)
 	track, err := scanTrack(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Track{}, false, nil
@@ -130,7 +144,7 @@ func (g *Generation) List(ctx context.Context, after string, limit int) ([]Track
 	if limit > 10_000 {
 		limit = 10_000
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id>? ORDER BY id LIMIT ?`, after, limit)
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks WHERE id>? ORDER BY id LIMIT ?`, after, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +166,7 @@ func scanTrack(row rowScanner) (Track, error) {
 	var track Track
 	var capabilities, rawTags, dsp, missing string
 	var cluster, alternative sql.NullInt64
-	err := row.Scan(&track.ID, &track.Artist, &track.Title, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore)
+	err := row.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore)
 	if err == nil {
 		err = json.Unmarshal([]byte(capabilities), &track.Capabilities)
 	}
@@ -197,6 +211,14 @@ func (g *Generation) close() error {
 	}
 	g.closeOnce.Do(func() {
 		var errs []error
+		g.attachmentMu.Lock()
+		for key, attachment := range g.attachments {
+			if attachment.close != nil {
+				attachment.close()
+			}
+			delete(g.attachments, key)
+		}
+		g.attachmentMu.Unlock()
 		if g.db != nil {
 			errs = append(errs, g.db.Close())
 			g.db = nil
@@ -387,36 +409,22 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='version'").Scan(&version); err != nil || version != fmt.Sprint(FormatVersion) {
 		return errors.New("librarypack: invalid metadata database version")
 	}
-	var learningBytes int64
-	if err := g.db.QueryRowContext(ctx, "SELECT COALESCE(length(value),0) FROM pack_info WHERE key='learning_json'").Scan(&learningBytes); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	var resourcesFormat string
+	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='resources_format'").Scan(&resourcesFormat); err != nil || resourcesFormat != "normalized-v1" {
+		return errors.New("librarypack: invalid normalized resource format")
+	}
+	if err := g.validateNormalizedResources(ctx, limits); err != nil {
+		return fmt.Errorf("librarypack: invalid normalized resources: %w", err)
+	}
+	if _, err := g.MetadataBasis(ctx); err != nil {
+		return fmt.Errorf("librarypack: invalid normalized metadata model: %w", err)
+	}
+	_, hasStatistics, err := g.Statistics(ctx)
+	if err != nil {
 		return err
 	}
-	if learningBytes > 64<<20 {
-		return errors.New("librarypack: learning payload exceeds allocation limit")
-	}
-	if learningBytes > 0 {
-		var learning string
-		if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='learning_json'").Scan(&learning); err != nil || !json.Valid([]byte(learning)) {
-			return errors.New("librarypack: invalid learning payload")
-		}
-	}
-	var statisticsBytes int64
-	if err := g.db.QueryRowContext(ctx, "SELECT COALESCE(length(value),0) FROM pack_info WHERE key='statistics_json'").Scan(&statisticsBytes); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	if statisticsBytes > 32<<20 {
-		return errors.New("librarypack: statistics payload exceeds allocation limit")
-	}
-	if statisticsBytes > 0 {
-		var statistics string
-		if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='statistics_json'").Scan(&statistics); err != nil || !json.Valid([]byte(statistics)) {
-			return errors.New("librarypack: invalid statistics payload")
-		}
-		if (statistics != "{}") != (g.manifest.StatisticsGeneration != "") {
-			return errors.New("librarypack: statistics payload does not match manifest generation")
-		}
-	} else if g.manifest.StatisticsGeneration != "" {
-		return errors.New("librarypack: statistics generation has no payload")
+	if hasStatistics != (g.manifest.StatisticsGeneration != "") {
+		return errors.New("librarypack: statistics resources do not match manifest generation")
 	}
 	info, err := g.vectors.Stat()
 	if err != nil {

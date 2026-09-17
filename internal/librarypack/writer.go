@@ -245,12 +245,28 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 	if _, err := db.ExecContext(ctx, `CREATE TABLE pack_info(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 		CREATE TABLE tracks(
 			id TEXT PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
+			normalized_artist TEXT NOT NULL, normalized_title TEXT NOT NULL,
+			source_identity TEXT NOT NULL, recording_identity TEXT NOT NULL,
+			isrc TEXT NOT NULL, musicbrainz_recording TEXT NOT NULL,
+			duration_ms INTEGER NOT NULL, duration_provenance TEXT NOT NULL, duration_reliable INTEGER NOT NULL,
 			album_artist TEXT NOT NULL, album TEXT NOT NULL,
 			root_alias TEXT NOT NULL, relative_path TEXT NOT NULL,
 			capabilities_json TEXT NOT NULL, raw_tags_json TEXT NOT NULL, dsp_json TEXT NOT NULL, missingness_json TEXT NOT NULL,
 			failure TEXT NOT NULL, unsupported TEXT NOT NULL, mert_row INTEGER,
 			cluster_id INTEGER, cluster_score REAL, alternative_cluster INTEGER, alternative_score REAL
-		);`); err != nil {
+		);
+		CREATE TABLE learning_info(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID;
+		CREATE TABLE training_sample(position INTEGER PRIMARY KEY,id TEXT NOT NULL);
+		CREATE TABLE metadata_vocabulary(column_id INTEGER PRIMARY KEY,term TEXT NOT NULL UNIQUE,idf REAL NOT NULL);
+		CREATE TABLE metadata_rows(artist_id TEXT NOT NULL,column_id INTEGER NOT NULL,value REAL NOT NULL,PRIMARY KEY(artist_id,column_id)) WITHOUT ROWID;
+		CREATE TABLE metadata_associations(artist_id TEXT NOT NULL,album_id TEXT NOT NULL,role TEXT NOT NULL,PRIMARY KEY(artist_id,album_id,role)) WITHOUT ROWID;
+		CREATE TABLE svd_model(version TEXT NOT NULL,outcome TEXT NOT NULL,reason TEXT NOT NULL,dimension INTEGER NOT NULL,columns_count INTEGER NOT NULL);
+		CREATE TABLE svd_values(kind TEXT NOT NULL,row_id INTEGER NOT NULL,column_id INTEGER NOT NULL,value REAL NOT NULL,PRIMARY KEY(kind,row_id,column_id)) WITHOUT ROWID;
+		CREATE TABLE spherical_model(version TEXT NOT NULL,input_generation TEXT NOT NULL,input_digest TEXT NOT NULL,seed TEXT NOT NULL,dimension INTEGER NOT NULL,clusters INTEGER NOT NULL,epochs INTEGER NOT NULL,objective REAL NOT NULL);
+		CREATE TABLE spherical_values(kind TEXT NOT NULL,row_id INTEGER NOT NULL,column_id INTEGER NOT NULL,value REAL NOT NULL,PRIMARY KEY(kind,row_id,column_id)) WITHOUT ROWID;
+		CREATE TABLE dsp_statistics_info(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID;
+		CREATE TABLE dsp_statistics_groups(group_id INTEGER PRIMARY KEY,id TEXT NOT NULL,version TEXT NOT NULL,sampling TEXT NOT NULL,scope TEXT NOT NULL,tracks INTEGER NOT NULL);
+		CREATE TABLE dsp_statistics_features(group_id INTEGER NOT NULL,position INTEGER NOT NULL,name TEXT NOT NULL,summary_json TEXT NOT NULL,PRIMARY KEY(group_id,position)) WITHOUT ROWID;`); err != nil {
 		return coverage, nil, err
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -263,10 +279,13 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			_ = tx.Rollback()
 		}
 	}()
-	if _, err := tx.ExecContext(ctx, "INSERT INTO pack_info(key,value) VALUES('format',?),('version',?),('learning_json',?),('statistics_json',?)", Format, fmt.Sprint(FormatVersion), string(learning), string(statistics)); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO pack_info(key,value) VALUES('format',?),('version',?),('resources_format','normalized-v1')", Format, fmt.Sprint(FormatVersion)); err != nil {
 		return coverage, nil, err
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	if err := writeNormalizedResources(ctx, tx, learning, statistics); err != nil {
+		return coverage, nil, err
+	}
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return coverage, nil, err
 	}
@@ -324,7 +343,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			}
 		}
 		capabilities, _ := json.Marshal(track.Capabilities)
-		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
+		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.NormalizedArtist, track.NormalizedTitle, track.SourceIdentity, track.RecordingIdentity, track.ISRC, track.MusicBrainzRecording, track.DurationMilliseconds, track.DurationProvenance, track.DurationReliable, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
 			return coverage, nil, err
 		}
 	}
@@ -366,7 +385,19 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 	if !validIdentifier(t.ID) || strings.TrimSpace(t.Artist) == "" || strings.TrimSpace(t.Title) == "" || previousID != "" && t.ID <= previousID {
 		return fmt.Errorf("librarypack: invalid, duplicate, or unordered track %q", t.ID)
 	}
-	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
+	if t.NormalizedArtist == "" {
+		t.NormalizedArtist = normalizePortableIdentity(t.Artist)
+	}
+	if t.NormalizedTitle == "" {
+		t.NormalizedTitle = normalizePortableIdentity(t.Title)
+	}
+	if t.SourceIdentity == "" {
+		t.SourceIdentity = "library:" + t.ID
+	}
+	if t.DurationMilliseconds < 0 || t.DurationMilliseconds > 24*60*60*1000 || t.DurationReliable && (t.DurationMilliseconds == 0 || strings.TrimSpace(t.DurationProvenance) == "") {
+		return fmt.Errorf("librarypack: invalid duration for %q", t.ID)
+	}
+	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
 		return fmt.Errorf("librarypack: track %q exceeds record limit", t.ID)
 	}
 	if t.RelativePath != "" && (!validIdentifier(t.RootAlias) || !validateRelativePath(t.RelativePath)) || t.RelativePath == "" && t.RootAlias != "" {
@@ -379,7 +410,7 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 		}
 		*raw = json.RawMessage(canonical)
 	}
-	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
+	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
 		return fmt.Errorf("librarypack: canonical track %q exceeds record limit", t.ID)
 	}
 	t.Capabilities = trackCapabilities(*t)
@@ -387,6 +418,10 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 		return fmt.Errorf("librarypack: invalid MERT vector for %q", t.ID)
 	}
 	return nil
+}
+
+func normalizePortableIdentity(value string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
 func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, metadataPath, vectorsPath string) error {

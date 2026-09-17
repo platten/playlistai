@@ -188,7 +188,28 @@ func (d *DynamicCatalog) ArtistRecordings(ctx context.Context, artist string) ([
 	if !ok {
 		return nil, fmt.Errorf("catalog: base does not support artist recordings")
 	}
-	return source.ArtistRecordings(ctx, artist)
+	tracks, err := source.ArtistRecordings(ctx, artist)
+	if err != nil {
+		return nil, err
+	}
+	wanted := core.NormalizeIdentityPart(artist)
+	seen := make(map[string]struct{}, len(tracks))
+	for _, track := range tracks {
+		seen[track.ID] = struct{}{}
+	}
+	for _, entry := range d.searchSnapshot() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if core.NormalizeIdentityPart(entry.ref.Artist) == wanted {
+			if _, exists := seen[entry.ref.ID]; !exists {
+				tracks = append(tracks, entry.ref)
+				seen[entry.ref.ID] = struct{}{}
+			}
+		}
+	}
+	sort.Slice(tracks, func(i, j int) bool { return tracks[i].ID < tracks[j].ID })
+	return tracks, nil
 }
 
 var _ ports.Catalog = (*DynamicCatalog)(nil)

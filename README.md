@@ -29,7 +29,7 @@ system FFmpeg installation:
 
 ```sh
 ./playlist-indexer run \
-  --root /mnt/music \
+  --root-alias music-main=/mnt/music \
   --state "$HOME/.local/share/playlist-indexer" \
   --profile balanced --device cpu --concurrency auto \
   --accept-model-license --out ./my-library.paipack
@@ -41,6 +41,8 @@ diagnostic correctness baseline, or `manual` with stage ceilings such as
 --inference-workers 2 --inference-threads 2 --max-ram 8GiB`. Stage ceilings
 share the global budget; they do not multiply it. Only one mutating coordinator
 may use a state directory, while `status` remains read-only.
+Use repeated `--root-alias ALIAS=PATH` for stable identities across remounts or
+root reordering. Plain repeated `--root` remains supported for compatibility.
 
 Interactive runs show a PTerm progress bar on stderr with discovered files and
 compatible queued, active, finished, and failed jobs. A PTerm box above the bar
@@ -55,6 +57,12 @@ epoch; unchanged files retain compatible completed metadata, DSP, and MERT jobs,
 so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
+
+Use `bench concurrency --root PATH --sample-tracks N` for isolated real-audio
+serial/2-worker/4-worker/auto equivalence and resource measurements. Use
+`bench scale --rows 2000000 --dimension 768 --max-ram 8GiB` for the explicit
+synthetic index/export/RSS/query-latency gate; it does not measure decoding or
+musical quality.
 
 The standard executable embeds its private codec runtime and performs explicit
 licensed MERT setup. The larger offline executable embeds both codec and CPU

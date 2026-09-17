@@ -114,6 +114,17 @@ func (s *Staged) PackSHA256() string {
 	return s.packSHA256
 }
 
+// Generation returns the verified generation while it is staged so bounded
+// derivative indexes can be constructed before the short activation step. For
+// an identical active generation it returns that immutable generation, allowing
+// a missing app-owned derivative index to be rebuilt without restaging the pack.
+func (s *Staged) Generation() *Generation {
+	if s == nil || s.entry == nil {
+		return nil
+	}
+	return s.entry.generation
+}
+
 func (m *Manager) Stage(ctx context.Context, archivePath string) (*Staged, error) {
 	if !m.mutation.CompareAndSwap(false, true) {
 		return nil, ErrMutationInProgress
@@ -164,9 +175,11 @@ func (m *Manager) Stage(ctx context.Context, archivePath string) (*Staged, error
 		return nil, ErrManagerClosed
 	}
 	if m.active != nil && m.active.generation.manifest.PackID == manifest.PackID && m.active.generation.packSHA256 == packSHA {
+		entry := m.active
+		entry.refs++ // pin while app-owned derivative validation/rebuild runs
 		m.mu.Unlock()
 		success = true
-		return &Staged{manager: m, manifest: manifest, packSHA256: packSHA, sameActive: true}, nil
+		return &Staged{manager: m, entry: entry, manifest: manifest, packSHA256: packSHA, dir: entry.generation.dir, sameActive: true}, nil
 	}
 	m.mu.Unlock()
 	destination := filepath.Join(m.root, "generations", manifest.PackID+"-"+strings.TrimPrefix(filepath.Base(stageDir), ".stage-"))
@@ -236,6 +249,7 @@ func (m *Manager) Activate(ctx context.Context, staged *Staged) error {
 	}
 	defer m.mutation.Store(false)
 	if staged.sameActive {
+		m.release(staged.entry)
 		return nil
 	}
 	m.mu.Lock()
@@ -278,6 +292,10 @@ func (m *Manager) Discard(staged *Staged) error {
 	}
 	defer m.mutation.Store(false)
 	if staged.entry == nil {
+		return nil
+	}
+	if staged.sameActive {
+		m.release(staged.entry)
 		return nil
 	}
 	err := staged.entry.generation.close()

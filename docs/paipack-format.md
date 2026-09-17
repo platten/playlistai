@@ -1,6 +1,6 @@
 # Playlist AI portable library pack (`.paipack`)
 
-Status: format version 2.
+Status: format version 3.
 
 A paipack is a portable, immutable recommendation-data snapshot. It contains
 metadata and derived analysis only. It never contains audio or PCM. Source
@@ -13,7 +13,7 @@ is shared by the analyzer and desktop integration.
 
 ## Envelope and members
 
-The file is a Zstandard-compressed POSIX tar stream. Version 2 contains exactly
+The file is a Zstandard-compressed POSIX tar stream. Version 3 contains exactly
 these regular-file members, in this order:
 
 1. `manifest.json`
@@ -61,10 +61,14 @@ compressed archive; that distinct hash identifies the exact imported file.
 ## Metadata snapshot
 
 `metadata.sqlite` is an immutable SQLite snapshot. `pack_info` identifies the
-format and schema. The bounded `learning_json` entry contains the fitted
-weighted-genre/SVD model plus the optional spherical centroid model and its
-training sample identity. The separately checksummed `statistics_json` entry
-contains deterministic library-relative DSP distributions partitioned by the
+format and normalized resource schema. Version 3 has no monolithic
+`learning_json` or `statistics_json` value. Vocabulary/IDF values, sparse
+artist rows and associations, SVD values, training sample identities,
+spherical centroids/counts, and DSP summaries are stored in canonical keyed
+tables. Consumers load only the resources they query. Per-track assignments
+remain on `tracks`, avoiding a corpus-sized in-memory assignment object.
+
+The normalized DSP tables contain deterministic library-relative distributions partitioned by the
 exact DSP version, sampling policy, and observed-audio scope. It records
 known/missing/partial counts and reasons, deterministic sampled breakpoints,
 Type-7 p05/p25/p50/p75/p95 quantiles, and its own generation identity; a
@@ -72,7 +76,9 @@ percentile is approximate whenever not every known observation fits the
 declared bounded sample. `tracks` is keyed by the stable, source-namespaced track ID
 and is inserted in ascending ID order. It preserves artist, title, album
 artist, album, optional root alias and safe relative path, raw tag JSON, DSP
-JSON, explicit missingness JSON, recoverable failure/unsupported reasons, a
+JSON, explicit missingness JSON, reliable duration/provenance, normalized
+artist/title values, source identity, optional authoritative ISRC/MusicBrainz
+recording identity, recoverable failure/unsupported reasons, a
 canonical capability list, an optional MERT row, and optional primary/alternate
 spherical cluster assignments with their cosine similarities. Assignments are
 stored by track row rather than as one giant JSON array.
@@ -128,12 +134,16 @@ state/
       manifest.json
       metadata.sqlite
       mert.f32
+      local-index-v1/  # consumer-built derivative; not an archive member
 ```
 
 `Stage` extracts into a unique private directory, verifies every member hash,
 validates the manifest, SQLite rows, capability/missingness data, vector header,
 file length, row mapping, and every vector, and then opens an immutable
-generation. Only one mutation may be staged at a time; overlapping mutation
+generation. The desktop builds deterministic metadata/artist inverted indexes
+and exact MERT shards in that private directory before activation. A derivative
+manifest and atomic directory rename prevent partial indexes from becoming
+visible. Only one mutation may be staged at a time; overlapping mutation
 attempts receive `ErrMutationInProgress`. Read pins continue concurrently.
 
 `Activate` writes and syncs a temporary `active.json`, atomically renames it,

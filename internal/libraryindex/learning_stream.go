@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -696,7 +697,28 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 	if err != nil {
 		return librarypack.Track{}, false, err
 	}
-	packed := librarypack.Track{ID: id, Artist: artist, Title: title, Album: album, AlbumArtist: albumArtist, RootAlias: rootAlias, RelativePath: filepath.ToSlash(relativePath), RawTags: rawTags, DSP: append(json.RawMessage(nil), dsp...), Missingness: missingness, Failure: failure, Unsupported: unsupported}
+	isrc := ""
+	if metadata.ISRC != nil {
+		isrc = normalizeEntity(metadata.ISRC.Value)
+	}
+	mbRecording := musicBrainzRecordingID(metadata.MusicBrainzIDs)
+	recordingIdentity := ""
+	if mbRecording != "" {
+		recordingIdentity = "musicbrainz:" + strings.ToLower(mbRecording)
+	} else if isrc != "" {
+		recordingIdentity = "isrc:" + strings.ToUpper(strings.ReplaceAll(isrc, "-", ""))
+	}
+	packed := librarypack.Track{
+		ID: id, Artist: artist, Title: title, NormalizedArtist: normalizeEntity(artist), NormalizedTitle: normalizeEntity(title),
+		SourceIdentity: "library:" + id, RecordingIdentity: recordingIdentity, ISRC: isrc, MusicBrainzRecording: mbRecording,
+		Album: album, AlbumArtist: albumArtist, RootAlias: rootAlias, RelativePath: filepath.ToSlash(relativePath),
+		RawTags: rawTags, DSP: append(json.RawMessage(nil), dsp...), Missingness: missingness, Failure: failure, Unsupported: unsupported,
+	}
+	if record.Probe.Duration.Reliable && record.Probe.Duration.Seconds > 0 {
+		packed.DurationMilliseconds = int64(math.Round(record.Probe.Duration.Seconds * 1000))
+		packed.DurationProvenance = record.Probe.Duration.Provenance
+		packed.DurationReliable = packed.DurationMilliseconds > 0
+	}
 	if len(vectorRaw) > 0 {
 		packed.MERT, err = decodeFloat32Vector(vectorRaw)
 		if err != nil {
@@ -713,6 +735,21 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 		packed.Alternative, packed.AltScore = &assignment.Alternative, assignment.AlternativeScore
 	}
 	return packed, true, nil
+}
+
+func musicBrainzRecordingID(values map[string]string) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		normalized := strings.ToLower(strings.NewReplacer(" ", "_", "-", "_").Replace(strings.TrimSpace(key)))
+		if normalized == "musicbrainz_trackid" || normalized == "musicbrainz_recordingid" {
+			return strings.TrimSpace(values[key])
+		}
+	}
+	return ""
 }
 
 func (s *frozenPackSource) Close() error {
