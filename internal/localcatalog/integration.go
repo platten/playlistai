@@ -111,7 +111,7 @@ func (c *CompositeCatalog) Meta(id string) (core.TrackMeta, bool) {
 		meta := core.TrackMeta{
 			Ref:   core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity},
 			Album: track.Album, AlbumReliable: track.Album != "", SourceIdentity: track.SourceIdentity,
-			ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+			ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		}
 		if track.AudioFingerprint != nil {
 			fingerprint := track.AudioFingerprint
@@ -469,6 +469,12 @@ func coreIdentityMatchesLocal(ref core.TrackRef, track Track) bool {
 			local.MusicBrainzRecording, _ = strings.CutPrefix(localIdentity, "musicbrainz:")
 		}
 		return librarypack.SameRecording(local, librarypack.Track{MusicBrainzRecording: value})
+	}
+	if value, ok := strings.CutPrefix(identity, "acoustid-id:"); ok {
+		if local.AcoustID == "" {
+			local.AcoustID, _ = strings.CutPrefix(localIdentity, "acoustid-id:")
+		}
+		return librarypack.SameRecording(local, librarypack.Track{AcoustID: value})
 	}
 	return identity == localIdentity
 }

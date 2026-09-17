@@ -247,7 +247,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			id TEXT PRIMARY KEY, artist TEXT NOT NULL, title TEXT NOT NULL,
 			normalized_artist TEXT NOT NULL, normalized_title TEXT NOT NULL,
 			source_identity TEXT NOT NULL, recording_identity TEXT NOT NULL,
-			isrc TEXT NOT NULL, musicbrainz_recording TEXT NOT NULL,
+			isrc TEXT NOT NULL, musicbrainz_recording TEXT NOT NULL, acoustid TEXT NOT NULL,
 			fingerprint_contract TEXT NOT NULL, fingerprint_format TEXT NOT NULL, fingerprint_algorithm INTEGER NOT NULL,
 			fingerprint_value TEXT NOT NULL, fingerprint_sha256 TEXT NOT NULL, fingerprint_scope TEXT NOT NULL, fingerprint_decoder TEXT NOT NULL,
 			duration_ms INTEGER NOT NULL, duration_provenance TEXT NOT NULL, duration_reliable INTEGER NOT NULL,
@@ -259,6 +259,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 		);
 		CREATE INDEX tracks_isrc ON tracks(isrc) WHERE isrc<>'';
 		CREATE INDEX tracks_musicbrainz_recording ON tracks(musicbrainz_recording COLLATE NOCASE) WHERE musicbrainz_recording<>'';
+		CREATE INDEX tracks_acoustid ON tracks(acoustid COLLATE NOCASE) WHERE acoustid<>'';
 		CREATE INDEX tracks_audio_fingerprint ON tracks(fingerprint_contract,fingerprint_sha256) WHERE fingerprint_sha256<>'';
 		CREATE TABLE learning_info(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID;
 		CREATE TABLE training_sample(position INTEGER PRIMARY KEY,id TEXT NOT NULL);
@@ -290,7 +291,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 	if err := writeNormalizedResources(ctx, tx, learning, statistics); err != nil {
 		return coverage, nil, err
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return coverage, nil, err
 	}
@@ -352,7 +353,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 		if track.AudioFingerprint != nil {
 			fingerprint = *track.AudioFingerprint
 		}
-		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.NormalizedArtist, track.NormalizedTitle, track.SourceIdentity, track.RecordingIdentity, track.ISRC, track.MusicBrainzRecording, fingerprint.Contract, fingerprint.Format, fingerprint.Algorithm, fingerprint.Fingerprint, fingerprint.FingerprintSHA256, fingerprint.Scope, fingerprint.DecoderRuntimeID, track.DurationMilliseconds, track.DurationProvenance, track.DurationReliable, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
+		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.NormalizedArtist, track.NormalizedTitle, track.SourceIdentity, track.RecordingIdentity, track.ISRC, track.MusicBrainzRecording, track.AcoustID, fingerprint.Contract, fingerprint.Format, fingerprint.Algorithm, fingerprint.Fingerprint, fingerprint.FingerprintSHA256, fingerprint.Scope, fingerprint.DecoderRuntimeID, track.DurationMilliseconds, track.DurationProvenance, track.DurationReliable, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
 			return coverage, nil, err
 		}
 	}
@@ -405,20 +406,20 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 	if mbid := canonicalMBID(t.MusicBrainzRecording); mbid != "" {
 		t.MusicBrainzRecording = mbid
 	}
+	if acoustID := canonicalAcoustID(t.AcoustID); acoustID != "" {
+		t.AcoustID = acoustID
+	}
 	if t.DurationMilliseconds < 0 || t.DurationMilliseconds > 24*60*60*1000 || t.DurationReliable && (t.DurationMilliseconds == 0 || strings.TrimSpace(t.DurationProvenance) == "") {
 		return fmt.Errorf("librarypack: invalid duration for %q", t.ID)
 	}
 	fingerprintBytes := 0
 	if t.AudioFingerprint != nil {
 		fingerprintBytes = len(t.AudioFingerprint.Contract) + len(t.AudioFingerprint.Format) + len(t.AudioFingerprint.Fingerprint) + len(t.AudioFingerprint.FingerprintSHA256) + len(t.AudioFingerprint.Scope) + len(t.AudioFingerprint.DecoderRuntimeID)
-		digest := sha256.Sum256([]byte(t.AudioFingerprint.Fingerprint))
-		if t.AudioFingerprint.Contract == "" || t.AudioFingerprint.Format != "acoustid-chromaprint-base64" || t.AudioFingerprint.Algorithm != 1 ||
-			t.AudioFingerprint.Scope != "full_selected_stream" || t.AudioFingerprint.DecoderRuntimeID == "" ||
-			!strings.EqualFold(hex.EncodeToString(digest[:]), t.AudioFingerprint.FingerprintSHA256) {
+		if !validAudioFingerprint(*t.AudioFingerprint) {
 			return fmt.Errorf("librarypack: invalid audio fingerprint for %q", t.ID)
 		}
 	}
-	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+fingerprintBytes+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
+	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+len(t.AcoustID)+fingerprintBytes+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
 		return fmt.Errorf("librarypack: track %q exceeds record limit", t.ID)
 	}
 	if t.RelativePath != "" && (!validIdentifier(t.RootAlias) || !validateRelativePath(t.RelativePath)) || t.RelativePath == "" && t.RootAlias != "" {
@@ -431,7 +432,7 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 		}
 		*raw = json.RawMessage(canonical)
 	}
-	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+fingerprintBytes+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
+	if len(t.ID)+len(t.Artist)+len(t.Title)+len(t.NormalizedArtist)+len(t.NormalizedTitle)+len(t.SourceIdentity)+len(t.RecordingIdentity)+len(t.ISRC)+len(t.MusicBrainzRecording)+len(t.AcoustID)+fingerprintBytes+len(t.DurationProvenance)+len(t.AlbumArtist)+len(t.Album)+len(t.RootAlias)+len(t.RelativePath)+len(t.Failure)+len(t.Unsupported)+len(t.RawTags)+len(t.DSP)+len(t.Missingness) > limits.MaxRecordBytes {
 		return fmt.Errorf("librarypack: canonical track %q exceeds record limit", t.ID)
 	}
 	t.Capabilities = trackCapabilities(*t)

@@ -1,6 +1,6 @@
 # Playlist AI portable library pack (`.paipack`)
 
-Status: format version 4.
+Status: format version 5.
 
 A paipack is a portable, immutable recommendation-data snapshot. It contains
 metadata and derived analysis only. It never contains audio or PCM. Source
@@ -11,15 +11,15 @@ mount mappings are not portable pack data.
 The Go implementation is `internal/librarypack`. It has no Wails dependency and
 is shared by the analyzer and desktop integration.
 
-Version 4 is intentionally incompatible with version 3 because the SQLite row
-schema and capability contract gained fingerprint fields and indexes. Rebuild
+Version 5 is intentionally incompatible with version 4 because the SQLite row
+schema and capability contract gained an AcoustID ID field and index. Rebuild
 an older pack with the current `playlist-indexer`; activation remains atomic,
 so rebuilding does not mutate an already installed generation or any source
 audio.
 
 ## Envelope and members
 
-The file is a Zstandard-compressed POSIX tar stream. Version 4 contains exactly
+The file is a Zstandard-compressed POSIX tar stream. Version 5 contains exactly
 these regular-file members, in this order:
 
 1. `manifest.json`
@@ -67,7 +67,7 @@ compressed archive; that distinct hash identifies the exact imported file.
 ## Metadata snapshot
 
 `metadata.sqlite` is an immutable SQLite snapshot. `pack_info` identifies the
-format and normalized resource schema. Version 4 has no monolithic
+format and normalized resource schema. Version 5 has no monolithic
 `learning_json` or `statistics_json` value. Vocabulary/IDF values, sparse
 artist rows and associations, SVD values, training sample identities,
 spherical centroids/counts, and DSP summaries are stored in canonical keyed
@@ -84,10 +84,10 @@ and is inserted in ascending ID order. It preserves artist, title, album
 artist, album, optional root alias and safe relative path, raw tag JSON, DSP
 JSON, explicit missingness JSON, reliable duration/provenance, normalized
 artist/title values, source identity, optional authoritative ISRC/MusicBrainz
-recording identity, and a locally computed base64-compressed AcoustID
-Chromaprint value when fingerprinting succeeded. The fingerprint contract,
-algorithm, full selected-stream scope, decoder identity, and a verified SHA-256
-lookup digest are stored with the value. Rows also preserve recoverable
+recording/AcoustID identities, and a base64-compressed AcoustID Chromaprint
+value when copied from a tag or generated locally. The fingerprint contract,
+algorithm, embedded-tag or full-selected-stream scope, decoder identity, and a
+verified SHA-256 lookup digest are stored with the value. Rows also preserve recoverable
 failure/unsupported reasons, a canonical capability list, an optional MERT row, and optional primary/alternate
 spherical cluster assignments with their cosine similarities. Assignments are
 stored by track row rather than as one giant JSON array.
@@ -99,9 +99,10 @@ Capabilities are evidence availability, not inferred labels:
 - `dsp` means DSP evidence is present; and
 - `local_path` means an alias-relative source reference is present; and
 - `audio_fingerprint` means a complete validated local AcoustID/Chromaprint
-  fingerprint is present.
+  fingerprint is present; and
+- `acoustid` means a valid tagged AcoustID ID is present.
 
-Valid ISRCs and recording MBIDs are authoritative duplicate evidence. A
+Valid ISRCs, recording MBIDs, and AcoustID IDs are authoritative duplicate evidence. A
 fingerprint match is accepted as the same recording only when its compatible
 full-stream Chromaprint value is exact and artist/title metadata matches or is
 very similar; reliable durations must also be close. Invalid identifier tags

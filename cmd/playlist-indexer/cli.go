@@ -121,7 +121,7 @@ type commonConfig struct {
 	QueueDepth              int    `json:"queueDepth"`
 	MaxOpenFiles            int    `json:"maxOpenFiles"`
 	Seed                    int64  `json:"seed"`
-	FollowDirectorySymlinks bool   `json:"followDirectorySymlinks"`
+	FollowDirectorySymlinks *bool  `json:"followDirectorySymlinks"`
 }
 
 func (c *commonFlags) preloadConfig(args []string) error {
@@ -152,7 +152,9 @@ func (c *commonFlags) preloadConfig(args []string) error {
 	c.scanWorkers, c.metadataWorkers, c.decodeWorkers, c.dspWorkers = cfg.ScanWorkers, cfg.MetadataWorkers, cfg.DecodeWorkers, cfg.DSPWorkers
 	c.inferenceWorkers, c.inferenceThreads, c.fitWorkers, c.indexWorkers = cfg.InferenceWorkers, cfg.InferenceThreads, cfg.FitWorkers, cfg.IndexWorkers
 	c.ioWorkers, c.queueDepth, c.maxOpenFiles, c.seed = cfg.IOWorkers, cfg.QueueDepth, cfg.MaxOpenFiles, cfg.Seed
-	c.followDirectorySymlinks = cfg.FollowDirectorySymlinks
+	if cfg.FollowDirectorySymlinks != nil {
+		c.followDirectorySymlinks = *cfg.FollowDirectorySymlinks
+	}
 	return nil
 }
 
@@ -233,7 +235,7 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 func runPipelineCommand(ctx context.Context, command string, args []string, stdout, stderr io.Writer) (code int, runErr error) {
 	flags := flag.NewFlagSet("playlist-indexer "+command, flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	var common commonFlags
+	common := commonFlags{followDirectorySymlinks: true}
 	if err := common.preloadConfig(args); err != nil {
 		return 1, err
 	}
@@ -421,7 +423,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			if scanErr == nil {
 				progress.SetPhase("Building scan manifest and diff")
 				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)
-				if scanErr == nil {
+				if scanErr == nil && command != "scan" {
 					progressReader.FreezeEpoch(scanReport.Epoch)
 				}
 			}
@@ -491,7 +493,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 

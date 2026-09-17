@@ -264,8 +264,8 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 		if progressErr != nil {
 			return report, progressErr
 		}
-		report.Files = progress.Total
-		report.AudioFiles = progress.Total
+		report.Files = progress.Files
+		report.AudioFiles = progress.Files
 	}
 	return report, err
 }
@@ -349,11 +349,11 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 			}
 			files++
 			device, inode := fileIdentity(info)
-			observed, err := s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)
+			_, err = s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)
 			if err != nil {
 				return nil, files, audio, DirectoryRevision{}, err
 			}
-			if observed.needsProcessing && options.OnFile != nil {
+			if options.OnFile != nil {
 				options.OnFile(FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
 			}
 			audio++

@@ -208,7 +208,7 @@ func (c *Catalog) AudioDuplicates(ctx context.Context, id string, limit int) ([]
 }
 
 // Duplicates returns high-confidence recording duplicates based on valid ISRC,
-// recording MBID, or locally corroborated AcoustID/Chromaprint evidence.
+// recording MBID, AcoustID ID, or locally corroborated Chromaprint evidence.
 func (c *Catalog) Duplicates(ctx context.Context, id string, limit int) ([]Track, error) {
 	localID, err := c.localID(id)
 	if err != nil {
@@ -278,7 +278,7 @@ func (c *Catalog) convertTrack(track librarypack.Track) Track {
 		ID: c.NamespacedID(track.ID), LocalID: track.ID, Artist: track.Artist, Title: track.Title,
 		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
 		SourceIdentity: track.SourceIdentity, RecordingIdentity: track.RecordingIdentity,
-		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording,
+		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		AudioFingerprint:     fingerprint,
 		DurationMilliseconds: track.DurationMilliseconds, DurationProvenance: track.DurationProvenance, DurationReliable: track.DurationReliable,
 		Cluster: track.Cluster, ClusterScore: track.ClusterScore, AlternativeCluster: track.Alternative, AlternativeScore: track.AltScore,

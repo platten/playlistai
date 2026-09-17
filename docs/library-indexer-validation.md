@@ -23,7 +23,8 @@ workspace from remaining release gates.
   real pack write/stage/activate/read paths and cover checksum/limit failures,
   metadata-only and MERT retrieval, incompatible spaces, channel completion
   order, cancellation, path escape, replacement/removal, pinned readers, and
-  ISRC/recording-MBID/fingerprint duplicate detection with metadata
+  ISRC/recording-MBID/AcoustID-ID duplicate detection, tagged fingerprint
+  round trips, and fingerprint duplicate detection with metadata
   corroboration.
 - `GOOS=windows GOARCH=amd64 go test -run '^$' ./...` passed for every package,
   and the available Windows runner executed the changed `librarypack`,

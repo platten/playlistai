@@ -88,19 +88,23 @@ group and waits for it to exit.
 
 Probe selects the default audio stream (then the lowest stream index), retains
 the raw tag dictionary exposed by ffprobe, and separately maps common title,
-artist, album-artist, album, genre, date, track/disc, MusicBrainz, ISRC, and
-ReplayGain fields. Artist and genre values are never split on `/` or `&`.
+artist, album-artist, album, genre, mood, style, date, track/disc, MusicBrainz,
+ISRC, AcoustID ID/fingerprint, and ReplayGain fields. Artist and genre values
+are never split on `/` or `&`.
 ffprobe's dictionary cannot represent repeated identical tag keys; that is a
 known preservation limit. Raw AAC duration is retained as an unreliable
 container estimate rather than promoted to an exact seek basis.
 
-The metadata stage fully decodes the selected stream to Chromaprint's required
-16-bit PCM boundary and stores the resulting AcoustID-compatible compressed
-fingerprint with its algorithm, runtime, scope, and SHA-256 lookup digest. The
+If neither an AcoustID ID nor fingerprint tag is present, the metadata stage
+fully decodes the selected stream to Chromaprint's required 16-bit PCM boundary
+and stores the resulting AcoustID-compatible compressed fingerprint with its
+algorithm, runtime, scope, and SHA-256 lookup digest. A tagged fingerprint is
+copied instead and is never regenerated; a tagged AcoustID ID likewise
+suppresses generation. The indexer performs no MBID lookup. The generated
 fingerprint pass also establishes full-decode integrity for formats covered by
-that contract. If fingerprinting is unavailable for a FLAC or MP3, the existing
-decode-to-discard integrity check still runs so fingerprint availability never
-weakens corruption detection.
+that contract. Tagged identities and failed generation use the existing
+decode-to-discard check for FLAC/MP3, so fingerprint reuse never weakens
+corruption detection.
 
 Sampled analysis decode emits interleaved float32 PCM at the selected stream's original sample
 rate and channel count. No ReplayGain, normalization, resampling, downmix,

@@ -185,14 +185,14 @@ func TestCompositeArtistRecordingsUseIndexesInLibraryOnlyAndCombinedModes(t *tes
 func TestCompositeMetaPreservesDurationAndAuthoritativeRecordingIdentity(t *testing.T) {
 	local, manager := openTestCatalog(t, []librarypack.Track{{
 		ID: "edition", Artist: "Artist", Title: "Song", RecordingIdentity: "musicbrainz:recording-1",
-		SourceIdentity: "library:edition", MusicBrainzRecording: "recording-1",
+		SourceIdentity: "library:edition", MusicBrainzRecording: "recording-1", AcoustID: "11111111-2222-3333-4444-555555555555",
 		DurationMilliseconds: 183250, DurationProvenance: "container", DurationReliable: true,
 	}}, nil)
 	defer manager.Close()
 	defer local.Close()
 	composite := &CompositeCatalog{base: testBase{}, local: local, mode: ModeCombined}
 	meta, ok := composite.Meta(local.NamespacedID("edition"))
-	if !ok || meta.Ref.RecordingIdentity != "musicbrainz:recording-1" || meta.SourceIdentity != "library:edition" ||
+	if !ok || meta.Ref.RecordingIdentity != "musicbrainz:recording-1" || meta.SourceIdentity != "library:edition" || meta.AcoustID != "11111111-2222-3333-4444-555555555555" ||
 		meta.FullRecordingDuration == nil || meta.FullRecordingDuration.Milliseconds != 183250 ||
 		meta.FullRecordingDuration.RecordingID != "musicbrainz:recording-1" {
 		t.Fatalf("local metadata lost identity or duration: %+v ok=%v", meta, ok)

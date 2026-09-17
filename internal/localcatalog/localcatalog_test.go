@@ -352,6 +352,17 @@ func TestExecutorMergeDeduplicatesHighConfidenceRecordings(t *testing.T) {
 	}
 }
 
+func TestExecutorMergeDeduplicatesTaggedAcoustID(t *testing.T) {
+	acoustID := "11111111-2222-3333-4444-555555555555"
+	candidates := mergeHits([][]Hit{{
+		{Track: Track{ID: "first", Artist: "Artist A", Title: "Song A", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 1}},
+		{Track: Track{ID: "second", Artist: "Artist B", Title: "Song B", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 2}},
+	}})
+	if len(candidates) != 1 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 {
+		t.Fatalf("AcoustID candidates = %+v", candidates)
+	}
+}
+
 func TestExecutorCancellationStopsChannels(t *testing.T) {
 	catalog, manager := openTestCatalog(t, testTracks(), nil)
 	defer manager.Close()

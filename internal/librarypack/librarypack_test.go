@@ -136,9 +136,10 @@ func TestDuplicatesUseIdentifiersOrCorroboratedFingerprint(t *testing.T) {
 	pack := Pack{
 		CorpusGeneration: "corpus-dedup", MetadataGeneration: "metadata-dedup",
 		Tracks: []Track{
-			{ID: "source", Artist: "The Artist", Title: "A Long Song Title", ISRC: "USAAA2600001", MusicBrainzRecording: "11111111-2222-3333-4444-555555555555", AudioFingerprint: fingerprint},
+			{ID: "source", Artist: "The Artist", Title: "A Long Song Title", ISRC: "USAAA2600001", MusicBrainzRecording: "11111111-2222-3333-4444-555555555555", AcoustID: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", AudioFingerprint: fingerprint},
 			{ID: "by-isrc", Artist: "Different", Title: "Metadata", ISRC: "US-AAA-26-00001"},
 			{ID: "by-mbid", Artist: "Different", Title: "Again", MusicBrainzRecording: "11111111-2222-3333-4444-555555555555"},
+			{ID: "by-acoustid", Artist: "Different", Title: "Again", AcoustID: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"},
 			{ID: "by-fingerprint", Artist: "The Artist", Title: "A Long Song Title!", AudioFingerprint: fingerprint},
 			{ID: "uncorroborated", Artist: "Another Artist", Title: "Unrelated Recording", AudioFingerprint: fingerprint},
 		},
@@ -166,11 +167,44 @@ func TestDuplicatesUseIdentifiersOrCorroboratedFingerprint(t *testing.T) {
 	for index := range duplicates {
 		ids[index] = duplicates[index].ID
 	}
-	if !reflect.DeepEqual(ids, []string{"by-fingerprint", "by-isrc", "by-mbid"}) {
+	if !reflect.DeepEqual(ids, []string{"by-acoustid", "by-fingerprint", "by-isrc", "by-mbid"}) {
 		t.Fatalf("duplicates = %v", ids)
 	}
 	if SameRecording(pack.Tracks[0], Track{Artist: "X", Title: "Y", ISRC: "vendor-specific"}) {
 		t.Fatal("invalid identifier became authoritative duplicate evidence")
+	}
+	if SameRecording(pack.Tracks[0], Track{Artist: "X", Title: "Y", AcoustID: "vendor-specific"}) {
+		t.Fatal("invalid AcoustID became authoritative duplicate evidence")
+	}
+}
+
+func TestTaggedAcoustIDFingerprintRoundTrips(t *testing.T) {
+	value := "AQADtNQYhYkYnGhw7Xembedded"
+	digest := sha256.Sum256([]byte(value))
+	pack := Pack{
+		CorpusGeneration: "corpus-embedded", MetadataGeneration: "metadata-embedded",
+		Tracks: []Track{{
+			ID: "tagged", Artist: "Artist", Title: "Song",
+			AudioFingerprint: &AudioFingerprint{
+				Contract: "acoustid-chromaprint-tag/v1;algorithm=1", Format: "acoustid-chromaprint-base64", Algorithm: 1,
+				Fingerprint: value, FingerprintSHA256: hex.EncodeToString(digest[:]), Scope: "embedded_tag", DecoderRuntimeID: "embedded_tag",
+			},
+		}},
+	}
+	archive, _ := writePackAt(t, "embedded.paipack", pack)
+	manager, err := OpenManager(context.Background(), t.TempDir(), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	staged, err := manager.Stage(context.Background(), archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = manager.Discard(staged) }()
+	track, ok, err := staged.Generation().Lookup(context.Background(), "tagged")
+	if err != nil || !ok || track.AudioFingerprint == nil || track.AudioFingerprint.Scope != "embedded_tag" {
+		t.Fatalf("tagged fingerprint round trip = %+v, ok=%v, err=%v", track.AudioFingerprint, ok, err)
 	}
 }
 

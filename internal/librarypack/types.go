@@ -20,7 +20,7 @@ import (
 
 const (
 	Format              = "playlist-ai-library-pack"
-	FormatVersion       = 4
+	FormatVersion       = 5
 	ManifestName        = "manifest.json"
 	MetadataName        = "metadata.sqlite"
 	MERTVectorsName     = "mert.f32"
@@ -34,6 +34,7 @@ var (
 	identifierPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`)
 	isrcPattern           = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$`)
 	mbidPattern           = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	acoustIDPattern       = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
 // Limits bounds untrusted archive expansion, SQLite records, and allocations.
@@ -159,6 +160,7 @@ type Track struct {
 	RecordingIdentity    string
 	ISRC                 string
 	MusicBrainzRecording string
+	AcoustID             string
 	AudioFingerprint     *AudioFingerprint
 	DurationMilliseconds int64
 	DurationProvenance   string
@@ -194,14 +196,17 @@ type AudioFingerprint struct {
 }
 
 // SameRecording reports whether two pack rows carry high-confidence evidence
-// for the same recording. Valid ISRC and recording MBID values are
-// authoritative. An exact compatible AcoustID/Chromaprint value is accepted
-// only when artist and title metadata also match or are very similar.
+// for the same recording. Valid ISRC, recording MBID, and AcoustID values are
+// authoritative. An exact compatible AcoustID/Chromaprint fingerprint is
+// accepted only when artist and title metadata also match or are very similar.
 func SameRecording(left, right Track) bool {
 	if leftISRC, rightISRC := canonicalISRC(left.ISRC), canonicalISRC(right.ISRC); leftISRC != "" && leftISRC == rightISRC {
 		return true
 	}
 	if leftMBID, rightMBID := canonicalMBID(left.MusicBrainzRecording), canonicalMBID(right.MusicBrainzRecording); leftMBID != "" && leftMBID == rightMBID {
+		return true
+	}
+	if leftAcoustID, rightAcoustID := canonicalAcoustID(left.AcoustID), canonicalAcoustID(right.AcoustID); leftAcoustID != "" && leftAcoustID == rightAcoustID {
 		return true
 	}
 	if !sameFingerprint(left.AudioFingerprint, right.AudioFingerprint) || !similarRecordingMetadata(left, right) {
@@ -236,12 +241,40 @@ func canonicalMBID(value string) string {
 	return value
 }
 
+func canonicalAcoustID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if !acoustIDPattern.MatchString(value) {
+		return ""
+	}
+	return value
+}
+
 func sameFingerprint(left, right *AudioFingerprint) bool {
 	return left != nil && right != nil &&
 		left.Contract != "" && left.Contract == right.Contract &&
 		left.Format == "acoustid-chromaprint-base64" && left.Format == right.Format &&
 		left.Algorithm == 1 && left.Algorithm == right.Algorithm &&
 		left.Fingerprint != "" && left.Fingerprint == right.Fingerprint
+}
+
+func validAudioFingerprint(fingerprint AudioFingerprint) bool {
+	if fingerprint.Contract == "" || fingerprint.Format != "acoustid-chromaprint-base64" || fingerprint.Algorithm != 1 ||
+		fingerprint.Fingerprint == "" || fingerprint.DecoderRuntimeID == "" {
+		return false
+	}
+	switch fingerprint.Scope {
+	case "full_selected_stream":
+		// Locally generated fingerprints include the decoder and Chromaprint
+		// runtime in the contract, so only like-for-like values compare.
+	case "embedded_tag":
+		if fingerprint.Contract != "acoustid-chromaprint-tag/v1;algorithm=1" || fingerprint.DecoderRuntimeID != "embedded_tag" {
+			return false
+		}
+	default:
+		return false
+	}
+	digest := sha256.Sum256([]byte(fingerprint.Fingerprint))
+	return strings.EqualFold(hex.EncodeToString(digest[:]), fingerprint.FingerprintSHA256)
 }
 
 func similarRecordingMetadata(left, right Track) bool {
@@ -323,6 +356,9 @@ func trackCapabilities(track Track) []string {
 	}
 	if track.AudioFingerprint != nil {
 		capabilities = append(capabilities, "audio_fingerprint")
+	}
+	if canonicalAcoustID(track.AcoustID) != "" {
+		capabilities = append(capabilities, "acoustid")
 	}
 	return capabilities
 }

@@ -100,11 +100,12 @@ and merges by score then stable track ID. ANN is not included because no execute
 2M-row measurement justified it; exact search remains the correctness backend.
 
 The `.paipack` format is documented in [paipack-format.md](paipack-format.md).
-Version 4 contains normalized sparse learning/statistics tables, a SQLite
+Version 5 contains normalized sparse learning/statistics tables, a SQLite
 metadata snapshot, and packed float32 vectors, not audio, PCM, absolute paths,
-or giant JSON model/vector arrays. It also retains embedded ISRC and recording
-MBID tags and a locally generated AcoustID-compatible Chromaprint value. The
-fingerprint is not submitted to a remote service. Desktop import builds checksum-verified
+or giant JSON model/vector arrays. It also retains embedded ISRC, recording
+MBID, AcoustID ID, and AcoustID fingerprint tags. Fingerprints are generated
+only when no AcoustID identity tag is present and are not submitted to a remote
+service. Desktop import builds checksum-verified
 metadata/artist and exact-MERT derivative indexes before atomic activation.
 
 ## Distribution
