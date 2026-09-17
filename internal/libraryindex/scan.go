@@ -25,6 +25,7 @@ type ScanOptions struct {
 	OnFile         func(FileActivity)
 	OnDirectory    func(string)
 	OnIssue        func(ProcessingIssue)
+	OnEpoch        func(int64)
 }
 
 // FileActivity is bounded progress metadata. It never includes an absolute
@@ -126,6 +127,9 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 		return ScanReport{}, err
 	}
 	report := ScanReport{Epoch: epoch, Resumed: resumed, RescannedDirectories: rescanned}
+	if options.OnEpoch != nil {
+		options.OnEpoch(epoch)
+	}
 	rootByID := make(map[string]Root, len(options.Roots))
 	for _, root := range options.Roots {
 		rootByID[root.ID] = root
@@ -166,7 +170,7 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 					recordFatal(fmt.Errorf("library indexer: unknown root %s", task.RootID))
 					continue
 				}
-				children, count, audioCount, revision, scanErr := s.scanDirectory(ctx, task, root, options)
+				children, _, _, revision, scanErr := s.scanDirectory(ctx, task, root, options)
 				release()
 				if scanErr != nil {
 					retryable := errors.Is(scanErr, errDirectoryChanged) && task.Attempt < maxDirectoryChangeAttempts
@@ -197,8 +201,6 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 					continue
 				}
 				atomic.AddInt64(&report.Directories, 1)
-				atomic.AddInt64(&report.Files, count)
-				atomic.AddInt64(&report.AudioFiles, audioCount)
 				leases.remove(task)
 			}
 		}()
@@ -249,6 +251,14 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 	errMu.Lock()
 	err = firstErr
 	errMu.Unlock()
+	if err == nil {
+		progress, progressErr := s.ScanCandidateProgress(ctx, epoch, options.SemanticJobs)
+		if progressErr != nil {
+			return report, progressErr
+		}
+		report.Files = progress.Total
+		report.AudioFiles = progress.Total
+	}
 	return report, err
 }
 
@@ -304,7 +314,6 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 				children = append(children, childRel)
 				continue
 			}
-			files++
 			if !mode.IsRegular() {
 				continue
 			}
@@ -312,13 +321,14 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 			if _, ok := audioExtensions[ext]; !ok {
 				continue
 			}
-			if options.OnFile != nil {
-				options.OnFile(FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
-			}
+			files++
 			device, inode := fileIdentity(info)
-			_, err = s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)
+			observed, err := s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)
 			if err != nil {
 				return nil, files, audio, DirectoryRevision{}, err
+			}
+			if observed.needsProcessing && options.OnFile != nil {
+				options.OnFile(FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
 			}
 			audio++
 		}

@@ -403,12 +403,12 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			resolvedRoots = append(resolvedRoots, root)
 		}
 		if scanErr == nil {
-			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record})
+			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch})
 			if scanErr == nil {
 				progress.SetPhase("Building scan manifest and diff")
 				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)
 				if scanErr == nil {
-					progressReader.SetEpoch(scanReport.Epoch)
+					progressReader.FreezeEpoch(scanReport.Epoch)
 				}
 			}
 		}
@@ -459,7 +459,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d audio=%d diff=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.Files, scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
+	fmt.Fprintf(stdout, "files=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 
@@ -667,7 +667,7 @@ func runStatus(ctx context.Context, args []string, stdout io.Writer) (int, error
 	if *jsonOutput {
 		return 0, json.NewEncoder(stdout).Encode(status)
 	}
-	fmt.Fprintf(stdout, "files=%d present=%d metadata=%d dsp=%d mert=%d jobs=%v\n", status.Files, status.Present, status.Metadata, status.DSP, status.MERT, status.JobsByState)
+	fmt.Fprintf(stdout, "files=%d present=%d queued_files=%d active_files=%d failed_files=%d metadata=%d dsp=%d mert=%d\n", status.Files, status.Present, status.QueuedFiles, status.ActiveFiles, status.FailedFiles, status.Metadata, status.DSP, status.MERT)
 	return 0, nil
 }
 

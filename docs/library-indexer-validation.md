@@ -36,10 +36,11 @@ workspace from remaining release gates.
   then displayed `Artist/one.flac`. The separately redirected `--json` stdout
   parsed successfully, and a TTY run with `--no-progress` emitted no
   cursor/progress output.
-- A real metadata-only run processed one MP3, then the same state was rerun
-  after adding one FLAC. The second run reported two discovered audio files but
-  exactly one metadata completion; final state contained two completed jobs.
-  A third unchanged run reported zero metadata completions. Focused race tests
+- Before the file-oriented manifest update, a real metadata-only run processed
+  one MP3, then the same state was rerun after adding one FLAC. It reported the
+  two discovered audio files but exactly one metadata completion; final state
+  contained two completed jobs. The current manifest-v2 validation below now
+  reports only the one file that will actually be processed. Focused race tests
   also exercised selective changed-directory resume, v1-to-v3 state migration,
   and preservation of the completed job's attempt count.
 - A separate real metadata-only run completed one FLAC under logical root
@@ -58,11 +59,20 @@ workspace from remaining release gates.
   status retained all three files and three completed metadata jobs.
 - The scan-first executable was run against two roots containing three files.
   It published a three-row inventory and three-row diff with verified SHA-256
-  fields before processing began, then completed all three metadata jobs. An
-  unchanged append-only rerun over one root published a two-row inventory and
-  an empty diff, completed zero metadata jobs, and retained all three records in
-  global status. A missing-root run exited with the documented partial outcome
-  and appended its directory error to `STATE/issues.jsonl`.
+  fields before processing began, then completed all three metadata jobs. A
+  missing-root run exited with the documented partial outcome and appended its
+  directory error to `STATE/issues.jsonl`.
+- The rebuilt manifest-v2 executable was run against one real FLAC beside an
+  empty directory and a non-audio text file. It emitted one inventory row, one
+  diff row, and one processing-file count; neither unrelated entry appeared in
+  either JSONL stream. An unchanged rerun emitted zero rows and zero processing
+  files. After adding one real M4A/AAC source, the next run again emitted exactly
+  one row/count and completed exactly one metadata result. Focused race tests
+  additionally verify that an audio-mode file with two stage jobs remains one
+  manifest/progress unit, and that the activity callback omits a compatible
+  completed file. A real pseudo-terminal run showed a stable `1 audio files`
+  total while that FLAC moved from queued to active to finished; the directory
+  and text file did not increase the bar total.
 - Race-enabled regressions freeze a diff, change a source's size, verify that it
   cannot re-enter that epoch after being marked
   `source_changed_after_manifest`, and verify that the next scan creates a new
@@ -158,11 +168,11 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          141153dbc78cabd7298db538dcd3a4bcfe52f7ed163f97cfc6d1ff06c3162cd6
-bin/playlist-indexer-offline  1de2b506699cf0af4abe4c40f02dd0aaf8d2b6b0f7e214ff49e2b684cfedb366
+bin/playlist-indexer          069db9f0d31e1962b3abf5acb6ab7366f0a6348f547fd06733ff1bfd59ce8265
+bin/playlist-indexer-offline  6bfc7f766f0fa3a1c390e7a791d6f36d9699e4c4d9b12c5b20f1fb734bc1e8d4
 ```
 
-The standard file is 24,038,821 bytes and the offline file is 425,508,389
+The standard file is 24,049,525 bytes and the offline file is 425,519,093
 bytes. `./scripts/test.sh` passed after the September 17 scan-manifest,
 live activity rendering, and append-root changes: 221 frontend tests,
 production frontend build, `go vet`, the full race-enabled Go suite, and

@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const ScanManifestVersion = 1
+const ScanManifestVersion = 2
 
 type ScanManifestReport struct {
 	Version        int               `json:"version"`
@@ -28,6 +28,7 @@ type ScanManifestReport struct {
 	InventoryHash  string            `json:"inventorySha256"`
 	DiffPath       string            `json:"diffPath"`
 	DiffCount      int64             `json:"diffCount"`
+	JobCount       int64             `json:"jobCount"`
 	DiffHash       string            `json:"diffSha256"`
 	SemanticJobs   map[string]string `json:"semanticJobs"`
 }
@@ -43,7 +44,11 @@ type scanManifestFile struct {
 
 type scanDiffFile struct {
 	scanManifestFile
-	JobKind     string `json:"jobKind"`
+	Jobs []scanDiffJob `json:"jobs"`
+}
+
+type scanDiffJob struct {
+	Kind        string `json:"kind"`
 	SemanticKey string `json:"semanticKey"`
 }
 
@@ -89,9 +94,10 @@ func (w *hashedJSONL) close() (string, error) {
 	return hex.EncodeToString(w.hash.Sum(nil)), err
 }
 
-// WriteScanManifest materializes the completed enumeration and its pending-job
-// diff before workers can claim any analysis. Paths are logical alias-relative
-// paths; absolute source mount locations are deliberately omitted.
+// WriteScanManifest materializes only unique audio files with pending compatible
+// work. Directory-frontier entries, unrelated files, and already-settled audio
+// are omitted. Paths are logical alias-relative paths; absolute source mount
+// locations are deliberately omitted.
 func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs map[string]string) (ScanManifestReport, error) {
 	var report ScanManifestReport
 	if epoch <= 0 || len(semanticJobs) == 0 {
@@ -144,9 +150,10 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 	if err != nil {
 		return report, err
 	}
-	rows, err := s.reader.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,f.size,f.source_revision,f.extension
-		FROM files f JOIN roots r ON r.id=f.root_id
-		WHERE f.status='present' AND f.last_seen_epoch=? ORDER BY r.alias,f.relative_path,f.id`, epoch)
+	rows, err := s.reader.QueryContext(ctx, `SELECT DISTINCT f.id,r.alias,f.relative_path,f.size,d.source_revision,f.extension
+		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id
+		JOIN files f ON f.id=j.file_id JOIN roots r ON r.id=f.root_id
+		WHERE d.epoch_id=? ORDER BY r.alias,f.relative_path,f.id`, epoch)
 	if err != nil {
 		_, _ = inventory.close()
 		return report, err
@@ -185,19 +192,42 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 		_, _ = diff.close()
 		return report, err
 	}
+	var current *scanDiffFile
+	var jobCount int64
+	flushCurrent := func() error {
+		if current == nil {
+			return nil
+		}
+		if err := diff.write(*current); err != nil {
+			return err
+		}
+		current = nil
+		return nil
+	}
 	for rows.Next() {
-		var item scanDiffFile
-		if err := rows.Scan(&item.FileID, &item.RootAlias, &item.Path, &item.Size, &item.SourceRevision, &item.Extension, &item.JobKind, &item.SemanticKey); err != nil {
+		var file scanManifestFile
+		var job scanDiffJob
+		if err := rows.Scan(&file.FileID, &file.RootAlias, &file.Path, &file.Size, &file.SourceRevision, &file.Extension, &job.Kind, &job.SemanticKey); err != nil {
 			rows.Close()
 			_, _ = diff.close()
 			return report, err
 		}
-		item.Path = filepath.ToSlash(item.Path)
-		if err := diff.write(item); err != nil {
-			rows.Close()
-			_, _ = diff.close()
-			return report, err
+		file.Path = filepath.ToSlash(file.Path)
+		if current == nil || current.FileID != file.FileID {
+			if err := flushCurrent(); err != nil {
+				rows.Close()
+				_, _ = diff.close()
+				return report, err
+			}
+			current = &scanDiffFile{scanManifestFile: file}
 		}
+		current.Jobs = append(current.Jobs, job)
+		jobCount++
+	}
+	if err := flushCurrent(); err != nil {
+		rows.Close()
+		_, _ = diff.close()
+		return report, err
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		_, _ = diff.close()
@@ -211,7 +241,7 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 	report = ScanManifestReport{
 		Version: ScanManifestVersion, Epoch: epoch, CreatedAt: time.Now().UTC(),
 		InventoryPath: filepath.ToSlash(filepath.Join("manifests", name, "inventory.jsonl")), InventoryCount: inventory.count, InventoryHash: inventoryHash,
-		DiffPath: filepath.ToSlash(filepath.Join("manifests", name, "diff.jsonl")), DiffCount: diff.count, DiffHash: diffHash,
+		DiffPath: filepath.ToSlash(filepath.Join("manifests", name, "diff.jsonl")), DiffCount: diff.count, JobCount: jobCount, DiffHash: diffHash,
 		SemanticJobs: make(map[string]string, len(semanticJobs)),
 	}
 	keys := make([]string, 0, len(semanticJobs))

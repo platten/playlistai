@@ -39,7 +39,7 @@ func TestDurableScanBoundsFrontierAndIgnoresNonRegularFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.Complete || report.AudioFiles != 3 || report.Directories != 3 {
+	if !report.Complete || report.Files != 3 || report.AudioFiles != 3 || report.Directories != 3 {
 		t.Fatalf("unexpected report: %+v", report)
 	}
 	status, err := state.Status(ctx)
@@ -186,11 +186,11 @@ func TestRescanDiscoversAddedFilesWithoutReprocessingCompletedJobs(t *testing.T)
 			observedMu.Unlock()
 		},
 	})
-	if err != nil || !second.Complete || second.Resumed || second.AudioFiles != 2 {
+	if err != nil || !second.Complete || second.Resumed || second.Files != 1 || second.AudioFiles != 1 {
 		t.Fatalf("second scan=%+v err=%v", second, err)
 	}
-	if !slices.Contains(observed, "existing.mp3") || !slices.Contains(observed, "added.flac") {
-		t.Fatalf("file callback did not report both scanned files: %v", observed)
+	if !slices.Equal(observed, []string{"added.flac"}) {
+		t.Fatalf("file callback included settled or non-processing files: %v", observed)
 	}
 	rows, err := state.Reader().QueryContext(ctx, `SELECT f.relative_path,j.state,j.attempt
 		FROM jobs j JOIN files f ON f.id=j.file_id ORDER BY f.relative_path`)
