@@ -294,6 +294,39 @@ func TestRenewedLeaseCannotBeReclaimed(t *testing.T) {
 	}
 }
 
+func TestPermanentCorruptionIsNotCountedOrRequeuedAsRetry(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "permanent-failure-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, _ := state.EnsureRoot(ctx, t.TempDir(), "root")
+	epoch, _ := state.BeginEpoch(ctx, []Root{root})
+	_, err = state.ObserveFile(ctx, epoch, SourceFile{RootID: root.ID, RelativePath: "damaged.flac", Size: 10, MTimeNS: 2, Extension: ".flac"}, map[string]string{"metadata": "v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs, err := state.ClaimJobs(ctx, "metadata", 1, time.Minute)
+	if err != nil || len(jobs) != 1 {
+		t.Fatalf("claim=%+v err=%v", jobs, err)
+	}
+	if err := state.FailJob(ctx, jobs[0], "corrupt_media", "damaged stream", false); err != nil {
+		t.Fatal(err)
+	}
+	var jobState string
+	var retryCount int
+	if err := state.Reader().QueryRowContext(ctx, `SELECT state,retry_count FROM jobs WHERE id=?`, jobs[0].ID).Scan(&jobState, &retryCount); err != nil {
+		t.Fatal(err)
+	}
+	if jobState != "failed" || retryCount != 0 {
+		t.Fatalf("state=%q retryCount=%d", jobState, retryCount)
+	}
+	if changed, err := state.RetryFailed(ctx); err != nil || changed != 0 {
+		t.Fatalf("permanent corruption requeued: changed=%d err=%v", changed, err)
+	}
+}
+
 func TestRefreshFileRevisionRequeuesEverySemanticJob(t *testing.T) {
 	ctx := context.Background()
 	state, err := OpenState(ctx, t.TempDir(), "refresh-test", 1)

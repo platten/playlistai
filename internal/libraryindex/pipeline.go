@@ -93,6 +93,13 @@ type MetadataRecord struct {
 	Probe       localaudio.ProbeResult `json:"probe"`
 	Contract    string                 `json:"contract"`
 	Unsupported string                 `json:"unsupported,omitempty"`
+	Integrity   IntegrityRecord        `json:"integrity"`
+}
+
+type IntegrityRecord struct {
+	Status string `json:"status"`
+	Method string `json:"method,omitempty"`
+	Error  string `json:"error,omitempty"`
 }
 
 type DSPWindowRecord struct {
@@ -238,27 +245,53 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	probe, err := a.Runtime.Probe(ctx, path)
+	probe, probeErr := a.Runtime.Probe(ctx, path)
 	release()
-	if err != nil {
-		if errors.Is(err, localaudio.ErrSourceChanged) {
+	if probeErr != nil {
+		if errors.Is(probeErr, localaudio.ErrSourceChanged) {
 			if verifyErr := a.verifySourceRevision(ctx, job, file, path); verifyErr != nil {
 				return verifyErr
 			}
 		}
-		if !errors.Is(err, localaudio.ErrUnsupported) {
-			return err
+		if !errors.Is(probeErr, localaudio.ErrUnsupported) {
+			return probeErr
 		}
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
 	}
+	integrity := IntegrityRecord{Status: "not_required"}
+	if probeErr == nil && localaudio.RequiresIntegrityValidation(probe) {
+		integrity = IntegrityRecord{Status: "valid", Method: localaudio.IntegrityValidationVersion}
+		release, err = a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
+		if err != nil {
+			return err
+		}
+		validationErr := a.Runtime.ValidateIntegrity(ctx, probe)
+		release()
+		if errors.Is(validationErr, localaudio.ErrSourceChanged) {
+			if verifyErr := a.verifySourceRevision(ctx, job, file, path); verifyErr != nil {
+				return verifyErr
+			}
+			return validationErr
+		}
+		if validationErr != nil {
+			if !errors.Is(validationErr, localaudio.ErrCorrupt) {
+				return validationErr
+			}
+			integrity.Status = "corrupt"
+			integrity.Error = boundedAnalysisDetail(validationErr.Error())
+		}
+		if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
+			return err
+		}
+	}
 	probe.Path = "" // persistent metadata never needs an absolute source path
 	unsupported := ""
-	if err != nil {
-		unsupported = err.Error()
+	if probeErr != nil {
+		unsupported = probeErr.Error()
 	}
-	raw, err := json.Marshal(MetadataRecord{Probe: probe, Contract: "ffprobe-json-tags/v1;" + a.Runtime.ID(), Unsupported: unsupported})
+	raw, err := json.Marshal(MetadataRecord{Probe: probe, Contract: job.SemanticKey, Unsupported: unsupported, Integrity: integrity})
 	if err != nil {
 		return err
 	}
@@ -433,6 +466,9 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	}
 	if stored.Unsupported != "" {
 		return fmt.Errorf("%w: %s", localaudio.ErrUnsupported, stored.Unsupported)
+	}
+	if stored.Integrity.Status == "corrupt" {
+		return fmt.Errorf("%w: %s", localaudio.ErrCorrupt, stored.Integrity.Error)
 	}
 	probe := stored.Probe
 	probe.Path = path
@@ -695,6 +731,10 @@ func classifyAnalysisError(err error) string {
 		return "canceled"
 	case errors.Is(err, localaudio.ErrSourceChanged):
 		return "source_changed"
+	case errors.Is(err, localaudio.ErrCorrupt):
+		return "corrupt_media"
+	case errors.Is(err, localaudio.ErrProcessStalled):
+		return "decoder_stalled"
 	case errors.Is(err, localaudio.ErrUnsupported):
 		return "unsupported"
 	case errors.Is(err, sql.ErrNoRows):
@@ -708,7 +748,7 @@ func retryableAnalysisError(parent context.Context, err error, retries int) bool
 	if retries >= 2 || parent.Err() != nil {
 		return false
 	}
-	return errors.Is(err, localaudio.ErrSourceChanged) || errors.Is(err, audio.ErrNativeWorker) || errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, localaudio.ErrSourceChanged) || errors.Is(err, localaudio.ErrProcessStalled) || errors.Is(err, audio.ErrNativeWorker) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, profile SamplingProfile) string {
@@ -716,5 +756,13 @@ func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, 
 }
 
 func MetadataSemanticKey(runtimeID string) string {
-	return fmt.Sprintf("ffprobe-json-tags/v1;%s", runtimeID)
+	return fmt.Sprintf("ffprobe-json-tags/v2;%s;%s", localaudio.IntegrityValidationVersion, runtimeID)
+}
+
+func boundedAnalysisDetail(value string) string {
+	const maximum = 4096
+	if len(value) > maximum {
+		return value[:maximum]
+	}
+	return value
 }

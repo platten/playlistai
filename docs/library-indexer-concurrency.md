@@ -69,12 +69,19 @@ aliases remain the identity boundary, so independently mounted folders need
 distinct aliases; a deliberate remount/path update continues to use
 `--root-alias`.
 
+Directory claims are scoped to one enumeration epoch. If an interrupted epoch
+has a different root set from the next invocation, its remaining frontier is
+marked interrupted/abandoned before a fresh epoch begins; stale tasks can never
+be claimed by the new root set. This allows an append-only run for an unrelated
+folder to preserve earlier inventory without waiting on a directory belonging
+to a prior interrupted scan.
+
 ## Pipeline and ownership
 
 The bounded flow is:
 
 ```text
-durable directory frontier -> inventory writer -> probe workers -> durable jobs
+durable directory frontier -> inventory writer -> probe + FLAC/MP3 integrity workers -> durable jobs
 -> decode workers -> immutable PCM window -> local DSP + MERT preprocessing
 -> warm one-request/session MERT pool -> ordered track result -> single writer
 -> drain -> online SQLite backup + immutable vector generation
@@ -90,6 +97,18 @@ with probing and decoding. Channels contain bounded
 descriptors; decoded bytes require a separate byte reservation. A window is
 cleared only after both branches release it. Native requests own their tensor
 until the framed response or killed/reaped worker completes.
+
+For actual FLAC and MP3 streams, the metadata stage reserves one CPU/source-I/O
+slot and runs a full pinned-FFmpeg decode-to-discard integrity pass before it
+completes the prerequisite job. Float output is streamed directly to a sink and
+does not consume the PCM queue budget. The subprocess has a 30-minute bound for
+exceptionally large sources. Its source revision is checked before and after;
+size, mtime, native identity, and Linux change time must remain stable. A media
+decode error is permanent `corrupt_media`, while a changed source is refreshed
+and requeued. The integrity child has a 30-second decoded-output activity
+watchdog in addition to its 30-minute total bound; a stall is terminated and
+retried with a fresh child. AAC retains the existing probe plus selected-window
+decode checks; full AAC integrity validation is not claimed by this contract.
 
 Directory completion also commits its mtime/size revision. Resuming an
 interrupted epoch stats completed frontier entries in bounded batches and

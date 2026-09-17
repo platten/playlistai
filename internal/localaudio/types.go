@@ -9,9 +9,11 @@ import (
 )
 
 var (
-	ErrOutputLimit   = errors.New("local audio subprocess output exceeded its limit")
-	ErrSourceChanged = errors.New("local audio source changed during processing")
-	ErrUnsupported   = errors.New("local audio stream is unsupported")
+	ErrOutputLimit    = errors.New("local audio subprocess output exceeded its limit")
+	ErrProcessStalled = errors.New("local audio subprocess stopped producing output")
+	ErrSourceChanged  = errors.New("local audio source changed during processing")
+	ErrUnsupported    = errors.New("local audio stream is unsupported")
+	ErrCorrupt        = errors.New("local audio stream is corrupt")
 )
 
 // SourceRevision is a stat-based change detector, not an audio identity or a
@@ -113,6 +115,8 @@ type PCMWindow struct {
 type Limits struct {
 	ProbeTimeout      time.Duration
 	DecodeTimeout     time.Duration
+	IntegrityTimeout  time.Duration
+	IntegrityStall    time.Duration
 	MaxProbeBytes     int64
 	MaxStderrBytes    int64
 	MaxMetadataBytes  int64
@@ -126,6 +130,8 @@ func DefaultLimits() Limits {
 	return Limits{
 		ProbeTimeout:      45 * time.Second,
 		DecodeTimeout:     2 * time.Minute,
+		IntegrityTimeout:  30 * time.Minute,
+		IntegrityStall:    30 * time.Second,
 		MaxProbeBytes:     4 << 20,
 		MaxStderrBytes:    128 << 10,
 		MaxMetadataBytes:  1 << 20,
