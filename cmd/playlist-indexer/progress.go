@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	progressRefreshInterval = 250 * time.Millisecond
+	progressRefreshInterval = time.Second
 	progressFullRedraw      = 30 * time.Second
 	largeFLACWarningBytes   = int64(500_000_000)
 )
@@ -256,7 +256,11 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			phase = next
 			render(true)
 		case activity = <-p.current:
-			render(true)
+			// File discovery can produce tens of thousands of activity events.
+			// Redraw the transient activity immediately, but leave the durable
+			// inventory count to the once-per-second ticker so display work does
+			// not turn scanning into a count query per file.
+			updateArea()
 		case success := <-p.stop:
 			render(true)
 			if success {

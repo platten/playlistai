@@ -183,7 +183,7 @@ func TestScanProgressBarUsesDiscoveredAudioFileCount(t *testing.T) {
 	}
 }
 
-func TestActivityRendersWhenDurableProgressQueryIsBusy(t *testing.T) {
+func TestActivityRendersWithoutPerFileDurableProgressQuery(t *testing.T) {
 	progress := &pipelineProgress{
 		phase:   make(chan string, 1),
 		current: make(chan progressDisplayActivity, 1),
@@ -205,7 +205,11 @@ func TestActivityRendersWhenDurableProgressQueryIsBusy(t *testing.T) {
 	go progress.run(context.Background(), reader, nil, bar, barOutput, &area, "Scanning", progressScan)
 	<-reader.calls // initial render
 	progress.SetCurrentFile(libraryindex.FileActivity{RelativePath: "Artist/Track.flac", Size: 123, Extension: ".flac"})
-	<-reader.calls // activity render
+	select {
+	case <-reader.calls:
+		t.Fatal("file activity triggered a durable progress query")
+	case <-time.After(100 * time.Millisecond):
+	}
 	progress.Stop(false)
 	if _, err := display.Seek(0, io.SeekStart); err != nil {
 		t.Fatal(err)

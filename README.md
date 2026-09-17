@@ -94,8 +94,10 @@ the most recent supported file discovered or started by analysis (several files
 may be active under concurrent plans). Directory names are traversal activity,
 not queued processing items.
 Activity updates remain visible even when a durable status read is briefly busy,
-and long-running work shows a once-per-second active-time heartbeat. The summary
-is kept on a separate line so growing file counts cannot consume the bar width,
+and long-running work shows a once-per-second active-time heartbeat. File and
+directory activity redraws do not issue database count queries; durable counts
+refresh once per second so larger inventories do not amplify scan work. The
+summary is kept on a separate line so growing file counts cannot consume the bar width,
 and the complete bar is regenerated at least every 30 seconds. FLAC sources
 larger than 500 MB use red activity text when terminal color is enabled
 (`NO_COLOR` remains respected). Redirected/non-TTY runs remain plain and
