@@ -19,7 +19,7 @@ import (
 
 const (
 	Format              = "playlist-ai-library-pack"
-	FormatVersion       = 2
+	FormatVersion       = 3
 	ManifestName        = "manifest.json"
 	MetadataName        = "metadata.sqlite"
 	MERTVectorsName     = "mert.f32"
@@ -147,24 +147,33 @@ type Manifest struct {
 // Track is the portable metadata row. RelativePath is optional and meaningful
 // only with RootAlias; a pack never contains an absolute source path.
 type Track struct {
-	ID           string
-	Artist       string
-	Title        string
-	AlbumArtist  string
-	Album        string
-	RootAlias    string
-	RelativePath string
-	Capabilities []string
-	RawTags      json.RawMessage
-	DSP          json.RawMessage
-	Missingness  json.RawMessage
-	Failure      string
-	Unsupported  string
-	MERT         []float32
-	Cluster      *int
-	ClusterScore float64
-	Alternative  *int
-	AltScore     float64
+	ID                   string
+	Artist               string
+	Title                string
+	NormalizedArtist     string
+	NormalizedTitle      string
+	SourceIdentity       string
+	RecordingIdentity    string
+	ISRC                 string
+	MusicBrainzRecording string
+	DurationMilliseconds int64
+	DurationProvenance   string
+	DurationReliable     bool
+	AlbumArtist          string
+	Album                string
+	RootAlias            string
+	RelativePath         string
+	Capabilities         []string
+	RawTags              json.RawMessage
+	DSP                  json.RawMessage
+	Missingness          json.RawMessage
+	Failure              string
+	Unsupported          string
+	MERT                 []float32
+	Cluster              *int
+	ClusterScore         float64
+	Alternative          *int
+	AltScore             float64
 }
 
 func trackCapabilities(track Track) []string {

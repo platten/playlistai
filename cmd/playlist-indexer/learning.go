@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/platten/playlistai/internal/libraryindex"
+	"github.com/platten/playlistai/internal/librarysearch"
 )
 
 func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
@@ -86,19 +90,33 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 }
 
 type benchmarkResult struct {
-	Configuration    string                      `json:"configuration"`
-	Skipped          string                      `json:"skipped,omitempty"`
-	Resources        libraryindex.ResourcePlan   `json:"resources"`
-	ColdSetup        time.Duration               `json:"coldSetup"`
-	WarmAnalysis     time.Duration               `json:"warmAnalysis"`
-	Report           libraryindex.AnalysisReport `json:"report"`
-	SemanticDigest   string                      `json:"semanticDigest,omitempty"`
-	SerialEquivalent *bool                       `json:"serialEquivalent,omitempty"`
+	Configuration     string                      `json:"configuration"`
+	Skipped           string                      `json:"skipped,omitempty"`
+	Resources         libraryindex.ResourcePlan   `json:"resources"`
+	ColdSetup         time.Duration               `json:"coldSetup"`
+	WarmAnalysis      time.Duration               `json:"warmAnalysis"`
+	Report            libraryindex.AnalysisReport `json:"report"`
+	SemanticDigest    string                      `json:"semanticDigest,omitempty"`
+	SerialEquivalent  *bool                       `json:"serialEquivalent,omitempty"`
+	PeakOwnedRSSBytes int64                       `json:"peakOwnedRssBytes"`
+	TracksPerSecond   float64                     `json:"tracksPerSecond"`
+	FitDuration       time.Duration               `json:"fitDuration"`
+	ExportDuration    time.Duration               `json:"exportDuration"`
+	PackBytes         int64                       `json:"packBytes"`
+	PackBytesPerTrack float64                     `json:"packBytesPerTrack"`
+	QuerySamples      int                         `json:"querySamples"`
+	QueryP50          time.Duration               `json:"queryP50"`
+	QueryP95          time.Duration               `json:"queryP95"`
+	ResumeOpen        time.Duration               `json:"resumeOpen"`
+	RAMTargetMet      bool                        `json:"ramTargetMet"`
 }
 
 func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
+	if len(args) > 0 && args[0] == "scale" {
+		return runScaleBenchmark(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) == 0 || args[0] != "concurrency" {
-		return 1, errors.New("usage: playlist-indexer bench concurrency --root PATH --sample-tracks N")
+		return 1, errors.New("usage: playlist-indexer bench concurrency --root PATH --sample-tracks N | playlist-indexer bench scale [--rows 2000000]")
 	}
 	flags := flag.NewFlagSet("playlist-indexer bench concurrency", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -247,10 +265,120 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profile}
 	defer analyzer.Admission.Close()
 	analysisStart := time.Now()
+	monitorDone := make(chan struct{})
+	peakRSS := make(chan int64, 1)
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		var peak int64
+		for {
+			owned := processRSSBytes() + pool.ResidentBytes()
+			if owned > peak {
+				peak = owned
+			}
+			select {
+			case <-monitorDone:
+				peakRSS <- peak
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
 	result.Report, err = analyzer.Run(ctx, libraryindex.AnalysisOptions{Metadata: true, Audio: true, Profile: profile}, done)
 	result.WarmAnalysis = time.Since(analysisStart)
+	if seconds := result.WarmAnalysis.Seconds(); seconds > 0 {
+		result.TracksPerSecond = float64(result.Report.AudioCompleted) / seconds
+	}
 	if err == nil {
 		result.SemanticDigest, err = state.SemanticDigest(ctx)
 	}
+	if err == nil {
+		fitStart := time.Now()
+		_, err = state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), Plan: plan})
+		result.FitDuration = time.Since(fitStart)
+	}
+	packPath := filepath.Join(scratch, "benchmark.paipack")
+	if err == nil {
+		exportStart := time.Now()
+		_, err = state.ExportPack(ctx, packPath)
+		result.ExportDuration = time.Since(exportStart)
+	}
+	if err == nil {
+		if info, statErr := os.Stat(packPath); statErr != nil {
+			err = statErr
+		} else {
+			result.PackBytes = info.Size()
+			if result.Report.MetadataCompleted > 0 {
+				result.PackBytesPerTrack = float64(info.Size()) / float64(result.Report.MetadataCompleted)
+			}
+		}
+	}
+	if err == nil && result.Report.AudioCompleted > 1 {
+		var queryID string
+		queryErr := state.Reader().QueryRowContext(ctx, `SELECT file_id FROM mert_results ORDER BY file_id LIMIT 1`).Scan(&queryID)
+		if queryErr == nil {
+			vector, vectorErr := state.TrackVector(ctx, queryID)
+			manager, managerErr := librarysearch.OpenManager(ctx, filepath.Join(scratch, "generations", "indexes"))
+			var handle *librarysearch.Handle
+			if managerErr == nil {
+				handle, managerErr = manager.Pin()
+			}
+			queryErr = errors.Join(vectorErr, managerErr)
+			latencies := make([]time.Duration, 0, 25)
+			if queryErr == nil {
+				for range 25 {
+					started := time.Now()
+					_, queryErr = handle.Search(ctx, librarysearch.Query{Vector: vector, Limit: min(50, int(result.Report.AudioCompleted)-1), Workers: plan.IndexWorkers, Exclude: map[string]struct{}{queryID: {}}})
+					latencies = append(latencies, time.Since(started))
+					if queryErr != nil {
+						break
+					}
+				}
+			}
+			if handle != nil {
+				handle.Release()
+			}
+			if manager != nil {
+				queryErr = errors.Join(queryErr, manager.Close())
+			}
+			clear(vector)
+			if queryErr == nil {
+				result.QuerySamples = len(latencies)
+				result.QueryP50, result.QueryP95 = durationPercentile(latencies, .50), durationPercentile(latencies, .95)
+			} else {
+				err = queryErr
+			}
+		} else if !errors.Is(queryErr, sql.ErrNoRows) {
+			err = queryErr
+		}
+	}
+	if err == nil {
+		if closeErr := state.Close(); closeErr != nil {
+			err = closeErr
+		} else {
+			resumeStart := time.Now()
+			resumed, openErr := libraryindex.OpenState(ctx, scratch, "bench-resume-"+name, max(2, plan.HeavyWorkers))
+			result.ResumeOpen = time.Since(resumeStart)
+			if openErr != nil {
+				err = openErr
+			} else {
+				err = resumed.Close()
+			}
+		}
+	}
+	close(monitorDone)
+	result.PeakOwnedRSSBytes = <-peakRSS
+	result.RAMTargetMet = result.PeakOwnedRSSBytes <= plan.MaxRAM
 	return result, err
+}
+
+func durationPercentile(values []time.Duration, percentile float64) time.Duration {
+	if len(values) == 0 {
+		return 0
+	}
+	ordered := append([]time.Duration(nil), values...)
+	slices.Sort(ordered)
+	index := int(math.Ceil(percentile*float64(len(ordered)))) - 1
+	index = max(0, min(index, len(ordered)-1))
+	return ordered[index]
 }

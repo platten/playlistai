@@ -116,6 +116,40 @@ func TestLocalLibraryImportControlsAndRemovalPreserveSources(t *testing.T) {
 	}
 }
 
+func TestReimportIdenticalPackRebuildsMissingDerivedIndex(t *testing.T) {
+	c := &Container{cfg: testConfig(t)}
+	t.Cleanup(func() { _ = c.Close() })
+	packPath := filepath.Join(t.TempDir(), "source.paipack")
+	writeAppLibraryPack(t, packPath, "rebuild", "track", "")
+	if _, err := c.ImportLocalLibrary(context.Background(), packPath); err != nil {
+		t.Fatal(err)
+	}
+	state, err := c.localLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := state.manager.Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(lease.Generation().Directory(), "local-index-v1")
+	lease.Release()
+	if err := os.RemoveAll(indexPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.ImportLocalLibrary(context.Background(), packPath); err != nil {
+		t.Fatalf("identical reimport did not rebuild index: %v", err)
+	}
+	catalog, err := c.PinLocalCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	if _, ok, err := catalog.Lookup(context.Background(), catalog.NamespacedID("track")); err != nil || !ok {
+		t.Fatalf("rebuilt catalog lookup: ok=%v err=%v", ok, err)
+	}
+}
+
 func TestLocalLibraryReplacementAndCanceledOrCorruptUpdateKeepOldPin(t *testing.T) {
 	cfg := testConfig(t)
 	firstPath, secondPath := filepath.Join(t.TempDir(), "first.paipack"), filepath.Join(t.TempDir(), "second.paipack")
@@ -199,6 +233,47 @@ func TestLocalLibraryMutationsAreSerialized(t *testing.T) {
 	status, err := c.LocalLibraryStatus()
 	if err != nil || status.PackID != first.PackID && status.PackID != second.PackID {
 		t.Fatalf("final active pack = %+v, %v", status, err)
+	}
+}
+
+func TestLocalLibraryStagingDoesNotBlockPinnedReaders(t *testing.T) {
+	c := &Container{cfg: testConfig(t)}
+	t.Cleanup(func() { _ = c.Close() })
+	oldPath, newPath := filepath.Join(t.TempDir(), "old.paipack"), filepath.Join(t.TempDir(), "new.paipack")
+	oldManifest := writeAppLibraryPack(t, oldPath, "old", "old-track", "")
+	newManifest := writeAppLibraryPack(t, newPath, "new", "new-track", "")
+	if _, err := c.ImportLocalLibrary(context.Background(), oldPath); err != nil {
+		t.Fatal(err)
+	}
+	state, err := c.localLibrary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged, release := make(chan struct{}), make(chan struct{})
+	state.onStaged = func() {
+		close(staged)
+		<-release
+	}
+	importDone := make(chan error, 1)
+	go func() {
+		_, err := c.ImportLocalLibrary(context.Background(), newPath)
+		importDone <- err
+	}()
+	<-staged
+	pinned, err := c.PinLocalCatalog()
+	if err != nil {
+		close(release)
+		t.Fatal(err)
+	}
+	if pinned.Provenance().PackID != oldManifest.PackID {
+		_ = pinned.Close()
+		close(release)
+		t.Fatalf("reader observed staged generation: got=%s old=%s new=%s", pinned.Provenance().PackID, oldManifest.PackID, newManifest.PackID)
+	}
+	_ = pinned.Close()
+	close(release)
+	if err := <-importDone; err != nil {
+		t.Fatal(err)
 	}
 }
 

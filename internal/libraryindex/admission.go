@@ -30,6 +30,16 @@ type Admission struct {
 	closed   bool
 }
 
+// ReservationLease permits an operation to relinquish resources when their
+// ownership ends (for example source descriptors immediately after decode)
+// while retaining the byte reservation for immutable PCM consumed downstream.
+type ReservationLease struct {
+	admission *Admission
+	mu        sync.Mutex
+	held      Reservation
+	released  bool
+}
+
 func NewAdmission(plan ResourcePlan, pcmByteBudget int64) *Admission {
 	memoryCapacity := plan.MaxRAM - plan.ResidentMERTBytes
 	if memoryCapacity < 0 {
@@ -43,6 +53,14 @@ func NewAdmission(plan ResourcePlan, pcmByteBudget int64) *Admission {
 }
 
 func (a *Admission) Acquire(ctx context.Context, request Reservation) (func(), error) {
+	lease, err := a.AcquireLease(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+	return lease.Release, nil
+}
+
+func (a *Admission) AcquireLease(ctx context.Context, request Reservation) (*ReservationLease, error) {
 	if request.CPU < 0 || request.SourceIO < 0 || request.Memory < 0 || request.Files < 0 || request.PCMBytes < 0 {
 		return nil, errors.New("library indexer: negative resource reservation")
 	}
@@ -63,19 +81,7 @@ func (a *Admission) Acquire(ctx context.Context, request Reservation) (func(), e
 			a.used.Files += request.Files
 			a.used.PCMBytes += request.PCMBytes
 			a.mu.Unlock()
-			var once sync.Once
-			return func() {
-				once.Do(func() {
-					a.mu.Lock()
-					a.used.CPU -= request.CPU
-					a.used.SourceIO -= request.SourceIO
-					a.used.Memory -= request.Memory
-					a.used.Files -= request.Files
-					a.used.PCMBytes -= request.PCMBytes
-					a.signalLocked()
-					a.mu.Unlock()
-				})
-			}, nil
+			return &ReservationLease{admission: a, held: request}, nil
 		}
 		notify := a.notify
 		a.mu.Unlock()
@@ -86,6 +92,54 @@ func (a *Admission) Acquire(ctx context.Context, request Reservation) (func(), e
 		}
 		a.mu.Lock()
 	}
+}
+
+func (l *ReservationLease) ReleasePart(part Reservation) error {
+	if l == nil || l.admission == nil {
+		return errors.New("library indexer: invalid reservation lease")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.released || !reservationContains(l.held, part) {
+		return errors.New("library indexer: reservation release exceeds ownership")
+	}
+	l.admission.release(part)
+	l.held.CPU -= part.CPU
+	l.held.SourceIO -= part.SourceIO
+	l.held.Memory -= part.Memory
+	l.held.Files -= part.Files
+	l.held.PCMBytes -= part.PCMBytes
+	return nil
+}
+
+func (l *ReservationLease) Release() {
+	if l == nil || l.admission == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.released {
+		return
+	}
+	l.admission.release(l.held)
+	l.held = Reservation{}
+	l.released = true
+}
+
+func reservationContains(held, part Reservation) bool {
+	return part.CPU >= 0 && part.SourceIO >= 0 && part.Memory >= 0 && part.Files >= 0 && part.PCMBytes >= 0 &&
+		part.CPU <= held.CPU && part.SourceIO <= held.SourceIO && part.Memory <= held.Memory && part.Files <= held.Files && part.PCMBytes <= held.PCMBytes
+}
+
+func (a *Admission) release(request Reservation) {
+	a.mu.Lock()
+	a.used.CPU -= request.CPU
+	a.used.SourceIO -= request.SourceIO
+	a.used.Memory -= request.Memory
+	a.used.Files -= request.Files
+	a.used.PCMBytes -= request.PCMBytes
+	a.signalLocked()
+	a.mu.Unlock()
 }
 
 func (a *Admission) fitsCapacity(r Reservation) bool {

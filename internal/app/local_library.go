@@ -76,9 +76,20 @@ type localLibrarySettings struct {
 type localLibraryState struct {
 	root     string
 	manager  *librarypack.Manager
+	mutation sync.Mutex // serializes import/removal without blocking readers
 	opMu     sync.Mutex
 	settings sync.RWMutex
 	current  localLibrarySettings
+	onStaged func() // test seam; production leaves nil
+}
+
+// localLibraryRequestSnapshot is the only mutable library state a playlist
+// request may observe. The lease, mode, and mappings are captured under opMu;
+// subsequent import/update/removal cannot mix generations within the request.
+type localLibraryRequestSnapshot struct {
+	lease        *librarypack.Lease
+	mode         LocalLibraryMode
+	rootMappings map[string]string
 }
 
 type localLibraryHolder struct {
@@ -224,8 +235,8 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 	if err != nil {
 		return LocalLibraryStatus{}, err
 	}
-	state.opMu.Lock()
-	defer state.opMu.Unlock()
+	state.mutation.Lock()
+	defer state.mutation.Unlock()
 	if err := ctx.Err(); err != nil {
 		return LocalLibraryStatus{}, err
 	}
@@ -233,22 +244,37 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 	if err != nil {
 		return LocalLibraryStatus{}, fmt.Errorf("verify local library pack: %w", err)
 	}
+	if state.onStaged != nil {
+		state.onStaged()
+	}
 	activated := false
 	defer func() {
 		if !activated {
 			_ = state.manager.Discard(staged)
 		}
 	}()
+	// Copying, decompression, verification, and deterministic index construction
+	// deliberately occur without opMu. Existing pinned readers continue using
+	// the old generation throughout this potentially long operation.
+	if generation := staged.Generation(); generation != nil {
+		if err := localcatalog.BuildIndexes(ctx, generation, localcatalog.IndexBuildOptions{Workers: 2, ShardRows: 16_384, MaxScratchBytes: 256 << 20}); err != nil {
+			return LocalLibraryStatus{}, fmt.Errorf("build local library indexes: %w", err)
+		}
+	}
+	state.opMu.Lock()
 	if err := state.manager.Activate(ctx, staged); err != nil {
 		activated = true // Activate owns cleanup after it accepts staged.
+		state.opMu.Unlock()
 		return LocalLibraryStatus{}, fmt.Errorf("activate local library pack: %w", err)
 	}
 	activated = true
 	settings := state.settingsSnapshot()
 	settings.RootMappings = mappingsForAliases(settings.RootMappings, staged.Manifest().RootAliases)
 	if err := state.saveSettings(settings); err != nil {
+		state.opMu.Unlock()
 		return LocalLibraryStatus{}, fmt.Errorf("local library activated but settings could not be saved: %w", err)
 	}
+	state.opMu.Unlock()
 	return state.status()
 }
 
@@ -380,6 +406,8 @@ func (c *Container) RemoveLocalLibrary(ctx context.Context) (LocalLibraryStatus,
 	if err != nil {
 		return LocalLibraryStatus{}, err
 	}
+	state.mutation.Lock()
+	defer state.mutation.Unlock()
 	state.opMu.Lock()
 	defer state.opMu.Unlock()
 	if err := state.manager.Remove(ctx); err != nil {
@@ -400,17 +428,23 @@ func (c *Container) PinLocalCatalog() (*localcatalog.Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	state.opMu.Lock()
-	lease, err := state.manager.Pin()
+	snapshot, err := state.pinRequestSnapshot()
 	if err != nil {
-		state.opMu.Unlock()
 		return nil, err
 	}
-	settings := state.settingsSnapshot()
-	manifest := lease.Generation().Manifest()
-	settings.RootMappings = mappingsForAliases(settings.RootMappings, manifest.RootAliases)
-	state.opMu.Unlock()
-	return localcatalog.Open(lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: settings.RootMappings})
+	return localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings})
+}
+
+func (s *localLibraryState) pinRequestSnapshot() (localLibraryRequestSnapshot, error) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	lease, err := s.manager.Pin()
+	if err != nil {
+		return localLibraryRequestSnapshot{}, err
+	}
+	settings := s.settingsSnapshot()
+	settings.RootMappings = mappingsForAliases(settings.RootMappings, lease.Generation().Manifest().RootAliases)
+	return localLibraryRequestSnapshot{lease: lease, mode: settings.Mode, rootMappings: settings.RootMappings}, nil
 }
 
 func (c *Container) pinLocalRecommendationOverlay(ctx context.Context, base ports.Catalog, resolver ports.ReferenceResolver, retriever ports.CandidateRetriever) (multichannel.RequestOverlay, error) {
@@ -418,15 +452,22 @@ func (c *Container) pinLocalRecommendationOverlay(ctx context.Context, base port
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
-	settings := state.settingsSnapshot()
-	mode := localcatalog.ModeCombined
-	if settings.Mode == LocalLibraryOnly {
-		mode = localcatalog.ModeLibraryOnly
-	}
-	overlay, err := localcatalog.PinRecommendationOverlay(ctx, c, base, resolver, retriever, mode, 2)
+	snapshot, err := state.pinRequestSnapshot()
 	if errors.Is(err, librarypack.ErrNoActiveGeneration) {
 		return multichannel.RequestOverlay{Catalog: base, Resolver: resolver, Retriever: retriever}, nil
 	}
+	if err != nil {
+		return multichannel.RequestOverlay{}, err
+	}
+	local, err := localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings})
+	if err != nil {
+		return multichannel.RequestOverlay{}, err
+	}
+	mode := localcatalog.ModeCombined
+	if snapshot.mode == LocalLibraryOnly {
+		mode = localcatalog.ModeLibraryOnly
+	}
+	overlay, err := localcatalog.NewRecommendationOverlay(ctx, local, base, resolver, retriever, mode, 2)
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
@@ -438,13 +479,13 @@ func (c *Container) LocalLibraryCatalogVersion(base string) string {
 	if err != nil {
 		return base
 	}
-	lease, err := state.manager.Pin()
+	snapshot, err := state.pinRequestSnapshot()
 	if err != nil {
 		return base
 	}
-	defer lease.Release()
-	packID := lease.Generation().Manifest().PackID
-	if state.settingsSnapshot().Mode == LocalLibraryOnly {
+	defer snapshot.lease.Release()
+	packID := snapshot.lease.Generation().Manifest().PackID
+	if snapshot.mode == LocalLibraryOnly {
 		return "local-library:" + packID
 	}
 	return base + "+local-library:" + packID

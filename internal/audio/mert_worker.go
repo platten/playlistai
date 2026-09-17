@@ -101,7 +101,7 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		if err := cmd.Start(); err != nil {
 			_ = stdin.Close()
 			_ = stdout.Close()
-			return nil, fmt.Errorf("audio: worker failed to start")
+			return nil, fmt.Errorf("%w: failed to start", ErrNativeWorker)
 		}
 		w.cmd, w.stdin, w.stdout = cmd, stdin, stdout
 	}
@@ -126,11 +126,11 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	case result := <-done:
 		if result.err != nil || result.response.Error != "" || result.response.Protocol != MERTWorkerProtocol || result.response.Model != w.Model {
 			w.stopLocked()
-			return nil, fmt.Errorf("audio: worker failed or model is incompatible")
+			return nil, fmt.Errorf("%w: process exited or returned an incompatible response", ErrNativeWorker)
 		}
 		if !request.Health && (w.Model.Dimension != MERTDimension || !MERTParity(result.response.Vector, result.response.Vector)) {
 			w.stopLocked()
-			return nil, fmt.Errorf("audio: invalid embedding")
+			return nil, fmt.Errorf("%w: invalid embedding", ErrNativeWorker)
 		}
 		return result.response.Vector, nil
 	}

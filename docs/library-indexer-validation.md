@@ -21,6 +21,12 @@ workspace from remaining release gates.
   real pack write/stage/activate/read paths and cover checksum/limit failures,
   metadata-only and MERT retrieval, incompatible spaces, channel completion
   order, cancellation, path escape, replacement/removal, and pinned readers.
+- `GOOS=windows GOARCH=amd64 go test -run '^$' ./...` passed for every package,
+  and the available Windows runner executed the changed `librarypack`,
+  `librarysearch`, `localcatalog`, and indexer CLI suites successfully. A broader
+  app-suite execution on that runner remains blocked by its pre-existing
+  `LockFileEx` `Incorrect function` behavior in catalog installation tests; it
+  is not reported as a native-Windows desktop pass.
 - The rebuilt standard executable was run through a real pseudo-terminal. Its
   PTerm bar reported discovered files and durable queued work on stderr. After
   the resume/rescan update, another real TTY run displayed the PTerm
@@ -36,16 +42,27 @@ workspace from remaining release gates.
 - The opt-in real-audio concurrency benchmark executed on an identical
   deterministic two-track sample. Serial, 2-worker, 4-worker, and auto runs all
   committed two metadata and two audio results with semantic digest
-  `ef69b24f683d79197635d352119b8f6cc90978488ad8083207af83b284910484`.
-  Final-artifact warm analysis observations were 1.921 s, 1.941 s, 1.137 s,
-  and 0.546 s; cold setup/warmup was 6.47–6.77 s. Measured resident MERT worker
-  memory was 669 MB, 674 MB, 1.321 GB, and 1.351 GB respectively and was
-  subtracted from subsequent memory admission. This sample is too small for a general
-  speedup claim and is recorded only as executed overlap/equivalence evidence.
+  `86aac444565764ef5892e82b24364d60982db37861ebaee939628bd3c6db880d`.
+  Current-artifact warm analysis observations were 2.100 s, 2.035 s, 1.159 s,
+  and 0.549 s; cold setup/warmup was 7.38–7.85 s. Peak aggregate owned RSS was
+  745 MB, 768 MB, 1.268 GB, and 1.312 GB respectively, all below the configured
+  4 GiB target. The same run completed v3 fit/export, state reopen, and 25 pinned
+  exact queries per configuration; observed p95 query latency ranged from 3.479
+  to 17.007 microseconds and resume-open time from 1.417 to 1.994 ms. This sample
+  is too small for a general speedup claim and is recorded only as executed
+  overlap/equivalence and measurement-path evidence.
 
 ## Clean runtime run
 
-The offline artifact was executed as UID/GID 65534 in
+The current rebuilt offline artifact was executed as UID/GID 65534 in
+`debian:12.12-slim` with `--network none`, a read-only two-track FLAC/M4A
+source, and no runtime Go, Python, FFmpeg, Wails, or desktop libraries. The
+serial run committed 2 metadata + DSP + real MERT records, fit and indexed the
+frozen generation, and exported a valid 11,788-byte v3 pack with SHA-256
+`144065d1e933036e432858f4025f71c1bda028ddc18b770cb5879a0c9fb0f76c`.
+Before/after hashes for both source files were identical.
+
+An earlier broader offline artifact was executed as UID/GID 65534 in
 `debian:12.12-slim` with `--network none`. The container had no Go, Python, or
 system FFmpeg. Source fixtures were mounted read-only. The serial command
 successfully extracted both native payloads, warmed the actual CPU MERT worker,
@@ -68,26 +85,34 @@ A second run reached export and found untagged fixtures violated the pack's
 nonempty display fields; export now records a filename title fallback and an
 explicit unknown artist/missingness provenance. The subsequent run passed.
 
-Current locally built artifacts (not published) are:
+The Linux amd64 standard and offline executables were rebuilt from this
+worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          12f43d2ebe0243cd7929b078ed8ced771815fd0d7a3b79742d05f0ecf9f5b1eb
-bin/playlist-indexer-offline  2695b757d2f7bfacb5ea0cf44a30cb823ce91d0f6c6111dac809ca2172601667
+bin/playlist-indexer          ae9fcf5ad669d1663bca72a79cc1fd8f2a039a7e03fe199ea014c67a1f287de4
+bin/playlist-indexer-offline  150ec617321703cd148989a944d82a89035ecd87cf0f67c08b5dab0046e34d9b
 ```
 
-The standard file is 23,832,077 bytes and the offline file is 425,301,645
-bytes. `./scripts/test.sh` passed after the September 17 resume/rescan and live
+The standard file is 23,924,805 bytes and the offline file is 425,394,373
+bytes. `./scripts/test.sh` passed after the September 17 production-readiness and live
 file-box changes: 221 frontend tests, production frontend build, `go vet`, the
 full race-enabled Go suite, and golangci-lint with zero findings.
 
 ## Honest limits
 
 HE-AAC has not been exercised by a positively identified fixture and is not
-claimed. Linux arm64, musl/Alpine, macOS/Windows generation cleanup, GPU/CUDA,
-and native GUI execution are unverified. The exact index is implemented; no ANN
+claimed. Linux arm64, musl/Alpine, macOS generation cleanup, GPU/CUDA, and
+native GUI execution are unverified. The exact index is implemented; no ANN
 recall or GPU parity claim is made. A synthetic 2,000,000-row benchmark and a
 200-track authorized real-library concurrency benchmark have not yet been run,
 so there is no two-million-track duration, RSS, or speedup claim.
+
+The new scale harness itself was executed with 128 rows, dimension 8, two
+workers, three pinned exact queries, and a 512 MiB target. It completed index
+construction and v3 pack export, reporting 13,930,496 bytes peak owned RSS,
+7,609 index bytes, 5,475 pack bytes, 53.925 microsecond p50 and 66.715
+microsecond p95 query latency. These tiny synthetic smoke values validate the
+measurement path only; they are not the missing two-million-row result.
 
 Fit now streams its frozen metadata and vectors, spills deterministic diverse
 sampling to SQLite, caps the training set from the RAM plan, checkpoints
@@ -98,17 +123,14 @@ SQLite and zstd buffers, fixed-size learning/statistics payload limits, and an
 atomic final publisher. The legacy slice writer remains for small callers but
 is not used by the indexer.
 
-The v2 pack contains the fitted metadata model, per-track cluster assignments,
+The v3 pack contains the fitted metadata model, per-track cluster assignments,
 and deterministic compatible-contract DSP percentile distributions. The
-desktop metadata channel loads the weighted TF-IDF baseline,
-combines it with normalized sourced-tag matching, and has an executed
-genre-only local-library recommendation regression. Its SVD representation is
-preserved in the pack but is not yet used in desktop scoring, and the exported
-DSP percentile resource is not yet surfaced by the desktop.
+desktop metadata channel loads weighted TF-IDF and SVD values from normalized
+tables, combines them with sourced-tag matching, uses cluster membership as
+soft rank-fusion/diversity evidence, and maps only reviewed acoustic concepts
+to compatible sampled-DSP percentile boosts.
 
 The metadata fitter still retains corpus-scale artist/album/genre association
-maps, and its portable model is one JSON value capped at 64 MiB. A legitimate
-high-cardinality corpus can therefore exceed RAM or fail export even though
-track/vector export itself is bounded. Runtime RSS/quota-shrink feedback,
-complete required status telemetry, and the unexecuted 2M stress gate also
-remain release blockers for calling the requested v2 turnkey release complete.
+maps while fitting. Runtime RSS/quota-shrink feedback, complete required status
+telemetry, and the unexecuted 2M stress gate remain release blockers until the
+current worktree is rebuilt and those measurements are executed.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,11 @@ import (
 )
 
 const WorkerProtocol = 1
+
+// ErrNativeWorker marks a failed, timed-out, or invalid native inference
+// process. Callers may retry a bounded number of times; Worker/MERTWorker reap
+// the failed process so the next attempt starts a fresh worker.
+var ErrNativeWorker = errors.New("audio: native worker failure")
 
 type WorkerRequest struct {
 	Protocol int

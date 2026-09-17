@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 )
@@ -54,6 +55,11 @@ func activatePack(t *testing.T, manager *librarypack.Manager, path string) {
 	staged, err := manager.Stage(context.Background(), path)
 	if err != nil {
 		t.Fatalf("stage pack: %v", err)
+	}
+	if generation := staged.Generation(); generation != nil {
+		if err := BuildIndexes(context.Background(), generation, IndexBuildOptions{Workers: 2, ShardRows: 2, MaxScratchBytes: 1 << 20}); err != nil {
+			t.Fatalf("build indexes: %v", err)
+		}
 	}
 	if err := manager.Activate(context.Background(), staged); err != nil {
 		t.Fatalf("activate pack: %v", err)
@@ -159,6 +165,54 @@ func TestSearchUsesExportedWeightedGenreModel(t *testing.T) {
 	hits, err := catalog.Search(context.Background(), MetadataQuery{Text: "rock", Limit: 4})
 	if err != nil || len(hits) != 1 || hits[0].Track.LocalID != "learned" {
 		t.Fatalf("learned metadata hits=%+v err=%v", hits, err)
+	}
+}
+
+func TestDSPPercentilePreferenceUsesReviewedMappingAndCompatibleContract(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "dsp.paipack")
+	statisticsModel := librarylearn.DSPStatisticsModel{
+		Version: librarylearn.DSPStatisticsVersion, Generation: "dspstats-test", QuantileMethod: librarylearn.DSPQuantileMethod,
+		CorpusTracks: 1, DSPTracks: 1, Groups: []librarylearn.DSPStatisticsGroup{{
+			ID: "group", Contract: librarylearn.DSPContract{Version: "dsp/v1", Sampling: "balanced/v1", Scope: "sampled_windows"}, Tracks: 1,
+			Features: []librarylearn.DSPFeatureStatistics{{Name: "bass_energy_ratio", Known: 1, Quantiles: &librarylearn.DSPQuantiles{P25: .2, P75: .6}}},
+		}},
+	}
+	statistics, err := json.Marshal(statisticsModel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsp := json.RawMessage(`{"version":"dsp/v1","sampling":"balanced/v1","scope":"sampled_windows","windows":[{"observedSeconds":5,"features":{"bass_energy_ratio":{"value":0.7,"state":"known"}}}]}`)
+	if _, err := librarypack.Write(context.Background(), archive, librarypack.Pack{
+		CorpusGeneration: "corpus-dsp", MetadataGeneration: "metadata-dsp", StatisticsGeneration: "dspstats-test", MERT: testSpace(), Statistics: statistics,
+		Tracks: []librarypack.Track{{ID: "bass", Artist: "Artist", Title: "Bass", DSP: dsp}},
+	}, librarypack.DefaultLimits()); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := librarypack.OpenManager(context.Background(), filepath.Join(root, "managed"), librarypack.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	activatePack(t, manager, archive)
+	lease, err := manager.Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Open(lease, Options{SourceID: "dsp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	intent := core.MusicIntent{Preferences: core.SemanticPreferences{TextureDescriptions: []core.IntentPreference{{ConceptID: "texture.bass-heavy", Value: "bass heavy", Influence: core.InfluencePositive}}}}
+	score, ok := catalog.DSPPreferenceScore(context.Background(), catalog.NamespacedID("bass"), intent)
+	if !ok || score <= 0 {
+		t.Fatalf("reviewed DSP preference score=%v ok=%v", score, ok)
+	}
+	intent.Preferences.TextureDescriptions[0].ConceptID = ""
+	intent.Preferences.TextureDescriptions[0].Value = "expensive sounding"
+	if _, ok := catalog.DSPPreferenceScore(context.Background(), catalog.NamespacedID("bass"), intent); ok {
+		t.Fatal("unreviewed acoustic language produced DSP evidence")
 	}
 }
 

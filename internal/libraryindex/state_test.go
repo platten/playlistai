@@ -3,7 +3,9 @@ package libraryindex
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,6 +90,96 @@ func TestStateCoordinatorLockAndFencedCommit(t *testing.T) {
 	progress, err := state.Progress(ctx, map[string]string{"metadata": "ffprobe/v1"})
 	if err != nil || progress.Files != 1 || progress.Total != 1 || progress.Finished != 1 || progress.Queued != 0 || progress.Leased != 0 || progress.Failed != 0 {
 		t.Fatalf("progress=%+v err=%v", progress, err)
+	}
+}
+
+func TestStableRootAliasSurvivesRemountAndRootOrderChanges(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	firstMount := filepath.Join(t.TempDir(), "music-a")
+	secondMount := filepath.Join(t.TempDir(), "music-b")
+	first, err := state.EnsureRoot(ctx, firstMount, "music-main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := state.EnsureRoot(ctx, filepath.Join(t.TempDir(), "other"), "music-other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remounted, err := state.EnsureRoot(ctx, secondMount, "music-main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != remounted.ID || remounted.Path != filepath.Clean(secondMount) || other.ID == remounted.ID {
+		t.Fatalf("alias identity changed across remount: first=%+v remounted=%+v other=%+v", first, remounted, other)
+	}
+	var roots int
+	if err := state.Reader().QueryRowContext(ctx, "SELECT COUNT(*) FROM roots").Scan(&roots); err != nil || roots != 2 {
+		t.Fatalf("remount created a duplicate root: count=%d err=%v", roots, err)
+	}
+}
+
+func TestBatchedWriterSaturationPreservesEveryFenceAndObservation(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "batch-saturation", 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, t.TempDir(), "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const count = 128
+	var wg sync.WaitGroup
+	errorsOut := make(chan error, count)
+	for index := 0; index < count; index++ {
+		index := index
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := state.ObserveFile(ctx, epoch, SourceFile{RootID: root.ID, RelativePath: fmt.Sprintf("track-%03d.flac", index), Size: int64(index + 1), MTimeNS: 1, Extension: ".flac"}, map[string]string{"metadata": "probe/v1"})
+			errorsOut <- err
+		}()
+	}
+	wg.Wait()
+	close(errorsOut)
+	for err := range errorsOut {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	jobs, err := state.ClaimJobs(ctx, "metadata", count, time.Minute)
+	if err != nil || len(jobs) != count {
+		t.Fatalf("claimed=%d err=%v", len(jobs), err)
+	}
+	errorsOut = make(chan error, count)
+	for _, job := range jobs {
+		job := job
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errorsOut <- state.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, Metadata: []byte(`{"ok":true}`)})
+		}()
+	}
+	wg.Wait()
+	close(errorsOut)
+	for err := range errorsOut {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var completed int
+	if err := state.Reader().QueryRowContext(ctx, "SELECT COUNT(*) FROM jobs WHERE state='completed'").Scan(&completed); err != nil || completed != count {
+		t.Fatalf("completed=%d err=%v", completed, err)
 	}
 }
 

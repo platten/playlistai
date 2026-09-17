@@ -194,7 +194,7 @@ func (a *Analyzer) runMetadata(ctx context.Context, discoveryDone <-chan struct{
 						atomic.AddInt64(&report.Retried, 1)
 						continue
 					}
-					retry := errors.Is(err, localaudio.ErrSourceChanged) && job.RetryCount < 2
+					retry := retryableAnalysisError(workerCtx, err, job.RetryCount)
 					if retry {
 						atomic.AddInt64(&report.Retried, 1)
 					} else {
@@ -286,7 +286,7 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 						atomic.AddInt64(&report.Retried, 1)
 						continue
 					}
-					retry := errors.Is(err, localaudio.ErrSourceChanged) && job.RetryCount < 2
+					retry := retryableAnalysisError(workerCtx, err, job.RetryCount)
 					if retry {
 						atomic.AddInt64(&report.Retried, 1)
 					} else {
@@ -449,18 +449,47 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	mert := MERTRecord{Model: a.MERT.Identity(), LocalPreprocessing: audio.MERTLocalPreprocessingVersion, Sampling: SamplingVersion + ";profile=" + string(profile), InferenceWorkers: a.Plan.InferenceWorkers, InferenceThreads: a.Plan.InferenceThreads}
 	sums := make([]float64, audio.MERTDimension)
 	var mertErr error
-	decodeReserve := int64(stored.Probe.SelectedStream.SampleRate * stored.Probe.SelectedStream.Channels * 4 * 5)
-	computeSlots := 1
-	if a.Plan.Mode != ConcurrencySerial && a.Plan.HeavyWorkers > 1 {
-		computeSlots = min(a.Plan.HeavyWorkers, 1+max(1, a.Plan.InferenceThreads))
+	var decodeReserve int64
+	for _, window := range decodeWindows {
+		decodeReserve += int64(math.Ceil(window.Duration.Seconds())) * int64(stored.Probe.SelectedStream.SampleRate) * int64(stored.Probe.SelectedStream.Channels) * 4
 	}
-	release, err := a.Admission.Acquire(ctx, Reservation{CPU: computeSlots, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: decodeReserve})
+	decodeLease, err := a.Admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: decodeReserve})
 	if err != nil {
 		return err
 	}
+	defer decodeLease.Release()
+	decoded := make([]localaudio.PCMWindow, 0, len(decodeWindows))
 	err = a.Runtime.DecodeWindows(ctx, probe, decodeWindows, func(window localaudio.PCMWindow) error {
+		window.Samples = append([]float32(nil), window.Samples...)
+		decoded = append(decoded, window)
+		return nil
+	})
+	// Decoder ownership ends here. Keep only the explicitly reserved immutable
+	// PCM bytes; source I/O, descriptors, and decode CPU become available before
+	// DSP or inference can back up.
+	if releaseErr := decodeLease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Files: 4}); err == nil {
+		err = releaseErr
+	}
+	if err != nil {
+		for i := range decoded {
+			clear(decoded[i].Samples)
+		}
+		return err
+	}
+	defer func() {
+		for i := range decoded {
+			clear(decoded[i].Samples)
+			decoded[i].Samples = nil
+		}
+	}()
+	for _, window := range decoded {
 		pcm := audio.DecodedPCM{Samples: window.Samples, SampleRate: window.SampleRate, Channels: window.Channels}
 		dspWork := func() error {
+			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
+			if err != nil {
+				return err
+			}
+			defer releaseCPU()
 			select {
 			case a.dspSlots <- struct{}{}:
 				defer func() { <-a.dspSlots }()
@@ -475,6 +504,11 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			return nil
 		}
 		mertWork := func() error {
+			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: max(1, a.Plan.InferenceThreads)})
+			if err != nil {
+				return err
+			}
+			defer releaseCPU()
 			if !hasMERTSignal(pcm) {
 				return errors.New("library indexer: silent or degenerate MERT window")
 			}
@@ -512,7 +546,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			if mertErr == nil {
 				mertErr = mertWork()
 			}
-			return nil
+			continue
 		}
 		var dspErr, windowMERTErr error
 		var branchWG sync.WaitGroup
@@ -532,16 +566,9 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		if mertErr == nil && windowMERTErr != nil {
 			mertErr = windowMERTErr
 		}
-		return dspErr
-	})
-	release()
-	if err != nil {
-		if errors.Is(err, localaudio.ErrSourceChanged) {
-			if verifyErr := a.verifySourceRevision(ctx, job, file, path); verifyErr != nil {
-				return verifyErr
-			}
+		if dspErr != nil {
+			return dspErr
 		}
-		return err
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
@@ -668,11 +695,20 @@ func classifyAnalysisError(err error) string {
 		return "source_changed"
 	case errors.Is(err, localaudio.ErrUnsupported):
 		return "unsupported"
+	case errors.Is(err, audio.ErrNativeWorker):
+		return "native_worker_transient"
 	case errors.Is(err, sql.ErrNoRows):
 		return "missing_prerequisite"
 	default:
 		return "analysis_failed"
 	}
+}
+
+func retryableAnalysisError(parent context.Context, err error, retries int) bool {
+	if retries >= 2 || parent.Err() != nil {
+		return false
+	}
+	return errors.Is(err, localaudio.ErrSourceChanged) || errors.Is(err, audio.ErrNativeWorker) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, profile SamplingProfile) string {
