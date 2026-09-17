@@ -15,7 +15,7 @@ func TestBalancedSamplingCentersAndUniqueCoverage(t *testing.T) {
 		t.Fatalf("windows=%+v", windows)
 	}
 	for i := range want {
-		if math.Abs(windows[i].Start-want[i]) > 1e-9 || windows[i].Duration != 5 || windows[i].Index != i {
+		if math.Abs(windows[i].Start-want[i]) > 1e-9 || math.Abs(windows[i].Duration-5) > 1e-9 || windows[i].Index != i {
 			t.Fatalf("window[%d]=%+v want start %v", i, windows[i], want[i])
 		}
 	}
