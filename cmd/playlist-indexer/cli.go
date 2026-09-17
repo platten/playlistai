@@ -270,6 +270,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if command != "analyze" && len(roots)+len(rootAliases)+len(appendRoots) == 0 {
 		return 1, errors.New("at least one --root, --root-alias, or --append-root is required")
 	}
+	if gracefulStopRequested(ctx) {
+		return 130, libraryindex.ErrShutdownRequested
+	}
 	codec, err := resolveCodec(ctx, common)
 	if err != nil {
 		return 1, err
@@ -278,13 +281,17 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if err != nil {
 		return 1, err
 	}
-	defer state.Close()
+	defer func() {
+		if closeErr := state.Close(); closeErr != nil {
+			code, runErr = 1, fmt.Errorf("close durable state: %w", closeErr)
+		}
+	}()
 	issues, err := openIssueRecorder(filepath.Dir(state.Path()))
 	if err != nil {
 		return 1, fmt.Errorf("open state issue log: %w", err)
 	}
 	defer func() {
-		if runErr != nil {
+		if runErr != nil && !errors.Is(runErr, libraryindex.ErrShutdownRequested) && !errors.Is(runErr, context.Canceled) {
 			issues.Record(libraryindex.NewProcessingIssue("run", "", "", "fatal", runErr, false))
 		}
 		if closeErr := issues.Close(); closeErr != nil && runErr == nil {
@@ -316,6 +323,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		defer pool.Close()
 		fmt.Fprintf(stderr, "MERT sessions warmed: count=%d threads=%d rss=%d elapsed=%s\n", pool.Parallelism(), plan.InferenceThreads, pool.ResidentBytes(), time.Since(warmStart).Round(time.Millisecond))
 	}
+	if gracefulStopRequested(ctx) {
+		return 130, libraryindex.ErrShutdownRequested
+	}
 	fmt.Fprintln(stderr, "effective resources:", plan.Summary())
 	profileValue := libraryindex.SamplingProfile(*profile)
 	semanticJobs := map[string]string{"metadata": libraryindex.MetadataSemanticKey(codec.ID())}
@@ -323,7 +333,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		semanticJobs["audio"] = libraryindex.AudioSemanticKey(codec.ID(), pool.Identity(), profileValue)
 	}
 	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue}
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profileValue}
+	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profileValue, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	var initialPhase string
 	switch command {
@@ -403,7 +413,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			resolvedRoots = append(resolvedRoots, root)
 		}
 		if scanErr == nil {
-			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch})
+			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch, StopAdmission: gracefulStopFromContext(ctx)})
 			if scanErr == nil {
 				progress.SetPhase("Building scan manifest and diff")
 				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)
@@ -414,7 +424,13 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		}
 	}
 	if scanErr != nil {
+		if errors.Is(scanErr, libraryindex.ErrShutdownRequested) {
+			return 130, scanErr
+		}
 		return 1, scanErr
+	}
+	if gracefulStopRequested(ctx) {
+		return 130, libraryindex.ErrShutdownRequested
 	}
 	if err := issues.Err(); err != nil {
 		return 1, fmt.Errorf("write state issue log: %w", err)
@@ -430,6 +446,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		close(discoveryDone)
 		analysisReport, err = analyzer.Run(ctx, analysisOptions, discoveryDone)
 		if err != nil {
+			if errors.Is(err, libraryindex.ErrShutdownRequested) {
+				return 130, err
+			}
 			return 1, err
 		}
 		if err := issues.Err(); err != nil {
@@ -439,11 +458,17 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	var fitResult libraryindex.FitResult
 	var packManifest any
 	if command == "run" && *outPath != "" {
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
+		}
 		progress.SetCurrentOperation("Library fitting (no source file)")
 		progress.SetPhase("Fitting library")
 		fitResult, err = state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), TrainingSample: *trainingSample, Clusters: *clusters, Refit: *refit, Plan: plan})
 		if err != nil {
 			return 1, err
+		}
+		if gracefulStopRequested(ctx) {
+			return 130, libraryindex.ErrShutdownRequested
 		}
 		progress.SetCurrentOperation("Library export (no source file)")
 		progress.SetPhase("Exporting library pack")
@@ -452,6 +477,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 			return 1, err
 		}
 		packManifest = manifest
+	}
+	if gracefulStopRequested(ctx) {
+		return 130, libraryindex.ErrShutdownRequested
 	}
 	progressComplete = true
 	progress.Stop(true)

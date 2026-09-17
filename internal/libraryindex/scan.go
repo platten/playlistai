@@ -26,6 +26,9 @@ type ScanOptions struct {
 	OnDirectory    func(string)
 	OnIssue        func(ProcessingIssue)
 	OnEpoch        func(int64)
+	// StopAdmission closes on graceful shutdown. Already-claimed directory
+	// tasks drain; no new frontier batch is claimed afterward.
+	StopAdmission <-chan struct{}
 }
 
 // FileActivity is bounded progress metadata. It never includes an absolute
@@ -213,6 +216,9 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 			if err := ctx.Err(); err != nil {
 				return err
 			}
+			if shutdownRequested(options.StopAdmission) {
+				return ErrShutdownRequested
+			}
 			claimed, err := s.ClaimDirectories(ctx, epoch, options.QueueDepth, jobLeaseDuration)
 			if err != nil {
 				return err
@@ -229,6 +235,8 @@ func (s *State) Scan(ctx context.Context, options ScanOptions) (ScanReport, erro
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
+				case <-options.StopAdmission:
+					return ErrShutdownRequested
 				case <-time.After(10 * time.Millisecond):
 				}
 				continue

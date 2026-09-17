@@ -183,12 +183,17 @@ to the private `STATE/issues.jsonl`; structured locations contain aliases and
 relative paths. Native diagnostic detail can contain physical paths, so this is
 an administrator log rather than a shareable report.
 
-SIGINT/SIGTERM cancels the shared context, stops discovery and new claims,
-kills/reaps cancelable owned child groups, and leaves uncommitted work durable
-for lease recovery. The resolved `--shutdown-timeout` bounds process teardown;
-a second signal forces immediate exit. The current implementation cancels
-admitted work on the first signal rather than attempting a finish-first drain;
-already committed writer transactions remain durable.
+The first SIGINT/SIGTERM closes a separate admission signal rather than
+canceling the work context. Directory and job dispatchers stop taking new claim
+batches, close their bounded queues after all already-claimed descriptors have
+been handed to workers, and wait for those operations to commit through the
+single writer. No later fit/export phase begins. SQLite, issue logs, admission
+state, and native sessions then close normally; pending frontier/jobs remain
+resumable. The resolved `--shutdown-timeout` bounds this drain (30 seconds by
+default), after which the coordinator cancels remaining owned subprocesses and
+waits briefly for cleanup. A second signal forces immediate exit. Cancellation
+does not promise instant interruption of blocked kernel I/O; fencing prevents a
+late result from being committed as current.
 
 ## Frozen generations and readers
 
