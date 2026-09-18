@@ -57,6 +57,31 @@ func RunMERT(dir string) error {
 			return err
 		}
 	}
+	device := os.Getenv("PLAYLISTAI_MERT_DEVICE")
+	if device == "" {
+		device = "cpu"
+	}
+	if device == "cpu" {
+		if m.Backend() != "cpu" {
+			return fmt.Errorf("MERT bundle requires CUDA but worker requested CPU")
+		}
+	} else {
+		deviceIndex, ok := audio.MERTCUDADeviceIndex(device)
+		if !ok || m.Backend() != "cuda" {
+			return fmt.Errorf("MERT CUDA device and bundle backend do not match")
+		}
+		cudaOptions, cudaErr := ort.NewCUDAProviderOptions()
+		if cudaErr != nil {
+			return fmt.Errorf("initialize CUDA execution provider: %w", cudaErr)
+		}
+		if cudaErr = cudaOptions.Update(map[string]string{"device_id": strconv.Itoa(deviceIndex), "do_copy_in_default_stream": "1"}); cudaErr == nil {
+			cudaErr = options.AppendExecutionProviderCUDA(cudaOptions)
+		}
+		destroyErr := cudaOptions.Destroy()
+		if cudaErr != nil || destroyErr != nil {
+			return fmt.Errorf("configure CUDA execution provider: %w", errors.Join(cudaErr, destroyErr))
+		}
+	}
 	session, err := ort.NewDynamicAdvancedSession(m.File(dir, "audio_model"), []string{"input_values", "attention_mask"}, []string{"embedding"}, options)
 	if err != nil {
 		return err

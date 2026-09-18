@@ -3,6 +3,38 @@
 This report distinguishes commands actually executed in the implementation
 workspace from remaining release gates.
 
+## Analysis scheduler and reuse check
+
+An isolated real-audio check used two 20-second, 44.1 kHz stereo
+FLAC files containing synthetic random PCM, the fast three-window profile, and
+the verified CPU MERT bundle. The host was WSL2 Linux x86-64 on an Intel Core
+Ultra 9 285H with 16 effective cores. Every pre-change and updated concurrency
+run produced semantic digest
+`e682c9f156cbba155efe37f2141a3614b041bb4485bbccf2342d8d7ab4164d39`.
+
+The pre-change binary measured 7.210 s serial, 3.596 s with two one-thread
+sessions, and 1.795 s/1.114 tracks per second under auto. The updated scheduler
+measured 7.379 s serial, 6.155 s for one session/one thread, 3.548 s for one
+session/two threads, 3.823 s for two sessions/one thread, and 1.960 s/1.020
+tracks per second under auto. This two-track run establishes parity and exposes
+the configuration tradeoff; it does not establish a general scheduler speedup.
+The updated report attributed 2.171 aggregate worker-seconds to six auto MERT
+inferences and recorded negligible session wait with two sessions.
+
+A separate duplicate fixture copied one source twice and assigned the same valid
+recording MBID and AcoustID ID. With `--integrity deferred`, both metadata, DSP,
+and audio jobs completed; exactly one MERT result was reused. Only three windows
+entered MERT, with 0.952 aggregate inference seconds, while both files retained
+independent DSP rows and `deferred` integrity status. Their stored vectors were
+byte-identical. This is a synthetic correctness/avoided-work check, not musical
+quality evidence.
+
+The host exposes an NVIDIA GeForce RTX 5060 Laptop GPU (8,151 MiB), driver
+616.56. Only the driver library was available in this WSL environment; a
+compatible ONNX Runtime CUDA provider and cuDNN were not installed. CUDA bundle
+validation and CPU-bundle rejection were exercised, but native GPU inference
+was therefore not claimed.
+
 ## Executed native evidence
 
 - `go test -run '^$' -bench '^BenchmarkObserveFiles$' -benchtime=1s -count=1
@@ -191,23 +223,22 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          5825f07eb76b9c32f5d6c40c5aede016b46455b0a4b7e5d1a6dd5d0221fc75e2
-bin/playlist-indexer-offline  d9a055309b09b48377d6c8f1f6cf2c2c6ee1e6fce8e242d7817ab64d20909d46
+bin/playlist-indexer          c81bc64e6600efd73ff06f476e8792f8e88c16715ead595c7b6b6f68e49f9e20
+bin/playlist-indexer-offline  dac3d4a86a22e0360ca53a8b8a939bed995d477d56fb130db2de19cd191d5277
 ```
 
-The standard file is 24,064,453 bytes and the offline file is 425,534,021
-bytes. `./scripts/test.sh` passed after the September 17 scan-manifest,
-live activity rendering, append-root, and graceful-shutdown changes: 221 frontend tests,
-production frontend build, `go vet`, the full race-enabled Go suite, and
-golangci-lint with zero findings. `GOOS=windows GOARCH=amd64 go test -run '^$'
-./...` also passed after these changes; this is a cross-compile check, not a
-native Windows execution claim.
+The standard file is 24,646,621 bytes and the offline file is 426,116,189
+bytes. `./scripts/test.sh` passed after the analysis scheduler, reuse, timing,
+and CUDA-bundle changes: 221 frontend tests, production frontend build, `go
+vet`, the full race-enabled Go suite, and golangci-lint with zero findings. The
+`GOOS=windows GOARCH=amd64 go test -run '^$' ./...` cross-compile check also
+passed after these changes; this is not a native Windows execution claim.
 
 ## Honest limits
 
 HE-AAC has not been exercised by a positively identified fixture and is not
-claimed. Linux arm64, musl/Alpine, macOS generation cleanup, GPU/CUDA, and
-native GUI execution are unverified. The exact index is implemented; no ANN
+claimed. Linux arm64, musl/Alpine, macOS generation cleanup, native CUDA
+inference, and native GUI execution are unverified. The exact index is implemented; no ANN
 recall or GPU parity claim is made. A synthetic 2,000,000-row benchmark and a
 200-track authorized real-library concurrency benchmark have not yet been run,
 so there is no two-million-track duration, RSS, or speedup claim.

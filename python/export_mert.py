@@ -136,11 +136,21 @@ def main():
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--runtime-library", type=Path)
+    parser.add_argument("--runtime-backend", choices=["cpu", "cuda"], default="cpu")
+    parser.add_argument("--runtime-provider-shared", type=Path, help="CUDA bundle libonnxruntime_providers_shared")
+    parser.add_argument("--runtime-provider-cuda", type=Path, help="CUDA bundle libonnxruntime_providers_cuda")
     parser.add_argument("--license-text", type=Path, required=True, help="Retained complete CC-BY-NC-4.0 plain text")
     parser.add_argument("--runtime-license", type=Path, help="Runtime release LICENSE/ThirdPartyNotices text, required for bundles")
     parser.add_argument("--platform", default="windows/amd64", choices=["windows/amd64", "windows/arm64", "linux/amd64", "linux/arm64", "darwin/arm64"])
     parser.add_argument("--threads", type=int, default=4)
     args = parser.parse_args()
+    if args.runtime_backend == "cuda":
+        if args.platform not in ("linux/amd64", "windows/amd64"):
+            parser.error("CUDA bundles are supported only for linux/amd64 and windows/amd64")
+        if not args.runtime_library or not args.runtime_provider_shared or not args.runtime_provider_cuda:
+            parser.error("CUDA bundles require the runtime and both ONNX Runtime provider libraries")
+    elif args.runtime_provider_shared or args.runtime_provider_cuda:
+        parser.error("provider libraries require --runtime-backend cuda")
     if args.threads < 1 or args.threads > 32:
         parser.error("threads must be 1..32")
     check_environment(Path(__file__).with_name("requirements-mert.txt"))
@@ -237,9 +247,18 @@ def main():
         for role, name in [("audio_model", graph_path.name), ("runtime", runtime_name), ("license", "LICENSES.txt"), ("health", "health.json")]:
             path = out / name
             artifacts.append({"role": role, "name": name, "url": "", "size": path.stat().st_size, "sha256": sha256(path)})
-        manifest = {"version": 1, "id": "mert-v1-95m-layer12-mean-5s-v1", "label": "MERT v1 95M (noncommercial)", "platform": args.platform,
+        if args.runtime_backend == "cuda":
+            providers = [("runtime_dependency_providers_shared", args.runtime_provider_shared),
+                         ("runtime_dependency_providers_cuda", args.runtime_provider_cuda)]
+            for role, source_path in providers:
+                name = source_path.name
+                if name in {a["name"] for a in artifacts} or Path(name).name != name:
+                    parser.error("CUDA provider libraries must have distinct safe basenames")
+                shutil.copyfile(source_path, out / name)
+                artifacts.append({"role": role, "name": name, "url": "", "size": (out / name).stat().st_size, "sha256": sha256(out / name)})
+        manifest = {"version": 1, "id": f"mert-v1-95m-layer12-mean-5s-{args.runtime_backend}-v1", "label": f"MERT v1 95M (noncommercial, {args.runtime_backend.upper()})", "platform": args.platform,
                     "model": {"model": "m-a-p/MERT-v1-95M", "revision": REVISION, "preprocessing": PREPROCESSING,
-                              "runtime": "onnxruntime/1.26.0/cpu", "dimension": 768, "weightsSha256": sha256(graph_path), "pooling": POOLING},
+                              "runtime": f"onnxruntime/1.26.0/{args.runtime_backend}", "dimension": 768, "weightsSha256": sha256(graph_path), "pooling": POOLING},
                     "memoryBytes": 2147483648, "license": "CC-BY-NC-4.0; ONNX Runtime MIT", "sourceUrl": f"https://huggingface.co/m-a-p/MERT-v1-95M/tree/{REVISION}",
                     "parity": parity, "artifacts": artifacts}
         write_json(out / "mert-bundle.json", manifest)

@@ -21,17 +21,37 @@ import (
 )
 
 type AnalysisOptions struct {
-	Metadata bool
-	Audio    bool
-	Profile  SamplingProfile
+	Metadata  bool
+	Audio     bool
+	Profile   SamplingProfile
+	Integrity IntegrityPolicy
 }
 
+type IntegrityPolicy string
+
+const (
+	IntegrityFull     IntegrityPolicy = "full"
+	IntegrityDeferred IntegrityPolicy = "deferred"
+)
+
 type AnalysisReport struct {
-	MetadataCompleted int64 `json:"metadataCompleted"`
-	AudioCompleted    int64 `json:"audioCompleted"`
-	Failed            int64 `json:"failed"`
-	Retried           int64 `json:"retried"`
-	SkippedChanged    int64 `json:"skippedChanged"`
+	MetadataCompleted int64           `json:"metadataCompleted"`
+	AudioCompleted    int64           `json:"audioCompleted"`
+	Failed            int64           `json:"failed"`
+	Retried           int64           `json:"retried"`
+	SkippedChanged    int64           `json:"skippedChanged"`
+	MERTReused        int64           `json:"mertReused"`
+	DSPReused         int64           `json:"dspReused"`
+	WindowsDecoded    int64           `json:"windowsDecoded"`
+	Timings           AnalysisTimings `json:"timings"`
+}
+
+type AnalysisTimings struct {
+	Decode         time.Duration `json:"decode"`
+	DSP            time.Duration `json:"dsp"`
+	MERTPreprocess time.Duration `json:"mertPreprocess"`
+	MERTWait       time.Duration `json:"mertWait"`
+	MERTInference  time.Duration `json:"mertInference"`
 }
 
 type Analyzer struct {
@@ -41,6 +61,7 @@ type Analyzer struct {
 	Plan      ResourcePlan
 	Admission *Admission
 	Profile   SamplingProfile
+	Integrity IntegrityPolicy
 	OnFile    func(FileActivity)
 	OnIssue   func(ProcessingIssue)
 	// StopAdmission closes on graceful shutdown. Dispatchers stop claiming new
@@ -52,7 +73,11 @@ type Analyzer struct {
 	DiffEpoch      int64
 	stageOnce      sync.Once
 	dspSlots       chan struct{}
+	reuseMu        sync.Mutex
+	reuseFlights   map[string]*reuseFlight
 }
+
+type reuseFlight struct{ done chan struct{} }
 
 const (
 	jobLeaseDuration   = 5 * time.Minute
@@ -151,6 +176,8 @@ type MERTRecord struct {
 	Segments           []MERTSegmentRecord              `json:"segments"`
 	InferenceWorkers   int                              `json:"inferenceWorkers"`
 	InferenceThreads   int                              `json:"inferenceThreads"`
+	Device             string                           `json:"device"`
+	ReusedRecording    string                           `json:"reusedRecording,omitempty"`
 }
 
 func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDone <-chan struct{}) (AnalysisReport, error) {
@@ -161,6 +188,13 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 	if options.Profile == "" {
 		options.Profile = ProfileBalanced
 	}
+	if options.Integrity == "" {
+		options.Integrity = IntegrityFull
+	}
+	if options.Integrity != IntegrityFull && options.Integrity != IntegrityDeferred {
+		return report, errors.New("library indexer: integrity policy must be full or deferred")
+	}
+	a.Integrity = options.Integrity
 	a.initializeStageLimits()
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -340,6 +374,8 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		}
 		if fingerprintEstablishedIntegrity {
 			integrity = IntegrityRecord{Status: "valid", Method: localaudio.IntegrityValidationVersion}
+		} else if localaudio.RequiresIntegrityValidation(probe) && a.Integrity == IntegrityDeferred {
+			integrity = IntegrityRecord{Status: "deferred", Method: "sampled-audio-on-analysis/v1"}
 		} else if localaudio.RequiresIntegrityValidation(probe) {
 			integrity, err = a.validateMetadataIntegrity(ctx, job, file, probe)
 			if err != nil {
@@ -400,7 +436,7 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				err := a.processAudio(workerCtx, job, profile)
+				err := a.processAudio(workerCtx, job, profile, report)
 				leases.remove(job)
 				if err != nil {
 					if errors.Is(err, errSourceChangedAfterManifest) {
@@ -587,7 +623,7 @@ func (a *Analyzer) emitIssue(issue ProcessingIssue) {
 	}
 }
 
-func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile) error {
+func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile, report *AnalysisReport) error {
 	file, err := a.State.File(ctx, job.FileID)
 	if err != nil {
 		return err
@@ -619,8 +655,27 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	if stored.Integrity.Status == "corrupt" {
 		return fmt.Errorf("%w: %s", localaudio.ErrCorrupt, stored.Integrity.Error)
 	}
+	recordingKey := metadataRecordingIdentity(stored)
+	reusable, reused, flight, err := a.claimReusableMERT(ctx, job.FileID, recordingKey, job.SemanticKey)
+	if err != nil {
+		return err
+	}
+	if flight != nil {
+		defer a.finishReuseFlight(recordingKey, job.SemanticKey, flight)
+	}
+	if reused {
+		atomic.AddInt64(&report.MERTReused, 1)
+	}
 	probe := stored.Probe
 	probe.Path = path
+	dspContract := DSPSemanticKey(probe.ProbeRuntimeID, profile)
+	cachedDSP, dspReused, err := a.State.CachedDSP(ctx, job.FileID, job.SourceRevision, dspContract)
+	if err != nil {
+		return err
+	}
+	if dspReused {
+		atomic.AddInt64(&report.DSPReused, 1)
+	}
 	windows, err := samplingForProbe(probe, profile)
 	if err != nil {
 		return err
@@ -631,48 +686,40 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	}
 	var dsp DSPRecord
 	dsp.Version, dsp.Sampling, dsp.Scope = audio.LocalDSPVersion, SamplingVersion+";profile="+string(profile), "sampled_windows"
-	mert := MERTRecord{Model: a.MERT.Identity(), LocalPreprocessing: audio.MERTLocalPreprocessingVersion, Sampling: SamplingVersion + ";profile=" + string(profile), InferenceWorkers: a.Plan.InferenceWorkers, InferenceThreads: a.Plan.InferenceThreads}
+	mert := MERTRecord{Model: a.MERT.Identity(), LocalPreprocessing: audio.MERTLocalPreprocessingVersion, Sampling: SamplingVersion + ";profile=" + string(profile), InferenceWorkers: a.Plan.InferenceWorkers, InferenceThreads: a.Plan.InferenceThreads, Device: a.MERT.Device()}
+	if reused {
+		mert.ReusedRecording = recordingKey
+	}
 	sums := make([]float64, audio.MERTDimension)
 	var mertErr error
-	var decodeReserve int64
-	for _, window := range decodeWindows {
-		decodeReserve += int64(math.Ceil(window.Duration.Seconds())) * int64(stored.Probe.SelectedStream.SampleRate) * int64(stored.Probe.SelectedStream.Channels) * 4
-	}
-	decodeLease, err := a.Admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: decodeReserve})
-	if err != nil {
-		return err
-	}
-	defer decodeLease.Release()
-	decoded := make([]localaudio.PCMWindow, 0, len(decodeWindows))
-	err = a.Runtime.DecodeWindows(ctx, probe, decodeWindows, func(window localaudio.PCMWindow) error {
-		window.Samples = append([]float32(nil), window.Samples...)
-		decoded = append(decoded, window)
-		return nil
-	})
-	// Decoder ownership ends here. Keep only the explicitly reserved immutable
-	// PCM bytes; source I/O, descriptors, and decode CPU become available before
-	// DSP or inference can back up.
-	if releaseErr := decodeLease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Files: 4}); err == nil {
-		err = releaseErr
-	}
-	if err != nil {
-		for i := range decoded {
-			clear(decoded[i].Samples)
+	for _, requested := range decodeWindows {
+		if reused && dspReused {
+			break
 		}
-		if a.FreezeManifest && errors.Is(err, localaudio.ErrSourceChanged) {
-			return errors.Join(errSourceChangedAfterManifest, err)
+		decodeReserve := int64(math.Ceil(requested.Duration.Seconds())) * int64(stored.Probe.SelectedStream.SampleRate) * int64(stored.Probe.SelectedStream.Channels) * 4
+		decodeLease, acquireErr := a.Admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: decodeReserve})
+		if acquireErr != nil {
+			return acquireErr
 		}
-		return err
-	}
-	defer func() {
-		for i := range decoded {
-			clear(decoded[i].Samples)
-			decoded[i].Samples = nil
+		decodeStarted := time.Now()
+		window, decodeErr := a.Runtime.DecodeWindow(ctx, probe, requested)
+		addAnalysisDuration(&report.Timings.Decode, time.Since(decodeStarted))
+		if releaseErr := decodeLease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Files: 4}); decodeErr == nil {
+			decodeErr = releaseErr
 		}
-	}()
-	for _, window := range decoded {
+		if decodeErr != nil {
+			decodeLease.Release()
+			if a.FreezeManifest && errors.Is(decodeErr, localaudio.ErrSourceChanged) {
+				return errors.Join(errSourceChangedAfterManifest, decodeErr)
+			}
+			return decodeErr
+		}
+		atomic.AddInt64(&report.WindowsDecoded, 1)
 		pcm := audio.DecodedPCM{Samples: window.Samples, SampleRate: window.SampleRate, Channels: window.Channels}
 		dspWork := func() error {
+			if dspReused {
+				return nil
+			}
 			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
 			if err != nil {
 				return err
@@ -684,7 +731,9 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			case <-ctx.Done():
 				return ctx.Err()
 			}
+			started := time.Now()
 			features, err := audio.MeasureLocalDSP(ctx, pcm)
+			addAnalysisDuration(&report.Timings.DSP, time.Since(started))
 			if err != nil {
 				return err
 			}
@@ -692,16 +741,22 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			return nil
 		}
 		mertWork := func() error {
-			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: max(1, a.Plan.InferenceThreads)})
+			if reused {
+				return nil
+			}
+			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
 			if err != nil {
 				return err
 			}
-			defer releaseCPU()
+			preprocessStarted := time.Now()
 			if !hasMERTSignal(pcm) {
+				releaseCPU()
 				return errors.New("library indexer: silent or degenerate MERT window")
 			}
 			ratio := downmixPowerRatio(pcm)
 			resampled, err := audio.MERTResampleLocal(ctx, pcm)
+			releaseCPU()
+			addAnalysisDuration(&report.Timings.MERTPreprocess, time.Since(preprocessStarted))
 			if err != nil {
 				return err
 			}
@@ -709,7 +764,25 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			if len(resampled) < 400 {
 				return errors.New("library indexer: insufficient observed MERT samples")
 			}
-			vector, err := a.MERT.EmbedAudio(ctx, resampled)
+			waitStarted := time.Now()
+			worker, releaseWorker, err := a.MERT.Acquire(ctx)
+			addAnalysisDuration(&report.Timings.MERTWait, time.Since(waitStarted))
+			if err != nil {
+				return err
+			}
+			defer releaseWorker()
+			cpuUnits := max(1, a.Plan.InferenceThreads)
+			if _, cuda := audio.MERTCUDADeviceIndex(a.MERT.Device()); cuda {
+				cpuUnits = 1
+			}
+			releaseInferenceCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: cpuUnits})
+			if err != nil {
+				return err
+			}
+			inferenceStarted := time.Now()
+			vector, err := worker.EmbedAudio(ctx, resampled)
+			releaseInferenceCPU()
+			addAnalysisDuration(&report.Timings.MERTInference, time.Since(inferenceStarted))
 			if err != nil {
 				return err
 			}
@@ -729,11 +802,15 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		}
 		if a.Plan.Mode == ConcurrencySerial || a.Plan.HeavyWorkers < 2 {
 			if err := dspWork(); err != nil {
+				clear(window.Samples)
+				decodeLease.Release()
 				return err
 			}
 			if mertErr == nil {
 				mertErr = mertWork()
 			}
+			clear(window.Samples)
+			decodeLease.Release()
 			continue
 		}
 		var dspErr, windowMERTErr error
@@ -755,34 +832,95 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			mertErr = windowMERTErr
 		}
 		if dspErr != nil {
+			clear(window.Samples)
+			decodeLease.Release()
 			return dspErr
 		}
+		clear(window.Samples)
+		decodeLease.Release()
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
 	}
-	dspRaw, err := json.Marshal(dsp)
-	if err != nil {
-		return err
+	dspRaw := cachedDSP
+	if !dspReused {
+		dspRaw, err = json.Marshal(dsp)
+		if err != nil {
+			return err
+		}
 	}
-	if mertErr != nil {
-		if err := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspRaw); err != nil {
+	if mertErr != nil && !reused {
+		if err := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw); err != nil {
 			return errors.Join(mertErr, err)
 		}
 		return mertErr
 	}
-	vector, err := normalizeSums(sums)
-	if err != nil {
-		if commitErr := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspRaw); commitErr != nil {
-			return errors.Join(err, commitErr)
+	var vectorRaw []byte
+	if reused {
+		if reusable.Dimension != audio.MERTDimension || len(reusable.Vector) != audio.MERTDimension*4 {
+			return errors.New("library indexer: incompatible reusable MERT result")
 		}
-		return err
+		vectorRaw = append([]byte(nil), reusable.Vector...)
+	} else {
+		vector, normalizeErr := normalizeSums(sums)
+		if normalizeErr != nil {
+			if commitErr := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw); commitErr != nil {
+				return errors.Join(normalizeErr, commitErr)
+			}
+			return normalizeErr
+		}
+		vectorRaw = float32Bytes(vector)
+		clear(vector)
 	}
 	mertRaw, err := json.Marshal(mert)
 	if err != nil {
 		return err
 	}
-	return a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, DSP: dspRaw, Vector: float32Bytes(vector), MERTData: mertRaw, Dimension: len(vector)})
+	return a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, DSP: dspRaw, DSPCacheContract: dspContract, Vector: vectorRaw, MERTData: mertRaw, Dimension: audio.MERTDimension})
+}
+
+func addAnalysisDuration(target *time.Duration, value time.Duration) {
+	atomic.AddInt64((*int64)(target), int64(value))
+}
+
+func (a *Analyzer) claimReusableMERT(ctx context.Context, fileID, recordingKey, contract string) (ReusableMERT, bool, *reuseFlight, error) {
+	if recordingKey == "" {
+		return ReusableMERT{}, false, nil, nil
+	}
+	flightKey := contract + "\x00" + recordingKey
+	for {
+		cached, found, err := a.State.ReusableMERTForRecording(ctx, fileID, recordingKey, contract)
+		if err != nil || found {
+			return cached, found, nil, err
+		}
+		a.reuseMu.Lock()
+		if a.reuseFlights == nil {
+			a.reuseFlights = make(map[string]*reuseFlight)
+		}
+		if existing := a.reuseFlights[flightKey]; existing != nil {
+			a.reuseMu.Unlock()
+			select {
+			case <-existing.done:
+				continue
+			case <-ctx.Done():
+				return ReusableMERT{}, false, nil, ctx.Err()
+			}
+		}
+		flight := &reuseFlight{done: make(chan struct{})}
+		a.reuseFlights[flightKey] = flight
+		a.reuseMu.Unlock()
+		return ReusableMERT{}, false, flight, nil
+	}
+}
+
+func (a *Analyzer) finishReuseFlight(recordingKey, contract string, flight *reuseFlight) {
+	key := contract + "\x00" + recordingKey
+	a.reuseMu.Lock()
+	if a.reuseFlights[key] == flight {
+		delete(a.reuseFlights, key)
+		close(flight.done)
+	}
+	a.reuseMu.Unlock()
 }
 
 func hasMERTSignal(pcm audio.DecodedPCM) bool {
@@ -907,8 +1045,23 @@ func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, 
 	return audio.LocalDSPVersion + ";" + audio.MERTLocalPreprocessingVersion + ";" + audio.MERTPoolingVersion + ";" + runtimeID + ";" + string(profile) + ";" + model.WeightsSHA256
 }
 
+func DSPSemanticKey(runtimeID string, profile SamplingProfile) string {
+	return audio.LocalDSPVersion + ";" + runtimeID + ";" + SamplingVersion + ";profile=" + string(profile)
+}
+
 func MetadataSemanticKey(runtimeID string) string {
-	return fmt.Sprintf("ffprobe-json-tags/v4;%s;%s;%s;%s", localaudio.AudioFingerprintVersion, localaudio.EmbeddedAudioFingerprintVersion, localaudio.IntegrityValidationVersion, runtimeID)
+	return MetadataSemanticKeyForPolicy(runtimeID, IntegrityFull)
+}
+
+func MetadataSemanticKeyForPolicy(runtimeID string, policy IntegrityPolicy) string {
+	if policy == "" {
+		policy = IntegrityFull
+	}
+	base := fmt.Sprintf("ffprobe-json-tags/v4;%s;%s;%s;%s", localaudio.AudioFingerprintVersion, localaudio.EmbeddedAudioFingerprintVersion, localaudio.IntegrityValidationVersion, runtimeID)
+	if policy == IntegrityFull {
+		return base
+	}
+	return base + ";integrity=" + string(policy)
 }
 
 func boundedAnalysisDetail(value string) string {

@@ -31,7 +31,7 @@ system FFmpeg installation:
 ./playlist-indexer run \
   --root-alias music-main=/mnt/music \
   --state "$HOME/.local/share/playlist-indexer" \
-  --profile balanced --device cpu --concurrency auto \
+  --profile balanced --device auto --concurrency auto \
   --accept-model-license --out ./my-library.paipack
 ```
 
@@ -50,7 +50,7 @@ run against the same state with an explicit new logical alias:
 ./playlist-indexer run \
   --append-root archive=/mnt/archive \
   --state "$HOME/.local/share/playlist-indexer" \
-  --profile balanced --device cpu --concurrency auto \
+  --profile balanced --device auto --concurrency auto \
   --accept-model-license --out ./my-library.paipack
 ```
 
@@ -67,7 +67,7 @@ Two unrelated folders can also be appended in one invocation:
   --append-root primary=/mnt/music \
   --append-root archive=/media/archive \
   --state "$HOME/.local/share/playlist-indexer" \
-  --profile balanced --device cpu --concurrency auto \
+  --profile balanced --device auto --concurrency auto \
   --accept-model-license --out ./my-library.paipack
 ```
 
@@ -112,6 +112,26 @@ existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
 Directory reads and their SQLite file/job observations are committed in bounded
 chunks, avoiding a durable transaction for every track in a large directory.
+
+Audio analysis decodes one sampled window at a time and releases source I/O
+before DSP or MERT runs. Multiple file workflows keep the bounded decode,
+preprocessing, and inference stages supplied. Matching recording MBIDs, ISRCs,
+AcoustID IDs, or exact fingerprint-plus-metadata identities reuse a compatible
+MERT vector while still measuring file-specific DSP. The final summary and JSON
+report aggregate decode, DSP, preprocessing, MERT-session wait, and inference
+worker time so `bench concurrency` can compare session/thread configurations.
+DSP also has its own semantic cache, so changing only the MERT model or
+execution provider does not repeat compatible file-specific measurements.
+
+`--device auto` selects the execution provider declared by the verified MERT
+bundle. The standard and offline payloads remain CPU bundles. An NVIDIA system
+uses `--device cuda` (or `cuda:INDEX`) with a separately prepared CUDA bundle;
+startup executes the normal parity fixtures and fails rather than silently
+using CPU if CUDA, cuDNN, the requested card, or provider libraries are missing.
+For a library whose embedded identity tags are trusted, `--integrity deferred`
+skips the otherwise separate full FLAC/MP3 validation decode and records that
+integrity remains deferred; sampled decode failures are still reported. The
+default `--integrity full` retains the complete validation contract.
 
 On the first Ctrl-C or SIGTERM, the indexer stops admitting new directory and
 analysis claims, then lets the bounded set of already-admitted operations finish

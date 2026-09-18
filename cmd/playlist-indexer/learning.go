@@ -15,6 +15,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/libraryindex"
 	"github.com/platten/playlistai/internal/librarysearch"
 )
@@ -144,16 +145,13 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	rootPath := flags.String("root", "", "authorized source tree")
 	sampleTracks := flags.Int("sample-tracks", 0, "positive deterministic real-audio sample size")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
-	device := flags.String("device", "cpu", "cpu or auto")
+	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	modelBundle := flags.String("model-bundle", "", "verified local prepared MERT bundle")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1, err
 	}
 	if *rootPath == "" || *sampleTracks <= 0 {
 		return 1, errors.New("bench concurrency requires --root and positive --sample-tracks")
-	}
-	if *device != "cpu" && *device != "auto" {
-		return 1, errors.New("only the validated CPU backend is available")
 	}
 	profileValue := libraryindex.SamplingProfile(*profile)
 	if _, err := libraryindex.SamplingWindows(60, profileValue); err != nil {
@@ -175,12 +173,15 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return 1, err
 	}
 	configs := []struct {
-		name    string
-		mode    libraryindex.ConcurrencyMode
-		workers int
+		name                       string
+		mode                       libraryindex.ConcurrencyMode
+		workers, sessions, threads int
 	}{
-		{"serial", libraryindex.ConcurrencySerial, 1}, {"2-worker", libraryindex.ConcurrencyManual, 2},
-		{"4-worker", libraryindex.ConcurrencyManual, 4}, {"auto", libraryindex.ConcurrencyAuto, 0},
+		{"serial", libraryindex.ConcurrencySerial, 1, 1, 1},
+		{"1-session-1-thread", libraryindex.ConcurrencyManual, basePlan.HeavyWorkers, 1, 1},
+		{"1-session-2-thread", libraryindex.ConcurrencyManual, basePlan.HeavyWorkers, 1, 2},
+		{"2-session-1-thread", libraryindex.ConcurrencyManual, basePlan.HeavyWorkers, 2, 1},
+		{"auto", libraryindex.ConcurrencyAuto, 0, 0, 0},
 	}
 	results := make([]benchmarkResult, 0, len(configs))
 	for _, config := range configs {
@@ -196,14 +197,15 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 			overrides.WorkersAuto = true
 		} else {
 			overrides.Workers = config.workers
-			overrides.InferenceThreads = 1
+			overrides.InferenceWorkers = config.sessions
+			overrides.InferenceThreads = config.threads
 		}
 		plan, planErr := libraryindex.ResolveResourcePlan(overrides)
 		if planErr != nil {
 			results = append(results, benchmarkResult{Configuration: config.name, Skipped: planErr.Error()})
 			continue
 		}
-		result, runErr := benchmarkConfiguration(ctx, common, root, paths, profileValue, *modelBundle, config.name, plan, stderr)
+		result, runErr := benchmarkConfiguration(ctx, common, root, paths, profileValue, *modelBundle, *device, config.name, plan, stderr)
 		if runErr != nil {
 			return 1, fmt.Errorf("benchmark %s: %w", config.name, runErr)
 		}
@@ -231,7 +233,7 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	})
 }
 
-func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath string, paths []string, profile libraryindex.SamplingProfile, modelBundle, name string, plan libraryindex.ResourcePlan, stderr io.Writer) (benchmarkResult, error) {
+func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath string, paths []string, profile libraryindex.SamplingProfile, modelBundle, requestedDevice, name string, plan libraryindex.ResourcePlan, stderr io.Writer) (benchmarkResult, error) {
 	result := benchmarkResult{Configuration: name, Resources: plan}
 	scratch, err := os.MkdirTemp("", "playlist-indexer-bench-")
 	if err != nil {
@@ -249,11 +251,19 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	if err != nil {
 		return result, err
 	}
+	device, err := audio.ResolveMERTDevice(requestedDevice, manifest.Backend())
+	if err != nil {
+		return result, err
+	}
+	if name == "auto" {
+		plan = tunePlanForDevice(plan, common, device)
+	}
+	result.Resources = plan
 	executable, err := os.Executable()
 	if err != nil {
 		return result, err
 	}
-	pool, resolvedPlan, err := warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr, nil)
+	pool, resolvedPlan, err := warmMERTPool(ctx, executable, bundleDir, manifest, device, plan, stderr, nil)
 	if err != nil {
 		return result, err
 	}

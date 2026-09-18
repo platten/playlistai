@@ -3,7 +3,10 @@ package libraryindex
 import (
 	"context"
 	"database/sql"
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"math"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/audio"
+	"github.com/platten/playlistai/internal/localaudio"
 )
 
 func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
@@ -41,7 +45,7 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	if err := state.Reader().QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "4" {
+	if version != "5" {
 		t.Fatalf("schema version = %q", version)
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT completed_mtime_ns,completed_size FROM directory_frontier LIMIT 1`); err != nil {
@@ -49,6 +53,46 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT follow_directory_symlinks FROM scan_epochs LIMIT 1`); err != nil {
 		t.Fatalf("scan policy column was not migrated: %v", err)
+	}
+}
+
+func TestStateMigratesV4RecordingKeysInBoundedBatches(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(dir, "library-index.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := MetadataRecord{Probe: localaudio.ProbeResult{Metadata: localaudio.Metadata{MusicBrainzIDs: map[string]string{"MUSICBRAINZ_TRACKID": "12345678-1234-1234-1234-123456789abc"}}}}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `
+		CREATE TABLE state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+		INSERT INTO state_meta(key,value) VALUES('schema_version','4');
+		CREATE TABLE track_metadata (
+			file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
+			data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
+		);
+		INSERT INTO track_metadata(file_id,source_revision,contract,data) VALUES('file','revision','metadata/v1',?);`, raw); err != nil {
+		_ = db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := OpenState(ctx, dir, "migration-test", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	var recordingKey string
+	if err := state.Reader().QueryRowContext(ctx, `SELECT recording_key FROM track_metadata WHERE file_id='file'`).Scan(&recordingKey); err != nil {
+		t.Fatal(err)
+	}
+	if recordingKey != "musicbrainz:12345678-1234-1234-1234-123456789abc" {
+		t.Fatalf("recording key = %q", recordingKey)
 	}
 }
 
@@ -94,6 +138,61 @@ func TestStateCoordinatorLockAndFencedCommit(t *testing.T) {
 	progress, err := state.Progress(ctx, map[string]string{"metadata": "ffprobe/v1"})
 	if err != nil || progress.Files != 1 || progress.Total != 1 || progress.Finished != 1 || progress.Queued != 0 || progress.Leased != 0 || progress.Failed != 0 {
 		t.Fatalf("progress=%+v err=%v", progress, err)
+	}
+}
+
+func TestReusableMERTUsesStrongRecordingIdentityAndExactContract(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "reuse-test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, t.TempDir(), "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := map[string]string{"metadata": "metadata/v1", "audio": "audio/v1"}
+	for i := range 2 {
+		_, err = state.ObserveFile(ctx, epoch, SourceFile{RootID: root.ID, RelativePath: fmt.Sprintf("song-%d.flac", i), Device: 1, Inode: uint64(i + 1), Size: 100, MTimeNS: int64(i + 1), Extension: ".flac"}, jobs)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	metadataJobs, err := state.ClaimJobs(ctx, "metadata", 2, time.Minute)
+	if err != nil || len(metadataJobs) != 2 {
+		t.Fatalf("claim metadata: %v jobs=%d", err, len(metadataJobs))
+	}
+	for _, job := range metadataJobs {
+		record := MetadataRecord{Probe: localaudio.ProbeResult{Metadata: localaudio.Metadata{MusicBrainzIDs: map[string]string{"MUSICBRAINZ_TRACKID": "12345678-1234-1234-1234-123456789abc"}}}}
+		raw, _ := json.Marshal(record)
+		if err := state.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, Metadata: raw}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	audioJobs, err := state.ClaimJobs(ctx, "audio", 2, time.Minute)
+	if err != nil || len(audioJobs) != 2 {
+		t.Fatalf("claim audio: %v jobs=%d", err, len(audioJobs))
+	}
+	vector := make([]byte, audio.MERTDimension*4)
+	binary.LittleEndian.PutUint32(vector, math.Float32bits(1))
+	if err := state.CommitJob(ctx, JobResult{Job: audioJobs[0], Contract: "audio/v1", DSP: []byte(`{"version":"dsp"}`), DSPCacheContract: "dsp/v1", Vector: vector, MERTData: []byte(`{"model":{}}`), Dimension: audio.MERTDimension}); err != nil {
+		t.Fatal(err)
+	}
+	if cached, found, err := state.CachedDSP(ctx, audioJobs[0].FileID, audioJobs[0].SourceRevision, "dsp/v1"); err != nil || !found || !strings.Contains(string(cached), "dsp") {
+		t.Fatalf("cached DSP: found=%v data=%q err=%v", found, cached, err)
+	}
+	recordingKey := "musicbrainz:12345678-1234-1234-1234-123456789abc"
+	got, found, err := state.ReusableMERTForRecording(ctx, audioJobs[1].FileID, recordingKey, "audio/v1")
+	if err != nil || !found || got.Dimension != audio.MERTDimension || len(got.Vector) != len(vector) {
+		t.Fatalf("reusable MERT: found=%v result=%+v err=%v", found, got, err)
+	}
+	if _, found, err := state.ReusableMERTForRecording(ctx, audioJobs[1].FileID, recordingKey, "audio/v2"); err != nil || found {
+		t.Fatalf("incompatible contract reused: found=%v err=%v", found, err)
 	}
 }
 

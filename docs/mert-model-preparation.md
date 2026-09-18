@@ -144,6 +144,33 @@ includes that archive's complete runtime notices. The source pins in
 [`mert-runtime-sources.json`](../python/mert-runtime-sources.json) match the
 application's `recommendedRuntimes` registry; a regression checks this agreement.
 
+### Optional NVIDIA CUDA bundle
+
+CUDA acceleration is a separate execution identity; the CPU runtime in the
+standard pack cannot acquire GPU support at runtime. On Linux/amd64 or
+Windows/amd64, build or obtain ONNX Runtime 1.26.0 with the CUDA execution
+provider and its matching CUDA 12.x/cuDNN 9 dependencies, then export a fresh
+bundle with the runtime and both provider libraries:
+
+```sh
+python python/export_mert.py \
+  --source-root "$assetRoot" --out "$assetRoot/derived-mert/linux-amd64-cuda-v1" \
+  --platform linux/amd64 --runtime-backend cuda \
+  --runtime-library /verified/cuda-ort/libonnxruntime.so \
+  --runtime-provider-shared /verified/cuda-ort/libonnxruntime_providers_shared.so \
+  --runtime-provider-cuda /verified/cuda-ort/libonnxruntime_providers_cuda.so \
+  --license-text "$assetRoot/derived-mert/CC-BY-NC-4.0.txt" \
+  --runtime-license "$assetRoot/derived-mert/ONNX-RUNTIME-NOTICES.txt"
+```
+
+Import that directory with `--model-bundle`, then use `--device cuda` or
+`cuda:INDEX`. `--device auto` follows the imported bundle identity. The native
+worker runs the bundled health fixtures on the requested GPU before analysis;
+provider loading, device selection, or numerical parity failure prevents the
+bundle from being used. Linux may resolve the compatible CUDA/cuDNN libraries
+from the host loader path. A Windows CUDA pack must include its complete
+app-local dependency closure as verified `runtime_dependency_*` artifacts.
+
 Windows additionally needs Microsoft's app-local C++ runtime DLLs. The retained
 official, signed Visual C++ v14 14.51.36247.0 redistributable EXEs are pinned in
 the same lock file, including their immutable Microsoft download URLs. A

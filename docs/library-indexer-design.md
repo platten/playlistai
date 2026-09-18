@@ -85,9 +85,10 @@ enumeration epoch or analysis jobs.
 Fast, balanced, and deep profiles request 3, 6, and 12 five-second windows.
 Balanced centers are 10%, 26%, 42%, 58%, 74%, and 90%. Clamping and interval
 subtraction ensure overlapping decoded time is not counted twice. Decoded
-windows transfer into one bounded immutable per-recording buffer; the decoder
+windows transfer one at a time into a bounded immutable buffer; the decoder
 then releases source I/O and descriptors before DSP and MERT acquire distinct
-CPU reservations. Each window remains immutable until both consumers finish. Backpressure is
+CPU reservations. Waiting for a warm MERT session holds no CPU slot. Each
+window remains immutable until both consumers finish. Backpressure is
 controlled by aggregate CPU, source I/O, descriptor, RAM, and PCM byte
 reservations.
 

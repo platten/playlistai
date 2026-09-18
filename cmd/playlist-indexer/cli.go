@@ -247,7 +247,8 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	flags.Var(&exclusions, "exclude", "root-relative excluded subtree; repeatable")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
 	analysis := flags.String("analysis", "audio", "metadata or audio")
-	device := flags.String("device", "cpu", "cpu or auto")
+	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
+	integrity := flags.String("integrity", "full", "full or deferred; deferred skips a second full decode when embedded identity tags exist")
 	modelBundle := flags.String("model-bundle", "", "verified local prepared MERT bundle")
 	outPath := flags.String("out", "", "portable .paipack output; run only")
 	trainingSample := flags.Int("training-sample", 0, "maximum deterministic MERT training sample")
@@ -259,8 +260,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if flags.NArg() != 0 {
 		return 1, errors.New("unexpected positional arguments")
 	}
-	if *device != "cpu" && *device != "auto" {
-		return 1, errors.New("only the validated CPU backend is available")
+	integrityPolicy := libraryindex.IntegrityPolicy(strings.ToLower(strings.TrimSpace(*integrity)))
+	if integrityPolicy != libraryindex.IntegrityFull && integrityPolicy != libraryindex.IntegrityDeferred {
+		return 1, errors.New("--integrity must be full or deferred")
 	}
 	metadataOnly := *analysis == "metadata"
 	if !metadataOnly && *analysis != "audio" {
@@ -321,25 +323,30 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		if err != nil {
 			return 1, err
 		}
+		resolvedDevice, err := audio.ResolveMERTDevice(*device, manifest.Backend())
+		if err != nil {
+			return 1, err
+		}
+		plan = tunePlanForDevice(plan, common, resolvedDevice)
 		warmStart := time.Now()
-		pool, plan, err = warmMERTPool(ctx, executable, bundleDir, manifest, plan, stderr, issues.Record)
+		pool, plan, err = warmMERTPool(ctx, executable, bundleDir, manifest, resolvedDevice, plan, stderr, issues.Record)
 		if err != nil {
 			return 1, fmt.Errorf("warm MERT workers: %w", err)
 		}
 		defer pool.Close()
-		fmt.Fprintf(stderr, "MERT sessions warmed: count=%d threads=%d rss=%d elapsed=%s\n", pool.Parallelism(), plan.InferenceThreads, pool.ResidentBytes(), time.Since(warmStart).Round(time.Millisecond))
+		fmt.Fprintf(stderr, "MERT sessions warmed: device=%s count=%d threads=%d rss=%d elapsed=%s\n", pool.Device(), pool.Parallelism(), plan.InferenceThreads, pool.ResidentBytes(), time.Since(warmStart).Round(time.Millisecond))
 	}
 	if gracefulStopRequested(ctx) {
 		return 130, libraryindex.ErrShutdownRequested
 	}
 	fmt.Fprintln(stderr, "effective resources:", plan.Summary())
 	profileValue := libraryindex.SamplingProfile(*profile)
-	semanticJobs := map[string]string{"metadata": libraryindex.MetadataSemanticKey(codec.ID())}
+	semanticJobs := map[string]string{"metadata": libraryindex.MetadataSemanticKeyForPolicy(codec.ID(), integrityPolicy)}
 	if !metadataOnly {
 		semanticJobs["audio"] = libraryindex.AudioSemanticKey(codec.ID(), pool.Identity(), profileValue)
 	}
-	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue}
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profileValue, StopAdmission: gracefulStopFromContext(ctx)}
+	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue, Integrity: integrityPolicy}
+	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	var initialPhase string
 	switch command {
@@ -493,8 +500,24 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d skipped_changed=%d failed=%d\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.SkippedChanged, analysisReport.Failed)
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_reused=%d dsp_reused=%d skipped_changed=%d failed=%d decode=%s dsp=%s mert_preprocess=%s mert_wait=%s mert_inference=%s\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTReused, analysisReport.DSPReused, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.Decode, analysisReport.Timings.DSP, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.MERTInference)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
+}
+
+func tunePlanForDevice(plan libraryindex.ResourcePlan, common commonFlags, device string) libraryindex.ResourcePlan {
+	if _, cuda := audio.MERTCUDADeviceIndex(device); !cuda {
+		return plan
+	}
+	if common.inferenceWorkers == 0 {
+		plan.InferenceWorkers = 1
+	}
+	if common.inferenceThreads == 0 {
+		plan.InferenceThreads = 1
+	}
+	if common.decodeWorkers == 0 {
+		plan.DecodeWorkers = min(plan.HeavyWorkers, max(plan.DecodeWorkers, plan.IOWorkers+plan.InferenceWorkers))
+	}
+	return plan
 }
 
 func parseNamedRoot(flagName, specification string) (string, string, error) {
@@ -527,9 +550,9 @@ func defaultRootAlias(path string) string {
 	return value
 }
 
-func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest audio.MERTBundleManifest, plan libraryindex.ResourcePlan, stderr io.Writer, onIssue func(libraryindex.ProcessingIssue)) (*audio.MERTWorkerPool, libraryindex.ResourcePlan, error) {
+func warmMERTPool(ctx context.Context, executable, bundleDir string, manifest audio.MERTBundleManifest, device string, plan libraryindex.ResourcePlan, stderr io.Writer, onIssue func(libraryindex.ProcessingIssue)) (*audio.MERTWorkerPool, libraryindex.ResourcePlan, error) {
 	makePool := func(count int) *audio.MERTWorkerPool {
-		return audio.NewMERTWorkerPool(&audio.MERTWorker{Executable: executable, BundleDir: bundleDir, Model: manifest.Model, InferenceThreads: plan.InferenceThreads}, count)
+		return audio.NewMERTWorkerPool(&audio.MERTWorker{Executable: executable, BundleDir: bundleDir, Model: manifest.Model, Device: device, InferenceThreads: plan.InferenceThreads}, count)
 	}
 	if plan.Mode == libraryindex.ConcurrencyAuto && plan.InferenceWorkers > 1 {
 		probe := makePool(1)

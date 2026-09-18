@@ -11,7 +11,7 @@ func TestResourcePlanAutoAndManual(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if auto.Mode != ConcurrencyAuto || auto.HeavyWorkers != 7 || auto.InferenceWorkers != 2 || auto.InferenceWorkers*auto.InferenceThreads > auto.HeavyWorkers || auto.IOWorkers != 2 {
+	if auto.Mode != ConcurrencyAuto || auto.HeavyWorkers != 7 || auto.InferenceWorkers != 2 || auto.InferenceWorkers*auto.InferenceThreads > auto.HeavyWorkers || auto.IOWorkers != 2 || auto.DecodeWorkers != 4 {
 		t.Fatalf("unexpected auto plan: %+v", auto)
 	}
 	manual, err := resolveResourcePlan(ResourceOverrides{Mode: ConcurrencyManual, Workers: 8, IOProfile: IONAS, IOWorkers: 2, DecodeWorkers: 2, DSPWorkers: 2, InferenceWorkers: 2, InferenceThreads: 2, MaxRAM: 8 << 30}, testCapacity())
