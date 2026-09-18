@@ -91,7 +91,6 @@ func FitSpherical(ctx context.Context, input []DenseVector, options SphericalOpt
 		Version: SphericalKMeansVersion, InputGeneration: options.InputGeneration,
 		InputDigest: digest, Seed: options.Seed, Dimension: dimension, Clusters: options.Clusters,
 		BatchSize: options.BatchSize, LogicalBlock: options.LogicalBlock, Tolerance: options.Tolerance,
-		Previous: math.Inf(1),
 	}
 	if checkpoint == nil {
 		state.Centroids = initializeSpherical(vectors, options.Clusters, options.Seed, dimension)
@@ -132,7 +131,7 @@ func FitSpherical(ctx context.Context, input []DenseVector, options SphericalOpt
 		if state.Cursor == len(vectors) {
 			empty := reinitializeEmpty(vectors, &state)
 			objective := state.Objective / float64(len(vectors))
-			if !empty && !math.IsInf(state.Previous, 0) && math.Abs(state.Previous-objective) <= options.Tolerance*max(1, math.Abs(state.Previous)) {
+			if !empty && state.Epoch > 0 && math.Abs(state.Previous-objective) <= options.Tolerance*max(1, math.Abs(state.Previous)) {
 				state.StableEpochs++
 			} else {
 				state.StableEpochs = 0
