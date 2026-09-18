@@ -2,6 +2,7 @@ package librarylearn
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
 	"reflect"
@@ -63,6 +64,24 @@ func TestSphericalCheckpointResume(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatal("resuming with a different worker count changed the model")
+	}
+}
+
+func TestSphericalCheckpointsAreJSONSerializable(t *testing.T) {
+	input := sphericalFixture()
+	checkpoints := 0
+	_, err := FitSpherical(context.Background(), input, SphericalOptions{
+		Clusters: 3, BatchSize: 11, LogicalBlock: 4, MaxEpochs: 2, Workers: 2,
+	}, nil, func(checkpoint SphericalCheckpoint) error {
+		checkpoints++
+		_, err := json.Marshal(checkpoint)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("serialize checkpoint: %v", err)
+	}
+	if checkpoints < 2 {
+		t.Fatalf("checkpoints = %d, want multiple batches", checkpoints)
 	}
 }
 
