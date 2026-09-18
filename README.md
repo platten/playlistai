@@ -231,6 +231,14 @@ plus CPU and CUDA MERT payloads; it still requires `--accept-model-license`. See
 recovery contract](docs/library-indexer-concurrency.md), [pack format](docs/paipack-format.md),
 and [executed validation](docs/library-indexer-validation.md).
 
+Existing format-v5 packs can be combined offline with the standalone,
+pure-Go `paipack-combine` utility. It validates every input, safely collapses
+recordings with authoritative identifiers or corroborated compatible
+Chromaprints, rewrites colliding portable aliases and track IDs, and rebuilds
+all corpus-relative metadata, DSP, and clustering resources. See the
+[paipack combiner guide](docs/paipack-combine.md) for identity rules, resource
+controls, and static build instructions.
+
 Choose **5, 10, 20, or 40 tracks** beside Generate (default: 20). This explicit
 selection takes precedence over a count in the description; replaying a saved
 playlist retains its original length. Generation keeps running while Settings
