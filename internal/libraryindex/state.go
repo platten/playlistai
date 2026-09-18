@@ -23,6 +23,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/installlock"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
@@ -211,6 +212,7 @@ CREATE TABLE IF NOT EXISTS mert_results (
  dimension INTEGER NOT NULL, vector BLOB NOT NULL, data BLOB NOT NULL,
  PRIMARY KEY(file_id,contract)
 );
+CREATE INDEX IF NOT EXISTS mert_results_contract ON mert_results(contract,file_id);
 CREATE TABLE IF NOT EXISTS runs (
  id TEXT PRIMARY KEY, command TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
  status TEXT NOT NULL, plan BLOB NOT NULL, detail TEXT NOT NULL DEFAULT ''
@@ -1547,24 +1549,33 @@ func (s *State) CachedDSP(ctx context.Context, fileID, sourceRevision, contract 
 	return data, err == nil, err
 }
 
-// ReusableMERTForRecording returns analysis from another current source with
-// the same strong recording identity and exact audio contract. DSP is excluded
-// because mastering-specific measurements are not recording-invariant.
-func (s *State) ReusableMERTForRecording(ctx context.Context, fileID, recordingKey, contract string) (ReusableMERT, bool, error) {
-	if recordingKey == "" {
-		return ReusableMERT{}, false, nil
-	}
-	var result ReusableMERT
-	err := s.reader.QueryRowContext(ctx, `SELECT v.vector,v.dimension
+// LoadReusableMERT reads the exact-contract recording index once before audio
+// workers start. Subsequent deduplication is served by the analyzer's
+// thread-safe in-memory cache rather than one SQLite query per file.
+func (s *State) LoadReusableMERT(ctx context.Context, contract string) (map[string]ReusableMERT, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT m.recording_key,v.vector,v.dimension
 		FROM track_metadata m
 		JOIN files f ON f.id=m.file_id AND f.source_revision=m.source_revision AND f.status='present'
 		JOIN mert_results v ON v.file_id=m.file_id AND v.source_revision=m.source_revision AND v.contract=?
-		WHERE m.recording_key=? AND m.file_id<>? AND length(v.vector)>0
-		ORDER BY m.file_id LIMIT 1`, contract, recordingKey, fileID).Scan(&result.Vector, &result.Dimension)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ReusableMERT{}, false, nil
+		WHERE m.recording_key<>'' AND v.dimension=? AND length(v.vector)=?
+		ORDER BY m.recording_key,m.file_id`, contract, audio.MERTDimension, audio.MERTDimension*4)
+	if err != nil {
+		return nil, err
 	}
-	return result, err == nil, err
+	defer rows.Close()
+	result := make(map[string]ReusableMERT)
+	for rows.Next() {
+		var recordingKey string
+		var value ReusableMERT
+		if err := rows.Scan(&recordingKey, &value.Vector, &value.Dimension); err != nil {
+			return nil, err
+		}
+		key := mertReuseKey(recordingKey, contract)
+		if _, exists := result[key]; !exists {
+			result[key] = value
+		}
+	}
+	return result, rows.Err()
 }
 
 func (s *State) FailJob(ctx context.Context, job Job, code, detail string, retry bool) error {

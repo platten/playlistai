@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -75,6 +76,23 @@ func TestMERTWarmupRetriesTransientNativeFailure(t *testing.T) {
 	permanent := &scriptedMERTWarmer{errors: []error{errors.New("invalid model")}}
 	if err := warmMERTWithRetries(context.Background(), permanent, io.Discard, nil); err == nil || permanent.calls != 1 {
 		t.Fatalf("permanent failure was retried: calls=%d err=%v", permanent.calls, err)
+	}
+}
+
+func TestEmbeddedMERTPrefixesPreferCUDAForAutoAndRetainLegacyFallback(t *testing.T) {
+	tests := map[string][]string{
+		"auto": {"mert/cuda", "mert/cpu", "mert"},
+		"cuda": {"mert/cuda", "mert"},
+		"cpu":  {"mert/cpu", "mert"},
+	}
+	for preference, want := range tests {
+		got := embeddedMERTPrefixes(preference, true)
+		if !slices.Equal(got, want) {
+			t.Errorf("embeddedMERTPrefixes(%q)=%v want %v", preference, got, want)
+		}
+	}
+	if got := embeddedMERTPrefixes("auto", false); !slices.Equal(got, []string{"mert/cpu", "mert", "mert/cuda"}) {
+		t.Fatalf("CPU-only automatic order = %v", got)
 	}
 }
 

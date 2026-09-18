@@ -148,25 +148,33 @@ its slot returns, and the durable analysis job receives at most two automatic
 retries, each able to launch a fresh process. Caller cancellation remains a
 separate outcome. Initial session warmup also makes at most two restart attempts
 for errors explicitly classified as native-worker failures; model/configuration
-errors fail immediately. FFmpeg children use absolute argv paths, a private process
+errors fail immediately. CUDA health startup has a separate two-minute bound for
+provider loading and first-use kernel initialization; normal inference retains
+the 30-second watchdog. FFmpeg children use absolute argv paths, a private process
 group, and Linux parent-death behavior. MERT workers likewise use their own
 process group and Linux parent-death signal, in addition to framed pipes,
 explicit close/kill/reap, deadlines, and durable fencing.
 
-The default CPU bundles use ONNX Runtime's CPU execution provider. A CUDA
-bundle has a distinct runtime identity, carries the verified ONNX Runtime CUDA
-provider libraries, and is accepted only on Linux/Windows amd64. `--device
-auto` follows the bundle; `--device cuda[:INDEX]` requires a CUDA bundle. The
+CPU bundles use ONNX Runtime's CPU execution provider. A CUDA bundle has a
+distinct runtime identity, carries the verified ONNX Runtime CUDA provider and
+app-local CUDA/cuDNN dependency closure, and is accepted only on Linux/Windows
+amd64. The dual Linux offline payload selects CUDA first on a detected NVIDIA
+host and visibly falls back to its embedded CPU bundle if native health fails;
+`--device cuda[:INDEX]` requires CUDA and is fail-closed. The
 worker appends CUDA before constructing the session, allowing unsupported graph
 nodes to use ONNX Runtime's CPU fallback, and runs the same bundled numerical
 health fixtures before any library job is admitted. Provider initialization or
-parity failure is fatal—there is no silent whole-model CPU fallback.
+parity failure is fatal for explicit CUDA. CPU health retains a `1e-4` maximum
+component error; CUDA permits `0.003` with the same `0.9999` minimum cosine to
+account for provider reduction order while keeping the spaces version-separated.
 
 Compatible MERT vectors may be reused across current files with the same valid
 recording MBID, ISRC, AcoustID ID, or exact fingerprint plus normalized
 artist/title identity. The audio semantic contract must match exactly, and an
-in-process single-flight prevents concurrent duplicates from running inference
-twice. DSP is always measured from each file because loudness and other
+exact-contract key/vector map is bulk-loaded from durable state before workers
+start. A mutex-protected lookup and in-process single-flight prevent concurrent
+duplicates from running inference twice without a per-file SQLite query. A new
+result enters the map only after its fenced disk commit succeeds. DSP is always measured from each file because loudness and other
 mastering-sensitive values are not recording-invariant.
 
 DSP uses a separate stage contract and cache. A change to the MERT graph or

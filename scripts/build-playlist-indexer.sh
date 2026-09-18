@@ -13,11 +13,18 @@ go run "$repo_dir/cmd/indexerpack" \
   --out "$output_dir/playlist-indexer"
 
 if [[ -n ${PLAYLIST_INDEXER_MERT_BUNDLE:-} ]]; then
+  model_args=(--model "$PLAYLIST_INDEXER_MERT_BUNDLE")
+  if [[ -n ${PLAYLIST_INDEXER_MERT_CUDA_BUNDLE:-} ]]; then
+    model_args+=(--cuda-model "$PLAYLIST_INDEXER_MERT_CUDA_BUNDLE")
+  fi
   go run "$repo_dir/cmd/indexerpack" \
     --launcher "$output_dir/playlist-indexer-launcher" \
     --codec "$codec_payload" \
-    --model "$PLAYLIST_INDEXER_MERT_BUNDLE" \
+    "${model_args[@]}" \
     --out "$output_dir/playlist-indexer-offline"
+elif [[ -n ${PLAYLIST_INDEXER_MERT_CUDA_BUNDLE:-} ]]; then
+  echo "PLAYLIST_INDEXER_MERT_CUDA_BUNDLE requires PLAYLIST_INDEXER_MERT_BUNDLE" >&2
+  exit 1
 fi
 
 sha256sum "$output_dir/playlist-indexer"

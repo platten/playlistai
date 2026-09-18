@@ -17,6 +17,7 @@ import (
 const (
 	MERTWorkerProtocol        = 1
 	MERTWorkerResponseTimeout = 30 * time.Second
+	MERTCUDAHealthTimeout     = 2 * time.Minute
 )
 
 type MERTWorkerRequest struct {
@@ -52,6 +53,28 @@ type MERTWorker struct {
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
+	stderr          *boundedWorkerStderr
+}
+
+type boundedWorkerStderr struct {
+	mu   sync.Mutex
+	data []byte
+}
+
+func (w *boundedWorkerStderr) Write(value []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	remaining := (16 << 10) - len(w.data)
+	if remaining > 0 {
+		w.data = append(w.data, value[:min(len(value), remaining)]...)
+	}
+	return len(value), nil
+}
+
+func (w *boundedWorkerStderr) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return strings.TrimSpace(string(w.data))
 }
 
 func (w *MERTWorker) Identity() core.AudioRepresentationIdentity { return w.Model }
@@ -91,6 +114,11 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	timeout := w.ResponseTimeout
 	if timeout <= 0 {
 		timeout = MERTWorkerResponseTimeout
+		if request.Health {
+			if _, cuda := MERTCUDADeviceIndex(w.EffectiveDevice()); cuda {
+				timeout = MERTCUDAHealthTimeout
+			}
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -120,7 +148,8 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		if w.BundleDir != "" {
 			cmd.Env = prependMERTLibraryPath(cmd.Env, w.BundleDir)
 		}
-		cmd.Stderr = io.Discard
+		workerStderr := &boundedWorkerStderr{}
+		cmd.Stderr = workerStderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
 			return nil, err
@@ -135,7 +164,7 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 			_ = stdout.Close()
 			return nil, fmt.Errorf("%w: failed to start", ErrNativeWorker)
 		}
-		w.cmd, w.stdin, w.stdout = cmd, stdin, stdout
+		w.cmd, w.stdin, w.stdout, w.stderr = cmd, stdin, stdout, workerStderr
 	}
 	type answer struct {
 		response MERTWorkerResponse
@@ -160,7 +189,14 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		return nil, fmt.Errorf("%w: no response for %s: %w", ErrNativeWorker, timeout, context.DeadlineExceeded)
 	case result := <-done:
 		if result.err != nil || result.response.Error != "" || result.response.Protocol != MERTWorkerProtocol || result.response.Model != w.Model {
+			detail := ""
+			if w.stderr != nil {
+				detail = w.stderr.String()
+			}
 			w.stopLocked()
+			if detail != "" {
+				return nil, fmt.Errorf("%w: process exited or returned an incompatible response: %s", ErrNativeWorker, detail)
+			}
 			return nil, fmt.Errorf("%w: process exited or returned an incompatible response", ErrNativeWorker)
 		}
 		if !request.Health && (w.Model.Dimension != MERTDimension || !MERTParity(result.response.Vector, result.response.Vector)) {
@@ -177,6 +213,7 @@ func (w *MERTWorker) stopLocked() {
 		_ = w.stdout.Close()
 		_ = w.cmd.Wait()
 		w.cmd = nil
+		w.stderr = nil
 	}
 }
 

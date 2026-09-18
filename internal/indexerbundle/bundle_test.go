@@ -35,6 +35,9 @@ func TestOpenAppendedBundle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer bundle.Close()
+	if !bundle.Has("codec") || bundle.Has("mert") {
+		t.Fatalf("unexpected embedded subtrees: codec=%v mert=%v", bundle.Has("codec"), bundle.Has("mert"))
+	}
 	sub, err := bundle.Sub("codec")
 	if err != nil {
 		t.Fatal(err)

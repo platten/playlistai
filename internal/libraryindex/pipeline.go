@@ -42,6 +42,7 @@ type AnalysisReport struct {
 	SkippedChanged    int64           `json:"skippedChanged"`
 	MERTReused        int64           `json:"mertReused"`
 	DSPReused         int64           `json:"dspReused"`
+	MERTCacheLoaded   int64           `json:"mertCacheLoaded"`
 	WindowsDecoded    int64           `json:"windowsDecoded"`
 	Timings           AnalysisTimings `json:"timings"`
 }
@@ -73,11 +74,8 @@ type Analyzer struct {
 	DiffEpoch      int64
 	stageOnce      sync.Once
 	dspSlots       chan struct{}
-	reuseMu        sync.Mutex
-	reuseFlights   map[string]*reuseFlight
+	reuseCache     *mertReuseCache
 }
-
-type reuseFlight struct{ done chan struct{} }
 
 const (
 	jobLeaseDuration   = 5 * time.Minute
@@ -334,18 +332,14 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	integrity := IntegrityRecord{Status: "not_required"}
 	fingerprintRecord := FingerprintRecord{Status: "unavailable"}
 	if probeErr == nil {
-		embeddedFingerprint, fingerprintTagged, embeddedErr := localaudio.EmbeddedAudioFingerprint(probe.Metadata)
-		acoustIDTagged := probe.Metadata.AcoustID != nil && strings.TrimSpace(probe.Metadata.AcoustID.Value) != ""
+		var generateFingerprint bool
+		var embeddedErr error
+		fingerprintRecord, generateFingerprint, embeddedErr = fingerprintFromEmbeddedTags(probe.Metadata)
 		fingerprintEstablishedIntegrity := false
-		switch {
-		case fingerprintTagged && embeddedErr == nil:
-			fingerprintRecord = FingerprintRecord{Status: "available", Value: &embeddedFingerprint}
-		case fingerprintTagged:
-			fingerprintRecord = FingerprintRecord{Status: "invalid_embedded", Error: boundedAnalysisDetail(embeddedErr.Error())}
+		if embeddedErr != nil {
 			a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "embedded_fingerprint_invalid", embeddedErr, false))
-		case acoustIDTagged:
-			fingerprintRecord = FingerprintRecord{Status: "not_generated_embedded_acoustid"}
-		default:
+		}
+		if generateFingerprint {
 			release, err = a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
 			if err != nil {
 				return err
@@ -399,6 +393,24 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	return a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, Metadata: raw})
 }
 
+// fingerprintFromEmbeddedTags makes fingerprint generation an explicit
+// missing-data operation. A valid embedded Chromaprint value is copied exactly;
+// an AcoustID ID also suppresses generation, and an invalid embedded value is
+// reported rather than silently replaced.
+func fingerprintFromEmbeddedTags(metadata localaudio.Metadata) (FingerprintRecord, bool, error) {
+	embedded, tagged, err := localaudio.EmbeddedAudioFingerprint(metadata)
+	switch {
+	case tagged && err == nil:
+		return FingerprintRecord{Status: "available", Value: &embedded}, false, nil
+	case tagged:
+		return FingerprintRecord{Status: "invalid_embedded", Error: boundedAnalysisDetail(err.Error())}, false, err
+	case metadata.AcoustID != nil && strings.TrimSpace(metadata.AcoustID.Value) != "":
+		return FingerprintRecord{Status: "not_generated_embedded_acoustid"}, false, nil
+	default:
+		return FingerprintRecord{Status: "unavailable"}, true, nil
+	}
+}
+
 func (a *Analyzer) validateMetadataIntegrity(ctx context.Context, job Job, file FileRecord, probe localaudio.ProbeResult) (IntegrityRecord, error) {
 	release, err := a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
 	if err != nil {
@@ -425,6 +437,13 @@ func (a *Analyzer) validateMetadataIntegrity(ctx context.Context, job Job, file 
 func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, report *AnalysisReport, profile SamplingProfile) error {
 	workerCtx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	contract := AudioSemanticKey(a.Runtime.ID(), a.MERT.Identity(), profile)
+	seed, err := a.State.LoadReusableMERT(ctx, contract)
+	if err != nil {
+		return err
+	}
+	a.reuseCache = newMERTReuseCache(seed)
+	report.MERTCacheLoaded = int64(len(seed))
 	leases := newJobLeaseTracker()
 	heartbeatDone := make(chan struct{})
 	go a.heartbeatJobs(workerCtx, leases, cancel, heartbeatDone)
@@ -471,7 +490,7 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 			}
 		}()
 	}
-	err := a.dispatchJobs(workerCtx, "audio", discoveryDone, jobs, leases)
+	err = a.dispatchJobs(workerCtx, "audio", discoveryDone, jobs, leases)
 	close(jobs)
 	workers.Wait()
 	if cause := context.Cause(workerCtx); cause != nil && !errors.Is(cause, context.Canceled) {
@@ -656,7 +675,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		return fmt.Errorf("%w: %s", localaudio.ErrCorrupt, stored.Integrity.Error)
 	}
 	recordingKey := metadataRecordingIdentity(stored)
-	reusable, reused, flight, err := a.claimReusableMERT(ctx, job.FileID, recordingKey, job.SemanticKey)
+	reusable, reused, flight, err := a.claimReusableMERT(ctx, recordingKey, job.SemanticKey)
 	if err != nil {
 		return err
 	}
@@ -876,51 +895,28 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	if err != nil {
 		return err
 	}
-	return a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, DSP: dspRaw, DSPCacheContract: dspContract, Vector: vectorRaw, MERTData: mertRaw, Dimension: audio.MERTDimension})
+	commitErr := a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, DSP: dspRaw, DSPCacheContract: dspContract, Vector: vectorRaw, MERTData: mertRaw, Dimension: audio.MERTDimension})
+	if commitErr == nil && !reused && recordingKey != "" {
+		a.reuseCache.store(recordingKey, job.SemanticKey, ReusableMERT{Vector: vectorRaw, Dimension: audio.MERTDimension})
+	}
+	return commitErr
 }
 
 func addAnalysisDuration(target *time.Duration, value time.Duration) {
 	atomic.AddInt64((*int64)(target), int64(value))
 }
 
-func (a *Analyzer) claimReusableMERT(ctx context.Context, fileID, recordingKey, contract string) (ReusableMERT, bool, *reuseFlight, error) {
-	if recordingKey == "" {
-		return ReusableMERT{}, false, nil, nil
+func (a *Analyzer) claimReusableMERT(ctx context.Context, recordingKey, contract string) (ReusableMERT, bool, *reuseFlight, error) {
+	if a.reuseCache == nil {
+		return ReusableMERT{}, false, nil, errors.New("library indexer: MERT reuse cache is not initialized")
 	}
-	flightKey := contract + "\x00" + recordingKey
-	for {
-		cached, found, err := a.State.ReusableMERTForRecording(ctx, fileID, recordingKey, contract)
-		if err != nil || found {
-			return cached, found, nil, err
-		}
-		a.reuseMu.Lock()
-		if a.reuseFlights == nil {
-			a.reuseFlights = make(map[string]*reuseFlight)
-		}
-		if existing := a.reuseFlights[flightKey]; existing != nil {
-			a.reuseMu.Unlock()
-			select {
-			case <-existing.done:
-				continue
-			case <-ctx.Done():
-				return ReusableMERT{}, false, nil, ctx.Err()
-			}
-		}
-		flight := &reuseFlight{done: make(chan struct{})}
-		a.reuseFlights[flightKey] = flight
-		a.reuseMu.Unlock()
-		return ReusableMERT{}, false, flight, nil
-	}
+	return a.reuseCache.claim(ctx, recordingKey, contract)
 }
 
 func (a *Analyzer) finishReuseFlight(recordingKey, contract string, flight *reuseFlight) {
-	key := contract + "\x00" + recordingKey
-	a.reuseMu.Lock()
-	if a.reuseFlights[key] == flight {
-		delete(a.reuseFlights, key)
-		close(flight.done)
+	if a.reuseCache != nil {
+		a.reuseCache.finish(recordingKey, contract, flight)
 	}
-	a.reuseMu.Unlock()
 }
 
 func hasMERTSignal(pcm audio.DecodedPCM) bool {

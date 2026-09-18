@@ -247,7 +247,7 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	if err != nil {
 		return result, err
 	}
-	bundleDir, manifest, err := ensureModel(ctx, benchFlags, modelBundle, stderr)
+	bundleDir, manifest, err := ensureModel(ctx, benchFlags, modelBundle, requestedDevice, stderr)
 	if err != nil {
 		return result, err
 	}

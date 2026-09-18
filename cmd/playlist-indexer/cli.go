@@ -315,7 +315,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	var pool *audio.MERTWorkerPool
 	if !metadataOnly {
-		bundleDir, manifest, err := ensureModel(ctx, common, *modelBundle, stderr)
+		bundleDir, manifest, err := ensureModel(ctx, common, *modelBundle, *device, stderr)
 		if err != nil {
 			return 1, err
 		}
@@ -500,7 +500,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_reused=%d dsp_reused=%d skipped_changed=%d failed=%d decode=%s dsp=%s mert_preprocess=%s mert_wait=%s mert_inference=%s\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTReused, analysisReport.DSPReused, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.Decode, analysisReport.Timings.DSP, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.MERTInference)
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d skipped_changed=%d failed=%d decode=%s dsp=%s mert_preprocess=%s mert_wait=%s mert_inference=%s\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.Decode, analysisReport.Timings.DSP, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.MERTInference)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 
@@ -611,20 +611,35 @@ func completionCode(failures int64) int {
 	return 0
 }
 
-func ensureModel(ctx context.Context, common commonFlags, localBundle string, stderr io.Writer) (string, audio.MERTBundleManifest, error) {
-	manager := &audio.MERTBundleManager{Directory: filepath.Join(common.state, "runtime", "mert")}
-	if dir, manifest, err := manager.ActiveContext(ctx); err == nil {
-		return dir, manifest, nil
+func ensureModel(ctx context.Context, common commonFlags, localBundle, requestedDevice string, stderr io.Writer) (string, audio.MERTBundleManifest, error) {
+	normalizedDevice, preference, err := audio.ParseMERTDevicePreference(requestedDevice)
+	if err != nil {
+		return "", audio.MERTBundleManifest{}, err
 	}
-	if !common.acceptModel {
+	manager := &audio.MERTBundleManager{Directory: filepath.Join(common.state, "runtime", "mert")}
+	licenseAccepted := common.acceptModel
+	if dir, manifest, activeErr := manager.ActiveContext(ctx); activeErr == nil {
+		licenseAccepted = true
+		if preference == "auto" || manifest.Backend() == preference {
+			return dir, manifest, nil
+		}
+	}
+	if !licenseAccepted {
 		return "", audio.MERTBundleManifest{}, errors.New("MERT is separately licensed CC-BY-NC-4.0; use --accept-model-license with setup/import or run")
 	}
 	if localBundle != "" {
+		manifest, err := audio.ReadMERTBundleContext(ctx, localBundle)
+		if err != nil {
+			return "", audio.MERTBundleManifest{}, err
+		}
+		if _, err := audio.ResolveMERTDevice(normalizedDevice, manifest.Backend()); err != nil {
+			return "", audio.MERTBundleManifest{}, err
+		}
 		dir, err := manager.InstallLocal(ctx, localBundle, nil)
 		if err != nil {
 			return "", audio.MERTBundleManifest{}, err
 		}
-		manifest, err := audio.ReadMERTBundleContext(ctx, dir)
+		manifest, err = audio.ReadMERTBundleContext(ctx, dir)
 		return dir, manifest, err
 	}
 	if bundle, openErr := indexerbundle.OpenSelf(); openErr == nil {
@@ -633,24 +648,52 @@ func ensureModel(ctx context.Context, common commonFlags, localBundle string, st
 		if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
 			return "", audio.MERTBundleManifest{}, err
 		}
-		stage, err := os.MkdirTemp(runtimeRoot, ".embedded-mert-")
-		if err != nil {
-			return "", audio.MERTBundleManifest{}, err
-		}
-		defer os.RemoveAll(stage)
-		if err := bundle.Extract("mert", stage); err == nil {
-			dir, err := manager.InstallLocal(ctx, stage, nil)
+		var cudaErr error
+		for _, prefix := range embeddedMERTPrefixes(preference, audio.MERTCUDAHostAvailable()) {
+			if !bundle.Has(prefix) {
+				continue
+			}
+			stage, err := os.MkdirTemp(runtimeRoot, ".embedded-mert-")
 			if err != nil {
 				return "", audio.MERTBundleManifest{}, err
 			}
-			manifest, err := audio.ReadMERTBundleContext(ctx, dir)
+			extractErr := bundle.Extract(prefix, stage)
+			if extractErr != nil {
+				_ = os.RemoveAll(stage)
+				return "", audio.MERTBundleManifest{}, extractErr
+			}
+			manifest, readErr := audio.ReadMERTBundleContext(ctx, stage)
+			if readErr != nil {
+				_ = os.RemoveAll(stage)
+				return "", audio.MERTBundleManifest{}, readErr
+			}
+			if preference != "auto" && manifest.Backend() != preference {
+				_ = os.RemoveAll(stage)
+				continue
+			}
+			dir, installErr := manager.InstallLocal(ctx, stage, nil)
+			_ = os.RemoveAll(stage)
+			if installErr != nil {
+				if preference == "auto" && manifest.Backend() == "cuda" {
+					cudaErr = installErr
+					fmt.Fprintf(stderr, "automatic CUDA MERT unavailable; falling back to embedded CPU bundle: %v\n", installErr)
+					continue
+				}
+				return "", audio.MERTBundleManifest{}, installErr
+			}
+			manifest, err = audio.ReadMERTBundleContext(ctx, dir)
 			return dir, manifest, err
-		} else if common.offline {
-			return "", audio.MERTBundleManifest{}, errors.New("offline executable does not contain a MERT payload; build with indexerpack --model or use --model-bundle")
+		}
+		if common.offline {
+			err := fmt.Errorf("offline executable does not contain a compatible %s MERT payload; rebuild with CPU and CUDA model bundles or use --model-bundle", preference)
+			return "", audio.MERTBundleManifest{}, errors.Join(cudaErr, err)
 		}
 	}
 	if common.offline {
 		return "", audio.MERTBundleManifest{}, errors.New("offline mode requires an embedded or --model-bundle MERT pack")
+	}
+	if preference == "cuda" {
+		return "", audio.MERTBundleManifest{}, errors.New("CUDA MERT requires an imported or embedded parity-validated CUDA bundle")
 	}
 	distribution, err := modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
@@ -676,6 +719,20 @@ func ensureModel(ctx context.Context, common commonFlags, localBundle string, st
 	}
 	manifest, err := audio.ReadMERTBundleContext(ctx, dir)
 	return dir, manifest, err
+}
+
+func embeddedMERTPrefixes(preference string, cudaHost bool) []string {
+	switch preference {
+	case "cuda":
+		return []string{"mert/cuda", "mert"}
+	case "cpu":
+		return []string{"mert/cpu", "mert"}
+	default:
+		if !cudaHost {
+			return []string{"mert/cpu", "mert", "mert/cuda"}
+		}
+		return []string{"mert/cuda", "mert/cpu", "mert"}
+	}
 }
 
 func resolveCodec(ctx context.Context, common commonFlags) (*localaudio.Runtime, error) {
@@ -769,6 +826,7 @@ func runModel(ctx context.Context, args []string, stdout, stderr io.Writer) (int
 	}
 	addCommon(flags, &common)
 	source := flags.String("source", "", "prepared local MERT pack; import only")
+	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1, err
 	}
@@ -783,7 +841,7 @@ func runModel(ctx context.Context, args []string, stdout, stderr io.Writer) (int
 	if command == "import" && *source == "" {
 		return 1, errors.New("model import requires --source")
 	}
-	dir, manifest, err := ensureModel(ctx, common, *source, stderr)
+	dir, manifest, err := ensureModel(ctx, common, *source, *device, stderr)
 	if err != nil {
 		return 1, err
 	}
