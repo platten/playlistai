@@ -286,14 +286,83 @@ func (g *Generation) List(ctx context.Context, after string, limit int) ([]Track
 	return out, rows.Err()
 }
 
+// TrackReadCloser streams every canonical track, including its optional MERT
+// vector, without materializing the library. A returned vector is owned by the
+// caller and remains valid after the next call.
+type TrackReadCloser interface {
+	TrackSource
+	Close() error
+}
+
+type generationTrackSource struct {
+	g    *Generation
+	rows *sql.Rows
+}
+
+// OpenTrackSource opens a stable-ID-ordered stream over this immutable
+// generation. The caller must close it.
+func (g *Generation) OpenTrackSource(ctx context.Context) (TrackReadCloser, error) {
+	if g == nil || g.db == nil {
+		return nil, errors.New("librarypack: generation is closed")
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score,mert_row FROM tracks ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	return &generationTrackSource{g: g, rows: rows}, nil
+}
+
+func (s *generationTrackSource) Next(ctx context.Context) (Track, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Track{}, false, err
+	}
+	if s == nil || s.rows == nil || s.g == nil {
+		return Track{}, false, errors.New("librarypack: track source is closed")
+	}
+	if !s.rows.Next() {
+		return Track{}, false, s.rows.Err()
+	}
+	var vectorRow sql.NullInt64
+	track, err := scanTrackFields(s.rows, &vectorRow)
+	if err != nil {
+		return Track{}, false, err
+	}
+	if vectorRow.Valid {
+		vector, ok, err := s.g.vectorAt(ctx, vectorRow.Int64)
+		if err != nil {
+			return Track{}, false, err
+		}
+		if !ok {
+			return Track{}, false, errors.New("librarypack: indexed vector row is missing")
+		}
+		track.MERT = vector
+	}
+	return track, true, nil
+}
+
+func (s *generationTrackSource) Close() error {
+	if s == nil || s.rows == nil {
+		return nil
+	}
+	err := s.rows.Close()
+	s.rows = nil
+	return err
+}
+
 type rowScanner interface{ Scan(...any) error }
 
 func scanTrack(row rowScanner) (Track, error) {
+	return scanTrackFields(row)
+}
+
+func scanTrackFields(row rowScanner, extra ...any) (Track, error) {
 	var track Track
 	var capabilities, rawTags, dsp, missing string
 	var fingerprint AudioFingerprint
 	var cluster, alternative sql.NullInt64
-	err := row.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.AcoustID, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore)
+	destinations := []any{&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.AcoustID, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &cluster, &track.ClusterScore, &alternative, &track.AltScore}
+	destinations = append(destinations, extra...)
+	err := row.Scan(destinations...)
 	if err == nil {
 		err = json.Unmarshal([]byte(capabilities), &track.Capabilities)
 	}

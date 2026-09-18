@@ -11,10 +11,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
-	"unicode"
 
 	_ "modernc.org/sqlite"
 
@@ -28,12 +26,6 @@ import (
 const (
 	assignmentStoreName = "assignments.sqlite"
 	streamBatchRows     = 4096
-)
-
-var (
-	isrcIdentityPattern     = regexp.MustCompile(`^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$`)
-	mbidIdentityPattern     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	acoustIDIdentityPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 )
 
 type frozenStore struct {
@@ -727,7 +719,7 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 			Scope: fingerprint.Scope, DecoderRuntimeID: fingerprint.DecoderRuntimeID,
 		}
 	}
-	packed.RecordingIdentity = recordingIdentity(mbRecording, isrc, acoustID, artist, title, packed.AudioFingerprint)
+	packed.RecordingIdentity = librarypack.RecordingIdentity(packed)
 	if record.Probe.Duration.Reliable && record.Probe.Duration.Seconds > 0 {
 		packed.DurationMilliseconds = int64(math.Round(record.Probe.Duration.Seconds * 1000))
 		packed.DurationProvenance = record.Probe.Duration.Provenance
@@ -785,24 +777,14 @@ func normalizeISRC(value string) string {
 }
 
 func recordingIdentity(mbid, isrc, acoustID, artist, title string, fingerprint *librarypack.AudioFingerprint) string {
-	if normalized := strings.ToLower(strings.TrimSpace(mbid)); mbidIdentityPattern.MatchString(normalized) {
-		return "musicbrainz:" + normalized
-	}
-	if normalized := normalizeISRC(isrc); isrcIdentityPattern.MatchString(normalized) {
-		return "isrc:" + normalized
-	}
-	if normalized := strings.ToLower(strings.TrimSpace(acoustID)); acoustIDIdentityPattern.MatchString(normalized) {
-		return "acoustid-id:" + normalized
-	}
-	if fingerprint == nil || fingerprint.Contract == "" || fingerprint.FingerprintSHA256 == "" {
-		return ""
-	}
-	metadata := normalizeDedupMetadata(artist) + "\x00" + normalizeDedupMetadata(title)
-	if metadata == "\x00" {
-		return ""
-	}
-	digest := sha256.Sum256([]byte(metadata))
-	return "acoustid:" + fingerprint.Contract + ":" + fingerprint.FingerprintSHA256 + ":metadata:" + fmt.Sprintf("%x", digest[:12])
+	return librarypack.RecordingIdentity(librarypack.Track{
+		MusicBrainzRecording: mbid,
+		ISRC:                 isrc,
+		AcoustID:             acoustID,
+		Artist:               artist,
+		Title:                title,
+		AudioFingerprint:     fingerprint,
+	})
 }
 
 func metadataRecordingIdentity(record MetadataRecord) string {
@@ -826,23 +808,6 @@ func metadataRecordingIdentity(record MetadataRecord) string {
 		fingerprint = &librarypack.AudioFingerprint{Contract: value.Contract, FingerprintSHA256: value.FingerprintSHA256}
 	}
 	return recordingIdentity(mbid, isrc, acoustID, artist, title, fingerprint)
-}
-
-func normalizeDedupMetadata(value string) string {
-	var normalized strings.Builder
-	space := false
-	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			if space && normalized.Len() > 0 {
-				normalized.WriteByte(' ')
-			}
-			normalized.WriteRune(r)
-			space = false
-		} else {
-			space = true
-		}
-	}
-	return normalized.String()
 }
 
 func (s *frozenPackSource) Close() error {
@@ -962,13 +927,13 @@ func sampleLearningItem(id string, record MetadataRecord) librarylearn.SampleIte
 		artist = entityID("artist", values[0])
 	}
 	group := ""
-	if mbid := strings.ToLower(strings.TrimSpace(musicBrainzRecordingID(metadata.MusicBrainzIDs))); mbidIdentityPattern.MatchString(mbid) {
+	if mbid := librarypack.CanonicalMusicBrainzRecordingID(musicBrainzRecordingID(metadata.MusicBrainzIDs)); mbid != "" {
 		group = "musicbrainz:" + mbid
-	} else if metadata.ISRC != nil && isrcIdentityPattern.MatchString(normalizeISRC(metadata.ISRC.Value)) {
-		group = "isrc:" + normalizeISRC(metadata.ISRC.Value)
+	} else if metadata.ISRC != nil && librarypack.CanonicalISRC(metadata.ISRC.Value) != "" {
+		group = "isrc:" + librarypack.CanonicalISRC(metadata.ISRC.Value)
 	} else if metadata.AcoustID != nil {
-		acoustID := strings.ToLower(strings.TrimSpace(metadata.AcoustID.Value))
-		if acoustIDIdentityPattern.MatchString(acoustID) {
+		acoustID := librarypack.CanonicalAcoustID(metadata.AcoustID.Value)
+		if acoustID != "" {
 			group = "acoustid-id:" + acoustID
 		}
 	}

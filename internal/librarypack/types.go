@@ -200,13 +200,13 @@ type AudioFingerprint struct {
 // authoritative. An exact compatible AcoustID/Chromaprint fingerprint is
 // accepted only when artist and title metadata also match or are very similar.
 func SameRecording(left, right Track) bool {
-	if leftISRC, rightISRC := canonicalISRC(left.ISRC), canonicalISRC(right.ISRC); leftISRC != "" && leftISRC == rightISRC {
+	if leftISRC, rightISRC := CanonicalISRC(left.ISRC), CanonicalISRC(right.ISRC); leftISRC != "" && leftISRC == rightISRC {
 		return true
 	}
-	if leftMBID, rightMBID := canonicalMBID(left.MusicBrainzRecording), canonicalMBID(right.MusicBrainzRecording); leftMBID != "" && leftMBID == rightMBID {
+	if leftMBID, rightMBID := CanonicalMusicBrainzRecordingID(left.MusicBrainzRecording), CanonicalMusicBrainzRecordingID(right.MusicBrainzRecording); leftMBID != "" && leftMBID == rightMBID {
 		return true
 	}
-	if leftAcoustID, rightAcoustID := canonicalAcoustID(left.AcoustID), canonicalAcoustID(right.AcoustID); leftAcoustID != "" && leftAcoustID == rightAcoustID {
+	if leftAcoustID, rightAcoustID := CanonicalAcoustID(left.AcoustID), CanonicalAcoustID(right.AcoustID); leftAcoustID != "" && leftAcoustID == rightAcoustID {
 		return true
 	}
 	if !sameFingerprint(left.AudioFingerprint, right.AudioFingerprint) || !similarRecordingMetadata(left, right) {
@@ -225,7 +225,10 @@ func SameRecording(left, right Track) bool {
 	return true
 }
 
-func canonicalISRC(value string) string {
+// CanonicalISRC returns the compact uppercase representation of a valid ISRC.
+// Invalid or vendor-specific values return an empty string and are never safe
+// recording-identity evidence.
+func CanonicalISRC(value string) string {
 	value = strings.ToUpper(strings.NewReplacer("-", "", " ", "").Replace(strings.TrimSpace(value)))
 	if !isrcPattern.MatchString(value) {
 		return ""
@@ -233,7 +236,8 @@ func canonicalISRC(value string) string {
 	return value
 }
 
-func canonicalMBID(value string) string {
+// CanonicalMusicBrainzRecordingID returns a lowercase valid recording UUID.
+func CanonicalMusicBrainzRecordingID(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if !mbidPattern.MatchString(value) {
 		return ""
@@ -241,13 +245,48 @@ func canonicalMBID(value string) string {
 	return value
 }
 
-func canonicalAcoustID(value string) string {
+// CanonicalMBID is the concise alias for CanonicalMusicBrainzRecordingID.
+func CanonicalMBID(value string) string { return CanonicalMusicBrainzRecordingID(value) }
+
+// CanonicalAcoustID returns a lowercase valid AcoustID UUID.
+func CanonicalAcoustID(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if !acoustIDPattern.MatchString(value) {
 		return ""
 	}
 	return value
 }
+
+// RecordingIdentity derives the current portable recording identity. Tagged
+// identifiers take precedence over a corroborated exact fingerprint. The
+// result is an identity label, not an additional duplicate signal: callers
+// must still use SameRecording when comparing two rows.
+func RecordingIdentity(track Track) string {
+	if value := CanonicalMusicBrainzRecordingID(track.MusicBrainzRecording); value != "" {
+		return "musicbrainz:" + value
+	}
+	if value := CanonicalISRC(track.ISRC); value != "" {
+		return "isrc:" + value
+	}
+	if value := CanonicalAcoustID(track.AcoustID); value != "" {
+		return "acoustid-id:" + value
+	}
+	if track.AudioFingerprint == nil || track.AudioFingerprint.Contract == "" || track.AudioFingerprint.FingerprintSHA256 == "" {
+		return ""
+	}
+	metadata := comparableMetadata(track.Artist) + "\x00" + comparableMetadata(track.Title)
+	if metadata == "\x00" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(metadata))
+	return "acoustid:" + track.AudioFingerprint.Contract + ":" + track.AudioFingerprint.FingerprintSHA256 + ":metadata:" + hex.EncodeToString(digest[:12])
+}
+
+// Internal aliases keep pack validation and writing on the same exported
+// canonicalization path used by the indexer and standalone tools.
+func canonicalISRC(value string) string     { return CanonicalISRC(value) }
+func canonicalMBID(value string) string     { return CanonicalMBID(value) }
+func canonicalAcoustID(value string) string { return CanonicalAcoustID(value) }
 
 func sameFingerprint(left, right *AudioFingerprint) bool {
 	return left != nil && right != nil &&

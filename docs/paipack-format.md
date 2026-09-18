@@ -104,8 +104,9 @@ Capabilities are evidence availability, not inferred labels:
 
 Valid ISRCs, recording MBIDs, and AcoustID IDs are authoritative duplicate evidence. A
 fingerprint match is accepted as the same recording only when its compatible
-full-stream Chromaprint value is exact and artist/title metadata matches or is
-very similar; reliable durations must also be close. Invalid identifier tags
+tagged or locally generated Chromaprint value is exact and artist/title metadata
+matches or is very similar; reliable durations must also be close. Fingerprint
+contracts and scopes must match exactly. Invalid identifier tags
 remain available as raw metadata but are not used to collapse recordings.
 Fingerprint values are computed and compared locally and are never submitted
 to AcoustID or AcousticBrainz. AcousticBrainz data is MBID-indexed analysis,
@@ -120,6 +121,16 @@ Rows and JSON objects are semantically canonicalized independently of worker
 completion or database insertion order. A creation timestamp may intentionally
 distinguish separately produced snapshots; byte-for-byte reproducibility is
 claimed only when all manifest inputs, including that timestamp, are equal.
+
+## Combining packs
+
+The standalone `paipack-combine` command combines two or more fully validated
+version-5 packs without changing the format. It does not accept version 4 or
+older packs; rebuild those with the current `playlist-indexer`. Combining never
+uses paths, track IDs, source identities, or previously stored
+`recording_identity` strings as duplicate evidence. See
+[paipack-combine.md](paipack-combine.md) for the complete merge and resource
+rebuild contract.
 
 ## Packed MERT vectors
 
