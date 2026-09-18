@@ -84,10 +84,13 @@ enumeration epoch or analysis jobs.
 
 Fast, balanced, and deep profiles request 3, 6, and 12 five-second windows.
 Balanced centers are 10%, 26%, 42%, 58%, 74%, and 90%. Clamping and interval
-subtraction ensure overlapping decoded time is not counted twice. Decoded
-windows transfer one at a time into a bounded immutable buffer; the decoder
-then releases source I/O and descriptors before DSP and MERT acquire distinct
-CPU reservations. Waiting for a warm MERT session holds no CPU slot. Each
+subtraction ensure overlapping decoded time is not counted twice. The HDD
+profile reserves a complete track's sampled PCM when it fits, decodes those
+windows consecutively under one source lease, then releases the reservation per
+processed window; an oversized track falls back to the single-window path used
+by the other profiles. The decoder releases source I/O and descriptors before
+DSP and MERT acquire distinct CPU reservations. DSP waits for its stage slot
+before acquiring CPU. Waiting for a warm MERT session holds no CPU slot. Each
 window remains immutable until both consumers finish. Backpressure is
 controlled by aggregate CPU, source I/O, descriptor, RAM, and PCM byte
 reservations.

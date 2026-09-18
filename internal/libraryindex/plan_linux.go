@@ -4,6 +4,7 @@ package libraryindex
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,13 +14,30 @@ import (
 )
 
 func detectHostCapacity() hostCapacity {
-	capacity := hostCapacity{GOMAXPROCS: runtimeCPUSlots(), CPUSource: "gomaxprocs"}
-	capacity.CPUSlots = capacity.GOMAXPROCS
+	capacity := hostCapacity{GOMAXPROCS: runtimeCPUSlots(), CPUSource: "gomaxprocs+sysfs"}
+	allowed := make([]int, 0, capacity.GOMAXPROCS)
 	var affinity unix.CPUSet
-	if unix.SchedGetaffinity(0, &affinity) == nil && affinity.Count() > 0 && affinity.Count() < capacity.CPUSlots {
-		capacity.CPUSlots = affinity.Count()
-		capacity.CPUSource = "affinity"
+	if unix.SchedGetaffinity(0, &affinity) == nil && affinity.Count() > 0 {
+		for cpu := 0; cpu < 1024; cpu++ {
+			if affinity.IsSet(cpu) {
+				allowed = append(allowed, cpu)
+			}
+		}
+		capacity.CPUSource = "affinity+sysfs"
 	}
+	if len(allowed) == 0 {
+		for cpu := 0; cpu < capacity.GOMAXPROCS; cpu++ {
+			allowed = append(allowed, cpu)
+		}
+	}
+	capacity.LogicalCPUs = len(allowed)
+	capacity.PhysicalCores = countPhysicalCores(allowed, os.ReadFile)
+	if capacity.PhysicalCores == 0 {
+		capacity.PhysicalCores = capacity.LogicalCPUs
+		capacity.CPUSource += "-logical-fallback"
+	}
+	capacity.CPUSlots = min(capacity.GOMAXPROCS, capacity.LogicalCPUs)
+	capacity.ComputeSlots = min(capacity.CPUSlots, capacity.PhysicalCores)
 	cgroup := currentCgroupFiles()
 	if raw, err := os.ReadFile(cgroup.cpuMax); err == nil {
 		fields := strings.Fields(string(raw))
@@ -35,6 +53,7 @@ func detectHostCapacity() hostCapacity {
 					capacity.CPUSlots = slots
 					capacity.CPUSource = cgroup.cpuSource
 				}
+				capacity.ComputeSlots = min(capacity.ComputeSlots, slots)
 			}
 		}
 	} else if quotaRaw, quotaErr := os.ReadFile(cgroup.cpuQuota); quotaErr == nil {
@@ -48,6 +67,7 @@ func detectHostCapacity() hostCapacity {
 				capacity.CPUSlots = slots
 				capacity.CPUSource = "cgroup-v1"
 			}
+			capacity.ComputeSlots = min(capacity.ComputeSlots, slots)
 		}
 	}
 	capacity.AvailableRAM = procMemAvailable()
@@ -68,6 +88,25 @@ func detectHostCapacity() hostCapacity {
 		capacity.OpenFileSoft = int(min(uint64(^uint(0)>>1), limits.Cur))
 	}
 	return capacity
+}
+
+func countPhysicalCores(cpus []int, readFile func(string) ([]byte, error)) int {
+	cores := make(map[string]struct{}, len(cpus))
+	for _, cpu := range cpus {
+		root := filepath.Join("/sys/devices/system/cpu", fmt.Sprintf("cpu%d", cpu), "topology")
+		packageRaw, packageErr := readFile(filepath.Join(root, "physical_package_id"))
+		coreRaw, coreErr := readFile(filepath.Join(root, "core_id"))
+		if packageErr != nil || coreErr != nil {
+			return 0
+		}
+		packageID := strings.TrimSpace(string(packageRaw))
+		coreID := strings.TrimSpace(string(coreRaw))
+		if packageID == "" || coreID == "" {
+			return 0
+		}
+		cores[packageID+":"+coreID] = struct{}{}
+	}
+	return len(cores)
 }
 
 type cgroupFileSet struct {

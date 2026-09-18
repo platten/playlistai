@@ -3,6 +3,59 @@
 This report distinguishes commands actually executed in the implementation
 workspace from remaining release gates.
 
+## Full-integrity CUDA pipeline measurements
+
+Docker was used to prepare a fresh pinned codec runtime, after which current and
+pre-change binaries analyzed the same private 72-track FLAC corpus (2.6 GiB,
+432 balanced-profile windows) directly on the host. Every recorded configuration
+completed 72 metadata and 72 audio jobs with no failures, skipped revisions, or
+source-change reports. The measurements used full integrity, an 8 GiB admission
+target, the HDD profile, and an ONNX Runtime 1.26.0 CUDA bundle with one CUDA
+session for the comparable candidate configurations.
+
+This was a warm-cache exploratory run on WSL2/ext4, an Intel Core Ultra 9 285H
+exposed as 16 logical and 16 physical cores, and an NVIDIA GeForce RTX 5060
+Laptop GPU with 8,151 MiB VRAM. It is not the planned Ryzen AI 9 HX PRO 370,
+RTX 5050, or cold ZFS RAIDZ1 release gate. The relevant single executions were:
+
+| Binary/configuration | Wall time | Tracks/s | Worker preparation + IPC/window |
+|---|---:|---:|---:|
+| Pre-change automatic | 31.179 s | 2.309 | not separately available |
+| Candidate 1 CUDA session × 1 thread, gob request | 19.993 s | 3.601 | 6.147 ms |
+| Candidate 1 CUDA session × 1 thread, binary request | 18.814 s | 3.827 | 1.573 ms |
+| Candidate automatic, binary request | 20.724 s | 3.474 | 1.663 ms |
+
+The measured worker-preparation-plus-IPC median exceeded the conditional 5 ms
+threshold before the transport change. Replacing only the private request with
+a bounded little-endian float32 frame reduced it by about 74% for the one-session
+case and brought every measured candidate configuration below 1.7 ms/window.
+The comparable one-session wall time improved by 5.9%. A corrected native
+`mertparity` worker entry point then passed CUDA cold/warm/cancel/reload health;
+the final observed health times were 2,453/50/2,332 ms.
+
+Three repeated isolated five-second resampler observations had medians of
+7.898 ms for the table-based local kernel and 167.742 ms for the frozen scalar
+kernel, a 21.2x speedup. In the one-session end-to-end run, resampling consumed
+2.980 aggregate seconds, well below 25% of the measured active CPU-stage work,
+so the conditional amd64 AVX2/FMA kernel was not added. An opt-in real-CUDA test
+also compared the old and new preprocessing paths for six mono/stereo/eight-
+channel windows from 8 through 192 kHz: minimum per-window and pooled cosine was
+1.0 and maximum coordinate difference was zero.
+
+The candidate automatic run was 33.5% faster than the pre-change automatic run
+on this warm host, with no warm-cache regression. This does not promote a
+target-hardware result: reboot-separated cold RAIDZ trials and the full pipeline
+matrix remain to be run on the specified Ryzen/ZFS system. The fused
+integrity/sample decoder was not enabled because its prerequisite requires less
+than 15% cold improvement, while the available warm result improved by more than
+15% and no cold RAIDZ evidence exists. A repeat final sweep measured
+40.596/18.779/18.732/19.841/19.788 seconds for serial, one-session/one-thread,
+one-session/two-thread, two-session/one-thread, and automatic respectively. All
+five results were semantically equivalent to serial, completed 432 windows with
+no failures or changed-source skips, and left before/after SHA-256 manifests for
+all 72 source files identical. Automatic CUDA still uses one session to avoid
+duplicating the model in 8 GiB VRAM.
+
 ## Analysis scheduler and reuse check
 
 An isolated real-audio check used two 20-second, 44.1 kHz stereo

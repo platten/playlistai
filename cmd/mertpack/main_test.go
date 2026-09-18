@@ -61,7 +61,7 @@ func TestMERTPackCannotImportOwnSourceAsDestination(t *testing.T) {
 	}
 }
 
-// Opt-in package probe sends the real framing protocol to the desktop binary,
+// Opt-in package probe sends the real private protocol to the desktop binary,
 // not to a separately built helper worker. No graphical session is launched.
 func TestPackagedDesktopMERTHealth(t *testing.T) {
 	exe := os.Getenv("PLAYLISTAI_MERT_MAIN_BINARY")
@@ -89,7 +89,7 @@ func TestPackagedDesktopMERTHealth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
-	if err = audio.WriteFrame(input, audio.MERTWorkerRequest{Protocol: audio.MERTWorkerProtocol, Health: true}); err != nil {
+	if err = audio.WriteMERTRequest(input, audio.MERTWorkerRequest{Protocol: audio.MERTWorkerProtocol, Health: true}); err != nil {
 		t.Fatal(err)
 	}
 	var response audio.MERTWorkerResponse

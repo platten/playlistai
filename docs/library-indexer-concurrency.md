@@ -7,12 +7,19 @@ ceilings, and `serial` admits one heavy unit, one source operation, one warm MER
 session, and one inference thread. Serial retains the same durable plumbing and
 is the correctness baseline. Conflicting multi-worker serial overrides fail.
 
-The global heavy budget is derived from `GOMAXPROCS`, Linux CPU affinity, and
-cgroup quota. Fractional quotas are rounded down, with a minimum of one slot.
-Auto reserves one slot for control when more than two are available. Stage
+The logical CPU ceiling is derived from `GOMAXPROCS`, Linux CPU affinity, and
+cgroup quota. Linux sysfs `(physical_package_id, core_id)` pairs identify the
+physical cores inside the allowed affinity set; quota and `GOMAXPROCS` also cap
+that compute count. Fractional quotas are rounded down, with a minimum of one
+slot. Auto reserves one physical compute slot for control, storage, and SQLite
+when at least four are available. An explicit `--workers` value can use the
+larger logical ceiling deliberately. Stage
 worker flags are ceilings sharing this budget, not independently multiplied
-allocations. Unknown/HDD/NAS storage defaults to two source operations; SSD may
-use more only within CPU, memory, and descriptor capacity.
+allocations. HDD defaults to one scan, metadata, and source-I/O operation, up to
+eight track/decode workflows, and at most two DSP operations. Unknown/NAS
+storage defaults to two source operations; SSD may use more only within CPU,
+memory, and descriptor capacity. Diagnostics state whether the profile was
+explicit or the portable automatic default.
 
 Each admitted operation atomically reserves the complete tuple:
 
@@ -20,10 +27,15 @@ Each admitted operation atomically reserves the complete tuple:
 (CPU slots, source-I/O slots, RAM bytes, file descriptors, PCM bytes)
 ```
 
-Each file workflow decodes one sampled window at a time. Once that decoder
-closes, it releases source resources and decode CPU while a reservation lease
-retains only that window's immutable PCM. DSP and MERT preprocessing acquire
-separate global CPU reservations; PCM is cleared after both branches end. A
+HDD workflows reserve all sampled PCM for one track up front when the complete
+reservation fits `min(4 GiB, maxRAM/8)`, decode every requested window
+consecutively while holding one source-I/O lease, then release decode resources
+before processing. The PCM reservation is released per completed window. When
+the complete reservation cannot fit, that track uses the single-window path.
+Other profiles use the single-window path directly. DSP and MERT preprocessing
+acquire separate global CPU reservations. A DSP waiter obtains its DSP-stage
+slot before CPU admission, so stage backpressure cannot retain compute
+capacity; PCM is cleared after both branches end. A
 workflow waits for a warm MERT session without holding CPU admission, then
 reserves the native inference budget only while that session executes. CPU MERT
 cost is `inference-workers × inference-threads`; auto permits a second warm session
@@ -31,6 +43,12 @@ only with at least four effective slots and session-memory headroom. The plan
 reserves model residency, native input/output, Go heap, PCM, database, snapshot,
 and index scratch. `--max-ram` is admission and monitoring policy, not an OS RSS
 guarantee. Native allocations are outside `GOMEMLIMIT`.
+
+Admission is cancellable and grants only the oldest request that fits without
+consuming a resource currently blocking an older waiter. This avoids wake-all
+contention and prevents younger source/PCM requests from starving an older
+track reservation while still permitting CPU-only continuation work to release
+PCM already in use.
 
 Implemented flags are `--workers`, `--scan-workers`, `--metadata-workers`,
 `--decode-workers`, `--dsp-workers`, `--io-workers`, `--io-profile`,
@@ -85,7 +103,7 @@ The bounded flow is:
 ```text
 durable directory frontier -> complete inventory -> immutable manifest + pending-job diff -> barrier
 -> probe + FLAC/MP3 integrity workers -> durable jobs
--> decode workers -> immutable PCM window -> local DSP + MERT preprocessing
+-> decode workflows -> bounded immutable PCM windows -> local DSP + MERT preprocessing
 -> warm one-request/session MERT pool -> ordered track result -> single writer
 -> drain -> online SQLite backup + immutable vector generation
 -> parallel fixed-block fit/assignment/index -> atomic pack publication
@@ -142,7 +160,9 @@ jobs remain completed and are never claimed again.
 Each MERT session is a long-lived child with exactly one active request,
 independent mutable tensors, explicit ONNX Runtime intra-op threads, sequential
 graph execution, and disabled idle spinning. The fixed batch-1 graph is never
-given a larger batch. A request that produces no framed response for 30 seconds
+given a larger batch. The matched parent and worker exchange bounded request
+headers and little-endian float32 PCM directly; responses retain the existing
+bounded framed encoding. A request that produces no framed response for 30 seconds
 is treated as a transient native failure: the child is killed and reaped before
 its slot returns, and the durable analysis job receives at most two automatic
 retries, each able to launch a fresh process. Caller cancellation remains a
@@ -270,17 +290,33 @@ two-session/one-thread, and auto configurations. It reports and compares a seman
 DSP, and vectors while excluding leases, timestamps, DB layout, logs, and
 execution settings. Configurations that exceed the measured budget are skipped
 with a reason. Cold setup/warmup and real-audio analysis are timed separately.
+`--matrix pipeline` expands heavy workers `8/10/11`, decode workers `4/6/8/10`,
+DSP workers `1/2/3`, source-I/O workers `1/2`, and track buffering on/off while
+holding MERT at one session and one thread. It runs at least three trials and
+selects the lowest-resource semantically equivalent, complete CUDA
+configuration whose median wall time is within 3% of the fastest and whose p95
+is within 5% of the fastest configuration's p95. Each point explicitly
+pre-reads the corpus immediately before timed analysis, configuration order is
+rotated and reversed between trials, and pipeline-matrix runs omit unrelated
+fit, export, and query work.
+
 Results include analysis tracks/second and peak aggregate owned RSS on Linux
 (launcher RSS plus resident MERT workers). Other platforms report the Go
 runtime committed-memory fallback and do not label it OS RSS. Each comparable
-run also fits and exports its frozen input, records pack bytes and bytes/track,
+non-matrix run also fits and exports its frozen input, records pack bytes and bytes/track,
 measures 25 exact queries against one pinned index (p50/p95), and times a clean
 state reopen as the resume gate. `ramTargetMet` compares measured peak owned RSS
 with the configured admission target; it does not turn that target into an OS
 hard limit. `serialEquivalent` remains the semantic gate for every parallel and
 automatic plan. The analysis report's stage durations are accumulated worker
-time, not exclusive wall-clock phase durations; `mertWait` exposes session
-starvation.
+time, not exclusive wall-clock phase durations. Aggregate and per-track JSON
+separates CPU/source/PCM admission, aggregate source reads, probe, fingerprint,
+full integrity, decode, DSP-slot wait, DSP, downmix, resampling, MERT-session
+wait, worker preprocessing, bounded binary request IPC, CUDA execution, total inference, and
+durable commit time. Admission queue/blocker counters,
+physical/logical topology, filesystem type, affinity, GPU identity, power
+profile, and before/after/delta ZFS ARC counters are diagnostic evidence;
+unavailable host counters remain zero or omitted rather than inferred.
 
 `playlist-indexer bench scale --rows 2000000 --dimension 768 --max-ram 8GiB`
 is the explicit synthetic scale gate. It streams canonical rows instead of

@@ -346,7 +346,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		semanticJobs["audio"] = libraryindex.AudioSemanticKey(codec.ID(), pool.Identity(), profileValue)
 	}
 	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue, Integrity: integrityPolicy}
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, plan.MaxRAM/4), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
+	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	var initialPhase string
 	switch command {
@@ -500,7 +500,13 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d skipped_changed=%d failed=%d decode=%s dsp=%s mert_preprocess=%s mert_wait=%s mert_inference=%s\n", scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.Decode, analysisReport.Timings.DSP, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.MERTInference)
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s mert_inference=%s commit=%s admission_queued=%d\n",
+		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
+		analysisReport.TracksBuffered, analysisReport.WindowFallbacks, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.CPUAdmission, analysisReport.Timings.SourceIOAdmission,
+		analysisReport.Timings.PCMAdmission, analysisReport.Timings.SourceRead, analysisReport.Timings.Probe, analysisReport.Timings.Fingerprint, analysisReport.Timings.Integrity,
+		analysisReport.Timings.Decode, analysisReport.Timings.DSPSlotWait, analysisReport.Timings.DSP, analysisReport.Timings.Downmix,
+		analysisReport.Timings.ResamplingKernel, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.WorkerPreprocess,
+		analysisReport.Timings.IPC, analysisReport.Timings.CUDAExecution, analysisReport.Timings.MERTInference, analysisReport.Timings.Commit, analysisReport.AdmissionWaits.Queued)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 

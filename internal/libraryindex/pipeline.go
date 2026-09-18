@@ -35,24 +35,49 @@ const (
 )
 
 type AnalysisReport struct {
-	MetadataCompleted int64           `json:"metadataCompleted"`
-	AudioCompleted    int64           `json:"audioCompleted"`
-	Failed            int64           `json:"failed"`
-	Retried           int64           `json:"retried"`
-	SkippedChanged    int64           `json:"skippedChanged"`
-	MERTReused        int64           `json:"mertReused"`
-	DSPReused         int64           `json:"dspReused"`
-	MERTCacheLoaded   int64           `json:"mertCacheLoaded"`
-	WindowsDecoded    int64           `json:"windowsDecoded"`
-	Timings           AnalysisTimings `json:"timings"`
+	MetadataCompleted int64                 `json:"metadataCompleted"`
+	AudioCompleted    int64                 `json:"audioCompleted"`
+	Failed            int64                 `json:"failed"`
+	Retried           int64                 `json:"retried"`
+	SkippedChanged    int64                 `json:"skippedChanged"`
+	MERTReused        int64                 `json:"mertReused"`
+	DSPReused         int64                 `json:"dspReused"`
+	MERTCacheLoaded   int64                 `json:"mertCacheLoaded"`
+	WindowsDecoded    int64                 `json:"windowsDecoded"`
+	TracksBuffered    int64                 `json:"tracksBuffered"`
+	WindowFallbacks   int64                 `json:"windowFallbacks"`
+	Timings           AnalysisTimings       `json:"timings"`
+	AdmissionWaits    AdmissionWaitCounters `json:"admissionWaits"`
+	TrackTimings      []TrackAnalysisTiming `json:"trackTimings,omitempty"`
 }
 
 type AnalysisTimings struct {
-	Decode         time.Duration `json:"decode"`
-	DSP            time.Duration `json:"dsp"`
-	MERTPreprocess time.Duration `json:"mertPreprocess"`
-	MERTWait       time.Duration `json:"mertWait"`
-	MERTInference  time.Duration `json:"mertInference"`
+	CPUAdmission      time.Duration `json:"cpuAdmission"`
+	SourceIOAdmission time.Duration `json:"sourceIoAdmission"`
+	PCMAdmission      time.Duration `json:"pcmAdmission"`
+	SourceRead        time.Duration `json:"sourceRead"`
+	Probe             time.Duration `json:"probe"`
+	Fingerprint       time.Duration `json:"fingerprint"`
+	Integrity         time.Duration `json:"integrity"`
+	Decode            time.Duration `json:"decode"`
+	DSPSlotWait       time.Duration `json:"dspSlotWait"`
+	DSP               time.Duration `json:"dsp"`
+	Downmix           time.Duration `json:"downmix"`
+	ResamplingKernel  time.Duration `json:"resamplingKernel"`
+	MERTPreprocess    time.Duration `json:"mertPreprocess"`
+	MERTWait          time.Duration `json:"mertWait"`
+	WorkerPreprocess  time.Duration `json:"workerPreprocess"`
+	IPC               time.Duration `json:"ipc"`
+	CUDAExecution     time.Duration `json:"cudaExecution"`
+	MERTInference     time.Duration `json:"mertInference"`
+	Commit            time.Duration `json:"commit"`
+}
+
+type TrackAnalysisTiming struct {
+	FileID  string          `json:"fileId"`
+	Windows int             `json:"windows"`
+	Total   time.Duration   `json:"total"`
+	Timings AnalysisTimings `json:"timings"`
 }
 
 type Analyzer struct {
@@ -75,6 +100,7 @@ type Analyzer struct {
 	stageOnce      sync.Once
 	dspSlots       chan struct{}
 	reuseCache     *mertReuseCache
+	timingMu       sync.Mutex
 }
 
 const (
@@ -226,6 +252,8 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 		}()
 	}
 	wg.Wait()
+	report.AdmissionWaits = a.Admission.Stats()
+	sort.Slice(report.TrackTimings, func(i, j int) bool { return report.TrackTimings[i].FileID < report.TrackTimings[j].FileID })
 	close(fatal)
 	var errs []error
 	for err := range fatal {
@@ -248,7 +276,7 @@ func (a *Analyzer) runMetadata(ctx context.Context, discoveryDone <-chan struct{
 		go func() {
 			defer workers.Done()
 			for job := range jobs {
-				err := a.processMetadata(workerCtx, job)
+				err := a.processMetadata(workerCtx, job, report)
 				leases.remove(job)
 				if err != nil {
 					if errors.Is(err, errSourceChangedAfterManifest) {
@@ -292,7 +320,13 @@ func (a *Analyzer) runMetadata(ctx context.Context, discoveryDone <-chan struct{
 	return err
 }
 
-func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
+func (a *Analyzer) processMetadata(ctx context.Context, job Job, report *AnalysisReport) (processErr error) {
+	trackStarted := time.Now()
+	track := TrackAnalysisTiming{FileID: job.FileID}
+	defer func() {
+		track.Total = time.Since(trackStarted)
+		a.recordTrackTiming(report, track)
+	}()
 	file, err := a.State.File(ctx, job.FileID)
 	if err != nil {
 		return err
@@ -307,11 +341,19 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
 	}
+	admissionStarted := time.Now()
 	release, err := a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4})
+	admissionWait := time.Since(admissionStarted)
+	track.Timings.CPUAdmission += admissionWait
+	track.Timings.SourceIOAdmission += admissionWait
 	if err != nil {
 		return err
 	}
+	probeStarted := time.Now()
 	probe, probeErr := a.Runtime.Probe(ctx, path)
+	probeDuration := time.Since(probeStarted)
+	track.Timings.Probe += probeDuration
+	track.Timings.SourceRead += probeDuration
 	release()
 	if probeErr != nil {
 		if errors.Is(probeErr, localaudio.ErrSourceChanged) {
@@ -340,11 +382,19 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 			a.emitIssue(NewProcessingIssue("metadata", file.RootAlias, file.RelativePath, "embedded_fingerprint_invalid", embeddedErr, false))
 		}
 		if generateFingerprint {
+			admissionStarted = time.Now()
 			release, err = a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
+			admissionWait = time.Since(admissionStarted)
+			track.Timings.CPUAdmission += admissionWait
+			track.Timings.SourceIOAdmission += admissionWait
 			if err != nil {
 				return err
 			}
+			fingerprintStarted := time.Now()
 			fingerprint, fingerprintErr := a.Runtime.AudioFingerprint(ctx, probe)
+			fingerprintDuration := time.Since(fingerprintStarted)
+			track.Timings.Fingerprint += fingerprintDuration
+			track.Timings.SourceRead += fingerprintDuration
 			release()
 			if errors.Is(fingerprintErr, localaudio.ErrSourceChanged) {
 				if a.FreezeManifest {
@@ -371,7 +421,7 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 		} else if localaudio.RequiresIntegrityValidation(probe) && a.Integrity == IntegrityDeferred {
 			integrity = IntegrityRecord{Status: "deferred", Method: "sampled-audio-on-analysis/v1"}
 		} else if localaudio.RequiresIntegrityValidation(probe) {
-			integrity, err = a.validateMetadataIntegrity(ctx, job, file, probe)
+			integrity, err = a.validateMetadataIntegrity(ctx, job, file, probe, &track.Timings)
 			if err != nil {
 				return err
 			}
@@ -390,7 +440,10 @@ func (a *Analyzer) processMetadata(ctx context.Context, job Job) error {
 	if err != nil {
 		return err
 	}
-	return a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, Metadata: raw})
+	commitStarted := time.Now()
+	commitErr := a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, Metadata: raw})
+	track.Timings.Commit += time.Since(commitStarted)
+	return commitErr
 }
 
 // fingerprintFromEmbeddedTags makes fingerprint generation an explicit
@@ -411,12 +464,20 @@ func fingerprintFromEmbeddedTags(metadata localaudio.Metadata) (FingerprintRecor
 	}
 }
 
-func (a *Analyzer) validateMetadataIntegrity(ctx context.Context, job Job, file FileRecord, probe localaudio.ProbeResult) (IntegrityRecord, error) {
+func (a *Analyzer) validateMetadataIntegrity(ctx context.Context, job Job, file FileRecord, probe localaudio.ProbeResult, timings *AnalysisTimings) (IntegrityRecord, error) {
+	admissionStarted := time.Now()
 	release, err := a.Admission.Acquire(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 8 << 20, Files: 4})
+	admissionWait := time.Since(admissionStarted)
+	timings.CPUAdmission += admissionWait
+	timings.SourceIOAdmission += admissionWait
 	if err != nil {
 		return IntegrityRecord{}, err
 	}
+	integrityStarted := time.Now()
 	integrityErr := a.Runtime.ValidateIntegrity(ctx, probe)
+	integrityDuration := time.Since(integrityStarted)
+	timings.Integrity += integrityDuration
+	timings.SourceRead += integrityDuration
 	release()
 	if errors.Is(integrityErr, localaudio.ErrSourceChanged) {
 		if a.FreezeManifest {
@@ -642,7 +703,13 @@ func (a *Analyzer) emitIssue(issue ProcessingIssue) {
 	}
 }
 
-func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile, report *AnalysisReport) error {
+func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile, report *AnalysisReport) (processErr error) {
+	trackStarted := time.Now()
+	track := TrackAnalysisTiming{FileID: job.FileID}
+	defer func() {
+		track.Total = time.Since(trackStarted)
+		a.recordTrackTiming(report, track)
+	}()
 	file, err := a.State.File(ctx, job.FileID)
 	if err != nil {
 		return err
@@ -711,152 +778,175 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	}
 	sums := make([]float64, audio.MERTDimension)
 	var mertErr error
-	for _, requested := range decodeWindows {
-		if reused && dspReused {
-			break
-		}
-		decodeReserve := int64(math.Ceil(requested.Duration.Seconds())) * int64(stored.Probe.SelectedStream.SampleRate) * int64(stored.Probe.SelectedStream.Channels) * 4
-		decodeLease, acquireErr := a.Admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: decodeReserve})
-		if acquireErr != nil {
-			return acquireErr
-		}
-		decodeStarted := time.Now()
-		window, decodeErr := a.Runtime.DecodeWindow(ctx, probe, requested)
-		addAnalysisDuration(&report.Timings.Decode, time.Since(decodeStarted))
-		if releaseErr := decodeLease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Files: 4}); decodeErr == nil {
-			decodeErr = releaseErr
-		}
-		if decodeErr != nil {
-			decodeLease.Release()
-			if a.FreezeManifest && errors.Is(decodeErr, localaudio.ErrSourceChanged) {
-				return errors.Join(errSourceChangedAfterManifest, decodeErr)
-			}
-			return decodeErr
-		}
-		atomic.AddInt64(&report.WindowsDecoded, 1)
+	processWindow := func(window localaudio.PCMWindow) error {
 		pcm := audio.DecodedPCM{Samples: window.Samples, SampleRate: window.SampleRate, Channels: window.Channels}
-		dspWork := func() error {
+		dspWork := func() (AnalysisTimings, error) {
+			var timings AnalysisTimings
 			if dspReused {
-				return nil
+				return timings, nil
 			}
-			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
+			releaseCPUAndSlot, slotWait, cpuWait, err := a.acquireDSPSlot(ctx)
+			timings.DSPSlotWait += slotWait
+			timings.CPUAdmission += cpuWait
 			if err != nil {
-				return err
+				return timings, err
 			}
-			defer releaseCPU()
-			select {
-			case a.dspSlots <- struct{}{}:
-				defer func() { <-a.dspSlots }()
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			defer releaseCPUAndSlot()
 			started := time.Now()
 			features, err := audio.MeasureLocalDSP(ctx, pcm)
-			addAnalysisDuration(&report.Timings.DSP, time.Since(started))
+			timings.DSP += time.Since(started)
 			if err != nil {
-				return err
+				return timings, err
 			}
 			dsp.Windows = append(dsp.Windows, DSPWindowRecord{Index: window.Index, StartSeconds: window.RequestedStart.Seconds(), ObservedSeconds: window.ObservedDuration.Seconds(), SampleRate: window.SampleRate, Channels: window.Channels, Features: features})
-			return nil
+			return timings, nil
 		}
-		mertWork := func() error {
+		mertWork := func() (AnalysisTimings, error) {
+			var timings AnalysisTimings
 			if reused {
-				return nil
+				return timings, nil
 			}
+			cpuStarted := time.Now()
 			releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
+			timings.CPUAdmission += time.Since(cpuStarted)
 			if err != nil {
-				return err
+				return timings, err
 			}
 			preprocessStarted := time.Now()
-			if !hasMERTSignal(pcm) {
-				releaseCPU()
-				return errors.New("library indexer: silent or degenerate MERT window")
-			}
-			ratio := downmixPowerRatio(pcm)
-			resampled, err := audio.MERTResampleLocal(ctx, pcm)
+			resampled, metrics, err := audio.MERTResampleLocalWithMetrics(ctx, pcm)
 			releaseCPU()
-			addAnalysisDuration(&report.Timings.MERTPreprocess, time.Since(preprocessStarted))
+			timings.MERTPreprocess += time.Since(preprocessStarted)
+			timings.Downmix += metrics.DownmixDuration
+			timings.ResamplingKernel += metrics.ResampleDuration
 			if err != nil {
-				return err
+				return timings, err
 			}
 			defer clear(resampled)
+			if !metrics.HasSignal {
+				return timings, errors.New("library indexer: silent or degenerate MERT window")
+			}
 			if len(resampled) < 400 {
-				return errors.New("library indexer: insufficient observed MERT samples")
+				return timings, errors.New("library indexer: insufficient observed MERT samples")
 			}
 			waitStarted := time.Now()
 			worker, releaseWorker, err := a.MERT.Acquire(ctx)
-			addAnalysisDuration(&report.Timings.MERTWait, time.Since(waitStarted))
+			timings.MERTWait += time.Since(waitStarted)
 			if err != nil {
-				return err
+				return timings, err
 			}
 			defer releaseWorker()
 			cpuUnits := max(1, a.Plan.InferenceThreads)
-			if _, cuda := audio.MERTCUDADeviceIndex(a.MERT.Device()); cuda {
+			_, cuda := audio.MERTCUDADeviceIndex(a.MERT.Device())
+			if cuda {
 				cpuUnits = 1
 			}
+			inferenceCPUStarted := time.Now()
 			releaseInferenceCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: cpuUnits})
+			timings.CPUAdmission += time.Since(inferenceCPUStarted)
 			if err != nil {
-				return err
+				return timings, err
 			}
 			inferenceStarted := time.Now()
-			vector, err := worker.EmbedAudio(ctx, resampled)
+			vector, workerTimings, err := worker.EmbedAudioWithTimings(ctx, resampled)
+			inferenceDuration := time.Since(inferenceStarted)
 			releaseInferenceCPU()
-			addAnalysisDuration(&report.Timings.MERTInference, time.Since(inferenceStarted))
+			timings.MERTInference += inferenceDuration
+			timings.WorkerPreprocess += workerTimings.Preprocessing
+			ipc := inferenceDuration - workerTimings.Preprocessing - workerTimings.Execution
+			if ipc > 0 {
+				timings.IPC += ipc
+			}
+			if cuda {
+				timings.CUDAExecution += workerTimings.Execution
+			}
 			if err != nil {
-				return err
+				return timings, err
 			}
 			defer clear(vector)
 			if len(vector) != audio.MERTDimension {
-				return errors.New("library indexer: invalid MERT dimension")
+				return timings, errors.New("library indexer: invalid MERT dimension")
 			}
 			weight := float64(len(resampled))
 			for i, value := range vector {
 				if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-					return errors.New("library indexer: nonfinite MERT output")
+					return timings, errors.New("library indexer: nonfinite MERT output")
 				}
 				sums[i] += float64(value) * weight
 			}
+			ratio := metrics.DownmixCancellationRatio
 			mert.Segments = append(mert.Segments, MERTSegmentRecord{Index: window.Index, StartSeconds: window.RequestedStart.Seconds(), ObservedSeconds: window.ObservedDuration.Seconds(), DownmixCancellationRatio: ratio, SevereDownmixCancellation: ratio < 0.01})
-			return nil
+			return timings, nil
 		}
 		if a.Plan.Mode == ConcurrencySerial || a.Plan.HeavyWorkers < 2 {
-			if err := dspWork(); err != nil {
-				clear(window.Samples)
-				decodeLease.Release()
+			dspTimings, err := dspWork()
+			mergeAnalysisTimings(&track.Timings, dspTimings)
+			if err != nil {
 				return err
 			}
 			if mertErr == nil {
-				mertErr = mertWork()
+				var mertTimings AnalysisTimings
+				mertTimings, mertErr = mertWork()
+				mergeAnalysisTimings(&track.Timings, mertTimings)
 			}
-			clear(window.Samples)
-			decodeLease.Release()
-			continue
+			return nil
 		}
+		var dspTimings, mertTimings AnalysisTimings
 		var dspErr, windowMERTErr error
 		var branchWG sync.WaitGroup
 		branchWG.Add(1)
 		go func() {
 			defer branchWG.Done()
-			dspErr = dspWork()
+			dspTimings, dspErr = dspWork()
 		}()
 		if mertErr == nil {
 			branchWG.Add(1)
 			go func() {
 				defer branchWG.Done()
-				windowMERTErr = mertWork()
+				mertTimings, windowMERTErr = mertWork()
 			}()
 		}
 		branchWG.Wait()
+		mergeAnalysisTimings(&track.Timings, dspTimings)
+		mergeAnalysisTimings(&track.Timings, mertTimings)
 		if mertErr == nil && windowMERTErr != nil {
 			mertErr = windowMERTErr
 		}
-		if dspErr != nil {
-			clear(window.Samples)
-			decodeLease.Release()
-			return dspErr
+		return dspErr
+	}
+
+	reservations := make([]int64, len(decodeWindows))
+	var totalPCM int64
+	for i, requested := range decodeWindows {
+		reserve, reserveErr := decodedPCMReservation(requested, stored.Probe.SelectedStream.SampleRate, stored.Probe.SelectedStream.Channels)
+		if reserveErr != nil {
+			return reserveErr
 		}
-		clear(window.Samples)
-		decodeLease.Release()
+		if totalPCM > math.MaxInt64-reserve {
+			return errors.New("library indexer: track PCM reservation overflow")
+		}
+		reservations[i] = reserve
+		totalPCM += reserve
+	}
+	if !reused || !dspReused {
+		decodeResult, decodeErr := runDecodedWindows(ctx, a.Admission, a.Plan.BufferingMode, decodeWindows, reservations,
+			func(ctx context.Context, requested localaudio.Window) (localaudio.PCMWindow, error) {
+				return a.Runtime.DecodeWindow(ctx, probe, requested)
+			}, processWindow)
+		mergeAnalysisTimings(&track.Timings, decodeResult.Timings)
+		track.Windows += decodeResult.Windows
+		atomic.AddInt64(&report.WindowsDecoded, int64(decodeResult.Windows))
+		if decodeResult.TrackBuffered {
+			atomic.AddInt64(&report.TracksBuffered, 1)
+		}
+		if decodeResult.WindowFallback {
+			atomic.AddInt64(&report.WindowFallbacks, 1)
+		}
+		if decodeErr != nil {
+			if a.FreezeManifest && errors.Is(decodeErr, localaudio.ErrSourceChanged) {
+				return errors.Join(errSourceChangedAfterManifest, decodeErr)
+			}
+			return decodeErr
+		}
 	}
 	if err := a.verifySourceRevision(ctx, job, file, path); err != nil {
 		return err
@@ -869,7 +959,10 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		}
 	}
 	if mertErr != nil && !reused {
-		if err := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw); err != nil {
+		commitStarted := time.Now()
+		err := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw)
+		track.Timings.Commit += time.Since(commitStarted)
+		if err != nil {
 			return errors.Join(mertErr, err)
 		}
 		return mertErr
@@ -883,7 +976,10 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	} else {
 		vector, normalizeErr := normalizeSums(sums)
 		if normalizeErr != nil {
-			if commitErr := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw); commitErr != nil {
+			commitStarted := time.Now()
+			commitErr := a.State.CommitPartialDSP(ctx, job, job.SemanticKey, dspContract, dspRaw)
+			track.Timings.Commit += time.Since(commitStarted)
+			if commitErr != nil {
 				return errors.Join(normalizeErr, commitErr)
 			}
 			return normalizeErr
@@ -895,15 +991,194 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	if err != nil {
 		return err
 	}
+	commitStarted := time.Now()
 	commitErr := a.State.CommitJob(ctx, JobResult{Job: job, Contract: job.SemanticKey, DSP: dspRaw, DSPCacheContract: dspContract, Vector: vectorRaw, MERTData: mertRaw, Dimension: audio.MERTDimension})
+	track.Timings.Commit += time.Since(commitStarted)
 	if commitErr == nil && !reused && recordingKey != "" {
 		a.reuseCache.store(recordingKey, job.SemanticKey, ReusableMERT{Vector: vectorRaw, Dimension: audio.MERTDimension})
 	}
 	return commitErr
 }
 
-func addAnalysisDuration(target *time.Duration, value time.Duration) {
-	atomic.AddInt64((*int64)(target), int64(value))
+func (a *Analyzer) acquireDSPSlot(ctx context.Context) (func(), time.Duration, time.Duration, error) {
+	slotStarted := time.Now()
+	select {
+	case a.dspSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, time.Since(slotStarted), 0, ctx.Err()
+	}
+	slotWait := time.Since(slotStarted)
+	cpuStarted := time.Now()
+	releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: 1})
+	cpuWait := time.Since(cpuStarted)
+	if err != nil {
+		<-a.dspSlots
+		return nil, slotWait, cpuWait, err
+	}
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			releaseCPU()
+			<-a.dspSlots
+		})
+	}, slotWait, cpuWait, nil
+}
+
+func decodedPCMReservation(window localaudio.Window, sampleRate, channels int) (int64, error) {
+	reservation, err := localaudio.DecodedPCMReservationBytes(window, sampleRate, channels)
+	if err != nil {
+		return 0, fmt.Errorf("library indexer: PCM reservation: %w", err)
+	}
+	return reservation, nil
+}
+
+type decodedWindowsResult struct {
+	Timings        AnalysisTimings
+	Windows        int
+	TrackBuffered  bool
+	WindowFallback bool
+}
+
+func runDecodedWindows(ctx context.Context, admission *Admission, mode BufferingMode, windows []localaudio.Window, reservations []int64, decode func(context.Context, localaudio.Window) (localaudio.PCMWindow, error), process func(localaudio.PCMWindow) error) (decodedWindowsResult, error) {
+	var result decodedWindowsResult
+	if admission == nil || decode == nil || process == nil || len(windows) == 0 || len(windows) != len(reservations) {
+		return result, errors.New("library indexer: decoded-window pipeline is not configured")
+	}
+	var totalPCM int64
+	for _, reservation := range reservations {
+		if reservation <= 0 || totalPCM > math.MaxInt64-reservation {
+			return result, errors.New("library indexer: invalid track PCM reservation")
+		}
+		totalPCM += reservation
+	}
+	_, capacity := admission.Usage()
+	bufferTrack := mode == BufferingTrack && totalPCM <= capacity.PCMBytes
+	result.TrackBuffered = bufferTrack
+	result.WindowFallback = mode == BufferingTrack && !bufferTrack
+	if bufferTrack {
+		acquireStarted := time.Now()
+		lease, err := admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: totalPCM})
+		waited := time.Since(acquireStarted)
+		result.Timings.CPUAdmission += waited
+		result.Timings.SourceIOAdmission += waited
+		result.Timings.PCMAdmission += waited
+		if err != nil {
+			return result, err
+		}
+		decoded := make([]localaudio.PCMWindow, 0, len(windows))
+		defer func() {
+			for i := range decoded {
+				clear(decoded[i].Samples)
+			}
+			lease.Release()
+		}()
+		for i, requested := range windows {
+			decodeStarted := time.Now()
+			window, decodeErr := decode(ctx, requested)
+			decodeDuration := time.Since(decodeStarted)
+			result.Timings.Decode += decodeDuration
+			result.Timings.SourceRead += decodeDuration
+			if decodeErr != nil {
+				return result, decodeErr
+			}
+			if int64(len(window.Samples)) > reservations[i]/4 {
+				clear(window.Samples)
+				return result, errors.New("library indexer: decoder exceeded reserved PCM")
+			}
+			decoded = append(decoded, window)
+			result.Windows++
+		}
+		if err := lease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4}); err != nil {
+			return result, err
+		}
+		for i := range decoded {
+			processErr := process(decoded[i])
+			clear(decoded[i].Samples)
+			decoded[i].Samples = nil
+			releaseErr := lease.ReleasePart(Reservation{PCMBytes: reservations[i]})
+			if processErr != nil || releaseErr != nil {
+				return result, errors.Join(processErr, releaseErr)
+			}
+		}
+		return result, nil
+	}
+	for i, requested := range windows {
+		acquireStarted := time.Now()
+		lease, err := admission.AcquireLease(ctx, Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4, PCMBytes: reservations[i]})
+		waited := time.Since(acquireStarted)
+		result.Timings.CPUAdmission += waited
+		result.Timings.SourceIOAdmission += waited
+		result.Timings.PCMAdmission += waited
+		if err != nil {
+			return result, err
+		}
+		decodeStarted := time.Now()
+		window, decodeErr := decode(ctx, requested)
+		decodeDuration := time.Since(decodeStarted)
+		result.Timings.Decode += decodeDuration
+		result.Timings.SourceRead += decodeDuration
+		if releaseErr := lease.ReleasePart(Reservation{CPU: 1, SourceIO: 1, Memory: 64 << 20, Files: 4}); decodeErr == nil {
+			decodeErr = releaseErr
+		}
+		if decodeErr != nil {
+			clear(window.Samples)
+			lease.Release()
+			return result, decodeErr
+		}
+		if int64(len(window.Samples)) > reservations[i]/4 {
+			clear(window.Samples)
+			lease.Release()
+			return result, errors.New("library indexer: decoder exceeded reserved PCM")
+		}
+		result.Windows++
+		processErr := process(window)
+		clear(window.Samples)
+		releaseErr := lease.ReleasePart(Reservation{PCMBytes: reservations[i]})
+		lease.Release()
+		if processErr != nil || releaseErr != nil {
+			return result, errors.Join(processErr, releaseErr)
+		}
+	}
+	return result, nil
+}
+
+func mergeAnalysisTimings(target *AnalysisTimings, value AnalysisTimings) {
+	target.CPUAdmission += value.CPUAdmission
+	target.SourceIOAdmission += value.SourceIOAdmission
+	target.PCMAdmission += value.PCMAdmission
+	target.SourceRead += value.SourceRead
+	target.Probe += value.Probe
+	target.Fingerprint += value.Fingerprint
+	target.Integrity += value.Integrity
+	target.Decode += value.Decode
+	target.DSPSlotWait += value.DSPSlotWait
+	target.DSP += value.DSP
+	target.Downmix += value.Downmix
+	target.ResamplingKernel += value.ResamplingKernel
+	target.MERTPreprocess += value.MERTPreprocess
+	target.MERTWait += value.MERTWait
+	target.WorkerPreprocess += value.WorkerPreprocess
+	target.IPC += value.IPC
+	target.CUDAExecution += value.CUDAExecution
+	target.MERTInference += value.MERTInference
+	target.Commit += value.Commit
+}
+
+func (a *Analyzer) recordTrackTiming(report *AnalysisReport, track TrackAnalysisTiming) {
+	a.timingMu.Lock()
+	defer a.timingMu.Unlock()
+	for i := range report.TrackTimings {
+		if report.TrackTimings[i].FileID != track.FileID {
+			continue
+		}
+		report.TrackTimings[i].Windows += track.Windows
+		report.TrackTimings[i].Total += track.Total
+		mergeAnalysisTimings(&report.TrackTimings[i].Timings, track.Timings)
+		mergeAnalysisTimings(&report.Timings, track.Timings)
+		return
+	}
+	report.TrackTimings = append(report.TrackTimings, track)
+	mergeAnalysisTimings(&report.Timings, track.Timings)
 }
 
 func (a *Analyzer) claimReusableMERT(ctx context.Context, recordingKey, contract string) (ReusableMERT, bool, *reuseFlight, error) {
@@ -917,26 +1192,6 @@ func (a *Analyzer) finishReuseFlight(recordingKey, contract string, flight *reus
 	if a.reuseCache != nil {
 		a.reuseCache.finish(recordingKey, contract, flight)
 	}
-}
-
-func hasMERTSignal(pcm audio.DecodedPCM) bool {
-	if pcm.Channels < 1 || len(pcm.Samples) < pcm.Channels*2 {
-		return false
-	}
-	frames := len(pcm.Samples) / pcm.Channels
-	var sum, squares float64
-	for frame := range frames {
-		var mono float64
-		for channel := range pcm.Channels {
-			mono += float64(pcm.Samples[frame*pcm.Channels+channel])
-		}
-		mono /= float64(pcm.Channels)
-		sum += mono
-		squares += mono * mono
-	}
-	mean := sum / float64(frames)
-	variance := squares/float64(frames) - mean*mean
-	return variance > 1e-12
 }
 
 func samplingForProbe(probe localaudio.ProbeResult, profile SamplingProfile) ([]SampleWindow, error) {
@@ -986,27 +1241,6 @@ func float32Bytes(vector []float32) []byte {
 		binary.LittleEndian.PutUint32(raw[i*4:], math.Float32bits(value))
 	}
 	return raw
-}
-
-func downmixPowerRatio(pcm audio.DecodedPCM) float64 {
-	if pcm.Channels <= 1 {
-		return 1
-	}
-	var channelPower, monoPower float64
-	frames := len(pcm.Samples) / pcm.Channels
-	for frame := range frames {
-		var mono float64
-		for channel := 0; channel < pcm.Channels; channel++ {
-			value := float64(pcm.Samples[frame*pcm.Channels+channel])
-			channelPower += value * value / float64(pcm.Channels)
-			mono += value / float64(pcm.Channels)
-		}
-		monoPower += mono * mono
-	}
-	if channelPower <= 1e-16 {
-		return 1
-	}
-	return monoPower / channelPower
 }
 
 func classifyAnalysisError(err error) string {

@@ -34,6 +34,13 @@ reference and emits five native preprocessing fixtures at 8, 24, 44.1, 48 and
 96 kHz, including stereo. This resampler is the application contract; it is not
 claimed to be bit-identical to torchaudio's default resampler.
 
+Local-library preprocessing implements the same sinc contract with rational
+polyphase coefficient tables (bounded to 32 MiB) and a recurrence fallback for
+unusual phase counts. The preview path and model-bundle fixtures retain their
+existing implementation. The local source pass also derives signal variance
+and downmix-cancellation energy without rescanning PCM; changing that local
+kernel is versioned separately and does not invalidate the DSP cache.
+
 The graph uses the final transformer layer (12). It masks temporal pooling using
 feature lengths computed successively by `floor((length-kernel)/stride)+1` with
 kernels `[10,3,3,3,3,2,2]` and strides `[5,2,2,2,2,2,2]`, then L2-normalizes with
@@ -251,6 +258,12 @@ accidental reliance on machine-wide CRT files. This does not modify global PATH
 or CLAP's loader. The earlier Windows `packs-v1` output is retained as historical
 measurement provenance but is superseded for distribution and rejected by the
 new app-local dependency validation.
+
+Matched parent and worker executables use a private, bounded request protocol:
+a fixed little-endian header followed by at most one 120,000-sample float32 PCM
+segment. Health requests carry no PCM. Worker responses retain their bounded
+framed encoding. This avoids per-sample reflection and allocation while keeping
+the protocol internal to the shipped executable pair.
 
 Execute the native Go command on each target (a working C compiler is needed
 only to build the maintainer command):

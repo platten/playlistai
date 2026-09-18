@@ -12,7 +12,7 @@ func TestMERTRejectsMalformedHealthBeforeInference(t *testing.T) {
 	if RunMERT(t.TempDir()) == nil {
 		t.Fatal("missing bundle accepted")
 	}
-	if _, err := mertEmbedding(nil, nil); err == nil {
+	if _, _, err := mertEmbedding(nil, nil); err == nil {
 		t.Fatal("empty inference accepted")
 	}
 	path := filepath.Join(t.TempDir(), "health.json")

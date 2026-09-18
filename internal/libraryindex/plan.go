@@ -27,6 +27,13 @@ const (
 	IOSSD  IOProfile = "ssd"
 )
 
+type BufferingMode string
+
+const (
+	BufferingWindow BufferingMode = "window"
+	BufferingTrack  BufferingMode = "track"
+)
+
 // ResourceOverrides contains user/config values. Zero means that automatic
 // planning supplies the value. Only WorkersAuto distinguishes an explicitly
 // supplied literal "auto" from an omitted value.
@@ -48,6 +55,7 @@ type ResourceOverrides struct {
 	MaxRAM           int64
 	MaxOpenFiles     int
 	ShutdownTimeout  time.Duration
+	BufferingMode    BufferingMode
 }
 
 // ResourcePlan is the complete allocation exposed in status and persisted in
@@ -55,7 +63,10 @@ type ResourceOverrides struct {
 // multiply the global CPU admission budget.
 type ResourcePlan struct {
 	Mode                  ConcurrencyMode `json:"mode"`
+	LogicalCPUs           int             `json:"logicalCpus"`
+	PhysicalCores         int             `json:"physicalCores"`
 	EffectiveCPUSlots     int             `json:"effectiveCpuSlots"`
+	ComputeSlots          int             `json:"computeSlots"`
 	CPUQuota              float64         `json:"cpuQuota,omitempty"`
 	CPUQuotaSource        string          `json:"cpuQuotaSource"`
 	HeavyWorkers          int             `json:"workers"`
@@ -69,8 +80,11 @@ type ResourcePlan struct {
 	IndexWorkers          int             `json:"indexWorkers"`
 	IOWorkers             int             `json:"ioWorkers"`
 	IOProfile             IOProfile       `json:"ioProfile"`
+	StorageProfileReason  string          `json:"storageProfileReason"`
+	BufferingMode         BufferingMode   `json:"bufferingMode"`
 	QueueDepth            int             `json:"queueDepth"`
 	MaxRAM                int64           `json:"maxRamBytes"`
+	BufferedPCMBytes      int64           `json:"bufferedPcmBytes"`
 	MaxOpenFiles          int             `json:"maxOpenFiles"`
 	ShutdownTimeout       time.Duration   `json:"shutdownTimeout"`
 	EstimatedSessionBytes int64           `json:"estimatedSessionBytes"`
@@ -78,12 +92,15 @@ type ResourcePlan struct {
 }
 
 type hostCapacity struct {
-	CPUSlots     int
-	CPUQuota     float64
-	CPUSource    string
-	AvailableRAM int64
-	OpenFileSoft int
-	GOMAXPROCS   int
+	LogicalCPUs   int
+	PhysicalCores int
+	CPUSlots      int
+	ComputeSlots  int
+	CPUQuota      float64
+	CPUSource     string
+	AvailableRAM  int64
+	OpenFileSoft  int
+	GOMAXPROCS    int
 }
 
 const (
@@ -122,6 +139,9 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	if over.IOProfile != IOAuto && over.IOProfile != IOHDD && over.IOProfile != IONAS && over.IOProfile != IOSSD {
 		return ResourcePlan{}, fmt.Errorf("library indexer: invalid I/O profile %q", over.IOProfile)
 	}
+	if over.BufferingMode != "" && over.BufferingMode != BufferingWindow && over.BufferingMode != BufferingTrack {
+		return ResourcePlan{}, fmt.Errorf("library indexer: invalid buffering mode %q", over.BufferingMode)
+	}
 	for name, value := range map[string]int{
 		"workers": over.Workers, "scan-workers": over.ScanWorkers, "metadata-workers": over.MetadataWorkers,
 		"decode-workers": over.DecodeWorkers, "dsp-workers": over.DSPWorkers, "inference-workers": over.InferenceWorkers,
@@ -138,6 +158,15 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	if host.CPUSlots < 1 {
 		host.CPUSlots = max(1, host.GOMAXPROCS)
 	}
+	if host.LogicalCPUs < 1 {
+		host.LogicalCPUs = host.CPUSlots
+	}
+	if host.PhysicalCores < 1 {
+		host.PhysicalCores = host.CPUSlots
+	}
+	if host.ComputeSlots < 1 {
+		host.ComputeSlots = min(host.PhysicalCores, host.CPUSlots)
+	}
 	memoryKnown := host.AvailableRAM > 0
 	if !memoryKnown {
 		host.AvailableRAM = 2 << 30
@@ -146,9 +175,9 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 		host.OpenFileSoft = 1024
 	}
 
-	heavy := host.CPUSlots
+	heavy := host.ComputeSlots
 	if heavy >= 4 {
-		heavy-- // leave one effective slot for writer/control/UI inspection
+		heavy-- // leave one physical compute core for writer/control/storage work
 	}
 	if over.Workers > 0 {
 		heavy = min(over.Workers, host.CPUSlots)
@@ -187,9 +216,13 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	}
 	ioWorkers := over.IOWorkers
 	if ioWorkers == 0 {
-		ioWorkers = 2
-		if over.IOProfile == IOSSD {
+		switch over.IOProfile {
+		case IOHDD:
+			ioWorkers = 1
+		case IOSSD:
 			ioWorkers = min(4, heavy)
+		default:
+			ioWorkers = 2
 		}
 	}
 	ioWorkers = max(1, ioWorkers)
@@ -229,20 +262,42 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 		// while other tracks are doing DSP or preprocessing.
 		decodeDefault = min(heavy, max(stageDefault, inferenceWorkers+ioWorkers))
 	}
+	if over.IOProfile == IOHDD && over.Mode != ConcurrencySerial {
+		decodeDefault = min(8, heavy)
+	}
 	if reserveInference && (inferenceThreads > heavy || inferenceWorkers*inferenceThreads > heavy) {
 		return ResourcePlan{}, fmt.Errorf("library indexer: inference reservation %d workers x %d threads exceeds global CPU budget %d", inferenceWorkers, inferenceThreads, heavy)
 	}
 	if reserveInference && int64(inferenceWorkers)*defaultMERTSessionBytes+minimumOperationBytes > maxRAM {
 		return ResourcePlan{}, fmt.Errorf("library indexer: %d inference workers cannot fit the %d-byte admission target", inferenceWorkers, maxRAM)
 	}
+	bufferingMode := over.BufferingMode
+	if bufferingMode == "" {
+		bufferingMode = BufferingWindow
+		if over.IOProfile == IOHDD {
+			bufferingMode = BufferingTrack
+		}
+	}
+	profileReason := "automatic portable defaults; source filesystem is not known while resolving resources"
+	if over.IOProfile != IOAuto {
+		profileReason = "explicit --io-profile=" + string(over.IOProfile)
+	}
+	bufferedPCM := min(int64(4<<30), maxRAM/8)
 	plan := ResourcePlan{
-		Mode: over.Mode, EffectiveCPUSlots: host.CPUSlots, CPUQuota: host.CPUQuota, CPUQuotaSource: host.CPUSource,
+		Mode: over.Mode, LogicalCPUs: host.LogicalCPUs, PhysicalCores: host.PhysicalCores,
+		EffectiveCPUSlots: host.CPUSlots, ComputeSlots: host.ComputeSlots, CPUQuota: host.CPUQuota, CPUQuotaSource: host.CPUSource,
 		HeavyWorkers: heavy, ScanWorkers: choose(over.ScanWorkers, min(2, ioWorkers)),
 		MetadataWorkers: choose(over.MetadataWorkers, stageDefault), DecodeWorkers: choose(over.DecodeWorkers, decodeDefault),
 		DSPWorkers: choose(over.DSPWorkers, stageDefault), InferenceWorkers: inferenceWorkers,
 		InferenceThreads: inferenceThreads, FitWorkers: choose(over.FitWorkers, heavy), IndexWorkers: choose(over.IndexWorkers, heavy),
-		IOWorkers: ioWorkers, IOProfile: over.IOProfile, QueueDepth: queueDepth, MaxRAM: maxRAM,
+		IOWorkers: ioWorkers, IOProfile: over.IOProfile, StorageProfileReason: profileReason, BufferingMode: bufferingMode,
+		QueueDepth: queueDepth, MaxRAM: maxRAM, BufferedPCMBytes: bufferedPCM,
 		MaxOpenFiles: maxOpen, ShutdownTimeout: shutdown, EstimatedSessionBytes: defaultMERTSessionBytes,
+	}
+	if over.IOProfile == IOHDD {
+		plan.ScanWorkers = choose(over.ScanWorkers, 1)
+		plan.MetadataWorkers = choose(over.MetadataWorkers, 1)
+		plan.DSPWorkers = choose(over.DSPWorkers, min(2, heavy))
 	}
 	return plan, nil
 }
@@ -273,10 +328,10 @@ func (p ResourcePlan) ValidateForAnalysis(metadataOnly bool) error {
 }
 
 func (p ResourcePlan) Summary() string {
-	return fmt.Sprintf("mode=%s cpu=%d workers=%d io=%d(%s) scan=%d metadata=%d decode=%d dsp=%d inference=%dx%d fit=%d index=%d queue=%d ram=%d open=%d",
-		p.Mode, p.EffectiveCPUSlots, p.HeavyWorkers, p.IOWorkers, p.IOProfile, p.ScanWorkers, p.MetadataWorkers,
+	return fmt.Sprintf("mode=%s cpu=%d logical/%d physical/%d compute workers=%d io=%d(%s) buffering=%s scan=%d metadata=%d decode=%d dsp=%d inference=%dx%d fit=%d index=%d queue=%d ram=%d pcm=%d open=%d",
+		p.Mode, p.LogicalCPUs, p.PhysicalCores, p.ComputeSlots, p.HeavyWorkers, p.IOWorkers, p.IOProfile, p.BufferingMode, p.ScanWorkers, p.MetadataWorkers,
 		p.DecodeWorkers, p.DSPWorkers, p.InferenceWorkers, p.InferenceThreads, p.FitWorkers, p.IndexWorkers,
-		p.QueueDepth, p.MaxRAM, p.MaxOpenFiles)
+		p.QueueDepth, p.MaxRAM, p.BufferedPCMBytes, p.MaxOpenFiles)
 }
 
 func runtimeCPUSlots() int { return max(1, runtime.GOMAXPROCS(0)) }

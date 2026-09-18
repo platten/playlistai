@@ -10,8 +10,11 @@ package libraryindex
 func detectHostCapacity() hostCapacity {
 	slots := runtimeCPUSlots()
 	return hostCapacity{
-		CPUSlots:   slots,
-		CPUSource:  "gomaxprocs",
-		GOMAXPROCS: slots,
+		LogicalCPUs:   slots,
+		PhysicalCores: slots,
+		CPUSlots:      slots,
+		ComputeSlots:  slots,
+		CPUSource:     "gomaxprocs-logical-fallback",
+		GOMAXPROCS:    slots,
 	}
 }
