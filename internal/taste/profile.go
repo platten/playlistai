@@ -17,7 +17,7 @@ import (
 
 const (
 	ProfileContractVersion  = 2
-	ProfileAlgorithmVersion = "taste-profile/v3"
+	ProfileAlgorithmVersion = "taste-profile/v4"
 	profileHalfLife         = 30 * 24 * time.Hour
 	exposureHalfLife        = 7 * 24 * time.Hour
 	maxTasteClusters        = 4
@@ -43,9 +43,9 @@ type evidencePoint struct {
 	vectors ports.Vectors
 }
 
-// BuildProfile deterministically projects explicit feedback into both catalog
-// embedding spaces. Time decay is anchored to the newest contributing event,
-// so rebuilding the same event set produces the same snapshot later.
+// BuildProfile deterministically projects explicit feedback into the catalog
+// spaces and separate compatible library spaces. Time decay is anchored to the
+// newest contributing event, so rebuilding the same events is reproducible.
 func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.FeedbackEvent, options ProfileOptions) (core.TasteProfile, error) {
 	if err := ctx.Err(); err != nil {
 		return core.TasteProfile{}, err
@@ -90,12 +90,24 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 			}
 		}
 	}
+	libraryVectors := make(map[string]core.LibraryVector)
 	for index, event := range effective {
 		if index&255 == 0 && ctx.Err() != nil {
 			return core.TasteProfile{}, ctx.Err()
 		}
 		if _, ok := catalog.Vectors(event.TrackID); !ok {
-			continue
+			library, available := catalog.(ports.LibraryAudioCatalog)
+			if !available {
+				continue
+			}
+			vector, available, lookupErr := library.LibraryVector(ctx, event.TrackID)
+			if lookupErr != nil {
+				return core.TasteProfile{}, lookupErr
+			}
+			if !available || !validLibraryVector(vector) {
+				continue
+			}
+			libraryVectors[event.TrackID] = vector
 		}
 		contributing = append(contributing, event)
 		if event.OccurredAt.After(profile.AsOf) {
@@ -104,6 +116,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	}
 
 	var positive, negative, requestPositive, requestNegative []evidencePoint
+	libraryGroups := make(map[string]*libraryEvidenceGroup)
 	for index, event := range contributing {
 		if index&255 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -118,6 +131,17 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 		}
 		weight := base * math.Exp2(-float64(age)/float64(profileHalfLife))
 		point := evidencePoint{trackID: event.TrackID, weight: weight, vectors: vectors}
+		if vector, ok := libraryVectors[event.TrackID]; ok {
+			addLibraryPoint(libraryGroups, vector, event, point.weight, polarity)
+			if event.Scope == core.FeedbackScopeRequest {
+				profile.RequestEvidence++
+			} else if polarity > 0 {
+				profile.PositiveEvidence++
+			} else {
+				profile.NegativeEvidence++
+			}
+			continue
+		}
 		if event.Scope == core.FeedbackScopeRequest {
 			profile.RequestEvidence++
 			if polarity > 0 {
@@ -150,6 +174,7 @@ func BuildProfile(ctx context.Context, catalog ports.Catalog, events []core.Feed
 	profile.RequestPositive = centroid(requestPositive, catalog.Dim())
 	profile.RequestNegative = centroid(requestNegative, catalog.Dim())
 	profile.Clusters = buildClusters(positive, catalog.Dim())
+	profile.Library = libraryTaste(libraryGroups)
 	profile.ColdStart = len(contributing) == 0
 	profile.SnapshotID = snapshotID(profile, append(contributing, exposures...))
 	return profile, nil
@@ -329,7 +354,8 @@ func snapshotID(profile core.TasteProfile, events []core.FeedbackEvent) string {
 		RequestID string               `json:"requestId"`
 		SessionID string               `json:"sessionId"`
 		Events    []core.FeedbackEvent `json:"events"`
-	}{profile.Version, profile.AlgorithmVersion, profile.CatalogVersion, requestID, sessionID, events}
+		Library   []core.LibraryTaste  `json:"library,omitempty"`
+	}{profile.Version, profile.AlgorithmVersion, profile.CatalogVersion, requestID, sessionID, events, profile.Library}
 	raw, _ := json.Marshal(payload)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])

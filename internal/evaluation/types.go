@@ -124,6 +124,8 @@ type CaseMetrics struct {
 	Generation                   GenerationRecord            `json:"generation"`
 	RecallAtK                    *float64                    `json:"recallAtK,omitempty"`
 	NDCGAtK                      *float64                    `json:"ndcgAtK,omitempty"`
+	JudgedAtK                    int                         `json:"judgedAtK"`
+	ReturnedAtK                  int                         `json:"returnedAtK"`
 	HardConstraintViolations     int                         `json:"hardConstraintViolations"`
 	EssentialCriterionViolations int                         `json:"essentialCriterionViolations"`
 	OutcomeState                 core.GenerationOutcomeState `json:"outcomeState"`

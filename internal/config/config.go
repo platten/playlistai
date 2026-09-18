@@ -105,6 +105,7 @@ type PreviewConfig struct {
 // legacy deejai strategy remains selectable as an evaluation baseline.
 type RecommendationConfig struct {
 	EnhancedMERTWeight        float64 `toml:"enhanced_mert_weight"`
+	LibraryEvidenceEnabled    bool    `toml:"library_evidence_enabled"`
 	EnhancedDSPWeight         float64 `toml:"enhanced_dsp_weight"`
 	EnhancedTransitionWeight  float64 `toml:"enhanced_transition_weight"`
 	Strategy                  string  `toml:"strategy"`

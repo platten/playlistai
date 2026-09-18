@@ -26,6 +26,8 @@ func NewSelector(cat ports.Catalog, cfg Config) *MMRSelector {
 // contextEntry is one already-fixed or already-selected track, resolved once so
 // the selection loop never re-reads the catalog for it.
 type contextEntry struct {
+	library    core.LibraryVector
+	hasLibrary bool
 	vectors    ports.Vectors
 	hasVectors bool
 	artistKey  string
@@ -37,6 +39,8 @@ type contextEntry struct {
 // one newly selected track at a time, so selection costs one update per
 // remaining candidate per round instead of a rescan of the whole context.
 type poolEntry struct {
+	library       core.LibraryVector
+	hasLibrary    bool
 	candidate     core.Candidate
 	vectors       ports.Vectors
 	hasVectors    bool
@@ -52,16 +56,29 @@ type poolEntry struct {
 	contextSize   int
 }
 
-func (s *MMRSelector) contextEntry(track core.TrackRef) contextEntry {
+func (s *MMRSelector) contextEntry(ctx context.Context, track core.TrackRef, useLibrary bool) (contextEntry, error) {
 	entry := contextEntry{artistKey: core.NormalizeIdentityPart(track.Artist)}
+	if s.cfg.LibraryEvidenceEnabled && useLibrary {
+		var err error
+		entry.library, entry.hasLibrary, err = lookupLibraryVector(ctx, s.cat, track.ID)
+		if err != nil {
+			return contextEntry{}, err
+		}
+	}
 	entry.vectors, entry.hasVectors = s.cat.Vectors(track.ID)
 	entry.album, entry.hasAlbum = reliableAlbum(s.cat, track.ID)
-	return entry
+	return entry, ctx.Err()
 }
 
 // fold accumulates one context track into the running diversity terms.
 func (p *poolEntry) fold(entry contextEntry, intent core.MusicIntent) {
 	p.contextSize++
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid && p.hasLibrary && entry.hasLibrary {
+		if similarity, measured := libraryCosine(p.library, entry.library); measured {
+			p.redundancy = math.Max(p.redundancy, math.Max(0, similarity))
+			p.redundancyOK = true
+		}
+	}
 	if p.hasVectors && entry.hasVectors {
 		if similarity, measured := weightedVectorSimilarity(p.vectors, entry.vectors,
 			intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight); measured {
@@ -85,7 +102,7 @@ func (p *poolEntry) fold(entry contextEntry, intent core.MusicIntent) {
 func (p *poolEntry) score(cfg Config, lambda float64) float64 {
 	c := &p.candidate
 	c.Scores.SelectionRelevance, c.Available.SelectionRelevance = p.relevance, true
-	c.Scores.EmbeddingRedundancy, c.Available.EmbeddingRedundancy = p.redundancy, p.hasVectors && p.redundancyOK
+	c.Scores.EmbeddingRedundancy, c.Available.EmbeddingRedundancy = p.redundancy, (p.hasVectors || p.hasLibrary) && p.redundancyOK
 	c.Scores.ArtistConcentration, c.Available.ArtistConcentration =
 		float64(p.artistMatches)/float64(maxInt(1, p.contextSize)), p.artistKey != ""
 	c.Scores.AlbumConcentration, c.Available.AlbumConcentration =
@@ -141,6 +158,9 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	}
 	pool := make([]poolEntry, 0, len(candidates))
 	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			return ports.SelectionResult{}, err
+		}
 		if enforceFloor && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && candidate.FitTier == fitClose && candidate.MusicalFit != core.EvidenceMatch {
 			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); !ok || relevance < requestFloor {
 				continue
@@ -155,6 +175,13 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			relevance: normalizedRelevance(candidate.Scores.Total, floor, best),
 		}
 		entry.vectors, entry.hasVectors = s.cat.Vectors(candidate.Track.ID)
+		if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+			var err error
+			entry.library, entry.hasLibrary, err = lookupLibraryVector(ctx, s.cat, candidate.Track.ID)
+			if err != nil {
+				return ports.SelectionResult{}, err
+			}
+		}
 		entry.album, entry.hasAlbum = reliableAlbum(s.cat, candidate.Track.ID)
 		pool = append(pool, entry)
 	}
@@ -168,7 +195,10 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	contextTracks = append(contextTracks, request.Waypoints...)
 	contextTracks = append(contextTracks, tailTracks(request.RecentSelections, maxContinuationAnchors)...)
 	for _, track := range contextTracks {
-		entry := s.contextEntry(track)
+		entry, err := s.contextEntry(ctx, track, request.Intent.Controls.RecommendationMode == core.EnhancedHybrid)
+		if err != nil {
+			return ports.SelectionResult{}, err
+		}
 		for index := range pool {
 			pool[index].fold(entry, request.Intent)
 		}
@@ -213,6 +243,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		result.Candidates = append(result.Candidates, selected.candidate)
 		pool = append(pool[:chosen], pool[chosen+1:]...)
 		added := contextEntry{
+			library: selected.library, hasLibrary: selected.hasLibrary,
 			vectors: selected.vectors, hasVectors: selected.hasVectors,
 			artistKey: selected.artistKey, album: selected.album, hasAlbum: selected.hasAlbum,
 		}
@@ -222,6 +253,9 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	}
 	if len(result.Candidates) < request.Count {
 		result.Notices = append(result.Notices, selectionFloorNotice(request.Count, len(result.Candidates), floor))
+	}
+	if err := ctx.Err(); err != nil {
+		return ports.SelectionResult{}, err
 	}
 	return result, nil
 }

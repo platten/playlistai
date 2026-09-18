@@ -11,11 +11,12 @@ type StepReason struct {
 }
 
 type RetrievalEvidence struct {
-	Channel     string  `json:"channel"`
-	QueryID     string  `json:"queryId"`
-	Rank        int     `json:"rank"`
-	Score       float64 `json:"score"` // channel-native score; never a probability
-	QueryWeight float64 `json:"queryWeight"`
+	LibrarySource *LibraryEvidenceSource `json:"librarySource,omitempty"`
+	Channel       string                 `json:"channel"`
+	QueryID       string                 `json:"queryId"`
+	Rank          int                    `json:"rank"`
+	Score         float64                `json:"score"` // channel-native score; never a probability
+	QueryWeight   float64                `json:"queryWeight"`
 }
 
 type ComponentEvidence struct {
@@ -40,6 +41,8 @@ type Candidate struct {
 }
 
 type CandidateScores struct {
+	LibraryMERT           float64 `json:"libraryMert"`
+	LibraryDSP            float64 `json:"libraryDsp"`
 	EnhancedMERT          float64 `json:"enhancedMert"`
 	EnhancedDSP           float64 `json:"enhancedDsp"`
 	AcousticIntent        float64 `json:"acousticIntent"`
@@ -61,6 +64,8 @@ type CandidateScores struct {
 }
 
 type CandidateFeatures struct {
+	LibraryMERT           bool `json:"libraryMert"`
+	LibraryDSP            bool `json:"libraryDsp"`
 	EnhancedMERT          bool `json:"enhancedMert"`
 	EnhancedDSP           bool `json:"enhancedDsp"`
 	AcousticIntent        bool `json:"acousticIntent"`

@@ -390,10 +390,19 @@ func (c *Catalog) learnedMetadataScore(ctx context.Context, generation *libraryp
 		return 0, false
 	}
 	queryTerms := strings.Fields(query)
+	// Vocabulary entries are complete genre phrases. Preserve an exact phrase
+	// before considering individual terms and keep sparse columns canonical.
+	queryTerms = append(queryTerms, strings.TrimSpace(query))
+	sort.Strings(queryTerms)
 	queryRow := librarylearn.SparseRow{}
+	seenColumns := map[int]bool{}
 	for _, term := range queryTerms {
 		column := sort.SearchStrings(c.metadata.Vocabulary, term)
 		if column < len(c.metadata.Vocabulary) && c.metadata.Vocabulary[column] == term {
+			if seenColumns[column] {
+				continue
+			}
+			seenColumns[column] = true
 			weight := 1.0
 			if column < len(c.metadata.IDF) && c.metadata.IDF[column] > 0 {
 				weight = c.metadata.IDF[column]
@@ -453,7 +462,7 @@ func (c *Catalog) learnedMetadataScore(ctx context.Context, generation *libraryp
 // CriterionEvidence exposes only sourced local genre annotations. Absence is
 // unknown, never proof of a mismatch.
 func (c *Catalog) CriterionEvidence(ctx context.Context, id string, criterion core.MusicalCriterion) core.EvidenceState {
-	if criterion.Kind != "genre" {
+	if criterion.Kind != "genre" && criterion.Kind != "style" {
 		return core.EvidenceUnknown
 	}
 	localID, err := c.localID(id)
@@ -469,13 +478,8 @@ func (c *Catalog) CriterionEvidence(ctx context.Context, id string, criterion co
 	if err != nil || !ok {
 		return core.EvidenceUnknown
 	}
-	var tags map[string]string
-	if json.Unmarshal(track.RawTags, &tags) != nil {
-		return core.EvidenceUnknown
-	}
-	want := normalizeUnicode(criterion.Value)
-	for key, value := range tags {
-		if strings.EqualFold(strings.TrimSpace(key), "genre") && normalizeUnicode(value) == want {
+	for _, annotation := range annotations(track.RawTags) {
+		if annotationMatches(annotation, criterion) {
 			return core.EvidenceMatch
 		}
 	}

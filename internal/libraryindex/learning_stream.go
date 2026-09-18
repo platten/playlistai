@@ -751,8 +751,10 @@ func musicBrainzRecordingID(values map[string]string) string {
 	sort.Strings(keys)
 	for _, key := range keys {
 		normalized := strings.ToLower(strings.NewReplacer(" ", "_", "-", "_").Replace(strings.TrimSpace(key)))
-		if normalized == "musicbrainz_trackid" || normalized == "musicbrainz_recordingid" {
-			return strings.TrimSpace(values[key])
+		if normalized == "musicbrainz_trackid" || normalized == "musicbrainz_recordingid" || normalized == "musicbrainz_track_id" || normalized == "musicbrainz_recording_id" {
+			if id := librarypack.CanonicalMusicBrainzRecordingID(values[key]); id != "" {
+				return id
+			}
 		}
 	}
 	return ""

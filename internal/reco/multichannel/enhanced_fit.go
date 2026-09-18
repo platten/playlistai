@@ -3,6 +3,7 @@ package multichannel
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/platten/playlistai/internal/audio"
@@ -140,8 +141,50 @@ func (o *Orchestrator) enhancedSupport(ctx context.Context, candidate core.Candi
 // engineering ranking guard, never a calibrated musical-fit claim.
 func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent) (float64, bool) {
 	best, available := 0.0, false
+	references := intent.References
+	hasPositive := false
+	for _, ref := range references {
+		if ref.Influence == core.InfluenceNegative {
+			continue
+		}
+		hasPositive = hasPositive || ref.TrackID != ""
+		if ref.Resolution != nil && ref.Resolution.Selected != nil {
+			for _, rep := range ref.Resolution.Selected.Representatives {
+				hasPositive = hasPositive || rep.TrackID != "" && rep.Weight > 0
+			}
+		}
+	}
+	if !hasPositive {
+		references = intent.RequiredTracks
+	}
+	// A local MERT retrieval comparison is direct reference evidence, not
+	// a taste/ownership bonus or categorical musical proof. Keep its native
+	// cosine scale and require provenance plus an explicit positive anchor.
+	for _, source := range candidate.Sources {
+		if source.Channel != "library_mert" || source.LibrarySource == nil || source.LibrarySource.SpaceID == "" || math.IsNaN(source.Score) || math.IsInf(source.Score, 0) {
+			continue
+		}
+		for _, ref := range references {
+			if ref.Influence == core.InfluenceNegative {
+				continue
+			}
+			matches := ref.TrackID == source.QueryID && ref.TrackID != ""
+			if ref.Resolution != nil && ref.Resolution.Selected != nil {
+				for _, rep := range ref.Resolution.Selected.Representatives {
+					matches = matches || rep.TrackID == source.QueryID && rep.Weight > 0
+				}
+			}
+			if matches && (!available || source.Score > best) {
+				best, available = clamp(source.Score, -1, 1), true
+			}
+		}
+	}
 	if candidate.Available.SemanticMatch {
-		best, available = candidate.Scores.SemanticMatch-max(0, candidate.Scores.SemanticNegativeMatch), true
+		score := candidate.Scores.SemanticMatch - max(0, candidate.Scores.SemanticNegativeMatch)
+		if !available || score > best {
+			best = score
+		}
+		available = true
 	}
 	var affinity, weight float64
 	if candidate.Available.AudioSeedAffinity {

@@ -75,16 +75,17 @@ func ParseDisplay(id, display string) TrackRef {
 // the display string and an often-empty 30s preview URL; everything else (album,
 // year, ISRC, all artists) is filled later by an Enricher.
 type TrackMeta struct {
-	FullRecordingDuration *RecordingDuration `json:"fullRecordingDuration,omitempty"`
-	Ref                   TrackRef           `json:"ref"`
-	PreviewURL            string             `json:"previewUrl"` // bundled Spotify CDN preview; frequently ""
-	Album                 string             `json:"album"`
-	AlbumReliable         bool               `json:"albumReliable"` // false means unknown, including a non-empty unverified value
-	SourceIdentity        string             `json:"sourceIdentity,omitempty"`
-	ISRC                  string             `json:"isrc,omitempty"`
-	MusicBrainzRecording  string             `json:"musicBrainzRecording,omitempty"`
-	AcoustID              string             `json:"acoustId,omitempty"`
-	AudioFingerprint      *AudioFingerprint  `json:"audioFingerprint,omitempty"`
+	Annotations           []MetadataAnnotation `json:"annotations,omitempty"`
+	FullRecordingDuration *RecordingDuration   `json:"fullRecordingDuration,omitempty"`
+	Ref                   TrackRef             `json:"ref"`
+	PreviewURL            string               `json:"previewUrl"` // bundled Spotify CDN preview; frequently ""
+	Album                 string               `json:"album"`
+	AlbumReliable         bool                 `json:"albumReliable"` // false means unknown, including a non-empty unverified value
+	SourceIdentity        string               `json:"sourceIdentity,omitempty"`
+	ISRC                  string               `json:"isrc,omitempty"`
+	MusicBrainzRecording  string               `json:"musicBrainzRecording,omitempty"`
+	AcoustID              string               `json:"acoustId,omitempty"`
+	AudioFingerprint      *AudioFingerprint    `json:"audioFingerprint,omitempty"`
 }
 
 // AudioFingerprint is tagged or locally computed AcoustID Chromaprint evidence.

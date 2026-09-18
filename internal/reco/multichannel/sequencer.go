@@ -15,9 +15,10 @@ import (
 // transition similarity, relevance, and optional waypoint-trajectory fit, then
 // performs bounded pair swaps that improve the same transition objective.
 type GreedySequencer struct {
-	enhancedInput core.EnhancedAudioInput
-	cat           ports.Catalog
-	cfg           Config
+	enhancedInput  core.EnhancedAudioInput
+	libraryVectors map[string]core.LibraryVector
+	cat            ports.Catalog
+	cfg            Config
 }
 
 type sequenceItem struct {
@@ -39,6 +40,33 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	}
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
+	}
+	s.libraryVectors = nil
+	if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		// Hydrate once under the request context. Pair comparisons and local
+		// improvement must not reopen SQLite/vector resources on every edge.
+		s.libraryVectors = make(map[string]core.LibraryVector)
+		tracks := append([]core.TrackRef(nil), request.Required...)
+		tracks = append(tracks, request.Waypoints...)
+		tracks = append(tracks, request.ReferenceAnchors...)
+		tracks = append(tracks, request.RecentSelections...)
+		for _, candidate := range request.Candidates {
+			tracks = append(tracks, candidate.Track)
+		}
+		seen := make(map[string]bool, len(tracks))
+		for _, track := range tracks {
+			if seen[track.ID] || track.ID == "" {
+				continue
+			}
+			seen[track.ID] = true
+			vector, found, err := lookupLibraryVector(ctx, s.cat, track.ID)
+			if err != nil {
+				return ports.SequenceResult{}, err
+			}
+			if found {
+				s.libraryVectors[track.ID] = vector
+			}
+		}
 	}
 	if genreArtistDiversity(request.Intent) {
 		request.Intent.Constraints.NoRepeatArtistBackToBack = true
@@ -84,6 +112,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	}
 	if len(request.CategoryStages) == 0 {
 		items = s.improve(items, request)
+	}
+	if err := ctx.Err(); err != nil {
+		return ports.SequenceResult{}, err
 	}
 	if !s.hardSpacingValid(items, request) {
 		return ports.SequenceResult{}, fmt.Errorf("%w: required ordering violates no-back-to-back artist", core.ErrRequiredTrackConflict)
@@ -140,6 +171,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 			Detail:    "The requested energy change is saved, but these recordings have no measured energy evidence. Review how the playlist builds or winds down.",
 			Requested: request.Intent.Count, Actual: len(items),
 		})
+	}
+	if err := ctx.Err(); err != nil {
+		return ports.SequenceResult{}, err
 	}
 	return result, nil
 }
@@ -464,6 +498,13 @@ func (s *GreedySequencer) trackSimilarity(left, right core.TrackRef, intent core
 	a, aOK := s.cat.Vectors(left.ID)
 	b, bOK := s.cat.Vectors(right.ID)
 	if !aOK || !bOK {
+		if s.cfg.LibraryEvidenceEnabled && intent.Controls.RecommendationMode == core.EnhancedHybrid {
+			leftVector, leftOK := s.libraryVectors[left.ID]
+			rightVector, rightOK := s.libraryVectors[right.ID]
+			if leftOK && rightOK {
+				return libraryCosine(leftVector, rightVector)
+			}
+		}
 		return 0, false
 	}
 	return weightedVectorSimilarity(a, b, intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight)
@@ -495,6 +536,11 @@ func (s *GreedySequencer) hardSpacingValid(items []sequenceItem, request ports.S
 
 func (s *GreedySequencer) candidateReason(candidate core.Candidate, request ports.SequenceRequest, position, total int, spacingRelaxed bool) core.StepReason {
 	evidence := rankingEvidence(candidate, request.Intent, s.cfg)
+	if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		evidence = append(evidence,
+			core.ComponentEvidence{Component: "library_mert_affinity", Score: candidate.Scores.LibraryMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.LibraryMERT, Detail: "Compatible library audio reference/taste similarity; sampled audio only"},
+			core.ComponentEvidence{Component: "library_dsp_preference", Score: candidate.Scores.LibraryDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.LibraryDSP, Detail: "Signed library-relative measured preference; sampled audio only"})
+	}
 	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		evidence = append(evidence, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference/taste similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; preview measurements, never hard musical evidence"})
 	}

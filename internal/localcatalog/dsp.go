@@ -24,6 +24,7 @@ type portableDSPRecord struct {
 type dspPreference struct {
 	feature   string
 	direction float64
+	degree    float64
 }
 
 // DSPPreferenceScore translates only reviewed concept-provider mappings. The
@@ -69,22 +70,18 @@ func (c *Catalog) DSPPreferenceScore(ctx context.Context, id string, intent core
 	matched := 0
 	for _, preference := range preferences {
 		value, valueOK := sampledDSPMean(record, preference.feature)
-		statistics, statisticsOK := dspFeatureStatistics(*group, preference.feature)
-		if !valueOK || !statisticsOK || statistics.Quantiles == nil {
+		percentile, statisticsOK := c.dspStats.Percentile(group.ID, preference.feature, value)
+		if !valueOK || !statisticsOK {
 			continue
 		}
-		low, high := statistics.Quantiles.P25, statistics.Quantiles.P75
-		if !(high > low) || math.IsNaN(value) || math.IsInf(value, 0) {
-			continue
-		}
-		score := max(-1.0, min(1.0, (value-low)/(high-low)*2-1)) * preference.direction
+		score := (2*percentile - 1) * preference.direction * preference.degree
 		total += score
 		matched++
 	}
 	if matched == 0 {
 		return 0, false
 	}
-	return total / float64(matched), true
+	return total / float64(len(preferences)), true
 }
 
 func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
@@ -94,6 +91,11 @@ func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
 	result := make([]dspPreference, 0)
 	seen := map[string]bool{}
 	for _, preference := range all {
+		// Stage-specific requests are retained in intent, never applied to the
+		// whole playlist by a track-level scorer.
+		if preference.Scope != "" && preference.Scope != "playlist" {
+			continue
+		}
 		var concept musicconcepts.Concept
 		var ok bool
 		if preference.ConceptID != "" {
@@ -118,10 +120,14 @@ func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
 		if preference.Influence == core.InfluenceNegative {
 			sign = -sign
 		}
-		key := axis + ":" + direction
+		degree := 1.0
+		if preference.Degree == "reduced" || preference.Strength == "weak" {
+			degree = .5
+		}
+		key := axis + ":" + direction + ":" + string(preference.Influence)
 		if !seen[key] {
 			seen[key] = true
-			result = append(result, dspPreference{feature: axis, direction: sign})
+			result = append(result, dspPreference{feature: axis, direction: sign, degree: degree})
 		}
 	}
 	return result
@@ -130,7 +136,7 @@ func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
 func sampledDSPMean(record portableDSPRecord, feature string) (float64, bool) {
 	var weighted, seconds float64
 	for _, window := range record.Windows {
-		if window.ObservedSeconds <= 0 {
+		if window.ObservedSeconds <= 0 || math.IsNaN(window.ObservedSeconds) || math.IsInf(window.ObservedSeconds, 0) {
 			continue
 		}
 		raw, ok := window.Features[feature]
@@ -138,20 +144,14 @@ func sampledDSPMean(record portableDSPRecord, feature string) (float64, bool) {
 			continue
 		}
 		var value core.DSPValue
-		if json.Unmarshal(raw, &value) != nil || value.Value == nil {
+		if json.Unmarshal(raw, &value) != nil || value.State != core.FeatureKnown || value.Value == nil || math.IsNaN(*value.Value) || math.IsInf(*value.Value, 0) {
 			continue
 		}
 		weighted += *value.Value * window.ObservedSeconds
 		seconds += window.ObservedSeconds
 	}
-	return weighted / seconds, seconds > 0
-}
-
-func dspFeatureStatistics(group librarylearn.DSPStatisticsGroup, feature string) (librarylearn.DSPFeatureStatistics, bool) {
-	for _, statistics := range group.Features {
-		if statistics.Name == feature {
-			return statistics, true
-		}
+	if seconds == 0 {
+		return 0, false
 	}
-	return librarylearn.DSPFeatureStatistics{}, false
+	return weighted / seconds, true
 }

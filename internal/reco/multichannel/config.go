@@ -2,9 +2,11 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v30"
+const AlgorithmVersion = "multichannel/v31"
 
 type Config struct {
+	// Experimental until the private held-out listening gate is satisfied.
+	LibraryEvidenceEnabled   bool
 	EnhancedMERTWeight       float64
 	EnhancedDSPWeight        float64
 	EnhancedTransitionWeight float64

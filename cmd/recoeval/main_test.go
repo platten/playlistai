@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/platten/playlistai/internal/librarypack"
 )
 
 func args(t *testing.T, values ...string) {
@@ -12,6 +15,25 @@ func args(t *testing.T, values ...string) {
 	old := os.Args
 	os.Args = append([]string{"recoeval"}, values...)
 	t.Cleanup(func() { os.Args = old })
+}
+
+func TestPaipackBlindDefaultsUseAvailableVariants(t *testing.T) {
+	dir := t.TempDir()
+	pack := filepath.Join(dir, "library.paipack")
+	if _, err := librarypack.Write(context.Background(), pack, librarypack.Pack{CorpusGeneration: "test", MetadataGeneration: "test", Tracks: []librarypack.Track{{ID: "local-extra", Artist: "Local", Title: "Extra"}}}, librarypack.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	args(t, "-dataset", "../../internal/evaluation/testdata/synthetic.json", "-catalog", "../../internal/catalog/testdata", "-paipack", pack, "-output", filepath.Join(dir, "report.json"), "-markdown", "", "-blind-output", filepath.Join(dir, "blind.json"), "-blind-key", filepath.Join(dir, "key.json"))
+	if err := run(); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "key.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "library_evidence_off") || !strings.Contains(string(raw), "library_evidence_on") {
+		t.Fatal("blind defaults did not select pack variants")
+	}
 }
 
 func TestRecommendationCLIReports(t *testing.T) {

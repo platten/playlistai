@@ -26,6 +26,7 @@ type Runner struct {
 	Features   ports.FeatureStore
 	Semantic   ports.SemanticSearcher
 	K          int
+	library    *libraryEvaluation
 }
 
 type variant struct {
@@ -95,6 +96,9 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) (Report, error) {
 		report.SemanticInfo = &info
 	}
 	report.Cohorts = cohortCounts(dataset)
+	if r.library != nil {
+		report.Limitations = append(report.Limitations, "paipack comparison uses the production request overlay; isolated retrieval-stage metrics are unavailable; rules parser is not an evaluation of the desktop model parser")
+	}
 	report.Intent = r.evaluateIntent(ctx, dataset.IntentCases)
 	report.Resolution = r.evaluateResolution(dataset.ResolutionCases)
 	if len(dataset.RecommendationCases) == 0 {
@@ -425,7 +429,11 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 		for i, record := range records {
 			events[i] = record.Event
 		}
-		built, err := taste.BuildProfile(ctx, r.Catalog, events, taste.ProfileOptions{IncludeAllExposures: true})
+		feedbackCatalog := r.Catalog
+		if r.library != nil {
+			feedbackCatalog = r.library.feedback
+		}
+		built, err := taste.BuildProfile(ctx, feedbackCatalog, events, taste.ProfileOptions{IncludeAllExposures: true})
 		if err != nil {
 			metrics.Error = err.Error()
 			return metrics
@@ -479,11 +487,18 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 		return metrics
 	}
 	ids := playlist.IDs()
-	if value, ok := NDCGAtK(ids, caseRelevance(item, dataset.Interactions), r.K); ok {
+	relevance := caseRelevance(item, dataset.Interactions)
+	metrics.ReturnedAtK = min(r.K, len(ids))
+	for _, id := range ids[:metrics.ReturnedAtK] {
+		if _, judged := relevance[id]; judged {
+			metrics.JudgedAtK++
+		}
+	}
+	if value, ok := NDCGAtK(ids, relevance, r.K); ok && (r.library == nil || metrics.JudgedAtK == metrics.ReturnedAtK) {
 		metrics.NDCGAtK = &value
 	}
-	metrics.HardConstraintViolations = HardConstraintViolations(ctx, playlist, r.Features)
-	metrics.EssentialCriterionViolations = EssentialCriterionViolations(ctx, playlist, r.Features)
+	metrics.HardConstraintViolations = HardConstraintViolations(ctx, playlist, r.Features, r.Catalog)
+	metrics.EssentialCriterionViolations = EssentialCriterionViolations(ctx, playlist, r.Features, r.Catalog)
 	outcome := playlist.Outcome.State
 	if outcome == "" { // versioned baseline engines predate structured outcomes
 		outcome = core.OutcomeFulfilled
@@ -498,6 +513,9 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 }
 
 func (r Runner) variants(parameters ParameterSet) []variant {
+	if r.library != nil {
+		return r.libraryVariants(parameters)
+	}
 	baseCfg := configFromParameters(parameters)
 	noDiversity := baseCfg
 	noDiversity.MMRMinimumLambda = 1

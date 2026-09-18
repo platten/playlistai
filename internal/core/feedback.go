@@ -103,6 +103,7 @@ type TasteCluster struct {
 // TasteProfile is a deterministic projection of the contributing feedback
 // events for one catalog and optional request context.
 type TasteProfile struct {
+	Library          []LibraryTaste     `json:"library,omitempty"`
 	Version          int                `json:"version"`
 	AlgorithmVersion string             `json:"algorithmVersion"`
 	SnapshotID       string             `json:"snapshotId"`

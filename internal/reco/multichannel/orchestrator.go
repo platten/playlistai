@@ -17,6 +17,9 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
+	// sourceCatalogVersion identifies reusable external analysis independently
+	// of the request's composite catalog/pack fingerprint.
+	sourceCatalogVersion    string
 	requestOverlayProvider  RequestOverlayProvider
 	enhancedProvider        EnhancedAudioProvider
 	enhancedRefreshProvider EnhancedAudioRefreshProvider
@@ -100,6 +103,9 @@ func New(cat ports.Catalog, sim ports.SimilarityEngine, resolver ports.Reference
 
 func (o *Orchestrator) AlgorithmVersion() string {
 	version := AlgorithmVersion
+	if o.cfg.LibraryEvidenceEnabled {
+		version += "+library-evidence/v1"
+	}
 	if o.candidateSource != nil {
 		version += "+iterative/v2"
 	}
@@ -620,6 +626,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			o.retriever = retriever.withSearchSession()
 		}
 	}
+	if o.resolver != nil {
+		o.sourceCatalogVersion = o.resolver.CatalogVersion()
+	}
 	if o.requestOverlayProvider != nil {
 		overlay, err := o.requestOverlayProvider(ctx, o.cat, o.resolver, o.retriever)
 		if err != nil {
@@ -651,7 +660,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		ctx = audio.WithLazyEnhancedBudget(ctx, audio.EnhancedTrackLimit, audio.EnhancedTimeLimit)
 		if request.EnhancedAudio != nil && o.resolver != nil {
 			catalog := request.EnhancedAudio.Input().CatalogVersion
-			if catalog != "" && catalog != o.resolver.CatalogVersion() {
+			if catalog != "" && catalog != o.analysisCatalogVersion() {
 				return core.Playlist{}, fmt.Errorf("saved enhanced evidence belongs to another catalog; start a new generation")
 			}
 		}
@@ -711,7 +720,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 			catalogVersion := "unknown"
 			if o.resolver != nil {
-				catalogVersion = o.resolver.CatalogVersion()
+				catalogVersion = o.analysisCatalogVersion()
 			}
 			budget := audio.AnalysisBudget
 			if o.candidateSource != nil {

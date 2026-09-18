@@ -215,7 +215,7 @@ func TestDSPPercentilePreferenceUsesReviewedMappingAndCompatibleContract(t *test
 		Version: librarylearn.DSPStatisticsVersion, Generation: "dspstats-test", QuantileMethod: librarylearn.DSPQuantileMethod,
 		CorpusTracks: 1, DSPTracks: 1, Groups: []librarylearn.DSPStatisticsGroup{{
 			ID: "group", Contract: librarylearn.DSPContract{Version: "dsp/v1", Sampling: "balanced/v1", Scope: "sampled_windows"}, Tracks: 1,
-			Features: []librarylearn.DSPFeatureStatistics{{Name: "bass_energy_ratio", Known: 1, Quantiles: &librarylearn.DSPQuantiles{P25: .2, P75: .6}}},
+			Features: []librarylearn.DSPFeatureStatistics{{Name: "bass_energy_ratio", Known: 1, SampleCount: 4, Breakpoints: []float64{.1, .2, .6, .8}, Quantiles: &librarylearn.DSPQuantiles{P25: .2, P75: .6}}},
 		}},
 	}
 	statistics, err := json.Marshal(statisticsModel)

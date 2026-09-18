@@ -169,100 +169,109 @@ func (f *refreshFeedbackFixture) ListFeedback(context.Context, ports.FeedbackQue
 
 func TestEnhancedRefreshFreezesTasteWhileAddingCompletedEvidence(t *testing.T) {
 	for _, cold := range []bool{false, true} {
-		t.Run(map[bool]string{false: "existing taste", true: "cold start"}[cold], func(t *testing.T) {
-			ctx := context.Background()
-			c, err := New(ctx, testConfig(t), nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer c.Close()
-			cat := fakes.NewCatalog(2,
-				fakes.CatalogTrack{ID: "a", Display: "Artist A - Track", Audio: []float32{1, 0}, Track: []float32{1, 0}},
-				fakes.CatalogTrack{ID: "b", Display: "Artist B - Track", Audio: []float32{1, 0}, Track: []float32{1, 0}},
-				fakes.CatalogTrack{ID: "c", Display: "Artist C - Track", Audio: []float32{0, 1}, Track: []float32{0, 1}})
-			c.runtime.Catalog, c.runtime.Resolver = cat, cat
-			model := core.AudioRepresentationIdentity{Model: "fixture", Revision: "1", Preprocessing: "fixture/v1", Runtime: "fixture/v1", Dimension: 2, WeightsSHA256: strings.Repeat("a", 64), Pooling: "mean-l2/v1"}
-			// The inert worker supplies identity only. All representation reads
-			// use fixture rows; no native process or preview acquisition runs.
-			// MERT cache reads and refills must also work with CLAP/DSP disabled.
-			c.enhanced.enabled = false
-			c.enhanced.mertEnabled = true
-			c.enhanced.worker = &audio.MERTWorker{Model: model}
-			c.enhanced.manifest = &audio.MERTBundleManifest{Model: model}
-			feedback := &refreshFeedbackFixture{FeedbackStore: c.Feedback}
-			c.Feedback = feedback
-			put := func(id string, vector []float32) core.TrackRef {
-				t.Helper()
-				meta, _ := cat.Meta(id)
-				row := core.AudioRepresentation{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref),
-					Identity: core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: id}, Model: model, AudioSHA256: strings.Repeat("b", 64),
-					Pooled: vector, Segments: []core.AudioRepresentationSegment{{StartSeconds: 0, EndSeconds: 5, Vector: vector}},
-					Coverage: core.PreviewCoverage{Available: true, Source: "deezer", EndSeconds: 5, CoveredSeconds: 5}, AnalyzedAt: "2026-09-12T12:00:00Z"}
-				row.ID = audio.Fingerprint(row)
-				if err := c.analysis.store.Representations().Put(ctx, row); err != nil {
+		for _, composite := range []bool{false, true} {
+			t.Run(map[bool]string{false: "existing taste", true: "cold start"}[cold]+map[bool]string{false: "/base", true: "/composite"}[composite], func(t *testing.T) {
+				ctx := context.Background()
+				c, err := New(ctx, testConfig(t), nil)
+				if err != nil {
 					t.Fatal(err)
 				}
-				return meta.Ref
-			}
-			put("a", []float32{1, 0})
-			put("b", []float32{1, 0})
-			if !cold {
-				feedback.events = []core.FeedbackEvent{
-					{ID: "1", TrackID: "a", Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(1, 0)},
-					{ID: "2", TrackID: "b", Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(2, 0)},
+				defer c.Close()
+				cat := fakes.NewCatalog(2,
+					fakes.CatalogTrack{ID: "a", Display: "Artist A - Track", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+					fakes.CatalogTrack{ID: "b", Display: "Artist B - Track", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+					fakes.CatalogTrack{ID: "c", Display: "Artist C - Track", Audio: []float32{0, 1}, Track: []float32{0, 1}})
+				c.runtime.Catalog, c.runtime.Resolver = cat, cat
+				model := core.AudioRepresentationIdentity{Model: "fixture", Revision: "1", Preprocessing: "fixture/v1", Runtime: "fixture/v1", Dimension: 2, WeightsSHA256: strings.Repeat("a", 64), Pooling: "mean-l2/v1"}
+				// The inert worker supplies identity only. All representation reads
+				// use fixture rows; no native process or preview acquisition runs.
+				// MERT cache reads and refills must also work with CLAP/DSP disabled.
+				c.enhanced.enabled = false
+				c.enhanced.mertEnabled = true
+				c.enhanced.worker = &audio.MERTWorker{Model: model}
+				c.enhanced.manifest = &audio.MERTBundleManifest{Model: model}
+				feedback := &refreshFeedbackFixture{FeedbackStore: c.Feedback}
+				c.Feedback = feedback
+				put := func(id string, vector []float32) core.TrackRef {
+					t.Helper()
+					meta, _ := cat.Meta(id)
+					row := core.AudioRepresentation{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref),
+						Identity: core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: id}, Model: model, AudioSHA256: strings.Repeat("b", 64),
+						Pooled: vector, Segments: []core.AudioRepresentationSegment{{StartSeconds: 0, EndSeconds: 5, Vector: vector}},
+						Coverage: core.PreviewCoverage{Available: true, Source: "deezer", EndSeconds: 5, CoveredSeconds: 5}, AnalyzedAt: "2026-09-12T12:00:00Z"}
+					row.ID = audio.Fingerprint(row)
+					if err := c.analysis.store.Representations().Put(ctx, row); err != nil {
+						t.Fatal(err)
+					}
+					return meta.Ref
 				}
-			}
-			intent := core.MusicIntent{Controls: core.IntentControls{RecommendationMode: core.EnhancedHybrid}}
-			profile := core.TasteProfile{CatalogVersion: cat.CatalogVersion(), AsOf: time.Unix(2, 0), ColdStart: cold}
-			first, err := c.PrepareEnhancedAudio(ctx, intent, profile, nil)
-			if err != nil || first == nil || feedback.reads != 1 {
-				t.Fatalf("initial taste capture: %v reads=%d", err, feedback.reads)
-			}
-			initial := first.Input()
-			initial.MERTSearch = &core.MERTSimilaritySearch{Recorded: true, CatalogVersion: cat.CatalogVersion(), Model: model, ViewFingerprint: "frozen-cache-view", SearchableTracks: 2}
-			first, err = core.NewEnhancedAudioSnapshot(initial)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cold && len(initial.PositiveCentroid) != 0 || !cold && !reflect.DeepEqual(initial.PositiveCentroid, []float32{1, 0}) {
-				t.Fatalf("wrong initial taste: %+v", initial.PositiveCentroid)
-			}
-			// Feedback changes after the request snapshot. A historical JSON
-			// round trip must preserve both known centroids and an empty cold start.
-			feedback.events = []core.FeedbackEvent{
-				{ID: "3", TrackID: "a", Type: core.FeedbackDislike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(3, 0)},
-				{ID: "4", TrackID: "b", Type: core.FeedbackDislike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(4, 0)},
-			}
-			raw, err := json.Marshal(first)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var saved core.EnhancedAudioSnapshot
-			if err := json.Unmarshal(raw, &saved); err != nil {
-				t.Fatal(err)
-			}
-			ref := put("c", []float32{0, 1})
-			refreshed, err := c.RefreshEnhancedAudio(ctx, intent, profile, []core.TrackRef{ref}, &saved)
-			if err != nil || refreshed == nil {
-				t.Fatalf("refresh: %v", err)
-			}
-			got := refreshed.Input()
-			if !reflect.DeepEqual(got.MERTSearch, initial.MERTSearch) {
-				t.Fatal("refresh replaced the frozen MERT search")
-			}
-			if feedback.reads != 1 || !reflect.DeepEqual(got.PositiveCentroid, initial.PositiveCentroid) || !reflect.DeepEqual(got.NegativeCentroid, initial.NegativeCentroid) {
-				t.Fatalf("feedback changed frozen taste: reads=%d positive=%v negative=%v", feedback.reads, got.PositiveCentroid, got.NegativeCentroid)
-			}
-			if got.Representations["c"].TrackID != "c" || first.Fingerprint() != saved.Fingerprint() {
-				t.Fatal("refresh lost completed track evidence or mutated saved input")
-			}
-			incompatible := saved.Input()
-			incompatible.Model.Revision = "other"
-			other, _ := core.NewEnhancedAudioSnapshot(incompatible)
-			if _, err := c.RefreshEnhancedAudio(ctx, intent, profile, nil, other); err == nil {
-				t.Fatal("refresh mixed incompatible representation spaces")
-			}
-		})
+				put("a", []float32{1, 0})
+				put("b", []float32{1, 0})
+				if !cold {
+					feedback.events = []core.FeedbackEvent{
+						{ID: "1", TrackID: "a", Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(1, 0)},
+						{ID: "2", TrackID: "b", Type: core.FeedbackLike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(2, 0)},
+					}
+				}
+				intent := core.MusicIntent{Controls: core.IntentControls{RecommendationMode: core.EnhancedHybrid}}
+				profile := core.TasteProfile{CatalogVersion: cat.CatalogVersion(), AsOf: time.Unix(2, 0), ColdStart: cold}
+				if composite {
+					profile.CatalogVersion += "+local-library:pack"
+				}
+				profileCatalog := profile.CatalogVersion
+				first, err := c.PrepareEnhancedAudio(ctx, intent, profile, nil)
+				if err != nil || first == nil || feedback.reads != 1 {
+					t.Fatalf("initial taste capture: %v reads=%d", err, feedback.reads)
+				}
+				initial := first.Input()
+				initial.MERTSearch = &core.MERTSimilaritySearch{Recorded: true, CatalogVersion: cat.CatalogVersion(), Model: model, ViewFingerprint: "frozen-cache-view", SearchableTracks: 2}
+				first, err = core.NewEnhancedAudioSnapshot(initial)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cold && len(initial.PositiveCentroid) != 0 || !cold && !reflect.DeepEqual(initial.PositiveCentroid, []float32{1, 0}) {
+					t.Fatalf("wrong initial taste: %+v", initial.PositiveCentroid)
+				}
+				if profile.CatalogVersion != profileCatalog {
+					t.Fatal("external cache projection changed persisted profile identity")
+				}
+				// Feedback changes after the request snapshot. A historical JSON
+				// round trip must preserve both known centroids and an empty cold start.
+				feedback.events = []core.FeedbackEvent{
+					{ID: "3", TrackID: "a", Type: core.FeedbackDislike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(3, 0)},
+					{ID: "4", TrackID: "b", Type: core.FeedbackDislike, Scope: core.FeedbackScopeDurable, OccurredAt: time.Unix(4, 0)},
+				}
+				raw, err := json.Marshal(first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var saved core.EnhancedAudioSnapshot
+				if err := json.Unmarshal(raw, &saved); err != nil {
+					t.Fatal(err)
+				}
+				ref := put("c", []float32{0, 1})
+				refreshed, err := c.RefreshEnhancedAudio(ctx, intent, profile, []core.TrackRef{ref}, &saved)
+				if err != nil || refreshed == nil {
+					t.Fatalf("refresh: %v", err)
+				}
+				got := refreshed.Input()
+				if !reflect.DeepEqual(got.MERTSearch, initial.MERTSearch) {
+					t.Fatal("refresh replaced the frozen MERT search")
+				}
+				if feedback.reads != 1 || !reflect.DeepEqual(got.PositiveCentroid, initial.PositiveCentroid) || !reflect.DeepEqual(got.NegativeCentroid, initial.NegativeCentroid) {
+					t.Fatalf("feedback changed frozen taste: reads=%d positive=%v negative=%v", feedback.reads, got.PositiveCentroid, got.NegativeCentroid)
+				}
+				if got.Representations["c"].TrackID != "c" || first.Fingerprint() != saved.Fingerprint() {
+					t.Fatal("refresh lost completed track evidence or mutated saved input")
+				}
+				incompatible := saved.Input()
+				incompatible.Model.Revision = "other"
+				other, _ := core.NewEnhancedAudioSnapshot(incompatible)
+				if _, err := c.RefreshEnhancedAudio(ctx, intent, profile, nil, other); err == nil {
+					t.Fatal("refresh mixed incompatible representation spaces")
+				}
+			})
+		}
 	}
 }
 

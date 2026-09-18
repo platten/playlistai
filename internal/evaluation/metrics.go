@@ -122,7 +122,7 @@ func PlaylistDiagnostics(cat ports.Catalog, playlist core.Playlist, recent []str
 	return
 }
 
-func HardConstraintViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore) int {
+func HardConstraintViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore, catalogs ...ports.Catalog) int {
 	excluded := map[string]struct{}{}
 	referenceArtists := map[string]struct{}{}
 	for _, reference := range playlist.Intent.References {
@@ -156,6 +156,9 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 		feature := evaluationFeatures(ctx, features, track.ID)
 		for _, constraint := range playlist.Intent.HardConstraints {
 			// Judge the requested rule, not the engine's claim that it enforced it.
+			if constraint.Kind == "require_style" && evaluationCriterion(ctx, track.ID, feature, core.MusicalCriterion{Kind: "style", Value: constraint.Value}, catalogs) == core.EvidenceMatch {
+				continue
+			}
 			if semanticConstraint(constraint.Kind) && !core.SemanticConstraintSatisfied(feature, constraint) {
 				violations++
 			}
@@ -167,7 +170,7 @@ func HardConstraintViolations(ctx context.Context, playlist core.Playlist, featu
 // EssentialCriterionViolations is intentionally conservative. Unknown or
 // unavailable evidence counts as a violation when tracks were returned; an
 // honest unsupported empty result does not.
-func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore) int {
+func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, features ports.FeatureStore, catalogs ...ports.Catalog) int {
 	if len(playlist.Tracks) == 0 || len(playlist.Intent.EssentialCriteria) == 0 {
 		return 0
 	}
@@ -177,17 +180,34 @@ func EssentialCriterionViolations(ctx context.Context, playlist core.Playlist, f
 	for _, track := range playlist.Tracks {
 		feature := evaluationFeatures(ctx, features, track.ID)
 		for _, criterion := range playlist.Intent.EssentialCriteria {
-			if (criterion.Scope == "" || criterion.Scope == "playlist") && core.CriterionEvidence(feature, criterion) != core.EvidenceMatch {
+			if (criterion.Scope == "" || criterion.Scope == "playlist") && evaluationCriterion(ctx, track.ID, feature, criterion, catalogs) != core.EvidenceMatch {
 				violations++
 			}
 		}
 		states := make([]core.EvidenceState, len(stages))
 		for index, criterion := range stages {
-			states[index] = core.CriterionEvidence(feature, criterion)
+			states[index] = evaluationCriterion(ctx, track.ID, feature, criterion, catalogs)
 		}
 		journeyStates = append(journeyStates, states)
 	}
 	return violations + core.JourneySequenceViolations(journeyStates, len(stages))
+}
+
+func evaluationCriterion(ctx context.Context, id string, feature core.TrackFeatures, criterion core.MusicalCriterion, catalogs []ports.Catalog) core.EvidenceState {
+	state := core.CriterionEvidence(feature, criterion)
+	if state != core.EvidenceUnknown {
+		return state
+	}
+	for _, cat := range catalogs {
+		if provider, ok := cat.(interface {
+			CriterionEvidence(context.Context, string, core.MusicalCriterion) core.EvidenceState
+		}); ok {
+			if evidence := provider.CriterionEvidence(ctx, id, criterion); evidence != core.EvidenceUnknown {
+				return evidence
+			}
+		}
+	}
+	return state
 }
 
 func evaluationFeatures(ctx context.Context, store ports.FeatureStore, id string) core.TrackFeatures {
