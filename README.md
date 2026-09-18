@@ -35,8 +35,11 @@ system FFmpeg installation:
   --accept-model-license --out ./my-library.paipack
 ```
 
-`auto` is the default bounded resource plan. Use `--concurrency serial` as the
-diagnostic correctness baseline, or `manual` with stage ceilings such as
+`auto` is the default bounded resource plan. On Linux it intersects affinity
+and cgroup quota with sysfs physical-core topology, then reserves one physical
+core for control, storage, and SQLite work; an explicit `--workers` value may
+deliberately use SMT threads. Use `--concurrency serial` as the diagnostic
+correctness baseline, or `manual` with stage ceilings such as
 `--workers 8 --io-profile nas --io-workers 2 --decode-workers 2
 --inference-workers 2 --inference-threads 2 --max-ram 8GiB`. Stage ceilings
 share the global budget; they do not multiply it. Only one mutating coordinator
@@ -113,16 +116,21 @@ stored directory revision changed. Resume never wipes prior state.
 Directory reads and their SQLite file/job observations are committed in bounded
 chunks, avoiding a durable transaction for every track in a large directory.
 
-Audio analysis decodes one sampled window at a time and releases source I/O
-before DSP or MERT runs. Multiple file workflows keep the bounded decode,
+With `--io-profile hdd`, audio analysis reserves a complete track's sampled PCM
+when it fits the bounded `min(4 GiB, maxRAM/8)` budget, decodes its windows
+consecutively under one source-I/O lease, and then releases PCM window by window
+through DSP and MERT. It falls back to single-window operation when the complete
+track cannot fit. Other profiles retain single-window buffering. Multiple file
+workflows keep the bounded decode,
 preprocessing, and inference stages supplied. Matching recording MBIDs, ISRCs,
 AcoustID IDs, or exact fingerprint-plus-metadata identities reuse a compatible
 MERT vector while still measuring file-specific DSP. Existing exact-contract
 recording vectors are loaded into a thread-safe in-memory index before audio
 workers start; newly committed vectors are inserted after the durable write, so
 deduplication does not perform a SQLite lookup per file. The final summary and JSON
-report aggregate decode, DSP, preprocessing, MERT-session wait, and inference
-worker time so `bench concurrency` can compare session/thread configurations.
+report aggregate and per-track admission, decode, DSP-slot, downmix, resampling,
+worker preprocessing, bounded binary PCM IPC, CUDA execution, and commit timings plus admission
+queue counters so `bench concurrency` can compare configurations.
 DSP also has its own semantic cache, so changing only the MERT model or
 execution provider does not repeat compatible file-specific measurements.
 
@@ -205,7 +213,13 @@ to produce decoded output remains valid work.
 
 Use `bench concurrency --root PATH --sample-tracks N` for isolated real-audio
 serial and explicit MERT session/thread configurations plus auto equivalence and
-resource measurements. Use
+resource measurements. Add `--matrix pipeline` to run three or more trials of
+the heavy `8/10/11`, decode `4/6/8/10`, DSP `1/2/3`, source-I/O `1/2`, and
+track-buffering on/off matrix with one MERT session/thread. Its JSON selects the
+lowest-resource complete CUDA configuration within 3% of the fastest median and
+5% of its p95. Matrix runs rotate/reverse configuration order, explicitly
+pre-read the source corpus immediately before each timed analysis, and omit
+fit/export/query work so the comparison remains pipeline-focused. Use
 `bench scale --rows 2000000 --dimension 768 --max-ram 8GiB` for the explicit
 synthetic index/export/RSS/query-latency gate; it does not measure decoding or
 musical quality.

@@ -9,6 +9,25 @@ import (
 	"time"
 )
 
+const decodeFrameOverhead = int64(4096)
+
+// DecodedPCMReservationBytes returns the bounded decoder output allowance for
+// a requested window. FFmpeg may emit a small codec/filter tail beyond the
+// nominal duration, so callers reserving PCM must include the same allowance
+// enforced by DecodeWindow.
+func DecodedPCMReservationBytes(window Window, sampleRate, channels int) (int64, error) {
+	if window.Duration <= 0 || sampleRate <= 0 || channels <= 0 || int64(channels) > math.MaxInt64/4 {
+		return 0, fmt.Errorf("localaudio: invalid PCM reservation inputs")
+	}
+	frameBytes := int64(channels) * 4
+	maximumFrames := math.MaxInt64/frameBytes - decodeFrameOverhead
+	frames := math.Ceil(window.Duration.Seconds() * float64(sampleRate))
+	if frames <= 0 || frames > float64(maximumFrames) {
+		return 0, fmt.Errorf("localaudio: decoded PCM reservation overflow")
+	}
+	return (int64(frames) + decodeFrameOverhead) * frameBytes, nil
+}
+
 func secondsArgument(value time.Duration) string {
 	return strconv.FormatFloat(value.Seconds(), 'f', 9, 64)
 }
@@ -28,14 +47,10 @@ func (r *Runtime) DecodeWindow(ctx context.Context, probe ProbeResult, window Wi
 		return result, ErrSourceChanged
 	}
 	rate, channels := probe.SelectedStream.SampleRate, probe.SelectedStream.Channels
-	expectedFrames := int64(math.Ceil(window.Duration.Seconds() * float64(rate)))
-	frameBytes := int64(channels) * 4
-	overhead := frameBytes * 4096
-	if expectedFrames <= 0 || r.limits.MaxPCMBytes <= overhead ||
-		expectedFrames > (r.limits.MaxPCMBytes-overhead)/frameBytes {
+	reservation, reservationErr := DecodedPCMReservationBytes(window, rate, channels)
+	if reservationErr != nil || reservation > r.limits.MaxPCMBytes {
 		return result, fmt.Errorf("localaudio: decoded PCM reservation exceeds limit")
 	}
-	reservation := expectedFrames*frameBytes + overhead
 	args := []string{
 		"-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-threads", "1",
 		"-ss", secondsArgument(window.Start), "-i", probe.Path,

@@ -516,18 +516,27 @@ func TestRefreshFileRevisionRequeuesEverySemanticJob(t *testing.T) {
 }
 
 func TestMERTSignalGateRejectsSilenceAndDC(t *testing.T) {
-	if hasMERTSignal(audio.DecodedPCM{Samples: make([]float32, 100), SampleRate: 24_000, Channels: 1}) {
+	hasSignal := func(samples []float32) bool {
+		t.Helper()
+		resampled, metrics, err := audio.MERTResampleLocalWithMetrics(context.Background(), audio.DecodedPCM{Samples: samples, SampleRate: 24_000, Channels: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		clear(resampled)
+		return metrics.HasSignal
+	}
+	if hasSignal(make([]float32, 100)) {
 		t.Fatal("silence passed signal gate")
 	}
 	dc := make([]float32, 100)
 	for i := range dc {
 		dc[i] = 0.25
 	}
-	if hasMERTSignal(audio.DecodedPCM{Samples: dc, SampleRate: 24_000, Channels: 1}) {
+	if hasSignal(dc) {
 		t.Fatal("DC passed signal gate")
 	}
 	dc[50] = -0.25
-	if !hasMERTSignal(audio.DecodedPCM{Samples: dc, SampleRate: 24_000, Channels: 1}) {
+	if !hasSignal(dc) {
 		t.Fatal("varying signal was rejected")
 	}
 }

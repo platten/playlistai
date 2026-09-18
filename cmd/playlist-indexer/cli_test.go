@@ -96,6 +96,22 @@ func TestEmbeddedMERTPrefixesPreferCUDAForAutoAndRetainLegacyFallback(t *testing
 	}
 }
 
+func TestTunePlanForCUDAKeepsOneSessionAndHDDDecodeWidth(t *testing.T) {
+	plan := libraryindex.ResourcePlan{
+		Mode:             libraryindex.ConcurrencyAuto,
+		HeavyWorkers:     11,
+		DecodeWorkers:    8,
+		IOWorkers:        1,
+		InferenceWorkers: 2,
+		InferenceThreads: 3,
+	}
+
+	got := tunePlanForDevice(plan, commonFlags{}, "cuda:0")
+	if got.InferenceWorkers != 1 || got.InferenceThreads != 1 || got.DecodeWorkers != 8 {
+		t.Fatalf("CUDA plan = %+v", got)
+	}
+}
+
 func TestConfigDefaultsAndCLIPrecedence(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "indexer.json")
 	if err := os.WriteFile(path, []byte(`{"concurrency":"manual","workers":"4","ioWorkers":1,"inferenceThreads":1,"maxRam":"4GiB","seed":7,"followDirectorySymlinks":true}`), 0o600); err != nil {

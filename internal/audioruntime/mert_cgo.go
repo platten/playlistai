@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"time"
 
 	ort "github.com/yalue/onnxruntime_go"
 
@@ -89,7 +90,8 @@ func RunMERT(dir string) error {
 	defer func() { _ = session.Destroy() }()
 	for {
 		var request audio.MERTWorkerRequest
-		if err = audio.ReadFrame(os.Stdin, &request, 1<<20); err != nil {
+		request, err = audio.ReadMERTRequest(os.Stdin)
+		if err != nil {
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
@@ -103,7 +105,7 @@ func RunMERT(dir string) error {
 		if request.Health {
 			err = mertHealth(session, m.File(dir, "health"), m.Backend())
 		} else {
-			response.Vector, err = mertEmbedding(session, request.Audio)
+			response.Vector, response.Timings, err = mertEmbedding(session, request.Audio)
 		}
 		clear(request.Audio)
 		if err != nil {
@@ -117,38 +119,44 @@ func RunMERT(dir string) error {
 		}
 	}
 }
-func mertEmbedding(session *ort.DynamicAdvancedSession, samples []float32) ([]float32, error) {
+func mertEmbedding(session *ort.DynamicAdvancedSession, samples []float32) ([]float32, audio.MERTWorkerTimings, error) {
+	var timings audio.MERTWorkerTimings
+	preprocessStarted := time.Now()
 	pcm, mask, err := audio.MERTInput(samples)
 	if err != nil {
-		return nil, err
+		return nil, timings, err
 	}
 	defer clear(pcm)
 	defer clear(mask)
 	input, err := ort.NewTensor(ort.NewShape(1, audio.MERTSegmentSamples), pcm)
 	if err != nil {
-		return nil, err
+		return nil, timings, err
 	}
 	defer func() { _ = input.Destroy() }()
 	attention, err := ort.NewTensor(ort.NewShape(1, audio.MERTSegmentSamples), mask)
 	if err != nil {
-		return nil, err
+		return nil, timings, err
 	}
 	defer func() { _ = attention.Destroy() }()
 	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, audio.MERTDimension))
 	if err != nil {
-		return nil, err
+		return nil, timings, err
 	}
 	defer func() { clear(output.GetData()); _ = output.Destroy() }()
+	timings.Preprocessing = time.Since(preprocessStarted)
+	executionStarted := time.Now()
 	if err = session.Run([]ort.Value{input, attention}, []ort.Value{output}); err != nil {
-		return nil, err
+		timings.Execution = time.Since(executionStarted)
+		return nil, timings, err
 	}
+	timings.Execution = time.Since(executionStarted)
 	vector := append([]float32(nil), output.GetData()...)
 	// Graph output must already be normalized. Do not hide graph/export errors.
 	if !audio.MERTParity(vector, vector) {
 		clear(vector)
-		return nil, fmt.Errorf("invalid MERT output")
+		return nil, timings, fmt.Errorf("invalid MERT output")
 	}
-	return vector, nil
+	return vector, timings, nil
 }
 
 type mertHealthFixture struct {
@@ -190,7 +198,7 @@ func mertHealth(session *ort.DynamicAdvancedSession, path, backend string) error
 		for j := range pcm {
 			pcm[j] = float32(0.1 * math.Sin(2*math.Pi*test.ToneHz*float64(j)/audio.MERTSampleRate))
 		}
-		vector, err := mertEmbedding(session, pcm)
+		vector, _, err := mertEmbedding(session, pcm)
 		clear(pcm)
 		maximumError, cosine, valid := audio.MERTParityMetrics(vector, test.Embedding)
 		clear(vector)

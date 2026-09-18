@@ -30,6 +30,12 @@ type MERTWorkerResponse struct {
 	Vector   []float32
 	Error    string
 	Model    core.AudioRepresentationIdentity
+	Timings  MERTWorkerTimings
+}
+
+type MERTWorkerTimings struct {
+	Preprocessing time.Duration `json:"preprocessing"`
+	Execution     time.Duration `json:"execution"`
 }
 
 // Worker serializes CPU inference and isolates decoder/runtime native failures
@@ -88,27 +94,31 @@ func (w *MERTWorker) EffectiveDevice() string {
 	return "cpu"
 }
 func (w *MERTWorker) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
+	vector, _, err := w.EmbedAudioWithTimings(ctx, pcm)
+	return vector, err
+}
+func (w *MERTWorker) EmbedAudioWithTimings(ctx context.Context, pcm []float32) ([]float32, MERTWorkerTimings, error) {
 	if len(pcm) < 400 || len(pcm) > MERTSegmentSamples {
-		return nil, fmt.Errorf("audio: invalid MERT segment length")
+		return nil, MERTWorkerTimings{}, fmt.Errorf("audio: invalid MERT segment length")
 	}
 	return w.call(ctx, MERTWorkerRequest{Protocol: MERTWorkerProtocol, Audio: pcm})
 }
 func (w *MERTWorker) Health(ctx context.Context) error {
-	_, err := w.call(ctx, MERTWorkerRequest{Protocol: MERTWorkerProtocol, Health: true})
+	_, _, err := w.call(ctx, MERTWorkerRequest{Protocol: MERTWorkerProtocol, Health: true})
 	return err
 }
 
-func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]float32, error) {
+func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]float32, MERTWorkerTimings, error) {
 	for !w.mu.TryLock() {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, MERTWorkerTimings{}, ctx.Err()
 		case <-time.After(5 * time.Millisecond):
 		}
 	}
 	defer w.mu.Unlock()
 	if w.closed {
-		return nil, fmt.Errorf("audio: worker is closed")
+		return nil, MERTWorkerTimings{}, fmt.Errorf("audio: worker is closed")
 	}
 	parent := ctx
 	timeout := w.ResponseTimeout
@@ -123,7 +133,7 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, MERTWorkerTimings{}, err
 	}
 	if w.cmd == nil {
 		executable, flag := w.Executable, "--mert-worker"
@@ -131,7 +141,7 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 			var err error
 			executable, err = os.Executable()
 			if err != nil {
-				return nil, err
+				return nil, MERTWorkerTimings{}, err
 			}
 		}
 		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
@@ -152,17 +162,17 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		cmd.Stderr = workerStderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
-			return nil, err
+			return nil, MERTWorkerTimings{}, err
 		}
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			_ = stdin.Close()
-			return nil, err
+			return nil, MERTWorkerTimings{}, err
 		}
 		if err := cmd.Start(); err != nil {
 			_ = stdin.Close()
 			_ = stdout.Close()
-			return nil, fmt.Errorf("%w: failed to start", ErrNativeWorker)
+			return nil, MERTWorkerTimings{}, fmt.Errorf("%w: failed to start", ErrNativeWorker)
 		}
 		w.cmd, w.stdin, w.stdout, w.stderr = cmd, stdin, stdout, workerStderr
 	}
@@ -173,7 +183,7 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 	done := make(chan answer, 1)
 	go func() {
 		var a answer
-		a.err = WriteFrame(w.stdin, request)
+		a.err = WriteMERTRequest(w.stdin, request)
 		if a.err == nil {
 			a.err = ReadFrame(w.stdout, &a.response, 1<<20)
 		}
@@ -184,9 +194,9 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		w.stopLocked()
 		<-done
 		if parent.Err() != nil {
-			return nil, parent.Err()
+			return nil, MERTWorkerTimings{}, parent.Err()
 		}
-		return nil, fmt.Errorf("%w: no response for %s: %w", ErrNativeWorker, timeout, context.DeadlineExceeded)
+		return nil, MERTWorkerTimings{}, fmt.Errorf("%w: no response for %s: %w", ErrNativeWorker, timeout, context.DeadlineExceeded)
 	case result := <-done:
 		if result.err != nil || result.response.Error != "" || result.response.Protocol != MERTWorkerProtocol || result.response.Model != w.Model {
 			detail := ""
@@ -195,15 +205,15 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 			}
 			w.stopLocked()
 			if detail != "" {
-				return nil, fmt.Errorf("%w: process exited or returned an incompatible response: %s", ErrNativeWorker, detail)
+				return nil, MERTWorkerTimings{}, fmt.Errorf("%w: process exited or returned an incompatible response: %s", ErrNativeWorker, detail)
 			}
-			return nil, fmt.Errorf("%w: process exited or returned an incompatible response", ErrNativeWorker)
+			return nil, MERTWorkerTimings{}, fmt.Errorf("%w: process exited or returned an incompatible response", ErrNativeWorker)
 		}
 		if !request.Health && (w.Model.Dimension != MERTDimension || !MERTParity(result.response.Vector, result.response.Vector)) {
 			w.stopLocked()
-			return nil, fmt.Errorf("%w: invalid embedding", ErrNativeWorker)
+			return nil, MERTWorkerTimings{}, fmt.Errorf("%w: invalid embedding", ErrNativeWorker)
 		}
-		return result.response.Vector, nil
+		return result.response.Vector, result.response.Timings, nil
 	}
 }
 func (w *MERTWorker) stopLocked() {

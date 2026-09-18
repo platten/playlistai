@@ -20,8 +20,8 @@ func main() {
 	}
 }
 func run() error {
-	if len(os.Args) == 3 && os.Args[1] == "--bundle" {
-		return audioruntime.RunMERT(os.Args[2])
+	if bundle, worker := mertWorkerInvocation(os.Args[1:]); worker {
+		return audioruntime.RunMERT(bundle)
 	}
 	if len(os.Args) != 2 {
 		return fmt.Errorf("usage: mertparity <prepared-bundle-directory>")
@@ -66,4 +66,12 @@ func run() error {
 		ReloadHealthMS     int64 `json:"reloadHealthMs"`
 		CancellationPassed bool  `json:"cancellationPassed"`
 	}{manifest.Model, coldElapsed.Milliseconds(), warmElapsed.Milliseconds(), time.Since(reload).Milliseconds(), true})
+}
+
+func mertWorkerInvocation(args []string) (string, bool) {
+	returnValue := ""
+	if len(args) == 2 && args[0] == "--mert-worker" {
+		returnValue = args[1]
+	}
+	return returnValue, returnValue != ""
 }

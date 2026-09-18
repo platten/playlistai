@@ -12,8 +12,8 @@ import (
 
 func runMERTTestWorker(mode string) {
 	for {
-		var request MERTWorkerRequest
-		if ReadFrame(os.Stdin, &request, 1<<20) != nil {
+		request, err := ReadMERTRequest(os.Stdin)
+		if err != nil {
 			return
 		}
 		if mode == "test:mert-hang" {
@@ -23,7 +23,7 @@ func runMERTTestWorker(mode string) {
 		if mode == "test:mert-crash" {
 			return
 		}
-		response := MERTWorkerResponse{Protocol: MERTWorkerProtocol, Model: mertTestModel(), Vector: make([]float32, MERTDimension)}
+		response := MERTWorkerResponse{Protocol: MERTWorkerProtocol, Model: mertTestModel(), Vector: make([]float32, MERTDimension), Timings: MERTWorkerTimings{Preprocessing: 2 * time.Millisecond, Execution: 3 * time.Millisecond}}
 		response.Vector[0] = 1
 		if mode == "test:mert-invalid" {
 			response.Vector[0] = float32(math.NaN())
@@ -35,6 +35,23 @@ func runMERTTestWorker(mode string) {
 		if WriteFrame(os.Stdout, response) != nil {
 			return
 		}
+	}
+}
+
+func TestMERTWorkerReturnsNativeStageTimings(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &MERTWorker{Executable: exe, BundleDir: "test:mert-healthy", Model: mertTestModel()}
+	defer w.Close()
+	vector, timings, err := w.EmbedAudioWithTimings(context.Background(), make([]float32, 400))
+	clear(vector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if timings.Preprocessing != 2*time.Millisecond || timings.Execution != 3*time.Millisecond {
+		t.Fatalf("worker timings=%+v", timings)
 	}
 }
 func TestMERTWorkerKillsReapsAndRestarts(t *testing.T) {
