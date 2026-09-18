@@ -1,9 +1,16 @@
-# Playlist indexer executed validation — through September 17, 2026
+# Playlist indexer executed validation — through September 18, 2026
 
 This report distinguishes commands actually executed in the implementation
 workspace from remaining release gates.
 
 ## Executed native evidence
+
+- `go test -run '^$' -bench '^BenchmarkObserveFiles$' -benchtime=1s -count=1
+  ./internal/libraryindex` on Linux/amd64 with an Intel Core Ultra 9 285H measured
+  7,015,028 ns/file for sequential one-file state commits and 124,591 ns/file
+  for 256-file directory-chunk commits (about 56x faster). This isolates SQLite
+  observation/job ingestion with synthetic file descriptors; it is not an
+  end-to-end filesystem or audio-analysis benchmark.
 
 - `./scripts/test-indexer-codecs.sh` passed under `go test -race` using actual
   pinned FFmpeg processes. It covered FLAC at 44.1/48/96/192 kHz, CBR/VBR MP3,

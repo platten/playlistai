@@ -300,6 +300,8 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 		}
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 		children := make([]string, 0, min(len(entries), 32))
+		discovered := make([]SourceFile, 0, len(entries))
+		activities := make([]FileActivity, 0, len(entries))
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
 				return nil, files, audio, DirectoryRevision{}, err
@@ -347,16 +349,19 @@ func (s *State) scanDirectory(ctx context.Context, task DirectoryTask, root Root
 			if _, ok := audioExtensions[ext]; !ok {
 				continue
 			}
-			files++
 			device, inode := fileIdentity(info)
-			_, err = s.ObserveFile(ctx, task.EpochID, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext}, options.SemanticJobs)
-			if err != nil {
-				return nil, files, audio, DirectoryRevision{}, err
+			discovered = append(discovered, SourceFile{RootID: root.ID, RelativePath: childRel, Device: device, Inode: inode, Size: info.Size(), MTimeNS: info.ModTime().UnixNano(), Extension: ext})
+			activities = append(activities, FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
+		}
+		if _, err := s.ObserveFiles(ctx, task.EpochID, discovered, options.SemanticJobs); err != nil {
+			return nil, files, audio, DirectoryRevision{}, err
+		}
+		files += int64(len(discovered))
+		audio += int64(len(discovered))
+		if options.OnFile != nil {
+			for _, activity := range activities {
+				options.OnFile(activity)
 			}
-			if options.OnFile != nil {
-				options.OnFile(FileActivity{RelativePath: childRel, Size: info.Size(), Extension: ext})
-			}
-			audio++
 		}
 		if err := s.AddDirectoryChildren(ctx, task, children); err != nil {
 			return nil, files, audio, DirectoryRevision{}, err

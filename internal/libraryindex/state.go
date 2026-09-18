@@ -1066,57 +1066,103 @@ func (s *State) SemanticDigest(ctx context.Context) (string, error) {
 }
 
 func (s *State) ObserveFile(ctx context.Context, epoch int64, file SourceFile, semanticKeys map[string]string) (SourceFile, error) {
-	file.RelativePath = filepath.Clean(file.RelativePath)
-	if file.RelativePath == "." || filepath.IsAbs(file.RelativePath) || file.RelativePath == ".." || strings.HasPrefix(file.RelativePath, ".."+string(filepath.Separator)) {
-		return file, errors.New("library indexer: source path escapes its root")
+	observed, err := s.ObserveFiles(ctx, epoch, []SourceFile{file}, semanticKeys)
+	if len(observed) == 1 {
+		return observed[0], err
 	}
-	if file.SourceRevision == "" {
-		file.SourceRevision = sourceRevision(file.Size, file.MTimeNS, file.Device, file.Inode)
+	return file, err
+}
+
+// ObserveFiles records one bounded filesystem discovery chunk in a single
+// transaction. Callers retain per-file results, while directories with many
+// entries avoid one durable round trip and commit per source.
+func (s *State) ObserveFiles(ctx context.Context, epoch int64, files []SourceFile, semanticKeys map[string]string) ([]SourceFile, error) {
+	if len(files) == 0 {
+		return []SourceFile{}, nil
 	}
-	if file.ID == "" {
-		file.ID = stableFileID(file.RootID, file.RelativePath)
+	if len(files) > 1024 {
+		return nil, errors.New("library indexer: file observation batch exceeds limit")
 	}
+	observed := slices.Clone(files)
+	for index := range observed {
+		file := &observed[index]
+		file.RelativePath = filepath.Clean(file.RelativePath)
+		if file.RelativePath == "." || filepath.IsAbs(file.RelativePath) || file.RelativePath == ".." || strings.HasPrefix(file.RelativePath, ".."+string(filepath.Separator)) {
+			return observed, errors.New("library indexer: source path escapes its root")
+		}
+		if file.SourceRevision == "" {
+			file.SourceRevision = sourceRevision(file.Size, file.MTimeNS, file.Device, file.Inode)
+		}
+		if file.ID == "" {
+			file.ID = stableFileID(file.RootID, file.RelativePath)
+		}
+		file.needsProcessing = false
+	}
+	updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	err := s.writeBatch(ctx, func(tx *sql.Tx) error {
-		var err error
-		// Preserve identity across same-filesystem moves within a configured root.
-		var prior string
-		// A zero pair means that this platform/filesystem could not provide a
-		// native identity. Never let that sentinel collapse unrelated paths.
-		if file.Device != 0 || file.Inode != 0 {
-			_ = tx.QueryRowContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`, file.RootID, file.Device, file.Inode).Scan(&prior)
-		}
-		if prior != "" {
-			file.ID = prior
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO files(id,root_id,relative_path,device,inode,size,mtime_ns,source_revision,extension,status,first_seen_epoch,last_seen_epoch,tombstoned_at)
-			VALUES(?,?,?,?,?,?,?,?,?,'present',?,?,NULL)
-			ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path,device=excluded.device,inode=excluded.inode,size=excluded.size,mtime_ns=excluded.mtime_ns,source_revision=excluded.source_revision,extension=excluded.extension,status='present',last_seen_epoch=excluded.last_seen_epoch,tombstoned_at=NULL`,
-			file.ID, file.RootID, file.RelativePath, file.Device, file.Inode, file.Size, file.MTimeNS, file.SourceRevision, file.Extension, epoch, epoch)
+		identityStatement, err := tx.PrepareContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`)
 		if err != nil {
 			return err
 		}
-		for kind, key := range semanticKeys {
-			if _, err = tx.ExecContext(ctx, `UPDATE jobs SET state='superseded',fence='',lease_until=NULL,updated_at=? WHERE kind=? AND file_id=? AND semantic_key<>? AND state<>'superseded'`, time.Now().UTC().Format(time.RFC3339Nano), kind, file.ID, key); err != nil {
+		defer identityStatement.Close()
+		fileStatement, err := tx.PrepareContext(ctx, `INSERT INTO files(id,root_id,relative_path,device,inode,size,mtime_ns,source_revision,extension,status,first_seen_epoch,last_seen_epoch,tombstoned_at)
+			VALUES(?,?,?,?,?,?,?,?,?,'present',?,?,NULL)
+			ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path,device=excluded.device,inode=excluded.inode,size=excluded.size,mtime_ns=excluded.mtime_ns,source_revision=excluded.source_revision,extension=excluded.extension,status='present',last_seen_epoch=excluded.last_seen_epoch,tombstoned_at=NULL`)
+		if err != nil {
+			return err
+		}
+		defer fileStatement.Close()
+		supersedeStatement, err := tx.PrepareContext(ctx, `UPDATE jobs SET state='superseded',fence='',lease_until=NULL,updated_at=? WHERE kind=? AND file_id=? AND semantic_key<>? AND state<>'superseded'`)
+		if err != nil {
+			return err
+		}
+		defer supersedeStatement.Close()
+		jobStatement, err := tx.PrepareContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
+			ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
+			state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
+			fence='',lease_until=NULL,
+			error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
+			error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
+			updated_at=excluded.updated_at RETURNING state`)
+		if err != nil {
+			return err
+		}
+		defer jobStatement.Close()
+
+		for index := range observed {
+			file := &observed[index]
+			// Preserve identity across same-filesystem moves within a configured root.
+			var prior string
+			// A zero pair means that this platform/filesystem could not provide a
+			// native identity. Never let that sentinel collapse unrelated paths.
+			if file.Device != 0 || file.Inode != 0 {
+				err = identityStatement.QueryRowContext(ctx, file.RootID, file.Device, file.Inode).Scan(&prior)
+				if err != nil && !errors.Is(err, sql.ErrNoRows) {
+					return err
+				}
+			}
+			if prior != "" {
+				file.ID = prior
+			}
+			if _, err = fileStatement.ExecContext(ctx, file.ID, file.RootID, file.RelativePath, file.Device, file.Inode, file.Size, file.MTimeNS, file.SourceRevision, file.Extension, epoch, epoch); err != nil {
 				return err
 			}
-			var jobState string
-			err = tx.QueryRowContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
-				ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
-				state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
-				fence='',lease_until=NULL,
-				error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
-				error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
-				updated_at=excluded.updated_at RETURNING state`, kind, file.ID, file.SourceRevision, key, time.Now().UTC().Format(time.RFC3339Nano)).Scan(&jobState)
-			if err != nil {
-				return err
-			}
-			if jobState == "pending" {
-				file.needsProcessing = true
+			for kind, key := range semanticKeys {
+				if _, err = supersedeStatement.ExecContext(ctx, updatedAt, kind, file.ID, key); err != nil {
+					return err
+				}
+				var jobState string
+				if err = jobStatement.QueryRowContext(ctx, kind, file.ID, file.SourceRevision, key, updatedAt).Scan(&jobState); err != nil {
+					return err
+				}
+				if jobState == "pending" {
+					file.needsProcessing = true
+				}
 			}
 		}
 		return nil
 	})
-	return file, err
+	return observed, err
 }
 
 type Job struct {

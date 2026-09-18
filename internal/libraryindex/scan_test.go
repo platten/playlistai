@@ -118,6 +118,40 @@ func TestDurableScanBoundsFrontierAndIgnoresNonRegularFiles(t *testing.T) {
 	}
 }
 
+func TestScanBatchesLargeDirectoryAcrossReadChunks(t *testing.T) {
+	ctx := context.Background()
+	rootPath := t.TempDir()
+	const count = 300
+	for index := 0; index < count; index++ {
+		name := filepath.Join(rootPath, fmt.Sprintf("track-%03d.flac", index))
+		if err := os.WriteFile(name, []byte("fixture"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state, err := OpenState(ctx, t.TempDir(), "large-directory-batch-test", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, rootPath, "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var activities int
+	report, err := state.Scan(ctx, ScanOptions{
+		Roots: []Root{root}, Workers: 1, QueueDepth: 1,
+		SemanticJobs: map[string]string{"metadata": "probe/v1", "audio": "audio/v1"},
+		OnFile:       func(FileActivity) { activities++ },
+	})
+	if err != nil || !report.Complete || report.AudioFiles != count || activities != count {
+		t.Fatalf("report=%+v activities=%d err=%v", report, activities, err)
+	}
+	status, err := state.Status(ctx)
+	if err != nil || status.Files != count || status.JobsByState["pending"] != 2*count {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+}
+
 func TestScanFollowsNestedDirectorySymlinksAndStopsAncestorCycles(t *testing.T) {
 	ctx := context.Background()
 	rootPath := t.TempDir()
