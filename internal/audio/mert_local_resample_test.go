@@ -82,7 +82,11 @@ func TestMERTResampleLocalSignalsAndEdges(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer clear(out)
-			if metrics.DownmixDuration <= 0 || metrics.ResampleDuration <= 0 {
+			// A short stage can complete within one host clock tick, especially
+			// on Windows under race and coverage instrumentation. Durations must
+			// remain valid and the complete operation must record elapsed time;
+			// do not require each independent sample to be nonzero.
+			if metrics.DownmixDuration < 0 || metrics.ResampleDuration < 0 || metrics.DownmixDuration+metrics.ResampleDuration <= 0 {
 				t.Fatalf("missing stage timings: %+v", metrics)
 			}
 			want := scalarMERTResampleLocal(pcm)
