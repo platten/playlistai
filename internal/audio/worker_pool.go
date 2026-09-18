@@ -86,7 +86,7 @@ func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 	pool := &MERTWorkerPool{workers: make([]*MERTWorker, 0, parallelism), available: make(chan *MERTWorker, parallelism)}
 	pool.workers = append(pool.workers, primary)
 	for range parallelism - 1 {
-		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, InferenceThreads: primary.InferenceThreads, ResponseTimeout: primary.ResponseTimeout})
+		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, Device: primary.Device, InferenceThreads: primary.InferenceThreads, ResponseTimeout: primary.ResponseTimeout})
 	}
 	for _, worker := range pool.workers {
 		pool.available <- worker
@@ -96,6 +96,7 @@ func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 
 func (p *MERTWorkerPool) Identity() core.AudioRepresentationIdentity { return p.workers[0].Identity() }
 func (p *MERTWorkerPool) Parallelism() int                           { return len(p.workers) }
+func (p *MERTWorkerPool) Device() string                             { return p.workers[0].EffectiveDevice() }
 func (p *MERTWorkerPool) ResidentBytes() int64 {
 	var total int64
 	for _, worker := range p.workers {
@@ -127,12 +128,24 @@ func (p *MERTWorkerPool) Warm(ctx context.Context) error {
 }
 
 func (p *MERTWorkerPool) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
+	worker, release, err := p.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return worker.EmbedAudio(ctx, pcm)
+}
+
+// Acquire reserves an already-warm native session. Callers can wait for a
+// session before reserving CPU capacity, preventing queued inference from
+// starving decoders and preprocessing.
+func (p *MERTWorkerPool) Acquire(ctx context.Context) (*MERTWorker, func(), error) {
 	select {
 	case worker := <-p.available:
-		defer func() { p.available <- worker }()
-		return worker.EmbedAudio(ctx, pcm)
+		var once sync.Once
+		return worker, func() { once.Do(func() { p.available <- worker }) }, nil
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 }
 

@@ -805,6 +805,29 @@ func recordingIdentity(mbid, isrc, acoustID, artist, title string, fingerprint *
 	return "acoustid:" + fingerprint.Contract + ":" + fingerprint.FingerprintSHA256 + ":metadata:" + fmt.Sprintf("%x", digest[:12])
 }
 
+func metadataRecordingIdentity(record MetadataRecord) string {
+	metadata := record.Probe.Metadata
+	artist, title := "", ""
+	if values := tagValues(metadata.ArtistCredits); len(values) > 0 {
+		artist = strings.Join(values, "; ")
+	}
+	if metadata.Title != nil {
+		title = metadata.Title.Value
+	}
+	mbid, isrc, acoustID := musicBrainzRecordingID(metadata.MusicBrainzIDs), "", ""
+	if metadata.ISRC != nil {
+		isrc = metadata.ISRC.Value
+	}
+	if metadata.AcoustID != nil {
+		acoustID = metadata.AcoustID.Value
+	}
+	var fingerprint *librarypack.AudioFingerprint
+	if value := record.AudioFingerprint.Value; record.AudioFingerprint.Status == "available" && value != nil {
+		fingerprint = &librarypack.AudioFingerprint{Contract: value.Contract, FingerprintSHA256: value.FingerprintSHA256}
+	}
+	return recordingIdentity(mbid, isrc, acoustID, artist, title, fingerprint)
+}
+
 func normalizeDedupMetadata(value string) string {
 	var normalized strings.Builder
 	space := false

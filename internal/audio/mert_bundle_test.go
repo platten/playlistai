@@ -66,6 +66,26 @@ func TestMERTBundleRejectsMismatch(t *testing.T) {
 		}
 	}
 }
+
+func TestMERTBundleAcceptsOnlyCompleteCUDAProviderRuntime(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "windows" || runtime.GOARCH != "amd64" {
+		t.Skip("CUDA bundles are limited to x86-64 hosts")
+	}
+	m := fixtureMERTBundle(t, "")
+	m.Model.Runtime = "onnxruntime/1.26.0/cuda"
+	for _, role := range []string{"runtime_dependency_providers_shared", "runtime_dependency_providers_cuda"} {
+		data := []byte(role)
+		digest := sha256.Sum256(data)
+		m.Artifacts = append(m.Artifacts, BundleArtifact{Role: role, Name: role + ".fixture", Size: int64(len(data)), SHA256: hex.EncodeToString(digest[:])})
+	}
+	if err := m.validateRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	m.Artifacts = m.Artifacts[:len(m.Artifacts)-1]
+	if err := m.validateRuntime(); err == nil {
+		t.Fatal("CUDA bundle without provider library accepted")
+	}
+}
 func TestMERTLocalInstallHealthAndIntegrity(t *testing.T) {
 	if !nativeInferenceAvailable {
 		t.Skip("native installation requires CGO; runtime-independent manifest tests run separately")

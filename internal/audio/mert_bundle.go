@@ -41,6 +41,17 @@ type MERTBundleManifest struct {
 	Artifacts   []BundleArtifact                 `json:"artifacts"`
 }
 
+func (m MERTBundleManifest) Backend() string {
+	switch m.Model.Runtime {
+	case "onnxruntime/1.26.0/cpu":
+		return "cpu"
+	case "onnxruntime/1.26.0/cuda":
+		return "cuda"
+	default:
+		return ""
+	}
+}
+
 func (m MERTBundleManifest) Validate() error {
 	if !nativeInferenceAvailable {
 		return fmt.Errorf("audio: MERT requires a cgo-enabled desktop build")
@@ -48,8 +59,11 @@ func (m MERTBundleManifest) Validate() error {
 	return m.validateRuntime()
 }
 func (m MERTBundleManifest) validateRuntime() error {
-	if m.Version != 1 || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model != "m-a-p/MERT-v1-95M" || m.Model.Revision != MERTRevision || m.Model.Preprocessing != MERTPreprocessingVersion || m.Model.Pooling != MERTPoolingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != MERTDimension || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() {
+	if m.Version != 1 || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model != "m-a-p/MERT-v1-95M" || m.Model.Revision != MERTRevision || m.Model.Preprocessing != MERTPreprocessingVersion || m.Model.Pooling != MERTPoolingVersion || m.Backend() == "" || m.Model.Dimension != MERTDimension || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() {
 		return fmt.Errorf("audio: incompatible MERT identity, platform, license, or parity")
+	}
+	if m.Backend() == "cuda" && m.Platform != "linux/amd64" && m.Platform != "windows/amd64" {
+		return fmt.Errorf("audio: CUDA MERT bundles are supported only on linux/amd64 and windows/amd64")
 	}
 	names := map[string]bool{"mert-bundle.json": true, "active.json": true, "active.json.tmp": true}
 	roles := map[string]bool{}
@@ -58,11 +72,15 @@ func (m MERTBundleManifest) validateRuntime() error {
 			return fmt.Errorf("audio: invalid MERT artifact")
 		}
 		dependency := MERTWindowsRuntimeDependencies(m.Platform)[a.Role]
-		if a.Role != "audio_model" && a.Role != "runtime" && a.Role != "license" && a.Role != "health" && dependency == "" {
+		runtimeDependency := strings.HasPrefix(a.Role, "runtime_dependency_")
+		if a.Role != "audio_model" && a.Role != "runtime" && a.Role != "license" && a.Role != "health" && !runtimeDependency {
 			return fmt.Errorf("audio: unknown MERT artifact role")
 		}
 		if dependency != "" && (a.Name != dependency || a.ArchiveMember != "" || a.Size > 16<<20) {
 			return fmt.Errorf("audio: invalid app-local MERT runtime dependency")
+		}
+		if runtimeDependency && (a.ArchiveMember != "" || a.Size > 2<<30) {
+			return fmt.Errorf("audio: invalid MERT runtime dependency")
 		}
 		if len(a.Data) > 0 && (len(a.Data) > 1<<20 || a.Role != "license" && a.Role != "health") {
 			return fmt.Errorf("audio: invalid MERT inline artifact")
@@ -88,6 +106,13 @@ func (m MERTBundleManifest) validateRuntime() error {
 	for role := range MERTWindowsRuntimeDependencies(m.Platform) {
 		if !roles[role] {
 			return fmt.Errorf("audio: missing app-local MERT %s", role)
+		}
+	}
+	if m.Backend() == "cuda" {
+		for _, role := range []string{"runtime_dependency_providers_shared", "runtime_dependency_providers_cuda"} {
+			if !roles[role] {
+				return fmt.Errorf("audio: missing CUDA MERT %s", role)
+			}
 		}
 	}
 	return nil

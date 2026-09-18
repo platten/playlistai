@@ -222,6 +222,13 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 		}
 		stageDefault = 1
 	}
+	decodeDefault := stageDefault
+	if reserveInference && over.Mode != ConcurrencySerial {
+		// File workflows now alternate bounded single-window decode and inference.
+		// Keep enough workflows admitted to fill the I/O and inference stages even
+		// while other tracks are doing DSP or preprocessing.
+		decodeDefault = min(heavy, max(stageDefault, inferenceWorkers+ioWorkers))
+	}
 	if reserveInference && (inferenceThreads > heavy || inferenceWorkers*inferenceThreads > heavy) {
 		return ResourcePlan{}, fmt.Errorf("library indexer: inference reservation %d workers x %d threads exceeds global CPU budget %d", inferenceWorkers, inferenceThreads, heavy)
 	}
@@ -231,7 +238,7 @@ func resolveResourcePlanFor(over ResourceOverrides, host hostCapacity, reserveIn
 	plan := ResourcePlan{
 		Mode: over.Mode, EffectiveCPUSlots: host.CPUSlots, CPUQuota: host.CPUQuota, CPUQuotaSource: host.CPUSource,
 		HeavyWorkers: heavy, ScanWorkers: choose(over.ScanWorkers, min(2, ioWorkers)),
-		MetadataWorkers: choose(over.MetadataWorkers, stageDefault), DecodeWorkers: choose(over.DecodeWorkers, stageDefault),
+		MetadataWorkers: choose(over.MetadataWorkers, stageDefault), DecodeWorkers: choose(over.DecodeWorkers, decodeDefault),
 		DSPWorkers: choose(over.DSPWorkers, stageDefault), InferenceWorkers: inferenceWorkers,
 		InferenceThreads: inferenceThreads, FitWorkers: choose(over.FitWorkers, heavy), IndexWorkers: choose(over.IndexWorkers, heavy),
 		IOWorkers: ioWorkers, IOProfile: over.IOProfile, QueueDepth: queueDepth, MaxRAM: maxRAM,

@@ -20,12 +20,13 @@ Each admitted operation atomically reserves the complete tuple:
 (CPU slots, source-I/O slots, RAM bytes, file descriptors, PCM bytes)
 ```
 
-Decode initially owns source I/O, descriptors, CPU, and bounded PCM bytes. Once
-the decoder closes, it releases source resources and decode CPU while a
-reservation lease retains immutable PCM ownership. DSP and MERT acquire
-separate global CPU reservations; PCM is cleared only after both branches end.
-MERT CPU cost
-is `inference-workers × inference-threads`; auto permits a second warm session
+Each file workflow decodes one sampled window at a time. Once that decoder
+closes, it releases source resources and decode CPU while a reservation lease
+retains only that window's immutable PCM. DSP and MERT preprocessing acquire
+separate global CPU reservations; PCM is cleared after both branches end. A
+workflow waits for a warm MERT session without holding CPU admission, then
+reserves the native inference budget only while that session executes. CPU MERT
+cost is `inference-workers × inference-threads`; auto permits a second warm session
 only with at least four effective slots and session-memory headroom. The plan
 reserves model residency, native input/output, Go heap, PCM, database, snapshot,
 and index scratch. `--max-ram` is admission and monitoring policy, not an OS RSS
@@ -114,7 +115,10 @@ fingerprint is retained locally and never submitted. Tagged fingerprints are
 copied without regeneration, and no missing MBID is looked up. For FLAC and
 MP3, a generated fingerprint also satisfies the full-decode integrity contract;
 tagged identities or failed generation use the decode-to-discard integrity
-fallback. Neither path consumes the sampled PCM queue budget. The subprocess has a 30-minute bound for
+fallback under the default `--integrity full` policy. `--integrity deferred` is
+an explicit throughput tradeoff for trusted tagged libraries: it records
+integrity as deferred and relies on later sampled decoding rather than claiming
+a complete-file validation. Neither path consumes the sampled PCM queue budget. The subprocess has a 30-minute bound for
 exceptionally large sources. Its source revision is checked before and after;
 size, mtime, native identity, and Linux change time must remain stable. A media
 decode error is permanent `corrupt_media`, while a changed source is refreshed
@@ -148,6 +152,28 @@ errors fail immediately. FFmpeg children use absolute argv paths, a private proc
 group, and Linux parent-death behavior. MERT workers likewise use their own
 process group and Linux parent-death signal, in addition to framed pipes,
 explicit close/kill/reap, deadlines, and durable fencing.
+
+The default CPU bundles use ONNX Runtime's CPU execution provider. A CUDA
+bundle has a distinct runtime identity, carries the verified ONNX Runtime CUDA
+provider libraries, and is accepted only on Linux/Windows amd64. `--device
+auto` follows the bundle; `--device cuda[:INDEX]` requires a CUDA bundle. The
+worker appends CUDA before constructing the session, allowing unsupported graph
+nodes to use ONNX Runtime's CPU fallback, and runs the same bundled numerical
+health fixtures before any library job is admitted. Provider initialization or
+parity failure is fatal—there is no silent whole-model CPU fallback.
+
+Compatible MERT vectors may be reused across current files with the same valid
+recording MBID, ISRC, AcoustID ID, or exact fingerprint plus normalized
+artist/title identity. The audio semantic contract must match exactly, and an
+in-process single-flight prevents concurrent duplicates from running inference
+twice. DSP is always measured from each file because loudness and other
+mastering-sensitive values are not recording-invariant.
+
+DSP uses a separate stage contract and cache. A change to the MERT graph or
+execution provider can therefore reuse compatible DSP from the same unchanged
+source, while the combined audio result remains fenced by the new job contract.
+If both same-file DSP and recording-level MERT are reusable, no sampled decode
+is needed for that compatible reanalysis.
 
 Segment results carry file/source revision, job fence, semantic contract,
 segment index and observed interval. Assembly sorts canonical segment order,
@@ -187,7 +213,8 @@ supersession, and job upserts share prepared statements and one transaction.
 This preserves atomic per-chunk discovery while avoiding a commit round trip for
 every track in a large directory.
 
-Schema v4 stores each immutable epoch's stage work in `scan_diff_jobs` and its
+Schema v5 stores recording identity beside metadata for indexed MERT reuse and
+adds a separate DSP stage cache. Schema v4's immutable epoch work remains in `scan_diff_jobs` and its
 directory-symlink traversal policy on the scan epoch, preventing a resumed
 frontier from mixing enabled and disabled traversal.
 Manifest format v2 groups that work into one diff row per audio file and records
@@ -230,8 +257,8 @@ metadata/MERT channel merge ordering.
 
 `playlist-indexer bench concurrency` selects a deterministic bounded sample by a
 keyed hash over stable relative paths, creates isolated scratch state, and runs
-serial, 2-worker, 4-worker, and auto configurations with explicit native thread
-budgets. It reports and compares a semantic digest over identities, metadata,
+serial, one-session/one-thread, one-session/two-thread,
+two-session/one-thread, and auto configurations. It reports and compares a semantic digest over identities, metadata,
 DSP, and vectors while excluding leases, timestamps, DB layout, logs, and
 execution settings. Configurations that exceed the measured budget are skipped
 with a reason. Cold setup/warmup and real-audio analysis are timed separately.
@@ -242,8 +269,10 @@ run also fits and exports its frozen input, records pack bytes and bytes/track,
 measures 25 exact queries against one pinned index (p50/p95), and times a clean
 state reopen as the resume gate. `ramTargetMet` compares measured peak owned RSS
 with the configured admission target; it does not turn that target into an OS
-hard limit. `serialEquivalent` remains the semantic gate for the 2-worker,
-4-worker, and automatic plans.
+hard limit. `serialEquivalent` remains the semantic gate for every parallel and
+automatic plan. The analysis report's stage durations are accumulated worker
+time, not exclusive wall-clock phase durations; `mertWait` exposes session
+starvation.
 
 `playlist-indexer bench scale --rows 2000000 --dimension 768 --max-ram 8GiB`
 is the explicit synthetic scale gate. It streams canonical rows instead of

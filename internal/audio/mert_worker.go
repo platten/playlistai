@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,6 +37,10 @@ type MERTWorker struct {
 	Executable string
 	BundleDir  string
 	Model      core.AudioRepresentationIdentity
+	// Device is "cpu" or "cuda[:index]". CUDA requires a CUDA-capable,
+	// parity-validated runtime bundle; it never silently falls back to a CPU-only
+	// runtime.
+	Device string
 	// InferenceThreads is the explicit native intra-operation budget. Zero
 	// retains the conservative legacy default of two threads.
 	InferenceThreads int
@@ -50,6 +55,15 @@ type MERTWorker struct {
 }
 
 func (w *MERTWorker) Identity() core.AudioRepresentationIdentity { return w.Model }
+func (w *MERTWorker) EffectiveDevice() string {
+	if w.Device != "" {
+		return w.Device
+	}
+	if strings.HasSuffix(w.Model.Runtime, "/cuda") {
+		return "cuda:0"
+	}
+	return "cpu"
+}
 func (w *MERTWorker) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
 	if len(pcm) < 400 || len(pcm) > MERTSegmentSamples {
 		return nil, fmt.Errorf("audio: invalid MERT segment length")
@@ -99,6 +113,13 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 			threads = 2
 		}
 		cmd.Env = append(os.Environ(), fmt.Sprintf("PLAYLISTAI_MERT_INTRA_THREADS=%d", threads))
+		cmd.Env = append(cmd.Env, "PLAYLISTAI_MERT_DEVICE="+w.EffectiveDevice())
+		// ONNX Runtime loads execution-provider libraries after the main shared
+		// library. Keep verified app-local provider libraries discoverable in the
+		// isolated worker without modifying the parent process environment.
+		if w.BundleDir != "" {
+			cmd.Env = prependMERTLibraryPath(cmd.Env, w.BundleDir)
+		}
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {

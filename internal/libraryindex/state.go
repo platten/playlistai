@@ -27,7 +27,7 @@ import (
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-const stateSchemaVersion = 4
+const stateSchemaVersion = 5
 
 var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 		return err
 	}
 	_ = conn.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version)
-	if version != "" && version != "1" && version != "2" && version != "3" && version != strconv.Itoa(stateSchemaVersion) {
+	if version != "" && version != "1" && version != "2" && version != "3" && version != "4" && version != strconv.Itoa(stateSchemaVersion) {
 		return fmt.Errorf("library indexer: unsupported state schema %q", version)
 	}
 	_, err := conn.ExecContext(ctx, `
@@ -196,9 +196,13 @@ CREATE TABLE IF NOT EXISTS scan_diff_jobs (
 CREATE INDEX IF NOT EXISTS scan_diff_claim ON scan_diff_jobs(epoch_id,kind,job_id);
 CREATE TABLE IF NOT EXISTS track_metadata (
  file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
- data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
+ data BLOB NOT NULL, recording_key TEXT NOT NULL DEFAULT '', PRIMARY KEY(file_id,contract)
 );
 CREATE TABLE IF NOT EXISTS dsp_results (
+ file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
+ data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
+);
+CREATE TABLE IF NOT EXISTS dsp_stage_cache (
  file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
  data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
 );
@@ -226,6 +230,7 @@ CREATE TABLE IF NOT EXISTS runs (
 		{table: "directory_frontier", name: "completed_mtime_ns", definition: "INTEGER NOT NULL DEFAULT -1"},
 		{table: "directory_frontier", name: "completed_size", definition: "INTEGER NOT NULL DEFAULT -1"},
 		{table: "scan_epochs", name: "follow_directory_symlinks", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "track_metadata", name: "recording_key", definition: "TEXT NOT NULL DEFAULT ''"},
 	} {
 		exists, err := sqliteColumnExists(ctx, conn, column.table, column.name)
 		if err != nil {
@@ -237,9 +242,78 @@ CREATE TABLE IF NOT EXISTS runs (
 			}
 		}
 	}
+	if _, err := conn.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS track_metadata_recording ON track_metadata(recording_key,file_id) WHERE recording_key<>''`); err != nil {
+		return err
+	}
+	if version != strconv.Itoa(stateSchemaVersion) {
+		if err := backfillRecordingKeys(ctx, conn); err != nil {
+			return err
+		}
+	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO state_meta(key,value) VALUES('schema_version',?)
 		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strconv.Itoa(stateSchemaVersion))
 	return err
+}
+
+func backfillRecordingKeys(ctx context.Context, conn *sql.Conn) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	statement, err := tx.PrepareContext(ctx, `UPDATE track_metadata SET recording_key=? WHERE rowid=?`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	type update struct {
+		rowID int64
+		key   string
+	}
+	var cursor int64
+	for {
+		rows, queryErr := tx.QueryContext(ctx, `SELECT rowid,data FROM track_metadata WHERE recording_key='' AND rowid>? ORDER BY rowid LIMIT 1024`, cursor)
+		if queryErr != nil {
+			_ = statement.Close()
+			_ = tx.Rollback()
+			return queryErr
+		}
+		updates := make([]update, 0, 1024)
+		scanned := 0
+		for rows.Next() {
+			var rowID int64
+			var raw []byte
+			if err := rows.Scan(&rowID, &raw); err != nil {
+				_ = rows.Close()
+				_ = statement.Close()
+				_ = tx.Rollback()
+				return err
+			}
+			scanned++
+			cursor = rowID
+			var record MetadataRecord
+			if json.Unmarshal(raw, &record) == nil {
+				if key := metadataRecordingIdentity(record); key != "" {
+					updates = append(updates, update{rowID: rowID, key: key})
+				}
+			}
+		}
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			_ = statement.Close()
+			_ = tx.Rollback()
+			return err
+		}
+		for _, item := range updates {
+			if _, err := statement.ExecContext(ctx, item.key, item.rowID); err != nil {
+				_ = statement.Close()
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		if scanned < 1024 {
+			break
+		}
+	}
+	return errors.Join(statement.Close(), tx.Commit())
 }
 
 func sqliteColumnExists(ctx context.Context, conn *sql.Conn, table, column string) (bool, error) {
@@ -1365,19 +1439,20 @@ func (s *State) RefreshFileRevision(ctx context.Context, fileID, expected string
 }
 
 type JobResult struct {
-	Job       Job
-	Contract  string
-	Metadata  []byte
-	DSP       []byte
-	Vector    []byte
-	MERTData  []byte
-	Dimension int
+	Job              Job
+	Contract         string
+	Metadata         []byte
+	DSP              []byte
+	DSPCacheContract string
+	Vector           []byte
+	MERTData         []byte
+	Dimension        int
 }
 
 // CommitPartialDSP preserves a valid independent DSP branch when MERT fails.
 // It deliberately leaves the owning audio job leased so FailJob can record the
 // missing MERT capability under the same fence.
-func (s *State) CommitPartialDSP(ctx context.Context, job Job, contract string, data []byte) error {
+func (s *State) CommitPartialDSP(ctx context.Context, job Job, contract, cacheContract string, data []byte) error {
 	return s.writeBatch(ctx, func(tx *sql.Tx) error {
 		var state, fence, source, current string
 		if err := tx.QueryRowContext(ctx, `SELECT state,fence,source_revision FROM jobs WHERE id=?`, job.ID).Scan(&state, &fence, &source); err != nil {
@@ -1394,6 +1469,11 @@ func (s *State) CommitPartialDSP(ctx context.Context, job Job, contract string, 
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO dsp_results(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, job.FileID, source, contract, data); err != nil {
 			return err
+		}
+		if cacheContract != "" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO dsp_stage_cache(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, job.FileID, source, cacheContract, data); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -1418,7 +1498,10 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 		}
 		switch result.Job.Kind {
 		case "metadata":
-			_, err = tx.ExecContext(ctx, `INSERT INTO track_metadata(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, result.Job.FileID, source, result.Contract, result.Metadata)
+			var record MetadataRecord
+			_ = json.Unmarshal(result.Metadata, &record)
+			recordingKey := metadataRecordingIdentity(record)
+			_, err = tx.ExecContext(ctx, `INSERT INTO track_metadata(file_id,source_revision,contract,data,recording_key) VALUES(?,?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data,recording_key=excluded.recording_key`, result.Job.FileID, source, result.Contract, result.Metadata, recordingKey)
 		case "dsp":
 			_, err = tx.ExecContext(ctx, `INSERT INTO dsp_results(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, result.Job.FileID, source, result.Contract, result.DSP)
 		case "mert":
@@ -1426,6 +1509,9 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 		case "audio":
 			if len(result.DSP) != 0 {
 				_, err = tx.ExecContext(ctx, `INSERT INTO dsp_results(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, result.Job.FileID, source, result.Contract, result.DSP)
+			}
+			if err == nil && len(result.DSP) != 0 && result.DSPCacheContract != "" {
+				_, err = tx.ExecContext(ctx, `INSERT INTO dsp_stage_cache(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, result.Job.FileID, source, result.DSPCacheContract, result.DSP)
 			}
 			if err == nil && len(result.Vector) != 0 {
 				_, err = tx.ExecContext(ctx, `INSERT INTO mert_results(file_id,source_revision,contract,dimension,vector,data) VALUES(?,?,?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,dimension=excluded.dimension,vector=excluded.vector,data=excluded.data`, result.Job.FileID, source, result.Contract, result.Dimension, result.Vector, result.MERTData)
@@ -1445,6 +1531,40 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 		}
 		return nil
 	})
+}
+
+type ReusableMERT struct {
+	Vector    []byte
+	Dimension int
+}
+
+func (s *State) CachedDSP(ctx context.Context, fileID, sourceRevision, contract string) ([]byte, bool, error) {
+	var data []byte
+	err := s.reader.QueryRowContext(ctx, `SELECT data FROM dsp_stage_cache WHERE file_id=? AND source_revision=? AND contract=?`, fileID, sourceRevision, contract).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	}
+	return data, err == nil, err
+}
+
+// ReusableMERTForRecording returns analysis from another current source with
+// the same strong recording identity and exact audio contract. DSP is excluded
+// because mastering-specific measurements are not recording-invariant.
+func (s *State) ReusableMERTForRecording(ctx context.Context, fileID, recordingKey, contract string) (ReusableMERT, bool, error) {
+	if recordingKey == "" {
+		return ReusableMERT{}, false, nil
+	}
+	var result ReusableMERT
+	err := s.reader.QueryRowContext(ctx, `SELECT v.vector,v.dimension
+		FROM track_metadata m
+		JOIN files f ON f.id=m.file_id AND f.source_revision=m.source_revision AND f.status='present'
+		JOIN mert_results v ON v.file_id=m.file_id AND v.source_revision=m.source_revision AND v.contract=?
+		WHERE m.recording_key=? AND m.file_id<>? AND length(v.vector)>0
+		ORDER BY m.file_id LIMIT 1`, contract, recordingKey, fileID).Scan(&result.Vector, &result.Dimension)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ReusableMERT{}, false, nil
+	}
+	return result, err == nil, err
 }
 
 func (s *State) FailJob(ctx context.Context, job Job, code, detail string, retry bool) error {
