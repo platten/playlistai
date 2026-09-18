@@ -181,6 +181,12 @@ its fence and source-revision predicate inside the shared transaction. If one
 item is stale, the batch rolls back and retries items individually, so it cannot
 discard unrelated valid commits.
 
+Directory enumeration additionally submits each bounded 256-entry read chunk as
+one file-observation request. Its file upserts, move-identity checks, semantic-job
+supersession, and job upserts share prepared statements and one transaction.
+This preserves atomic per-chunk discovery while avoiding a commit round trip for
+every track in a large directory.
+
 Schema v4 stores each immutable epoch's stage work in `scan_diff_jobs` and its
 directory-symlink traversal policy on the scan epoch, preventing a resumed
 frontier from mixing enabled and disabled traversal.

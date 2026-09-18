@@ -110,6 +110,8 @@ epoch; unchanged files retain compatible completed metadata, DSP, and MERT jobs,
 so only new or changed sources are analyzed. An interrupted scan resumes its
 existing frontier and selectively reopens already-completed directories whose
 stored directory revision changed. Resume never wipes prior state.
+Directory reads and their SQLite file/job observations are committed in bounded
+chunks, avoiding a durable transaction for every track in a large directory.
 
 On the first Ctrl-C or SIGTERM, the indexer stops admitting new directory and
 analysis claims, then lets the bounded set of already-admitted operations finish

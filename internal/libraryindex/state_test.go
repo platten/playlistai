@@ -213,6 +213,50 @@ func TestBatchedWriterSaturationPreservesEveryFenceAndObservation(t *testing.T) 
 	}
 }
 
+func TestObserveFilesCommitsDirectoryChunkAtomically(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "observe-files-batch", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, t.TempDir(), "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed, err := state.ObserveFiles(ctx, epoch, []SourceFile{
+		{RootID: root.ID, RelativePath: "a.flac", Size: 1, MTimeNS: 1, Extension: ".flac"},
+		{RootID: root.ID, RelativePath: "b.mp3", Size: 2, MTimeNS: 2, Extension: ".mp3"},
+		{RootID: root.ID, RelativePath: "c.m4a", Size: 3, MTimeNS: 3, Extension: ".m4a"},
+	}, map[string]string{"metadata": "probe/v1", "audio": "audio/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range observed {
+		if file.ID == "" || file.SourceRevision == "" || !file.needsProcessing {
+			t.Fatalf("incomplete observed file: %+v", file)
+		}
+	}
+	status, err := state.Status(ctx)
+	if err != nil || status.Files != 3 || status.JobsByState["pending"] != 6 {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
+	if _, err := state.ObserveFiles(ctx, epoch, []SourceFile{
+		{RootID: root.ID, RelativePath: "valid.flac", Size: 4, MTimeNS: 4, Extension: ".flac"},
+		{RootID: root.ID, RelativePath: "../escape.flac", Size: 5, MTimeNS: 5, Extension: ".flac"},
+	}, map[string]string{"metadata": "probe/v1"}); err == nil {
+		t.Fatal("invalid batch committed")
+	}
+	status, err = state.Status(ctx)
+	if err != nil || status.Files != 3 || status.JobsByState["pending"] != 6 {
+		t.Fatalf("invalid batch changed state: status=%+v err=%v", status, err)
+	}
+}
+
 func TestUnavailableNativeFileIdentityDoesNotCollapsePaths(t *testing.T) {
 	ctx := context.Background()
 	state, err := OpenState(ctx, t.TempDir(), "zero-file-identity-test", 1)
