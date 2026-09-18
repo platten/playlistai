@@ -364,7 +364,7 @@ func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
 	if c.enhanced.pool != nil {
 		analyzer = c.enhanced.pool
 	}
-	m := &audio.MERTService{Preview: p, Analyzer: analyzer, Store: c.analysis.store.Representations(), ParityValidated: c.enhanced.manifest.Parity.Valid()}
+	m := &audio.MERTService{Preview: p, Analyzer: analyzer, Store: c.analysis.store.Representations(), ParityValidated: c.enhanced.manifest.Parity.ValidForBackend(c.enhanced.manifest.Backend())}
 	return p, m
 }
 

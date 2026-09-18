@@ -115,7 +115,8 @@ metadata/artist and exact-MERT derivative indexes before atomic activation.
 or guaranteed static ELF. `cmd/indexerpack` appends a deterministic ZIP payload
 and authenticated trailer to the Go launcher. The standard artifact contains
 the codec payload and performs an explicit separately licensed MERT setup/import.
-The offline artifact contains both codec and CPU MERT payloads. Inner manifests
+The Linux amd64 offline artifact contains the codec plus CPU and CUDA MERT
+payloads. Inner manifests
 and hashes are checked again before private, versioned, locked atomic promotion.
 
 Build both variants with:
@@ -123,6 +124,7 @@ Build both variants with:
 ```sh
 PLAYLIST_INDEXER_CODEC_PAYLOAD=/absolute/codec-payload \
 PLAYLIST_INDEXER_MERT_BUNDLE=/absolute/mert-linux-amd64 \
+PLAYLIST_INDEXER_MERT_CUDA_BUNDLE=/absolute/mert-linux-amd64-cuda \
 ./scripts/build-playlist-indexer.sh
 ```
 

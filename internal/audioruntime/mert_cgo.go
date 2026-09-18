@@ -101,12 +101,13 @@ func RunMERT(dir string) error {
 		}
 		response := audio.MERTWorkerResponse{Protocol: audio.MERTWorkerProtocol, Model: m.Model}
 		if request.Health {
-			err = mertHealth(session, m.File(dir, "health"))
+			err = mertHealth(session, m.File(dir, "health"), m.Backend())
 		} else {
 			response.Vector, err = mertEmbedding(session, request.Audio)
 		}
 		clear(request.Audio)
 		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			response.Error = "MERT inference unavailable"
 		}
 		err = audio.WriteFrame(os.Stdout, response)
@@ -159,7 +160,7 @@ type mertHealthFixture struct {
 	} `json:"fixtures"`
 }
 
-func mertHealth(session *ort.DynamicAdvancedSession, path string) error {
+func mertHealth(session *ort.DynamicAdvancedSession, path, backend string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -172,6 +173,15 @@ func mertHealth(session *ort.DynamicAdvancedSession, path string) error {
 	if len(fixture.Fixtures) < 3 || len(fixture.Fixtures) > 16 {
 		return fmt.Errorf("invalid MERT health fixtures")
 	}
+	maximumAllowedError := 0.0001
+	if backend == "cuda" {
+		// CUDA kernels can choose different floating-point reduction orders than
+		// the pinned CPU/PyTorch reference while retaining essentially identical
+		// direction. Keep a bounded component gate as well as cosine parity.
+		maximumAllowedError = 0.003
+	}
+	observedMaximumError, observedMinimumCosine := 0.0, 1.0
+	validParity := true
 	for _, test := range fixture.Fixtures {
 		if test.Samples < 400 || test.Samples > audio.MERTSegmentSamples || math.IsNaN(test.ToneHz) || test.ToneHz < 0 || test.ToneHz >= audio.MERTSampleRate/2 {
 			return fmt.Errorf("invalid MERT health tone")
@@ -182,14 +192,21 @@ func mertHealth(session *ort.DynamicAdvancedSession, path string) error {
 		}
 		vector, err := mertEmbedding(session, pcm)
 		clear(pcm)
-		parity := audio.MERTParity(vector, test.Embedding)
+		maximumError, cosine, valid := audio.MERTParityMetrics(vector, test.Embedding)
 		clear(vector)
 		if err != nil {
 			return err
 		}
-		if !parity {
-			return fmt.Errorf("MERT health parity mismatch")
+		if maximumError > observedMaximumError {
+			observedMaximumError = maximumError
 		}
+		if cosine < observedMinimumCosine {
+			observedMinimumCosine = cosine
+		}
+		validParity = validParity && valid
+	}
+	if !validParity || observedMaximumError > maximumAllowedError || observedMinimumCosine < 0.9999 {
+		return fmt.Errorf("MERT health parity mismatch: maximum_error=%g minimum_cosine=%g", observedMaximumError, observedMinimumCosine)
 	}
 	return nil
 }

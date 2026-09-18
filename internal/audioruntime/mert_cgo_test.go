@@ -20,7 +20,7 @@ func TestMERTRejectsMalformedHealthBeforeInference(t *testing.T) {
 		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 			t.Fatal(err)
 		}
-		if mertHealth(nil, path) == nil {
+		if mertHealth(nil, path, "cpu") == nil {
 			t.Fatal("malformed health accepted")
 		}
 	}

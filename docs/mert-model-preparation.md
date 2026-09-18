@@ -163,13 +163,39 @@ python python/export_mert.py \
   --runtime-license "$assetRoot/derived-mert/ONNX-RUNTIME-NOTICES.txt"
 ```
 
-Import that directory with `--model-bundle`, then use `--device cuda` or
-`cuda:INDEX`. `--device auto` follows the imported bundle identity. The native
+When a verified CPU bundle already contains the exact graph and health fixtures,
+`prepare_mert_cuda_variant.py` can retain those bytes and add the GPU runtime
+plus its complete dependency/license closure:
+
+```sh
+python python/prepare_mert_cuda_variant.py \
+  --cpu-bundle /verified/mert-cpu --out /verified/mert-cuda \
+  --platform linux/amd64 \
+  --runtime-library /verified/ort/libonnxruntime.so.1.26.0 \
+  --provider-shared /verified/ort/libonnxruntime_providers_shared.so \
+  --provider-cuda /verified/ort/libonnxruntime_providers_cuda.so \
+  --dependency /verified/cuda/libcudart.so.12 \
+  --dependency /verified/cudnn/libcudnn.so.9 \
+  --runtime-notice /verified/ort/LICENSE \
+  --runtime-notice /verified/ort/ThirdPartyNotices.txt \
+  --dependency-license /verified/cuda/License.txt \
+  --cuda-maximum-absolute-error 0.0025972630828619003 \
+  --cuda-minimum-cosine 0.9999093130980584
+```
+
+Repeat `--dependency` for the complete CUDA, cuBLAS, cuFFT, cuRAND, cuDNN and
+NVJitLink shared-library closure, and retain the corresponding NVIDIA license
+files. Build the dual offline executable with both
+`PLAYLIST_INDEXER_MERT_BUNDLE` and `PLAYLIST_INDEXER_MERT_CUDA_BUNDLE`.
+
+Import a CUDA directory with `--model-bundle`, then use `--device cuda` or
+`cuda:INDEX`. `--device auto` follows an already active imported bundle. The native
 worker runs the bundled health fixtures on the requested GPU before analysis;
 provider loading, device selection, or numerical parity failure prevents the
-bundle from being used. Linux may resolve the compatible CUDA/cuDNN libraries
-from the host loader path. A Windows CUDA pack must include its complete
-app-local dependency closure as verified `runtime_dependency_*` artifacts.
+bundle from being used. The dual offline executable uses a fast NVIDIA-device
+preflight before extracting CUDA, then performs this authoritative native
+check. Every app-local dependency is a verified `runtime_dependency_*`
+artifact; only the NVIDIA kernel driver remains a host prerequisite.
 
 Windows additionally needs Microsoft's app-local C++ runtime DLLs. The retained
 official, signed Visual C++ v14 14.51.36247.0 redistributable EXEs are pinned in

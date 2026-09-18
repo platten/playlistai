@@ -73,6 +73,8 @@ func TestMERTBundleAcceptsOnlyCompleteCUDAProviderRuntime(t *testing.T) {
 	}
 	m := fixtureMERTBundle(t, "")
 	m.Model.Runtime = "onnxruntime/1.26.0/cuda"
+	m.Parity.MaximumAbsoluteError = 0.0026
+	m.Parity.MinimumCosine = 0.99991
 	for _, role := range []string{"runtime_dependency_providers_shared", "runtime_dependency_providers_cuda"} {
 		data := []byte(role)
 		digest := sha256.Sum256(data)
@@ -81,6 +83,11 @@ func TestMERTBundleAcceptsOnlyCompleteCUDAProviderRuntime(t *testing.T) {
 	if err := m.validateRuntime(); err != nil {
 		t.Fatal(err)
 	}
+	m.Parity.MaximumAbsoluteError = 0.0031
+	if err := m.validateRuntime(); err == nil {
+		t.Fatal("CUDA bundle outside the native parity gate accepted")
+	}
+	m.Parity.MaximumAbsoluteError = 0.0026
 	m.Artifacts = m.Artifacts[:len(m.Artifacts)-1]
 	if err := m.validateRuntime(); err == nil {
 		t.Fatal("CUDA bundle without provider library accepted")

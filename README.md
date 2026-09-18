@@ -117,17 +117,26 @@ Audio analysis decodes one sampled window at a time and releases source I/O
 before DSP or MERT runs. Multiple file workflows keep the bounded decode,
 preprocessing, and inference stages supplied. Matching recording MBIDs, ISRCs,
 AcoustID IDs, or exact fingerprint-plus-metadata identities reuse a compatible
-MERT vector while still measuring file-specific DSP. The final summary and JSON
+MERT vector while still measuring file-specific DSP. Existing exact-contract
+recording vectors are loaded into a thread-safe in-memory index before audio
+workers start; newly committed vectors are inserted after the durable write, so
+deduplication does not perform a SQLite lookup per file. The final summary and JSON
 report aggregate decode, DSP, preprocessing, MERT-session wait, and inference
 worker time so `bench concurrency` can compare session/thread configurations.
 DSP also has its own semantic cache, so changing only the MERT model or
 execution provider does not repeat compatible file-specific measurements.
 
-`--device auto` selects the execution provider declared by the verified MERT
-bundle. The standard and offline payloads remain CPU bundles. An NVIDIA system
-uses `--device cuda` (or `cuda:INDEX`) with a separately prepared CUDA bundle;
-startup executes the normal parity fixtures and fails rather than silently
-using CPU if CUDA, cuDNN, the requested card, or provider libraries are missing.
+An embedded `ACOUSTID_FINGERPRINT` is copied without running Chromaprint, and an
+embedded AcoustID ID also suppresses fingerprint generation. Fingerprints are
+generated only when both identities are absent and are never submitted.
+
+`--device auto` selects the active verified MERT execution provider. The
+standard payload performs explicit model setup; the Linux amd64 offline payload
+contains both CPU and CUDA MERT variants plus the app-local CUDA 12/cuDNN 9
+runtime. On a detected NVIDIA host, first setup validates CUDA on the requested
+GPU and uses it when every health fixture passes; otherwise auto visibly falls
+back to the embedded CPU bundle. `--device cuda` (or `cuda:INDEX`) is fail-closed
+and never silently uses CPU.
 For a library whose embedded identity tags are trusted, `--integrity deferred`
 skips the otherwise separate full FLAC/MP3 validation decode and records that
 integrity remains deferred; sampled decode failures are still reported. The
@@ -195,14 +204,15 @@ terminated and retried from a fresh process, while a large file that continues
 to produce decoded output remains valid work.
 
 Use `bench concurrency --root PATH --sample-tracks N` for isolated real-audio
-serial/2-worker/4-worker/auto equivalence and resource measurements. Use
+serial and explicit MERT session/thread configurations plus auto equivalence and
+resource measurements. Use
 `bench scale --rows 2000000 --dimension 768 --max-ram 8GiB` for the explicit
 synthetic index/export/RSS/query-latency gate; it does not measure decoding or
 musical quality.
 
 The standard executable embeds its private codec runtime and performs explicit
-licensed MERT setup. The larger offline executable embeds both codec and CPU
-MERT payloads; it still requires `--accept-model-license`. See the
+licensed MERT setup. The larger Linux amd64 offline executable embeds the codec
+plus CPU and CUDA MERT payloads; it still requires `--accept-model-license`. See the
 [implementation contract](docs/library-indexer-design.md), [concurrency and
 recovery contract](docs/library-indexer-concurrency.md), [pack format](docs/paipack-format.md),
 and [executed validation](docs/library-indexer-validation.md).

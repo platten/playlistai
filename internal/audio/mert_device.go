@@ -9,37 +9,50 @@ import (
 // ResolveMERTDevice binds a CLI preference to the execution provider carried
 // by a verified bundle. A CPU-only runtime can never masquerade as CUDA.
 func ResolveMERTDevice(requested, backend string) (string, error) {
-	requested = strings.ToLower(strings.TrimSpace(requested))
-	if requested == "" {
-		requested = "auto"
+	requested, preference, err := ParseMERTDevicePreference(requested)
+	if err != nil {
+		return "", err
 	}
 	if backend != "cpu" && backend != "cuda" {
 		return "", fmt.Errorf("audio: unsupported MERT bundle backend %q", backend)
 	}
-	if requested == "auto" {
+	if preference == "auto" {
 		if backend == "cuda" {
 			return "cuda:0", nil
 		}
 		return "cpu", nil
 	}
-	if requested == "cpu" {
+	if preference == "cpu" {
 		if backend != "cpu" {
 			return "", fmt.Errorf("audio: --device cpu requires a CPU MERT bundle")
 		}
 		return "cpu", nil
 	}
+	if backend != "cuda" {
+		return "", fmt.Errorf("audio: %s requires a parity-validated CUDA MERT bundle", requested)
+	}
+	return requested, nil
+}
+
+// ParseMERTDevicePreference validates a CLI request before a CPU or CUDA
+// bundle has been selected. The returned preference is auto, cpu, or cuda.
+func ParseMERTDevicePreference(requested string) (normalized, preference string, err error) {
+	requested = strings.ToLower(strings.TrimSpace(requested))
+	if requested == "" {
+		requested = "auto"
+	}
+	if requested == "auto" || requested == "cpu" {
+		return requested, requested, nil
+	}
 	if requested == "cuda" {
 		requested = "cuda:0"
 	}
 	prefix, rawIndex, found := strings.Cut(requested, ":")
-	index, err := strconv.Atoi(rawIndex)
-	if !found || prefix != "cuda" || err != nil || index < 0 || index > 63 {
-		return "", fmt.Errorf("audio: --device must be auto, cpu, cuda, or cuda:INDEX")
+	index, parseErr := strconv.Atoi(rawIndex)
+	if !found || prefix != "cuda" || parseErr != nil || index < 0 || index > 63 {
+		return "", "", fmt.Errorf("audio: --device must be auto, cpu, cuda, or cuda:INDEX")
 	}
-	if backend != "cuda" {
-		return "", fmt.Errorf("audio: %s requires a parity-validated CUDA MERT bundle", requested)
-	}
-	return fmt.Sprintf("cuda:%d", index), nil
+	return fmt.Sprintf("cuda:%d", index), "cuda", nil
 }
 
 func MERTCUDADeviceIndex(device string) (int, bool) {

@@ -24,8 +24,16 @@ type MERTParityReport struct {
 	MinimumCosine        float64 `json:"minimumCosine"`
 }
 
-func (p MERTParityReport) Valid() bool {
-	return p.ReferenceRevision == MERTRevision && p.Fixtures >= 3 && p.MaximumAbsoluteError >= 0 && p.MaximumAbsoluteError <= 0.0001 && p.MinimumCosine >= 0.9999 && p.MinimumCosine <= 1.000001
+func (p MERTParityReport) Valid() bool { return p.ValidForBackend("cpu") }
+
+// ValidForBackend applies the recorded numerical gate for the execution
+// provider that produced the report.
+func (p MERTParityReport) ValidForBackend(backend string) bool {
+	maximumError := 0.0001
+	if backend == "cuda" {
+		maximumError = 0.003
+	}
+	return p.ReferenceRevision == MERTRevision && p.Fixtures >= 3 && p.MaximumAbsoluteError >= 0 && p.MaximumAbsoluteError <= maximumError && p.MinimumCosine >= 0.9999 && p.MinimumCosine <= 1.000001
 }
 
 type MERTBundleManifest struct {
@@ -59,7 +67,7 @@ func (m MERTBundleManifest) Validate() error {
 	return m.validateRuntime()
 }
 func (m MERTBundleManifest) validateRuntime() error {
-	if m.Version != 1 || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model != "m-a-p/MERT-v1-95M" || m.Model.Revision != MERTRevision || m.Model.Preprocessing != MERTPreprocessingVersion || m.Model.Pooling != MERTPoolingVersion || m.Backend() == "" || m.Model.Dimension != MERTDimension || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() {
+	if m.Version != 1 || !safeName(m.ID) || m.Platform != runtime.GOOS+"/"+runtime.GOARCH || m.Model.Model != "m-a-p/MERT-v1-95M" || m.Model.Revision != MERTRevision || m.Model.Preprocessing != MERTPreprocessingVersion || m.Model.Pooling != MERTPoolingVersion || m.Backend() == "" || m.Model.Dimension != MERTDimension || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.ValidForBackend(m.Backend()) {
 		return fmt.Errorf("audio: incompatible MERT identity, platform, license, or parity")
 	}
 	if m.Backend() == "cuda" && m.Platform != "linux/amd64" && m.Platform != "windows/amd64" {
@@ -324,17 +332,24 @@ func (b *MERTBundleManager) Remove() error {
 
 // MERTParity compares normalized segment embeddings to pinned PyTorch results.
 func MERTParity(a, b []float32) bool {
+	maximumError, cosine, valid := MERTParityMetrics(a, b)
+	return valid && maximumError <= 0.0001 && cosine >= 0.9999
+}
+
+func MERTParityMetrics(a, b []float32) (maximumError, cosine float64, valid bool) {
 	if !validVector(a, MERTDimension) || !validVector(b, MERTDimension) {
-		return false
+		return 0, 0, false
 	}
 	var dot, normA, normB float64
 	for j := range a {
-		if math.Abs(float64(a[j])-float64(b[j])) > 0.0001 {
-			return false
+		delta := math.Abs(float64(a[j]) - float64(b[j]))
+		if delta > maximumError {
+			maximumError = delta
 		}
 		dot += float64(a[j]) * float64(b[j])
 		normA += float64(a[j]) * float64(a[j])
 		normB += float64(b[j]) * float64(b[j])
 	}
-	return math.Abs(normA-1) <= 0.0001 && math.Abs(normB-1) <= 0.0001 && dot/math.Sqrt(normA*normB) >= 0.9999
+	cosine = dot / math.Sqrt(normA*normB)
+	return maximumError, cosine, math.Abs(normA-1) <= 0.0001 && math.Abs(normB-1) <= 0.0001
 }

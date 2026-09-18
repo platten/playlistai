@@ -87,6 +87,21 @@ func (b *Bundle) Sub(name string) (fs.FS, error) {
 	return fs.Sub(b.zip, name)
 }
 
+// Has reports whether the payload contains at least one regular entry below a
+// subtree. Pack archives omit explicit directory entries for reproducibility.
+func (b *Bundle) Has(name string) bool {
+	if b == nil || b.zip == nil || !fs.ValidPath(name) {
+		return false
+	}
+	prefix := strings.TrimSuffix(name, "/") + "/"
+	for _, entry := range b.zip.File {
+		if strings.HasPrefix(entry.Name, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // Extract copies one payload subtree without following links. The caller must
 // use a newly-created private directory and authenticate the inner manifest.
 func (b *Bundle) Extract(name, destination string) error {

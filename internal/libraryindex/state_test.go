@@ -187,11 +187,13 @@ func TestReusableMERTUsesStrongRecordingIdentityAndExactContract(t *testing.T) {
 		t.Fatalf("cached DSP: found=%v data=%q err=%v", found, cached, err)
 	}
 	recordingKey := "musicbrainz:12345678-1234-1234-1234-123456789abc"
-	got, found, err := state.ReusableMERTForRecording(ctx, audioJobs[1].FileID, recordingKey, "audio/v1")
+	cache, err := state.LoadReusableMERT(ctx, "audio/v1")
+	got, found := cache[mertReuseKey(recordingKey, "audio/v1")]
 	if err != nil || !found || got.Dimension != audio.MERTDimension || len(got.Vector) != len(vector) {
 		t.Fatalf("reusable MERT: found=%v result=%+v err=%v", found, got, err)
 	}
-	if _, found, err := state.ReusableMERTForRecording(ctx, audioJobs[1].FileID, recordingKey, "audio/v2"); err != nil || found {
+	incompatible, err := state.LoadReusableMERT(ctx, "audio/v2")
+	if _, found := incompatible[mertReuseKey(recordingKey, "audio/v2")]; err != nil || found {
 		t.Fatalf("incompatible contract reused: found=%v err=%v", found, err)
 	}
 }

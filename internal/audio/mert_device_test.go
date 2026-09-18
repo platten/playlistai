@@ -21,6 +21,17 @@ func TestResolveMERTDeviceRequiresMatchingVerifiedBundle(t *testing.T) {
 	}
 }
 
+func TestParseMERTDevicePreference(t *testing.T) {
+	for _, test := range []struct{ input, normalized, preference string }{
+		{"", "auto", "auto"}, {"cpu", "cpu", "cpu"}, {"CUDA", "cuda:0", "cuda"}, {"cuda:3", "cuda:3", "cuda"},
+	} {
+		normalized, preference, err := ParseMERTDevicePreference(test.input)
+		if err != nil || normalized != test.normalized || preference != test.preference {
+			t.Fatalf("ParseMERTDevicePreference(%q)=%q,%q,%v", test.input, normalized, preference, err)
+		}
+	}
+}
+
 func TestPrependMERTEnvironmentPathReplacesInheritedValue(t *testing.T) {
 	got := prependMERTEnvironmentPath([]string{"KEEP=value", "Path=first", "PATH=second"}, "PATH", "bundle", true)
 	want := "PATH=bundle" + string(os.PathListSeparator) + "first"

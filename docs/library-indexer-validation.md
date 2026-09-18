@@ -30,10 +30,26 @@ byte-identical. This is a synthetic correctness/avoided-work check, not musical
 quality evidence.
 
 The host exposes an NVIDIA GeForce RTX 5060 Laptop GPU (8,151 MiB), driver
-616.56. Only the driver library was available in this WSL environment; a
-compatible ONNX Runtime CUDA provider and cuDNN were not installed. CUDA bundle
-validation and CPU-bundle rejection were exercised, but native GPU inference
-was therefore not claimed.
+616.56. Microsoft ONNX Runtime 1.26.0's official Linux x64 GPU archive was
+verified at SHA-256 `cb7df7ee2ca0f962c7ce7c839aeae36223d146a91fb4646d62fb0046f297479f`.
+The test CUDA bundle included its provider plus the CUDA 12/cuBLAS/cuFFT/cuRAND,
+cuDNN 9 and NVJitLink dependency set declared by the ONNX Runtime 1.26.0 Python
+extras. Every native health fixture passed on the GPU under the CUDA-specific
+`0.003` maximum-component / `0.9999` minimum-cosine gate; CPU keeps its `1e-4`
+component gate.
+
+A fresh run of the final dual-payload offline binary used `--offline --device
+auto`, selected CUDA, completed three duplicate files with two MERT reuses, and
+spent 73.366 aggregate milliseconds on the three inferred windows. The matching
+explicit-CPU offline run spent 923.258 ms on those windows (about 12.6x more
+inference worker time on this synthetic fixture). CUDA session warmup took 2.791
+s; its 37.67 s first-run wall time was dominated by extracting and verifying the
+3.4 GiB app-local CUDA closure. CPU first-run wall time was 9.87 s with its much
+smaller payload. In a prior incremental run, the analyzer bulk-loaded one
+persisted recording entry, reused it for a newly added duplicate, and recorded
+zero MERT preprocessing/wait/inference time. This validates native CUDA
+execution, both embedded backends, and the persisted-to-memory dedup path; it is
+not held-out musical-quality evidence.
 
 ## Executed native evidence
 
@@ -223,21 +239,23 @@ The Linux amd64 standard and offline executables were rebuilt from this
 worktree using the previously verified pinned codec/MERT payloads:
 
 ```text
-bin/playlist-indexer          c81bc64e6600efd73ff06f476e8792f8e88c16715ead595c7b6b6f68e49f9e20
-bin/playlist-indexer-offline  dac3d4a86a22e0360ca53a8b8a939bed995d477d56fb130db2de19cd191d5277
+bin/playlist-indexer          50d2bc47be1c86b6823fcf65810a832a62fd608c87df3ce5bd727d0aee82768e
+bin/playlist-indexer-offline  39fdb7d7f1b583b2e586407c023ce2bdb2dc4ebada236ab496779b5b9c170bc7
 ```
 
-The standard file is 24,646,621 bytes and the offline file is 426,116,189
-bytes. `./scripts/test.sh` passed after the analysis scheduler, reuse, timing,
-and CUDA-bundle changes: 221 frontend tests, production frontend build, `go
-vet`, the full race-enabled Go suite, and golangci-lint with zero findings. The
+The standard file is 24,673,349 bytes. The dual CPU/CUDA offline file is
+4,036,423,266 bytes; downloaded runtime/model inputs remain excluded from Git.
+`./scripts/test.sh` passed after the in-memory reuse, dual offline packaging,
+native CUDA, and fingerprint-tag changes: 221 frontend tests, production
+frontend build, `go vet`, the full race-enabled Go suite, and golangci-lint with
+zero findings. The
 `GOOS=windows GOARCH=amd64 go test -run '^$' ./...` cross-compile check also
 passed after these changes; this is not a native Windows execution claim.
 
 ## Honest limits
 
 HE-AAC has not been exercised by a positively identified fixture and is not
-claimed. Linux arm64, musl/Alpine, macOS generation cleanup, native CUDA
+claimed. Linux arm64, musl/Alpine, macOS generation cleanup, Windows CUDA
 inference, and native GUI execution are unverified. The exact index is implemented; no ANN
 recall or GPU parity claim is made. A synthetic 2,000,000-row benchmark and a
 200-track authorized real-library concurrency benchmark have not yet been run,

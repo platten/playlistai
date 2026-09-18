@@ -24,16 +24,17 @@ type input struct{ prefix, root string }
 func main() {
 	launcher := flag.String("launcher", "", "unpacked playlist-indexer executable")
 	codec := flag.String("codec", "", "verified codec payload directory")
-	model := flag.String("model", "", "optional verified MERT bundle directory")
+	model := flag.String("model", "", "optional verified CPU MERT bundle directory")
+	cudaModel := flag.String("cuda-model", "", "optional verified CUDA MERT bundle directory; requires --model")
 	out := flag.String("out", "", "output executable")
 	flag.Parse()
-	if err := pack(*launcher, *codec, *model, *out); err != nil {
+	if err := pack(*launcher, *codec, *model, *cudaModel, *out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func pack(launcher, codec, model, out string) error {
+func pack(launcher, codec, model, cudaModel, out string) error {
 	if launcher == "" || codec == "" || out == "" {
 		return errors.New("indexerpack: --launcher, --codec, and --out are required")
 	}
@@ -45,15 +46,37 @@ func pack(launcher, codec, model, out string) error {
 		return fmt.Errorf("indexerpack: invalid codec payload: %w", err)
 	}
 	inputs := []input{{"codec", codecAbs}}
+	if cudaModel != "" && model == "" {
+		return errors.New("indexerpack: --cuda-model requires the CPU --model bundle")
+	}
 	if model != "" {
 		modelAbs, err := filepath.Abs(model)
 		if err != nil {
 			return err
 		}
-		if _, err := audio.ReadMERTBundle(modelAbs); err != nil {
+		manifest, err := audio.ReadMERTBundle(modelAbs)
+		if err != nil {
 			return fmt.Errorf("indexerpack: invalid MERT payload: %w", err)
 		}
-		inputs = append(inputs, input{"mert", modelAbs})
+		if cudaModel == "" {
+			inputs = append(inputs, input{"mert", modelAbs})
+		} else {
+			if manifest.Backend() != "cpu" {
+				return errors.New("indexerpack: --model must be a CPU MERT bundle when --cuda-model is present")
+			}
+			cudaAbs, err := filepath.Abs(cudaModel)
+			if err != nil {
+				return err
+			}
+			cudaManifest, err := audio.ReadMERTBundle(cudaAbs)
+			if err != nil {
+				return fmt.Errorf("indexerpack: invalid CUDA MERT payload: %w", err)
+			}
+			if cudaManifest.Backend() != "cuda" {
+				return errors.New("indexerpack: --cuda-model must declare the CUDA backend")
+			}
+			inputs = append(inputs, input{"mert/cpu", modelAbs}, input{"mert/cuda", cudaAbs})
+		}
 	}
 	launcherFile, err := os.Open(launcher)
 	if err != nil {
