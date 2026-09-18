@@ -71,7 +71,7 @@ func (o *Orchestrator) mertCandidates(search *core.MERTSimilaritySearch) []core.
 	if search == nil || !search.Recorded || search.CatalogVersion == "" || !validEnhancedModel(search.Model) {
 		return nil
 	}
-	if o.resolver != nil && search.CatalogVersion != o.resolver.CatalogVersion() {
+	if o.resolver != nil && search.CatalogVersion != o.analysisCatalogVersion() {
 		return nil
 	}
 	queries := make(map[string]core.MERTSimilarityQuery, len(search.Queries))
@@ -117,6 +117,16 @@ func (o *Orchestrator) mertCandidates(search *core.MERTSimilaritySearch) []core.
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Track.ID < out[j].Track.ID })
 	return out
+}
+
+func (o *Orchestrator) analysisCatalogVersion() string {
+	if o.sourceCatalogVersion != "" {
+		return o.sourceCatalogVersion
+	}
+	if o.resolver != nil {
+		return o.resolver.CatalogVersion()
+	}
+	return "unknown"
 }
 
 // mertAudioRetriever merges the frozen MERT neighbor set with every advancing

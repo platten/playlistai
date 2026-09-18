@@ -65,20 +65,50 @@ func NewRecommendationOverlay(ctx context.Context, local *Catalog, base ports.Ca
 		}
 		return RecommendationOverlay{}, errors.New("localcatalog: complete base services and pinned local catalog are required")
 	}
-	composite := &CompositeCatalog{base: base, local: local, mode: mode}
+	composite := &CompositeCatalog{base: base, local: local, mode: mode, baseVersion: resolver.CatalogVersion()}
 	combinedResolver := &CompositeResolver{base: resolver, local: local, mode: mode}
 	combinedRetriever, err := NewCombinedRetriever(retriever, local, mode, workers)
 	if err != nil {
 		_ = local.Close()
 		return RecommendationOverlay{}, err
 	}
-	return RecommendationOverlay{Catalog: composite, Resolver: combinedResolver, Retriever: combinedRetriever, local: local}, nil
+	var catalog ports.Catalog = composite
+	if registrar, ok := base.(ports.DynamicTrackCatalog); ok && mode == ModeCombined {
+		catalog = &dynamicCompositeCatalog{CompositeCatalog: composite, registrar: registrar}
+	}
+	return RecommendationOverlay{Catalog: catalog, Resolver: combinedResolver, Retriever: combinedRetriever, local: local}, nil
+}
+
+// Only combined views over a writable base expose registration. A library-only
+// view must not accidentally enable external discovery through a type assertion.
+type dynamicCompositeCatalog struct {
+	*CompositeCatalog
+	registrar ports.DynamicTrackCatalog
+}
+
+func (c *dynamicCompositeCatalog) RegisterDynamicTrack(track core.TrackMeta) error {
+	return c.registrar.RegisterDynamicTrack(track)
 }
 
 type CompositeCatalog struct {
-	base  ports.Catalog
-	local *Catalog
-	mode  RecommendationMode
+	baseVersion string
+	base        ports.Catalog
+	local       *Catalog
+	mode        RecommendationMode
+}
+
+// NewEvidenceCatalog borrows a pinned local catalog for feedback and other
+// read-only consumers. Output-source restrictions do not invalidate feedback
+// on a previously displayed recording.
+func NewEvidenceCatalog(base ports.Catalog, local *Catalog, baseVersion string) ports.Catalog {
+	return &CompositeCatalog{base: base, local: local, mode: ModeCombined, baseVersion: baseVersion}
+}
+
+func (c *CompositeCatalog) CatalogVersion() string {
+	if c.mode == ModeLibraryOnly {
+		return "local-library:" + c.local.Provenance().PackID
+	}
+	return c.baseVersion + "+local-library:" + c.local.Provenance().PackID
 }
 
 func (c *CompositeCatalog) Len() int {
@@ -109,8 +139,9 @@ func (c *CompositeCatalog) Meta(id string) (core.TrackMeta, bool) {
 			return core.TrackMeta{}, false
 		}
 		meta := core.TrackMeta{
-			Ref:   core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity},
-			Album: track.Album, AlbumReliable: track.Album != "", SourceIdentity: track.SourceIdentity,
+			Annotations: c.local.Annotations(context.Background(), id),
+			Ref:         core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity},
+			Album:       track.Album, AlbumReliable: track.Album != "", SourceIdentity: track.SourceIdentity,
 			ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		}
 		if track.AudioFingerprint != nil {
@@ -201,7 +232,7 @@ func (c *CompositeCatalog) Resolve(query string, limit int) []core.TrackRef {
 }
 
 func (c *CompositeCatalog) SupportsCriterion(criterion core.MusicalCriterion) bool {
-	return criterion.Kind == "genre"
+	return criterion.Kind == "genre" || criterion.Kind == "style"
 }
 
 func (c *CompositeCatalog) CriterionEvidence(ctx context.Context, id string, criterion core.MusicalCriterion) core.EvidenceState {
@@ -360,13 +391,6 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 				localByID[candidate.Track.ID] = merged
 			}
 			merged.Evidence = append(merged.Evidence, candidate.Evidence...)
-			if candidate.Track.Cluster != nil && !hasEvidenceChannel(merged.Evidence, ClusterChannel) {
-				rank := 1
-				if len(candidate.Evidence) > 0 {
-					rank = max(1, candidate.Evidence[0].Rank)
-				}
-				merged.Evidence = append(merged.Evidence, Evidence{Channel: ClusterChannel, QueryID: fmt.Sprintf("cluster:%d", *candidate.Track.Cluster), Rank: rank, Score: candidate.Track.ClusterScore, Provenance: candidate.Track.Provenance})
-			}
 		}
 	}
 	for _, required := range request.Intent.RequiredTracks {
@@ -401,10 +425,13 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 			if evidence.Channel == ClusterChannel {
 				weight = .25
 			}
-			converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: evidence.Channel, QueryID: evidence.QueryID, Rank: evidence.Rank, Score: evidence.Score, QueryWeight: weight})
-		}
-		if score, ok := r.local.DSPPreferenceScore(ctx, candidate.Track.ID, request.Intent); ok {
-			converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: DSPChannel, QueryID: "reviewed-dsp-percentiles", Rank: percentileRank(score), Score: score, QueryWeight: .25})
+			source := r.local.EvidenceSource()
+			if evidence.Channel != MERTChannel {
+				source.SpaceID = ""
+				source.Generation = evidence.Provenance.MetadataGeneration
+				source.Scope = "embedded_tags"
+			}
+			converted.Sources = append(converted.Sources, core.RetrievalEvidence{Channel: evidence.Channel, QueryID: evidence.QueryID, Rank: evidence.Rank, Score: evidence.Score, QueryWeight: weight, LibrarySource: &source})
 		}
 		all = append(all, converted)
 	}
@@ -442,15 +469,6 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	return all, baseErr
 }
 
-func hasEvidenceChannel(evidence []Evidence, channel string) bool {
-	for _, item := range evidence {
-		if item.Channel == channel {
-			return true
-		}
-	}
-	return false
-}
-
 func coreIdentityMatchesLocal(ref core.TrackRef, track Track) bool {
 	identity := strings.ToLower(strings.TrimSpace(ref.RecordingIdentity))
 	if identity == "" {
@@ -479,16 +497,10 @@ func coreIdentityMatchesLocal(ref core.TrackRef, track Track) bool {
 	return identity == localIdentity
 }
 
-func percentileRank(score float64) int {
-	// Rank fusion consumes positive ordinals; retain the signed native score in
-	// evidence while mapping stronger matches to smaller deterministic ranks.
-	score = max(-1.0, min(1.0, score))
-	return 1 + int((1-score)*49.5)
-}
-
 func recommendationQueries(request ports.RetrievalRequest) []Query {
 	var queries []Query
 	seenText := map[string]bool{}
+	seenID := map[string]bool{}
 	exclude := make(map[string]struct{}, len(request.AttemptedIDs)+len(request.RecentSelections))
 	for id := range request.AttemptedIDs {
 		exclude[id] = struct{}{}
@@ -521,7 +533,8 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 			}
 		}
 		for _, id := range ids {
-			if strings.HasPrefix(id, "local:") {
+			if strings.HasPrefix(id, "local:") && !seenID[id] {
+				seenID[id] = true
 				queries = append(queries, Query{MERT: &NeighborQuery{SeedID: id, Limit: 100, ExcludeIDs: exclude}})
 			}
 		}

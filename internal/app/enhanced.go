@@ -491,7 +491,11 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 				}
 			}
 		}
-		input.PositiveCentroid, input.NegativeCentroid = taste.ContentCentroids(events, profile, input.Model, cached)
+		// External representations belong to the base catalog. The persisted
+		// profile retains its composite pack fingerprint for exact replay.
+		sourceProfile := profile
+		sourceProfile.CatalogVersion = catalog
+		input.PositiveCentroid, input.NegativeCentroid = taste.ContentCentroids(events, sourceProfile, input.Model, cached)
 	}
 	return core.NewEnhancedAudioSnapshot(input)
 }

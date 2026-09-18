@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"flag"
+	flagpkg "flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,21 +12,26 @@ import (
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/evaluation"
 	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/localcatalog"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/semantic"
 	"github.com/platten/playlistai/internal/similarity/brute"
 )
 
 func main() {
-	if err := run(); err != nil && err != flag.ErrHelp {
+	if err := run(); err != nil && err != flagpkg.ErrHelp {
 		fmt.Fprintln(os.Stderr, "recoeval:", err)
 		os.Exit(1)
 	}
 }
 func run() error {
-	flag := flag.NewFlagSet("recoeval", flag.ContinueOnError)
+	flag := flagpkg.NewFlagSet("recoeval", flagpkg.ContinueOnError)
 	var datasetPath, catalogDir, configPath, outputPath, markdownPath, blindPath, keyPath, left, right, blindSeed string
 	var k int
+	var packPath, libraryMode string
+	flag.StringVar(&packPath, "paipack", "", "optional pack for production library evidence off/on comparison")
+	flag.StringVar(&libraryMode, "library-mode", "combined", "paipack source policy: combined or library_only")
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
 	flag.StringVar(&catalogDir, "catalog", "", "catalog directory override")
 	flag.StringVar(&configPath, "config", "", "optional app TOML for a semantic sidecar")
@@ -43,6 +48,19 @@ func run() error {
 	}
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
+	}
+	if packPath != "" && libraryMode != string(localcatalog.ModeCombined) && libraryMode != string(localcatalog.ModeLibraryOnly) {
+		return fmt.Errorf("-library-mode must be combined or library_only")
+	}
+	if packPath != "" {
+		explicit := map[string]bool{}
+		flag.Visit(func(f *flagpkg.Flag) { explicit[f.Name] = true })
+		if !explicit["left"] {
+			left = "library_evidence_off"
+		}
+		if !explicit["right"] {
+			right = "library_evidence_on"
+		}
 	}
 	cfg := config.Default()
 	var err error
@@ -82,6 +100,36 @@ func run() error {
 		return err
 	}
 	runner := evaluation.Runner{Catalog: cat, Resolver: cat, Similarity: sim, Parser: rules.New(), Features: featureStore, Semantic: searcher, K: k}
+	if packPath != "" {
+		// Evaluation owns an isolated temporary import. Never mutate the user's
+		// active library, mappings, listening history, or indexing state.
+		root, err := os.MkdirTemp("", "playlist-recoeval-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(root)
+		manager, err := librarypack.OpenManager(context.Background(), root, librarypack.DefaultLimits())
+		if err != nil {
+			return err
+		}
+		defer manager.Close()
+		staged, err := manager.Stage(context.Background(), packPath)
+		if err != nil {
+			return err
+		}
+		if err = localcatalog.BuildIndexes(context.Background(), staged.Generation(), localcatalog.IndexBuildOptions{Workers: 1}); err != nil {
+			return err
+		}
+		if err = manager.Activate(context.Background(), staged); err != nil {
+			return err
+		}
+		var release func()
+		runner, release, err = runner.WithLibrary(context.Background(), evaluationPackProvider{manager}, localcatalog.RecommendationMode(libraryMode))
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	report, err := runner.Run(context.Background(), dataset)
 	if err != nil {
 		return err
@@ -110,7 +158,7 @@ func run() error {
 		if err := ensureParent(keyPath); err != nil {
 			return err
 		}
-		if err := evaluation.WriteBlindComparison(report, dataset, cat, left, right, blindSeed, blindPath, keyPath); err != nil {
+		if err := evaluation.WriteBlindComparison(report, dataset, runner.Catalog, left, right, blindSeed, blindPath, keyPath); err != nil {
 			return err
 		}
 	}
@@ -120,6 +168,16 @@ func run() error {
 	}
 	fmt.Println()
 	return nil
+}
+
+type evaluationPackProvider struct{ manager *librarypack.Manager }
+
+func (p evaluationPackProvider) PinLocalCatalog() (*localcatalog.Catalog, error) {
+	lease, err := p.manager.Pin()
+	if err != nil {
+		return nil, err
+	}
+	return localcatalog.Open(lease, localcatalog.Options{SourceID: "library"})
 }
 func ensureParent(path string) error {
 	parent := filepath.Dir(path)

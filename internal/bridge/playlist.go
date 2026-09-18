@@ -356,12 +356,16 @@ func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, int
 		return core.TasteProfile{}, err
 	}
 	profileCatalog := "unknown"
-	if a.runtime().Resolver != nil {
-		profileCatalog = a.runtime().Resolver.CatalogVersion()
+	catalog, release, err := a.app.PinFeedbackCatalogFor(ctx, a.runtime())
+	if err != nil {
+		return core.TasteProfile{}, err
 	}
-	// Taste vectors remain in the bundled Deej-AI spaces. The independently
-	// pinned local evidence generation is recorded by identity.CatalogVersion;
-	// it must not make an otherwise identical base-vector profile incompatible.
+	defer release()
+	if versioned, ok := catalog.(interface{ CatalogVersion() string }); ok {
+		profileCatalog = versioned.CatalogVersion()
+	}
+	// Feedback uses the combined evidence view even when the playlist output
+	// is library-only. Validate that independent pinned profile identity.
 	if !found || profile.CatalogVersion != profileCatalog || profile.AlgorithmVersion != identity.ProfileVersion {
 		return core.TasteProfile{}, errors.New("saved taste snapshot is missing or incompatible; regenerate to use current preferences")
 	}

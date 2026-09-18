@@ -866,12 +866,8 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			if len(vector) != audio.MERTDimension {
 				return timings, errors.New("library indexer: invalid MERT dimension")
 			}
-			weight := float64(len(resampled))
-			for i, value := range vector {
-				if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-					return timings, errors.New("library indexer: nonfinite MERT output")
-				}
-				sums[i] += float64(value) * weight
+			if err := accumulateMERT(sums, vector, float64(len(resampled))); err != nil {
+				return timings, err
 			}
 			ratio := metrics.DownmixCancellationRatio
 			mert.Segments = append(mert.Segments, MERTSegmentRecord{Index: window.Index, StartSeconds: window.RequestedStart.Seconds(), ObservedSeconds: window.ObservedDuration.Seconds(), DownmixCancellationRatio: ratio, SevereDownmixCancellation: ratio < 0.01})
@@ -1272,7 +1268,25 @@ func retryableAnalysisError(parent context.Context, err error, retries int) bool
 }
 
 func AudioSemanticKey(runtimeID string, model core.AudioRepresentationIdentity, profile SamplingProfile) string {
-	return audio.LocalDSPVersion + ";" + audio.MERTLocalPreprocessingVersion + ";" + audio.MERTPoolingVersion + ";" + runtimeID + ";" + string(profile) + ";" + model.WeightsSHA256
+	return audio.LocalDSPVersion + ";" + audio.MERTLocalPreprocessingVersion + ";" + audio.MERTPoolingVersion + ";" + runtimeID + ";" + SamplingVersion + ";" + string(profile) + ";" + model.WeightsSHA256
+}
+
+// Validate the entire window before changing the pooled result. A malformed
+// worker response must not leave a prefix of its vector in the accumulator.
+func accumulateMERT(sums []float64, vector []float32, weight float64) error {
+	if len(sums) != len(vector) || len(vector) == 0 || weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return errors.New("library indexer: invalid MERT pooling input")
+	}
+	for i, value := range vector {
+		next := sums[i] + float64(value)*weight
+		if math.IsNaN(next) || math.IsInf(next, 0) {
+			return errors.New("library indexer: nonfinite MERT output")
+		}
+	}
+	for i, value := range vector {
+		sums[i] += float64(value) * weight
+	}
+	return nil
 }
 
 func DSPSemanticKey(runtimeID string, profile SamplingProfile) string {

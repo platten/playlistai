@@ -58,10 +58,15 @@ func (a *API) RecordFeedback(ctx context.Context, request RecordFeedbackRequest)
 	if a.app.Feedback == nil {
 		return FeedbackReceipt{}, errors.New("local feedback storage is unavailable")
 	}
-	if a.runtime().Catalog == nil {
+	catalog, releaseCatalog, err := a.app.PinFeedbackCatalogFor(ctx, a.runtime())
+	if err != nil {
+		return FeedbackReceipt{}, err
+	}
+	defer releaseCatalog()
+	if catalog == nil {
 		return FeedbackReceipt{}, errors.New("catalog not loaded")
 	}
-	if _, ok := a.runtime().Catalog.Meta(request.TrackID); !ok {
+	if _, ok := catalog.Meta(request.TrackID); !ok {
 		return FeedbackReceipt{}, fmt.Errorf("feedback: unknown catalog track %q", request.TrackID)
 	}
 	if request.Type == core.FeedbackExposure {
@@ -70,15 +75,16 @@ func (a *API) RecordFeedback(ctx context.Context, request RecordFeedbackRequest)
 	if request.Scope == "" {
 		request.Scope = defaultFeedbackScope(request.Type)
 	}
+	versions := a.feedbackVersionsFor(catalog)
 	event, err := a.app.Feedback.RecordFeedback(ctx, core.FeedbackEvent{
 		Type: request.Type, Scope: request.Scope, TrackID: request.TrackID,
 		RequestID: request.RequestID, SessionID: request.SessionID, Context: request.Context,
-		Versions: a.feedbackVersions(),
+		Versions: versions,
 	})
 	if err != nil {
 		return FeedbackReceipt{}, err
 	}
-	profile, err := a.tasteProfile(ctx, request.SessionID, request.RequestID)
+	profile, err := a.buildTasteProfileWithCatalog(ctx, request.SessionID, request.RequestID, false, catalog)
 	if err != nil {
 		return FeedbackReceipt{}, err
 	}
@@ -105,18 +111,23 @@ func (a *API) RecordTrackAcceptance(ctx context.Context, request RecordAcceptanc
 	if a.app.Feedback == nil {
 		return FeedbackBatchReceipt{}, errors.New("local feedback storage is unavailable")
 	}
-	if a.runtime().Catalog == nil {
+	catalog, releaseCatalog, err := a.app.PinFeedbackCatalogFor(ctx, a.runtime())
+	if err != nil {
+		return FeedbackBatchReceipt{}, err
+	}
+	defer releaseCatalog()
+	if catalog == nil {
 		return FeedbackBatchReceipt{}, errors.New("catalog not loaded")
 	}
 	seen := make(map[string]struct{}, len(request.TrackIDs))
 	events := make([]core.FeedbackEvent, 0, len(request.TrackIDs))
-	versions := a.feedbackVersions()
+	versions := a.feedbackVersionsFor(catalog)
 	for position, trackID := range request.TrackIDs {
 		if _, duplicate := seen[trackID]; duplicate {
 			continue
 		}
 		seen[trackID] = struct{}{}
-		if _, ok := a.runtime().Catalog.Meta(trackID); !ok {
+		if _, ok := catalog.Meta(trackID); !ok {
 			return FeedbackBatchReceipt{}, fmt.Errorf("feedback: unknown catalog track %q", trackID)
 		}
 		events = append(events, core.FeedbackEvent{
@@ -128,7 +139,7 @@ func (a *API) RecordTrackAcceptance(ctx context.Context, request RecordAcceptanc
 	if err := a.app.Feedback.RecordFeedbackBatch(ctx, events); err != nil {
 		return FeedbackBatchReceipt{}, err
 	}
-	profile, err := a.tasteProfile(ctx, request.SessionID, request.RequestID)
+	profile, err := a.buildTasteProfileWithCatalog(ctx, request.SessionID, request.RequestID, false, catalog)
 	if err != nil {
 		return FeedbackBatchReceipt{}, err
 	}
@@ -170,6 +181,17 @@ func (a *API) tasteProfile(ctx context.Context, sessionID, requestID string) (co
 }
 
 func (a *API) buildTasteProfile(ctx context.Context, sessionID, requestID string, includeAllExposures bool) (core.TasteProfile, error) {
+	ctx, finish := a.app.OperationContext(ctx)
+	defer finish()
+	catalog, release, err := a.app.PinFeedbackCatalogFor(ctx, a.runtime())
+	if err != nil {
+		return core.TasteProfile{}, err
+	}
+	defer release()
+	return a.buildTasteProfileWithCatalog(ctx, sessionID, requestID, includeAllExposures, catalog)
+}
+
+func (a *API) buildTasteProfileWithCatalog(ctx context.Context, sessionID, requestID string, includeAllExposures bool, catalog ports.Catalog) (core.TasteProfile, error) {
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
 	if err := ctx.Err(); err != nil {
@@ -188,7 +210,7 @@ func (a *API) buildTasteProfile(ctx context.Context, sessionID, requestID string
 			return core.TasteProfile{}, err
 		}
 	}
-	profile, err := taste.BuildProfile(ctx, a.runtime().Catalog, events, taste.ProfileOptions{
+	profile, err := taste.BuildProfile(ctx, catalog, events, taste.ProfileOptions{
 		RequestID: requestID, SessionID: sessionID, IncludeAllExposures: includeAllExposures,
 	})
 	if err != nil {
@@ -260,6 +282,14 @@ func (a *API) feedbackVersions() core.FeedbackVersions {
 	}
 }
 
+func (a *API) feedbackVersionsFor(catalog ports.Catalog) core.FeedbackVersions {
+	versions := a.feedbackVersions()
+	if versioned, ok := catalog.(interface{ CatalogVersion() string }); ok {
+		versions.Catalog = versioned.CatalogVersion()
+	}
+	return versions
+}
+
 func (a *API) catalogVersion() string {
 	if a.runtime().Resolver == nil {
 		return "unknown"
@@ -275,11 +305,15 @@ func (a *API) recommendationVersion() string {
 }
 
 func profileSummary(profile core.TasteProfile) TasteProfileSummary {
+	clusters := len(profile.Clusters)
+	for _, library := range profile.Library {
+		clusters += len(library.Clusters)
+	}
 	return TasteProfileSummary{
 		Version: profile.Version, AlgorithmVersion: profile.AlgorithmVersion, SnapshotID: profile.SnapshotID,
 		CatalogVersion: profile.CatalogVersion, ColdStart: profile.ColdStart,
 		PositiveEvidence: profile.PositiveEvidence, NegativeEvidence: profile.NegativeEvidence,
 		RequestEvidence: profile.RequestEvidence, ExposureCount: profile.ExposureCount,
-		ClusterCount: len(profile.Clusters),
+		ClusterCount: clusters,
 	}
 }

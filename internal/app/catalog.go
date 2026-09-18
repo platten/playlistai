@@ -73,6 +73,7 @@ func (c *Container) loadCatalog() error {
 		// swapping shared services while a generation is running.
 		rc := c.cfg.Recommendation
 		mc := multichannel.DefaultConfig()
+		mc.LibraryEvidenceEnabled = rc.LibraryEvidenceEnabled
 		mc.EnhancedMERTWeight = rc.EnhancedMERTWeight
 		mc.EnhancedDSPWeight = rc.EnhancedDSPWeight
 		mc.EnhancedTransitionWeight = rc.EnhancedTransitionWeight

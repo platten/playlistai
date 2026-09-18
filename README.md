@@ -231,6 +231,10 @@ plus CPU and CUDA MERT payloads; it still requires `--accept-model-license`. See
 recovery contract](docs/library-indexer-concurrency.md), [pack format](docs/paipack-format.md),
 and [executed validation](docs/library-indexer-validation.md).
 
+See the [paipack recommendation-quality implementation and indexer backlog](docs/library-indexer-improvements.md)
+for experimental local-audio scoring, private off/on evaluation, and proposed
+recording-link and pack-format upgrades.
+
 Existing format-v5 packs can be combined offline with the standalone,
 pure-Go `paipack-combine` utility. It validates every input, safely collapses
 recordings with authoritative identifiers or corroborated compatible

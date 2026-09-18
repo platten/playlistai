@@ -435,6 +435,37 @@ func (c *Container) PinLocalCatalog() (*localcatalog.Catalog, error) {
 	return localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings})
 }
 
+// PinFeedbackCatalog keeps one local generation alive through validation and
+// profile projection. Feedback remains valid regardless of output-source mode.
+func (c *Container) PinFeedbackCatalog(ctx context.Context) (ports.Catalog, func(), error) {
+	return c.PinFeedbackCatalogFor(ctx, c.Runtime())
+}
+
+// PinFeedbackCatalogFor uses the caller's runtime snapshot, keeping base catalog
+// identity and accesses consistent throughout a guarded bridge operation.
+func (c *Container) PinFeedbackCatalogFor(ctx context.Context, runtime RuntimeSnapshot) (ports.Catalog, func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+	if runtime.Catalog == nil {
+		// Cold-start profile reads are valid before setup; explicit feedback
+		// entrypoints reject this nil view as a catalog-not-loaded error.
+		return nil, func() {}, nil
+	}
+	local, err := c.PinLocalCatalog()
+	if errors.Is(err, librarypack.ErrNoActiveGeneration) {
+		return runtime.Catalog, func() {}, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	version := "unknown"
+	if runtime.Resolver != nil {
+		version = runtime.Resolver.CatalogVersion()
+	}
+	return localcatalog.NewEvidenceCatalog(runtime.Catalog, local, version), func() { _ = local.Close() }, nil
+}
+
 func (s *localLibraryState) pinRequestSnapshot() (localLibraryRequestSnapshot, error) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
