@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestFailedParentDoesNotPublishOrWalkChildren(t *testing.T) {
 	}
 	defer state.Close()
 	path := t.TempDir()
-	for _, name := range []string{"a-child/track.flac", "b-trigger.flac", "z-disappears.flac"} {
+	for _, name := range []string{"a-child/track.flac", "b-trigger.flac"} {
 		dest := filepath.Join(path, name)
 		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			t.Fatal(err)
@@ -33,11 +34,18 @@ func TestFailedParentDoesNotPublishOrWalkChildren(t *testing.T) {
 		t.Fatal(err)
 	}
 	var walked []string
+	attempts := 0
+	revisionBase := time.Now().Add(time.Hour)
 	report, err := state.Scan(ctx, ScanOptions{Roots: []Root{root}, Workers: 1, QueueDepth: 1,
 		OnDirectory: func(path string) { walked = append(walked, path) },
 		OnFile: func(file FileActivity) {
 			if file.RelativePath == "b-trigger.flac" {
-				if err := os.Remove(filepath.Join(path, "z-disappears.flac")); err != nil {
+				// ReadDir's Info is cached on Windows, so deleting a later entry does
+				// not portably cause Info to fail. Exhaust revision retries instead,
+				// after the child has been discovered on every attempt.
+				attempts++
+				revision := revisionBase.Add(time.Duration(attempts) * time.Second)
+				if err := os.Chtimes(path, revision, revision); err != nil {
 					t.Error(err)
 				}
 			}
@@ -46,8 +54,13 @@ func TestFailedParentDoesNotPublishOrWalkChildren(t *testing.T) {
 	if err != nil || report.Errors != 1 || report.Complete {
 		t.Fatalf("report=%+v err=%v", report, err)
 	}
-	if len(walked) != 1 {
-		t.Fatalf("unpublished child walked: %v", walked)
+	if attempts != maxDirectoryChangeAttempts || len(walked) != maxDirectoryChangeAttempts {
+		t.Fatalf("failed parent attempts=%d walked=%v", attempts, walked)
+	}
+	for _, directory := range walked {
+		if directory != "music" {
+			t.Fatalf("unpublished child walked: %v", walked)
+		}
 	}
 	var frontier, files int
 	if err := state.Reader().QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM directory_frontier),(SELECT COUNT(*) FROM files)`).Scan(&frontier, &files); err != nil {
@@ -252,13 +265,106 @@ func TestSpilledScanPreservesSerialHardlinkIdentity(t *testing.T) {
 	if _, err := state.Scan(ctx, ScanOptions{Roots: []Root{root}, Workers: 1, QueueDepth: 1, SemanticJobs: map[string]string{"metadata": "v1"}}); err != nil {
 		t.Fatal(err)
 	}
-	var id, relative string
-	if err := state.Reader().QueryRowContext(ctx, `SELECT id,relative_path FROM files WHERE relative_path IN ('a.flac','z.flac')`).Scan(&id, &relative); err != nil {
+
+	info, err := os.Stat(filepath.Join(path, "a.flac"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if id != stableFileID(root.ID, "a.flac") || relative != "z.flac" {
-		t.Fatalf("hardlink identity diverged from sorted serial scan: id=%q path=%q", id, relative)
+	device, inode := fileIdentity(info)
+	assertScanHardlinkIdentity(t, state, root, device != 0 || inode != 0)
+}
+
+// Native IDs are deliberately unavailable on some supported hosts. Both
+// outcomes are contractual: shared native identity collapses in sorted order;
+// unknown identity keeps distinct path-derived rows.
+func assertScanHardlinkIdentity(t *testing.T, state *State, root Root, native bool) {
+	t.Helper()
+	rows, err := state.Reader().QueryContext(context.Background(), `SELECT id,relative_path FROM files WHERE relative_path IN ('a.flac','z.flac') ORDER BY relative_path`)
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var id, path string
+		if err := rows.Scan(&id, &path); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, id+" "+path)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{stableFileID(root.ID, "a.flac") + " z.flac"}
+	if !native {
+		want = []string{stableFileID(root.ID, "a.flac") + " a.flac", stableFileID(root.ID, "z.flac") + " z.flac"}
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("hardlink identity diverged from sorted serial scan (native=%v): got=%v want=%v", native, got, want)
+	}
+}
+
+// Exercise the native-ID ordering invariant on hosts whose fileIdentity
+// implementation has no native-ID support as well as those that do.
+func TestSpilledScanSortsSyntheticNativeIdentity(t *testing.T) {
+	ctx := context.Background()
+	state, err := OpenState(ctx, t.TempDir(), "synthetic-hardlink-sort", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	root, err := state.EnsureRoot(ctx, t.TempDir(), "music")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epoch, err := state.BeginEpoch(ctx, []Root{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := state.ClaimDirectories(ctx, epoch, 1, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(state.dir, "scan-staging"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	db, tx, path, err := newScanSpill(ctx, state.dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(path)
+	defer db.Close()
+	defer func() { _ = tx.Rollback() }()
+	files := []SourceFile{{RootID: root.ID, RelativePath: "z.flac", Device: 7, Inode: 3, Extension: ".flac"}}
+	for i := 0; i < scanDirectoryEntries+30; i++ {
+		files = append(files, SourceFile{RootID: root.ID, RelativePath: fmt.Sprintf("middle-%04d.flac", i), Device: 7, Inode: uint64(i + 100), Extension: ".flac"})
+	}
+	files = append(files, SourceFile{RootID: root.ID, RelativePath: "a.flac", Device: 7, Inode: 3, Extension: ".flac"})
+	for i := range files {
+		if err := normalizeSourceFile(&files[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeScanSpill(ctx, tx, scanDirectoryChunk{Files: files}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	inventory, err := state.loadScanInventory(ctx, []Root{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := make(chan scanDirectoryResult, 1)
+	results <- scanDirectoryResult{task: tasks[0], spill: path}
+	close(results)
+	if err := state.commitScanResults(ctx, epoch, results, func() (*scanInventory, error) { return inventory, nil }, nil, &ScanReport{}); err != nil {
+		t.Fatal(err)
+	}
+	assertScanHardlinkIdentity(t, state, root, true)
 }
 
 func TestCanceledSpilledScanReleasesBuffersAndResumes(t *testing.T) {
