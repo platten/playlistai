@@ -226,3 +226,26 @@ func TestAdmissionConcurrentReleasePartLeavesNoUsage(t *testing.T) {
 		t.Fatalf("concurrent leases leaked: %+v", used)
 	}
 }
+
+func TestAdmissionRecordsPeakBytesAfterRelease(t *testing.T) {
+	a := NewAdmission(ResourcePlan{MaxRAM: 1024}, 512)
+	defer a.Close()
+	first, err := a.Acquire(context.Background(), Reservation{Memory: 200, PCMBytes: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.Acquire(context.Background(), Reservation{Memory: 300, PCMBytes: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first()
+	second()
+	stats := a.Stats()
+	if stats.PeakMemoryBytes != 500 || stats.PeakPCMBytes != 300 {
+		t.Fatalf("peaks=%+v", stats)
+	}
+	used, _ := a.Usage()
+	if used.Memory != 0 || used.PCMBytes != 0 {
+		t.Fatal("reservations leaked")
+	}
+}

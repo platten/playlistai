@@ -54,7 +54,7 @@ type commonFlags struct {
 	seed                                                                         int64
 	scanWorkers, metadataWorkers, decodeWorkers, dspWorkers                      int
 	inferenceWorkers, inferenceThreads, fitWorkers, indexWorkers                 int
-	ioWorkers, queueDepth, maxOpenFiles                                          int
+	ioWorkers, queueDepth, maxOpenFiles, stageTraceEvents                        int
 }
 
 func addCommon(flags *flag.FlagSet, values *commonFlags) {
@@ -88,6 +88,7 @@ func addCommon(flags *flag.FlagSet, values *commonFlags) {
 	flags.IntVar(&values.indexWorkers, "index-workers", values.indexWorkers, "index CPU-task ceiling")
 	flags.IntVar(&values.ioWorkers, "io-workers", values.ioWorkers, "aggregate source-tree I/O ceiling")
 	flags.StringVar(&values.ioProfile, "io-profile", values.ioProfile, "auto, hdd, nas, or ssd")
+	flags.IntVar(&values.stageTraceEvents, "stage-trace-events", 0, "opt-in bounded stage trace (0 disables; maximum 100000 events)")
 	flags.IntVar(&values.queueDepth, "queue-depth", values.queueDepth, "small descriptor queue depth")
 	flags.StringVar(&values.maxRAM, "max-ram", values.maxRAM, "admission target, e.g. 8GiB")
 	flags.IntVar(&values.maxOpenFiles, "max-open-files", values.maxOpenFiles, "owned source/runtime descriptor ceiling")
@@ -167,6 +168,9 @@ func (c commonFlags) metadataPlan() (libraryindex.ResourcePlan, error) {
 }
 
 func (c commonFlags) resolvePlan(metadataOnly bool) (libraryindex.ResourcePlan, error) {
+	if c.stageTraceEvents < 0 || c.stageTraceEvents > 100000 {
+		return libraryindex.ResourcePlan{}, errors.New("--stage-trace-events must be between 0 and 100000")
+	}
 	mode := libraryindex.ConcurrencyMode(strings.ToLower(c.concurrency))
 	ioProfile := libraryindex.IOProfile(strings.ToLower(c.ioProfile))
 	over := libraryindex.ResourceOverrides{Mode: mode, IOProfile: ioProfile, ScanWorkers: c.scanWorkers, MetadataWorkers: c.metadataWorkers,
@@ -346,7 +350,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		semanticJobs["audio"] = libraryindex.AudioSemanticKey(codec.ID(), pool.Identity(), profileValue)
 	}
 	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue, Integrity: integrityPolicy}
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
+	analyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	var initialPhase string
 	switch command {
@@ -367,6 +371,18 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	progressComplete := false
 	defer func() { progress.Stop(progressComplete) }()
 	analyzer.OnIssue = issues.Record
+	analyzer.OnMERTHealth = func(healthy bool, err error) {
+		phase, message := analysisPhase, "MERT worker recovered; resuming audio analysis"
+		if !healthy {
+			phase = "Paused: MERT worker unavailable, retrying health check"
+			message = "MERT worker unavailable; audio analysis paused until a health check passes: " + firstLine(err)
+		}
+		if progress.Active() {
+			progress.SetPhase(phase)
+			return
+		}
+		fmt.Fprintln(stderr, message)
+	}
 	var scanReport libraryindex.ScanReport
 	var scanErr error
 	if command != "analyze" {
@@ -450,7 +466,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	var analysisReport libraryindex.AnalysisReport
 	if command != "scan" {
-		progress.SetPhase("Analyzing manifest diff")
+		progress.SetPhase(analysisPhase)
 		analyzer.FreezeManifest = command != "analyze"
 		if command != "analyze" {
 			analyzer.DiffEpoch = scanReport.Epoch
@@ -500,14 +516,24 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s mert_inference=%s commit=%s admission_queued=%d\n",
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d mert_outages=%d mert_deferred=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s onnx_execution=%s mert_inference=%s commit=%s admission_queued=%d\n",
 		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
-		analysisReport.TracksBuffered, analysisReport.WindowFallbacks, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.Timings.CPUAdmission, analysisReport.Timings.SourceIOAdmission,
+		analysisReport.TracksBuffered, analysisReport.WindowFallbacks, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.MERTOutages, analysisReport.MERTDeferred, analysisReport.Timings.CPUAdmission, analysisReport.Timings.SourceIOAdmission,
 		analysisReport.Timings.PCMAdmission, analysisReport.Timings.SourceRead, analysisReport.Timings.Probe, analysisReport.Timings.Fingerprint, analysisReport.Timings.Integrity,
 		analysisReport.Timings.Decode, analysisReport.Timings.DSPSlotWait, analysisReport.Timings.DSP, analysisReport.Timings.Downmix,
 		analysisReport.Timings.ResamplingKernel, analysisReport.Timings.MERTPreprocess, analysisReport.Timings.MERTWait, analysisReport.Timings.WorkerPreprocess,
-		analysisReport.Timings.IPC, analysisReport.Timings.CUDAExecution, analysisReport.Timings.MERTInference, analysisReport.Timings.Commit, analysisReport.AdmissionWaits.Queued)
+		analysisReport.Timings.IPC, analysisReport.Timings.CUDAExecution, analysisReport.Timings.ONNXExecution, analysisReport.Timings.MERTInference, analysisReport.Timings.Commit, analysisReport.AdmissionWaits.Queued)
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
+}
+
+const analysisPhase = "Analyzing manifest diff"
+
+func firstLine(err error) string {
+	if err == nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(err.Error(), "\n")
+	return line
 }
 
 func tunePlanForDevice(plan libraryindex.ResourcePlan, common commonFlags, device string) libraryindex.ResourcePlan {

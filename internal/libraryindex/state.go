@@ -42,19 +42,20 @@ type writerRequest struct {
 // State owns one mutating coordinator, one SQLite writer connection and a
 // separate bounded read-only pool. Workers never receive a transaction handle.
 type State struct {
-	dir         string
-	path        string
-	writerDB    *sql.DB
-	writer      *sql.Conn
-	reader      *sql.DB
-	control     chan writerRequest
-	results     chan writerRequest
-	batches     chan writerRequest
-	stop        chan struct{}
-	done        chan struct{}
-	releaseLock func() error
-	closeOnce   sync.Once
-	closeErr    error
+	pageCacheBytes int64
+	dir            string
+	path           string
+	writerDB       *sql.DB
+	writer         *sql.Conn
+	reader         *sql.DB
+	control        chan writerRequest
+	results        chan writerRequest
+	batches        chan writerRequest
+	stop           chan struct{}
+	done           chan struct{}
+	releaseLock    func() error
+	closeOnce      sync.Once
+	closeErr       error
 }
 
 type LockOwner struct {
@@ -117,22 +118,30 @@ func OpenState(ctx context.Context, dir, command string, readConnections int) (*
 		_ = db.Close()
 		return nil, err
 	}
+	if err := rebuildEligibleWorkset(ctx, conn); err != nil {
+		_ = conn.Close()
+		_ = db.Close()
+		return nil, err
+	}
 	roDSN, err := sqliteuri.ReadOnly(path, false)
 	if err != nil {
 		_ = conn.Close()
 		_ = db.Close()
 		return nil, err
 	}
-	reader, err := sql.Open("sqlite", roDSN+"&_pragma="+url.QueryEscape("busy_timeout(5000)"))
+	// Bound reader cache residency independently of library size and spill sort
+	// temporaries to disk. Eight readers plus the writer use at most 96 MiB of
+	// page caches, within the planner's native-process safety headroom.
+	reader, err := sql.Open("sqlite", roDSN+"&_pragma="+url.QueryEscape("busy_timeout(5000)")+"&_pragma="+url.QueryEscape("temp_store(1)")+"&_pragma="+url.QueryEscape("cache_size(-8192)"))
 	if err != nil {
 		_ = conn.Close()
 		_ = db.Close()
 		return nil, err
 	}
-	readConnections = max(1, readConnections)
+	readConnections = min(8, max(1, readConnections))
 	reader.SetMaxOpenConns(readConnections)
 	reader.SetMaxIdleConns(readConnections)
-	s := &State{dir: abs, path: path, writerDB: db, writer: conn, reader: reader,
+	s := &State{pageCacheBytes: int64(32+8*readConnections) << 20, dir: abs, path: path, writerDB: db, writer: conn, reader: reader,
 		control: make(chan writerRequest, 32), results: make(chan writerRequest, 64), batches: make(chan writerRequest, 256), stop: make(chan struct{}), done: make(chan struct{}), releaseLock: release}
 	go s.writerLoop()
 	locked = false
@@ -141,7 +150,10 @@ func OpenState(ctx context.Context, dir, command string, readConnections int) (*
 
 func migrateState(ctx context.Context, conn *sql.Conn) error {
 	var version string
+	// Bound page-cache memory; large temporary sorts spill to local disk. Scan
+	// transactions are chunked, so they no longer need a library-sized cache.
 	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL; PRAGMA wal_autocheckpoint=1000;
+PRAGMA cache_size=-32768; PRAGMA temp_store=FILE;
 CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);`); err != nil {
 		return err
 	}
@@ -171,6 +183,7 @@ CREATE TABLE IF NOT EXISTS directory_frontier (
 	 completed_size INTEGER NOT NULL DEFAULT -1,
  PRIMARY KEY(epoch_id,root_id,relative_path)
 );
+CREATE INDEX IF NOT EXISTS directory_frontier_claim ON directory_frontier(epoch_id,state,root_id,relative_path);
 CREATE TABLE IF NOT EXISTS files (
  id TEXT PRIMARY KEY, root_id TEXT NOT NULL REFERENCES roots(id), relative_path TEXT NOT NULL,
  device INTEGER NOT NULL, inode INTEGER NOT NULL, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL,
@@ -188,13 +201,14 @@ CREATE TABLE IF NOT EXISTS jobs (
  updated_at TEXT NOT NULL, UNIQUE(kind,file_id,semantic_key)
 );
 CREATE INDEX IF NOT EXISTS jobs_claim ON jobs(kind,state,updated_at,id);
+CREATE INDEX IF NOT EXISTS jobs_claim_order ON jobs(kind,state);
 CREATE INDEX IF NOT EXISTS jobs_file_active ON jobs(file_id,kind,semantic_key,state);
 CREATE TABLE IF NOT EXISTS scan_diff_jobs (
  epoch_id INTEGER NOT NULL REFERENCES scan_epochs(id), job_id INTEGER NOT NULL REFERENCES jobs(id),
  source_revision TEXT NOT NULL, kind TEXT NOT NULL, semantic_key TEXT NOT NULL,
  PRIMARY KEY(epoch_id,job_id)
 );
-CREATE INDEX IF NOT EXISTS scan_diff_claim ON scan_diff_jobs(epoch_id,kind,job_id);
+DROP INDEX IF EXISTS scan_diff_claim;
 CREATE TABLE IF NOT EXISTS track_metadata (
  file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
  data BLOB NOT NULL, recording_key TEXT NOT NULL DEFAULT '', PRIMARY KEY(file_id,contract)
@@ -682,12 +696,6 @@ func (s *State) requeueChangedDirectories(ctx context.Context, epoch int64, root
 	for _, root := range roots {
 		rootByID[root.ID] = root
 	}
-	rows, err := s.reader.QueryContext(ctx, `SELECT root_id,relative_path,completed_mtime_ns,completed_size
-		FROM directory_frontier WHERE epoch_id=? AND state='completed' ORDER BY root_id,relative_path`, epoch)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
 
 	const batchSize = 128
 	batch := make([]completedDirectory, 0, batchSize)
@@ -727,39 +735,61 @@ func (s *State) requeueChangedDirectories(ctx context.Context, epoch int64, root
 			return tx.Commit()
 		})
 	}
-	for rows.Next() {
-		var item completedDirectory
-		if err := rows.Scan(&item.rootID, &item.relativePath, &item.revision.MTimeNS, &item.revision.Size); err != nil {
+
+	var afterRoot, afterPath string
+	for {
+		rows, err := s.reader.QueryContext(ctx, `SELECT root_id,relative_path,completed_mtime_ns,completed_size
+   FROM directory_frontier WHERE epoch_id=? AND state='completed' AND (root_id,relative_path)>(?,?)
+   ORDER BY root_id,relative_path LIMIT ?`, epoch, afterRoot, afterPath, batchSize)
+		if err != nil {
 			return 0, err
 		}
-		root, ok := rootByID[item.rootID]
-		if !ok {
-			return 0, fmt.Errorf("library indexer: resumed directory references unknown root %s", item.rootID)
-		}
-		relative := item.relativePath
-		if relative == "." {
-			relative = ""
-		}
-		info, statErr := os.Stat(filepath.Join(root.Path, relative))
-		changed := statErr != nil || !info.IsDir() || item.revision.MTimeNS < 0 || item.revision.Size < 0
-		if !changed {
-			changed = info.ModTime().UnixNano() != item.revision.MTimeNS || info.Size() != item.revision.Size
-		}
-		if !changed {
-			continue
-		}
-		batch = append(batch, item)
-		if len(batch) == batchSize {
-			if err := flush(); err != nil {
+		page := make([]completedDirectory, 0, batchSize)
+		for rows.Next() {
+			var item completedDirectory
+			if err := rows.Scan(&item.rootID, &item.relativePath, &item.revision.MTimeNS, &item.revision.Size); err != nil {
+				rows.Close()
 				return 0, err
 			}
+			page = append(page, item)
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-	if err := flush(); err != nil {
-		return 0, err
+		if err := closeRows(rows); err != nil {
+			return 0, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		afterRoot = page[len(page)-1].rootID
+		afterPath = page[len(page)-1].relativePath
+		// Close each read snapshot before statting and writing, so resume cannot
+		// pin a growing WAL for the duration of a large library walk.
+		for _, item := range page {
+			root, ok := rootByID[item.rootID]
+			if !ok {
+				return 0, fmt.Errorf("library indexer: resumed directory references unknown root %s", item.rootID)
+			}
+			relative := item.relativePath
+			if relative == "." {
+				relative = ""
+			}
+			info, statErr := os.Stat(filepath.Join(root.Path, relative))
+			changed := statErr != nil || !info.IsDir() || item.revision.MTimeNS < 0 || item.revision.Size < 0
+			if !changed {
+				changed = info.ModTime().UnixNano() != item.revision.MTimeNS || info.Size() != item.revision.Size
+			}
+			if !changed {
+				continue
+			}
+			batch = append(batch, item)
+			if len(batch) == batchSize {
+				if err := flush(); err != nil {
+					return 0, err
+				}
+			}
+		}
+		if err := flush(); err != nil {
+			return 0, err
+		}
 	}
 	return total, nil
 }
@@ -770,48 +800,6 @@ type DirectoryTask struct {
 	RelativePath string
 	Attempt      int
 	Fence        string
-}
-
-// AddDirectoryChildren durably publishes a bounded discovery batch while the
-// parent remains leased. Replays are idempotent and increment outstanding work
-// only for newly inserted children.
-func (s *State) AddDirectoryChildren(ctx context.Context, task DirectoryTask, children []string) error {
-	if len(children) == 0 {
-		return nil
-	}
-	return s.write(ctx, true, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-		var state, fence string
-		if err := tx.QueryRowContext(ctx, `SELECT state,fence FROM directory_frontier WHERE epoch_id=? AND root_id=? AND relative_path=?`, task.EpochID, task.RootID, task.RelativePath).Scan(&state, &fence); err != nil {
-			return err
-		}
-		if state != "leased" || fence != task.Fence {
-			return errors.New("library indexer: stale directory fence")
-		}
-		added := 0
-		for _, child := range children {
-			child = filepath.Clean(child)
-			if filepath.IsAbs(child) || child == ".." || strings.HasPrefix(child, ".."+string(filepath.Separator)) {
-				return errors.New("library indexer: child directory escapes root")
-			}
-			res, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO directory_frontier(epoch_id,root_id,relative_path,state) VALUES(?,?,?,'pending')`, task.EpochID, task.RootID, child)
-			if err != nil {
-				return err
-			}
-			n, _ := res.RowsAffected()
-			added += int(n)
-		}
-		if added > 0 {
-			if _, err := tx.ExecContext(ctx, `UPDATE scan_scopes SET outstanding_dirs=outstanding_dirs+? WHERE epoch_id=? AND root_id=?`, added, task.EpochID, task.RootID); err != nil {
-				return err
-			}
-		}
-		return tx.Commit()
-	})
 }
 
 // ClaimDirectories leases a small durable frontier batch. Expired tasks are
@@ -829,22 +817,43 @@ func (s *State) ClaimDirectories(ctx context.Context, epoch int64, limit int, le
 		}
 		defer func() { _ = tx.Rollback() }()
 		now := time.Now().UTC()
-		rows, err := tx.QueryContext(ctx, `SELECT epoch_id,root_id,relative_path,attempt FROM directory_frontier
-			WHERE epoch_id=? AND (state='pending' OR (state='leased' AND lease_until<?))
-			ORDER BY root_id,relative_path LIMIT ?`, epoch, now.Format(time.RFC3339Nano), limit)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var task DirectoryTask
-			if err := rows.Scan(&task.EpochID, &task.RootID, &task.RelativePath, &task.Attempt); err != nil {
-				rows.Close()
+		// Separate state ranges keep completed directories out of every batch
+		// lookup. Merge their bounded ordered prefixes to preserve frontier order.
+		for _, selection := range []struct{ state, expiry string }{
+			{state: "pending"}, {state: "leased", expiry: " AND lease_until<?"},
+		} {
+			args := []any{epoch, selection.state}
+			if selection.expiry != "" {
+				args = append(args, now.Format(time.RFC3339Nano))
+			}
+			args = append(args, limit)
+			rows, err := tx.QueryContext(ctx, `SELECT epoch_id,root_id,relative_path,attempt
+				FROM directory_frontier INDEXED BY directory_frontier_claim
+				WHERE epoch_id=? AND state=?`+selection.expiry+`
+				ORDER BY root_id,relative_path LIMIT ?`, args...)
+			if err != nil {
 				return err
 			}
-			tasks = append(tasks, task)
+			for rows.Next() {
+				var task DirectoryTask
+				if err := rows.Scan(&task.EpochID, &task.RootID, &task.RelativePath, &task.Attempt); err != nil {
+					rows.Close()
+					return err
+				}
+				tasks = append(tasks, task)
+			}
+			if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+				return err
+			}
 		}
-		if err := rows.Close(); err != nil {
-			return err
+		sort.Slice(tasks, func(i, j int) bool {
+			if tasks[i].RootID != tasks[j].RootID {
+				return tasks[i].RootID < tasks[j].RootID
+			}
+			return tasks[i].RelativePath < tasks[j].RelativePath
+		})
+		if len(tasks) > limit {
+			tasks = tasks[:limit]
 		}
 		for i := range tasks {
 			tasks[i].Attempt++
@@ -863,40 +872,6 @@ func (s *State) ClaimDirectories(ctx context.Context, epoch int64, limit int, le
 		return tx.Commit()
 	})
 	return tasks, err
-}
-
-func (s *State) RenewDirectories(ctx context.Context, tasks []DirectoryTask, lease time.Duration) error {
-	if len(tasks) == 0 {
-		return nil
-	}
-	if len(tasks) > 1024 || lease <= 0 {
-		return errors.New("library indexer: invalid directory renewal bounds")
-	}
-	return s.write(ctx, true, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-		now := time.Now().UTC()
-		for _, task := range tasks {
-			res, err := tx.ExecContext(ctx, `UPDATE directory_frontier SET lease_until=? WHERE epoch_id=? AND root_id=? AND relative_path=? AND state='leased' AND fence=?`, now.Add(lease).Format(time.RFC3339Nano), task.EpochID, task.RootID, task.RelativePath, task.Fence)
-			if err != nil {
-				return err
-			}
-			if n, _ := res.RowsAffected(); n == 1 {
-				continue
-			}
-			var state, fence string
-			if err := tx.QueryRowContext(ctx, `SELECT state,fence FROM directory_frontier WHERE epoch_id=? AND root_id=? AND relative_path=?`, task.EpochID, task.RootID, task.RelativePath).Scan(&state, &fence); err != nil {
-				return err
-			}
-			if state == "leased" && fence != task.Fence {
-				return errors.New("library indexer: lost directory lease")
-			}
-		}
-		return tx.Commit()
-	})
 }
 
 // CompleteDirectory atomically publishes discovered child directories before
@@ -938,52 +913,6 @@ func (s *State) CompleteDirectory(ctx context.Context, task DirectoryTask, child
 			return errors.New("library indexer: directory completion lost its fence")
 		}
 		_, err = tx.ExecContext(ctx, `UPDATE scan_scopes SET outstanding_dirs=outstanding_dirs-1+? WHERE epoch_id=? AND root_id=?`, added, task.EpochID, task.RootID)
-		if err != nil {
-			return err
-		}
-		return tx.Commit()
-	})
-}
-
-// RetryDirectory returns a still-outstanding task to the durable frontier. It
-// is used when the directory changed while it was being enumerated, so the
-// scan does not commit a potentially incomplete view.
-func (s *State) RetryDirectory(ctx context.Context, task DirectoryTask, detail string) error {
-	if len(detail) > 4096 {
-		detail = detail[:4096]
-	}
-	return s.write(ctx, true, func(conn *sql.Conn) error {
-		res, err := conn.ExecContext(ctx, `UPDATE directory_frontier
-			SET state='pending',error=?,fence='',lease_until=NULL
-			WHERE epoch_id=? AND root_id=? AND relative_path=? AND state='leased' AND fence=?`, detail, task.EpochID, task.RootID, task.RelativePath, task.Fence)
-		if err != nil {
-			return err
-		}
-		if count, _ := res.RowsAffected(); count != 1 {
-			return errors.New("library indexer: stale directory retry")
-		}
-		return nil
-	})
-}
-
-func (s *State) FailDirectory(ctx context.Context, task DirectoryTask, detail string) error {
-	if len(detail) > 4096 {
-		detail = detail[:4096]
-	}
-	return s.write(ctx, true, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-		res, err := tx.ExecContext(ctx, `UPDATE directory_frontier SET state='failed',error=?,fence='',lease_until=NULL WHERE epoch_id=? AND root_id=? AND relative_path=? AND fence=?`, detail, task.EpochID, task.RootID, task.RelativePath, task.Fence)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n != 1 {
-			return errors.New("library indexer: stale directory failure")
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE scan_scopes SET outstanding_dirs=outstanding_dirs-1,permission_errors=permission_errors+1,status='partial' WHERE epoch_id=? AND root_id=?`, task.EpochID, task.RootID)
 		if err != nil {
 			return err
 		}
@@ -1161,84 +1090,130 @@ func (s *State) ObserveFiles(ctx context.Context, epoch int64, files []SourceFil
 	}
 	observed := slices.Clone(files)
 	for index := range observed {
-		file := &observed[index]
-		file.RelativePath = filepath.Clean(file.RelativePath)
-		if file.RelativePath == "." || filepath.IsAbs(file.RelativePath) || file.RelativePath == ".." || strings.HasPrefix(file.RelativePath, ".."+string(filepath.Separator)) {
-			return observed, errors.New("library indexer: source path escapes its root")
+		if err := normalizeSourceFile(&observed[index]); err != nil {
+			return observed, err
 		}
-		if file.SourceRevision == "" {
-			file.SourceRevision = sourceRevision(file.Size, file.MTimeNS, file.Device, file.Inode)
-		}
-		if file.ID == "" {
-			file.ID = stableFileID(file.RootID, file.RelativePath)
-		}
-		file.needsProcessing = false
 	}
 	updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	err := s.writeBatch(ctx, func(tx *sql.Tx) error {
-		identityStatement, err := tx.PrepareContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`)
+		statements, err := prepareObservation(ctx, tx)
 		if err != nil {
 			return err
 		}
-		defer identityStatement.Close()
-		fileStatement, err := tx.PrepareContext(ctx, `INSERT INTO files(id,root_id,relative_path,device,inode,size,mtime_ns,source_revision,extension,status,first_seen_epoch,last_seen_epoch,tombstoned_at)
-			VALUES(?,?,?,?,?,?,?,?,?,'present',?,?,NULL)
-			ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path,device=excluded.device,inode=excluded.inode,size=excluded.size,mtime_ns=excluded.mtime_ns,source_revision=excluded.source_revision,extension=excluded.extension,status='present',last_seen_epoch=excluded.last_seen_epoch,tombstoned_at=NULL`)
-		if err != nil {
-			return err
-		}
-		defer fileStatement.Close()
-		supersedeStatement, err := tx.PrepareContext(ctx, `UPDATE jobs SET state='superseded',fence='',lease_until=NULL,updated_at=? WHERE kind=? AND file_id=? AND semantic_key<>? AND state<>'superseded'`)
-		if err != nil {
-			return err
-		}
-		defer supersedeStatement.Close()
-		jobStatement, err := tx.PrepareContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
-			ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
-			state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
-			fence='',lease_until=NULL,
-			error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
-			error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
-			updated_at=excluded.updated_at RETURNING state`)
-		if err != nil {
-			return err
-		}
-		defer jobStatement.Close()
-
+		defer statements.close()
 		for index := range observed {
-			file := &observed[index]
-			// Preserve identity across same-filesystem moves within a configured root.
-			var prior string
-			// A zero pair means that this platform/filesystem could not provide a
-			// native identity. Never let that sentinel collapse unrelated paths.
-			if file.Device != 0 || file.Inode != 0 {
-				err = identityStatement.QueryRowContext(ctx, file.RootID, file.Device, file.Inode).Scan(&prior)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					return err
-				}
-			}
-			if prior != "" {
-				file.ID = prior
-			}
-			if _, err = fileStatement.ExecContext(ctx, file.ID, file.RootID, file.RelativePath, file.Device, file.Inode, file.Size, file.MTimeNS, file.SourceRevision, file.Extension, epoch, epoch); err != nil {
+			if err := statements.observe(ctx, epoch, &observed[index], semanticKeys, updatedAt); err != nil {
 				return err
-			}
-			for kind, key := range semanticKeys {
-				if _, err = supersedeStatement.ExecContext(ctx, updatedAt, kind, file.ID, key); err != nil {
-					return err
-				}
-				var jobState string
-				if err = jobStatement.QueryRowContext(ctx, kind, file.ID, file.SourceRevision, key, updatedAt).Scan(&jobState); err != nil {
-					return err
-				}
-				if jobState == "pending" {
-					file.needsProcessing = true
-				}
 			}
 		}
 		return nil
 	})
 	return observed, err
+}
+
+// normalizeSourceFile validates the root-relative path and derives the stat
+// revision and default path identity.
+func normalizeSourceFile(file *SourceFile) error {
+	file.RelativePath = filepath.Clean(file.RelativePath)
+	if file.RelativePath == "." || filepath.IsAbs(file.RelativePath) || file.RelativePath == ".." || strings.HasPrefix(file.RelativePath, ".."+string(filepath.Separator)) {
+		return errors.New("library indexer: source path escapes its root")
+	}
+	if file.SourceRevision == "" {
+		file.SourceRevision = sourceRevision(file.Size, file.MTimeNS, file.Device, file.Inode)
+	}
+	if file.ID == "" {
+		file.ID = stableFileID(file.RootID, file.RelativePath)
+	}
+	file.needsProcessing = false
+	return nil
+}
+
+type observationStatements struct {
+	identity  *sql.Stmt
+	file      *sql.Stmt
+	supersede *sql.Stmt
+	job       *sql.Stmt
+}
+
+type preparer interface {
+	PrepareContext(context.Context, string) (*sql.Stmt, error)
+}
+
+func prepareObservation(ctx context.Context, tx preparer) (*observationStatements, error) {
+	statements := &observationStatements{}
+	var err error
+	if statements.identity, err = tx.PrepareContext(ctx, `SELECT id FROM files WHERE root_id=? AND device=? AND inode=? AND tombstoned_at IS NULL LIMIT 1`); err != nil {
+		return nil, err
+	}
+	if statements.file, err = tx.PrepareContext(ctx, `INSERT INTO files(id,root_id,relative_path,device,inode,size,mtime_ns,source_revision,extension,status,first_seen_epoch,last_seen_epoch,tombstoned_at)
+		VALUES(?,?,?,?,?,?,?,?,?,'present',?,?,NULL)
+		ON CONFLICT(id) DO UPDATE SET relative_path=excluded.relative_path,device=excluded.device,inode=excluded.inode,size=excluded.size,mtime_ns=excluded.mtime_ns,source_revision=excluded.source_revision,extension=excluded.extension,status='present',last_seen_epoch=excluded.last_seen_epoch,tombstoned_at=NULL`); err != nil {
+		statements.close()
+		return nil, err
+	}
+	if statements.supersede, err = tx.PrepareContext(ctx, `UPDATE jobs SET state='superseded',fence='',lease_until=NULL,updated_at=? WHERE kind=? AND file_id=? AND semantic_key<>? AND state<>'superseded'`); err != nil {
+		statements.close()
+		return nil, err
+	}
+	if statements.job, err = tx.PrepareContext(ctx, `INSERT INTO jobs(kind,file_id,source_revision,semantic_key,state,updated_at) VALUES(?,?,?,?,'pending',?)
+		ON CONFLICT(kind,file_id,semantic_key) DO UPDATE SET source_revision=excluded.source_revision,
+		state=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state IN ('completed','failed') THEN jobs.state ELSE 'pending' END,
+		fence='',lease_until=NULL,
+		error_code=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_code ELSE '' END,
+		error_detail=CASE WHEN jobs.source_revision=excluded.source_revision AND jobs.state='failed' THEN jobs.error_detail ELSE '' END,
+		updated_at=excluded.updated_at RETURNING state`); err != nil {
+		statements.close()
+		return nil, err
+	}
+	return statements, nil
+}
+
+func (o *observationStatements) close() {
+	for _, statement := range []*sql.Stmt{o.identity, o.file, o.supersede, o.job} {
+		if statement != nil {
+			_ = statement.Close()
+		}
+	}
+}
+
+// observe records one normalized file and its semantic jobs, resolving the
+// durable identity first so same-filesystem moves keep their file ID. A caller
+// that has proven the file matches no durable row passes known=false to skip
+// the identity lookup and supersede statements, which would be no-ops.
+func (o *observationStatements) observe(ctx context.Context, epoch int64, file *SourceFile, semanticKeys map[string]string, updatedAt string) error {
+	return o.observeKnown(ctx, epoch, file, semanticKeys, updatedAt, true)
+}
+
+func (o *observationStatements) observeKnown(ctx context.Context, epoch int64, file *SourceFile, semanticKeys map[string]string, updatedAt string, known bool) error {
+	var prior string
+	// A zero pair means that this platform/filesystem could not provide a
+	// native identity. Never let that sentinel collapse unrelated paths.
+	if known && (file.Device != 0 || file.Inode != 0) {
+		if err := o.identity.QueryRowContext(ctx, file.RootID, file.Device, file.Inode).Scan(&prior); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	if prior != "" {
+		file.ID = prior
+	}
+	if _, err := o.file.ExecContext(ctx, file.ID, file.RootID, file.RelativePath, file.Device, file.Inode, file.Size, file.MTimeNS, file.SourceRevision, file.Extension, epoch, epoch); err != nil {
+		return err
+	}
+	for kind, key := range semanticKeys {
+		if known {
+			if _, err := o.supersede.ExecContext(ctx, updatedAt, kind, file.ID, key); err != nil {
+				return err
+			}
+		}
+		var jobState string
+		if err := o.job.QueryRowContext(ctx, kind, file.ID, file.SourceRevision, key, updatedAt).Scan(&jobState); err != nil {
+			return err
+		}
+		if jobState == "pending" {
+			file.needsProcessing = true
+		}
+	}
+	return nil
 }
 
 type Job struct {
@@ -1250,6 +1225,7 @@ type Job struct {
 	Attempt        int
 	Fence          string
 	RetryCount     int
+	claimEpoch     int64
 }
 
 func randomFence() (string, error) {
@@ -1264,49 +1240,7 @@ func (s *State) ClaimJobs(ctx context.Context, kind string, limit int, lease tim
 	if limit < 1 || limit > 1024 || lease <= 0 {
 		return nil, errors.New("library indexer: invalid job claim bounds")
 	}
-	var jobs []Job
-	err := s.write(ctx, true, func(conn *sql.Conn) error {
-		tx, err := conn.BeginTx(ctx, nil)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = tx.Rollback() }()
-		now := time.Now().UTC()
-		rows, err := tx.QueryContext(ctx, `SELECT j.id,j.kind,j.file_id,j.source_revision,j.semantic_key,j.attempt,j.retry_count FROM jobs j
-			WHERE j.kind=? AND (j.state='pending' OR (j.state='leased' AND j.lease_until<?))
-			AND (j.kind='metadata' OR EXISTS(SELECT 1 FROM jobs prerequisite WHERE prerequisite.file_id=j.file_id AND prerequisite.kind='metadata' AND prerequisite.state='completed' AND prerequisite.source_revision=j.source_revision))
-			ORDER BY j.id LIMIT ?`, kind, now.Format(time.RFC3339Nano), limit)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var job Job
-			if err := rows.Scan(&job.ID, &job.Kind, &job.FileID, &job.SourceRevision, &job.SemanticKey, &job.Attempt, &job.RetryCount); err != nil {
-				rows.Close()
-				return err
-			}
-			jobs = append(jobs, job)
-		}
-		if err := rows.Close(); err != nil {
-			return err
-		}
-		for i := range jobs {
-			jobs[i].Attempt++
-			jobs[i].Fence, err = randomFence()
-			if err != nil {
-				return err
-			}
-			res, err := tx.ExecContext(ctx, `UPDATE jobs SET state='leased',attempt=?,fence=?,lease_until=?,updated_at=? WHERE id=? AND source_revision=?`, jobs[i].Attempt, jobs[i].Fence, now.Add(lease).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), jobs[i].ID, jobs[i].SourceRevision)
-			if err != nil {
-				return err
-			}
-			if n, _ := res.RowsAffected(); n != 1 {
-				return errors.New("library indexer: job changed during claim")
-			}
-		}
-		return tx.Commit()
-	})
-	return jobs, err
+	return s.claimJobs(ctx, kind, 0, limit, lease)
 }
 
 // ClaimScanDiffJobs leases only work frozen into one scan manifest. A source
@@ -1315,53 +1249,99 @@ func (s *State) ClaimScanDiffJobs(ctx context.Context, epoch int64, kind string,
 	if epoch <= 0 || limit < 1 || limit > 1024 || lease <= 0 {
 		return nil, errors.New("library indexer: invalid scan diff job claim bounds")
 	}
+	return s.claimJobs(ctx, kind, epoch, limit, lease)
+}
+
+// claimJobs selects candidates on a read connection and holds the single
+// writer only for the guarded lease updates. Candidate selection walks an
+// epoch-scoped eligible workset, so unrelated, blocked and completed work does
+// not affect claim cost. A candidate that changed
+// after the read snapshot fails its guard and is skipped, not leased.
+func (s *State) claimJobs(ctx context.Context, kind string, epoch int64, limit int, lease time.Duration) ([]Job, error) {
+	candidates, err := s.claimCandidates(ctx, kind, epoch, time.Now().UTC(), limit)
+	if err != nil || len(candidates) == 0 {
+		return nil, err
+	}
+	return s.leaseCandidates(ctx, candidates, lease)
+}
+
+// leaseCandidates leases each candidate only if it still matches the snapshot
+// it was selected from; changed candidates are omitted from the result.
+func (s *State) leaseCandidates(ctx context.Context, candidates []Job, lease time.Duration) ([]Job, error) {
 	var jobs []Job
 	err := s.write(ctx, true, func(conn *sql.Conn) error {
+		jobs = jobs[:0]
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
 		now := time.Now().UTC()
-		rows, err := tx.QueryContext(ctx, `SELECT j.id,j.kind,j.file_id,j.source_revision,j.semantic_key,j.attempt,j.retry_count
-			FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id
-			WHERE d.epoch_id=? AND d.kind=? AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
-			AND (j.state='pending' OR (j.state='leased' AND j.lease_until<?))
-			AND (j.kind='metadata' OR EXISTS(SELECT 1 FROM jobs prerequisite WHERE prerequisite.file_id=j.file_id
-				AND prerequisite.kind='metadata' AND prerequisite.state='completed' AND prerequisite.source_revision=j.source_revision))
-			ORDER BY d.job_id LIMIT ?`, epoch, kind, now.Format(time.RFC3339Nano), limit)
+		for _, job := range candidates {
+			fence, err := randomFence()
+			if err != nil {
+				return err
+			}
+			res, err := tx.ExecContext(ctx, `UPDATE jobs SET state='leased',attempt=?,fence=?,lease_until=?,updated_at=?
+				WHERE id=? AND kind=? AND source_revision=? AND semantic_key=? AND attempt=?
+				AND (state='pending' OR (state='leased' AND lease_until<?))
+				AND EXISTS(SELECT 1 FROM eligible_jobs e WHERE e.epoch_id=? AND e.kind=jobs.kind AND e.ready=1 AND e.job_id=jobs.id)`, job.Attempt+1, fence, now.Add(lease).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+				job.ID, job.Kind, job.SourceRevision, job.SemanticKey, job.Attempt, now.Format(time.RFC3339Nano), job.claimEpoch)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n != 1 {
+				continue
+			}
+			job.Attempt++
+			job.Fence = fence
+			jobs = append(jobs, job)
+		}
+		return tx.Commit()
+	})
+	if err != nil {
+		return nil, err
+	}
+	return jobs, nil
+}
+
+func (s *State) claimCandidates(ctx context.Context, kind string, epoch int64, now time.Time, limit int) ([]Job, error) {
+	// Pending prefixes are already ordered by job ID. Expired leases use their
+	// own expiry range, then sort the bounded active leases into the same order.
+	var candidates []Job
+	for _, selection := range []struct {
+		state  string
+		expiry string
+	}{{state: "pending"}, {state: "leased", expiry: ` AND e.lease_until<?`}} {
+		args := []any{epoch, kind, selection.state}
+		if selection.expiry != "" {
+			args = append(args, now.Format(time.RFC3339Nano))
+		}
+		args = append(args, limit)
+		rows, err := s.reader.QueryContext(ctx, `SELECT j.id,j.kind,j.file_id,j.source_revision,j.semantic_key,j.attempt,j.retry_count
+			FROM eligible_jobs e CROSS JOIN jobs j ON j.id=e.job_id
+			WHERE e.epoch_id=? AND e.kind=? AND e.ready=1 AND e.state=?`+selection.expiry+` ORDER BY e.job_id LIMIT ?`, args...)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for rows.Next() {
 			var job Job
 			if err := rows.Scan(&job.ID, &job.Kind, &job.FileID, &job.SourceRevision, &job.SemanticKey, &job.Attempt, &job.RetryCount); err != nil {
 				rows.Close()
-				return err
+				return nil, err
 			}
-			jobs = append(jobs, job)
+			job.claimEpoch = epoch
+			candidates = append(candidates, job)
 		}
-		if err := rows.Close(); err != nil {
-			return err
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return nil, err
 		}
-		for i := range jobs {
-			jobs[i].Attempt++
-			jobs[i].Fence, err = randomFence()
-			if err != nil {
-				return err
-			}
-			res, err := tx.ExecContext(ctx, `UPDATE jobs SET state='leased',attempt=?,fence=?,lease_until=?,updated_at=?
-				WHERE id=? AND source_revision=? AND (state='pending' OR (state='leased' AND lease_until<?))`, jobs[i].Attempt, jobs[i].Fence, now.Add(lease).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), jobs[i].ID, jobs[i].SourceRevision, now.Format(time.RFC3339Nano))
-			if err != nil {
-				return err
-			}
-			if n, _ := res.RowsAffected(); n != 1 {
-				return errors.New("library indexer: scan diff job changed during claim")
-			}
-		}
-		return tx.Commit()
-	})
-	return jobs, err
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].ID < candidates[j].ID })
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
 }
 
 // RenewJobs extends leases only for the exact attempts still owned by this
@@ -1578,6 +1558,21 @@ func (s *State) LoadReusableMERT(ctx context.Context, contract string) (map[stri
 	return result, rows.Err()
 }
 
+// ReleaseJob returns a leased job to the queue without charging a retry. It is
+// used when shared infrastructure, not the track, prevented completion.
+func (s *State) ReleaseJob(ctx context.Context, job Job) error {
+	return s.writeBatch(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET state='pending',fence='',lease_until=NULL,updated_at=? WHERE id=? AND state='leased' AND fence=? AND source_revision=?`, time.Now().UTC().Format(time.RFC3339Nano), job.ID, job.Fence, job.SourceRevision)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return errors.New("library indexer: stale job release")
+		}
+		return nil
+	})
+}
+
 func (s *State) FailJob(ctx context.Context, job Job, code, detail string, retry bool) error {
 	if len(detail) > 4096 {
 		detail = detail[:4096]
@@ -1784,14 +1779,16 @@ func queryStatus(ctx context.Context, db *sql.DB) (Status, error) {
 }
 
 func (s *State) JobCounts(ctx context.Context, kind string) (pending, leased int64, err error) {
-	err = s.reader.QueryRowContext(ctx, `SELECT COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='leased'),0) FROM jobs WHERE kind=?`, kind).Scan(&pending, &leased)
+	err = s.reader.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM jobs INDEXED BY jobs_claim_order WHERE kind=?1 AND state='pending'),
+		(SELECT COUNT(*) FROM jobs INDEXED BY jobs_claim_order WHERE kind=?1 AND state='leased')`, kind).Scan(&pending, &leased)
 	return
 }
 
 func (s *State) ScanDiffJobCounts(ctx context.Context, epoch int64, kind string) (pending, leased int64, err error) {
-	err = s.reader.QueryRowContext(ctx, `SELECT COALESCE(SUM(j.state='pending'),0),COALESCE(SUM(j.state='leased'),0)
-		FROM scan_diff_jobs d JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
-		WHERE d.epoch_id=? AND d.kind=?`, epoch, kind).Scan(&pending, &leased)
+	// Include blocked work, but never unrelated epochs or completed jobs.
+	err = s.reader.QueryRowContext(ctx, `SELECT COALESCE(SUM(state='pending'),0),COALESCE(SUM(state='leased'),0)
+		FROM eligible_jobs WHERE epoch_id=? AND kind=?`, epoch, kind).Scan(&pending, &leased)
 	return
 }
 
@@ -1806,7 +1803,8 @@ func (s *State) FinalizeBlockedAudio(ctx context.Context) error {
 	return s.write(ctx, true, func(conn *sql.Conn) error {
 		_, err := conn.ExecContext(ctx, `UPDATE jobs AS audio SET state='failed',error_code='metadata_unavailable',
 			error_detail='audio analysis prerequisite metadata did not complete',updated_at=?
-			WHERE audio.kind='audio' AND audio.state='pending' AND NOT EXISTS(
+			WHERE audio.id IN (SELECT pending.id FROM jobs pending INDEXED BY jobs_claim_order WHERE pending.kind='audio' AND pending.state='pending')
+			AND NOT EXISTS(
 				SELECT 1 FROM jobs metadata WHERE metadata.file_id=audio.file_id AND metadata.kind='metadata'
 				AND metadata.state='completed' AND metadata.source_revision=audio.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano))
 		return err
@@ -1814,13 +1812,16 @@ func (s *State) FinalizeBlockedAudio(ctx context.Context) error {
 }
 
 func (s *State) FinalizeBlockedScanDiffAudio(ctx context.Context, epoch int64) error {
+	if epoch <= 0 {
+		return errors.New("library indexer: invalid scan diff epoch")
+	}
 	return s.write(ctx, true, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, `UPDATE jobs AS audio SET state='failed',error_code='metadata_unavailable',
+		// The projection contains only exact manifest revisions and semantics.
+		// Its blocked-pending range excludes unrelated, completed and ready work.
+		_, err := conn.ExecContext(ctx, `UPDATE jobs SET state='failed',error_code='metadata_unavailable',
 			error_detail='audio analysis prerequisite metadata did not complete',updated_at=?
-			WHERE audio.id IN (SELECT d.job_id FROM scan_diff_jobs d WHERE d.epoch_id=? AND d.kind='audio')
-			AND audio.state='pending' AND audio.source_revision=(SELECT d.source_revision FROM scan_diff_jobs d WHERE d.epoch_id=? AND d.job_id=audio.id)
-			AND NOT EXISTS(SELECT 1 FROM jobs metadata WHERE metadata.file_id=audio.file_id AND metadata.kind='metadata'
-				AND metadata.state='completed' AND metadata.source_revision=audio.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano), epoch, epoch)
+			WHERE id IN (SELECT job_id FROM eligible_jobs
+				WHERE epoch_id=? AND kind='audio' AND ready=0 AND state='pending')`, time.Now().UTC().Format(time.RFC3339Nano), epoch)
 		return err
 	})
 }

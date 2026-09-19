@@ -2,6 +2,7 @@ package audio
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -54,6 +55,8 @@ type MERTWorker struct {
 	// ResponseTimeout bounds a silent native request. Zero uses the production
 	// 30-second watchdog. It is configurable for deterministic process tests.
 	ResponseTimeout time.Duration
+	diagnostics     MERTWorkerDiagnostics
+	startedOnce     bool
 	mu              sync.Mutex
 	closed          bool
 	cmd             *exec.Cmd
@@ -108,7 +111,7 @@ func (w *MERTWorker) Health(ctx context.Context) error {
 	return err
 }
 
-func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]float32, MERTWorkerTimings, error) {
+func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) (vector []float32, timings MERTWorkerTimings, callErr error) {
 	for !w.mu.TryLock() {
 		select {
 		case <-ctx.Done():
@@ -117,6 +120,20 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 		}
 	}
 	defer w.mu.Unlock()
+	started := time.Now()
+	restarting := false
+	defer func() {
+		if errors.Is(callErr, ErrNativeWorker) {
+			w.diagnostics.NativeFailures++
+		}
+		if request.Health {
+			w.diagnostics.HealthChecks++
+			w.diagnostics.HealthDuration += time.Since(started)
+		}
+		if restarting {
+			w.diagnostics.RestartDuration += time.Since(started)
+		}
+	}()
 	if w.closed {
 		return nil, MERTWorkerTimings{}, fmt.Errorf("audio: worker is closed")
 	}
@@ -174,6 +191,11 @@ func (w *MERTWorker) call(ctx context.Context, request MERTWorkerRequest) ([]flo
 			_ = stdout.Close()
 			return nil, MERTWorkerTimings{}, fmt.Errorf("%w: failed to start", ErrNativeWorker)
 		}
+		restarting = w.startedOnce
+		if restarting {
+			w.diagnostics.Restarts++
+		}
+		w.startedOnce = true
 		w.cmd, w.stdin, w.stdout, w.stderr = cmd, stdin, stdout, workerStderr
 	}
 	type answer struct {
@@ -248,4 +270,20 @@ func (w *MERTWorker) Close() error {
 	w.closed = true
 	w.stopLocked()
 	return nil
+}
+
+// MERTWorkerDiagnostics separates process replacements and fixture validation
+// from failed native inference. Durations can overlap (a health check may restart).
+type MERTWorkerDiagnostics struct {
+	NativeFailures  int64
+	Restarts        int64
+	HealthChecks    int64
+	HealthDuration  time.Duration
+	RestartDuration time.Duration
+}
+
+func (w *MERTWorker) Diagnostics() MERTWorkerDiagnostics {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.diagnostics
 }

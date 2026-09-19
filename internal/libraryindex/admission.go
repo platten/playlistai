@@ -21,6 +21,8 @@ type AdmissionUsage struct {
 }
 
 type AdmissionWaitCounters struct {
+	PeakMemoryBytes int64         `json:"peakMemoryBytes"`
+	PeakPCMBytes    int64         `json:"peakPCMBytes"`
 	Requests        uint64        `json:"requests"`
 	Immediate       uint64        `json:"immediate"`
 	Queued          uint64        `json:"queued"`
@@ -151,6 +153,8 @@ func (a *Admission) reserveLocked(request Reservation) {
 	a.used.Memory += request.Memory
 	a.used.Files += request.Files
 	a.used.PCMBytes += request.PCMBytes
+	a.stats.PeakMemoryBytes = max(a.stats.PeakMemoryBytes, a.used.Memory)
+	a.stats.PeakPCMBytes = max(a.stats.PeakPCMBytes, a.used.PCMBytes)
 }
 
 func (a *Admission) releaseLocked(request Reservation) {

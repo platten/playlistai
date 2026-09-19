@@ -178,7 +178,7 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 		return runScaleBenchmark(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) == 0 || args[0] != "concurrency" {
-		return 1, errors.New("usage: playlist-indexer bench concurrency [--matrix pipeline] --root PATH --sample-tracks N | playlist-indexer bench scale [--rows 2000000]")
+		return 1, errors.New("usage: playlist-indexer bench concurrency [--matrix pipeline|gpu] --root PATH --sample-tracks N | playlist-indexer bench scale [--rows 2000000]")
 	}
 	flags := flag.NewFlagSet("playlist-indexer bench concurrency", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -192,19 +192,35 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
 	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	modelBundle := flags.String("model-bundle", "", "verified local prepared MERT bundle")
-	matrix := flags.String("matrix", "", "optional benchmark matrix: pipeline")
-	trials := flags.Int("trials", 3, "trials per configuration for --matrix pipeline")
+	matrix := flags.String("matrix", "", "optional benchmark matrix: pipeline or gpu")
+	trials := flags.Int("trials", 3, "trials per matrix configuration (gpu requires exactly 3)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1, err
 	}
 	if *rootPath == "" || *sampleTracks <= 0 {
 		return 1, errors.New("bench concurrency requires --root and positive --sample-tracks")
 	}
-	if *matrix != "" && *matrix != "pipeline" {
-		return 1, errors.New("--matrix accepts only pipeline")
+	if *matrix != "" && *matrix != "pipeline" && *matrix != "gpu" {
+		return 1, errors.New("--matrix accepts only pipeline or gpu")
 	}
 	if *matrix == "pipeline" && *trials < 3 {
 		return 1, errors.New("--matrix pipeline requires at least three trials")
+	}
+	if *matrix == "gpu" && *trials != 3 {
+		return 1, errors.New("--matrix gpu requires exactly three trials")
+	}
+	if *matrix == "gpu" {
+		normalized, preference, err := audio.ParseMERTDevicePreference(*device)
+		if err != nil {
+			return 1, err
+		}
+		if preference == "auto" {
+			normalized, preference = "cuda:0", "cuda"
+		}
+		if preference != "cuda" {
+			return 1, errors.New("--matrix gpu requires a CUDA device")
+		}
+		*device = normalized
 	}
 	profileValue := libraryindex.SamplingProfile(*profile)
 	if _, err := libraryindex.SamplingWindows(60, profileValue); err != nil {
@@ -224,6 +240,9 @@ func runBenchmark(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	basePlan, err := common.plan()
 	if err != nil {
 		return 1, err
+	}
+	if *matrix == "gpu" {
+		return runGPUMatrixBenchmark(ctx, common, root, paths, *sampleTracks, profileValue, *modelBundle, *device, basePlan, stdout, stderr)
 	}
 	if *matrix == "pipeline" {
 		return runPipelineMatrixBenchmark(ctx, common, root, paths, *sampleTracks, profileValue, *modelBundle, *device, *trials, basePlan, stdout, stderr)
@@ -526,7 +545,7 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 	result.ColdSetup = time.Since(setupStart)
 	done := make(chan struct{})
 	close(done)
-	analyzer := &libraryindex.Analyzer{State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profile, StopAdmission: gracefulStopFromContext(ctx)}
+	analyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profile, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	result.Host = readBenchmarkHostDiagnostics(rootPath, pool.Device())
 	if options.PreReadSources {
@@ -569,7 +588,7 @@ func benchmarkConfiguration(ctx context.Context, common commonFlags, rootPath st
 		result.RAMTargetMet = result.PeakOwnedRSSBytes <= plan.MaxRAM
 	}
 	defer stopMonitor()
-	result.Report, err = analyzer.Run(ctx, libraryindex.AnalysisOptions{Metadata: true, Audio: true, Profile: profile}, done)
+	result.Report, err = analyzer.Run(ctx, libraryindex.AnalysisOptions{Metadata: true, Audio: true, Profile: profile, Integrity: libraryindex.IntegrityFull}, done)
 	result.ARCAfter = readBenchmarkARCSnapshot()
 	result.ARCDelta = benchmarkARCSnapshot{
 		SizeBytes: result.ARCAfter.SizeBytes - result.ARCBefore.SizeBytes,
