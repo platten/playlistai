@@ -35,20 +35,30 @@ const (
 )
 
 type AnalysisReport struct {
-	MetadataCompleted int64                 `json:"metadataCompleted"`
-	AudioCompleted    int64                 `json:"audioCompleted"`
-	Failed            int64                 `json:"failed"`
-	Retried           int64                 `json:"retried"`
-	SkippedChanged    int64                 `json:"skippedChanged"`
-	MERTReused        int64                 `json:"mertReused"`
-	DSPReused         int64                 `json:"dspReused"`
-	MERTCacheLoaded   int64                 `json:"mertCacheLoaded"`
-	WindowsDecoded    int64                 `json:"windowsDecoded"`
-	TracksBuffered    int64                 `json:"tracksBuffered"`
-	WindowFallbacks   int64                 `json:"windowFallbacks"`
-	Timings           AnalysisTimings       `json:"timings"`
-	AdmissionWaits    AdmissionWaitCounters `json:"admissionWaits"`
-	TrackTimings      []TrackAnalysisTiming `json:"trackTimings,omitempty"`
+	MetadataCompleted     int64                 `json:"metadataCompleted"`
+	AudioCompleted        int64                 `json:"audioCompleted"`
+	Failed                int64                 `json:"failed"`
+	Retried               int64                 `json:"retried"`
+	SkippedChanged        int64                 `json:"skippedChanged"`
+	MERTReused            int64                 `json:"mertReused"`
+	DSPReused             int64                 `json:"dspReused"`
+	MERTCacheLoaded       int64                 `json:"mertCacheLoaded"`
+	MERTOutages           int64                 `json:"mertOutages"`
+	MERTDeferred          int64                 `json:"mertDeferred"`
+	WindowsDecoded        int64                 `json:"windowsDecoded"`
+	TracksBuffered        int64                 `json:"tracksBuffered"`
+	WindowFallbacks       int64                 `json:"windowFallbacks"`
+	Timings               AnalysisTimings       `json:"timings"`
+	AdmissionWaits        AdmissionWaitCounters `json:"admissionWaits"`
+	StageTrace            []StageTraceEvent     `json:"stageTrace,omitempty"`
+	TraceDropped          uint64                `json:"traceDropped,omitempty"`
+	NativeFailures        int64                 `json:"nativeFailures"`
+	WorkerRestarts        int64                 `json:"workerRestarts"`
+	HealthChecks          int64                 `json:"healthChecks"`
+	WorkerRestartDuration time.Duration         `json:"workerRestartDuration"`
+	HealthCheckDuration   time.Duration         `json:"healthCheckDuration"`
+	MERTOutageDuration    time.Duration         `json:"mertOutageDuration"`
+	TrackTimings          []TrackAnalysisTiming `json:"trackTimings,omitempty"`
 }
 
 type AnalysisTimings struct {
@@ -68,6 +78,7 @@ type AnalysisTimings struct {
 	MERTWait          time.Duration `json:"mertWait"`
 	WorkerPreprocess  time.Duration `json:"workerPreprocess"`
 	IPC               time.Duration `json:"ipc"`
+	ONNXExecution     time.Duration `json:"onnxExecution"`
 	CUDAExecution     time.Duration `json:"cudaExecution"`
 	MERTInference     time.Duration `json:"mertInference"`
 	Commit            time.Duration `json:"commit"`
@@ -90,6 +101,9 @@ type Analyzer struct {
 	Integrity IntegrityPolicy
 	OnFile    func(FileActivity)
 	OnIssue   func(ProcessingIssue)
+	// OnMERTHealth reports MERT outages and recoveries. Audio analysis is
+	// paused between the two calls.
+	OnMERTHealth func(healthy bool, err error)
 	// StopAdmission closes on graceful shutdown. Dispatchers stop claiming new
 	// jobs while workers drain every job already admitted to their queues.
 	StopAdmission <-chan struct{}
@@ -100,12 +114,18 @@ type Analyzer struct {
 	stageOnce      sync.Once
 	dspSlots       chan struct{}
 	reuseCache     *mertReuseCache
+	mertHealth     *mertSupervisor
 	timingMu       sync.Mutex
+	timingReport   *AnalysisReport
+	timingIndex    map[string]int
+	Trace          *StageTrace
 }
 
 const (
 	jobLeaseDuration   = 5 * time.Minute
 	jobHeartbeatPeriod = time.Minute
+	claimIdleMinimum   = 20 * time.Millisecond
+	claimIdleMaximum   = 500 * time.Millisecond
 )
 
 var errSourceRefreshed = errors.New("library indexer: source revision refreshed")
@@ -220,6 +240,9 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 	}
 	a.Integrity = options.Integrity
 	a.initializeStageLimits()
+	if options.Audio && a.MERT == nil {
+		return report, errors.New("library indexer: MERT model is required for audio analysis")
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	var wg sync.WaitGroup
@@ -237,9 +260,6 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 		}()
 	}
 	if options.Audio {
-		if a.MERT == nil {
-			return report, errors.New("library indexer: MERT model is required for audio analysis")
-		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -252,6 +272,7 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 		}()
 	}
 	wg.Wait()
+	report.StageTrace, report.TraceDropped = a.Trace.Snapshot()
 	report.AdmissionWaits = a.Admission.Stats()
 	sort.Slice(report.TrackTimings, func(i, j int) bool { return report.TrackTimings[i].FileID < report.TrackTimings[j].FileID })
 	close(fatal)
@@ -505,6 +526,17 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 	}
 	a.reuseCache = newMERTReuseCache(seed)
 	report.MERTCacheLoaded = int64(len(seed))
+	a.mertHealth = newMERTSupervisor(workerCtx, a.probeMERT, a.reportMERTHealth)
+	a.mertHealth.start()
+	defer func() {
+		a.mertHealth.stop()
+		report.MERTOutages = a.mertHealth.outages.Load()
+		report.MERTOutageDuration = a.mertHealth.outageDuration()
+		stats := a.MERT.Diagnostics()
+		report.NativeFailures, report.WorkerRestarts = stats.NativeFailures, stats.Restarts
+		report.HealthChecks, report.HealthCheckDuration = stats.HealthChecks, stats.HealthDuration
+		report.WorkerRestartDuration = stats.RestartDuration
+	}()
 	leases := newJobLeaseTracker()
 	heartbeatDone := make(chan struct{})
 	go a.heartbeatJobs(workerCtx, leases, cancel, heartbeatDone)
@@ -518,6 +550,16 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 			for job := range jobs {
 				err := a.processAudio(workerCtx, job, profile, report)
 				leases.remove(job)
+				if errors.Is(err, errMERTUnavailable) {
+					// The outage, not this track, stopped the work: requeue it
+					// without spending one of its retries.
+					atomic.AddInt64(&report.MERTDeferred, 1)
+					if releaseErr := a.State.ReleaseJob(workerCtx, job); releaseErr != nil {
+						cancel(releaseErr)
+						return
+					}
+					continue
+				}
 				if err != nil {
 					if errors.Is(err, errSourceChangedAfterManifest) {
 						atomic.AddInt64(&report.SkippedChanged, 1)
@@ -562,6 +604,7 @@ func (a *Analyzer) runAudio(ctx context.Context, discoveryDone <-chan struct{}, 
 
 func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone <-chan struct{}, out chan<- Job, leases *jobLeaseTracker) error {
 	discoveryComplete := false
+	idle := claimIdleMinimum
 	for {
 		if shutdownRequested(a.StopAdmission) {
 			return ErrShutdownRequested
@@ -575,17 +618,30 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 		}
 		var claimed []Job
 		var err error
+		claimStarted := time.Now()
 		if a.DiffEpoch > 0 {
 			claimed, err = a.State.ClaimScanDiffJobs(ctx, a.DiffEpoch, kind, max(1, min(a.Plan.QueueDepth, 64)), jobLeaseDuration)
 		} else {
 			claimed, err = a.State.ClaimJobs(ctx, kind, max(1, min(a.Plan.QueueDepth, 64)), jobLeaseDuration)
 		}
+		a.trace("claim_"+kind, claimStarted, len(claimed))
 		if err != nil {
 			return err
 		}
 		if len(claimed) == 0 {
+			// An empty claim that walked a long blocked range sleeps at least as
+			// long as it ran, bounding its share of a read connection.
+			claimElapsed := time.Since(claimStarted)
 			if discoveryComplete {
-				if kind == "audio" {
+				pending, leased, err := a.jobCounts(ctx, kind)
+				if err != nil {
+					return err
+				}
+				// Pending audio that cannot be claimed is blocked on metadata. Once
+				// metadata is exhausted it can never become eligible, so fail it.
+				// Checking pending first keeps the in-flight tail from rerunning
+				// the finalization query on every poll.
+				if kind == "audio" && pending > 0 {
 					metadataPending, metadataLeased, err := a.jobCounts(ctx, "metadata")
 					if err != nil {
 						return err
@@ -594,11 +650,10 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 						if err := a.finalizeBlockedAudio(ctx); err != nil {
 							return err
 						}
+						if pending, leased, err = a.jobCounts(ctx, kind); err != nil {
+							return err
+						}
 					}
-				}
-				pending, leased, err := a.jobCounts(ctx, kind)
-				if err != nil {
-					return err
 				}
 				if pending == 0 && leased == 0 {
 					return nil
@@ -609,10 +664,14 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 				return context.Cause(ctx)
 			case <-a.StopAdmission:
 				return ErrShutdownRequested
-			case <-time.After(20 * time.Millisecond):
+			case <-time.After(max(idle, claimElapsed)):
 			}
+			// Empty polls back off so a stage waiting on its prerequisite or on
+			// in-flight leases does not keep the state database busy.
+			idle = min(2*idle, claimIdleMaximum)
 			continue
 		}
+		idle = claimIdleMinimum
 		leases.add(claimed...)
 		for _, job := range claimed {
 			select {
@@ -630,6 +689,72 @@ func (a *Analyzer) jobCounts(ctx context.Context, kind string) (int64, int64, er
 		return a.State.ScanDiffJobCounts(ctx, a.DiffEpoch, kind)
 	}
 	return a.State.JobCounts(ctx, kind)
+}
+
+func (a *Analyzer) probeMERT(ctx context.Context, wait bool) (bool, error) {
+	started := time.Now()
+	defer func() { a.trace("health_check", started, 0) }()
+	if wait {
+		return true, a.MERT.ValidateAll(ctx)
+	}
+	worker, release, ok := a.MERT.TryAcquire()
+	if !ok {
+		return false, nil
+	}
+	defer release()
+	return true, a.MERT.Validate(ctx, worker)
+}
+
+// acquireMERT rechecks availability after both independently blocking waits.
+// Deferral never retains a worker or CPU reservation.
+func (a *Analyzer) acquireMERT(ctx context.Context, timings *AnalysisTimings) (*audio.MERTWorker, func(), func(), error) {
+	available := func(worker *audio.MERTWorker) bool {
+		return (a.mertHealth == nil || a.mertHealth.healthy()) && (worker == nil || !a.MERT.Quarantined(worker))
+	}
+	if !available(nil) {
+		return nil, nil, nil, errMERTUnavailable
+	}
+	started := time.Now()
+	a.trace("session_queue", started, 0)
+	worker, releaseWorker, err := a.MERT.Acquire(ctx)
+	timings.MERTWait += time.Since(started)
+	a.trace("session_wait", started, 0)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !available(worker) {
+		releaseWorker()
+		return nil, nil, nil, errMERTUnavailable
+	}
+	cpuUnits := max(1, a.Plan.InferenceThreads)
+	if _, cuda := audio.MERTCUDADeviceIndex(a.MERT.Device()); cuda {
+		cpuUnits = 1
+	}
+	started = time.Now()
+	releaseCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: cpuUnits})
+	timings.CPUAdmission += time.Since(started)
+	a.trace("inference_cpu_wait", started, 0)
+	if err != nil {
+		releaseWorker()
+		return nil, nil, nil, err
+	}
+	release := func() { releaseCPU(); releaseWorker() }
+	if !available(worker) {
+		release()
+		return nil, nil, nil, errMERTUnavailable
+	}
+	return worker, releaseCPU, release, nil
+}
+
+func (a *Analyzer) reportMERTHealth(healthy bool, err error) {
+	if healthy {
+		a.emitIssue(NewProcessingIssue("audio", "", "", "mert_recovered", nil, false))
+	} else {
+		a.emitIssue(NewProcessingIssue("audio", "", "", "mert_unavailable", fmt.Errorf("%s: %w", mertOutageIssueDetail, err), true))
+	}
+	if a.OnMERTHealth != nil {
+		a.OnMERTHealth(healthy, err)
+	}
 }
 
 func (a *Analyzer) finalizeBlockedAudio(ctx context.Context) error {
@@ -704,6 +829,11 @@ func (a *Analyzer) emitIssue(issue ProcessingIssue) {
 }
 
 func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingProfile, report *AnalysisReport) (processErr error) {
+	if a.mertHealth != nil {
+		if err := a.mertHealth.wait(ctx, a.StopAdmission); err != nil {
+			return err
+		}
+	}
 	trackStarted := time.Now()
 	track := TrackAnalysisTiming{FileID: job.FileID}
 	defer func() {
@@ -778,6 +908,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	}
 	sums := make([]float64, audio.MERTDimension)
 	var mertErr error
+
 	processWindow := func(window localaudio.PCMWindow) error {
 		pcm := audio.DecodedPCM{Samples: window.Samples, SampleRate: window.SampleRate, Channels: window.Channels}
 		dspWork := func() (AnalysisTimings, error) {
@@ -795,6 +926,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			started := time.Now()
 			features, err := audio.MeasureLocalDSP(ctx, pcm)
 			timings.DSP += time.Since(started)
+			a.trace("dsp", started, 1)
 			if err != nil {
 				return timings, err
 			}
@@ -816,6 +948,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			resampled, metrics, err := audio.MERTResampleLocalWithMetrics(ctx, pcm)
 			releaseCPU()
 			timings.MERTPreprocess += time.Since(preprocessStarted)
+			a.trace("mert_preprocess", preprocessStarted, 1)
 			timings.Downmix += metrics.DownmixDuration
 			timings.ResamplingKernel += metrics.ResampleDuration
 			if err != nil {
@@ -828,30 +961,26 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			if len(resampled) < 400 {
 				return timings, errors.New("library indexer: insufficient observed MERT samples")
 			}
-			waitStarted := time.Now()
-			worker, releaseWorker, err := a.MERT.Acquire(ctx)
-			timings.MERTWait += time.Since(waitStarted)
+
+			a.Trace.Ready(1)
+			worker, releaseInferenceCPU, releaseInference, err := a.acquireMERT(ctx, &timings)
+			a.Trace.Ready(-1)
 			if err != nil {
 				return timings, err
 			}
-			defer releaseWorker()
-			cpuUnits := max(1, a.Plan.InferenceThreads)
+			defer releaseInference()
 			_, cuda := audio.MERTCUDADeviceIndex(a.MERT.Device())
-			if cuda {
-				cpuUnits = 1
-			}
-			inferenceCPUStarted := time.Now()
-			releaseInferenceCPU, err := a.Admission.Acquire(ctx, Reservation{CPU: cpuUnits})
-			timings.CPUAdmission += time.Since(inferenceCPUStarted)
-			if err != nil {
-				return timings, err
-			}
+			a.Trace.Dispatch(worker)
 			inferenceStarted := time.Now()
 			vector, workerTimings, err := worker.EmbedAudioWithTimings(ctx, resampled)
 			inferenceDuration := time.Since(inferenceStarted)
 			releaseInferenceCPU()
+			a.Trace.Finished(worker)
+			a.trace("inference_request", inferenceStarted, 1)
+			a.trace("onnx_execution", time.Now().Add(-workerTimings.Execution), 1)
 			timings.MERTInference += inferenceDuration
 			timings.WorkerPreprocess += workerTimings.Preprocessing
+			timings.ONNXExecution += workerTimings.Execution
 			ipc := inferenceDuration - workerTimings.Preprocessing - workerTimings.Execution
 			if ipc > 0 {
 				timings.IPC += ipc
@@ -860,7 +989,18 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 				timings.CUDAExecution += workerTimings.Execution
 			}
 			if err != nil {
+				// Health-check the same worker, which also restarts it. A healthy
+				// restart leaves the failure with this track and its retries.
+				if errors.Is(err, audio.ErrNativeWorker) {
+					a.MERT.Quarantine(worker)
+					if a.mertHealth != nil && a.mertHealth.confirmOutage(ctx, func(ctx context.Context) error { return a.MERT.Validate(ctx, worker) }) {
+						return timings, errors.Join(errMERTUnavailable, err)
+					}
+				}
 				return timings, err
+			}
+			if a.mertHealth != nil {
+				a.mertHealth.succeeded()
 			}
 			defer clear(vector)
 			if len(vector) != audio.MERTDimension {
@@ -869,10 +1009,12 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 			if err := accumulateMERT(sums, vector, float64(len(resampled))); err != nil {
 				return timings, err
 			}
+
 			ratio := metrics.DownmixCancellationRatio
 			mert.Segments = append(mert.Segments, MERTSegmentRecord{Index: window.Index, StartSeconds: window.RequestedStart.Seconds(), ObservedSeconds: window.ObservedDuration.Seconds(), DownmixCancellationRatio: ratio, SevereDownmixCancellation: ratio < 0.01})
 			return timings, nil
 		}
+
 		if a.Plan.Mode == ConcurrencySerial || a.Plan.HeavyWorkers < 2 {
 			dspTimings, err := dspWork()
 			mergeAnalysisTimings(&track.Timings, dspTimings)
@@ -926,7 +1068,10 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 	if !reused || !dspReused {
 		decodeResult, decodeErr := runDecodedWindows(ctx, a.Admission, a.Plan.BufferingMode, decodeWindows, reservations,
 			func(ctx context.Context, requested localaudio.Window) (localaudio.PCMWindow, error) {
-				return a.Runtime.DecodeWindow(ctx, probe, requested)
+				started := time.Now()
+				window, err := a.Runtime.DecodeWindow(ctx, probe, requested)
+				a.trace("decode", started, 1)
+				return window, err
 			}, processWindow)
 		mergeAnalysisTimings(&track.Timings, decodeResult.Timings)
 		track.Windows += decodeResult.Windows
@@ -937,6 +1082,7 @@ func (a *Analyzer) processAudio(ctx context.Context, job Job, profile SamplingPr
 		if decodeResult.WindowFallback {
 			atomic.AddInt64(&report.WindowFallbacks, 1)
 		}
+
 		if decodeErr != nil {
 			if a.FreezeManifest && errors.Is(decodeErr, localaudio.ErrSourceChanged) {
 				return errors.Join(errSourceChangedAfterManifest, decodeErr)
@@ -1155,6 +1301,7 @@ func mergeAnalysisTimings(target *AnalysisTimings, value AnalysisTimings) {
 	target.MERTWait += value.MERTWait
 	target.WorkerPreprocess += value.WorkerPreprocess
 	target.IPC += value.IPC
+	target.ONNXExecution += value.ONNXExecution
 	target.CUDAExecution += value.CUDAExecution
 	target.MERTInference += value.MERTInference
 	target.Commit += value.Commit
@@ -1163,16 +1310,21 @@ func mergeAnalysisTimings(target *AnalysisTimings, value AnalysisTimings) {
 func (a *Analyzer) recordTrackTiming(report *AnalysisReport, track TrackAnalysisTiming) {
 	a.timingMu.Lock()
 	defer a.timingMu.Unlock()
-	for i := range report.TrackTimings {
-		if report.TrackTimings[i].FileID != track.FileID {
-			continue
+	if a.timingReport != report {
+		a.timingReport = report
+		a.timingIndex = make(map[string]int, len(report.TrackTimings))
+		for i := range report.TrackTimings {
+			a.timingIndex[report.TrackTimings[i].FileID] = i
 		}
+	}
+	if i, ok := a.timingIndex[track.FileID]; ok {
 		report.TrackTimings[i].Windows += track.Windows
 		report.TrackTimings[i].Total += track.Total
 		mergeAnalysisTimings(&report.TrackTimings[i].Timings, track.Timings)
 		mergeAnalysisTimings(&report.Timings, track.Timings)
 		return
 	}
+	a.timingIndex[track.FileID] = len(report.TrackTimings)
 	report.TrackTimings = append(report.TrackTimings, track)
 	mergeAnalysisTimings(&report.Timings, track.Timings)
 }

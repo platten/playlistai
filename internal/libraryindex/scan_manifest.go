@@ -109,7 +109,9 @@ func (s *State) WriteScanManifest(ctx context.Context, epoch int64, semanticJobs
 			return err
 		}
 		defer func() { _ = tx.Rollback() }()
-		if _, err := tx.ExecContext(ctx, `DELETE FROM scan_diff_jobs WHERE epoch_id=?`, epoch); err != nil {
+		// Only the newest manifest's diff is ever claimed; older epochs' rows
+		// would otherwise accumulate by one library's worth of jobs per scan.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM scan_diff_jobs`); err != nil {
 			return err
 		}
 		keys := make([]string, 0, len(semanticJobs))

@@ -77,13 +77,15 @@ func (p *WorkerPool) Close() error {
 // MERTWorkerPool provides the same bounded concurrency for optional audio-only
 // representations. Workers remain lazy, so unused slots consume no model RAM.
 type MERTWorkerPool struct {
-	workers   []*MERTWorker
-	available chan *MERTWorker
+	mu          sync.Mutex
+	quarantined map[*MERTWorker]bool
+	workers     []*MERTWorker
+	available   chan *MERTWorker
 }
 
 func NewMERTWorkerPool(primary *MERTWorker, parallelism int) *MERTWorkerPool {
 	parallelism = max(1, parallelism)
-	pool := &MERTWorkerPool{workers: make([]*MERTWorker, 0, parallelism), available: make(chan *MERTWorker, parallelism)}
+	pool := &MERTWorkerPool{quarantined: make(map[*MERTWorker]bool), workers: make([]*MERTWorker, 0, parallelism), available: make(chan *MERTWorker, parallelism)}
 	pool.workers = append(pool.workers, primary)
 	for range parallelism - 1 {
 		pool.workers = append(pool.workers, &MERTWorker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, Device: primary.Device, InferenceThreads: primary.InferenceThreads, ResponseTimeout: primary.ResponseTimeout})
@@ -115,7 +117,7 @@ func (p *MERTWorkerPool) Warm(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			errs <- worker.Health(ctx)
+			errs <- p.Validate(ctx, worker)
 		}()
 	}
 	wg.Wait()
@@ -127,13 +129,67 @@ func (p *MERTWorkerPool) Warm(ctx context.Context) error {
 	return errors.Join(joined...)
 }
 
+// Quarantine keeps a failed session unavailable for inference until that exact
+// session passes its fixture check. Call while holding its pool reservation.
+func (p *MERTWorkerPool) Quarantine(worker *MERTWorker) {
+	p.mu.Lock()
+	p.quarantined[worker] = true
+	p.mu.Unlock()
+}
+
+func (p *MERTWorkerPool) Quarantined(worker *MERTWorker) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.quarantined[worker]
+}
+
+// Validate must be called with the session reserved (or during initial Warm).
+func (p *MERTWorkerPool) Validate(ctx context.Context, worker *MERTWorker) error {
+	err := worker.Health(ctx)
+	p.mu.Lock()
+	p.quarantined[worker] = err != nil
+	p.mu.Unlock()
+	return err
+}
+
+// ValidateAll holds each checked reservation until every session is checked,
+// so recovery cannot repeatedly validate one healthy session and overlook a
+// failed sibling. In-flight calls drain before this completes.
+func (p *MERTWorkerPool) ValidateAll(ctx context.Context) error {
+	var releases []func()
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+	}()
+	var errs []error
+	for range p.workers {
+		worker, release, err := p.Acquire(ctx)
+		if err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		releases = append(releases, release)
+		errs = append(errs, p.Validate(ctx, worker))
+	}
+	return errors.Join(errs...)
+}
+
 func (p *MERTWorkerPool) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
 	worker, release, err := p.Acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	return worker.EmbedAudio(ctx, pcm)
+	if p.Quarantined(worker) {
+		if err := p.Validate(ctx, worker); err != nil {
+			return nil, err
+		}
+	}
+	vector, err := worker.EmbedAudio(ctx, pcm)
+	if errors.Is(err, ErrNativeWorker) {
+		p.Quarantine(worker)
+	}
+	return vector, err
 }
 
 // Acquire reserves an already-warm native session. Callers can wait for a
@@ -149,6 +205,18 @@ func (p *MERTWorkerPool) Acquire(ctx context.Context) (*MERTWorker, func(), erro
 	}
 }
 
+// TryAcquire reserves an idle session without waiting. Liveness probes use it
+// so health checks never delay queued inference.
+func (p *MERTWorkerPool) TryAcquire() (*MERTWorker, func(), bool) {
+	select {
+	case worker := <-p.available:
+		var once sync.Once
+		return worker, func() { once.Do(func() { p.available <- worker }) }, true
+	default:
+		return nil, nil, false
+	}
+}
+
 func (p *MERTWorkerPool) Unload() {
 	for _, worker := range p.workers {
 		worker.Unload()
@@ -161,4 +229,17 @@ func (p *MERTWorkerPool) Close() error {
 		errs = append(errs, worker.Close())
 	}
 	return errors.Join(errs...)
+}
+
+func (p *MERTWorkerPool) Diagnostics() MERTWorkerDiagnostics {
+	var total MERTWorkerDiagnostics
+	for _, worker := range p.workers {
+		value := worker.Diagnostics()
+		total.NativeFailures += value.NativeFailures
+		total.Restarts += value.Restarts
+		total.HealthChecks += value.HealthChecks
+		total.HealthDuration += value.HealthDuration
+		total.RestartDuration += value.RestartDuration
+	}
+	return total
 }

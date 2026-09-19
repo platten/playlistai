@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -220,5 +221,202 @@ func TestActivityRendersWithoutPerFileDurableProgressQuery(t *testing.T) {
 	}
 	if !strings.Contains(string(contents), "Artist/Track.flac") {
 		t.Fatalf("activity was hidden by progress query failure: %q", contents)
+	}
+}
+
+type slowProgressReader struct {
+	delay time.Duration
+	calls chan time.Time
+}
+
+func (r slowProgressReader) Progress(ctx context.Context, _ map[string]string) (libraryindex.ProgressSnapshot, error) {
+	started := time.Now()
+	select {
+	case <-time.After(r.delay):
+	case <-ctx.Done():
+		return libraryindex.ProgressSnapshot{}, ctx.Err()
+	}
+	r.calls <- started
+	return libraryindex.ProgressSnapshot{Total: int64(len(r.calls))}, nil
+}
+
+func TestProgressPollerSpacesQueriesByTheirDuration(t *testing.T) {
+	const delay = 400 * time.Millisecond
+	reader := slowProgressReader{delay: delay, calls: make(chan time.Time, 8)}
+	out := make(chan polledProgressSnapshot, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go pollProgressSnapshots(ctx, reader, nil, out, func() progressGeneration { return progressGeneration{} })
+	first := <-reader.calls
+	<-out
+	second := <-reader.calls
+	if gap, minimum := second.Sub(first), delay+progressQueryBudget*delay; gap < minimum {
+		t.Fatalf("progress queries %v apart, want at least %v for a %v query", gap, minimum, delay)
+	}
+}
+
+func TestAnalysisETAUsesRecentThroughput(t *testing.T) {
+	var eta analysisETA
+	start := time.Unix(0, 0)
+	if suffix := eta.suffix(100); suffix != " • ETA estimating…" {
+		t.Fatalf("empty estimator suffix=%q", suffix)
+	}
+	// 60 files per minute for 20 minutes; only the last 10 minutes count.
+	for second := 0; second <= 1200; second += 5 {
+		finished := int64(second)
+		if second > 600 {
+			finished = 600 + int64(second-600)/2 // slows to 30 files/min
+		}
+		eta.observe(start.Add(time.Duration(second)*time.Second), finished)
+	}
+	left, perMinute, ok := eta.estimate(900)
+	if !ok || perMinute < 29 || perMinute > 31 {
+		t.Fatalf("rate=%.2f ok=%v, want the recent 30 files/min", perMinute, ok)
+	}
+	if left < 29*time.Minute || left > 31*time.Minute {
+		t.Fatalf("eta=%v, want about 30m for 900 files", left)
+	}
+	if got := eta.suffix(900); got != " • ETA 30m (30 files/min)" {
+		t.Fatalf("suffix=%q", got)
+	}
+	if eta.suffix(0) != "" {
+		t.Fatal("finished run still shows an ETA")
+	}
+}
+
+func TestAnalysisETAWaitsForEvidenceAndResetsOnNewCounter(t *testing.T) {
+	var eta analysisETA
+	start := time.Unix(0, 0)
+	// Idle time before the first finished file is not counted.
+	eta.observe(start, 0)
+	eta.observe(start.Add(5*time.Minute), 0)
+	eta.observe(start.Add(5*time.Minute+4*time.Second), 4)
+	if _, _, ok := eta.estimate(50); ok {
+		t.Fatal("estimated from less than the minimum window")
+	}
+	eta.observe(start.Add(5*time.Minute+10*time.Second), 10)
+	if _, perMinute, ok := eta.estimate(50); !ok || perMinute < 59 || perMinute > 61 {
+		t.Fatalf("rate=%.2f ok=%v, want 60 files/min excluding the idle scan", perMinute, ok)
+	}
+	eta.observe(start.Add(6*time.Minute), 5) // new epoch restarted the counter
+	if _, _, ok := eta.estimate(50); ok {
+		t.Fatal("estimate mixed samples across a counter reset")
+	}
+	// A stall inside the window lowers the rate rather than freezing it.
+	var stalled analysisETA
+	stalled.observe(start, 0)
+	stalled.observe(start.Add(time.Minute), 60)
+	stalled.observe(start.Add(3*time.Minute), 60)
+	if _, perMinute, ok := stalled.estimate(60); !ok || perMinute < 19 || perMinute > 21 {
+		t.Fatalf("stalled rate=%.2f ok=%v, want 20 files/min", perMinute, ok)
+	}
+}
+
+func TestFormatETA(t *testing.T) {
+	for input, want := range map[time.Duration]string{
+		20 * time.Second:            "<1m",
+		42 * time.Minute:            "42m",
+		3*time.Hour + 5*time.Minute: "3h05m",
+		80 * time.Hour:              "3d08h",
+	} {
+		if got := formatETA(input); got != want {
+			t.Fatalf("formatETA(%v)=%q want %q", input, got, want)
+		}
+	}
+}
+
+type blockingProgressReader struct {
+	started  chan struct{}
+	canceled chan struct{}
+}
+
+func (r blockingProgressReader) Progress(ctx context.Context, _ map[string]string) (libraryindex.ProgressSnapshot, error) {
+	close(r.started)
+	<-ctx.Done()
+	close(r.canceled)
+	return libraryindex.ProgressSnapshot{}, ctx.Err()
+}
+
+func TestProgressStopCancelsBlockedSnapshotWithoutWaitingForTimeout(t *testing.T) {
+	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
+	output := &bytes.Buffer{}
+	bar, err := pterm.DefaultProgressbar.WithWriter(output).WithTotal(1).Start("Scanning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	display, err := os.CreateTemp(t.TempDir(), "display")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer display.Close()
+	area := cursor.NewArea().WithWriter(display)
+	reader := blockingProgressReader{started: make(chan struct{}), canceled: make(chan struct{})}
+	go progress.run(context.Background(), reader, nil, bar, output, &area, "Scanning", progressScan)
+	<-reader.started
+	progress.SetPhase("Analyzing")
+	progress.SetCurrentOperation("cached render")
+	stopped := make(chan struct{})
+	go func() { progress.Stop(false); close(stopped) }()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stop blocked on the snapshot query")
+	}
+	select {
+	case <-reader.canceled:
+	case <-time.After(time.Second):
+		t.Fatal("snapshot query was not canceled")
+	}
+	if _, err := display.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := io.ReadAll(display)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "Stopped") {
+		t.Fatalf("missing cached final render: %q", contents)
+	}
+}
+
+type gatedProgressReader struct{ started, release chan struct{} }
+
+func (r gatedProgressReader) Progress(ctx context.Context, _ map[string]string) (libraryindex.ProgressSnapshot, error) {
+	close(r.started)
+	select {
+	case <-r.release:
+		return libraryindex.ProgressSnapshot{Files: 99}, nil
+	case <-ctx.Done():
+		return libraryindex.ProgressSnapshot{}, ctx.Err()
+	}
+}
+
+func TestProgressPollerDiscardsSnapshotFromPreviousGeneration(t *testing.T) {
+	var generation atomic.Uint64
+	reader := gatedProgressReader{started: make(chan struct{}), release: make(chan struct{})}
+	out := make(chan polledProgressSnapshot, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go pollProgressSnapshots(ctx, reader, nil, out, func() progressGeneration { return progressGeneration{scope: generation.Load()} })
+	<-reader.started
+	generation.Add(1)
+	close(reader.release)
+	select {
+	case got := <-out:
+		t.Fatalf("stale counts published: %+v", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestProgressScopeGenerationChangesAtEpochAndFreeze(t *testing.T) {
+	reader := &scopedProgressReader{}
+	progress := &pipelineProgress{}
+	first := progress.snapshotGeneration(reader)
+	reader.SetScanEpoch(1)
+	second := progress.snapshotGeneration(reader)
+	reader.FreezeEpoch(1)
+	third := progress.snapshotGeneration(reader)
+	if first == second || second == third {
+		t.Fatal("scope transitions reused a generation")
 	}
 }

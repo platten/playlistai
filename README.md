@@ -224,6 +224,14 @@ fit/export/query work so the comparison remains pipeline-focused. Use
 synthetic index/export/RSS/query-latency gate; it does not measure decoding or
 musical quality.
 
+Use `--matrix gpu` for three trials of decode workers `{4,8}`, DSP workers
+`{2,4}`, and CUDA sessions `{1,2}`, with a serial correctness reference and full
+integrity. It recommends changes only after repeatable throughput gains of at
+least 10%, no more than 5% p95 track-latency regression, and matching output and
+coverage. Add `--stage-trace-events 20000` for bounded, path-free stage diagnostics.
+See the [repair measurements](docs/indexer-repair-validation.md) for executed
+results and telemetry limitations.
+
 The standard executable embeds its private codec runtime and performs explicit
 licensed MERT setup. The larger Linux amd64 offline executable embeds the codec
 plus CPU and CUDA MERT payloads; it still requires `--accept-model-license`. See the

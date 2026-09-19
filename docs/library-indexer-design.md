@@ -57,6 +57,34 @@ still enumerates the full configured scope. Per-file source revisions and
 semantic job keys keep unchanged completed analysis out of the claim queue,
 while new or changed files become pending.
 
+Enumeration claims bounded batches (at most 256 directories) from SQLite's
+indexed durable frontier. A single committer groups successful results; children
+become eligible only after their parent enumeration succeeded and published
+them. Failed directories retain partial-root inventory and never enqueue their
+unpublished children. Walkers read 256 directory entries at a time and spill
+large results to private temporary SQLite files with a 1 MiB page cache. Their
+path index preserves whole-directory ordering, including hardlink identity.
+Successful spills commit in bounded chunks; the parent remains leased until
+the final chunk, so interruption safely re-enumerates it. Successful replay
+first clears that directory's prior attempt epoch marks, so files deleted
+between attempts cannot survive a complete scan; partial roots still retain
+prior inventory. Final error totals come from durable scopes, including failures
+before an interruption. Spill files are removed after commit or cancellation;
+stale spill files under `STATE/scan-staging` are discarded on resume.
+
+The optional inventory snapshot is capped at 4,096 files and bounded job rows.
+Within that cap, matching paths, revisions, native identities, and settled jobs
+need only a `last_seen_epoch` update. Larger inventories use a prepared indexed
+read to prove the same unchanged identity and settled-job conditions before
+touching the epoch mark; other files use full per-file observation. Neither path
+retains a library-sized map. Scan buffers and configured SQLite page caches stay
+reserved through commit. Source I/O descriptors release when enumeration ends;
+spill replay descriptors remain reserved through commit. The optional inventory
+cache is skipped when the remaining memory budget cannot fit it alongside one
+directory buffer. SQLite's periodic automatic WAL checkpoints remain enabled
+throughout enumeration. Earlier synthetic throughput measurements used an
+unbounded scan implementation and do not establish performance of these bounds.
+
 Every `run` completes enumeration before any file-analysis claim. It atomically
 publishes a privacy-safe manifest generation under `STATE/manifests`. Both
 streams contain only unique audio files with compatible pending work: the
@@ -64,7 +92,8 @@ inventory records logical root aliases, relative paths, sizes, and source
 revisions, while each diff row nests the file's stage jobs. Directories,
 non-audio entries, and unchanged files with settled work remain in their proper
 durable catalog/frontier state but are not processing-manifest rows. Analysis is
-restricted to that diff. Size, mtime, and native identity
+restricted to that diff; writing a manifest replaces the previous epoch's diff
+rows. Size, mtime, and native identity
 are checked against the frozen revision before and after
 probe/integrity/decode; native operations also fence Linux change time across
 their own reads. A mismatch is persisted as
@@ -72,6 +101,14 @@ their own reads. A mismatch is persisted as
 observes the new revision. Issues are durably appended to
 the private `STATE/issues.jsonl`; structured source locations remain logical,
 while native diagnostic detail may contain a physical path.
+
+Job selection uses a disposable `eligible_jobs` projection keyed by epoch, kind,
+readiness, state, and job ID. Metadata-blocked work occupies a separate index
+range from claimable work. SQLite triggers maintain the projection within the
+single writer's durable transactions; startup rebuilds it from authoritative
+jobs and the current manifest. Lease commits recheck membership and prerequisite
+eligibility under the writer transaction as well as source and attempt fences.
+Selection and scoped counts avoid unrelated epochs and completed prefixes.
 
 Graceful shutdown has a separate stop-admission signal. The first interrupt
 prevents new frontier/job claims and later pipeline phases while keeping the
@@ -94,6 +131,20 @@ before acquiring CPU. Waiting for a warm MERT session holds no CPU slot. Each
 window remains immutable until both consumers finish. Backpressure is
 controlled by aggregate CPU, source I/O, descriptor, RAM, and PCM byte
 reservations.
+
+A MERT worker failure is followed by a fixture health check on the restarted
+worker. If the check passes, the failure is charged to the track through the
+normal bounded retries. If it fails, the analyzer declares a MERT outage:
+in-flight tracks keep their DSP result and return to the queue without a retry
+charge, new audio tracks wait, and one recovery loop health-checks every session
+with 1–30 s backoff until analysis can resume. A failed session stays quarantined
+until that exact session validates. Dispatch rechecks health after both session
+and CPU waits, releasing reservations when deferring. Transition notifications
+are serialized so a late recovery cannot overwrite a newer outage. Idle workers are also probed
+after 30 s without a successful embedding. Outages and recoveries are recorded
+as `mert_unavailable`/`mert_recovered` issues and counted as `mert_outages` and
+`mert_deferred` in the run summary. Metadata analysis continues during an
+outage. A warm-up failure at startup remains fatal.
 
 The frozen learning generation contains a distinct-artist/album TF-IDF genre
 baseline, bounded sparse implicit SVD when the data has meaningful rank,

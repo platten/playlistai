@@ -60,8 +60,11 @@ audio file is found, then the most recent file admitted by scan or analysis.
 Activity rendering does not wait on the SQLite progress snapshot, so a briefly
 busy read connection cannot leave the box stuck at its initial message. A
 file or directory activity event redraws only that transient box; it never
-issues a durable count query. The durable snapshot and active-time heartbeat
-refresh once per second, keeping scan cost linear as the inventory grows. Counts
+issues a durable count query. One cancellable background poller owns durable snapshots; initial, phase, stop,
+and interruption renders immediately use cached counts. Epoch/freeze and phase
+generations reject stale responses. Polls run at most once per second and wait
+at least four times the previous query duration to bound database load; the
+active-time heartbeat still refreshes once per second. Counts
 render on a separate summary line, leaving stable width for the PTerm count/percentage bar;
 the bar is regenerated every 30 seconds even when the snapshot is unchanged.
 A growing job total can reduce the displayed percentage, but cannot remove the
@@ -116,8 +119,11 @@ Directories, non-audio entries, and already-settled files are excluded from both
 manifest streams. Scan progress reports every supported file observed in the
 current epoch and separately reports the pending-work subset. The stage jobs are
 frozen in `scan_diff_jobs`; analysis can claim only that epoch's diff. A directory is read
-in 256-entry chunks; each child batch is idempotently committed to the durable
-frontier before the parent is completed. Pool-level heartbeats renew directory
+in 256-entry chunks and fully enumerated before its children are published.
+Oversized directories use private disk-backed staging; successful results replay
+in bounded, lexically ordered batches to the durable frontier before the parent
+is completed. Failed enumeration never exposes unpublished children.
+Pool-level heartbeats renew directory
 and analysis leases. A full in-memory queue therefore cannot lose or deadlock
 frontier work. Scanning and later analysis both obey the source-I/O/descriptor
 admission controller. Channels contain bounded
@@ -235,8 +241,8 @@ its fence and source-revision predicate inside the shared transaction. If one
 item is stale, the batch rolls back and retries items individually, so it cannot
 discard unrelated valid commits.
 
-Directory enumeration additionally submits each bounded 256-entry read chunk as
-one file-observation request. Its file upserts, move-identity checks, semantic-job
+Successful directory enumeration additionally submits each bounded replay chunk
+as one file-observation request. Its file upserts, move-identity checks, semantic-job
 supersession, and job upserts share prepared statements and one transaction.
 This preserves atomic per-chunk discovery while avoiding a commit round trip for
 every track in a large directory.
@@ -317,6 +323,46 @@ durable commit time. Admission queue/blocker counters,
 physical/logical topology, filesystem type, affinity, GPU identity, power
 profile, and before/after/delta ZFS ARC counters are diagnostic evidence;
 unavailable host counters remain zero or omitted rather than inferred.
+
+`--matrix gpu` is a smaller fixed matrix: decode workers `{4,8}`, DSP
+workers `{2,4}`, and CUDA sessions `{1,2}`, plus a serial correctness baseline.
+It requires exactly three trials per point and CUDA (`--device auto` selects
+explicit CUDA for this mode). All 27 analyses use the same deterministically
+sampled source paths, full integrity, isolated scratch state, one inference
+thread, and the existing CPU/RAM/I/O/descriptor limits. Unsupported resource
+points are reported as skipped. Each trial pre-reads sources and order rotates
+and reverses. For example:
+
+```sh
+playlist-indexer bench concurrency --matrix gpu --root /authorized/sample \
+  --sample-tracks 32 --device cuda --offline --accept-model-license \
+  --model-bundle /verified/bundle \
+  --stage-trace-events 20000 --max-ram 8GiB > gpu-matrix.json
+```
+
+The report retains all trial reports, serial semantic equivalence, coverage,
+measured owned memory, median throughput, wall p95, and per-track p95 service
+latency. Selection retains the smallest one-session matrix point unless another
+point improves median throughput by at least 10%, also improves each paired
+trial by 10%, and increases track p95 by no more than 5%. Two sessions must pass
+these guards against their matching decode/DSP one-session point too. Missing
+serial evidence, incomplete coverage, failures, changed sources, mismatched
+session counts, or exceeded memory targets disqualify a point. Selection is a
+report recommendation and never changes configuration defaults or real library
+state. A service-time p95 is not an end-to-end queueing latency measurement.
+
+`--stage-trace-events N` opts into a bounded stage trace, capped at 100,000
+events; zero (the default) disables it. Durations in JSON are nanoseconds.
+Events cover claims, decode, DSP/preprocessing, resource waits, ready windows,
+ONNX calls, and gaps between requests on each worker. Idle gaps include host
+processing and recovery; they are not GPU-idle measurements. Native worker
+counters include the lifetime of the pool, including warm fixture checks. Trace events and dropped-event counts
+are additive report fields. Capture a sustained fixed-input trace together
+with host CPU, storage, and GPU telemetry before attributing desktop stutter to
+any stage. Owned process RSS excludes device VRAM; sample GPU memory separately.
+ONNX execution duration includes host work in the runtime call and does not
+measure GPU occupancy. WSL GPU utilization/process counters and unavailable
+Windows presentation diagnostics must be identified as limitations in results.
 
 `playlist-indexer bench scale --rows 2000000 --dimension 768 --max-ram 8GiB`
 is the explicit synthetic scale gate. It streams canonical rows instead of

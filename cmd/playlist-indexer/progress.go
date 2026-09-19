@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"atomicgo.dev/cursor"
@@ -20,8 +21,13 @@ import (
 
 const (
 	progressRefreshInterval = time.Second
-	progressFullRedraw      = 30 * time.Second
-	largeFLACWarningBytes   = int64(500_000_000)
+	// A manifest-scoped aggregate over hundreds of thousands of jobs takes
+	// about a second. Background polls wait this multiple of the last query's
+	// duration, capping the progress display's share of a read connection.
+	progressQueryBudget   = 4
+	progressQueryTimeout  = 30 * time.Second
+	progressFullRedraw    = 30 * time.Second
+	largeFLACWarningBytes = int64(500_000_000)
 )
 
 type progressMode uint8
@@ -33,11 +39,12 @@ const (
 )
 
 type pipelineProgress struct {
-	phase   chan string
-	current chan progressDisplayActivity
-	stop    chan bool
-	done    chan struct{}
-	once    sync.Once
+	phase      chan string
+	current    chan progressDisplayActivity
+	stop       chan bool
+	done       chan struct{}
+	once       sync.Once
+	generation atomic.Uint64
 }
 
 type progressDisplayActivity struct {
@@ -52,14 +59,16 @@ type progressSnapshotReader interface {
 }
 
 type scopedProgressReader struct {
-	mu     sync.RWMutex
-	state  *libraryindex.State
-	epoch  int64
-	frozen bool
+	mu         sync.RWMutex
+	state      *libraryindex.State
+	epoch      int64
+	frozen     bool
+	generation uint64
 }
 
 func (r *scopedProgressReader) SetScanEpoch(epoch int64) {
 	r.mu.Lock()
+	r.generation++
 	r.epoch = epoch
 	r.frozen = false
 	r.mu.Unlock()
@@ -67,9 +76,30 @@ func (r *scopedProgressReader) SetScanEpoch(epoch int64) {
 
 func (r *scopedProgressReader) FreezeEpoch(epoch int64) {
 	r.mu.Lock()
+	r.generation++
 	r.epoch = epoch
 	r.frozen = true
 	r.mu.Unlock()
+}
+
+func (r *scopedProgressReader) ProgressGeneration() uint64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.generation
+}
+
+type progressGeneration struct{ phase, scope uint64 }
+type polledProgressSnapshot struct {
+	snapshot   libraryindex.ProgressSnapshot
+	generation progressGeneration
+}
+
+func (p *pipelineProgress) snapshotGeneration(state progressSnapshotReader) progressGeneration {
+	generation := progressGeneration{phase: p.generation.Load()}
+	if scoped, ok := state.(interface{ ProgressGeneration() uint64 }); ok {
+		generation.scope = scoped.ProgressGeneration()
+	}
+	return generation
 }
 
 func (r *scopedProgressReader) Progress(ctx context.Context, semanticJobs map[string]string) (libraryindex.ProgressSnapshot, error) {
@@ -119,10 +149,25 @@ func startPipelineProgress(ctx context.Context, state progressSnapshotReader, se
 	return progress
 }
 
+// Active reports whether the terminal display is rendering. When it is not,
+// callers print notable state changes to stderr instead.
+func (p *pipelineProgress) Active() bool {
+	if p == nil {
+		return false
+	}
+	select {
+	case <-p.done:
+		return false
+	default:
+		return true
+	}
+}
+
 func (p *pipelineProgress) SetPhase(phase string) {
 	if p == nil || phase == "" {
 		return
 	}
+	p.generation.Add(1)
 	select {
 	case p.phase <- phase:
 	default:
@@ -202,6 +247,17 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 	barLine := latestProgressLine(barOutput)
 	summaryLine := progressTitle(phase, last, mode)
 	lastBarRedraw := time.Time{}
+	var eta analysisETA
+	var lastETASample time.Time
+	// Analysis status lines carry a completion estimate; scan and export
+	// phases have no finished-file throughput to extrapolate.
+	title := func(phase string, snapshot libraryindex.ProgressSnapshot) string {
+		line := progressTitle(phase, snapshot, mode)
+		if mode == progressJobs {
+			line += eta.suffix(snapshot.Total - snapshot.Finished)
+		}
+		return line
+	}
 	updateArea := func() {
 		content := summaryLine + "\n" + barLine
 		if mode != progressActivity {
@@ -218,15 +274,12 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 		}
 		lastBarRedraw = now
 	}
-	render := func(force bool) {
+	show := func(snapshot libraryindex.ProgressSnapshot, ok, force bool) {
 		now := time.Now()
-		queryCtx, cancel := context.WithTimeout(context.Background(), progressRefreshInterval)
-		snapshot, err := state.Progress(queryCtx, semanticJobs)
-		cancel()
-		if err != nil {
+		if !ok {
 			// Activity updates must not depend on a read connection becoming
 			// available while the durable writer is busy.
-			summaryLine = progressTitle(phase, last, mode)
+			summaryLine = title(phase, last)
 			redrawDue := progressRedrawDue(lastBarRedraw, now)
 			if force || redrawDue {
 				redrawBar(last, now)
@@ -236,6 +289,12 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			}
 			return
 		}
+		// Sample at most once per second, including unchanged snapshots, so a
+		// stall lowers the measured throughput instead of freezing the ETA.
+		if now.Sub(lastETASample) >= time.Second {
+			eta.observe(now, snapshot.Finished)
+			lastETASample = now
+		}
 		snapshotChanged := snapshot != last
 		activityChanged := progressActivityAge(activity, now) != lastActivitySecond
 		redrawDue := progressRedrawDue(lastBarRedraw, now)
@@ -243,12 +302,20 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			return
 		}
 		last = snapshot
-		summaryLine = progressTitle(phase, snapshot, mode)
+		summaryLine = title(phase, snapshot)
 		if force || snapshotChanged || redrawDue {
 			redrawBar(snapshot, now)
 		}
 		updateArea()
 	}
+	// Exactly one poller owns durable reads. Rendering and shutdown always use
+	// the cached snapshot, even when SQLite is waiting on a busy connection.
+	render := func(force bool) { show(last, false, force) }
+	polled := make(chan polledProgressSnapshot, 1)
+	pollCtx, stopPolling := context.WithCancel(ctx)
+	defer stopPolling()
+	generation := func() progressGeneration { return p.snapshotGeneration(state) }
+	go pollProgressSnapshots(pollCtx, state, semanticJobs, polled, generation)
 	render(true)
 	for {
 		select {
@@ -285,9 +352,41 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			updateArea()
 			_, _ = bar.Stop()
 			return
+		case snapshot := <-polled:
+			if snapshot.generation == generation() {
+				show(snapshot.snapshot, true, false)
+			}
 		case <-ticker.C:
-			render(false)
+			// Advance the activity age and redraw deadline between polls.
+			show(last, true, false)
 		}
+	}
+}
+
+func pollProgressSnapshots(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, out chan polledProgressSnapshot, generation func() progressGeneration) {
+	wait := time.Duration(0)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		stamp := generation()
+		started := time.Now()
+		queryCtx, cancel := context.WithTimeout(ctx, progressQueryTimeout)
+		snapshot, err := state.Progress(queryCtx, semanticJobs)
+		cancel()
+		wait = max(progressRefreshInterval, progressQueryBudget*time.Since(started))
+		if err != nil || ctx.Err() != nil || stamp != generation() {
+			continue
+		}
+		// This goroutine is the only sender, so draining keeps just the newest
+		// snapshot and the following send cannot block.
+		select {
+		case <-out:
+		default:
+		}
+		out <- polledProgressSnapshot{snapshot: snapshot, generation: stamp}
 	}
 }
 
