@@ -80,7 +80,7 @@ func durableInventory(t *testing.T, state *State, root Root) []string {
 			t.Fatal(err)
 		}
 		origin := "other"
-		for _, candidate := range []string{"keep.flac", "retry.flac", "old-name.flac", "modified.flac", "deleted.flac", "added.flac"} {
+		for _, candidate := range []string{"keep.flac", "retry.flac", "old-name.flac", "new-name.flac", "modified.flac", "deleted.flac", "added.flac"} {
 			if id == stableFileID(root.ID, candidate) {
 				origin = candidate
 			}
@@ -146,6 +146,11 @@ func TestInMemoryScanMatchesPerFileObservation(t *testing.T) {
 	scanned, scannedRoot := open("in-memory")
 	direct, directRoot := open("direct")
 
+	renameInfo, err := os.Stat(filepath.Join(rootPath, "old-name.flac"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renameDevice, renameInode := fileIdentity(renameInfo)
 	if err := os.Rename(filepath.Join(rootPath, "old-name.flac"), filepath.Join(rootPath, "new-name.flac")); err != nil {
 		t.Fatal(err)
 	}
@@ -177,11 +182,17 @@ func TestInMemoryScanMatchesPerFileObservation(t *testing.T) {
 	// so this pass exercises its guards.
 	got := rescan(firstKeys)
 	joined := strings.Join(got, "\n")
-	for _, expected := range []string{
+	expected := []string{
 		"keep.flac id=keep.flac status=present live=true seen=2", "job=metadata/probe/v1/completed",
-		"new-name.flac id=old-name.flac", "deleted.flac id=deleted.flac status=missing live=false seen=1",
+		"deleted.flac id=deleted.flac status=missing live=false seen=1",
 		"added.flac id=added.flac status=present live=true seen=2",
-	} {
+	}
+	if renameDevice != 0 || renameInode != 0 {
+		expected = append(expected, "new-name.flac id=old-name.flac")
+	} else {
+		expected = append(expected, "new-name.flac id=new-name.flac status=present live=true seen=2", "old-name.flac id=old-name.flac status=missing live=false seen=1")
+	}
+	for _, expected := range expected {
 		if !strings.Contains(joined, expected) {
 			t.Fatalf("scenario missing %q:\n%s", expected, joined)
 		}
