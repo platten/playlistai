@@ -107,6 +107,9 @@ func validateEvaluationRoot(abs string) error {
 	if !filepath.IsAbs(abs) || filepath.Base(abs) != "discovery-data" || filepath.Base(filepath.Dir(abs)) != "data" || !strings.HasPrefix(filepath.Base(filepath.Dir(filepath.Dir(abs))), "enhanced-40-eval-") {
 		return fmt.Errorf("evaluation asset root must be inside a dedicated enhanced-40-eval-*/data/discovery-data directory")
 	}
+	// Validate the caller-controlled sandbox, not host ancestors. On macOS,
+	// /var is legitimately a system symlink to /private/var.
+	boundary := filepath.Dir(filepath.Dir(abs))
 	for current := abs; ; current = filepath.Dir(current) {
 		info, err := os.Lstat(current)
 		if err == nil {
@@ -119,7 +122,7 @@ func validateEvaluationRoot(abs string) error {
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if filepath.Dir(current) == current {
+		if current == boundary {
 			break
 		}
 	}

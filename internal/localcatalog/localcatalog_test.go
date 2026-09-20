@@ -75,6 +75,9 @@ func openTestCatalog(t *testing.T, tracks []librarypack.Track, mappings map[stri
 	if err != nil {
 		t.Fatalf("open manager: %v", err)
 	}
+	// Manager owns generation-cached SQLite/vector attachments. Register its
+	// close after TempDir so Windows releases file handles before directory cleanup.
+	t.Cleanup(func() { _ = manager.Close() })
 	activatePack(t, manager, pack)
 	lease, err := manager.Pin()
 	if err != nil {
