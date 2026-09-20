@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime"
 
 	"github.com/platten/playlistai/internal/modelpack"
 )
@@ -29,9 +30,30 @@ func run(args []string, stdout, stderr io.Writer) error {
 	source := flags.String("pack-source", "", "directory to package into a segmented tar.zst stream")
 	bundle := flags.String("pack-output", "", "new or empty directory for upload-ready parts")
 	name := flags.String("name", "", "portable model pack identifier")
+	recommended := flags.String("recommended", "", "download the pinned mert or clap pack for this platform")
 	partBytes := flags.Int64("part-bytes", modelpack.DefaultPartBytes, "maximum part size; must be below 200000000")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *recommended != "" {
+		if *manifest != "" || *checksum != "" || *source != "" || *bundle != "" || *name != "" || *cache == "" || *out == "" {
+			flags.Usage()
+			return fmt.Errorf("--recommended requires cache and out, without another model source")
+		}
+		var distribution modelpack.Distribution
+		var err error
+		switch *recommended {
+		case "mert":
+			distribution, err = modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
+		case "clap":
+			distribution, err = modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
+		default:
+			return fmt.Errorf("--recommended must be mert or clap")
+		}
+		if err != nil {
+			return err
+		}
+		*manifest, *checksum = distribution.URL, distribution.SHA256
 	}
 	packMode := *source != "" || *bundle != "" || *name != ""
 	if packMode {

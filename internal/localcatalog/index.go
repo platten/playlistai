@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	derivedIndexDir     = "local-index-v1"
-	derivedIndexVersion = 1
+	derivedIndexDir     = "local-index-v3"
+	derivedIndexVersion = 3
 	metadataIndexName   = "metadata.sqlite"
 )
 
@@ -34,6 +34,7 @@ type derivedIndexManifest struct {
 	Metadata       string `json:"metadata"`
 	MetadataSHA256 string `json:"metadataSha256"`
 	MERT           string `json:"mert,omitempty"`
+	CLAP           string `json:"clap,omitempty"`
 }
 
 // IndexBuildOptions bounds import-time scratch and CPU use. The generated
@@ -91,7 +92,7 @@ func BuildIndexes(ctx context.Context, generation *librarypack.Generation, optio
 		source := &generationVectorSource{generation: generation, pageSize: 512}
 		dir, _, buildErr := librarysearch.Build(ctx, source, librarysearch.BuildOptions{
 			Root: vectorsRoot, SourceGeneration: generation.Manifest().MERTGeneration,
-			Contract: vectorContract(generation.Manifest().MERT), Dimension: generation.Manifest().MERT.Dimension,
+			Contract: vectorContract("mert", generation.Manifest().MERT), Dimension: generation.Manifest().MERT.Dimension,
 			ShardRows: options.ShardRows, Workers: options.Workers, MaxScratchBytes: options.MaxScratchBytes,
 		})
 		if buildErr != nil {
@@ -102,6 +103,19 @@ func BuildIndexes(ctx context.Context, generation *librarypack.Generation, optio
 			return errors.New("localcatalog: invalid derived MERT index path")
 		}
 		manifest.MERT = filepath.ToSlash(relative)
+	}
+	if generation.Manifest().Coverage.CLAP > 0 {
+		vectorsRoot := filepath.Join(stage, "clap")
+		source := &generationVectorSource{generation: generation, pageSize: 512, clap: true}
+		dir, _, buildErr := librarysearch.Build(ctx, source, librarysearch.BuildOptions{Root: vectorsRoot, SourceGeneration: generation.Manifest().CLAPGeneration, Contract: vectorContract("clap", generation.Manifest().CLAP), Dimension: generation.Manifest().CLAP.Dimension, ShardRows: options.ShardRows, Workers: options.Workers, MaxScratchBytes: options.MaxScratchBytes})
+		if buildErr != nil {
+			return fmt.Errorf("localcatalog: build CLAP index: %w", buildErr)
+		}
+		relative, relErr := filepath.Rel(stage, dir)
+		if relErr != nil || strings.HasPrefix(relative, "..") {
+			return errors.New("localcatalog: invalid derived CLAP index path")
+		}
+		manifest.CLAP = filepath.ToSlash(relative)
 	}
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -125,6 +139,7 @@ type generationVectorSource struct {
 	page       []librarypack.Track
 	after      string
 	pageSize   int
+	clap       bool
 }
 
 func (s *generationVectorSource) Next(ctx context.Context) (librarysearch.VectorRow, bool, error) {
@@ -141,7 +156,14 @@ func (s *generationVectorSource) Next(ctx context.Context) (librarysearch.Vector
 	}
 	track := s.page[0]
 	s.page = s.page[1:]
-	vector, ok, err := s.generation.Vector(ctx, track.ID)
+	var vector []float32
+	var ok bool
+	var err error
+	if s.clap {
+		vector, ok, err = s.generation.CLAPVector(ctx, track.ID)
+	} else {
+		vector, ok, err = s.generation.Vector(ctx, track.ID)
+	}
 	if err != nil {
 		return librarysearch.VectorRow{}, false, err
 	}
@@ -254,6 +276,11 @@ func buildMetadataIndex(ctx context.Context, generation *librarypack.Generation,
 func metadataTerms(ctx context.Context, generation *librarypack.Generation, track librarypack.Track, learned *librarylearn.MetadataModel) ([]string, error) {
 	text := strings.Join([]string{track.Artist, track.Title, track.AlbumArtist, track.Album, rawTagText(track.RawTags)}, " ")
 	unique := make(map[string]struct{})
+	for _, annotation := range annotations(track.RawTags) {
+		for _, term := range annotationPostingTerms(annotation) {
+			unique[term] = struct{}{}
+		}
+	}
 	for _, term := range strings.Fields(normalizeUnicode(text)) {
 		unique[term] = struct{}{}
 		if len(unique) == 4096 {
@@ -305,10 +332,11 @@ func artistKeys(values ...string) []string {
 type derivedIndexes struct {
 	metadata *sql.DB
 	mert     *librarysearch.Index
+	clap     *librarysearch.Index
 }
 
 func openDerivedIndexes(ctx context.Context, generation *librarypack.Generation) (*derivedIndexes, func(), error) {
-	value, err := generation.CachedAttachment("localcatalog/search-v1", func(string) (any, func(), error) {
+	value, err := generation.CachedAttachment("localcatalog/search-v3", func(string) (any, func(), error) {
 		indexes, closeIndexes, openErr := openDerivedIndexesUncached(ctx, generation)
 		return indexes, closeIndexes, openErr
 	})
@@ -349,6 +377,9 @@ func openDerivedIndexesUncached(ctx context.Context, generation *librarypack.Gen
 		if indexes.mert != nil {
 			_ = indexes.mert.Close()
 		}
+		if indexes.clap != nil {
+			_ = indexes.clap.Close()
+		}
 		_ = indexes.metadata.Close()
 	}
 	if manifest.MERT != "" {
@@ -363,13 +394,25 @@ func openDerivedIndexesUncached(ctx context.Context, generation *librarypack.Gen
 			return nil, func() {}, err
 		}
 	}
+	if manifest.CLAP != "" {
+		clapPath := filepath.Clean(filepath.Join(root, filepath.FromSlash(manifest.CLAP)))
+		if !strings.HasPrefix(clapPath, root+string(os.PathSeparator)) {
+			closeAll()
+			return nil, func() {}, errors.New("localcatalog: unsafe CLAP index path")
+		}
+		indexes.clap, err = librarysearch.Open(ctx, clapPath)
+		if err != nil {
+			closeAll()
+			return nil, func() {}, err
+		}
+	}
 	return indexes, closeAll, nil
 }
 
-func vectorContract(space librarypack.VectorSpace) string {
+func vectorContract(kind string, space librarypack.VectorSpace) string {
 	raw, _ := json.Marshal(space)
 	sum := sha256.Sum256(raw)
-	return "mert:" + hex.EncodeToString(sum[:16])
+	return kind + ":" + hex.EncodeToString(sum[:16])
 }
 
 func hashIndexFile(path string) (string, error) {

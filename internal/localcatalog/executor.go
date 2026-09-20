@@ -27,6 +27,7 @@ type Executor struct {
 	channelSlots chan struct{}
 	metadata     channelRunner
 	mert         channelRunner
+	clap         channelRunner
 }
 
 // sharedQueryBudget is admission state only. Executors remain catalog-bound so
@@ -131,6 +132,9 @@ func NewExecutor(catalog *Catalog, maxConcurrent int) (*Executor, error) {
 	executor.mert = func(ctx context.Context, value any) ([]Hit, error) {
 		return catalog.Neighbors(ctx, value.(NeighborQuery))
 	}
+	executor.clap = func(ctx context.Context, value any) ([]Hit, error) {
+		return catalog.CLAPNeighbors(ctx, value.(NeighborQuery))
+	}
 	catalog.executor = executor
 	return executor, nil
 }
@@ -139,7 +143,7 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 	if e == nil || e.catalog == nil {
 		return QueryResult{}, errors.New("localcatalog: nil executor")
 	}
-	if query.Metadata == nil && query.MERT == nil {
+	if query.Metadata == nil && query.MERT == nil && query.CLAP == nil {
 		_, done, err := e.catalog.withGeneration()
 		if err != nil {
 			return QueryResult{}, err
@@ -165,12 +169,15 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 		runner channelRunner
 		value  any
 	}
-	tasks := make([]task, 0, 2)
+	tasks := make([]task, 0, 3)
 	if query.Metadata != nil {
 		tasks = append(tasks, task{index: 0, runner: e.metadata, value: *query.Metadata})
 	}
 	if query.MERT != nil {
 		tasks = append(tasks, task{index: 1, runner: e.mert, value: *query.MERT})
+	}
+	if query.CLAP != nil {
+		tasks = append(tasks, task{index: 2, runner: e.clap, value: *query.CLAP})
 	}
 	type completed struct {
 		index int
@@ -210,7 +217,7 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 			results <- completed{index: item.index, hits: hits, err: err}
 		}()
 	}
-	ordered := make([][]Hit, 2)
+	ordered := make([][]Hit, 3)
 	var joined error
 	for range tasks {
 		result := <-results
@@ -451,7 +458,9 @@ func channelOrder(channel string) int {
 		return 0
 	case MERTChannel:
 		return 1
-	default:
+	case CLAPChannel:
 		return 2
+	default:
+		return 3
 	}
 }

@@ -16,6 +16,26 @@ func (c *Catalog) EvidenceSource() core.LibraryEvidenceSource {
 	return core.LibraryEvidenceSource{PackID: c.manifest.PackID, SpaceID: hex.EncodeToString(sum[:]), Generation: c.manifest.MERTGeneration, Scope: c.manifest.MERT.Scope}
 }
 
+func (c *Catalog) CLAPEvidenceSource() core.LibraryEvidenceSource {
+	return c.clapEvidenceSource(c.manifest.CLAPModel)
+}
+
+func (c *Catalog) clapEvidenceSource(model *core.AudioModelIdentity) core.LibraryEvidenceSource {
+	unknownPack := ""
+	if model == nil {
+		// Unknown runtime provenance is comparable only within this immutable
+		// pack; equal paired weights cannot establish cross-pack equivalence.
+		unknownPack = c.manifest.PackID
+	}
+	raw, _ := json.Marshal(struct {
+		Space       librarypack.VectorSpace
+		Model       *core.AudioModelIdentity
+		UnknownPack string
+	}{c.manifest.CLAP, model, unknownPack})
+	sum := sha256.Sum256(raw)
+	return core.LibraryEvidenceSource{PackID: c.manifest.PackID, SpaceID: hex.EncodeToString(sum[:]), Generation: c.manifest.CLAPGeneration, Scope: c.manifest.CLAP.Scope}
+}
+
 func (c *Catalog) LibraryVector(ctx context.Context, id string) (core.LibraryVector, bool, error) {
 	localID, err := c.localID(id)
 	if err != nil {

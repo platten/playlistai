@@ -132,6 +132,8 @@ func (c *dynamicCompositeCatalog) RegisterDynamicTrack(track core.TrackMeta) err
 }
 
 type CompositeCatalog struct {
+	semanticModel      core.AudioModelIdentity
+	semanticQueries    []core.AudioClauseVector
 	recordingKnowledge map[string]core.EnrichedTrack
 	baseVersion        string
 	base               ports.Catalog
@@ -447,7 +449,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	if r.catalog != nil {
 		if source, ok := r.catalog.(ports.LibraryAudioCatalog); ok {
 			seen := map[string]bool{}
-			for _, ref := range append(append([]core.IntentReference(nil), request.Intent.References...), request.Intent.RequiredTracks...) {
+			for _, ref := range core.RetrievalReferences(request.Intent) {
 				if ref.Influence == core.InfluenceNegative {
 					continue
 				}
@@ -471,6 +473,44 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 						queries = append(queries, Query{MERT: &NeighborQuery{Vector: vector.Values, Space: &space, Limit: 100, ExcludeIDs: request.AttemptedIDs}})
 					}
 				}
+			}
+		}
+	}
+	if provider, ok := r.catalog.(interface {
+		libraryQueries(string) []core.AudioClauseVector
+	}); ok &&
+		(request.Intent.Controls.RecommendationMode == core.EnhancedHybrid || request.Intent.Controls.RecommendationMode == core.CLAPFirst) {
+		space := r.local.CLAPVectorSpace()
+		seen := map[string]bool{}
+		for _, query := range provider.libraryQueries(r.local.manifest.PackID) {
+			// Negative descriptions penalize ranking, never seed the positive pool.
+			key := query.Clause.Scope + ":" + query.Clause.Kind + ":" + query.Clause.Text
+			if query.Clause.Negative || seen[key] {
+				continue
+			}
+			seen[key] = true
+			if vector := normalizedTextVector(query.Values); len(vector) > 0 {
+				queries = append(queries, Query{CLAP: &NeighborQuery{Vector: vector, Space: &space, CLAPModel: r.local.manifest.CLAPModel, Limit: 100, ExcludeIDs: request.AttemptedIDs}})
+			}
+		}
+	}
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		space := r.local.VectorSpace()
+		for _, taste := range request.Profile.Library {
+			if taste.Source.SpaceID != r.local.EvidenceSource().SpaceID {
+				continue
+			}
+			vectors := [][]float32{taste.RequestPositive, taste.Positive}
+			vectors = append(vectors, taste.Clusters[:min(len(taste.Clusters), 4)]...)
+			for _, vector := range vectors {
+				if validQueryVector(vector, space.Dimension) {
+					queries = append(queries, Query{MERT: &NeighborQuery{Vector: vector, Space: &space, Limit: 24, ExcludeIDs: request.AttemptedIDs}})
+				}
+			}
+		}
+		for _, recent := range request.RecentSelections[max(0, len(request.RecentSelections)-3):] {
+			if r.local.owns(recent.ID) {
+				queries = append(queries, Query{MERT: &NeighborQuery{SeedID: recent.ID, Limit: 16, ExcludeIDs: request.AttemptedIDs}})
 			}
 		}
 	}
@@ -543,7 +583,12 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 				weight = .25
 			}
 			source := r.local.EvidenceSource()
-			if evidence.Channel != MERTChannel {
+			if evidence.Channel == CLAPChannel {
+				source = r.local.CLAPEvidenceSource()
+				if request.Intent.Controls.RecommendationMode == core.CLAPFirst {
+					weight = 1.5
+				}
+			} else if evidence.Channel != MERTChannel {
 				source.SpaceID = ""
 				source.Generation = evidence.Provenance.MetadataGeneration
 				source.Scope = "embedded_tags"
@@ -571,12 +616,31 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	var maximum float64
 	for i := range all {
 		var fusion float64
+		// Preserve all generation provenance above, but do not let copies of
+		// one representation/query buy additional ranking votes.
+		votes := map[string]float64{}
 		for _, source := range all[i].Sources {
 			weight := source.QueryWeight
+			if request.Intent.Controls.RecommendationMode == core.CLAPFirst && source.Channel == MERTChannel {
+				weight *= .65
+			}
 			if source.Channel == ClusterChannel && clusterPopulation[source.QueryID] > 1 {
 				weight /= math.Sqrt(float64(clusterPopulation[source.QueryID]))
 			}
-			fusion += weight / float64(60+max(1, source.Rank))
+			space, scope := "", ""
+			if source.LibrarySource != nil {
+				space, scope = source.LibrarySource.SpaceID, source.LibrarySource.Scope
+			}
+			key, _ := json.Marshal([]string{source.Channel, source.QueryID, space, scope})
+			votes[string(key)] = max(votes[string(key)], weight/float64(60+max(1, source.Rank)))
+		}
+		keys := make([]string, 0, len(votes))
+		for key := range votes {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			fusion += votes[key]
 		}
 		if fusion > 0 {
 			all[i].Scores.RetrievalFusion, all[i].Available.RetrievalFusion = fusion, true
@@ -597,10 +661,15 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 func uniqueRetrievalEvidence(input []core.RetrievalEvidence) []core.RetrievalEvidence {
 	best := make(map[string]core.RetrievalEvidence, len(input))
 	for _, evidence := range input {
+		space, generation, scope := "", "", ""
+		if evidence.LibrarySource != nil {
+			space = evidence.LibrarySource.SpaceID
+			generation = evidence.LibrarySource.Generation
+			scope = evidence.LibrarySource.Scope
+		}
 		key, _ := json.Marshal(struct {
-			Channel, Query string
-			Source         *core.LibraryEvidenceSource
-		}{evidence.Channel, evidence.QueryID, evidence.LibrarySource})
+			Channel, Query, Space, Generation, Scope string
+		}{evidence.Channel, evidence.QueryID, space, generation, scope})
 		previous, exists := best[string(key)]
 		if !exists || max(1, evidence.Rank) < max(1, previous.Rank) ||
 			(max(1, evidence.Rank) == max(1, previous.Rank) && (evidence.Score > previous.Score ||
@@ -659,7 +728,7 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 	for _, recent := range request.RecentSelections {
 		exclude[recent.ID] = struct{}{}
 	}
-	for _, ref := range append(append([]core.IntentReference(nil), request.Intent.References...), request.Intent.RequiredTracks...) {
+	for _, ref := range core.RetrievalReferences(request.Intent) {
 		if ref.TrackID != "" {
 			exclude[ref.TrackID] = struct{}{}
 		}
@@ -669,7 +738,7 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 			}
 		}
 	}
-	for _, ref := range append(append([]core.IntentReference(nil), request.Intent.References...), request.Intent.RequiredTracks...) {
+	for _, ref := range core.RetrievalReferences(request.Intent) {
 		if ref.Influence == core.InfluenceNegative {
 			continue
 		}
@@ -687,14 +756,17 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 			if (strings.HasPrefix(id, "local:") || strings.HasPrefix(id, "pack:")) && !seenID[id] {
 				seenID[id] = true
 				queries = append(queries, Query{MERT: &NeighborQuery{SeedID: id, Limit: 100, ExcludeIDs: exclude}})
+				if request.Intent.Controls.RecommendationMode == core.CLAPFirst || request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+					queries = append(queries, Query{CLAP: &NeighborQuery{SeedID: id, Limit: 100, ExcludeIDs: exclude}})
+				}
 			}
 		}
 	}
 	criteria := append([]core.MusicalCriterion(nil), request.Intent.EssentialCriteria...)
-	for kind, preferences := range map[string][]core.IntentPreference{"genre": request.Intent.Preferences.Genres, "style": request.Intent.Preferences.Styles, "mood": request.Intent.Preferences.Moods} {
+	for kind, preferences := range map[string][]core.IntentPreference{"genre": request.Intent.Preferences.Genres, "style": request.Intent.Preferences.Styles, "mood": request.Intent.Preferences.Moods, "instrumentation": request.Intent.Preferences.Instrumentation, "texture": request.Intent.Preferences.TextureDescriptions} {
 		for _, preference := range preferences {
 			if preference.Influence != core.InfluenceNegative {
-				criteria = append(criteria, core.MusicalCriterion{Kind: kind, Value: preference.Value})
+				criteria = append(criteria, core.MusicalCriterion{Kind: kind, Value: preference.Value, Scope: preference.Scope, Strength: preference.Strength, Group: preference.Group, ConceptID: preference.ConceptID})
 			}
 		}
 	}

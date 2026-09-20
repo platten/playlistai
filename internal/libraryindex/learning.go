@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
@@ -56,7 +57,7 @@ type FitResult struct {
 }
 
 func (s *State) Fit(ctx context.Context, options FitOptions) (FitResult, error) {
-	for _, kind := range []string{"metadata", "audio"} {
+	for _, kind := range []string{"metadata", "audio", "clap"} {
 		pending, leased, err := s.JobCounts(ctx, kind)
 		if err != nil {
 			return FitResult{}, err
@@ -390,5 +391,47 @@ func (s *State) ExportPack(ctx context.Context, output string) (librarypack.Mani
 	if generation.DSPStatistics.Generation != "" {
 		statisticsGeneration = generation.DSPStatistics.Generation
 	}
-	return librarypack.WriteSource(ctx, output, librarypack.Pack{CreatedAt: time.Now().UTC(), CorpusGeneration: generation.Snapshot.Generation, MetadataGeneration: generation.ID + "-metadata", MERTGeneration: generation.ID + "-mert", ClusterGeneration: clusterGeneration, StatisticsGeneration: statisticsGeneration, MERT: generation.VectorSpace, Learning: portableLearning, Statistics: portableStatistics}, trackSource, librarypack.DefaultLimits())
+	clapSpace, clapModel, clapGeneration, err := clapVectorSpace(ctx, generation.Snapshot.Path, generation.ID)
+	if err != nil {
+		return librarypack.Manifest{}, err
+	}
+	return librarypack.WriteSource(ctx, output, librarypack.Pack{CreatedAt: time.Now().UTC(), CorpusGeneration: generation.Snapshot.Generation, MetadataGeneration: generation.ID + "-metadata", MERTGeneration: generation.ID + "-mert", CLAPGeneration: clapGeneration, ClusterGeneration: clusterGeneration, StatisticsGeneration: statisticsGeneration, MERT: generation.VectorSpace, CLAP: clapSpace, CLAPModel: clapModel, Learning: portableLearning, Statistics: portableStatistics}, trackSource, librarypack.DefaultLimits())
+}
+
+func clapVectorSpace(ctx context.Context, snapshotPath, generationID string) (librarypack.VectorSpace, *core.AudioModelIdentity, string, error) {
+	store, err := openFrozenStore(snapshotPath)
+	if err != nil {
+		return librarypack.VectorSpace{}, nil, "", err
+	}
+	defer store.Close()
+	rows, err := store.db.QueryContext(ctx, `SELECT c.data FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='clap' AND j.state='completed' JOIN clap_results c ON c.file_id=f.id AND c.source_revision=f.source_revision AND c.contract=j.semantic_key WHERE f.status='present' AND length(c.vector)>0 ORDER BY f.id`)
+	if err != nil {
+		return librarypack.VectorSpace{}, nil, "", err
+	}
+	defer rows.Close()
+	var first *CLAPRecord
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return librarypack.VectorSpace{}, nil, "", err
+		}
+		var record CLAPRecord
+		if err := json.Unmarshal(raw, &record); err != nil {
+			return librarypack.VectorSpace{}, nil, "", err
+		}
+		if first == nil {
+			first = &record
+		} else if first.Model != record.Model || first.Sampling != record.Sampling {
+			return librarypack.VectorSpace{}, nil, "", errors.New("library indexer: incompatible CLAP models or sampling contracts in snapshot")
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return librarypack.VectorSpace{}, nil, "", err
+	}
+	if first == nil {
+		return librarypack.VectorSpace{}, nil, "", nil
+	}
+	record := *first
+	space := librarypack.VectorSpace{Name: "library_clap", Dimension: record.Model.Dimension, DType: "float32", ByteOrder: "little", Normalized: true, Model: record.Model.Model, ModelRevision: record.Model.Revision, GraphSHA256: record.Model.Weights, Decoder: "pinned-ffmpeg", Preprocessing: record.Model.Preprocessing, Sampling: record.Sampling, Pooling: "duration-weighted-mean-l2/v1", Scope: "two-distributed-excerpts", Missingness: "absent-row"}
+	return space, &record.Model, generationID + "-clap", nil
 }

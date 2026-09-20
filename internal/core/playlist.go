@@ -41,6 +41,7 @@ type Candidate struct {
 }
 
 type CandidateScores struct {
+	LibraryMetadata       float64 `json:"libraryMetadata"`
 	LibraryMERT           float64 `json:"libraryMert"`
 	LibraryDSP            float64 `json:"libraryDsp"`
 	EnhancedMERT          float64 `json:"enhancedMert"`
@@ -64,6 +65,7 @@ type CandidateScores struct {
 }
 
 type CandidateFeatures struct {
+	LibraryMetadata       bool `json:"libraryMetadata"`
 	LibraryMERT           bool `json:"libraryMert"`
 	LibraryDSP            bool `json:"libraryDsp"`
 	EnhancedMERT          bool `json:"enhancedMert"`

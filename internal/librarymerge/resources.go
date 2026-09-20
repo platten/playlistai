@@ -18,6 +18,7 @@ type rebuiltResources struct {
 	corpusGeneration     string
 	metadataGeneration   string
 	mertGeneration       string
+	clapGeneration       string
 	clusterGeneration    string
 	statisticsGeneration string
 	trainingSample       []string

@@ -250,10 +250,12 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	flags.Var(&appendRoots, "append-root", "additional stable source root as ALIAS=PATH; repeatable")
 	flags.Var(&exclusions, "exclude", "root-relative excluded subtree; repeatable")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
-	analysis := flags.String("analysis", "audio", "metadata or audio")
+	analysis := flags.String("analysis", "audio", "metadata, audio, clap, or all")
 	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
+	clapDevice := flags.String("clap-device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	integrity := flags.String("integrity", "full", "full or deferred; deferred skips a second full decode when embedded identity tags exist")
 	modelBundle := flags.String("model-bundle", "", "verified local prepared MERT bundle")
+	clapBundle := flags.String("clap-bundle", "", "verified local prepared CLAP bundle")
 	outPath := flags.String("out", "", "portable .paipack output; run only")
 	trainingSample := flags.Int("training-sample", 0, "maximum deterministic MERT training sample")
 	clusters := flags.Int("clusters", 0, "spherical cluster count; zero uses the recorded heuristic")
@@ -269,8 +271,10 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		return 1, errors.New("--integrity must be full or deferred")
 	}
 	metadataOnly := *analysis == "metadata"
-	if !metadataOnly && *analysis != "audio" {
-		return 1, errors.New("--analysis must be metadata or audio")
+	wantMERT := *analysis == "audio" || *analysis == "all"
+	wantCLAP := *analysis == "clap" || *analysis == "all"
+	if !metadataOnly && !wantMERT && !wantCLAP {
+		return 1, errors.New("--analysis must be metadata, audio, clap, or all")
 	}
 	plan, err := common.resolvePlan(metadataOnly)
 	if err != nil {
@@ -318,7 +322,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		fmt.Fprintf(stderr, "requeued failed jobs: %d\n", requeued)
 	}
 	var pool *audio.MERTWorkerPool
-	if !metadataOnly {
+	if wantMERT {
 		bundleDir, manifest, err := ensureModel(ctx, common, *modelBundle, *device, stderr)
 		if err != nil {
 			return 1, err
@@ -340,16 +344,31 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		defer pool.Close()
 		fmt.Fprintf(stderr, "MERT sessions warmed: device=%s count=%d threads=%d rss=%d elapsed=%s\n", pool.Device(), pool.Parallelism(), plan.InferenceThreads, pool.ResidentBytes(), time.Since(warmStart).Round(time.Millisecond))
 	}
+	var clapDir string
+	var clapManifest audio.BundleManifest
+	var resolvedCLAPDevice string
+	if wantCLAP {
+		clapDir, clapManifest, resolvedCLAPDevice, err = ensureCLAPModel(ctx, common, *clapBundle, *clapDevice, stderr)
+		if err != nil {
+			if pool != nil {
+				_ = pool.Close()
+			}
+			return 1, err
+		}
+	}
 	if gracefulStopRequested(ctx) {
 		return 130, libraryindex.ErrShutdownRequested
 	}
 	fmt.Fprintln(stderr, "effective resources:", plan.Summary())
 	profileValue := libraryindex.SamplingProfile(*profile)
 	semanticJobs := map[string]string{"metadata": libraryindex.MetadataSemanticKeyForPolicy(codec.ID(), integrityPolicy)}
-	if !metadataOnly {
+	if wantMERT {
 		semanticJobs["audio"] = libraryindex.AudioSemanticKey(codec.ID(), pool.Identity(), profileValue)
 	}
-	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: !metadataOnly, Profile: profileValue, Integrity: integrityPolicy}
+	if wantCLAP {
+		semanticJobs["clap"] = libraryindex.CLAPSemanticKey(codec.ID(), audio.Fingerprint(clapManifest.Model))
+	}
+	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: wantMERT, Profile: profileValue, Integrity: integrityPolicy}
 	analyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
 	defer analyzer.Admission.Close()
 	var initialPhase string
@@ -366,6 +385,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		progressMode = progressScan
 	}
 	progressReader := &scopedProgressReader{state: state}
+	progressReader.SetSemanticJobs(semanticJobs)
 	progress := startPipelineProgress(ctx, progressReader, semanticJobs, stderr, common.noProgress, initialPhase, progressMode)
 	analyzer.OnFile = progress.SetCurrentFile
 	progressComplete := false
@@ -444,7 +464,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		if scanErr == nil {
 			scanReport, scanErr = state.Scan(ctx, libraryindex.ScanOptions{Roots: resolvedRoots, Workers: plan.ScanWorkers, QueueDepth: plan.QueueDepth, FollowSymlinks: common.followDirectorySymlinks, Exclusions: exclusions, SemanticJobs: semanticJobs, Admission: analyzer.Admission, OnFile: progress.SetCurrentFile, OnDirectory: progress.SetCurrentDirectory, OnIssue: issues.Record, OnEpoch: progressReader.SetScanEpoch, StopAdmission: gracefulStopFromContext(ctx)})
 			if scanErr == nil {
-				progress.SetPhase("Building scan manifest and diff")
+				progress.BeginOperationPhase("Building durable scan manifest and diff", "Writing resumable scan inventory")
 				scanReport.Manifest, scanErr = state.WriteScanManifest(ctx, scanReport.Epoch, semanticJobs)
 				if scanErr == nil && command != "scan" {
 					progressReader.FreezeEpoch(scanReport.Epoch)
@@ -466,7 +486,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	var analysisReport libraryindex.AnalysisReport
 	if command != "scan" {
-		progress.SetPhase(analysisPhase)
+		primaryJobs := selectSemanticJobs(semanticJobs, "metadata", "audio")
+		progressReader.SetSemanticJobs(primaryJobs)
+		progress.BeginPhase(primaryAnalysisPhase(wantMERT), progressJobs)
 		analyzer.FreezeManifest = command != "analyze"
 		if command != "analyze" {
 			analyzer.DiffEpoch = scanReport.Epoch
@@ -483,6 +505,45 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		if err := issues.Err(); err != nil {
 			return 1, fmt.Errorf("write state issue log: %w", err)
 		}
+		if wantCLAP {
+			if pool != nil {
+				_ = pool.Close()
+				pool = nil
+			}
+			progressReader.SetSemanticJobs(selectSemanticJobs(semanticJobs, "clap"))
+			progress.BeginPhase("Extracting CLAP embeddings from two 10-second excerpts", progressJobs)
+			executable, executableErr := os.Executable()
+			if executableErr != nil {
+				return 1, executableErr
+			}
+			clapWorkers := max(1, plan.InferenceWorkers)
+			if _, cuda := audio.MERTCUDADeviceIndex(resolvedCLAPDevice); cuda {
+				// One persistent CUDA session keeps the paired CLAP graphs resident
+				// without multiplying their VRAM footprint. Decode workers continue
+				// filling the bounded queue while inference is active.
+				clapWorkers = 1
+			}
+			clapPool := audio.NewWorkerPool(&audio.Worker{Executable: executable, BundleDir: clapDir, Model: clapManifest.Model, Device: resolvedCLAPDevice}, clapWorkers)
+			warmCtx, cancelWarm := context.WithTimeout(ctx, 2*time.Minute)
+			warmErr := clapPool.Warm(warmCtx)
+			cancelWarm()
+			if warmErr != nil {
+				_ = clapPool.Close()
+				return 1, fmt.Errorf("warm CLAP workers: %w", warmErr)
+			}
+			fmt.Fprintf(stderr, "CLAP sessions warmed: device=%s count=%d\n", resolvedCLAPDevice, clapWorkers)
+			clapAnalyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, CLAP: clapPool, CLAPDevice: resolvedCLAPDevice, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx), FreezeManifest: analyzer.FreezeManifest, DiffEpoch: analyzer.DiffEpoch, OnFile: progress.SetCurrentFile, OnIssue: issues.Record}
+			clapReport, clapErr := clapAnalyzer.Run(ctx, libraryindex.AnalysisOptions{CLAP: true, Integrity: integrityPolicy}, discoveryDone)
+			clapAnalyzer.Admission.Close()
+			_ = clapPool.Close()
+			mergeAnalysisReports(&analysisReport, clapReport)
+			if clapErr != nil {
+				if errors.Is(clapErr, libraryindex.ErrShutdownRequested) {
+					return 130, clapErr
+				}
+				return 1, clapErr
+			}
+		}
 	}
 	var fitResult libraryindex.FitResult
 	var packManifest any
@@ -490,8 +551,8 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		if gracefulStopRequested(ctx) {
 			return 130, libraryindex.ErrShutdownRequested
 		}
-		progress.SetCurrentOperation("Library fitting (no source file)")
-		progress.SetPhase("Fitting library")
+		progressReader.SetSemanticJobs(selectSemanticJobs(semanticJobs, "metadata"))
+		progress.BeginOperationPhase("Fitting recommendation resources", "Library fitting (no source file)")
 		fitResult, err = state.Fit(ctx, libraryindex.FitOptions{Seed: uint64(common.seed), TrainingSample: *trainingSample, Clusters: *clusters, Refit: *refit, Plan: plan})
 		if err != nil {
 			return 1, err
@@ -499,8 +560,7 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 		if gracefulStopRequested(ctx) {
 			return 130, libraryindex.ErrShutdownRequested
 		}
-		progress.SetCurrentOperation("Library export (no source file)")
-		progress.SetPhase("Exporting library pack")
+		progress.BeginOperationPhase("Exporting portable library pack", "Library export (no source file)")
 		manifest, err := state.ExportPack(ctx, *outPath)
 		if err != nil {
 			return 1, err
@@ -516,8 +576,8 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d mert_outages=%d mert_deferred=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s onnx_execution=%s mert_inference=%s commit=%s admission_queued=%d\n",
-		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d clap=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d mert_outages=%d mert_deferred=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s onnx_execution=%s mert_inference=%s commit=%s admission_queued=%d\n",
+		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.CLAPCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
 		analysisReport.TracksBuffered, analysisReport.WindowFallbacks, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.MERTOutages, analysisReport.MERTDeferred, analysisReport.Timings.CPUAdmission, analysisReport.Timings.SourceIOAdmission,
 		analysisReport.Timings.PCMAdmission, analysisReport.Timings.SourceRead, analysisReport.Timings.Probe, analysisReport.Timings.Fingerprint, analysisReport.Timings.Integrity,
 		analysisReport.Timings.Decode, analysisReport.Timings.DSPSlotWait, analysisReport.Timings.DSP, analysisReport.Timings.Downmix,
@@ -526,7 +586,37 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), nil
 }
 
-const analysisPhase = "Analyzing manifest diff"
+const analysisPhase = "Extracting metadata, DSP features, and MERT embeddings"
+
+func primaryAnalysisPhase(wantMERT bool) string {
+	if wantMERT {
+		return analysisPhase
+	}
+	return "Extracting audio metadata and curated tags"
+}
+
+func selectSemanticJobs(semanticJobs map[string]string, kinds ...string) map[string]string {
+	selected := make(map[string]string, len(kinds))
+	for _, kind := range kinds {
+		if key, ok := semanticJobs[kind]; ok {
+			selected[kind] = key
+		}
+	}
+	return selected
+}
+
+func mergeAnalysisReports(target *libraryindex.AnalysisReport, source libraryindex.AnalysisReport) {
+	target.MetadataCompleted += source.MetadataCompleted
+	target.AudioCompleted += source.AudioCompleted
+	target.CLAPCompleted += source.CLAPCompleted
+	target.Failed += source.Failed
+	target.Retried += source.Retried
+	target.SkippedChanged += source.SkippedChanged
+	target.StageTrace = append(target.StageTrace, source.StageTrace...)
+	target.TraceDropped += source.TraceDropped
+	target.AdmissionWaits.Requests += source.AdmissionWaits.Requests
+	target.AdmissionWaits.Queued += source.AdmissionWaits.Queued
+}
 
 func firstLine(err error) string {
 	if err == nil {
@@ -751,6 +841,102 @@ func ensureModel(ctx context.Context, common commonFlags, localBundle, requested
 	}
 	manifest, err := audio.ReadMERTBundleContext(ctx, dir)
 	return dir, manifest, err
+}
+
+func ensureCLAPModel(ctx context.Context, common commonFlags, localBundle, requestedDevice string, stderr io.Writer) (string, audio.BundleManifest, string, error) {
+	device := strings.ToLower(strings.TrimSpace(requestedDevice))
+	if device == "" {
+		device = "auto"
+	}
+	preference := device
+	if strings.HasPrefix(device, "cuda:") {
+		preference = "cuda"
+	}
+	if preference != "auto" && preference != "cpu" && preference != "cuda" {
+		return "", audio.BundleManifest{}, "", errors.New("--clap-device must be auto, cpu, cuda, or cuda:INDEX")
+	}
+	manager := &audio.BundleManager{Directory: filepath.Join(common.state, "runtime", "clap")}
+	selectDevice := func(manifest audio.BundleManifest) (string, bool) {
+		if preference == "cpu" {
+			return "cpu", manifest.Backend() == "cpu"
+		}
+		if preference == "cuda" {
+			return device, manifest.Backend() == "cuda"
+		}
+		if manifest.Backend() == "cuda" {
+			return "cuda", audio.MERTCUDAHostAvailable()
+		}
+		return "cpu", true
+	}
+	if localBundle != "" {
+		manifest, err := audio.ReadBundleContext(ctx, localBundle)
+		if err != nil {
+			return "", audio.BundleManifest{}, "", err
+		}
+		resolved, ok := selectDevice(manifest)
+		if !ok {
+			return "", audio.BundleManifest{}, "", errors.New("CLAP bundle backend does not match --clap-device")
+		}
+		dir, err := manager.InstallDirectory(ctx, localBundle, nil)
+		return dir, manifest, resolved, err
+	}
+	if dir, manifest, activeErr := manager.ActiveContext(ctx); activeErr == nil {
+		if resolved, ok := selectDevice(manifest); ok {
+			return dir, manifest, resolved, nil
+		}
+	}
+	bundle, openErr := indexerbundle.OpenSelf()
+	if openErr != nil {
+		return "", audio.BundleManifest{}, "", errors.New("CLAP runtime is not installed; use the offline executable or --clap-bundle")
+	}
+	defer bundle.Close()
+	runtimeRoot := filepath.Join(common.state, "runtime")
+	if err := os.MkdirAll(runtimeRoot, 0o700); err != nil {
+		return "", audio.BundleManifest{}, "", err
+	}
+	prefixes := []string{"clap/cpu", "clap"}
+	if preference == "cuda" {
+		prefixes = []string{"clap/cuda"}
+	}
+	if preference == "auto" && audio.MERTCUDAHostAvailable() {
+		prefixes = []string{"clap/cuda", "clap/cpu", "clap"}
+	}
+	var cudaErr error
+	for _, prefix := range prefixes {
+		if !bundle.Has(prefix) {
+			continue
+		}
+		stage, err := os.MkdirTemp(runtimeRoot, ".embedded-clap-")
+		if err != nil {
+			return "", audio.BundleManifest{}, "", err
+		}
+		if err = bundle.Extract(prefix, stage); err != nil {
+			_ = os.RemoveAll(stage)
+			return "", audio.BundleManifest{}, "", err
+		}
+		manifest, readErr := audio.ReadBundleContext(ctx, stage)
+		if readErr != nil {
+			_ = os.RemoveAll(stage)
+			return "", audio.BundleManifest{}, "", readErr
+		}
+		resolved, ok := selectDevice(manifest)
+		if !ok {
+			_ = os.RemoveAll(stage)
+			continue
+		}
+		dir, installErr := manager.InstallDirectory(ctx, stage, nil)
+		_ = os.RemoveAll(stage)
+		if installErr != nil {
+			if preference == "auto" && manifest.Backend() == "cuda" {
+				cudaErr = installErr
+				fmt.Fprintf(stderr, "automatic CUDA CLAP unavailable; falling back to embedded CPU bundle: %v\n", installErr)
+				continue
+			}
+			return "", audio.BundleManifest{}, "", installErr
+		}
+		return dir, manifest, resolved, nil
+	}
+	return "", audio.BundleManifest{}, "", errors.Join(cudaErr, errors.New("offline executable does not contain a compatible CPU/GPU CLAP payload"))
 }
 
 func embeddedMERTPrefixes(preference string, cudaHost bool) []string {

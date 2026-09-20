@@ -33,6 +33,7 @@ type Generation struct {
 	dir          string
 	db           *sql.DB
 	vectors      *os.File
+	clapVectors  *os.File
 	closeOnce    sync.Once
 	closeErr     error
 	attachmentMu sync.Mutex
@@ -48,6 +49,10 @@ func (g *Generation) Manifest() Manifest {
 	m := g.manifest
 	m.Files = append([]File(nil), m.Files...)
 	m.RootAliases = append([]string(nil), m.RootAliases...)
+	if m.CLAPModel != nil {
+		model := *m.CLAPModel
+		m.CLAPModel = &model
+	}
 	return m
 }
 
@@ -261,6 +266,30 @@ func (g *Generation) Vector(ctx context.Context, id string) ([]float32, bool, er
 	return g.vectorAt(ctx, row.Int64)
 }
 
+// CLAPVector returns the owned pooled CLAP vector for a track. CLAP and MERT
+// are intentionally exposed as separate spaces and must not be compared.
+func (g *Generation) CLAPVector(ctx context.Context, id string) ([]float32, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	if g == nil || g.db == nil {
+		return nil, false, errors.New("librarypack: generation is closed")
+	}
+	if g.manifest.Version == LegacyFormatVersion {
+		return nil, false, nil
+	}
+	var row sql.NullInt64
+	if err := g.db.QueryRowContext(ctx, "SELECT clap_row FROM tracks WHERE id=?", id).Scan(&row); errors.Is(err, sql.ErrNoRows) {
+		return nil, false, nil
+	} else if err != nil {
+		return nil, false, err
+	}
+	if !row.Valid {
+		return nil, false, nil
+	}
+	return g.clapVectorAt(ctx, row.Int64)
+}
+
 // List returns canonical ID order after the exclusive cursor. Limit is capped
 // to keep callers from accidentally materializing an entire large library.
 func (g *Generation) List(ctx context.Context, after string, limit int) ([]Track, error) {
@@ -305,7 +334,15 @@ func (g *Generation) OpenTrackSource(ctx context.Context) (TrackReadCloser, erro
 	if g == nil || g.db == nil {
 		return nil, errors.New("librarypack: generation is closed")
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score,mert_row FROM tracks ORDER BY id`)
+	clapColumn := "clap_row"
+	if g.manifest.Version == LegacyFormatVersion {
+		clapColumn = "NULL AS clap_row"
+	}
+	evidenceColumn := "X''"
+	if g.manifest.Version >= FormatVersion {
+		evidenceColumn = "COALESCE((SELECT data FROM clap_evidence WHERE track_id=tracks.id),X'')"
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score,mert_row,`+clapColumn+`,`+evidenceColumn+` FROM tracks ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -323,9 +360,21 @@ func (s *generationTrackSource) Next(ctx context.Context) (Track, bool, error) {
 		return Track{}, false, s.rows.Err()
 	}
 	var vectorRow sql.NullInt64
-	track, err := scanTrackFields(s.rows, &vectorRow)
+	var clapRow sql.NullInt64
+	var evidenceRaw []byte
+	track, err := scanTrackFields(s.rows, &vectorRow, &clapRow, &evidenceRaw)
 	if err != nil {
 		return Track{}, false, err
+	}
+	if clapRow.Valid {
+		vector, ok, err := s.g.clapVectorAt(ctx, clapRow.Int64)
+		if err != nil {
+			return Track{}, false, err
+		}
+		if !ok {
+			return Track{}, false, errors.New("librarypack: indexed CLAP vector row is missing")
+		}
+		track.CLAP = vector
 	}
 	if vectorRow.Valid {
 		vector, ok, err := s.g.vectorAt(ctx, vectorRow.Int64)
@@ -336,6 +385,11 @@ func (s *generationTrackSource) Next(ctx context.Context) (Track, bool, error) {
 			return Track{}, false, errors.New("librarypack: indexed vector row is missing")
 		}
 		track.MERT = vector
+	}
+	if len(evidenceRaw) > 0 {
+		if err := json.Unmarshal(evidenceRaw, &track.CLAPEvidence); err != nil {
+			return Track{}, false, err
+		}
 	}
 	return track, true, nil
 }
@@ -404,6 +458,29 @@ func (g *Generation) vectorAt(ctx context.Context, row int64) ([]float32, bool, 
 	return vector, true, nil
 }
 
+func (g *Generation) clapVectorAt(ctx context.Context, row int64) ([]float32, bool, error) {
+	dim := g.manifest.CLAP.Dimension
+	if g.clapVectors == nil || row < 0 || row >= int64(g.manifest.Coverage.CLAP) || dim <= 0 {
+		return nil, false, errors.New("librarypack: CLAP vector row outside manifest")
+	}
+	bytes := make([]byte, dim*4)
+	offset := int64(32) + row*int64(len(bytes))
+	if _, err := g.clapVectors.ReadAt(bytes, offset); err != nil {
+		return nil, false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	vector := make([]float32, dim)
+	for i := range vector {
+		vector[i] = math.Float32frombits(binary.LittleEndian.Uint32(bytes[i*4 : i*4+4]))
+	}
+	if !validUnitVector(vector) {
+		return nil, false, errors.New("librarypack: stored CLAP vector is invalid")
+	}
+	return vector, true, nil
+}
+
 func (g *Generation) close() error {
 	if g == nil {
 		return nil
@@ -425,6 +502,10 @@ func (g *Generation) close() error {
 		if g.vectors != nil {
 			errs = append(errs, g.vectors.Close())
 			g.vectors = nil
+		}
+		if g.clapVectors != nil {
+			errs = append(errs, g.clapVectors.Close())
+			g.clapVectors = nil
 		}
 		g.closeErr = errors.Join(errs...)
 	})
@@ -530,7 +611,11 @@ func extractArchive(ctx context.Context, archivePath, destination string, limits
 			return Manifest{}, "", fmt.Errorf("librarypack: checksum mismatch for %s", header.Name)
 		}
 	}
-	if len(expected) == 0 || !seen[MetadataName] || !seen[MERTVectorsName] || len(seen) != 3 {
+	requiredMembers := 3
+	if manifest.Coverage.CLAP > 0 {
+		requiredMembers++
+	}
+	if len(expected) != requiredMembers-1 || !seen[MetadataName] || !seen[MERTVectorsName] || manifest.Coverage.CLAP > 0 && !seen[CLAPVectorsName] || len(seen) != requiredMembers {
 		return Manifest{}, "", errors.New("librarypack: archive is incomplete")
 	}
 	var trailing [1]byte
@@ -581,18 +666,32 @@ func openGeneration(ctx context.Context, dir, packSHA256 string, limits Limits) 
 	if err != nil {
 		return nil, err
 	}
+	var clapVectors *os.File
+	if manifest.Coverage.CLAP > 0 {
+		clapVectors, err = os.Open(filepath.Join(dir, CLAPVectorsName))
+		if err != nil {
+			_ = vectors.Close()
+			return nil, err
+		}
+	}
 	dsn, err := sqliteuri.ReadOnly(filepath.Join(dir, MetadataName), true)
 	if err != nil {
 		_ = vectors.Close()
+		if clapVectors != nil {
+			_ = clapVectors.Close()
+		}
 		return nil, err
 	}
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		_ = vectors.Close()
+		if clapVectors != nil {
+			_ = clapVectors.Close()
+		}
 		return nil, err
 	}
 	db.SetMaxOpenConns(4)
-	g := &Generation{manifest: manifest, packSHA256: packSHA256, dir: dir, db: db, vectors: vectors}
+	g := &Generation{manifest: manifest, packSHA256: packSHA256, dir: dir, db: db, vectors: vectors, clapVectors: clapVectors}
 	if err := g.validate(ctx, limits); err != nil {
 		_ = g.close()
 		return nil, err
@@ -605,7 +704,7 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='format'").Scan(&format); err != nil || format != Format {
 		return errors.New("librarypack: invalid metadata database format")
 	}
-	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='version'").Scan(&version); err != nil || version != fmt.Sprint(FormatVersion) {
+	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='version'").Scan(&version); err != nil || version != fmt.Sprint(g.manifest.Version) {
 		return errors.New("librarypack: invalid metadata database version")
 	}
 	var resourcesFormat string
@@ -640,6 +739,26 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if !ok || info.Size() != wantSize {
 		return errors.New("librarypack: vector file size does not match manifest")
 	}
+	if g.manifest.Coverage.CLAP > 0 {
+		if g.clapVectors == nil {
+			return errors.New("librarypack: missing CLAP vector file")
+		}
+		clapInfo, err := g.clapVectors.Stat()
+		if err != nil {
+			return err
+		}
+		clapHeader := make([]byte, 32)
+		if _, err := io.ReadFull(g.clapVectors, clapHeader); err != nil {
+			return errors.New("librarypack: truncated CLAP vector header")
+		}
+		if string(clapHeader[:8]) != string(clapVectorMagic[:]) || binary.LittleEndian.Uint32(clapHeader[8:12]) != vectorFormatVersion || int(binary.LittleEndian.Uint32(clapHeader[12:16])) != g.manifest.CLAP.Dimension || binary.LittleEndian.Uint64(clapHeader[16:24]) != uint64(g.manifest.Coverage.CLAP) {
+			return errors.New("librarypack: CLAP vector header does not match manifest")
+		}
+		clapSize, ok := checkedVectorSize(g.manifest.CLAP.Dimension, g.manifest.Coverage.CLAP)
+		if !ok || clapInfo.Size() != clapSize {
+			return errors.New("librarypack: CLAP vector file size does not match manifest")
+		}
+	}
 	var preflightCount, maxRecord, maxJSON int
 	if err := g.db.QueryRowContext(ctx, `SELECT count(*), COALESCE(MAX(length(id)+length(artist)+length(title)+length(normalized_artist)+length(normalized_title)+length(source_identity)+length(recording_identity)+length(isrc)+length(musicbrainz_recording)+length(acoustid)+length(duration_provenance)+length(album_artist)+length(album)+length(root_alias)+length(relative_path)+length(fingerprint_contract)+length(fingerprint_format)+length(fingerprint_value)+length(fingerprint_sha256)+length(fingerprint_scope)+length(fingerprint_decoder)+length(capabilities_json)+length(raw_tags_json)+length(dsp_json)+length(missingness_json)+length(failure)+length(unsupported)),0), COALESCE(MAX(MAX(length(capabilities_json),length(raw_tags_json),length(dsp_json),length(missingness_json))),0) FROM tracks`).Scan(&preflightCount, &maxRecord, &maxJSON); err != nil {
 		return err
@@ -647,12 +766,16 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if preflightCount < 0 || preflightCount > limits.MaxTracks || maxRecord > limits.MaxRecordBytes || maxJSON > limits.MaxJSONBytes {
 		return errors.New("librarypack: metadata allocation limits exceeded")
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks ORDER BY id`)
+	clapColumn := "clap_row"
+	if g.manifest.Version == LegacyFormatVersion {
+		clapColumn = "NULL AS clap_row"
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,`+clapColumn+`,cluster_id,cluster_score,alternative_cluster,alternative_score FROM tracks ORDER BY id`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	count, vectors := 0, int64(0)
+	count, vectors, clapVectors := 0, int64(0), int64(0)
 	aliases := map[string]bool{}
 	for _, alias := range g.manifest.RootAliases {
 		aliases[alias] = true
@@ -668,9 +791,10 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 		var fingerprint AudioFingerprint
 		var capabilities, rawTags, dsp, missing string
 		var vectorRow sql.NullInt64
+		var clapVectorRow sql.NullInt64
 		var cluster, alternative sql.NullInt64
 		var clusterScore, alternativeScore float64
-		if err := rows.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.AcoustID, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &vectorRow, &cluster, &clusterScore, &alternative, &alternativeScore); err != nil {
+		if err := rows.Scan(&track.ID, &track.Artist, &track.Title, &track.NormalizedArtist, &track.NormalizedTitle, &track.SourceIdentity, &track.RecordingIdentity, &track.ISRC, &track.MusicBrainzRecording, &track.AcoustID, &track.DurationMilliseconds, &track.DurationProvenance, &track.DurationReliable, &track.AlbumArtist, &track.Album, &track.RootAlias, &track.RelativePath, &fingerprint.Contract, &fingerprint.Format, &fingerprint.Algorithm, &fingerprint.Fingerprint, &fingerprint.FingerprintSHA256, &fingerprint.Scope, &fingerprint.DecoderRuntimeID, &capabilities, &rawTags, &dsp, &missing, &track.Failure, &track.Unsupported, &vectorRow, &clapVectorRow, &cluster, &clusterScore, &alternative, &alternativeScore); err != nil {
 			return err
 		}
 		if cluster.Valid && (cluster.Int64 < 0 || math.IsNaN(clusterScore) || math.IsInf(clusterScore, 0)) || alternative.Valid && (alternative.Int64 < 0 || math.IsNaN(alternativeScore) || math.IsInf(alternativeScore, 0)) {
@@ -705,6 +829,9 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 		expectedCapabilities := []string{"metadata"}
 		if vectorRow.Valid {
 			expectedCapabilities = append(expectedCapabilities, "mert")
+		}
+		if clapVectorRow.Valid {
+			expectedCapabilities = append(expectedCapabilities, "clap")
 		}
 		if dsp != "{}" {
 			expectedCapabilities = append(expectedCapabilities, "dsp")
@@ -743,6 +870,18 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 			}
 			vectors++
 		}
+		if clapVectorRow.Valid {
+			if clapVectorRow.Int64 != clapVectors {
+				return errors.New("librarypack: noncanonical or duplicate CLAP vector row")
+			}
+			if _, ok, err := g.clapVectorAt(ctx, clapVectorRow.Int64); err != nil || !ok {
+				if err != nil {
+					return err
+				}
+				return errors.New("librarypack: missing CLAP vector")
+			}
+			clapVectors++
+		}
 		count++
 		if count > limits.MaxTracks {
 			return errors.New("librarypack: metadata row limit exceeded")
@@ -751,10 +890,10 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if count != g.manifest.Coverage.Tracks || vectors != int64(g.manifest.Coverage.MERT) {
+	if count != g.manifest.Coverage.Tracks || vectors != int64(g.manifest.Coverage.MERT) || clapVectors != int64(g.manifest.Coverage.CLAP) {
 		return errors.New("librarypack: metadata coverage does not match manifest")
 	}
-	return nil
+	return g.validateCLAPEvidenceRows(ctx, limits)
 }
 
 func checkedVectorSize(dim, count int) (int64, bool) {

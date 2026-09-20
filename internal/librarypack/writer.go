@@ -19,17 +19,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platten/playlistai/internal/core"
+
 	"github.com/klauspost/compress/zstd"
 	_ "modernc.org/sqlite"
 )
 
 var vectorMagic = [8]byte{'P', 'A', 'I', 'M', 'E', 'R', 'T', 0}
+var clapVectorMagic = [8]byte{'P', 'A', 'I', 'C', 'L', 'A', 'P', 0}
 
 // Write creates a complete pack beside out, syncs it, and atomically replaces
 // out. An error or cancellation leaves an existing destination unchanged.
 func Write(ctx context.Context, out string, pack Pack, limits Limits) (Manifest, error) {
 	limits = limits.normalized()
-	tracks, err := canonicalTracks(pack.Tracks, pack.MERT.Dimension, limits)
+	tracks, err := canonicalTracks(pack.Tracks, pack.MERT.Dimension, pack.CLAP.Dimension, limits)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -92,6 +95,7 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 
 	metadataPath := filepath.Join(work, MetadataName)
 	vectorsPath := filepath.Join(work, MERTVectorsName)
+	clapVectorsPath := filepath.Join(work, CLAPVectorsName)
 	learning, err := canonicalJSON(pack.Learning, 64<<20)
 	if err != nil {
 		return Manifest{}, fmt.Errorf("librarypack: learning payload: %w", err)
@@ -103,7 +107,7 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 	if (statistics != "{}") != (pack.StatisticsGeneration != "") {
 		return Manifest{}, errors.New("librarypack: statistics payload and generation must be present together")
 	}
-	coverage, aliases, err := writePayloadSource(ctx, metadataPath, vectorsPath, source, pack.MERT.Dimension, json.RawMessage(learning), json.RawMessage(statistics), limits)
+	coverage, aliases, err := writePayloadSource(ctx, metadataPath, vectorsPath, clapVectorsPath, source, pack.MERT.Dimension, pack.CLAP, pack.CLAPModel, json.RawMessage(learning), json.RawMessage(statistics), limits)
 	if err != nil {
 		return Manifest{}, err
 	}
@@ -116,6 +120,14 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 		f.Name, f.Kind = entry.name, entry.kind
 		files = append(files, f)
 	}
+	if coverage.CLAP > 0 {
+		f, fileErr := hashFile(ctx, clapVectorsPath)
+		if fileErr != nil {
+			return Manifest{}, fileErr
+		}
+		f.Name, f.Kind = CLAPVectorsName, "clap_float32"
+		files = append(files, f)
+	}
 	created := ""
 	if !pack.CreatedAt.IsZero() {
 		created = pack.CreatedAt.UTC().Format(time.RFC3339)
@@ -123,8 +135,9 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 	manifest := Manifest{
 		Format: Format, Version: FormatVersion, CreatedAt: created,
 		CorpusGeneration: pack.CorpusGeneration, MetadataGeneration: pack.MetadataGeneration,
-		MERTGeneration: pack.MERTGeneration, ClusterGeneration: pack.ClusterGeneration,
-		StatisticsGeneration: pack.StatisticsGeneration, Coverage: coverage, MERT: pack.MERT,
+		MERTGeneration: pack.MERTGeneration, CLAPGeneration: pack.CLAPGeneration, ClusterGeneration: pack.ClusterGeneration,
+		StatisticsGeneration: pack.StatisticsGeneration, Coverage: coverage, MERT: pack.MERT, CLAP: pack.CLAP,
+		CLAPModel:   pack.CLAPModel,
 		RootAliases: aliases, Files: files,
 	}
 	manifest.PackID = semanticID(manifest)
@@ -146,7 +159,12 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
-	if err = writeArchive(ctx, tmp, manifestRaw, metadataPath, vectorsPath); err == nil {
+	if err = writeArchive(ctx, tmp, manifestRaw, metadataPath, vectorsPath, func() string {
+		if coverage.CLAP > 0 {
+			return clapVectorsPath
+		}
+		return ""
+	}()); err == nil {
 		err = tmp.Sync()
 	}
 	if closeErr := tmp.Close(); err == nil {
@@ -169,7 +187,7 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 	return manifest, nil
 }
 
-func canonicalTracks(input []Track, dim int, limits Limits) ([]Track, error) {
+func canonicalTracks(input []Track, dim, clapDim int, limits Limits) ([]Track, error) {
 	if len(input) > limits.MaxTracks {
 		return nil, errors.New("librarypack: too many tracks")
 	}
@@ -202,11 +220,15 @@ func canonicalTracks(input []Track, dim int, limits Limits) ([]Track, error) {
 				return nil, fmt.Errorf("librarypack: invalid MERT vector for %q", t.ID)
 			}
 		}
+		if len(t.CLAP) > 0 && (clapDim <= 0 || len(t.CLAP) != clapDim || !validUnitVector(t.CLAP)) {
+			return nil, fmt.Errorf("librarypack: invalid CLAP vector for %q", t.ID)
+		}
 	}
 	return tracks, nil
 }
 
-func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, source TrackSource, dim int, learning, statistics json.RawMessage, limits Limits) (Coverage, []string, error) {
+func writePayloadSource(ctx context.Context, metadataPath, vectorsPath, clapVectorsPath string, source TrackSource, dim int, clapSpace VectorSpace, clapModel *core.AudioModelIdentity, learning, statistics json.RawMessage, limits Limits) (Coverage, []string, error) {
+	clapDim := clapSpace.Dimension
 	var coverage Coverage
 	aliases := map[string]struct{}{}
 	vectorFile, err := os.OpenFile(vectorsPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
@@ -224,6 +246,23 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 	binary.LittleEndian.PutUint32(header[8:12], vectorFormatVersion)
 	binary.LittleEndian.PutUint32(header[12:16], uint32(dim))
 	if _, err := vectorFile.Write(header); err != nil {
+		return coverage, nil, err
+	}
+	clapFile, err := os.OpenFile(clapVectorsPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return coverage, nil, err
+	}
+	clapOK := false
+	defer func() {
+		if !clapOK {
+			_ = clapFile.Close()
+		}
+	}()
+	clapHeader := make([]byte, 32)
+	copy(clapHeader, clapVectorMagic[:])
+	binary.LittleEndian.PutUint32(clapHeader[8:12], vectorFormatVersion)
+	binary.LittleEndian.PutUint32(clapHeader[12:16], uint32(clapDim))
+	if _, err := clapFile.Write(clapHeader); err != nil {
 		return coverage, nil, err
 	}
 
@@ -254,9 +293,10 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			album_artist TEXT NOT NULL, album TEXT NOT NULL,
 			root_alias TEXT NOT NULL, relative_path TEXT NOT NULL,
 			capabilities_json TEXT NOT NULL, raw_tags_json TEXT NOT NULL, dsp_json TEXT NOT NULL, missingness_json TEXT NOT NULL,
-			failure TEXT NOT NULL, unsupported TEXT NOT NULL, mert_row INTEGER,
+			failure TEXT NOT NULL, unsupported TEXT NOT NULL, mert_row INTEGER, clap_row INTEGER,
 			cluster_id INTEGER, cluster_score REAL, alternative_cluster INTEGER, alternative_score REAL
 		);
+		CREATE TABLE clap_evidence(track_id TEXT PRIMARY KEY REFERENCES tracks(id),data BLOB NOT NULL) WITHOUT ROWID;
 		CREATE INDEX tracks_isrc ON tracks(isrc) WHERE isrc<>'';
 		CREATE INDEX tracks_musicbrainz_recording ON tracks(musicbrainz_recording COLLATE NOCASE) WHERE musicbrainz_recording<>'';
 		CREATE INDEX tracks_acoustid ON tracks(acoustid COLLATE NOCASE) WHERE acoustid<>'';
@@ -291,13 +331,20 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 	if err := writeNormalizedResources(ctx, tx, learning, statistics); err != nil {
 		return coverage, nil, err
 	}
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO tracks(id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,mert_row,clap_row,cluster_id,cluster_score,alternative_cluster,alternative_score) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return coverage, nil, err
 	}
 	defer stmt.Close()
+	clapEvidenceStmt, err := tx.PrepareContext(ctx, "INSERT INTO clap_evidence(track_id,data) VALUES(?,?)")
+	if err != nil {
+		return coverage, nil, err
+	}
+	defer clapEvidenceStmt.Close()
 	vectorRow := int64(0)
+	clapRow := int64(0)
 	floatBytes := make([]byte, max(0, dim*4))
+	clapBytes := make([]byte, max(0, clapDim*4))
 	lastID := ""
 	for {
 		track, ok, nextErr := source.Next(ctx)
@@ -310,8 +357,20 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 		if coverage.Tracks >= limits.MaxTracks {
 			return coverage, nil, errors.New("librarypack: too many tracks")
 		}
-		if err := canonicalTrack(&track, lastID, dim, limits); err != nil {
+		if err := canonicalTrack(&track, lastID, dim, clapDim, limits); err != nil {
 			return coverage, nil, err
+		}
+		evidenceRaw, err := clapEvidenceJSON(track, limits)
+		if err != nil {
+			return coverage, nil, err
+		}
+		if evidence := track.CLAPEvidence; evidence != nil {
+			if evidence.Sampling != clapSpace.Sampling {
+				return coverage, nil, errors.New("librarypack: CLAP sampling differs from manifest")
+			}
+			if evidence.Model != nil && (!validCLAPModel(*evidence.Model, clapSpace) || clapModel != nil && *evidence.Model != *clapModel) {
+				return coverage, nil, errors.New("librarypack: CLAP evidence model differs from manifest")
+			}
 		}
 		lastID = track.ID
 		coverage.Tracks++
@@ -322,6 +381,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			}
 		}
 		var row any
+		var clapVectorRow any
 		if len(track.MERT) > 0 {
 			row = vectorRow
 			for j, value := range track.MERT {
@@ -332,6 +392,17 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 			}
 			vectorRow++
 			coverage.MERT++
+		}
+		if len(track.CLAP) > 0 {
+			clapVectorRow = clapRow
+			for j, value := range track.CLAP {
+				binary.LittleEndian.PutUint32(clapBytes[j*4:j*4+4], math.Float32bits(value))
+			}
+			if _, err := clapFile.Write(clapBytes); err != nil {
+				return coverage, nil, err
+			}
+			clapRow++
+			coverage.CLAP++
 		}
 		if string(track.DSP) != "{}" {
 			coverage.DSP++
@@ -353,8 +424,13 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 		if track.AudioFingerprint != nil {
 			fingerprint = *track.AudioFingerprint
 		}
-		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.NormalizedArtist, track.NormalizedTitle, track.SourceIdentity, track.RecordingIdentity, track.ISRC, track.MusicBrainzRecording, track.AcoustID, fingerprint.Contract, fingerprint.Format, fingerprint.Algorithm, fingerprint.Fingerprint, fingerprint.FingerprintSHA256, fingerprint.Scope, fingerprint.DecoderRuntimeID, track.DurationMilliseconds, track.DurationProvenance, track.DurationReliable, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
+		if _, err := stmt.ExecContext(ctx, track.ID, track.Artist, track.Title, track.NormalizedArtist, track.NormalizedTitle, track.SourceIdentity, track.RecordingIdentity, track.ISRC, track.MusicBrainzRecording, track.AcoustID, fingerprint.Contract, fingerprint.Format, fingerprint.Algorithm, fingerprint.Fingerprint, fingerprint.FingerprintSHA256, fingerprint.Scope, fingerprint.DecoderRuntimeID, track.DurationMilliseconds, track.DurationProvenance, track.DurationReliable, track.AlbumArtist, track.Album, track.RootAlias, track.RelativePath, string(capabilities), string(track.RawTags), string(track.DSP), string(track.Missingness), track.Failure, track.Unsupported, row, clapVectorRow, track.Cluster, track.ClusterScore, track.Alternative, track.AltScore); err != nil {
 			return coverage, nil, err
+		}
+		if evidenceRaw != nil {
+			if _, err := clapEvidenceStmt.ExecContext(ctx, track.ID, evidenceRaw); err != nil {
+				return coverage, nil, err
+			}
 		}
 	}
 	binary.LittleEndian.PutUint64(header[16:24], uint64(vectorRow))
@@ -368,6 +444,17 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 		return coverage, nil, err
 	}
 	vectorOK = true
+	binary.LittleEndian.PutUint64(clapHeader[16:24], uint64(clapRow))
+	if _, err := clapFile.WriteAt(clapHeader, 0); err != nil {
+		return coverage, nil, err
+	}
+	if err := clapFile.Sync(); err != nil {
+		return coverage, nil, err
+	}
+	if err := clapFile.Close(); err != nil {
+		return coverage, nil, err
+	}
+	clapOK = true
 	if err := tx.Commit(); err != nil {
 		return coverage, nil, err
 	}
@@ -391,7 +478,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath string, s
 	return coverage, outAliases, nil
 }
 
-func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
+func canonicalTrack(t *Track, previousID string, dim, clapDim int, limits Limits) error {
 	if !validIdentifier(t.ID) || strings.TrimSpace(t.Artist) == "" || strings.TrimSpace(t.Title) == "" || previousID != "" && t.ID <= previousID {
 		return fmt.Errorf("librarypack: invalid, duplicate, or unordered track %q", t.ID)
 	}
@@ -439,6 +526,9 @@ func canonicalTrack(t *Track, previousID string, dim int, limits Limits) error {
 	if len(t.MERT) > 0 && (dim <= 0 || len(t.MERT) != dim || !validUnitVector(t.MERT)) {
 		return fmt.Errorf("librarypack: invalid MERT vector for %q", t.ID)
 	}
+	if len(t.CLAP) > 0 && (clapDim <= 0 || len(t.CLAP) != clapDim || !validUnitVector(t.CLAP)) {
+		return fmt.Errorf("librarypack: invalid CLAP vector for %q", t.ID)
+	}
 	return nil
 }
 
@@ -446,7 +536,7 @@ func normalizePortableIdentity(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
-func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, metadataPath, vectorsPath string) error {
+func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, metadataPath, vectorsPath, clapVectorsPath string) error {
 	zw, err := zstd.NewWriter(destination, zstd.WithEncoderLevel(zstd.SpeedBetterCompression), zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(8<<20))
 	if err != nil {
 		return err
@@ -470,6 +560,18 @@ func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, m
 			size int64
 			open func() (io.ReadCloser, error)
 		}{item.name, info.Size(), func() (io.ReadCloser, error) { return os.Open(file) }})
+	}
+	if clapVectorsPath != "" {
+		info, statErr := os.Stat(clapVectorsPath)
+		if statErr != nil {
+			return statErr
+		}
+		file := clapVectorsPath
+		entries = append(entries, struct {
+			name string
+			size int64
+			open func() (io.ReadCloser, error)
+		}{CLAPVectorsName, info.Size(), func() (io.ReadCloser, error) { return os.Open(file) }})
 	}
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {

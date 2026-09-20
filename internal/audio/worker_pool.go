@@ -31,7 +31,7 @@ func NewWorkerPool(primary *Worker, parallelism int) *WorkerPool {
 	pool := &WorkerPool{workers: make([]*Worker, 0, parallelism), available: make(chan *Worker, parallelism)}
 	pool.workers = append(pool.workers, primary)
 	for range parallelism - 1 {
-		pool.workers = append(pool.workers, &Worker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model})
+		pool.workers = append(pool.workers, &Worker{Executable: primary.Executable, BundleDir: primary.BundleDir, Model: primary.Model, Device: primary.Device})
 	}
 	for _, worker := range pool.workers {
 		pool.available <- worker
@@ -41,6 +41,15 @@ func NewWorkerPool(primary *Worker, parallelism int) *WorkerPool {
 
 func (p *WorkerPool) Identity() core.AudioModelIdentity { return p.workers[0].Identity() }
 func (p *WorkerPool) Parallelism() int                  { return len(p.workers) }
+
+func (p *WorkerPool) Warm(ctx context.Context) error {
+	for _, worker := range p.workers {
+		if err := worker.Health(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func (p *WorkerPool) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
 	return p.call(ctx, func(worker *Worker) ([]float32, error) { return worker.EmbedAudio(ctx, pcm) })

@@ -68,7 +68,10 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 		}
 		if !explicitSelection && reference.Grounding != nil && !reference.Grounding.Truncated && len(reference.Grounding.Candidates) == 1 && reference.Grounding.Candidates[0].Kind == core.ReferenceTrack {
 			grounded := reference
-			grounded.TrackID = "musicbrainz:" + reference.Grounding.Candidates[0].ID
+			grounded.TrackID = reference.Grounding.Candidates[0].ID
+			if !strings.HasPrefix(grounded.TrackID, "local:") && !strings.HasPrefix(grounded.TrackID, "pack:") && !strings.HasPrefix(grounded.TrackID, "musicbrainz:") {
+				grounded.TrackID = "musicbrainz:" + grounded.TrackID
+			}
 			result = resolver.ResolveReference(grounded)
 			groundingResolved = result.Status == core.ResolutionResolved && result.Selected != nil
 		}
@@ -121,7 +124,7 @@ func groundingMatchesSelected(identity core.IdentityCandidate, selected core.Res
 	if core.NormalizeIdentityPart(identity.Name) != core.NormalizeIdentityPart(selected.Artist) {
 		return false
 	}
-	if identity.Kind == core.ReferenceTrack {
+	if identity.Kind == core.ReferenceTrack || identity.Kind == core.ReferenceAlbum {
 		return core.NormalizeIdentityPart(identity.Title) == core.NormalizeIdentityPart(selected.Title)
 	}
 	return identity.Kind == core.ReferenceArtist

@@ -76,8 +76,11 @@ func (m BundleManifest) validateRuntime() error {
 }
 
 func (m BundleManifest) validateRuntimeForPlatform(platform string) error {
-	if (m.Version != 1 && m.Version != 2) || !safeName(m.ID) || m.Platform != platform || m.Model.Model == "" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || m.Model.Runtime != "onnxruntime/1.26.0/cpu" || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
-		return fmt.Errorf("audio: bundle requires compatible platform, provenance, CPU runtime, preprocessing, and parity")
+	if (m.Version != 1 && m.Version != 2) || !safeName(m.ID) || m.Platform != platform || m.Model.Model == "" || m.Model.Revision == "" || m.Model.Preprocessing != PreprocessingVersion || (m.Model.Runtime != "onnxruntime/1.26.0/cpu" && m.Model.Runtime != "onnxruntime/1.26.0/cuda") || m.Model.Dimension != 512 || m.MemoryBytes <= 0 || m.License == "" || m.SourceURL == "" || !m.Parity.Valid() || m.Parity.ReferenceRevision != m.Model.Revision {
+		return fmt.Errorf("audio: bundle requires compatible platform, provenance, runtime, preprocessing, and parity")
+	}
+	if m.Backend() == "cuda" && platform != "linux/amd64" && platform != "windows/amd64" {
+		return fmt.Errorf("audio: CUDA bundles require Linux or Windows amd64")
 	}
 	if m.Version == 2 && (len(m.ONNXOutputNames) != 2 || m.ONNXOutputNames[0] == "" || m.ONNXOutputNames[1] == "") {
 		return fmt.Errorf("audio: paired ONNX output names required")
@@ -85,8 +88,9 @@ func (m BundleManifest) validateRuntimeForPlatform(platform string) error {
 	names, roles := map[string]bool{"bundle.json": true, "bundle.json.tmp": true, "active.json": true}, map[string]bool{}
 	for _, a := range m.Artifacts {
 		hash, err := hex.DecodeString(a.SHA256)
-		inline := len(a.Data) > 0 && len(a.Data) <= 1<<20 && (a.Role == "health" || a.Role == "preprocessing" || a.Role == "license")
-		if !safeName(a.Name) || names[a.Name] || roles[a.Role] || a.Role == "" || a.Size <= 0 || err != nil || len(hash) != 32 || (!inline && !strings.HasPrefix(a.URL, "https://")) || len(a.Data) > 0 && !inline {
+		inline := len(a.Data) > 0 && len(a.Data) <= 2<<20 && (a.Role == "health" || a.Role == "preprocessing" || a.Role == "license")
+		localRuntime := a.Role == "runtime" || strings.HasPrefix(a.Role, "runtime_dependency_")
+		if !safeName(a.Name) || names[a.Name] || roles[a.Role] || a.Role == "" || a.Size <= 0 || err != nil || len(hash) != 32 || (!inline && !localRuntime && !strings.HasPrefix(a.URL, "https://")) || len(a.Data) > 0 && !inline {
 			return fmt.Errorf("audio: invalid bundle artifact")
 		}
 		names[a.Name] = true
@@ -114,6 +118,16 @@ func (m BundleManifest) validateRuntimeForPlatform(platform string) error {
 		return fmt.Errorf("audio: embedding identity does not match paired model artifacts")
 	}
 	return nil
+}
+
+// Backend is part of the runtime identity. CPU and CUDA results remain
+// independently versioned unless a reviewed parity report explicitly permits
+// reuse at a higher layer.
+func (m BundleManifest) Backend() string {
+	if strings.HasSuffix(m.Model.Runtime, "/cuda") {
+		return "cuda"
+	}
+	return "cpu"
 }
 
 func (m BundleManifest) EmbeddingFingerprint() string {
@@ -238,7 +252,11 @@ func (b *BundleManager) installLocked(ctx context.Context, m BundleManifest, sou
 	if b.healthCheck != nil {
 		err = b.healthCheck(ctx, dir, m)
 	} else {
-		worker := &Worker{Executable: m.File(dir, "worker"), BundleDir: dir, Model: m.Model}
+		device := "cpu"
+		if m.Backend() == "cuda" {
+			device = "cuda"
+		}
+		worker := &Worker{Executable: m.File(dir, "worker"), BundleDir: dir, Model: m.Model, Device: device}
 		err = worker.Health(ctx)
 		_ = worker.Close()
 	}

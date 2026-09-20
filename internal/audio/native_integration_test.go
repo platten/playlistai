@@ -32,7 +32,14 @@ func TestNativeInferenceWithoutPython(t *testing.T) {
 	t.Setenv("PYTHONHOME", empty)
 	t.Setenv("PYTHONPATH", empty)
 	t.Setenv("LD_LIBRARY_PATH", empty)
-	w := &Worker{Executable: manifest.File(dir, "worker"), BundleDir: dir, Model: manifest.Model}
+	executable := manifest.File(dir, "worker")
+	if manifest.Version == 2 {
+		executable = os.Getenv("PLAYLISTAI_TEST_AUDIO_WORKER_EXECUTABLE")
+		if executable == "" {
+			t.Skip("set PLAYLISTAI_TEST_AUDIO_WORKER_EXECUTABLE for a version 2 bundle")
+		}
+	}
+	w := &Worker{Executable: executable, BundleDir: dir, Model: manifest.Model, Device: manifest.Backend()}
 	defer w.Close()
 	if err := w.Health(context.Background()); err != nil {
 		t.Fatal("native audio/text health requires an external runtime:", err)

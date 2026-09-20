@@ -17,6 +17,10 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
+	groundedSeedPool  []core.Candidate
+	requestContext    context.Context
+	packedAssessments map[string]core.AudioAssessment
+	packedModel       core.AudioModelIdentity
 	// sourceCatalogVersion identifies reusable external analysis independently
 	// of the request's composite catalog/pack fingerprint.
 	sourceCatalogVersion    string
@@ -625,6 +629,9 @@ func (o *Orchestrator) BuildWithProfile(ctx context.Context, intent core.MusicIn
 func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.RecommendationRequest) (result core.Playlist, buildErr error) {
 	local := *o
 	o = &local
+	o.requestContext = ctx
+	o.packedAssessments = make(map[string]core.AudioAssessment)
+	o.groundedSeedPool = nil
 	o.assemblyCache = &completedAssembly{}
 	o.enhancedPrepared = false
 	o.enhancedSnapshot = nil
@@ -692,6 +699,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	o.bestAvailable = intent.VerificationPolicy == core.BestAvailable
 	o.enhanced = intent.Controls.RecommendationMode == core.EnhancedHybrid
 	o.knowledge = intent.Knowledge
+	if err := o.preparePackedQueries(ctx, intent); err != nil {
+		return core.Playlist{}, err
+	}
+	defer func() { o.appendPackedEvidence(&result) }()
 	var resolutionIssues []resolution.Issue
 	if o.resolver != nil {
 		intent, resolutionIssues = resolution.Apply(o.resolver, intent)
@@ -807,9 +818,20 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 		request.Progress.Report("generation", 0, 0, note)
 	}
-	intent, anchorNotices, err := o.assessInferredAnchors(ctx, intent)
+	intent, err = o.refineArtistRepresentatives(ctx, intent)
 	if err != nil {
 		return core.Playlist{}, err
+	}
+	intent, groundedSeeds, err := o.planGroundedSeeds(ctx, intent, request, seedValue)
+	if err != nil {
+		return core.Playlist{}, err
+	}
+	var anchorNotices []core.PlaylistNotice
+	if len(groundedSeeds) == 0 {
+		intent, anchorNotices, err = o.assessInferredAnchors(ctx, intent)
+		if err != nil {
+			return core.Playlist{}, err
+		}
 	}
 	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 && !hasExplicitRetrievalReference(o.cat, intent) {
 		var kept []core.InferredAnchor
@@ -1001,6 +1023,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 
 	eligible := newEligibility(intent, references, required)
+	permitGroundedSeeds(eligible, groundedSeeds)
 	eligible.excludeRecent(recentSelections)
 	if err := eligible.validateRequired(required, intent.Constraints.ExcludeSeedArtists); err != nil {
 		return core.Playlist{}, err
@@ -1022,7 +1045,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	candidates := append(append([]core.Candidate(nil), cachedAudio...), mertAudio...)
-	if o.candidateSource == nil {
+	if o.groundedSeedPool != nil {
+		candidates = append(candidates, o.groundedSeedPool...)
+	} else if o.candidateSource == nil {
 		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
 		})
@@ -1044,6 +1069,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 		candidates = append(candidates, boundedMetadataCandidates(local, o.cfg.MaxCandidates)...)
 	}
+	candidates = append(candidates, groundedSeeds...)
 	semanticNotices := append([]core.PlaylistNotice(nil), anchorNotices...)
 	var positiveCoverage core.QueryCoverage
 	candidates, positiveCoverage, scoreNotices, err := o.scoreSemanticUnion(ctx, candidates, intent)

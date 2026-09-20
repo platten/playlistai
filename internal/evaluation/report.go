@@ -41,6 +41,11 @@ func writeVariantTable(out *strings.Builder, title string, results []VariantResu
 		fmt.Fprintf(out, "| %s | %d | %s | %s | %d | %d | %s | %d | %.3f | %s | %d |\n", item.Name, a.SuccessfulCases, estimate(item.Uncertainty["recallAtK"]), estimate(item.Uncertainty["ndcgAtK"]), a.HardConstraintViolations, a.EssentialCriterionViolations, outcomes, a.RecordingDuplicates, a.ArtistDiversity, estimate(item.Uncertainty["transitionQuality"]), a.Latency.TotalMicros)
 	}
 	fmt.Fprintln(out)
+	fmt.Fprintln(out, "| Variant | Seed top-1 | Seed top-3 | Opening relevance | Seed dead-end rate |\n|---|---:|---:|---:|---:|")
+	for _, item := range results {
+		fmt.Fprintf(out, "| %s | %s | %s | %s | %s |\n", item.Name, estimate(item.Uncertainty["seedTop1"]), estimate(item.Uncertainty["seedTop3"]), estimate(item.Uncertainty["openingRelevance"]), estimate(item.Uncertainty["seedDeadEndRate"]))
+	}
+	fmt.Fprintln(out, "\nStarting-point relevance uses separate 0–3 judgments normalized to 0–1. Unjudged prefixes are n/a. JSON includes judged coverage and source groups; source shares are not a quality target.")
 }
 func estimate(value Interval) string {
 	if value.Cases == 0 {

@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version         = "artist-first/v1"
+	Version         = "artist-first/v2"
 	MaxPromptBytes  = 8 << 10
 	MaxLexicalWords = 256
 )
@@ -62,6 +62,22 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 	if vocabulary != nil {
 		source.Recognition.GenreVocabulary = "installed"
 		source.Recognition.GenreVocabularyHash = vocabulary.ContentSHA256
+	}
+	if genres, ok := store.(genreLookup); ok {
+		if terms, err := genres.RecognitionGenres(ctx); err == nil && len(terms) > 0 {
+			combined := genrevocab.Vocabulary{}
+			if vocabulary != nil {
+				combined = *vocabulary
+				combined.Genres = append([]genrevocab.Genre(nil), vocabulary.Genres...)
+			}
+			for _, term := range terms {
+				if term = strings.TrimSpace(term); term != "" && len(term) <= 128 {
+					combined.Genres = append(combined.Genres, genrevocab.Genre{Name: term})
+				}
+			}
+			vocabulary = &combined
+			source.Recognition.GenreVocabulary += "+paipack"
+		}
 	}
 	if store == nil {
 		source.Recognition.ReferenceLookup = "unavailable"
@@ -142,7 +158,7 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 		atom, bounds, err := recognizeReference(lookupCtx, prompt, source, store, artist, previousArtistEnd, nextArtistStart)
 		if err != nil {
 			source = incomplete(source, "Artist-scoped recording lookup did not complete; artist identity matches were retained.")
-			atom, bounds = artistAtom(prompt, source, artist), [2]int{artist.start, artist.end}
+			atom, bounds = artistAtom(prompt, source, artist, store), [2]int{artist.start, artist.end}
 		}
 		source.Atoms = discardOverlappingInterpretations(source.Atoms, bounds[0], bounds[1])
 		source.Atoms = append(source.Atoms, atom)
@@ -190,6 +206,9 @@ func candidateKeys(prompt string, tokens []token) ([]string, map[string][][2]int
 }
 
 func artistContext(prompt string, candidate span) bool {
+	if strings.TrimSpace(prompt[:candidate.start]) == "" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(prompt[candidate.end:])), "going to ") {
+		return true
+	}
 	if quoted(prompt, candidate.start, candidate.end) || referencePrefix.MatchString(prompt[:candidate.start]) {
 		return true
 	}
@@ -250,6 +269,22 @@ func spanOverlapsAny(start, end int, spans []span) bool {
 }
 
 func recognizeReference(ctx context.Context, prompt string, source core.IntentTranslation, store IdentityLookup, artist span, previousArtistEnd, nextArtistStart int) (core.IntentAtom, [2]int, error) {
+	if albums, ok := store.(albumLookup); ok {
+		// Only explicit "album TITLE by ARTIST" syntax activates this port.
+		prefix := prompt[:artist.start]
+		if loc := regexp.MustCompile(`(?i)\balbum\s+(.+?)\s+by\s+$`).FindStringSubmatchIndex(prefix); loc != nil {
+			title := cleanTitle(prefix[loc[2]:loc[3]])
+			matches, truncated, err := albums.LookupArtistAlbums(ctx, artist.text, title)
+			if err != nil {
+				return core.IntentAtom{}, [2]int{}, err
+			}
+			if len(matches) > 0 {
+				atom := referenceAtom(prompt, source, loc[2], artist.end, core.ReferenceAlbum, title+" by "+artist.text)
+				atom.Grounding = &core.IdentityGrounding{Provider: "paipack", MatchedSpelling: prompt[loc[2]:artist.end], MatchType: "artist_scoped_album", SnapshotVersion: source.Recognition.ReferenceSnapshot, Candidates: matches, Truncated: truncated}
+				return atom, [2]int{loc[2], artist.end}, nil
+			}
+		}
+	}
 	for _, adjacent := range adjacentTitles(prompt, source, artist, previousArtistEnd, nextArtistStart) {
 		var queries []mbindex.ArtistRecordingQuery
 		for _, identity := range artist.artists {
@@ -279,11 +314,11 @@ func recognizeReference(ctx context.Context, prompt string, source core.IntentTr
 		if len(candidates) > 0 {
 			artistName := canonicalArtistName(artist.artists, candidates)
 			atom := referenceAtom(prompt, source, adjacent.start, adjacent.end, core.ReferenceTrack, artistName+" — "+adjacent.title)
-			atom.Grounding = &core.IdentityGrounding{Provider: "MusicBrainz", MatchedSpelling: prompt[adjacent.start:adjacent.end], MatchType: "artist_scoped_title", SnapshotVersion: store.SnapshotIdentity().IndexVersion + ":" + store.SnapshotIdentity().Snapshot, Candidates: candidates, Truncated: truncated}
+			atom.Grounding = &core.IdentityGrounding{Provider: provider(store), MatchedSpelling: prompt[adjacent.start:adjacent.end], MatchType: "artist_scoped_title", SnapshotVersion: store.SnapshotIdentity().IndexVersion + ":" + store.SnapshotIdentity().Snapshot, Candidates: candidates, Truncated: truncated}
 			return atom, [2]int{adjacent.start, adjacent.end}, nil
 		}
 	}
-	return artistAtom(prompt, source, artist), [2]int{artist.start, artist.end}, nil
+	return artistAtom(prompt, source, artist, store), [2]int{artist.start, artist.end}, nil
 }
 
 func canonicalArtistName(artists []mbindex.ArtistIdentity, recordings []core.IdentityCandidate) string {
@@ -309,7 +344,14 @@ func canonicalArtistName(artists []mbindex.ArtistIdentity, recordings []core.Ide
 	return ""
 }
 
-func artistAtom(prompt string, source core.IntentTranslation, artist span) core.IntentAtom {
+func provider(store IdentityLookup) string {
+	if named, ok := store.(interface{ RecognitionProvider() string }); ok {
+		return named.RecognitionProvider()
+	}
+	return "MusicBrainz"
+}
+
+func artistAtom(prompt string, source core.IntentTranslation, artist span, store IdentityLookup) core.IntentAtom {
 	atom := referenceAtom(prompt, source, artist.start, artist.end, core.ReferenceArtist, artist.text)
 	candidates := make([]core.IdentityCandidate, 0, len(artist.artists))
 	matchType := "exact"
@@ -319,7 +361,7 @@ func artistAtom(prompt string, source core.IntentTranslation, artist span) core.
 		}
 		candidates = append(candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: identity.MBID, Name: identity.Name, Disambiguation: identity.Disambiguation})
 	}
-	atom.Grounding = &core.IdentityGrounding{Provider: "MusicBrainz", MatchedSpelling: artist.text, MatchType: matchType, SnapshotVersion: source.Recognition.ReferenceSnapshot, Candidates: candidates, Truncated: artist.truncated}
+	atom.Grounding = &core.IdentityGrounding{Provider: provider(store), MatchedSpelling: artist.text, MatchType: matchType, SnapshotVersion: source.Recognition.ReferenceSnapshot, Candidates: candidates, Truncated: artist.truncated}
 	return atom
 }
 

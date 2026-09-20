@@ -351,15 +351,14 @@ func reciprocalRankFusion(sources []core.RetrievalEvidence, constant float64) fl
 	// Keep its strongest contribution once; provenance is still retained in
 	// Sources, but repetition is not independent recommendation evidence.
 	type query struct {
-		channel, id string
-		library     core.LibraryEvidenceSource
+		channel, id, space, scope string
 	}
 	best := make(map[query]float64, len(sources))
 	var order []query
 	for _, source := range sources {
 		key := query{channel: source.Channel, id: source.QueryID}
 		if source.LibrarySource != nil {
-			key.library = *source.LibrarySource
+			key.space, key.scope = source.LibrarySource.SpaceID, source.LibrarySource.Scope
 		}
 		value := positiveWeight(source.QueryWeight) / (constant + float64(source.Rank))
 		if previous, exists := best[key]; !exists {

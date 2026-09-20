@@ -19,6 +19,26 @@ type poolRetriever struct {
 	pageSize   int
 }
 
+func TestRecommendationPoolBoundsByEvidenceBeforeProviderOrder(t *testing.T) {
+	cat := testCatalog()
+	intent := testIntent(2)
+	cfg := DefaultConfig()
+	cfg.MaxCandidates = 2
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, cfg)
+	input := candidatesForTracks(refs(cat, "audio", "cooc", "last"))
+	input[0].Scores.RetrievalFusion = .1
+	input[0].Sources = []core.RetrievalEvidence{{LibrarySource: &core.LibraryEvidenceSource{PackID: "member"}}}
+	input[1].Scores.RetrievalFusion = .5
+	input[2].Scores.RetrievalFusion = .9
+	got, err := engine.prepareRecommendationPool(context.Background(), input, ports.RetrievalRequest{Intent: intent, AttemptedIDs: map[string]struct{}{}}, newEligibility(intent, nil, nil), nil, 2)
+	if err != nil || len(got) != 2 || got[0].Track.ID != "last" || got[1].Track.ID != "cooc" {
+		t.Fatalf("provider/source prefix dominated bound: %+v %v", got, err)
+	}
+	if input[0].Track.ID != "audio" {
+		t.Fatal("caller pool mutated")
+	}
+}
+
 func (r *poolRetriever) Retrieve(_ context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	copyRequest := request
 	copyRequest.AttemptedIDs = make(map[string]struct{}, len(request.AttemptedIDs))

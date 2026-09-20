@@ -62,7 +62,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	batchCount := recommendationBatchCount(intent, len(required))
 	target := max(0, batchCount-len(required))
 	comparisonTarget := target
-	if o.audioSession != nil && soundComparisonRequested(intent) {
+	if (o.audioSession != nil || o.enhanced && o.cfg.LibraryEvidenceEnabled) && soundComparisonRequested(intent) {
 		comparisonTarget = max(target, min(o.cfg.MaxCandidates, recommendationPoolSize(batchCount, len(required))))
 	}
 	if len(audio.Clauses(intent)) > 0 && o.audioSession == nil && !o.enhanced {
@@ -141,6 +141,8 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		return accepted, notices, nil // required tracks were already validated
 	}
 	attempts := 0
+	analysisLimited := false
+	analysisStopped := false
 	for ; attempts < iterativeAttempts; attempts++ {
 		if err := parent.Err(); err != nil {
 			return nil, notices, err
@@ -154,9 +156,21 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			notices = append(notices, core.PlaylistNotice{Code: "discovery_budget", Detail: "The search time limit was reached, not the end of the catalog. Retry to search further."})
 			break
 		}
-		if o.audioSession != nil && o.audioSession.ShouldStop() {
-			notices = append(notices, core.PlaylistNotice{Code: "analysis_limit", Detail: "Audio checking stopped or reached its analysis budget; the catalog was not exhausted."})
-			break
+		audioStopped := o.audioSession != nil && o.audioSession.ShouldStop()
+		if audioStopped {
+			if !analysisLimited {
+				analysisStopped = o.audioSession.Snapshot().Stopped
+				notices = append(notices, core.PlaylistNotice{Code: "analysis_limit", Detail: "Audio checking stopped or reached its analysis budget; the catalog was not exhausted."})
+				analysisLimited = true
+			}
+			// A preview budget does not consume already packed evidence. Explicit
+			// stops still terminate; all remaining candidates retain eligibility checks.
+			if !o.enhanced || analysisStopped {
+				break
+			}
+			// Retain queued and locally retrievable evidence, without opening a
+			// new external discovery page after the preview acquisition budget.
+			stream = nil
 		}
 		var (
 			candidate          core.Candidate
@@ -263,7 +277,13 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		if request.Progress != nil {
 			request.Progress.Report("generation", int64(min(len(accepted), target)), int64(target), "Checking candidates for the final selection")
 		}
-		if o.audioSession != nil {
+		if packed, ok := o.packedOnly(ctx, candidate.Track.ID, intent); ok {
+			audio.ApplyScores(&candidate, packed)
+		} else if audioStopped {
+			if !o.enhancedMetadataFallback(ctx, candidate, intent) {
+				continue
+			}
+		} else if o.audioSession != nil {
 			var assessment core.AudioAssessment
 			if prechecked {
 				assessment, err = preparedAssessment, preparedErr
@@ -281,6 +301,10 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 						return nil, notices, prepareErr
 					}
 					if keep {
+						if packed, ok := o.packedOnly(ctx, next.Track.ID, intent); ok {
+							prepared = append(prepared, preparedCandidate{candidate: next, assessment: packed})
+							continue
+						}
 						batch = append(batch, next)
 					}
 				}
