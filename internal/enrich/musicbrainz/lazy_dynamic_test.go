@@ -49,7 +49,9 @@ func TestDynamicOnlinePageYieldsWithoutPreviewFanout(t *testing.T) {
 	defer cat.Close()
 	intent := core.MusicIntent{Seed: "42", Count: 10, Controls: core.IntentControls{RecommendationMode: core.EnhancedHybrid}, Preferences: core.SemanticPreferences{Genres: []core.IntentPreference{{Value: "classical", Influence: core.InfluencePositive}}}}
 	stream := client.OpenCandidates(intent, cat, cat)
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Race+coverage Windows runners can spend several seconds registering the
+	// bounded page in SQLite; this remains a finite regression-test deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	track, err := stream.Next(ctx)
 	if err != nil {

@@ -196,12 +196,10 @@ func readManifest(ctx context.Context, location, checksum string) (Manifest, err
 	return m, m.Validate()
 }
 
-func verify(ctx context.Context, filename string, size int64, sum string) error {
-	f, e := os.Open(filename)
-	if e != nil {
+func verifyFile(ctx context.Context, f *os.File, size int64, sum string) error {
+	if _, e := f.Seek(0, io.SeekStart); e != nil {
 		return e
 	}
-	defer f.Close()
 	info, e := f.Stat()
 	if e != nil {
 		return e
@@ -215,6 +213,19 @@ func verify(ctx context.Context, filename string, size int64, sum string) error 
 	}
 	if !strings.EqualFold(hex.EncodeToString(h.Sum(nil)), sum) {
 		return errors.New("model file checksum mismatch")
+	}
+	_, e = f.Seek(0, io.SeekStart)
+	return e
+}
+
+func verifyRootFile(ctx context.Context, root *os.Root, name string, size int64, sum string) error {
+	f, e := root.Open(name)
+	if e != nil {
+		return e
+	}
+	defer f.Close()
+	if e = verifyFile(ctx, f, size, sum); e != nil {
+		return e
 	}
 	return nil
 }
@@ -259,14 +270,20 @@ func FetchManifest(ctx context.Context, m Manifest, manifestLocation, cacheDir, 
 	if e = os.MkdirAll(cacheDir, 0o755); e != nil {
 		return e
 	}
+	cacheRoot, e := os.OpenRoot(cacheDir)
+	if e != nil {
+		return e
+	}
+	defer cacheRoot.Close()
 	var total, done int64
 	for _, part := range m.Parts {
 		total += part.Size
 	}
 	names := make([]string, 0, len(m.Parts))
 	for _, part := range m.Parts {
-		target := filepath.Join(cacheDir, strings.ToLower(part.SHA256)+".partdata")
-		if e = verify(ctx, target, part.Size, part.SHA256); e != nil {
+		targetName := strings.ToLower(part.SHA256) + ".partdata"
+		target := filepath.Join(cacheDir, targetName)
+		if e = verifyRootFile(ctx, cacheRoot, targetName, part.Size, part.SHA256); e != nil {
 			source := part.Path
 			if !httpsURL(source) {
 				if httpsURL(manifestLocation) {
@@ -280,7 +297,7 @@ func FetchManifest(ctx context.Context, m Manifest, manifestLocation, cacheDir, 
 			if httpsURL(source) {
 				_, e = dataset.DownloadWithClient(ctx, source, target, part.Size, part.SHA256, func(n, _ int64) { p.Report("modelpack", done+n, total, part.Path) }, downloadClient(30*time.Minute))
 			} else {
-				e = copyLocal(ctx, source, target, part.Size, part.SHA256)
+				e = copyLocal(ctx, filepath.Dir(manifestLocation), filepath.FromSlash(part.Path), target, part.Size, part.SHA256)
 			}
 			if e != nil {
 				return fmt.Errorf("model part %s: %w", part.Path, e)
@@ -313,15 +330,20 @@ func FetchManifest(ctx context.Context, m Manifest, manifestLocation, cacheDir, 
 	return os.Rename(stage, destination)
 }
 
-func copyLocal(ctx context.Context, source, target string, size int64, sum string) error {
-	if e := verify(ctx, source, size, sum); e != nil {
+func copyLocal(ctx context.Context, sourceRoot, sourceName, target string, size int64, sum string) error {
+	root, e := os.OpenRoot(sourceRoot)
+	if e != nil {
 		return e
 	}
-	in, e := os.Open(source)
+	defer root.Close()
+	in, e := root.Open(sourceName)
 	if e != nil {
 		return e
 	}
 	defer in.Close()
+	if e = verifyFile(ctx, in, size, sum); e != nil {
+		return e
+	}
 	out, e := os.CreateTemp(filepath.Dir(target), ".modelpart-")
 	if e != nil {
 		return e
@@ -329,14 +351,19 @@ func copyLocal(ctx context.Context, source, target string, size int64, sum strin
 	name := out.Name()
 	defer os.Remove(name)
 	_, e = io.Copy(out, io.LimitReader(contextReader{ctx, in}, size+1))
-	closeErr := out.Close()
 	if e != nil {
+		_ = out.Close()
 		return e
 	}
-	if closeErr != nil {
-		return closeErr
+	if e = out.Sync(); e != nil {
+		_ = out.Close()
+		return e
 	}
-	if e = verify(ctx, name, size, sum); e != nil {
+	if e = verifyFile(ctx, out, size, sum); e != nil {
+		_ = out.Close()
+		return e
+	}
+	if e = out.Close(); e != nil {
 		return e
 	}
 	return os.Rename(name, target)
