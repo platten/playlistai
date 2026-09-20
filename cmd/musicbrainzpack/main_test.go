@@ -80,7 +80,7 @@ func TestRerunReusesCompletedIndexOffline(t *testing.T) {
 	if err := os.Mkdir(empty, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	args = []string{"-work-dir", root, "-bundle-dir", empty, "-source", ":invalid"}
+	args = []string{"-work-dir", root, "-bundle-dir", empty, "-source", ":invalid", "-skip-genres"}
 	if err := runWithOutput(context.Background(), args, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
