@@ -3,6 +3,7 @@ package evaluation
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ type Runner struct {
 	Semantic   ports.SemanticSearcher
 	K          int
 	library    *libraryEvaluation
+	discovery  *discoveryEvaluation
 }
 
 type variant struct {
@@ -98,6 +100,14 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) (Report, error) {
 	report.Cohorts = cohortCounts(dataset)
 	if r.library != nil {
 		report.Limitations = append(report.Limitations, "paipack comparison uses the production request overlay; isolated retrieval-stage metrics are unavailable; rules parser is not an evaluation of the desktop model parser")
+	}
+	if r.discovery != nil {
+		report.DiscoverySnapshot = r.discovery.fingerprint
+		report.Limitations = append(report.Limitations,
+			"Shared discovery ablation is offline: no MusicBrainz/Wikidata expansion, preview downloads, or new CLAP/MERT analysis is configured; installed semantic features remain identical across variants.",
+			"All discovery variants retain the same pack identity, reference resolution, and hard-eligibility annotations. Baseline disables new pack candidate retrieval and library audio ranking; it is not the historical application without pack identity data.",
+			"Metadata-only retains library_metadata retrieval and disables pack MERT/DSP ranking and sequencing. MERT-only retains library_mert/library_cluster retrieval and MERT ranking/sequencing, disabling DSP. Combined retains all production pack channels and DSP. Channel filtering follows production retrieval, so ablation latency does not measure saved computation.",
+			"Pack snapshot fingerprint: "+r.discovery.fingerprint+". No held-out judgments are inferred from missing labels; the rules parser is not an evaluation of the desktop model parser.")
 	}
 	report.Intent = r.evaluateIntent(ctx, dataset.IntentCases)
 	report.Resolution = r.evaluateResolution(dataset.ResolutionCases)
@@ -413,6 +423,14 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 	}
 	metrics.Latency.ParseMicros = time.Since(parseStarted).Microseconds()
 	intent = intent.Normalized()
+	if r.discovery != nil && intent.Seed.IsZero() {
+		sum := sha256.Sum256([]byte(dataset.Name + "\x00" + item.ID))
+		value := binary.LittleEndian.Uint64(sum[:8])
+		if value == 0 {
+			value = 1
+		}
+		intent.Seed = core.RNGSeed(fmt.Sprintf("%d", value))
+	}
 	if v.control != nil {
 		intent = v.control(intent).Normalized()
 	}
@@ -494,7 +512,7 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 			metrics.JudgedAtK++
 		}
 	}
-	if value, ok := NDCGAtK(ids, relevance, r.K); ok && (r.library == nil || metrics.JudgedAtK == metrics.ReturnedAtK) {
+	if value, ok := NDCGAtK(ids, relevance, r.K); ok && (r.library == nil && r.discovery == nil || metrics.JudgedAtK == metrics.ReturnedAtK) {
 		metrics.NDCGAtK = &value
 	}
 	metrics.HardConstraintViolations = HardConstraintViolations(ctx, playlist, r.Features, r.Catalog)
@@ -509,10 +527,16 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 	metrics.OutcomeState = outcome
 	metrics.RecordingDuplicates, metrics.ArtistDiversity, metrics.MaxArtistShare, metrics.CatalogCoverage, metrics.RecentExposureRepetition, metrics.TransitionQuality = PlaylistDiagnostics(r.Catalog, playlist, item.RecentExposures)
 	metrics.Generation = GenerationRecord{TrackIDs: ids, CatalogVersion: r.Resolver.CatalogVersion(), AlgorithmVersion: algorithmVersion(v.engine), IntentFingerprint: fingerprintJSON(intent.Normalized()), ContextFingerprint: fingerprintJSON(item.RecentExposures), IntentVersion: playlist.Intent.Version, ProfileVersion: profile.AlgorithmVersion, ProfileSnapshot: profile.SnapshotID, RNGSeed: playlist.Seed, OutcomeState: outcome}
+	if r.discovery != nil {
+		metrics.Generation.DiscoverySnapshot = r.discovery.fingerprint
+	}
 	return metrics
 }
 
 func (r Runner) variants(parameters ParameterSet) []variant {
+	if r.discovery != nil {
+		return r.discoveryVariants(parameters)
+	}
 	if r.library != nil {
 		return r.libraryVariants(parameters)
 	}

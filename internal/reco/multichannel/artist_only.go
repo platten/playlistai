@@ -40,6 +40,9 @@ func artistRestrictionConflict(intent core.MusicIntent) []core.OutcomeReason {
 		if c.Kind != "require_artist" {
 			continue
 		}
+		if core.RequiresOtherArtists(intent) {
+			return []core.OutcomeReason{{Code: "artist_only_conflict", Detail: "An artist-only playlist cannot also include other artists.", Criterion: c.Value, Action: "Choose either the artist-only restriction or the request to include other artists."}}
+		}
 		artist, ok := requiredArtist(intent, c.Value)
 		if !ok {
 			continue

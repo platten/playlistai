@@ -20,6 +20,7 @@ import (
 func testConfig(t *testing.T) config.Config {
 	t.Helper()
 	cfg := config.Default()
+	cfg.Discovery.ManifestURL = "" // unrelated app fixtures do not install shared discovery data
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
 	cfg.Catalog.ArchiveURL = "" // tests never hit the network for the catalog

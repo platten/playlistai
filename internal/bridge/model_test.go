@@ -91,6 +91,7 @@ func TestGetModelCatalogIncludesVRAMTierPicks(t *testing.T) {
 
 func TestSettingsAndWizardRecommendOnlySmallestInForcedCPUMode(t *testing.T) {
 	cfg := config.Default()
+	cfg.Discovery.ManifestURL = "" // this fixture exercises model selection independently
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
 	cfg.Catalog.ArchiveURL = ""

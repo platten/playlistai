@@ -7,11 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/platten/playlistai/internal/app"
 	"github.com/platten/playlistai/internal/core"
-	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/intent/schema"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -28,10 +26,15 @@ type StageTiming struct {
 }
 
 type ParserStatus struct {
-	Backend          string `json:"backend"`
-	RequestedBackend string `json:"requestedBackend"`
-	FallbackUsed     bool   `json:"fallbackUsed"`
-	FallbackReason   string `json:"fallbackReason"`
+	Backend             string   `json:"backend"`
+	RequestedBackend    string   `json:"requestedBackend"`
+	FallbackUsed        bool     `json:"fallbackUsed"`
+	FallbackReason      string   `json:"fallbackReason"`
+	ReferenceLookup     string   `json:"referenceLookup,omitempty"`
+	ReferenceSnapshot   string   `json:"referenceSnapshot,omitempty"`
+	GenreVocabulary     string   `json:"genreVocabulary,omitempty"`
+	GenreVocabularyHash string   `json:"genreVocabularyHash,omitempty"`
+	RecognitionNotices  []string `json:"recognitionNotices,omitempty"`
 }
 
 type GenerationStatus struct {
@@ -168,14 +171,13 @@ func (c *intentCache) clear() {
 }
 
 func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, progress ports.Progress) (parsedIntentEntry, bool, error) {
+	input = a.app.PrepareIntentInput(ctx, input)
 	key, err := a.intentCacheKey(input)
 	if err != nil {
 		return parsedIntentEntry{}, false, err
 	}
 	key = a.intentCache.scopedKey(key)
 	if entry, ok := a.intentCache.get(key); ok {
-		entry.intent = a.confirmSubmittedGenre(ctx, input, entry.intent, entry.outcome.Backend)
-		a.intentCache.put(key, entry)
 		return entry, true, nil
 	}
 	outcome, err := a.app.ParseIntentDetailed(ctx, input, progress)
@@ -185,41 +187,11 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 	if err := ctx.Err(); err != nil {
 		return parsedIntentEntry{}, false, err
 	}
-	name := rules.BareGenreQuery(input.Prompt)
-	if cached, ok := a.app.Knowledge.(ports.CachedGenreKnowledge); ok && !input.SkipMetadata && outcome.Backend == "rules" && name != "" && cached.IsCachedGenre(ctx, name) {
-		outcome.Intent.OriginalDescription = input.Prompt
-		outcome.Intent = rules.ApplyConfirmedGenre(outcome.Intent, name)
-	}
 	entry := parsedIntentEntry{intent: outcome.Intent.Normalized(), outcome: outcome}
-	entry.intent = a.confirmSubmittedGenre(ctx, input, entry.intent, outcome.Backend)
-	a.intentCache.put(key, entry)
+	if input.SourceFacts == nil || !input.SourceFacts.Recognition.Incomplete {
+		a.intentCache.put(key, entry)
+	}
 	return entry, false, nil
-}
-
-// Explicitly submitted parsing can check provider genre identity before the UI
-// offers misleading artist alternatives. Legacy preview calls remain offline.
-func (a *API) confirmSubmittedGenre(ctx context.Context, input ports.IntentInput, intent core.MusicIntent, backend string) core.MusicIntent {
-	if input.SkipMetadata {
-		return intent
-	}
-	name := rules.BareGenreQuery(input.Prompt)
-	provider, ok := a.app.Knowledge.(ports.GenreNameKnowledge)
-	if !ok || backend != "rules" || input.GenerationID == "" || name == "" || len(intent.EssentialCriteria) > 0 || len(intent.Preferences.Genres) > 0 {
-		return intent
-	}
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	graph, err := provider.GenreNames(ctx)
-	if err != nil {
-		return intent
-	}
-	for _, node := range graph.Nodes {
-		if node.ID == graph.ID(name) {
-			intent.OriginalDescription = input.Prompt
-			return rules.ApplyConfirmedGenre(intent, name)
-		}
-	}
-	return intent
 }
 
 func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {
@@ -228,15 +200,16 @@ func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {
 
 func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVersion int) (string, error) {
 	payload := struct {
-		SkipMetadata   bool            `json:"skipMetadata"`
-		Prompt         string          `json:"prompt"`
-		SessionID      string          `json:"sessionId"`
-		ParserIdentity string          `json:"parserIdentity"`
-		SchemaVersion  int             `json:"schemaVersion"`
-		NowPlaying     *core.TrackRef  `json:"nowPlaying"`
-		RecentTracks   []core.TrackRef `json:"recentTracks"`
-		Locale         string          `json:"locale"`
-	}{input.SkipMetadata, input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale}
+		SkipMetadata        bool            `json:"skipMetadata"`
+		Prompt              string          `json:"prompt"`
+		SessionID           string          `json:"sessionId"`
+		ParserIdentity      string          `json:"parserIdentity"`
+		SchemaVersion       int             `json:"schemaVersion"`
+		NowPlaying          *core.TrackRef  `json:"nowPlaying"`
+		RecentTracks        []core.TrackRef `json:"recentTracks"`
+		Locale              string          `json:"locale"`
+		RecognitionIdentity string          `json:"recognitionIdentity"`
+	}{input.SkipMetadata, input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale, input.RecognitionIdentity}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -281,8 +254,15 @@ func generationIdentity(intent core.MusicIntent, catalogVersion, algorithmVersio
 }
 
 func parserStatus(outcome app.ParseOutcome) ParserStatus {
+	notices := []string(nil)
+	if outcome.Recognition.Incomplete {
+		notices = append(notices, outcome.Recognition.Notices...)
+	}
 	return ParserStatus{
 		Backend: outcome.Backend, RequestedBackend: outcome.RequestedBackend,
 		FallbackUsed: outcome.FallbackUsed, FallbackReason: outcome.FallbackReason,
+		ReferenceLookup: outcome.Recognition.ReferenceLookup, ReferenceSnapshot: outcome.Recognition.ReferenceSnapshot,
+		GenreVocabulary: outcome.Recognition.GenreVocabulary, GenreVocabularyHash: outcome.Recognition.GenreVocabularyHash,
+		RecognitionNotices: notices,
 	}
 }

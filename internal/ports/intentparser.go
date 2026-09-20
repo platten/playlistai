@@ -18,6 +18,10 @@ type IntentInput struct {
 	NowPlaying   *core.TrackRef  // resolves "like this"
 	RecentTracks []core.TrackRef // resolves "keep it going"
 	Locale       string
+	// RecognitionIdentity pins every offline resource that affected source
+	// recognition. It is computed before parse-cache lookup and is never sent as
+	// user-visible language to a model.
+	RecognitionIdentity string
 	// SourceFacts is the immutable extraction snapshot shared by every model
 	// attempt for this request. Callers may omit it; the local client prepares it.
 	SourceFacts *core.IntentTranslation

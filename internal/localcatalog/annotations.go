@@ -20,7 +20,8 @@ var annotationKinds = map[string]string{
 	"date": "edition_date", "year": "edition_date",
 	"originaldate": "original_release_date", "originalreleasedate": "original_release_date", "original_release_date": "original_release_date",
 	"artist": "artist_credit", "artists": "artist_credit", "album_artist": "album_artist", "albumartist": "album_artist",
-	"composer": "composer", "work": "work", "musicbrainz_work": "work", "movement": "movement", "part": "movement",
+	"musicbrainz_artistid": "artist_mbid",
+	"composer":             "composer", "work": "work", "musicbrainz_work": "work", "movement": "movement", "part": "movement",
 	"track": "track_number", "tracknumber": "track_number", "disc": "disc_number", "discnumber": "disc_number",
 	"releasetype": "release_type", "release_type": "release_type", "musicbrainz_album_type": "release_type",
 	"replaygain_track_gain": "replaygain_track_gain", "replaygain_album_gain": "replaygain_album_gain",
@@ -28,7 +29,7 @@ var annotationKinds = map[string]string{
 }
 
 func annotations(raw json.RawMessage) []core.MetadataAnnotation {
-	var tags map[string]string
+	var tags map[string]json.RawMessage
 	if json.Unmarshal(raw, &tags) != nil {
 		return nil
 	}
@@ -39,8 +40,11 @@ func annotations(raw json.RawMessage) []core.MetadataAnnotation {
 	sort.Strings(keys)
 	var result []core.MetadataAnnotation
 	for _, key := range keys {
-		value := strings.TrimSpace(tags[key])
-		if value == "" {
+		var scalar string
+		var values []string
+		if json.Unmarshal(tags[key], &scalar) == nil {
+			values = []string{scalar}
+		} else if json.Unmarshal(tags[key], &values) != nil {
 			continue
 		}
 		normalized := strings.ToLower(strings.NewReplacer(" ", "_", "-", "_").Replace(strings.TrimSpace(key)))
@@ -52,9 +56,25 @@ func annotations(raw json.RawMessage) []core.MetadataAnnotation {
 		if kind == "" {
 			continue
 		}
-		result = append(result, core.MetadataAnnotation{Kind: kind, Value: value, SourceKey: key, Origin: "embedded_tag", Scale: scale})
+		seen := map[string]bool{}
+		for _, value := range values {
+			value = strings.TrimSpace(value)
+			if value == "" || seen[value] {
+				continue
+			}
+			seen[value] = true
+			result = append(result, core.MetadataAnnotation{Kind: kind, Value: value, SourceKey: key, Origin: "embedded_tag", Scale: scale})
+		}
 	}
 	return result
+}
+
+func supportsAnnotationCriterion(criterion core.MusicalCriterion) bool {
+	switch criterion.Kind {
+	case "genre", "style", "mood", "language", "original_release_date", "edition_date":
+		return true
+	}
+	return false
 }
 
 func (c *Catalog) Annotations(ctx context.Context, id string) []core.MetadataAnnotation {

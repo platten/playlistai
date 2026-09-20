@@ -570,31 +570,31 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 	snapshot.Candidates = append(snapshot.Candidates, meta.Ref)
 }
 
-// addDynamicKnowledgeRecording admits a MusicBrainz recording outside the
-// Deej-AI catalog only when Deezer independently corroborates its identity and
-// supplies a preview. The registered metadata then lets the ordinary CLAP,
-// MERT, acoustic-evidence, eligibility, ranking and history paths handle it.
+// addDynamicKnowledgeRecording keeps recording identity independent of preview
+// availability. Registration never resolves or downloads a preview: the audio
+// service corroborates preview identity only when it checks a candidate. Keeping
+// the provider recording ID also makes discovery independent of preview outages.
 func (c *Client) addDynamicKnowledgeRecording(ctx context.Context, r mbRecording, cat ports.Catalog, snapshot *core.KnowledgeSnapshot) error {
 	registrar, ok := cat.(ports.DynamicTrackCatalog)
-	if !ok || c.candidatePreview == nil || len(r.ArtistCredit) == 0 || r.ID == "" {
+	if !ok || len(r.ArtistCredit) == 0 || r.ID == "" {
 		return nil
 	}
-	ref := core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title}
-	track := knowledgeTrack(r, ref)
-	resolved, err := c.candidatePreview.ResolveAudioPreview(ctx, ref, track)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	identity := resolved.Identity
-	if identity.Status != core.ResolutionResolved || identity.Provider != "deezer" || identity.ProviderID == "" || resolved.URL == "" {
+	ref := core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title}
+	if ref.Artist == "" {
+		ref.Artist = r.ArtistCredit[0].Artist.Name
+	}
+	// Search labels alone cannot establish identity or musical suitability.
+	if !contextMBID.MatchString(r.ID) || !contextMBID.MatchString(r.ArtistCredit[0].Artist.ID) || ref.Artist == "" || ref.Title == "" {
 		return nil
 	}
-	ref.ID = "deezer:" + identity.ProviderID
-	track.Ref = ref
-	if identity.ISRC != "" {
-		track.ISRC = identity.ISRC
-	}
-	meta := core.TrackMeta{Ref: ref, PreviewURL: resolved.URL, Album: track.Album, AlbumReliable: track.Album != "", FullRecordingDuration: track.FullRecordingDuration}
+	ref.ID = "musicbrainz:" + strings.ToLower(r.ID)
+	ref.RecordingIdentity = ref.ID
+	track := knowledgeTrack(r, ref)
+	meta := core.TrackMeta{Ref: ref, Album: track.Album, AlbumReliable: track.Album != "", FullRecordingDuration: track.FullRecordingDuration,
+		MusicBrainzRecording: strings.ToLower(r.ID), ISRC: track.ISRC, SourceIdentity: "musicbrainz:" + strings.ToLower(r.ID)}
 	if err := registrar.RegisterDynamicTrack(meta); err != nil {
 		return err
 	}

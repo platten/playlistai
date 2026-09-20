@@ -347,9 +347,31 @@ func normalizedWeights(audio, track float64) [2]float32 {
 }
 
 func reciprocalRankFusion(sources []core.RetrievalEvidence, constant float64) float64 {
-	var score float64
+	// Multiple files or merged caches can repeat the same logical query hit.
+	// Keep its strongest contribution once; provenance is still retained in
+	// Sources, but repetition is not independent recommendation evidence.
+	type query struct {
+		channel, id string
+		library     core.LibraryEvidenceSource
+	}
+	best := make(map[query]float64, len(sources))
+	var order []query
 	for _, source := range sources {
-		score += positiveWeight(source.QueryWeight) / (constant + float64(source.Rank))
+		key := query{channel: source.Channel, id: source.QueryID}
+		if source.LibrarySource != nil {
+			key.library = *source.LibrarySource
+		}
+		value := positiveWeight(source.QueryWeight) / (constant + float64(source.Rank))
+		if previous, exists := best[key]; !exists {
+			order = append(order, key)
+			best[key] = value
+		} else if value > previous {
+			best[key] = value
+		}
+	}
+	var score float64
+	for _, key := range order {
+		score += best[key]
 	}
 	return score
 }

@@ -188,3 +188,46 @@ it("generates exact artist references without opening the dialog", async () => {
   expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
 });
+
+it("shows provider identities and requires a more specific prompt for a homonymous artist", async () => {
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([{
+    kind: "artist", query: "Shared Name", status: "ambiguous", inferred: false,
+    groundingCandidates: [
+      { kind: "artist", id: "artist-a", name: "Shared Name", disambiguation: "US group" },
+      { kind: "artist", id: "artist-b", name: "Shared Name", disambiguation: "UK group" },
+    ],
+    alternatives: [],
+  }])));
+  renderScreen();
+  await submit("Music by Shared Name");
+
+  expect(await screen.findByText(/MusicBrainz has more than one identity/)).toBeTruthy();
+  const identities = screen.getByRole("list", { name: "MusicBrainz identities for Shared Name" });
+  expect(within(identities).getByText("Shared Name (US group)")).toBeTruthy();
+  expect(within(identities).getByText("Shared Name (UK group)")).toBeTruthy();
+  expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+
+  expect(screen.queryByRole("combobox", { name: /Choose the intended artist/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  expect(onGenerated).not.toHaveBeenCalled();
+  expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+});
+
+it("shows an incomplete offline recognition notice without blocking generation", async () => {
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([])));
+  bridge.GenerateFromPromptWithContext.mockImplementation((_text, context) => completed({
+    request: {}, name: "Playlist",
+    playlist: { generationId: context.generationId, tracks: [], notices: [], outcome: { state: "needs_clarification", reasons: [] }, status: {
+      state: "needs_clarification", reasons: [], partialReasons: [],
+      parser: { recognitionNotices: ["Reference lookup reached its request limit; text-only parsing was used."] },
+    } },
+    status: {
+      state: "needs_clarification", reasons: [], partialReasons: [],
+      parser: { recognitionNotices: ["Reference lookup reached its request limit; text-only parsing was used."] },
+    },
+  }));
+  renderScreen();
+  await submit("Music by an unusually long artist name");
+  expect(await screen.findByText("Reference lookup reached its request limit; text-only parsing was used.")).toBeTruthy();
+  expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
+});

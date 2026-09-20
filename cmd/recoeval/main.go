@@ -10,6 +10,7 @@ import (
 
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/evaluation"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/librarypack"
@@ -29,7 +30,8 @@ func run() error {
 	flag := flagpkg.NewFlagSet("recoeval", flagpkg.ContinueOnError)
 	var datasetPath, catalogDir, configPath, outputPath, markdownPath, blindPath, keyPath, left, right, blindSeed string
 	var k int
-	var packPath, libraryMode string
+	var packPath, libraryMode, discoveryState string
+	flag.StringVar(&discoveryState, "discovery-state", "", "installed shared discovery manager directory for offline baseline/metadata/MERT/combined comparison")
 	flag.StringVar(&packPath, "paipack", "", "optional pack for production library evidence off/on comparison")
 	flag.StringVar(&libraryMode, "library-mode", "combined", "paipack source policy: combined or library_only")
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
@@ -49,10 +51,13 @@ func run() error {
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
 	}
+	if discoveryState != "" && packPath != "" {
+		return fmt.Errorf("-discovery-state and -paipack are mutually exclusive")
+	}
 	if packPath != "" && libraryMode != string(localcatalog.ModeCombined) && libraryMode != string(localcatalog.ModeLibraryOnly) {
 		return fmt.Errorf("-library-mode must be combined or library_only")
 	}
-	if packPath != "" {
+	if packPath != "" || discoveryState != "" {
 		explicit := map[string]bool{}
 		flag.Visit(func(f *flagpkg.Flag) { explicit[f.Name] = true })
 		if !explicit["left"] {
@@ -60,6 +65,14 @@ func run() error {
 		}
 		if !explicit["right"] {
 			right = "library_evidence_on"
+		}
+		if discoveryState != "" {
+			if !explicit["left"] {
+				left = "discovery_baseline"
+			}
+			if !explicit["right"] {
+				right = "discovery_combined"
+			}
 		}
 	}
 	cfg := config.Default()
@@ -100,6 +113,22 @@ func run() error {
 		return err
 	}
 	runner := evaluation.Runner{Catalog: cat, Resolver: cat, Similarity: sim, Parser: rules.New(), Features: featureStore, Semantic: searcher, K: k}
+	if discoveryState != "" {
+		if _, err := os.Stat(filepath.Join(discoveryState, "active.json")); err != nil {
+			return fmt.Errorf("installed discovery activation record: %w", err)
+		}
+		manager, err := discoveryasset.Open(context.Background(), discoveryState)
+		if err != nil {
+			return err
+		}
+		defer manager.Close()
+		var release func()
+		runner, release, err = runner.WithDiscovery(context.Background(), manager)
+		if err != nil {
+			return err
+		}
+		defer release()
+	}
 	if packPath != "" {
 		// Evaluation owns an isolated temporary import. Never mutate the user's
 		// active library, mappings, listening history, or indexing state.

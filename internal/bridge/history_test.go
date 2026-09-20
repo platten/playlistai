@@ -133,6 +133,41 @@ func TestSavedPlaylistPreservesFullWidthSeed(t *testing.T) {
 	}
 }
 
+func TestSavedPlaylistPreservesIdentityGrounding(t *testing.T) {
+	t.Parallel()
+	c := newLoadedContainer(t)
+	api := New(c, nil)
+	grounding := &core.IdentityGrounding{
+		Provider: "MusicBrainz", MatchedSpelling: "Björk", MatchType: "canonical", SnapshotVersion: "musicbrainz-offline/v1:20260920-120000",
+		Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "artist-mbid", Name: "Björk"}},
+	}
+	intent := core.MusicIntent{
+		Version: core.CurrentIntentVersion, OriginalDescription: "music by Björk",
+		References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Björk", Influence: core.InfluencePositive, Grounding: grounding}},
+		Translation: &core.IntentTranslation{Version: "source-atoms/v8", OriginalText: "music by Björk", Atoms: []core.IntentAtom{{
+			ID: "recognition:9:15", Kind: "artist", Value: "Björk", Scope: "playlist", Polarity: "positive", Strength: "preferred", Grounding: grounding,
+			Evidence: []core.SourceEvidence{{Text: "Björk", Start: 9, End: 15, Explicit: true}},
+		}}},
+		Controls: core.IntentControls{TotalTrackCount: 10, AudioWeight: .5, CooccurrenceWeight: .5},
+	}.Normalized()
+	requestJSON, err := json.Marshal(BuildPlaylistRequest{Version: core.CurrentIntentVersion, Intent: intent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := c.History.Save(context.Background(), history.Record{Name: "Grounded", Prompt: intent.OriginalDescription, RequestJSON: requestJSON, TracksJSON: []byte("[]")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := api.LoadSavedPlaylist(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := loaded.Request.Intent.References[0]
+	if ref.Grounding == nil || ref.Grounding.Candidates[0].ID != "artist-mbid" || loaded.Request.Intent.Translation == nil || loaded.Request.Intent.Translation.Atoms[0].Grounding == nil {
+		t.Fatalf("saved identity grounding changed: %+v", loaded.Request.Intent)
+	}
+}
+
 func TestSanitizeTitle(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{

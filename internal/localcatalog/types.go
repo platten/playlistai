@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
 )
 
@@ -26,8 +27,9 @@ var (
 )
 
 // Provenance identifies the immutable evidence generation behind a result.
-// Source is always local_library; it is never a streaming-service identity.
+// Source distinguishes personal local_library and public shared_pack data.
 type Provenance struct {
+	ProfileGeneration  string `json:"profileGeneration,omitempty"`
 	Source             string `json:"source"`
 	SourceID           string `json:"sourceId"`
 	PackID             string `json:"packId"`
@@ -91,6 +93,7 @@ type Candidate struct {
 }
 
 type MetadataQuery struct {
+	Criterion  *core.MusicalCriterion
 	Text       string
 	Limit      int
 	ExcludeIDs map[string]struct{}

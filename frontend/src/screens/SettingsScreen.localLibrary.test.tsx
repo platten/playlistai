@@ -16,6 +16,7 @@ vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("../components/RecommendationSettings", () => ({ RecommendationSettings: () => <div>Recommendation settings fixture</div> }));
 vi.mock("../components/MusicAnalysisCard", () => ({ MusicAnalysisCard: () => null }));
 vi.mock("../components/EnhancedAudioCard", () => ({ EnhancedAudioCard: () => null }));
+vi.mock("../components/DiscoveryDataCard", () => ({ DiscoveryDataCard: () => null }));
 vi.mock("../components/MusicMetadataCard", () => ({ MusicMetadataCard: () => null }));
 
 function completed<T>(value: T) {

@@ -8,6 +8,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetAnalysisEnabled", "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
   "GetEnhancedAnalysisStatus", "InstallRecommendedMERT",
+  "GetDiscoveryAssetStatus", "InstallDiscoveryAsset", "CancelDiscoveryAssetInstall", "CheckDiscoveryAssetUpdate",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
@@ -22,6 +23,7 @@ beforeEach(() => {
   Object.values(api).forEach((fn) => fn.mockReset().mockImplementation(() => completed(null)));
   api.GetCatalogInfo.mockImplementation(() => completed({ loaded: true }));
   api.GetMetadataBundleInfo.mockImplementation(() => completed({ musicBrainzConfigured: false }));
+  api.GetDiscoveryAssetStatus.mockImplementation(() => completed({ configured: false, installed: false }));
   api.GetPreviewProviderName.mockImplementation(() => completed("off"));
 });
 afterEach(cleanup);
@@ -33,6 +35,21 @@ async function start(onDone = vi.fn()) {
   fireEvent.click(await screen.findByRole("button", { name: "Get started" }));
   await act(async () => {});
 }
+
+it("requires discovery activation during an existing-user repair", async () => {
+  const pending = deferred();
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["discovery"], ["discovery"], true)));
+  api.GetDiscoveryAssetStatus.mockImplementation(() => completed({ configured: true, installed: false, tracks: 0 }));
+  api.InstallDiscoveryAsset.mockReturnValue(pending.promise);
+  render(<FirstRunWizard onDone={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Download or resume discovery data" }));
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => { pending.resolve({ configured: true, installed: true, tracks: 20, version: "v1" }); });
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false);
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus([], [], true)));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("You're set up");
+});
 
 it("omits every ready asset screen without changing saved choices or downloading", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus([])));

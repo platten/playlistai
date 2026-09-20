@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
@@ -72,6 +73,17 @@ func TestSpellingChoiceMustBeAnOfferedCatalogAlternative(t *testing.T) {
 		if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
 			t.Fatal("invalid choice accepted", choice)
 		}
+	}
+}
+
+func TestCatalogChoiceCannotBypassAmbiguousProviderGrounding(t *testing.T) {
+	m := core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "christrian loeffler", Grounding: &core.IdentityGrounding{
+		Provider: "MusicBrainz", MatchedSpelling: "christrian loeffler", MatchType: "alias", SnapshotVersion: "snapshot",
+		Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "artist-a", Name: "Christian Löffler"}, {Kind: core.ReferenceArtist, ID: "artist-b", Name: "Christian Löffler"}},
+	}}}}
+	choice := ResolutionSelection{Kind: core.ReferenceArtist, Query: "christrian loeffler", TrackID: "haul"}
+	if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil || !strings.Contains(err.Error(), "provider identities") {
+		t.Fatalf("forged provider-ambiguous selection accepted: %v", err)
 	}
 }
 

@@ -253,3 +253,18 @@ func TestMusicBrainzBackoffDoesNotBlockDeezerRecovery(t *testing.T) {
 		t.Fatalf("MusicBrainz outage blocked independent fallback: %+v, %v, calls=%d", got.References, err, calls.Load())
 	}
 }
+
+func TestGroundedSeedArtistUsesPinnedIdentity(t *testing.T) {
+	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Alias", Grounding: &core.IdentityGrounding{
+		Provider: "MusicBrainz", MatchedSpelling: "Alias", MatchType: "alias", SnapshotVersion: "snapshot",
+		Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "artist-mbid", Name: "Canonical Artist"}},
+	}}
+	artist, ok := groundedSeedArtist(ref)
+	if !ok || artist.ID != "artist-mbid" || artist.Name != "Canonical Artist" {
+		t.Fatalf("grounded identity was ignored: %+v %v", artist, ok)
+	}
+	ref.Grounding.Candidates = append(ref.Grounding.Candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: "other", Name: "Alias"})
+	if _, ok := groundedSeedArtist(ref); ok {
+		t.Fatal("ambiguous grounding selected an artist")
+	}
+}

@@ -138,6 +138,11 @@ type mertAudioRetriever struct {
 	cfg        Config
 }
 
+func (r *mertAudioRetriever) SupportsIntentMetadata() bool {
+	metadata, ok := r.base.(interface{ SupportsIntentMetadata() bool })
+	return ok && metadata.SupportsIntentMetadata()
+}
+
 func (r *mertAudioRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	raw, err := r.base.Retrieve(ctx, request)
 	if err != nil {

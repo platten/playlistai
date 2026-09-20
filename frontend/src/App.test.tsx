@@ -21,6 +21,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
   "ClearTasteData", "ClearPlaylistHistory", "SetDebugLogging", "OpenLogWindow", "ResetAssets",
   "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "GetInstalledModels", "GetModelRecommendations", "CompleteOnboarding",
   "GetPreviewURL", "GetEnhancedAnalysisStatus",
+  "GetDiscoveryAssetStatus", "InstallDiscoveryAsset", "CancelDiscoveryAssetInstall", "CheckDiscoveryAssetUpdate",
   "GetLocalLibraryStatus", "ChooseLocalLibraryPack", "CancelLocalLibraryImport", "SetLocalLibraryMode", "SetLocalLibraryRoot", "RemoveLocalLibrary",
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
@@ -66,6 +67,7 @@ beforeEach(() => {
   bridge.GetRecommendationMode.mockImplementation(() => completed("acousticbrainz_first"));
   bridge.GetPreviewProviderName.mockImplementation(() => completed("deezer"));
   bridge.GetDebugLogging.mockImplementation(() => completed(false));
+  bridge.GetDiscoveryAssetStatus.mockImplementation(() => completed({ configured: false, installed: false, version: "", packIds: [], tracks: 0, downloadBytes: 0, error: "" }));
   bridge.GetLocalLibraryStatus.mockImplementation(() => completed({ installed: false, mode: "combined", coverage: {}, roots: [] }));
   bridge.ParseIntentWithContext.mockImplementation(() => completed({ ...fixture().request.intent, creativity: 0.5, noise: 0.1, lookback: 3, artistsExclude: [], intent: fixture().request.intent, resolutionIssues: [], seeds: [], requiredTracks: [] }));
   bridge.GenerateFromPromptWithContext.mockImplementation((_prompt, context) => {

@@ -99,3 +99,22 @@ func TestDreamyIsMoodWithoutGuessedProviderClassifier(t *testing.T) {
 		t.Fatalf("dreamy was unknown or given an unreviewed classifier: %+v", c)
 	}
 }
+
+func TestTrebleVocabularyUsesBandEnergyNotBrightness(t *testing.T) {
+	for _, tt := range []struct {
+		alias, id, mapping string
+	}{
+		{"treble-heavy", "texture.treble-emphasis", "treble_energy_ratio:positive"},
+		{"more treble", "texture.treble-emphasis", "treble_energy_ratio:positive"},
+		{"less treble", "texture.reduced-treble", "treble_energy_ratio:negative"},
+		{"treble roll-off", "texture.reduced-treble", "treble_energy_ratio:negative"},
+	} {
+		concept, ok := Find("texture", tt.alias)
+		if !ok || concept.ID != tt.id || !reflect.DeepEqual(concept.Providers.DSP, []string{tt.mapping}) {
+			t.Fatalf("treble alias %q: %+v", tt.alias, concept)
+		}
+		if slices.Contains(concept.Providers.DSP, "spectral_centroid_hz:positive") || slices.Contains(concept.Providers.DSP, "spectral_centroid_hz:negative") {
+			t.Fatalf("treble alias %q was mapped to brightness: %+v", tt.alias, concept)
+		}
+	}
+}

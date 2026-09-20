@@ -24,7 +24,7 @@ def key(value: str) -> str:
 
 
 def validate(document: dict) -> None:
-    if document.get("version") != "music-concepts/v3":
+    if document.get("version") != "music-concepts/v4":
         raise ValueError("unsupported registry version; update both Go and preparation contracts")
     concepts = document.get("concepts", [])
     if not concepts or not document.get("provenance"):

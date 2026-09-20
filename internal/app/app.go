@@ -14,11 +14,11 @@ import (
 
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/export/soundiizcsv"
 	"github.com/platten/playlistai/internal/export/soundiizhandoff"
 	"github.com/platten/playlistai/internal/history"
-	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/intent/rules"
@@ -35,6 +35,8 @@ import (
 type Container struct {
 	catalogLoadMu     sync.Mutex
 	metadataInstallMu sync.Mutex
+	discoveryMu       sync.Mutex
+	discovery         *discoveryasset.Manager
 	analysis          analysisState
 	enhanced          enhancedState
 	cfg               config.Config
@@ -161,13 +163,12 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 // enrichment (the review screen still works, just with no ISRC/metadata).
 func (c *Container) wireEnrichExport() {
 	mb, err := musicbrainz.New(musicbrainz.Config{
-		AcousticBrainzURL:        musicbrainz.AcousticBrainzURL,
-		OfflineIndexPath:         mbindex.ActivePath(filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")),
-		UserAgent:                c.cfg.Enrich.UserAgent,
-		CachePath:                c.cfg.Enrich.CachePath,
-		MirrorURL:                c.cfg.Enrich.MirrorURL,
-		MinScore:                 c.cfg.Enrich.MinScore,
-		CandidatePreviewResolver: deezer.New(deezer.Config{}),
+		AcousticBrainzURL: musicbrainz.AcousticBrainzURL,
+		OfflineIndexPath:  mbindex.ActivePath(filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")),
+		UserAgent:         c.cfg.Enrich.UserAgent,
+		CachePath:         c.cfg.Enrich.CachePath,
+		MirrorURL:         c.cfg.Enrich.MirrorURL,
+		MinScore:          c.cfg.Enrich.MinScore,
 	})
 	if err != nil {
 		c.log.Warn("enricher unavailable; continuing without MusicBrainz", "err", err)
@@ -342,6 +343,7 @@ type ParseOutcome struct {
 	RequestedBackend string
 	FallbackUsed     bool
 	FallbackReason   string
+	Recognition      core.RecognitionStatus
 }
 
 // ParseIntentDetailed preserves fallback and cancellation information for the
@@ -351,8 +353,8 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 	active, rp := c.parser, c.rulesParser
 	c.mu.Unlock()
 	requested := active.Info().Backend
-	source := lexicon.Extract(in.Prompt)
-	in.SourceFacts = &source
+	in = c.PrepareIntentInput(ctx, in)
+	source := in.SourceFacts
 	if err := ctx.Err(); err != nil {
 		return ParseOutcome{}, err
 	}
@@ -365,13 +367,13 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 		m, err = active.Parse(ctx, in)
 	}
 	if err == nil {
-		return ParseOutcome{Intent: m, Backend: active.Info().Backend, RequestedBackend: requested}, nil
+		return ParseOutcome{Intent: m, Backend: active.Info().Backend, RequestedBackend: requested, Recognition: source.Recognition}, nil
 	}
 	if ctx.Err() != nil {
-		return ParseOutcome{Backend: requested, RequestedBackend: requested}, ctx.Err()
+		return ParseOutcome{Backend: requested, RequestedBackend: requested, Recognition: source.Recognition}, ctx.Err()
 	}
 	if active.Info().Backend == "rules" {
-		return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested}, err
+		return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, Recognition: source.Recognition}, err
 	}
 	c.log.Warn("intent parser fallback", "from", requested, "to", "rules")
 
@@ -381,9 +383,9 @@ func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInpu
 	m, fallbackErr := rp.Parse(ctx, in)
 	reason := parserFallbackReason(err)
 	if fallbackErr != nil {
-		return ParseOutcome{Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason}, fallbackErr
+		return ParseOutcome{Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason, Recognition: source.Recognition}, fallbackErr
 	}
-	return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason}, nil
+	return ParseOutcome{Intent: m, Backend: "rules", RequestedBackend: requested, FallbackUsed: true, FallbackReason: reason, Recognition: source.Recognition}, nil
 }
 
 func parserFallbackReason(err error) string {

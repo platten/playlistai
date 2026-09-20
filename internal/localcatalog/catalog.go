@@ -3,6 +3,7 @@ package localcatalog
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 var namespacePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
@@ -29,9 +31,13 @@ var namespacePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 // pack to absolute roots on this machine. Missing roots are accepted as
 // offline; relative roots and aliases absent from the manifest are rejected.
 type Options struct {
-	SourceID     string
-	RootMappings map[string]string
-	PageSize     int
+	// ProfileGeneration is the verified companion SHA-256 for shared packs.
+	ProfileGeneration string
+	ProfilePath       string
+	Shared            bool
+	SourceID          string
+	RootMappings      map[string]string
+	PageSize          int
 }
 
 // Catalog owns one librarypack lease. Close releases it after in-flight calls
@@ -45,6 +51,7 @@ type Catalog struct {
 	pageSize   int
 	rootMap    map[string]string
 	metadata   *librarylearn.MetadataModel
+	profiles   *sql.DB
 	dspStats   *librarylearn.DSPStatisticsModel
 	indexes    *derivedIndexes
 	closeIndex func()
@@ -101,6 +108,12 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 		prefix: "local:" + options.SourceID + ":", pageSize: pageSize, rootMap: rootMap,
 		budget: acquireQueryBudget(generation),
 	}
+	if options.Shared {
+		catalog.prefix = "pack:" + options.SourceID + ":"
+		catalog.provenance.Source = "shared_pack"
+		catalog.provenance.ProfileGeneration = options.ProfileGeneration
+		catalog.rootMap = nil
+	}
 	indexes, closeIndex, indexErr := openDerivedIndexes(context.Background(), generation)
 	if indexErr != nil {
 		releaseQueryBudget(generation, catalog.budget)
@@ -108,6 +121,24 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 		return nil, fmt.Errorf("localcatalog: open required search indexes: %w", indexErr)
 	}
 	catalog.indexes, catalog.closeIndex = indexes, closeIndex
+	if options.Shared && options.ProfilePath != "" {
+		dsn, err := sqliteuri.ReadOnly(options.ProfilePath, true)
+		if err != nil {
+			_ = catalog.Close()
+			return nil, err
+		}
+		db, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			_ = catalog.Close()
+			return nil, err
+		}
+		catalog.profiles = db
+		var packID string
+		if err := db.QueryRow("SELECT pack_id FROM packs WHERE pack_id=? AND sha256=?", manifest.PackID, generation.PackSHA256()).Scan(&packID); err != nil {
+			_ = catalog.Close()
+			return nil, fmt.Errorf("localcatalog: companion pack binding: %w", err)
+		}
+	}
 	if learned, learningErr := generation.MetadataBasis(context.Background()); learningErr == nil && learned.Version != "" {
 		catalog.metadata = &learned
 	}
@@ -140,6 +171,9 @@ func (c *Catalog) Close() error {
 	if closeIndex != nil {
 		closeIndex()
 	}
+	if c.profiles != nil {
+		_ = c.profiles.Close()
+	}
 	releaseQueryBudget(generation, budget)
 	lease.Release()
 	return nil
@@ -150,6 +184,10 @@ func (c *Catalog) Provenance() Provenance               { return c.provenance }
 func (c *Catalog) VectorSpace() librarypack.VectorSpace { return c.manifest.MERT }
 
 func (c *Catalog) NamespacedID(localID string) string { return c.prefix + localID }
+
+func (c *Catalog) owns(id string) bool {
+	return strings.HasPrefix(id, c.prefix) && len(id) > len(c.prefix)
+}
 
 func (c *Catalog) localID(id string) (string, error) {
 	if !strings.HasPrefix(id, c.prefix) || len(id) == len(c.prefix) {
@@ -234,6 +272,10 @@ func (c *Catalog) Duplicates(ctx context.Context, id string, limit int) ([]Track
 // intentionally separate from fuzzy free-text resolution so artist-only
 // requests do not depend on dense catalog row iteration.
 func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {
+	return c.artistRecordings(ctx, artist, -1)
+}
+
+func (c *Catalog) artistRecordings(ctx context.Context, artist string, limit int) ([]core.TrackRef, error) {
 	key := normalizeUnicode(artist)
 	if key == "" {
 		return []core.TrackRef{}, nil
@@ -243,7 +285,7 @@ func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.T
 		return nil, err
 	}
 	defer done()
-	rows, err := c.indexes.metadata.QueryContext(ctx, "SELECT id FROM artists WHERE artist=? ORDER BY id", key)
+	rows, err := c.indexes.metadata.QueryContext(ctx, "SELECT id FROM artists WHERE artist=? ORDER BY id LIMIT ?", key, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -352,6 +394,15 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		id := c.NamespacedID(track.ID)
 		if _, excluded := query.ExcludeIDs[id]; excluded {
 			continue
+		}
+		if query.Criterion != nil {
+			matched := false
+			for _, annotation := range annotations(track.RawTags) {
+				matched = matched || annotationMatches(annotation, *query.Criterion)
+			}
+			if !matched {
+				continue
+			}
 		}
 		textScore, textOK := metadataScore(normalized, terms, track)
 		learnedScore, learnedOK := c.learnedMetadataScore(ctx, generation, normalized, track)
@@ -462,7 +513,7 @@ func (c *Catalog) learnedMetadataScore(ctx context.Context, generation *libraryp
 // CriterionEvidence exposes only sourced local genre annotations. Absence is
 // unknown, never proof of a mismatch.
 func (c *Catalog) CriterionEvidence(ctx context.Context, id string, criterion core.MusicalCriterion) core.EvidenceState {
-	if criterion.Kind != "genre" && criterion.Kind != "style" {
+	if !supportsAnnotationCriterion(criterion) {
 		return core.EvidenceUnknown
 	}
 	localID, err := c.localID(id)

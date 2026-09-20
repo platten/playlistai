@@ -8,16 +8,24 @@ const (
 )
 
 const (
-	CurrentIntentVersion = 10
-	DefaultCount         = 20
-	DefaultCreativity    = 0.5
-	DefaultNoise         = 0.0
-	DefaultLookback      = 3
-	MinCount             = 1
-	MaxCount             = 100
-	MinLookback          = 1
-	MaxLookback          = 10
+	includeOtherArtistsIntentVersion = 11
+	groundedRecognitionIntentVersion = 12
+	CurrentIntentVersion             = groundedRecognitionIntentVersion
+	DefaultCount                     = 20
+	DefaultCreativity                = 0.5
+	DefaultNoise                     = 0.0
+	DefaultLookback                  = 3
+	MinCount                         = 1
+	MaxCount                         = 100
+	MinLookback                      = 1
+	MaxLookback                      = 10
 )
+
+// HardConstraintIncludeOtherArtists records an explicit output-diversity
+// requirement such as "include other artists". It is separate from artist
+// diversity preferences because satisfying it requires at least one recording
+// outside the explicitly named positive artists.
+const HardConstraintIncludeOtherArtists = "include_other_artists"
 
 type ReferenceKind string
 type Influence string
@@ -37,6 +45,31 @@ type SourceEvidence struct {
 	Start    int    `json:"start"`
 	End      int    `json:"end"`
 	Explicit bool   `json:"explicit"`
+}
+
+// IdentityCandidate is provider identity evidence discovered before natural
+// language interpretation. It is deliberately separate from catalog
+// resolution: an MBID does not imply that Playlist AI can use the entity as a
+// recommendation seed in the active catalog.
+type IdentityCandidate struct {
+	Kind           ReferenceKind `json:"kind"`
+	ID             string        `json:"id"`
+	ArtistID       string        `json:"artistId,omitempty"`
+	Name           string        `json:"name"`
+	Title          string        `json:"title,omitempty"`
+	Disambiguation string        `json:"disambiguation,omitempty"`
+}
+
+// IdentityGrounding records the exact spelling and immutable provider snapshot
+// that supported a recognized source occurrence. Multiple candidates are kept
+// when MusicBrainz contains homonymous artists or recording versions.
+type IdentityGrounding struct {
+	Provider        string              `json:"provider"`
+	MatchedSpelling string              `json:"matchedSpelling"`
+	MatchType       string              `json:"matchType"`
+	SnapshotVersion string              `json:"snapshotVersion"`
+	Candidates      []IdentityCandidate `json:"candidates"`
+	Truncated       bool                `json:"truncated,omitempty"`
 }
 
 type ResolutionStatus string
@@ -89,6 +122,7 @@ type IntentReference struct {
 	TrackID          string               `json:"trackId"`
 	Influence        Influence            `json:"influence"`
 	Evidence         []SourceEvidence     `json:"evidence"`
+	Grounding        *IdentityGrounding   `json:"grounding,omitempty"`
 	Resolution       *ReferenceResolution `json:"resolution,omitempty"`
 }
 

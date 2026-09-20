@@ -502,10 +502,11 @@ func (c *Container) pinLocalRecommendationOverlay(ctx context.Context, base port
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
-	return multichannel.RequestOverlay{Catalog: overlay.Catalog, Resolver: overlay.Resolver, Retriever: overlay.Retriever, Release: overlay.Close}, nil
+	return multichannel.RequestOverlay{Catalog: overlay.Catalog, Resolver: overlay.Resolver, Retriever: overlay.Retriever, Release: overlay.Close, LibraryOnly: mode == localcatalog.ModeLibraryOnly}, nil
 }
 
 func (c *Container) LocalLibraryCatalogVersion(base string) string {
+	base = c.discoveryCatalogVersion(base)
 	state, err := c.localLibrary()
 	if err != nil {
 		return base

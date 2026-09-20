@@ -140,6 +140,7 @@ type CaseMetrics struct {
 }
 
 type GenerationRecord struct {
+	DiscoverySnapshot  string                      `json:"discoverySnapshot,omitempty"`
 	TrackIDs           []string                    `json:"trackIds"`
 	CatalogVersion     string                      `json:"catalogVersion"`
 	AlgorithmVersion   string                      `json:"algorithmVersion"`
@@ -200,6 +201,7 @@ type ResolutionResult struct {
 }
 
 type Report struct {
+	DiscoverySnapshot  string                 `json:"discoverySnapshot,omitempty"`
 	Version            int                    `json:"version"`
 	DatasetName        string                 `json:"datasetName"`
 	Evidence           EvidenceLevel          `json:"evidence"`

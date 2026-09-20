@@ -16,6 +16,9 @@ func (c *Catalog) ResolvePath(ctx context.Context, id string) (PathResolution, e
 	if err != nil {
 		return PathResolution{}, err
 	}
+	if c.provenance.Source == "shared_pack" {
+		return PathResolution{TrackID: id, State: PathNoEvidence}, nil
+	}
 	generation, done, err := c.withGeneration()
 	if err != nil {
 		return PathResolution{}, err
