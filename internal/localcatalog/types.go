@@ -15,6 +15,7 @@ import (
 const (
 	MetadataChannel = "library_metadata"
 	MERTChannel     = "library_mert"
+	CLAPChannel     = "library_clap"
 	ClusterChannel  = "library_cluster"
 	DSPChannel      = "library_dsp_percentile"
 )
@@ -37,6 +38,7 @@ type Provenance struct {
 	CorpusGeneration   string `json:"corpusGeneration"`
 	MetadataGeneration string `json:"metadataGeneration"`
 	MERTGeneration     string `json:"mertGeneration,omitempty"`
+	CLAPGeneration     string `json:"clapGeneration,omitempty"`
 }
 
 // Track is local-library metadata. ID is namespace-qualified; LocalID is the
@@ -105,7 +107,10 @@ type NeighborQuery struct {
 	Vector []float32
 	// Space may be omitted for a SeedID. An external Vector must provide the
 	// complete representation contract, which must exactly match the pack.
-	Space      *librarypack.VectorSpace
+	Space *librarypack.VectorSpace
+	// CLAPModel is required for external vectors targeting an explicit v7
+	// paired runtime. It is ignored by MERT retrieval.
+	CLAPModel  *core.AudioModelIdentity
 	Limit      int
 	ExcludeIDs map[string]struct{}
 }
@@ -113,6 +118,7 @@ type NeighborQuery struct {
 type Query struct {
 	Metadata *MetadataQuery
 	MERT     *NeighborQuery
+	CLAP     *NeighborQuery
 }
 
 type QueryResult struct {

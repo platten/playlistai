@@ -467,6 +467,16 @@ func mergeTrackEvidence(primary *librarypack.Track, primaryVector *[]float32, la
 	} else if len(*primaryVector) > 0 && len(laterVector) > 0 && !reflect.DeepEqual(*primaryVector, laterVector) {
 		conflicts["mert"]++
 	}
+	if len(primary.CLAP) == 0 && len(later.CLAP) > 0 {
+		primary.CLAP = append([]float32(nil), later.CLAP...)
+		primary.CLAPEvidence = later.CLAPEvidence
+	} else if len(primary.CLAP) > 0 && len(later.CLAP) > 0 && !reflect.DeepEqual(primary.CLAP, later.CLAP) {
+		conflicts["clap"]++
+	} else if primary.CLAPEvidence == nil && later.CLAPEvidence != nil {
+		primary.CLAPEvidence = later.CLAPEvidence
+	} else if primary.CLAPEvidence != nil && later.CLAPEvidence != nil && !reflect.DeepEqual(primary.CLAPEvidence, later.CLAPEvidence) {
+		conflicts["clap_evidence"]++
+	}
 	primary.RawTags = mergeRawTags(primary.RawTags, later.RawTags, conflicts)
 }
 

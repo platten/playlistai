@@ -200,11 +200,20 @@ func acousticCompatibleFor(intent core.MusicIntent, comparisons []core.IntentCom
 // request-owned evidence snapshot, never stale preparation-only metadata.
 func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Candidate, request ports.RankRequest) ([]core.Candidate, error) {
 	request.Intent.Knowledge = o.knowledge
+	request.PreviewAssessments = make(map[string]core.AudioAssessment, len(candidates))
+	for _, candidate := range candidates {
+		if a, ok, err := o.packedAssessment(ctx, candidate.Track.ID); err != nil {
+			return nil, err
+		} else if ok {
+			request.PreviewAssessments[candidate.Track.ID] = a
+		}
+	}
 	if o.audioSession != nil {
-		request.PreviewAssessments = make(map[string]core.AudioAssessment, len(candidates))
 		for _, candidate := range candidates {
 			if a, ok := o.audioSession.Assessment(candidate.Track.ID); ok {
-				request.PreviewAssessments[candidate.Track.ID] = a
+				if _, packed := request.PreviewAssessments[candidate.Track.ID]; !packed || a.Eligible {
+					request.PreviewAssessments[candidate.Track.ID] = a
+				}
 			}
 		}
 	}

@@ -31,10 +31,16 @@ type dspPreference struct {
 // result is a library-relative soft score over sampled measurements, never a
 // categorical mood/quality claim or a hard filter.
 func (c *Catalog) DSPPreferenceScore(ctx context.Context, id string, intent core.MusicIntent) (float64, bool) {
+	return c.DSPPreferenceScoreForScope(ctx, id, intent, "playlist")
+}
+
+// DSPPreferenceScoreForScope includes global preferences and the requested
+// stage only; other journey stages cannot influence this placement.
+func (c *Catalog) DSPPreferenceScoreForScope(ctx context.Context, id string, intent core.MusicIntent, scope string) (float64, bool) {
 	if c.dspStats == nil {
 		return 0, false
 	}
-	preferences := reviewedDSPPreferences(intent)
+	preferences := reviewedDSPPreferencesForScope(intent, scope)
 	if len(preferences) == 0 {
 		return 0, false
 	}
@@ -85,6 +91,10 @@ func (c *Catalog) DSPPreferenceScore(ctx context.Context, id string, intent core
 }
 
 func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
+	return reviewedDSPPreferencesForScope(intent, "playlist")
+}
+
+func reviewedDSPPreferencesForScope(intent core.MusicIntent, scope string) []dspPreference {
 	all := append([]core.IntentPreference(nil), intent.Preferences.TextureDescriptions...)
 	all = append(all, intent.Preferences.Styles...)
 	all = append(all, intent.Preferences.Moods...)
@@ -93,7 +103,7 @@ func reviewedDSPPreferences(intent core.MusicIntent) []dspPreference {
 	for _, preference := range all {
 		// Stage-specific requests are retained in intent, never applied to the
 		// whole playlist by a track-level scorer.
-		if preference.Scope != "" && preference.Scope != "playlist" {
+		if preference.Scope != "" && preference.Scope != "playlist" && preference.Scope != scope {
 			continue
 		}
 		var concept musicconcepts.Concept

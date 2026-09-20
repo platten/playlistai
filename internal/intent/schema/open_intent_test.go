@@ -69,7 +69,9 @@ func TestOpenIntentSeparatesEntityNamespacesAndExclusions(t *testing.T) {
 func TestOpenIntentRejectsFabricatedSourceAndUnqualifiedTrack(t *testing.T) {
 	w := Wire{Genres: []WirePreference{}, Mode: "similar", TotalCount: 5, Moods: []WirePreference{{Value: "energetic", Explicit: true, Span: "unmentioned"}}}
 	raw, _ := json.Marshal(w)
-	if m, err := ParseForPrompt(raw, "lively music"); err != nil || len(m.Preferences.Moods) != 0 || len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "lively" || m.Translation == nil || len(m.Translation.Repairs) < 2 {
+	// Lively is now a reviewed energetic alias; use an actually unknown source
+	// term to retain this regression's fabricated-evidence/repair contract.
+	if m, err := ParseForPrompt(raw, "glitterpunk music"); err != nil || len(m.Preferences.Moods) != 0 || len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "glitterpunk" || m.Translation == nil || len(m.Translation.Repairs) < 2 {
 		t.Fatalf("ungrounded suggestion was not removed while preserving the unknown source term: %+v %v", m, err)
 	}
 	w.Moods = nil

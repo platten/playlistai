@@ -1,5 +1,5 @@
 {
-  "version": "music-concepts/v4",
+  "version": "music-concepts/v5",
   "provenance": {
     "description": "Project-authored musical thesaurus: exact contextual aliases, descriptive CLAP captions, and schema-validated AcousticBrainz classes. Captions are hypotheses for similarity ranking, not measured guarantees.",
     "acousticBrainz": "https://acousticbrainz.org/data",
@@ -1093,6 +1093,7 @@
       "kind": "mood",
       "value": "energetic",
       "aliases": [
+        "lively",
         "high energy",
         "high-energy",
         "high powered",
@@ -1444,6 +1445,8 @@
       "value": "cello",
       "aliases": [
         "cellos",
+        "chello",
+        "chellos",
         "violoncello",
         "violoncellos"
       ],
@@ -2811,6 +2814,18 @@
         "clap": [
           "Music in the style of ska."
         ]
+      }
+    },
+    {
+      "id": "genre.dance",
+      "kind": "genre",
+      "value": "dance",
+      "aliases": ["dance music"],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": ["dance"],
+        "clap": ["Dance music with a rhythm suited to dancing."]
       }
     },
     {

@@ -7,19 +7,19 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
-func TestAnnotationsPreserveTagProvenanceAndUnknownPredictionScale(t *testing.T) {
-	got := annotations(json.RawMessage(`{"genre":"R&B","artist":"AC/DC","mood_happy":"0.8","BPM":"120","TBPM":"121","originaldate":"1979","date":"2005"}`))
+func TestAnnotationsPreserveTagProvenanceAndCuratedPredictionScale(t *testing.T) {
+	got := annotations(json.RawMessage(`{"genre":"R&B","artist":"AC/DC","mood_happy":"-78","BPM":"120","TBPM":"121","originaldate":"1979","date":"2005"}`))
 	if len(got) != 7 {
 		t.Fatalf("lost values: %+v", got)
 	}
 	counts := map[string]int{}
 	for _, a := range got {
 		counts[a.Kind]++
-		if a.Origin != "embedded_tag" || a.SourceKey == "" {
+		if a.Origin != "embedded_tag" && a.Origin != "trusted_curated_tag" || a.SourceKey == "" {
 			t.Fatalf("lost provenance: %+v", a)
 		}
-		if a.Kind == "legacy_prediction:mood_happy" && a.Scale != "unknown" {
-			t.Fatal("invented prediction scale")
+		if a.Kind == "acousticbrainz:mood_happy" && (a.Scale != "-100..100" || a.Value != "-78" || a.Origin != "trusted_curated_tag") {
+			t.Fatal("lost signed curated mood scale")
 		}
 		if a.Kind == "artist_credit" && a.Value != "AC/DC" {
 			t.Fatal("split literal artist name")

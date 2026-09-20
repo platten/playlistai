@@ -39,12 +39,19 @@ const (
 )
 
 type pipelineProgress struct {
-	phase      chan string
+	phase      chan progressPhase
 	current    chan progressDisplayActivity
 	stop       chan bool
 	done       chan struct{}
 	once       sync.Once
 	generation atomic.Uint64
+}
+
+type progressPhase struct {
+	name     string
+	mode     progressMode
+	reset    bool
+	activity progressDisplayActivity
 }
 
 type progressDisplayActivity struct {
@@ -64,6 +71,7 @@ type scopedProgressReader struct {
 	epoch      int64
 	frozen     bool
 	generation uint64
+	jobs       map[string]string
 }
 
 func (r *scopedProgressReader) SetScanEpoch(epoch int64) {
@@ -88,6 +96,21 @@ func (r *scopedProgressReader) ProgressGeneration() uint64 {
 	return r.generation
 }
 
+func (r *scopedProgressReader) SetSemanticJobs(semanticJobs map[string]string) {
+	r.mu.Lock()
+	r.generation++
+	r.jobs = cloneSemanticJobs(semanticJobs)
+	r.mu.Unlock()
+}
+
+func cloneSemanticJobs(semanticJobs map[string]string) map[string]string {
+	cloned := make(map[string]string, len(semanticJobs))
+	for kind, key := range semanticJobs {
+		cloned[kind] = key
+	}
+	return cloned
+}
+
 type progressGeneration struct{ phase, scope uint64 }
 type polledProgressSnapshot struct {
 	snapshot   libraryindex.ProgressSnapshot
@@ -106,18 +129,22 @@ func (r *scopedProgressReader) Progress(ctx context.Context, semanticJobs map[st
 	r.mu.RLock()
 	epoch := r.epoch
 	frozen := r.frozen
+	jobs := r.jobs
 	r.mu.RUnlock()
+	if jobs != nil {
+		semanticJobs = jobs
+	}
 	if epoch > 0 {
 		if !frozen {
 			return r.state.ScanCandidateProgress(ctx, epoch, semanticJobs)
 		}
-		return r.state.ScanDiffProgress(ctx, epoch)
+		return r.state.ScanDiffProgressForJobs(ctx, epoch, semanticJobs)
 	}
 	return r.state.Progress(ctx, semanticJobs)
 }
 
 func startPipelineProgress(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, writer io.Writer, disabled bool, initialPhase string, mode progressMode) *pipelineProgress {
-	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
+	progress := &pipelineProgress{phase: make(chan progressPhase, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
 	file, terminal := writer.(*os.File)
 	if disabled || !terminal || !term.IsTerminal(int(file.Fd())) || os.Getenv("TERM") == "dumb" {
 		close(progress.done)
@@ -164,7 +191,24 @@ func (p *pipelineProgress) Active() bool {
 }
 
 func (p *pipelineProgress) SetPhase(phase string) {
-	if p == nil || phase == "" {
+	p.setPhase(progressPhase{name: phase})
+}
+
+// BeginPhase switches to a separately measured phase and resets its progress
+// bar while preserving the same live terminal area.
+func (p *pipelineProgress) BeginPhase(phase string, mode progressMode) {
+	p.setPhase(progressPhase{name: phase, mode: mode, reset: true})
+}
+
+// BeginOperationPhase atomically changes an activity phase and its label so
+// the independent event channels cannot briefly restore the previous phase's
+// file after the reset.
+func (p *pipelineProgress) BeginOperationPhase(phase, operation string) {
+	p.setPhase(progressPhase{name: phase, mode: progressActivity, reset: true, activity: progressDisplayActivity{title: "Current operation", path: operation, started: time.Now()}})
+}
+
+func (p *pipelineProgress) setPhase(phase progressPhase) {
+	if p == nil || phase.name == "" {
 		return
 	}
 	p.generation.Add(1)
@@ -180,6 +224,10 @@ func (p *pipelineProgress) SetPhase(phase string) {
 		default:
 		}
 	}
+}
+
+func progressPhasePanel(phase string) string {
+	return pterm.DefaultBox.WithTitle("Active phase").WithTitleTopCenter().WithTextStyle(pterm.NewStyle(pterm.FgCyan, pterm.Bold)).Sprint(phase)
 }
 
 // SetCurrentFile updates the live box without blocking a scan or analysis
@@ -259,8 +307,8 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 		return line
 	}
 	updateArea := func() {
-		content := summaryLine + "\n" + barLine
-		if mode != progressActivity {
+		content := progressPhasePanel(phase) + "\n" + summaryLine + "\n" + barLine
+		if mode != progressActivity || activity.path != "" {
 			title, detail := progressActivityDisplay(activity, phase, last)
 			content = progressActivityBox(title, detail, activity.warning) + "\n" + content
 		}
@@ -320,7 +368,17 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 	for {
 		select {
 		case next := <-p.phase:
-			phase = next
+			phase = next.name
+			if next.reset {
+				mode = next.mode
+				last = libraryindex.ProgressSnapshot{}
+				activity = next.activity
+				eta = analysisETA{}
+				lastETASample = time.Time{}
+				bar.Total = 1
+				bar.Current = 0
+				summaryLine = title(phase, last)
+			}
 			render(true)
 		case activity = <-p.current:
 			// File discovery can produce tens of thousands of activity events.

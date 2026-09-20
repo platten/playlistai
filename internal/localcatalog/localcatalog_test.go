@@ -120,6 +120,43 @@ func TestMetadataAndMERTTracksAreIndependentlyRetrievable(t *testing.T) {
 	}
 }
 
+func TestCLAPNeighborsUseIndependentVectorSpace(t *testing.T) {
+	root := t.TempDir()
+	packPath := filepath.Join(root, "clap.paipack")
+	clapSpace := testSpace()
+	clapSpace.Name, clapSpace.Dimension, clapSpace.Model, clapSpace.GraphSHA256 = "library_clap", 2, "larger-clap-music", strings.Repeat("b", 64)
+	_, err := librarypack.Write(context.Background(), packPath, librarypack.Pack{CorpusGeneration: "clap-corpus", MetadataGeneration: "clap-metadata", MERTGeneration: "clap-mert", CLAPGeneration: "clap-v1", MERT: testSpace(), CLAP: clapSpace, Tracks: []librarypack.Track{
+		{ID: "seed", Artist: "Seed", Title: "Origin", MERT: []float32{1, 0, 0}, CLAP: []float32{1, 0}},
+		{ID: "near", Artist: "Near", Title: "CLAP", MERT: []float32{0, 1, 0}, CLAP: []float32{.8, .6}},
+		{ID: "far", Artist: "Far", Title: "CLAP", MERT: []float32{1, 0, 0}, CLAP: []float32{0, 1}},
+	}}, librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := librarypack.OpenManager(context.Background(), filepath.Join(root, "managed"), librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	activatePack(t, manager, packPath)
+	lease, err := manager.Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Open(lease, Options{SourceID: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	hits, err := catalog.CLAPNeighbors(context.Background(), NeighborQuery{SeedID: catalog.NamespacedID("seed"), Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 2 || hits[0].Track.LocalID != "near" || hits[0].Evidence.Channel != CLAPChannel || hits[0].Evidence.VectorSpace == nil || hits[0].Evidence.VectorSpace.Name != "library_clap" {
+		t.Fatalf("CLAP neighbors=%+v", hits)
+	}
+}
+
 func TestAudioDuplicatesUsePinnedFingerprintIndex(t *testing.T) {
 	value := "AQADtNQYhYkYnGhw7Xlocalduplicate"
 	digest := sha256.Sum256([]byte(value))

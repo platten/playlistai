@@ -15,10 +15,11 @@ import (
 // transition similarity, relevance, and optional waypoint-trajectory fit, then
 // performs bounded pair swaps that improve the same transition objective.
 type GreedySequencer struct {
-	enhancedInput  core.EnhancedAudioInput
-	libraryVectors map[string]core.LibraryVector
-	cat            ports.Catalog
-	cfg            Config
+	enhancedInput      core.EnhancedAudioInput
+	libraryVectors     map[string]core.LibraryVector
+	libraryCLAPVectors map[string]core.LibraryVector
+	cat                ports.Catalog
+	cfg                Config
 }
 
 type sequenceItem struct {
@@ -42,10 +43,12 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 		return ports.SequenceResult{}, err
 	}
 	s.libraryVectors = nil
+	s.libraryCLAPVectors = nil
 	if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		// Hydrate once under the request context. Pair comparisons and local
 		// improvement must not reopen SQLite/vector resources on every edge.
 		s.libraryVectors = make(map[string]core.LibraryVector)
+		s.libraryCLAPVectors = make(map[string]core.LibraryVector)
 		tracks := append([]core.TrackRef(nil), request.Required...)
 		tracks = append(tracks, request.Waypoints...)
 		tracks = append(tracks, request.ReferenceAnchors...)
@@ -65,6 +68,18 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 			}
 			if found {
 				s.libraryVectors[track.ID] = vector
+			}
+			if source, ok := s.cat.(ports.LibrarySemanticCatalog); ok {
+				vector, found, err := source.LibraryCLAPVector(ctx, track.ID)
+				if err != nil {
+					return ports.SequenceResult{}, err
+				}
+				if err := ctx.Err(); err != nil {
+					return ports.SequenceResult{}, err
+				}
+				if found {
+					s.libraryCLAPVectors[track.ID] = vector
+				}
 			}
 		}
 	}
@@ -386,6 +401,25 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 	chosen, best := pool[0], math.Inf(-1)
 	for _, index := range pool {
 		score := s.orderingScore(candidates[index], previous, request, position)
+		if position == 0 && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && len(request.Required) == 0 && len(request.RecentSelections) == 0 {
+			// Opening fitness includes a useful outgoing edge among the already
+			// eligible set; this does not make an internal anchor a required track.
+			bestNext, known := -1.0, false
+			for _, next := range pool {
+				if next == index {
+					continue
+				}
+				if request.Intent.Constraints.NoRepeatArtistBackToBack && sameArtist(candidates[index].Track, candidates[next].Track) {
+					continue
+				}
+				if similarity, ok := s.trackSimilarity(candidates[index].Track, candidates[next].Track, request.Intent); ok && (!known || similarity > bestNext) {
+					bestNext, known = similarity, true
+				}
+			}
+			if known {
+				score += s.cfg.EnhancedTransitionWeight * request.Intent.Controls.TransitionSmoothness * bestNext
+			}
+		}
 		if score > best || (score == best && candidates[index].Track.ID < candidates[chosen].Track.ID) {
 			chosen, best = index, score
 		}
@@ -399,6 +433,11 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 
 func (s *GreedySequencer) orderingScore(candidate core.Candidate, previous core.TrackRef, request ports.SequenceRequest, position int) float64 {
 	score := s.cfg.TransitionRelevanceWeight * candidate.Scores.SelectionRelevance
+	if request.Intent.Count > 1 {
+		if similarity, ok := s.packedJourneySimilarity(candidate.Track, request, float64(position)/float64(request.Intent.Count-1)); ok {
+			score += s.cfg.JourneyPositionWeight * similarity
+		}
+	}
 	score += s.enhancedTransition(previous, candidate.Track, s.enhancedInput, request.Intent)
 	if similarity, ok := s.trackSimilarity(previous, candidate.Track, request.Intent); ok {
 		score += request.Intent.Controls.TransitionSmoothness * similarity
@@ -467,6 +506,11 @@ func (s *GreedySequencer) sequenceObjective(items []sequenceItem, request ports.
 	var score float64
 	previous := s.startAnchor(request, nil)
 	for index, item := range items {
+		if len(items) > 1 {
+			if similarity, ok := s.packedJourneySimilarity(item.track, request, float64(index)/float64(len(items)-1)); ok {
+				score += s.cfg.JourneyPositionWeight * similarity
+			}
+		}
 		score += s.enhancedTransition(previous, item.track, s.enhancedInput, request.Intent)
 		if similarity, ok := s.trackSimilarity(previous, item.track, request.Intent); ok {
 			score += request.Intent.Controls.TransitionSmoothness * similarity
@@ -497,17 +541,36 @@ func (s *GreedySequencer) trackSimilarity(left, right core.TrackRef, intent core
 	}
 	a, aOK := s.cat.Vectors(left.ID)
 	b, bOK := s.cat.Vectors(right.ID)
-	if !aOK || !bOK {
-		if s.cfg.LibraryEvidenceEnabled && intent.Controls.RecommendationMode == core.EnhancedHybrid {
-			leftVector, leftOK := s.libraryVectors[left.ID]
-			rightVector, rightOK := s.libraryVectors[right.ID]
-			if leftOK && rightOK {
-				return libraryCosine(leftVector, rightVector)
-			}
-		}
-		return 0, false
+	var score float64
+	known := false
+	if aOK && bOK {
+		score, known = weightedVectorSimilarity(a, b, intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight)
 	}
-	return weightedVectorSimilarity(a, b, intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight)
+	if !s.cfg.LibraryEvidenceEnabled || intent.Controls.RecommendationMode != core.EnhancedHybrid {
+		return score, known
+	}
+	// Fixed request-level weights retain missingness as neutral, rather than
+	// inflating a sparse pair by dividing by only its observed components.
+	denominator := 1.0
+	for _, family := range []struct {
+		vectors map[string]core.LibraryVector
+		weight  float64
+	}{{s.libraryVectors, s.cfg.EnhancedMERTWeight}, {s.libraryCLAPVectors, s.cfg.EnhancedTransitionWeight}} {
+		if len(family.vectors) < 2 || family.weight <= 0 {
+			continue
+		}
+		denominator += family.weight
+		leftVector, leftOK := family.vectors[left.ID]
+		rightVector, rightOK := family.vectors[right.ID]
+		if !leftOK || !rightOK {
+			continue
+		}
+		if similarity, ok := libraryCosine(leftVector, rightVector); ok {
+			score += family.weight * similarity
+			known = true
+		}
+	}
+	return score / denominator, known
 }
 
 func (s *GreedySequencer) softArtistGap(intent core.MusicIntent) int {
@@ -569,6 +632,7 @@ func (s *GreedySequencer) candidateReason(candidate core.Candidate, request port
 
 func rankingEvidence(candidate core.Candidate, intent core.MusicIntent, cfg Config) []core.ComponentEvidence {
 	return []core.ComponentEvidence{
+		{Component: "library_metadata", Score: candidate.Scores.LibraryMetadata, Weight: libraryMetadataWeight, Available: candidate.Available.LibraryMetadata, Detail: "validated recording tags and descriptors; missing or conflicting values remain unknown, instrument credits do not prove prominence"},
 		{Component: "acousticbrainz_intent", Score: candidate.Scores.AcousticIntent, Weight: acousticWeight(intent), Available: candidate.Available.AcousticIntent, Detail: "signed classifier margins; ranking overlap follows the saved source priority, predictions do not establish strict eligibility"},
 		{Component: "audio_seed_affinity", Score: candidate.Scores.AudioSeedAffinity, Weight: intent.Controls.AudioWeight, Available: candidate.Available.AudioSeedAffinity},
 		{Component: "cooccurrence_seed_affinity", Score: candidate.Scores.CooccurrenceAffinity, Weight: intent.Controls.CooccurrenceWeight, Available: candidate.Available.CooccurrenceAffinity},

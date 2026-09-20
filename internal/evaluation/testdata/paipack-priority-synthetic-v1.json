@@ -1,0 +1,533 @@
+{
+  "version": 1,
+  "name": "paipack-priority-synthetic-workflow-v1",
+  "evidence": "synthetic",
+  "catalogVersion": "",
+  "createdAt": "2026-09-20T00:00:00Z",
+  "intentCases": [],
+  "resolutionCases": [],
+  "recommendationCases": [
+    {
+      "id": "priority-1-repeat-1",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-01T00:00:00Z",
+      "prompt": "ambient with lots of piano",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-2-repeat-1",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-02T00:00:00Z",
+      "prompt": "radiohead going to marilyn manson",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-3-repeat-1",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-03T00:00:00Z",
+      "prompt": "classical music with chello",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-4-repeat-1",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-04T00:00:00Z",
+      "prompt": "lively dance music from the 1990s",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-1-repeat-2",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-05T00:00:00Z",
+      "prompt": "ambient with lots of piano",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-2-repeat-2",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-06T00:00:00Z",
+      "prompt": "radiohead going to marilyn manson",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-3-repeat-2",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-07T00:00:00Z",
+      "prompt": "classical music with chello",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-4-repeat-2",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-08T00:00:00Z",
+      "prompt": "lively dance music from the 1990s",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-1-repeat-3",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-09T00:00:00Z",
+      "prompt": "ambient with lots of piano",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-2-repeat-3",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-10T00:00:00Z",
+      "prompt": "radiohead going to marilyn manson",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-3-repeat-3",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-11T00:00:00Z",
+      "prompt": "classical music with chello",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-4-repeat-3",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-12T00:00:00Z",
+      "prompt": "lively dance music from the 1990s",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-1-repeat-4",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-13T00:00:00Z",
+      "prompt": "ambient with lots of piano",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-2-repeat-4",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-14T00:00:00Z",
+      "prompt": "radiohead going to marilyn manson",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-3-repeat-4",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-15T00:00:00Z",
+      "prompt": "classical music with chello",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-4-repeat-4",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-16T00:00:00Z",
+      "prompt": "lively dance music from the 1990s",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-1-repeat-5",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-17T00:00:00Z",
+      "prompt": "ambient with lots of piano",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-2-repeat-5",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-18T00:00:00Z",
+      "prompt": "radiohead going to marilyn manson",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-3-repeat-5",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-19T00:00:00Z",
+      "prompt": "classical music with chello",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    },
+    {
+      "id": "priority-4-repeat-5",
+      "listenerId": "synthetic-priority-listener",
+      "occurredAt": "2026-08-20T00:00:00Z",
+      "prompt": "lively dance music from the 1990s",
+      "intent": {},
+      "relevance": {},
+      "startingPointJudgments": {
+        "seedRelevance": {
+          "synthetic:acceptable-anchor": 3,
+          "synthetic:unacceptable-anchor": 0
+        },
+        "openingRelevance": {
+          "synthetic:acceptable-opening": 3
+        },
+        "eligibleNeighbors": {
+          "synthetic:acceptable-anchor": 4,
+          "synthetic:unacceptable-anchor": 0
+        }
+      },
+      "tags": [
+        "synthetic",
+        "priority-prompt",
+        "repeated-workflow-not-independent-evidence"
+      ]
+    }
+  ],
+  "interactions": [],
+  "tuningGrid": []
+}

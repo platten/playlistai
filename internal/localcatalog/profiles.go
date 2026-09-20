@@ -3,8 +3,6 @@ package localcatalog
 import (
 	"context"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
@@ -198,7 +196,14 @@ func (c *Catalog) profileForAlbum(ctx context.Context, artist, album string) (co
 			p.Artist = track.Artist
 		}
 		p.SupportingTracks = append(p.SupportingTracks, ref.ID)
-		for _, annotation := range c.Annotations(ctx, ref.ID) {
+		trackAnnotations := c.Annotations(ctx, ref.ID)
+		if year := NormalizeMusicalMetadata(trackAnnotations).OriginalYear; year != nil {
+			if p.FirstYear == 0 || *year < p.FirstYear {
+				p.FirstYear = *year
+			}
+			p.LastYear = max(p.LastYear, *year)
+		}
+		for _, annotation := range trackAnnotations {
 			switch annotation.Kind {
 			case "artist_mbid":
 				if id := librarypack.CanonicalMusicBrainzRecordingID(annotation.Value); id != "" {
@@ -208,19 +213,6 @@ func (c *Catalog) profileForAlbum(ctx context.Context, artist, album string) (co
 				genres[annotation.Value]++
 			case "mood":
 				moods[annotation.Value]++
-			case "original_release_date":
-				value := strings.TrimSpace(annotation.Value)
-				if len(value) < 4 {
-					continue
-				}
-				year, e := strconv.Atoi(value[:4])
-				if e != nil || year < 1000 || year > 9999 {
-					continue
-				}
-				if p.FirstYear == 0 || year < p.FirstYear {
-					p.FirstYear = year
-				}
-				p.LastYear = max(p.LastYear, year)
 			}
 		}
 	}

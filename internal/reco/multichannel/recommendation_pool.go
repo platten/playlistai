@@ -8,24 +8,11 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-// Reserve the installed-data channel before bounding a union which may be
-// returned in ID order. Provenance, not the ID namespace, also covers recordings
-// deduplicated onto base catalog IDs. Fusion order is deterministic within each
-// source group; final musical ranking and MMR still happen afterwards.
+// Bound by retrieval evidence, never source membership. Local and outside
+// recordings compete on the same scale before final musical ranking.
 func boundedMetadataCandidates(candidates []core.Candidate, limit int) []core.Candidate {
 	ordered := append([]core.Candidate(nil), candidates...)
-	fromPack := func(candidate core.Candidate) bool {
-		for _, source := range candidate.Sources {
-			if source.LibrarySource != nil {
-				return true
-			}
-		}
-		return false
-	}
 	sort.SliceStable(ordered, func(i, j int) bool {
-		if a, b := fromPack(ordered[i]), fromPack(ordered[j]); a != b {
-			return a
-		}
 		if ordered[i].Scores.RetrievalFusion != ordered[j].Scores.RetrievalFusion {
 			return ordered[i].Scores.RetrievalFusion > ordered[j].Scores.RetrievalFusion
 		}
@@ -66,6 +53,9 @@ func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []
 			}
 		}
 		before := len(request.AttemptedIDs)
+		// A provider's concatenation order must not decide which source owns
+		// the bounded pool. Compare common retrieval evidence before truncation.
+		raw = boundedMetadataCandidates(raw, len(raw))
 		for _, candidate := range raw {
 			id := candidate.Track.ID
 			if _, seen := request.AttemptedIDs[id]; seen {

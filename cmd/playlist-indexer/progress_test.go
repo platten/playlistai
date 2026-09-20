@@ -186,7 +186,7 @@ func TestScanProgressBarUsesDiscoveredAudioFileCount(t *testing.T) {
 
 func TestActivityRendersWithoutPerFileDurableProgressQuery(t *testing.T) {
 	progress := &pipelineProgress{
-		phase:   make(chan string, 1),
+		phase:   make(chan progressPhase, 1),
 		current: make(chan progressDisplayActivity, 1),
 		stop:    make(chan bool, 1),
 		done:    make(chan struct{}),
@@ -338,7 +338,7 @@ func (r blockingProgressReader) Progress(ctx context.Context, _ map[string]strin
 }
 
 func TestProgressStopCancelsBlockedSnapshotWithoutWaitingForTimeout(t *testing.T) {
-	progress := &pipelineProgress{phase: make(chan string, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
+	progress := &pipelineProgress{phase: make(chan progressPhase, 1), current: make(chan progressDisplayActivity, 1), stop: make(chan bool, 1), done: make(chan struct{})}
 	output := &bytes.Buffer{}
 	bar, err := pterm.DefaultProgressbar.WithWriter(output).WithTotal(1).Start("Scanning")
 	if err != nil {
@@ -416,7 +416,28 @@ func TestProgressScopeGenerationChangesAtEpochAndFreeze(t *testing.T) {
 	second := progress.snapshotGeneration(reader)
 	reader.FreezeEpoch(1)
 	third := progress.snapshotGeneration(reader)
-	if first == second || second == third {
+	reader.SetSemanticJobs(map[string]string{"clap": "clap/v1"})
+	fourth := progress.snapshotGeneration(reader)
+	if first == second || second == third || third == fourth {
 		t.Fatal("scope transitions reused a generation")
+	}
+}
+
+func TestProgressPhasePanelUsesPtermWidget(t *testing.T) {
+	panel := pterm.RemoveColorFromString(progressPhasePanel("Extracting CLAP embeddings"))
+	if !strings.Contains(panel, "Active phase") || !strings.Contains(panel, "Extracting CLAP embeddings") || !strings.Contains(panel, "─") {
+		t.Fatalf("phase panel = %q", panel)
+	}
+}
+
+func TestSelectSemanticJobsKeepsOnlyCurrentPhase(t *testing.T) {
+	all := map[string]string{"metadata": "metadata/v1", "audio": "mert/v1", "clap": "clap/v1"}
+	selected := selectSemanticJobs(all, "clap")
+	if len(selected) != 1 || selected["clap"] != "clap/v1" {
+		t.Fatalf("selected jobs = %#v", selected)
+	}
+	selected["clap"] = "changed"
+	if all["clap"] != "clap/v1" {
+		t.Fatal("phase selection aliased the source map")
 	}
 }

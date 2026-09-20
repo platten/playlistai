@@ -189,6 +189,11 @@ func TestReciprocalFusionDuplicateQueryIsNotIndependentEvidence(t *testing.T) {
 		t.Fatalf("duplicate files boosted query evidence: %.12f != %.12f", got, want)
 	}
 	a := core.RetrievalEvidence{Channel: "library_audio", QueryID: "reference", Rank: 1, QueryWeight: 1, LibrarySource: &core.LibraryEvidenceSource{PackID: "pack", SpaceID: "mert-v1", Generation: "one", Scope: "full"}}
+	copyInAnotherPack := a
+	copyInAnotherPack.LibrarySource = &core.LibraryEvidenceSource{PackID: "other-pack", SpaceID: "mert-v1", Generation: "other-generation", Scope: "full"}
+	if got := reciprocalRankFusion([]core.RetrievalEvidence{a, copyInAnotherPack}, 60); got != 1.0/61 {
+		t.Fatalf("repeated pack evidence bought extra votes: %v", got)
+	}
 	b := a
 	b.LibrarySource = &core.LibraryEvidenceSource{PackID: "pack", SpaceID: "mert-v2", Generation: "two", Scope: "full"}
 	if got := reciprocalRankFusion([]core.RetrievalEvidence{a, a, b}, 60); got != 2.0/61 {

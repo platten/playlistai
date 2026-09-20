@@ -16,14 +16,19 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/platten/playlistai/internal/core"
 )
 
 const (
 	Format              = "playlist-ai-library-pack"
-	FormatVersion       = 5
+	FormatVersion       = 7
+	PooledCLAPVersion   = 6
+	LegacyFormatVersion = 5
 	ManifestName        = "manifest.json"
 	MetadataName        = "metadata.sqlite"
 	MERTVectorsName     = "mert.f32"
+	CLAPVectorsName     = "clap.f32"
 	vectorFormatVersion = 1
 )
 
@@ -57,7 +62,7 @@ func DefaultLimits() Limits {
 		MaxExpandedBytes: 128 << 30,
 		MaxMemberBytes:   96 << 30,
 		MaxManifestBytes: 4 << 20,
-		MaxMembers:       3,
+		MaxMembers:       4,
 		MaxTracks:        5_000_000,
 		MaxVectorDim:     4096,
 		MaxRecordBytes:   1 << 20,
@@ -127,25 +132,53 @@ type Coverage struct {
 	Tracks      int `json:"tracks"`
 	Metadata    int `json:"metadata"`
 	MERT        int `json:"mert"`
+	CLAP        int `json:"clap"`
 	DSP         int `json:"dsp"`
 	Failed      int `json:"failed"`
 	Unsupported int `json:"unsupported"`
 }
 
 type Manifest struct {
-	Format               string      `json:"format"`
-	Version              int         `json:"version"`
-	PackID               string      `json:"packId"`
-	CreatedAt            string      `json:"createdAt,omitempty"`
-	CorpusGeneration     string      `json:"corpusGeneration"`
-	MetadataGeneration   string      `json:"metadataGeneration"`
-	MERTGeneration       string      `json:"mertGeneration,omitempty"`
-	ClusterGeneration    string      `json:"clusterGeneration,omitempty"`
-	StatisticsGeneration string      `json:"statisticsGeneration,omitempty"`
-	Coverage             Coverage    `json:"coverage"`
-	MERT                 VectorSpace `json:"mert"`
-	RootAliases          []string    `json:"rootAliases"`
-	Files                []File      `json:"files"`
+	Format               string                   `json:"format"`
+	Version              int                      `json:"version"`
+	PackID               string                   `json:"packId"`
+	CreatedAt            string                   `json:"createdAt,omitempty"`
+	CorpusGeneration     string                   `json:"corpusGeneration"`
+	MetadataGeneration   string                   `json:"metadataGeneration"`
+	MERTGeneration       string                   `json:"mertGeneration,omitempty"`
+	CLAPGeneration       string                   `json:"clapGeneration,omitempty"`
+	ClusterGeneration    string                   `json:"clusterGeneration,omitempty"`
+	StatisticsGeneration string                   `json:"statisticsGeneration,omitempty"`
+	Coverage             Coverage                 `json:"coverage"`
+	MERT                 VectorSpace              `json:"mert"`
+	CLAP                 VectorSpace              `json:"clap"`
+	CLAPModel            *core.AudioModelIdentity `json:"clapModel,omitempty"`
+	RootAliases          []string                 `json:"rootAliases"`
+	Files                []File                   `json:"files"`
+}
+
+type legacyCoverageV5 struct {
+	Tracks      int `json:"tracks"`
+	Metadata    int `json:"metadata"`
+	MERT        int `json:"mert"`
+	DSP         int `json:"dsp"`
+	Failed      int `json:"failed"`
+	Unsupported int `json:"unsupported"`
+}
+type legacyManifestV5 struct {
+	Format               string           `json:"format"`
+	Version              int              `json:"version"`
+	PackID               string           `json:"packId"`
+	CreatedAt            string           `json:"createdAt,omitempty"`
+	CorpusGeneration     string           `json:"corpusGeneration"`
+	MetadataGeneration   string           `json:"metadataGeneration"`
+	MERTGeneration       string           `json:"mertGeneration,omitempty"`
+	ClusterGeneration    string           `json:"clusterGeneration,omitempty"`
+	StatisticsGeneration string           `json:"statisticsGeneration,omitempty"`
+	Coverage             legacyCoverageV5 `json:"coverage"`
+	MERT                 VectorSpace      `json:"mert"`
+	RootAliases          []string         `json:"rootAliases"`
+	Files                []File           `json:"files"`
 }
 
 // Track is the portable metadata row. RelativePath is optional and meaningful
@@ -176,6 +209,8 @@ type Track struct {
 	Failure              string
 	Unsupported          string
 	MERT                 []float32
+	CLAP                 []float32
+	CLAPEvidence         *CLAPEvidence
 	Cluster              *int
 	ClusterScore         float64
 	Alternative          *int
@@ -387,6 +422,9 @@ func trackCapabilities(track Track) []string {
 	if len(track.MERT) > 0 {
 		capabilities = append(capabilities, "mert")
 	}
+	if len(track.CLAP) > 0 {
+		capabilities = append(capabilities, "clap")
+	}
 	if len(track.DSP) > 0 && string(track.DSP) != "{}" {
 		capabilities = append(capabilities, "dsp")
 	}
@@ -407,9 +445,12 @@ type Pack struct {
 	CorpusGeneration     string
 	MetadataGeneration   string
 	MERTGeneration       string
+	CLAPGeneration       string
 	ClusterGeneration    string
 	StatisticsGeneration string
 	MERT                 VectorSpace
+	CLAP                 VectorSpace
+	CLAPModel            *core.AudioModelIdentity
 	Tracks               []Track
 	// Learning is a canonical JSON payload containing the fitted metadata
 	// model and optional spherical model/assignments. It is stored inside the
@@ -422,18 +463,18 @@ type Pack struct {
 
 func (m Manifest) Validate(limits Limits) error {
 	limits = limits.normalized()
-	if m.Format != Format || m.Version != FormatVersion {
+	if m.Format != Format || (m.Version != FormatVersion && m.Version != PooledCLAPVersion && m.Version != LegacyFormatVersion) {
 		return fmt.Errorf("librarypack: unsupported format %q version %d", m.Format, m.Version)
 	}
 	if !validIdentifier(m.CorpusGeneration) || !validIdentifier(m.MetadataGeneration) {
 		return errors.New("librarypack: invalid corpus or metadata generation")
 	}
-	for _, generation := range []string{m.MERTGeneration, m.ClusterGeneration, m.StatisticsGeneration} {
+	for _, generation := range []string{m.MERTGeneration, m.CLAPGeneration, m.ClusterGeneration, m.StatisticsGeneration} {
 		if generation != "" && !validIdentifier(generation) {
 			return errors.New("librarypack: invalid optional generation identity")
 		}
 	}
-	if m.Coverage.Tracks < 0 || m.Coverage.Tracks > limits.MaxTracks || m.Coverage.Metadata < 0 || m.Coverage.Metadata > m.Coverage.Tracks || m.Coverage.MERT < 0 || m.Coverage.MERT > m.Coverage.Tracks || m.Coverage.DSP < 0 || m.Coverage.DSP > m.Coverage.Tracks || m.Coverage.Failed < 0 || m.Coverage.Failed > m.Coverage.Tracks || m.Coverage.Unsupported < 0 || m.Coverage.Unsupported > m.Coverage.Tracks {
+	if m.Coverage.Tracks < 0 || m.Coverage.Tracks > limits.MaxTracks || m.Coverage.Metadata < 0 || m.Coverage.Metadata > m.Coverage.Tracks || m.Coverage.MERT < 0 || m.Coverage.MERT > m.Coverage.Tracks || m.Coverage.CLAP < 0 || m.Coverage.CLAP > m.Coverage.Tracks || m.Coverage.DSP < 0 || m.Coverage.DSP > m.Coverage.Tracks || m.Coverage.Failed < 0 || m.Coverage.Failed > m.Coverage.Tracks || m.Coverage.Unsupported < 0 || m.Coverage.Unsupported > m.Coverage.Tracks {
 		return errors.New("librarypack: invalid coverage counts")
 	}
 	if m.CreatedAt != "" {
@@ -441,16 +482,37 @@ func (m Manifest) Validate(limits Limits) error {
 			return errors.New("librarypack: invalid creation time")
 		}
 	}
-	if err := validateVectorSpace(m.MERT, m.Coverage.MERT, limits); err != nil {
+	if err := validateVectorSpace(m.MERT, m.Coverage.MERT, limits, "library_mert"); err != nil {
 		return err
 	}
 	if m.Coverage.MERT > 0 && m.MERTGeneration == "" {
 		return errors.New("librarypack: MERT coverage requires a generation identity")
 	}
-	if len(m.Files) != 2 || len(m.RootAliases) > 1024 {
-		return errors.New("librarypack: manifest must list exactly metadata and MERT vector files")
+	if err := validateVectorSpace(m.CLAP, m.Coverage.CLAP, limits, "library_clap"); err != nil {
+		return err
+	}
+	if m.Version == LegacyFormatVersion && (m.Coverage.CLAP != 0 || m.CLAPGeneration != "" || m.CLAP != (VectorSpace{})) {
+		return errors.New("librarypack: version 5 cannot contain CLAP data")
+	}
+	if m.Coverage.CLAP > 0 && m.CLAPGeneration == "" {
+		return errors.New("librarypack: CLAP coverage requires a generation identity")
+	}
+	if m.CLAPModel != nil {
+		if m.Version < FormatVersion || m.Coverage.CLAP == 0 || !validCLAPModel(*m.CLAPModel, m.CLAP) {
+			return errors.New("librarypack: invalid paired CLAP model identity")
+		}
+	}
+	wantFiles := 2
+	if m.Coverage.CLAP > 0 {
+		wantFiles++
+	}
+	if len(m.Files) != wantFiles || len(m.RootAliases) > 1024 {
+		return errors.New("librarypack: manifest has an invalid vector file set")
 	}
 	want := map[string]string{MetadataName: "metadata_sqlite", MERTVectorsName: "mert_float32"}
+	if m.Coverage.CLAP > 0 {
+		want[CLAPVectorsName] = "clap_float32"
+	}
 	seen := map[string]bool{}
 	var total int64
 	for _, f := range m.Files {
@@ -479,17 +541,28 @@ func (m Manifest) Validate(limits Limits) error {
 	return nil
 }
 
-func validateVectorSpace(v VectorSpace, count int, limits Limits) error {
+func validateVectorSpace(v VectorSpace, count int, limits Limits, name string) error {
 	if count == 0 && v.Dimension == 0 {
 		return nil
 	}
-	if v.Name != "library_mert" || v.Dimension <= 0 || v.Dimension > limits.MaxVectorDim || v.DType != "float32" || v.ByteOrder != "little" || !v.Normalized || strings.TrimSpace(v.Model) == "" || strings.TrimSpace(v.ModelRevision) == "" || !validHash(v.GraphSHA256) || strings.TrimSpace(v.Preprocessing) == "" || strings.TrimSpace(v.Sampling) == "" || strings.TrimSpace(v.Pooling) == "" || strings.TrimSpace(v.Scope) == "" || strings.TrimSpace(v.Missingness) == "" {
-		return errors.New("librarypack: invalid MERT representation contract")
+	if v.Name != name || v.Dimension <= 0 || v.Dimension > limits.MaxVectorDim || v.DType != "float32" || v.ByteOrder != "little" || !v.Normalized || strings.TrimSpace(v.Model) == "" || strings.TrimSpace(v.ModelRevision) == "" || !validHash(v.GraphSHA256) || strings.TrimSpace(v.Preprocessing) == "" || strings.TrimSpace(v.Sampling) == "" || strings.TrimSpace(v.Pooling) == "" || strings.TrimSpace(v.Scope) == "" || strings.TrimSpace(v.Missingness) == "" {
+		return fmt.Errorf("librarypack: invalid %s representation contract", name)
 	}
 	return nil
 }
 
 func semanticID(m Manifest) string {
+	if m.Version == LegacyFormatVersion {
+		m.Files = append([]File(nil), m.Files...)
+		sort.Slice(m.Files, func(i, j int) bool { return m.Files[i].Name < m.Files[j].Name })
+		m.RootAliases = append([]string(nil), m.RootAliases...)
+		sort.Strings(m.RootAliases)
+		legacy := legacyManifestV5{Format: m.Format, Version: m.Version, PackID: "", CreatedAt: m.CreatedAt, CorpusGeneration: m.CorpusGeneration, MetadataGeneration: m.MetadataGeneration, MERTGeneration: m.MERTGeneration, ClusterGeneration: m.ClusterGeneration, StatisticsGeneration: m.StatisticsGeneration, MERT: m.MERT, RootAliases: m.RootAliases, Files: m.Files}
+		legacy.Coverage = legacyCoverageV5{m.Coverage.Tracks, m.Coverage.Metadata, m.Coverage.MERT, m.Coverage.DSP, m.Coverage.Failed, m.Coverage.Unsupported}
+		raw, _ := json.Marshal(legacy)
+		sum := sha256.Sum256(raw)
+		return hex.EncodeToString(sum[:])
+	}
 	m.PackID = ""
 	m.Files = append([]File(nil), m.Files...)
 	sort.Slice(m.Files, func(i, j int) bool { return m.Files[i].Name < m.Files[j].Name })

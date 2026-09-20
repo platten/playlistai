@@ -335,6 +335,13 @@ func uncertainty(cases []CaseMetrics) map[string]Interval {
 		if item.Error != "" {
 			continue
 		}
+		if item.StartingPoints != nil {
+			for name, value := range map[string]*float64{"seedTop1": item.StartingPoints.SeedTop1, "seedTop3": item.StartingPoints.SeedTop3, "openingRelevance": item.StartingPoints.OpeningRelevance, "seedDeadEndRate": item.StartingPoints.DeadEndRate} {
+				if value != nil {
+					values[name] = append(values[name], *value)
+				}
+			}
+		}
 		values["artistDiversity"] = append(values["artistDiversity"], item.ArtistDiversity)
 		values["maxArtistShare"] = append(values["maxArtistShare"], item.MaxArtistShare)
 		values["catalogCoverage"] = append(values["catalogCoverage"], item.CatalogCoverage)

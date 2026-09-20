@@ -160,7 +160,7 @@ type AnchorSuitability struct {
 	Source []FeatureProvenance `json:"source"`
 }
 
-// InferredAnchor is a model-proposed retrieval aid, never a claim that the
+// InferredAnchor is a catalog-selected or model-proposed retrieval aid, never a claim that the
 // user named the entity. Role and Reason make complementary proposals
 // inspectable; Reference holds catalog resolution separately from suitability.
 type InferredAnchor struct {

@@ -155,13 +155,16 @@ and merges by score then stable track ID. ANN is not included because no execute
 2M-row measurement justified it; exact search remains the correctness backend.
 
 The `.paipack` format is documented in [paipack-format.md](paipack-format.md).
-Version 5 contains normalized sparse learning/statistics tables, a SQLite
-metadata snapshot, and packed float32 vectors, not audio, PCM, absolute paths,
+Version 6 contains normalized sparse learning/statistics tables, a SQLite
+metadata snapshot, and separate packed MERT and optional CLAP float32 vectors,
+not audio, PCM, absolute paths,
 or giant JSON model/vector arrays. It also retains embedded ISRC, recording
 MBID, AcoustID ID, and AcoustID fingerprint tags. Fingerprints are generated
 only when no AcoustID identity tag is present and are not submitted to a remote
 service. Desktop import builds checksum-verified
-metadata/artist and exact-MERT derivative indexes before atomic activation.
+metadata/artist and exact-MERT/CLAP derivative indexes before atomic activation.
+CLAP uses two distributed ten-second excerpts and remains a distinct embedding
+space; its cosine values are not probabilities and are never mixed with MERT.
 
 ## Distribution
 
@@ -169,18 +172,45 @@ metadata/artist and exact-MERT derivative indexes before atomic activation.
 or guaranteed static ELF. `cmd/indexerpack` appends a deterministic ZIP payload
 and authenticated trailer to the Go launcher. The standard artifact contains
 the codec payload and performs an explicit separately licensed MERT setup/import.
-The Linux amd64 offline artifact contains the codec plus CPU and CUDA MERT
-payloads. Inner manifests
+The Linux amd64 offline artifact contains the codec plus CPU and CUDA variants
+of both MERT and CLAP. Analysis runs MERT/DSP and CLAP as separate phases so a
+model stays resident across tracks instead of being reloaded per recording. Inner manifests
 and hashes are checked again before private, versioned, locked atomic promotion.
 
 Build both variants with:
 
 ```sh
-PLAYLIST_INDEXER_CODEC_PAYLOAD=/absolute/codec-payload \
 PLAYLIST_INDEXER_MERT_BUNDLE=/absolute/mert-linux-amd64 \
 PLAYLIST_INDEXER_MERT_CUDA_BUNDLE=/absolute/mert-linux-amd64-cuda \
+PLAYLIST_INDEXER_CLAP_BUNDLE=/absolute/clap-linux-amd64 \
+PLAYLIST_INDEXER_CLAP_CUDA_BUNDLE=/absolute/clap-linux-amd64-cuda \
 ./scripts/build-playlist-indexer.sh
 ```
+
+Setting any model-bundle variable requests the offline build; alternatively set
+`PLAYLIST_INDEXER_BUILD_OFFLINE=1`. Before compiling, the script requires a
+working Linux amd64 NVIDIA driver, validates complete matching CPU/CUDA bundles
+for both MERT and CLAP, and checks every manifest-declared file and checksum.
+Missing CPU bundles are downloaded from the repository's pinned model registry.
+The codec runtime is reused from the offline cache when present. If it is absent
+and `PLAYLIST_INDEXER_CODEC_PAYLOAD` is not set, the script uses Docker Buildx to
+build it from the checksum-pinned FFmpeg and Chromaprint sources. Both completed
+executables are inspected before publication; the offline check requires codec,
+CPU/CUDA MERT, and CPU/CUDA CLAP payload trees.
+If CUDA CLAP is missing, it is derived from the verified CPU CLAP graphs and
+CUDA MERT runtime. Because no public CUDA MERT distribution is pinned in the
+repository, provide an existing `PLAYLIST_INDEXER_MERT_CUDA_BUNDLE`, or set a
+reviewed `PLAYLIST_INDEXER_MERT_CUDA_MANIFEST` together with its required
+`PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256`; the segmented bundle is then
+downloaded and verified. Downloads are retained beneath
+`PLAYLIST_INDEXER_OFFLINE_CACHE_DIR` (the user cache by default). Packaging uses
+a staging directory under the output directory and moves the completed standard
+and offline executables into `bin/` atomically only after successful validation.
+
+Use `--analysis all` for metadata, MERT/DSP, and CLAP; `--analysis clap` performs
+a resumable CLAP-only backfill. `--clap-device auto` tries the embedded CUDA
+bundle and falls back to CPU if native validation fails. Explicit `cuda:INDEX`
+requests fail instead of silently changing backends.
 
 MERT remains CC-BY-NC-4.0 and always requires `--accept-model-license`, including
 when bytes are embedded. `--yes` is deliberately absent. Network is used only by

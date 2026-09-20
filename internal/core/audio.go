@@ -82,6 +82,7 @@ type AudioClauseAssessment struct {
 }
 
 type AudioAssessment struct {
+	LibraryCoverage   *LibraryCLAPCoverage    `json:"libraryCoverage,omitempty"`
 	TrackID           string                  `json:"trackId"`
 	AnalysisID        string                  `json:"analysisId"`
 	Identity          PreviewIdentity         `json:"identity"`
@@ -93,16 +94,18 @@ type AudioAssessment struct {
 }
 
 type AudioEvidenceSnapshot struct {
-	ID                  string             `json:"id"`
-	Model               AudioModelIdentity `json:"model"`
-	PolicyVersion       string             `json:"policyVersion"`
-	Assessments         []AudioAssessment  `json:"assessments"`
-	NewAnalyses         int                `json:"newAnalyses"`
-	CacheHits           int                `json:"cacheHits"`
-	BytesFetched        int64              `json:"bytesFetched"`
-	ElapsedMilliseconds int64              `json:"elapsedMilliseconds"`
-	Stopped             bool               `json:"stopped"`
-	BudgetExhausted     bool               `json:"budgetExhausted"`
+	LibraryModel        *AudioModelIdentity `json:"libraryModel,omitempty"`
+	LibraryAssessments  []AudioAssessment   `json:"libraryAssessments,omitempty"`
+	ID                  string              `json:"id"`
+	Model               AudioModelIdentity  `json:"model"`
+	PolicyVersion       string              `json:"policyVersion"`
+	Assessments         []AudioAssessment   `json:"assessments"`
+	NewAnalyses         int                 `json:"newAnalyses"`
+	CacheHits           int                 `json:"cacheHits"`
+	BytesFetched        int64               `json:"bytesFetched"`
+	ElapsedMilliseconds int64               `json:"elapsedMilliseconds"`
+	Stopped             bool                `json:"stopped"`
+	BudgetExhausted     bool                `json:"budgetExhausted"`
 }
 
 type AnalysisStorageUsage struct {

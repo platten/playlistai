@@ -64,6 +64,20 @@ func LoadDataset(path string) (Dataset, error) {
 		return Dataset{}, fmt.Errorf("evaluation: invalid evidence level %q", dataset.Evidence)
 	}
 	for _, item := range dataset.RecommendationCases {
+		if j := item.StartingPointJudgments; j != nil {
+			for _, grades := range []map[string]float64{j.SeedRelevance, j.OpeningRelevance} {
+				for id, grade := range grades {
+					if id == "" || !validGrade(grade) {
+						return Dataset{}, fmt.Errorf("evaluation: case %q has invalid starting point judgment", item.ID)
+					}
+				}
+			}
+			for id, count := range j.EligibleNeighbors {
+				if id == "" || count < 0 {
+					return Dataset{}, fmt.Errorf("evaluation: case %q has invalid neighborhood judgment", item.ID)
+				}
+			}
+		}
 		for id, grade := range item.Relevance {
 			if id == "" || grade < 0 || grade > 3 {
 				return Dataset{}, fmt.Errorf("evaluation: case %q has invalid relevance judgment %q=%g", item.ID, id, grade)
@@ -423,7 +437,7 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 	}
 	metrics.Latency.ParseMicros = time.Since(parseStarted).Microseconds()
 	intent = intent.Normalized()
-	if r.discovery != nil && intent.Seed.IsZero() {
+	if (r.discovery != nil || r.library != nil) && intent.Seed.IsZero() {
 		sum := sha256.Sum256([]byte(dataset.Name + "\x00" + item.ID))
 		value := binary.LittleEndian.Uint64(sum[:8])
 		if value == 0 {
@@ -506,6 +520,9 @@ func (r Runner) evaluateCase(ctx context.Context, dataset Dataset, split Tempora
 	}
 	ids := playlist.IDs()
 	relevance := caseRelevance(item, dataset.Interactions)
+	starting := StartingPoints(resolvedSeedIDs(playlist.Intent), ids, item.StartingPointJudgments)
+	metrics.StartingPoints = &starting
+	metrics.SourceQuality = SourceQualityAtK(ids, relevance, r.K)
 	metrics.ReturnedAtK = min(r.K, len(ids))
 	for _, id := range ids[:metrics.ReturnedAtK] {
 		if _, judged := relevance[id]; judged {

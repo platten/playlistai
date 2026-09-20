@@ -15,7 +15,7 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v8"
+const Version = "source-atoms/v9"
 
 var (
 	durationPattern    = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
@@ -138,6 +138,14 @@ func Extract(prompt string) core.IntentTranslation {
 		add(kind, fmt.Sprintf("%s:%d:%d", basis, first, last), scopeAt(prompt, p[0]), polarity, "required", "plain", "", start, p[1])
 	}
 	known := conceptMentions(prompt)
+	// A bare artist-to-artist journey has no introductory "from". Preserve
+	// its two explicit endpoints without restricting intermediate artists.
+	if loc := regexp.MustCompile(`(?i)^\s*(.+?)\s+going\s+to\s+(.+?)\s*[.!?]?\s*$`).FindStringSubmatchIndex(prompt); loc != nil {
+		if !descriptiveRange(prompt, loc[2], loc[3], known) && !descriptiveRange(prompt, loc[4], loc[5], known) {
+			add("start", prompt[loc[2]:loc[3]], "journey_start", "positive", "required", "plain", "", loc[2], loc[3])
+			add("destination", prompt[loc[4]:loc[5]], "journey_end", "positive", "required", "plain", "", loc[4], loc[5])
+		}
+	}
 	quoted := quotedReferenceMentions(prompt)
 	for _, r := range quoted {
 		add(r.kind, r.value, r.scope, "positive", r.strength, "plain", "", r.start, r.end)
@@ -313,6 +321,11 @@ func Extract(prompt string) core.IntentTranslation {
 		prefix := prompt[:m.start]
 		if m.kind == "genre" {
 			strength = "essential"
+		}
+		if m.kind == "instrumentation" {
+			if loc := regexp.MustCompile(`(?i)\b(?:lots of|plenty of|a lot of|prominent)\s+$`).FindStringIndex(prefix); loc != nil {
+				strength, degree, spanStart = "essential", "mostly", loc[0]
+			}
 		}
 		if loc := negativeContextStart(prefix); loc >= 0 {
 			polarity = "negative"

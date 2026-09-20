@@ -166,7 +166,7 @@ func TestInterruptedSearchDoesNotClaimCatalogExhaustion(t *testing.T) {
 	}
 }
 
-func TestMetadataBatchReservesPackProvenanceBeforeBasePrefix(t *testing.T) {
+func TestMetadataBatchRanksEvidenceWithoutPackMembershipBonus(t *testing.T) {
 	var candidates []core.Candidate
 	for i := range 600 {
 		candidates = append(candidates, core.Candidate{Track: core.TrackRef{ID: fmt.Sprintf("base:%03d", i)}})
@@ -174,9 +174,21 @@ func TestMetadataBatchReservesPackProvenanceBeforeBasePrefix(t *testing.T) {
 	for _, id := range []string{"pack:late", "base:recording-alias"} {
 		candidates = append(candidates, core.Candidate{Track: core.TrackRef{ID: id}, Sources: []core.RetrievalEvidence{{LibrarySource: &core.LibraryEvidenceSource{PackID: "fixture"}}}})
 	}
+	candidates[0].Scores.RetrievalFusion = .9
+	candidates[len(candidates)-2].Scores.RetrievalFusion = .8
+	candidates[len(candidates)-1].Scores.RetrievalFusion = .7
 	got := boundedMetadataCandidates(candidates, 512)
-	if len(got) != 512 || got[0].Track.ID != "base:recording-alias" || got[1].Track.ID != "pack:late" {
-		t.Fatal("base prefix hid pack source coverage", got[:2])
+	if len(got) != 512 || got[0].Track.ID != "base:000" || got[1].Track.ID != "pack:late" || got[2].Track.ID != "base:recording-alias" {
+		t.Fatal("membership displaced common retrieval relevance", got[:3])
+	}
+	for i := range candidates {
+		candidates[i].Sources = nil
+	}
+	withoutProvenance := boundedMetadataCandidates(candidates, 512)
+	for i := range got {
+		if got[i].Track.ID != withoutProvenance[i].Track.ID {
+			t.Fatal("source provenance changed ordering")
+		}
 	}
 	if candidates[0].Track.ID != "base:000" {
 		t.Fatal("source-owned candidate slice mutated")

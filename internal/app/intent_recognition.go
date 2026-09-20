@@ -9,6 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/genrevocab"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/recognition"
+	"github.com/platten/playlistai/internal/localcatalog"
 	"github.com/platten/playlistai/internal/mbindex"
 	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
@@ -52,17 +53,43 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 		err = statErr
 	}
 	if store != nil && err == nil {
-		identity := store.SnapshotIdentity()
+		defer store.Close()
+	}
+	var lookup recognition.IdentityLookup
+	if store != nil && err == nil {
+		lookup = store
+	}
+	libraryOnly := false
+	if state, stateErr := c.localLibrary(); stateErr == nil {
+		if pinned, pinErr := state.pinRequestSnapshot(); pinErr == nil {
+			libraryOnly = pinned.mode == LocalLibraryOnly
+			if local, openErr := localcatalog.Open(pinned.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: pinned.rootMappings}); openErr == nil {
+				defer local.Close()
+				lookup = recognition.Combine(lookup, local)
+			}
+		}
+	}
+	if !libraryOnly {
+		if manager, managerErr := c.discoveryManager(); managerErr == nil {
+			if packs, release, pinErr := manager.Pin(ctx); pinErr == nil {
+				defer release()
+				for _, pack := range packs {
+					lookup = recognition.Combine(lookup, pack)
+				}
+			}
+		}
+	}
+	if lookup != nil {
+		identity := lookup.SnapshotIdentity()
 		snapshot = identity.IndexVersion + ":" + identity.Snapshot
-		source = recognition.Apply(ctx, in.Prompt, source, store, vocabulary)
-		_ = store.Close()
-	} else {
-		source = recognition.Apply(ctx, in.Prompt, source, nil, vocabulary)
+	}
+	source = recognition.Apply(ctx, in.Prompt, source, lookup, vocabulary)
+	if store == nil || err != nil {
 		if err != nil && !os.IsNotExist(err) {
 			source.Recognition.Incomplete = true
 			source.Recognition.ReferenceLookup = "incomplete"
 			source.Recognition.Notices = append(source.Recognition.Notices, "The installed MusicBrainz index could not be opened; text-only reference parsing was used.")
-			snapshot = "invalid"
+			snapshot += "+musicbrainz-invalid"
 		}
 	}
 	if genreInvalid {

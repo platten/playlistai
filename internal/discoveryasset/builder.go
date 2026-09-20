@@ -192,11 +192,13 @@ func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
 			}
 			original := g.Manifest()
 			generation := "discovery-" + o.Version
-			p := librarypack.Pack{CorpusGeneration: generation, MetadataGeneration: generation, MERT: original.MERT, Tracks: tracks, Learning: learning, Statistics: rawStats, StatisticsGeneration: stats.Generation}
+			p := librarypack.Pack{CorpusGeneration: generation, MetadataGeneration: generation, MERT: original.MERT, CLAP: original.CLAP, Tracks: tracks, Learning: learning, Statistics: rawStats, StatisticsGeneration: stats.Generation}
 			for _, t := range tracks {
 				if len(t.MERT) > 0 {
 					p.MERTGeneration = generation
-					break
+				}
+				if len(t.CLAP) > 0 {
+					p.CLAPGeneration = generation
 				}
 			}
 			written, err = librarypack.Write(ctx, filepath.Join(stage, name), p, packLimits())
@@ -209,7 +211,7 @@ func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
 			continue
 		}
 		for _, tr := range tracks {
-			retainedBytes += trackMemory(tr) + int64(len(tr.MERT))*4
+			retainedBytes += trackMemory(tr) + int64(len(tr.MERT)+len(tr.CLAP))*4
 		}
 		if retainedBytes > 1<<30 {
 			return m, errors.New("discoveryasset: selected corpus exceeds 1 GiB builder memory budget; reduce --max-tracks")
