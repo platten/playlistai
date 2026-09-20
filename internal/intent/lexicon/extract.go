@@ -15,12 +15,12 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v6"
+const Version = "source-atoms/v9"
 
 var (
 	durationPattern    = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
 	periodPattern      = regexp.MustCompile(`(?i)\b([0-9]{1,2})(?:st|nd|rd|th)?[\s\p{Pd}]+century\b|\b((?:18|19|20)[0-9]0)['’]?s\b`)
-	referenceIntro     = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|along the lines of|the atmosphere of|the feel of|like|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|finish with|begin with|start with|from|through|via|to)\s+`)
+	referenceIntro     = regexp.MustCompile(`(?i)\b(?:similar to|inspired by|in the style of|along the lines of|the atmosphere of|the feel of|like|playlist around|music by|songs by|tracks by|the artist|transitioning to|ending at|ending with|ends with|finish with|begin with|start with|starts with|from|through|via|to)\s+`)
 	referenceEnd       = regexp.MustCompile(`(?i)[,:;.!?\n]|\s+(?:but|with|for|over|through|via|to|into|from|by the end|at the end|and then|that|themselves)\b`)
 	negativeIntro      = regexp.MustCompile(`(?i)\b(?:do not include|don't include|don’t include|don't play|do not play|do not want|don't want|don’t want|nothing by|nothing from|excluding|exclude|without|except|avoid|skip|neither|nor|no|not)\s+`)
 	negativeEnd        = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
@@ -31,7 +31,6 @@ var (
 	negativePrefix     = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|skip|rather than|nothing)(?:\s+(?:too|very|much))?\s*$`)
 	reducedPrefix      = regexp.MustCompile(`(?i)\b(?:less|not too|nothing too)\s*$`)
 	strictPrefix       = regexp.MustCompile(`(?i)\b(?:must be|must have|only|strictly|always|absolutely)\s*$`)
-	quotePattern       = regexp.MustCompile(`"[^"\n]+"|“[^”\n]+”`)
 	openTexturePattern = regexp.MustCompile(`(?i)\bwith\s+(?:(?:lots|plenty|a lot)\s+of|(?:a|an)\s+(?:good|strong|rich|delicate))\s+(.+?)(?:\s+(?:transitioning|leading|ending|moving|and then)\b|[,;.]|$)`)
 )
 
@@ -43,7 +42,29 @@ type mention struct {
 // Extract is deterministic and offline. Unknown or ambiguous wording remains
 // available to the model; it is not silently replaced with a known parent genre.
 func Extract(prompt string) core.IntentTranslation {
-	x := core.IntentTranslation{Version: Version + "+" + musicconcepts.Version}
+	x := core.IntentTranslation{Version: Version + "+" + musicconcepts.Version, OriginalText: prompt}
+	for _, bounds := range quotedRanges(prompt) {
+		x.Quoted = append(x.Quoted, core.SourceRegion{Text: prompt[bounds[0]:bounds[1]], Start: bounds[0], End: bounds[1]})
+	}
+	markerPatterns := []struct {
+		kind    string
+		pattern *regexp.Regexp
+	}{
+		{"exclusion", regexp.MustCompile(`(?i)\b(?:no|not|without|avoid|exclude|excluding|skip|nothing by|nothing from)\b`)},
+		{"inclusion", regexp.MustCompile(`(?i)\b(?:include|including|must include|must have|add)\b`)},
+		{"alternative", regexp.MustCompile(`(?i)\b(?:or|either|alternatively)\b`)},
+		{"journey_start", regexp.MustCompile(`(?i)\b(?:start with|starts with|begin with|from)\b`)},
+		{"journey_via", regexp.MustCompile(`(?i)\b(?:via|through)\b`)},
+		{"journey_end", regexp.MustCompile(`(?i)\b(?:end with|ends with|finish with|to)\b`)},
+	}
+	for _, marker := range markerPatterns {
+		for _, bounds := range marker.pattern.FindAllStringIndex(prompt, -1) {
+			if !insideQuoted(prompt, bounds[0], bounds[1]) {
+				x.Markers = append(x.Markers, core.SyntacticMarker{Kind: marker.kind, Text: prompt[bounds[0]:bounds[1]], Start: bounds[0], End: bounds[1]})
+			}
+		}
+	}
+	sort.SliceStable(x.Markers, func(i, j int) bool { return x.Markers[i].Start < x.Markers[j].Start })
 	add := func(kind, value, scope, polarity, strength, degree, concept string, start, end int) {
 		if start < 0 || end > len(prompt) || start >= end || value == "" {
 			return
@@ -117,6 +138,18 @@ func Extract(prompt string) core.IntentTranslation {
 		add(kind, fmt.Sprintf("%s:%d:%d", basis, first, last), scopeAt(prompt, p[0]), polarity, "required", "plain", "", start, p[1])
 	}
 	known := conceptMentions(prompt)
+	// A bare artist-to-artist journey has no introductory "from". Preserve
+	// its two explicit endpoints without restricting intermediate artists.
+	if loc := regexp.MustCompile(`(?i)^\s*(.+?)\s+going\s+to\s+(.+?)\s*[.!?]?\s*$`).FindStringSubmatchIndex(prompt); loc != nil {
+		if !descriptiveRange(prompt, loc[2], loc[3], known) && !descriptiveRange(prompt, loc[4], loc[5], known) {
+			add("start", prompt[loc[2]:loc[3]], "journey_start", "positive", "required", "plain", "", loc[2], loc[3])
+			add("destination", prompt[loc[4]:loc[5]], "journey_end", "positive", "required", "plain", "", loc[4], loc[5])
+		}
+	}
+	quoted := quotedReferenceMentions(prompt)
+	for _, r := range quoted {
+		add(r.kind, r.value, r.scope, "positive", r.strength, "plain", "", r.start, r.end)
+	}
 	for _, r := range requiredTrackOccurrences(prompt) {
 		e := r.Evidence[0]
 		add("required_track", r.Query, "playlist", "positive", "required", "plain", "", e.Start, e.End)
@@ -124,6 +157,9 @@ func Extract(prompt string) core.IntentTranslation {
 	// First protect explicitly introduced entities. Descriptive clauses such as
 	// "from quiet to loud" must not turn into artist endpoints.
 	for _, loc := range referenceIntro.FindAllStringIndex(prompt, -1) {
+		if insideQuoted(prompt, loc[0], loc[1]) || overlapsQuotedReference(quoted, loc[0], loc[1]) || overlapsQuotedReference(quoted, loc[1], loc[1]+1) {
+			continue
+		}
 		end := referenceTextEnd(prompt, loc[1])
 		start, end := trimRange(prompt, loc[1], end)
 		intro := strings.ToLower(strings.TrimSpace(prompt[loc[0]:loc[1]]))
@@ -161,13 +197,18 @@ func Extract(prompt string) core.IntentTranslation {
 			start += p[1]
 		}
 		start, end = trimRange(prompt, start, end)
+		// A possessive sonic description names an artist, not a recording:
+		// "Brian Eno's ambient sound" retains both independently scoped facts.
+		if p := possessiveSound.FindStringSubmatchIndex(prompt[start:end]); p != nil {
+			end = start + p[3]
+		}
 		value := prompt[start:end]
 		if p := regexp.MustCompile(`(?i)^(.+?)['’]s\s+(album|track)\s+(.+)$`).FindStringSubmatch(value); p != nil {
 			entityType = strings.ToLower(p[2])
 			explicitEntity = true
 			value = p[3] + " by " + p[1]
 		}
-		if strings.Contains(value, " - ") || strings.Contains(value, " — ") {
+		if entityType == "artist" && (strings.Contains(value, " - ") || strings.Contains(value, " — ") || strings.Contains(strings.ToLower(value), " by ")) {
 			entityType = "track"
 			explicitEntity = true
 		}
@@ -199,6 +240,11 @@ func Extract(prompt string) core.IntentTranslation {
 	}
 	if artist, start, end := onlyArtistMention(prompt); artist != "" {
 		add("require_artist", artist, "playlist", "positive", "required", "plain", "", start, end)
+	}
+	for _, loc := range otherArtistsPattern.FindAllStringIndex(prompt, -1) {
+		if !insideQuoted(prompt, loc[0], loc[1]) && !negatedIncludePrefix.MatchString(prompt[:loc[0]]) && !negativePrefix.MatchString(prompt[:loc[0]]) {
+			add(core.HardConstraintIncludeOtherArtists, "true", "playlist", "positive", "required", "plain", "", loc[0], loc[1])
+		}
 	}
 	// A short bare name is protected only with name-like syntax. Unknown bare
 	// categories still reach the open-vocabulary model unchanged.
@@ -275,6 +321,11 @@ func Extract(prompt string) core.IntentTranslation {
 		prefix := prompt[:m.start]
 		if m.kind == "genre" {
 			strength = "essential"
+		}
+		if m.kind == "instrumentation" {
+			if loc := regexp.MustCompile(`(?i)\b(?:lots of|plenty of|a lot of|prominent)\s+$`).FindStringIndex(prefix); loc != nil {
+				strength, degree, spanStart = "essential", "mostly", loc[0]
+			}
 		}
 		if loc := negativeContextStart(prefix); loc >= 0 {
 			polarity = "negative"
@@ -393,6 +444,16 @@ func Extract(prompt string) core.IntentTranslation {
 
 func conceptMentions(prompt string) []mention {
 	var candidates []mention
+	// Preserve complete explicitly named compounds even before the concept
+	// dictionary supports them. Empty concept IDs are deliberate: recognition
+	// of user intent is not musical evidence or a parent-genre equivalence.
+	for _, value := range []string{"heavy metal", "Japanese city pop", "city pop", "Brazilian jazz", "folk rock", "melodic house", "acoustic folk", "ambient electronic"} {
+		for _, p := range regexp.MustCompile(`(?i)`+regexp.QuoteMeta(value)).FindAllStringIndex(prompt, -1) {
+			if boundary(prompt, p[0], true) && boundary(prompt, p[1], false) {
+				candidates = append(candidates, mention{start: p[0], end: p[1], kind: "genre", value: strings.ToLower(value)})
+			}
+		}
+	}
 	for _, c := range musicconcepts.Concepts() {
 		for _, alias := range append([]string{c.Value}, c.Aliases...) {
 			if alias == "" {
@@ -511,7 +572,7 @@ func splitRanges(s string, start, end int) [][2]int {
 	return out
 }
 func insideQuoted(s string, start, end int) bool {
-	for _, p := range quotePattern.FindAllStringIndex(s, -1) {
+	for _, p := range quotedRanges(s) {
 		if start >= p[0] && end <= p[1] {
 			return true
 		}
@@ -608,12 +669,18 @@ func scopeAt(s string, pos int) string {
 	if regexp.MustCompile(`(?i)\b(?:closing|last|final)\s+(?:section|part|stage)\s*$`).MatchString(prefix) {
 		return "journey_end"
 	}
-	lastStart, lastEnd := -1, -1
+	lastStart, lastEnd, lastVia := -1, -1, -1
 	for _, p := range startMarker.FindAllStringIndex(prefix, -1) {
 		lastStart = p[0]
 	}
 	for _, p := range endMarker.FindAllStringIndex(prefix, -1) {
 		lastEnd = p[0]
+	}
+	for _, p := range viaMarker.FindAllStringIndex(prefix, -1) {
+		lastVia = p[0]
+	}
+	if lastVia > lastStart && lastVia > lastEnd {
+		return "journey_via"
 	}
 	if lastEnd > lastStart {
 		return "journey_end"

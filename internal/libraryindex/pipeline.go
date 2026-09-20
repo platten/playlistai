@@ -23,6 +23,7 @@ import (
 type AnalysisOptions struct {
 	Metadata  bool
 	Audio     bool
+	CLAP      bool
 	Profile   SamplingProfile
 	Integrity IntegrityPolicy
 }
@@ -37,6 +38,7 @@ const (
 type AnalysisReport struct {
 	MetadataCompleted     int64                 `json:"metadataCompleted"`
 	AudioCompleted        int64                 `json:"audioCompleted"`
+	CLAPCompleted         int64                 `json:"clapCompleted"`
 	Failed                int64                 `json:"failed"`
 	Retried               int64                 `json:"retried"`
 	SkippedChanged        int64                 `json:"skippedChanged"`
@@ -92,15 +94,17 @@ type TrackAnalysisTiming struct {
 }
 
 type Analyzer struct {
-	State     *State
-	Runtime   *localaudio.Runtime
-	MERT      *audio.MERTWorkerPool
-	Plan      ResourcePlan
-	Admission *Admission
-	Profile   SamplingProfile
-	Integrity IntegrityPolicy
-	OnFile    func(FileActivity)
-	OnIssue   func(ProcessingIssue)
+	State      *State
+	Runtime    *localaudio.Runtime
+	MERT       *audio.MERTWorkerPool
+	CLAP       *audio.WorkerPool
+	CLAPDevice string
+	Plan       ResourcePlan
+	Admission  *Admission
+	Profile    SamplingProfile
+	Integrity  IntegrityPolicy
+	OnFile     func(FileActivity)
+	OnIssue    func(ProcessingIssue)
 	// OnMERTHealth reports MERT outages and recoveries. Audio analysis is
 	// paused between the two calls.
 	OnMERTHealth func(healthy bool, err error)
@@ -243,6 +247,9 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 	if options.Audio && a.MERT == nil {
 		return report, errors.New("library indexer: MERT model is required for audio analysis")
 	}
+	if options.CLAP && a.CLAP == nil {
+		return report, errors.New("library indexer: CLAP model is required for CLAP analysis")
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	var wg sync.WaitGroup
@@ -264,6 +271,18 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 		go func() {
 			defer wg.Done()
 			if err := a.runAudio(ctx, discoveryDone, &report, options.Profile); err != nil {
+				fatal <- err
+				if !errors.Is(err, ErrShutdownRequested) {
+					cancel(err)
+				}
+			}
+		}()
+	}
+	if options.CLAP {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a.runCLAP(ctx, discoveryDone, &report); err != nil {
 				fatal <- err
 				if !errors.Is(err, ErrShutdownRequested) {
 					cancel(err)
@@ -641,13 +660,13 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 				// metadata is exhausted it can never become eligible, so fail it.
 				// Checking pending first keeps the in-flight tail from rerunning
 				// the finalization query on every poll.
-				if kind == "audio" && pending > 0 {
+				if (kind == "audio" || kind == "clap") && pending > 0 {
 					metadataPending, metadataLeased, err := a.jobCounts(ctx, "metadata")
 					if err != nil {
 						return err
 					}
 					if metadataPending == 0 && metadataLeased == 0 {
-						if err := a.finalizeBlockedAudio(ctx); err != nil {
+						if err := a.finalizeBlockedKind(ctx, kind); err != nil {
 							return err
 						}
 						if pending, leased, err = a.jobCounts(ctx, kind); err != nil {
@@ -757,11 +776,11 @@ func (a *Analyzer) reportMERTHealth(healthy bool, err error) {
 	}
 }
 
-func (a *Analyzer) finalizeBlockedAudio(ctx context.Context) error {
+func (a *Analyzer) finalizeBlockedKind(ctx context.Context, kind string) error {
 	if a.DiffEpoch > 0 {
-		return a.State.FinalizeBlockedScanDiffAudio(ctx, a.DiffEpoch)
+		return a.State.FinalizeBlockedScanDiffKind(ctx, a.DiffEpoch, kind)
 	}
-	return a.State.FinalizeBlockedAudio(ctx)
+	return a.State.FinalizeBlockedKind(ctx, kind)
 }
 
 func (a *Analyzer) heartbeatJobs(ctx context.Context, leases *jobLeaseTracker, cancel context.CancelCauseFunc, done chan<- struct{}) {

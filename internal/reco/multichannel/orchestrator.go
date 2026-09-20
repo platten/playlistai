@@ -17,10 +17,15 @@ import (
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
+	groundedSeedPool  []core.Candidate
+	requestContext    context.Context
+	packedAssessments map[string]core.AudioAssessment
+	packedModel       core.AudioModelIdentity
 	// sourceCatalogVersion identifies reusable external analysis independently
 	// of the request's composite catalog/pack fingerprint.
 	sourceCatalogVersion    string
 	requestOverlayProvider  RequestOverlayProvider
+	intentOverlayProvider   IntentOverlayProvider
 	enhancedProvider        EnhancedAudioProvider
 	enhancedRefreshProvider EnhancedAudioRefreshProvider
 	enhancedPreviewProvider func() *audio.Service
@@ -52,13 +57,24 @@ type Orchestrator struct {
 // recommendation. Catalog, resolver, and retriever must describe the same
 // generation. Release is called only after every ranking/sequence reader ends.
 type RequestOverlay struct {
-	Catalog   ports.Catalog
-	Resolver  ports.ReferenceResolver
-	Retriever ports.CandidateRetriever
-	Release   func()
+	Catalog               ports.Catalog
+	Resolver              ports.ReferenceResolver
+	Retriever             ports.CandidateRetriever
+	Release               func()
+	EnableLibraryEvidence bool
+	LibraryOnly           bool
 }
 
 type RequestOverlayProvider func(context.Context, ports.Catalog, ports.ReferenceResolver, ports.CandidateRetriever) (RequestOverlay, error)
+
+type IntentOverlayProvider func(context.Context, core.MusicIntent, ports.Catalog, ports.ReferenceResolver, ports.CandidateRetriever) (RequestOverlay, error)
+
+// WithIntentOverlayProvider selects shared assets using the request's policy.
+// It supersedes the legacy overlay hook; configuration remains request-local.
+func (o *Orchestrator) WithIntentOverlayProvider(provider IntentOverlayProvider) *Orchestrator {
+	o.intentOverlayProvider = provider
+	return o
+}
 
 func (o *Orchestrator) WithRequestOverlayProvider(provider RequestOverlayProvider) *Orchestrator {
 	o.requestOverlayProvider = provider
@@ -613,6 +629,9 @@ func (o *Orchestrator) BuildWithProfile(ctx context.Context, intent core.MusicIn
 func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.RecommendationRequest) (result core.Playlist, buildErr error) {
 	local := *o
 	o = &local
+	o.requestContext = ctx
+	o.packedAssessments = make(map[string]core.AudioAssessment)
+	o.groundedSeedPool = nil
 	o.assemblyCache = &completedAssembly{}
 	o.enhancedPrepared = false
 	o.enhancedSnapshot = nil
@@ -629,8 +648,14 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if o.resolver != nil {
 		o.sourceCatalogVersion = o.resolver.CatalogVersion()
 	}
-	if o.requestOverlayProvider != nil {
-		overlay, err := o.requestOverlayProvider(ctx, o.cat, o.resolver, o.retriever)
+	if o.requestOverlayProvider != nil || o.intentOverlayProvider != nil {
+		var overlay RequestOverlay
+		var err error
+		if o.intentOverlayProvider != nil {
+			overlay, err = o.intentOverlayProvider(ctx, request.Intent.Normalized(), o.cat, o.resolver, o.retriever)
+		} else {
+			overlay, err = o.requestOverlayProvider(ctx, o.cat, o.resolver, o.retriever)
+		}
 		if err != nil {
 			return core.Playlist{}, err
 		}
@@ -645,6 +670,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 		if overlay.Retriever != nil {
 			o.retriever = overlay.Retriever
+		}
+		if overlay.EnableLibraryEvidence && request.Intent.Normalized().Controls.RecommendationMode == core.EnhancedHybrid {
+			o.cfg.LibraryEvidenceEnabled = true
 		}
 		// These stages consult catalog metadata and vectors after retrieval, so
 		// rebuild their request-local views over the pinned composite catalog.
@@ -671,6 +699,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	o.bestAvailable = intent.VerificationPolicy == core.BestAvailable
 	o.enhanced = intent.Controls.RecommendationMode == core.EnhancedHybrid
 	o.knowledge = intent.Knowledge
+	if err := o.preparePackedQueries(ctx, intent); err != nil {
+		return core.Playlist{}, err
+	}
+	defer func() { o.appendPackedEvidence(&result) }()
 	var resolutionIssues []resolution.Issue
 	if o.resolver != nil {
 		intent, resolutionIssues = resolution.Apply(o.resolver, intent)
@@ -688,12 +720,39 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return core.Playlist{}, fmt.Errorf("seed: %w", err)
 	}
 	intent.Seed = seed
+	if intent.Knowledge != nil {
+		if binder, ok := o.cat.(interface{ BindRecordingKnowledge([]core.EnrichedTrack) }); ok {
+			binder.BindRecordingKnowledge(intent.Knowledge.Tracks)
+		}
+	}
+	if o.enhanced && (intent.Knowledge == nil || !intent.Knowledge.DiscoveryRecorded) {
+		if profiles, ok := o.cat.(ports.DiscoveryProfileCatalog); ok {
+			values, err := profiles.DiscoveryProfiles(ctx, intent, 12)
+			if err != nil && ctx.Err() != nil {
+				return core.Playlist{}, ctx.Err()
+			}
+			if len(values) > 0 || intent.Knowledge != nil {
+				snapshot := core.KnowledgeSnapshot{}
+				if intent.Knowledge != nil {
+					snapshot = *intent.Knowledge
+				}
+				snapshot.PackProfiles = values
+				intent.Knowledge = &snapshot
+				o.knowledge = &snapshot
+			}
+		}
+	}
 	var discovery ports.MusicCandidateStream
 	// User-named references take retrieval priority over broad genre sampling.
 	// Descriptive clauses still screen every recommendation below.
-	if o.candidateSource != nil && (!o.bestAvailable || !hasExplicitRetrievalReference(o.cat, intent)) {
+	if o.candidateSource != nil && (!o.bestAvailable || !hasExplicitRetrievalReference(o.cat, intent) || o.enhanced && intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0) {
 		discovery = o.candidateSource.OpenCandidates(intent, o.cat, o.resolver)
 		if discovery != nil {
+			if checked, ok := discovery.(ports.DiscoveryCompatibility); ok {
+				if err := checked.ReplayError(); err != nil {
+					return core.Playlist{}, err
+				}
+			}
 			o.knowledge = discovery.Snapshot()
 			intent.Knowledge = o.knowledge
 			defer func() { result.Intent.Knowledge = discovery.Snapshot() }()
@@ -759,9 +818,20 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 		request.Progress.Report("generation", 0, 0, note)
 	}
-	intent, anchorNotices, err := o.assessInferredAnchors(ctx, intent)
+	intent, err = o.refineArtistRepresentatives(ctx, intent)
 	if err != nil {
 		return core.Playlist{}, err
+	}
+	intent, groundedSeeds, err := o.planGroundedSeeds(ctx, intent, request, seedValue)
+	if err != nil {
+		return core.Playlist{}, err
+	}
+	var anchorNotices []core.PlaylistNotice
+	if len(groundedSeeds) == 0 {
+		intent, anchorNotices, err = o.assessInferredAnchors(ctx, intent)
+		if err != nil {
+			return core.Playlist{}, err
+		}
 	}
 	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 && !hasExplicitRetrievalReference(o.cat, intent) {
 		var kept []core.InferredAnchor
@@ -910,7 +980,8 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	positiveSemantic, _ := semanticQueryText(intent)
-	_, localMetadata := o.retriever.(interface{ SupportsIntentMetadata() bool })
+	metadataRetriever, localMetadata := o.retriever.(interface{ SupportsIntentMetadata() bool })
+	localMetadata = localMetadata && metadataRetriever.SupportsIntentMetadata()
 	semanticSeeded := len(cachedAudio) > 0 || len(mertAudio) > 0 || discovery != nil || positiveSemantic != "" && (o.semantic != nil || localMetadata) || o.knowledge != nil && len(o.knowledge.Candidates) > 0
 	if len(references) == 0 && len(required) == 0 && !semanticSeeded {
 		if core.WantsInstrumental(intent) {
@@ -952,6 +1023,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 
 	eligible := newEligibility(intent, references, required)
+	permitGroundedSeeds(eligible, groundedSeeds)
 	eligible.excludeRecent(recentSelections)
 	if err := eligible.validateRequired(required, intent.Constraints.ExcludeSeedArtists); err != nil {
 		return core.Playlist{}, err
@@ -973,14 +1045,31 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 	candidates := append(append([]core.Candidate(nil), cachedAudio...), mertAudio...)
-	if o.candidateSource == nil {
+	if o.groundedSeedPool != nil {
+		candidates = append(candidates, o.groundedSeedPool...)
+	} else if o.candidateSource == nil {
 		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
 		})
 		if err != nil {
 			return core.Playlist{}, err
 		}
+	} else if o.enhanced && localMetadata {
+		// A provider stream must not hide the installed pack on a cold audio
+		// cache. Prepare one bounded local batch first; ordinary eligibility and
+		// fit checks below still apply, and the stream supplies further choices.
+		local, retrieveErr := o.retriever.Retrieve(ctx, ports.RetrievalRequest{
+			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
+		})
+		if retrieveErr != nil && ctx.Err() != nil {
+			return core.Playlist{}, ctx.Err()
+		}
+		if retrieveErr != nil {
+			anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "local_retrieval_interrupted", Detail: "Installed music data retrieval was interrupted; continuing with available candidates and artist discovery."})
+		}
+		candidates = append(candidates, boundedMetadataCandidates(local, o.cfg.MaxCandidates)...)
 	}
+	candidates = append(candidates, groundedSeeds...)
 	semanticNotices := append([]core.PlaylistNotice(nil), anchorNotices...)
 	var positiveCoverage core.QueryCoverage
 	candidates, positiveCoverage, scoreNotices, err := o.scoreSemanticUnion(ctx, candidates, intent)
@@ -1121,7 +1210,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	// after assembly so a just-completed immutable result can be reused exactly.
 	setSemanticCapability(&intent, semanticMatched, len(semanticNotices) > 0)
 	for index := range intent.HardConstraints {
-		if intent.HardConstraints[index].Kind == "require_album" || intent.HardConstraints[index].Kind == "require_artist" {
+		if intent.HardConstraints[index].Kind == "require_album" || intent.HardConstraints[index].Kind == "require_artist" || intent.HardConstraints[index].Kind == core.HardConstraintIncludeOtherArtists {
 			intent.HardConstraints[index].RuntimeEnforced = true
 		}
 	}
@@ -1148,16 +1237,33 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "semantic_fallback", Detail: "semantic intent was preserved but no compatible grounded semantic matches were available; seeded embedding retrieval remained active", Requested: intent.Count, Actual: len(playlist.Tracks)})
 	}
 	if len(playlist.Tracks) < intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
-		if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && !o.enhanced {
+		interrupted := false
+		for _, notice := range playlist.Notices {
+			switch notice.Code {
+			case "discovery_stopped", "discovery_budget", "analysis_limit", "retrieval_interrupted", "local_retrieval_interrupted", "discovery_unavailable":
+				interrupted = true
+			}
+		}
+		select {
+		case <-request.StopChecking:
+			interrupted = true
+		default:
+		}
+		if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre && !o.enhanced && !interrupted {
 			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "single_genre_evidence_exhausted", Criterion: genre.Value, Detail: "Only tracks with affirmative evidence for the requested genre were retained; unknown or mismatching tracks were excluded.", Action: "Try a smaller playlist or add more tracks with verified genre metadata."})
 		}
-		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{
-			Code:      "eligible_tracks_exhausted",
-			Detail:    "eligible sufficiently relevant candidates were exhausted without relaxing hard exclusions or recording deduplication",
-			Requested: intent.Count, Actual: len(playlist.Tracks),
-		})
+		if interrupted {
+			playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "search_incomplete", Detail: "Search stopped before the requested count was reached; available tracks were retained without relaxing requirements.", Requested: intent.Count, Actual: len(playlist.Tracks)})
+			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "search_incomplete", Detail: "Search was interrupted before the requested count was reached; the catalog was not exhausted.", Action: "retry or continue with the retained tracks"})
+		} else {
+			playlist.Notices = append(playlist.Notices, core.PlaylistNotice{
+				Code:      "eligible_tracks_exhausted",
+				Detail:    "eligible sufficiently relevant candidates were exhausted without relaxing hard exclusions or recording deduplication",
+				Requested: intent.Count, Actual: len(playlist.Tracks),
+			})
+			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "eligible_tracks_exhausted", Detail: "eligible sufficiently relevant tracks were exhausted", Action: "reduce the requested count or add another fitting reference"})
+		}
 		playlist.Outcome.State = core.OutcomePartial
-		playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "eligible_tracks_exhausted", Detail: "eligible sufficiently relevant tracks were exhausted", Action: "reduce the requested count or add another fitting reference"})
 	}
 	if len(intent.EssentialCriteria) > 0 {
 		_, finalReport, finalErr := o.filterEssential(ctx, candidatesForTracks(playlist.Tracks), intent.EssentialCriteria)

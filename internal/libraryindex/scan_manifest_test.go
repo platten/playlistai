@@ -132,11 +132,26 @@ func TestScanManifestAndProgressCountUniquePendingAudioFiles(t *testing.T) {
 	if progress.Files != 1 || progress.Total != 1 || progress.Queued != 1 {
 		t.Fatalf("progress counted stage jobs instead of the audio file: %+v", progress)
 	}
+	metadataJobs, err := state.ClaimScanDiffJobs(ctx, scan.Epoch, "metadata", 1, time.Minute)
+	if err != nil || len(metadataJobs) != 1 {
+		t.Fatalf("claim metadata=%+v err=%v", metadataJobs, err)
+	}
+	if err := state.CommitJob(ctx, JobResult{Job: metadataJobs[0], Contract: "probe/v1", Metadata: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	metadataProgress, err := state.ScanDiffProgressForJobs(ctx, scan.Epoch, map[string]string{"metadata": "probe/v1"})
+	if err != nil || metadataProgress.Total != 1 || metadataProgress.Finished != 1 || metadataProgress.Queued != 0 {
+		t.Fatalf("metadata phase progress=%+v err=%v", metadataProgress, err)
+	}
+	audioProgress, err := state.ScanDiffProgressForJobs(ctx, scan.Epoch, map[string]string{"audio": "mert/v1"})
+	if err != nil || audioProgress.Total != 1 || audioProgress.Finished != 0 || audioProgress.Queued != 1 {
+		t.Fatalf("audio phase progress=%+v err=%v", audioProgress, err)
+	}
 	status, err := state.Status(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status.Files != 1 || status.QueuedFiles != 1 || status.JobsByState["pending"] != 2 {
+	if status.Files != 1 || status.QueuedFiles != 1 || status.JobsByState["pending"] != 1 || status.JobsByState["completed"] != 1 {
 		t.Fatalf("status did not separate file and stage-job counts: %+v", status)
 	}
 }

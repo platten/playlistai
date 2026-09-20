@@ -21,30 +21,31 @@ const artistRecordingPages = 5
 const discoveryRecordingPages = 100
 
 type candidateStream struct {
-	client              *Client
-	cat                 ports.Catalog
-	resolver            ports.ReferenceResolver
-	intent              core.MusicIntent
-	snapshot            core.KnowledgeSnapshot
-	rng                 *rand.Rand
-	genres              []string
-	artists             []core.GenreArtist
-	pending             [][]core.TrackRef
-	seen                map[string]bool
-	initialized, replay bool
-	position            int
-	failures            int
-	lastError           error
-	deferredArtists     []core.GenreArtist
-	recordingOffsets    map[string]int
-	recordingPages      map[string]int
-	exactByArtist       map[string]map[string]string
-	offlineRead         map[string]bool
-	recordingReads      int
-	windowReads         int
-	previewReads        int
-	previewBudgetNotice bool
-	acousticSpent       time.Duration
+	client               *Client
+	cat                  ports.Catalog
+	resolver             ports.ReferenceResolver
+	intent               core.MusicIntent
+	snapshot             core.KnowledgeSnapshot
+	rng                  *rand.Rand
+	genres               []string
+	artists              []core.GenreArtist
+	pending              [][]core.TrackRef
+	seen                 map[string]bool
+	initialized, replay  bool
+	position             int
+	failures             int
+	lastError            error
+	deferredArtists      []core.GenreArtist
+	recordingOffsets     map[string]int
+	recordingPages       map[string]int
+	exactByArtist        map[string]map[string]string
+	offlineRead          map[string]bool
+	recordingReads       int
+	windowReads          int
+	dynamicRegistrations int
+	dynamicBudgetNotice  bool
+	acousticSpent        time.Duration
+	replayError          error
 }
 
 // Keep small requests cheap; larger genre playlists can draw from up to twenty
@@ -56,22 +57,29 @@ func (s *candidateStream) discoveryWindowSize() int {
 	return min(20, max(discoveryWindow, max(s.intent.Count, s.intent.Controls.TotalTrackCount)))
 }
 
-func (s *candidateStream) dynamicPreviewLimit() int {
+// Bound persistent metadata growth independently of actual preview analysis.
+func (s *candidateStream) dynamicRegistrationLimit() int {
 	return min(100, max(20, max(s.intent.Count, s.intent.Controls.TotalTrackCount)*8))
 }
 
+func (s *candidateStream) ReplayError() error { return s.replayError }
+
 func (s *candidateStream) dynamicDiscoveryEnabled() bool {
 	_, writable := s.cat.(ports.DynamicTrackCatalog)
-	return writable && s.client.candidatePreview != nil && s.intent.Controls.RecommendationMode == core.EnhancedHybrid
+	return writable && s.intent.Controls.RecommendationMode == core.EnhancedHybrid
 }
 
 func discoveryKey(intent core.MusicIntent, catalog string) string {
+	return discoveryKeyVersion(intent, catalog, "discovery/v6")
+}
+
+func discoveryKeyVersion(intent core.MusicIntent, catalog, version string) string {
 	intent = intent.Normalized()
 	constraints := make([][2]string, 0, len(intent.HardConstraints))
 	for _, c := range intent.HardConstraints {
 		constraints = append(constraints, [2]string{c.Kind, c.Value})
 	}
-	return knowledgeHash(struct {
+	key := knowledgeHash(struct {
 		Version     string
 		Catalog     string
 		Seed        core.RNGSeed
@@ -89,9 +97,13 @@ func discoveryKey(intent core.MusicIntent, catalog string) string {
 		Start       *core.IntentReference
 		Context     []core.ContextSeedPlan
 		Policy      core.VerificationPolicy
-	}{"discovery/v5+" + musicconcepts.Version + "+" + core.ContextProfileVersion, catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
+	}{version + "+" + musicconcepts.Version + "+" + core.ContextProfileVersion, catalog, intent.Seed, intent.Controls, intent.OriginalDescription,
 		intent.Preferences, intent.EssentialCriteria, constraints, intent.References, intent.RequiredTracks, intent.Mode,
 		intent.Journey, intent.Temporal, intent.Destination, intent.Start, contextPlans(intent), intent.VerificationPolicy})
+	if intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0 {
+		key += "+pack-discovery/v1:" + knowledgeHash(intent.Knowledge.PackProfiles)
+	}
+	return key
 }
 
 func (s *candidateStream) Evidence(trackID string) []core.RetrievalEvidence {
@@ -115,7 +127,8 @@ func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, reso
 		// recording still has to pass catalog identity and CLAP vocal screening.
 		genres = []string{"instrumental"}
 	}
-	if len(genres) == 0 || cat == nil || resolver == nil {
+	hasPackProfiles := intent.Controls.RecommendationMode == core.EnhancedHybrid && intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0
+	if len(genres) == 0 && !hasPackProfiles || cat == nil || resolver == nil {
 		return nil
 	}
 	seed, _ := intent.Seed.Int64() // normalized and validated by the orchestrator
@@ -125,6 +138,22 @@ func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, reso
 		_ = json.Unmarshal(raw, &s.snapshot) // independent request-owned slices
 	}
 	key := discoveryKey(intent, resolver.CatalogVersion())
+	requestKey := discoveryKey(intent, "")
+	// Explicit v5 snapshots still replay their recorded identities offline;
+	// only newly generated discovery adopts metadata-only registration.
+	if s.snapshot.DiscoveryRecorded && s.snapshot.DiscoveryKey != "" &&
+		(s.snapshot.DiscoveryKey == discoveryKeyVersion(intent, resolver.CatalogVersion(), "discovery/v5") ||
+			s.snapshot.DiscoveryRequestKey == discoveryKeyVersion(intent, "", "discovery/v5")) {
+		key = discoveryKeyVersion(intent, resolver.CatalogVersion(), "discovery/v5")
+		requestKey = discoveryKeyVersion(intent, "", "discovery/v5")
+	}
+	// A saved generation cannot silently become a fresh online search when a
+	// shared asset is replaced. Explicit edits clear DiscoveryRecorded upstream.
+	if s.snapshot.DiscoveryRecorded && (len(s.snapshot.PackProfiles) > 0 || s.snapshot.DiscoveryCatalog != "") && s.snapshot.DiscoveryKey != "" && s.snapshot.DiscoveryKey != key {
+		if s.snapshot.DiscoveryRequestKey == "" || s.snapshot.DiscoveryRequestKey == requestKey {
+			s.replayError = fmt.Errorf("%w; start a new generation", ports.ErrDiscoveryGenerationMismatch)
+		}
+	}
 	// Unkeyed legacy snapshots retain their original offline replay behavior.
 	s.replay = s.snapshot.DiscoveryRecorded && (s.snapshot.DiscoveryKey == "" || s.snapshot.DiscoveryKey == key)
 	if !s.replay {
@@ -132,6 +161,8 @@ func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, reso
 		s.snapshot.DiscoveryEvidence = nil
 	}
 	s.snapshot.DiscoveryKey = key
+	s.snapshot.DiscoveryCatalog = resolver.CatalogVersion()
+	s.snapshot.DiscoveryRequestKey = requestKey
 	s.snapshot.DiscoveryRecorded = true
 	return s
 }
@@ -150,6 +181,9 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 	if err := ctx.Err(); err != nil {
 		return core.TrackRef{}, err
 	}
+	if s.replayError != nil {
+		return core.TrackRef{}, s.replayError
+	}
 	if s.replay {
 		if s.position >= len(s.snapshot.Discovery) {
 			return core.TrackRef{}, io.EOF
@@ -161,6 +195,9 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 	if !s.initialized {
 		s.initialized = true
 		var pools [][]core.GenreArtist
+		if s.intent.Controls.RecommendationMode == core.EnhancedHybrid && len(s.snapshot.PackProfiles) > 0 {
+			pools = append(pools, s.packDiscoveryArtists(ctx))
+		}
 		unavailableGenre := ""
 		for _, genre := range s.genres {
 			var pool core.GenreArtistPool
@@ -229,8 +266,8 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		if len(s.artists) > 0 && s.windowReads < s.discoveryWindowSize() {
 			artist := s.artists[0]
 			s.artists = s.artists[1:]
-			// Artists outside Deej-AI remain eligible only when the enhanced local
-			// index path can corroborate each recording through a Deezer preview.
+			// Enhanced discovery can register provider-identified recordings even
+			// when preview audio is unavailable; fit is assessed independently.
 			resolution := s.resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
 			if resolution.Status == core.ResolutionUnresolved && !s.dynamicDiscoveryEnabled() {
 				continue
@@ -246,13 +283,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				if err != nil {
 					return core.TrackRef{}, err
 				}
-				exact = map[string]string{}
-				for _, track := range entries {
-					key := core.ProvisionalRecordingKey(track)
-					if exact[key] == "" {
-						exact[key] = track.ID
-					}
-				}
+				exact = indexKnownArtistRecordings(s.cat, entries)
 			}
 			s.exactByArtist[artist.ID] = exact
 			if offline := s.client.localMusicBrainz(); offline != nil && !s.offlineRead[artist.ID] {
@@ -278,8 +309,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 						}
 						var matched core.KnowledgeSnapshot
 						if exact != nil {
-							key := core.ProvisionalRecordingKey(core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title})
-							id := exact[key]
+							id := matchKnownRecording(s.cat, exact, r)
 							if id != "" {
 								s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
 							}
@@ -287,12 +317,14 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 							s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched)
 						}
 						if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() {
-							if s.previewReads < s.dynamicPreviewLimit() {
-								s.previewReads++
-								_ = s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched)
-							} else if !s.previewBudgetNotice {
-								s.previewBudgetNotice = true
-								s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("Preview resolution reached its %d-recording limit; remaining MusicBrainz candidates were not analyzed.", s.dynamicPreviewLimit()))
+							if s.dynamicRegistrations < s.dynamicRegistrationLimit() {
+								s.dynamicRegistrations++
+								if err := s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched); err != nil {
+									return core.TrackRef{}, err
+								}
+							} else if !s.dynamicBudgetNotice {
+								s.dynamicBudgetNotice = true
+								s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("Metadata registration reached its %d-recording limit; additional MusicBrainz candidates were not registered.", s.dynamicRegistrationLimit()))
 							}
 						}
 						for _, track := range matched.Candidates {
@@ -365,14 +397,18 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				// can still be a new discovery-stream candidate.
 				var matched core.KnowledgeSnapshot
 				if exact != nil {
-					key := core.ProvisionalRecordingKey(core.TrackRef{Artist: r.ArtistCredit[0].Name, Title: r.Title})
-					id := exact[key]
-					if id == "" {
-						continue
+					id := matchKnownRecording(s.cat, exact, r)
+					if id != "" {
+						s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
 					}
-					s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
 				} else {
 					s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched)
+				}
+				if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() && s.dynamicRegistrations < s.dynamicRegistrationLimit() {
+					s.dynamicRegistrations++
+					if err := s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched); err != nil {
+						return core.TrackRef{}, err
+					}
 				}
 				for _, track := range matched.Candidates {
 					// Merge recording-ID conflicts using the same provenance rules

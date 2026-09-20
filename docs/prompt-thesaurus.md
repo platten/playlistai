@@ -1,6 +1,6 @@
 # Prompt thesaurus reference
 
-Generated from `music-concepts/v3`: **293 concepts and 726 canonical terms/aliases**.
+Generated from `music-concepts/v4`: **295 concepts and 742 canonical terms/aliases**.
 
 Regenerate with `node scripts/render-music-thesaurus.mjs`; verify with `--check`.
 
@@ -307,6 +307,8 @@ Aliases are matched case-insensitively within their typed facet. The parser uses
 | --- | --- | --- | --- |
 | bright | bright sound; bright timbre; bright tone; bright tonal colour; bright tonal color | Music with a bright timbre. | timbre:bright |
 | dark | dark sound; dark timbre; dark tone; dark tonal colour; dark tonal color | Music with a dark timbre. | timbre:dark |
+| treble emphasis | treble-heavy; treble heavy; strong treble; prominent treble; more treble; treble forward; treble-forward | Music with prominent treble frequencies. | — |
+| reduced treble | less treble; treble reduction; rolled-off treble; rolled off treble; treble roll-off; treble rolloff; softened treble | Music with reduced treble frequencies. | — |
 | dynamic | wide dynamics; big dynamic swings; big changes from quiet to loud; wide dynamic range; large dynamic range | Music with wide dynamics, changing from quiet to loud. | — |
 | compressed dynamics | narrow dynamic range; compressed dynamic range | Music with a narrow dynamic range. | — |
 | bass heavy | bass-heavy; strong bass; bass heavy sound; bass emphasis; bass forward; bass-forward | Music with strong, prominent bass. | — |

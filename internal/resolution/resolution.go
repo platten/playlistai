@@ -10,15 +10,17 @@ import (
 )
 
 type Issue struct {
-	Kind               core.ReferenceKind         `json:"kind"`
-	Influence          core.Influence             `json:"influence"`
-	Query              string                     `json:"query"`
-	Status             core.ResolutionStatus      `json:"status"`
-	Required           bool                       `json:"required"`
-	Inferred           bool                       `json:"inferred"`
-	Role               string                     `json:"role"`
-	Alternatives       []core.ResolutionCandidate `json:"alternatives"`
-	SpellingSuggestion *core.ResolutionCandidate  `json:"spellingSuggestion,omitempty"`
+	Kind                core.ReferenceKind         `json:"kind"`
+	Influence           core.Influence             `json:"influence"`
+	Query               string                     `json:"query"`
+	Status              core.ResolutionStatus      `json:"status"`
+	Required            bool                       `json:"required"`
+	Inferred            bool                       `json:"inferred"`
+	Role                string                     `json:"role"`
+	Alternatives        []core.ResolutionCandidate `json:"alternatives"`
+	GroundingCandidates []core.IdentityCandidate   `json:"groundingCandidates,omitempty"`
+	GroundingTruncated  bool                       `json:"groundingTruncated,omitempty"`
+	SpellingSuggestion  *core.ResolutionCandidate  `json:"spellingSuggestion,omitempty"`
 }
 
 // Apply annotates every typed reference with the resolver result and selects
@@ -55,18 +57,47 @@ func Apply(resolver ports.ReferenceResolver, intent core.MusicIntent) (core.Musi
 func applyList(resolver ports.ReferenceResolver, references []core.IntentReference, required bool, issues []Issue) ([]core.IntentReference, []Issue) {
 	out := make([]core.IntentReference, len(references))
 	for i, reference := range references {
+		explicitSelection := strings.TrimSpace(reference.TrackID) != ""
 		var result core.ReferenceResolution
+		groundingResolved := false
 		if reference.SpellingDecision != "accepted" && reference.Resolution != nil && reference.Resolution.Selected != nil && IsSpellingCandidate(*reference.Resolution.Selected) {
 			reference.TrackID, reference.Resolution = "", nil
 		}
 		if reference.SpellingDecision == "original" {
 			reference.TrackID, reference.Resolution = "", nil
 		}
-		if reference.Resolution != nil && reference.Resolution.CatalogVersion == resolver.CatalogVersion() &&
+		if !explicitSelection && reference.Grounding != nil && !reference.Grounding.Truncated && len(reference.Grounding.Candidates) == 1 && reference.Grounding.Candidates[0].Kind == core.ReferenceTrack {
+			grounded := reference
+			grounded.TrackID = reference.Grounding.Candidates[0].ID
+			if !strings.HasPrefix(grounded.TrackID, "local:") && !strings.HasPrefix(grounded.TrackID, "pack:") && !strings.HasPrefix(grounded.TrackID, "musicbrainz:") {
+				grounded.TrackID = "musicbrainz:" + grounded.TrackID
+			}
+			result = resolver.ResolveReference(grounded)
+			groundingResolved = result.Status == core.ResolutionResolved && result.Selected != nil
+		}
+		if groundingResolved {
+			// The catalog explicitly correlated this recording MBID.
+		} else if reference.Resolution != nil && reference.Resolution.CatalogVersion == resolver.CatalogVersion() &&
 			(reference.Kind == core.ReferenceAlbum || reference.Resolution.Status == core.ResolutionResolved && reference.Resolution.Selected != nil) {
 			result = *reference.Resolution
 		} else {
 			result = resolver.ResolveReference(reference)
+		}
+		groundingAmbiguous := reference.Grounding != nil && (reference.Grounding.Truncated || len(reference.Grounding.Candidates) > 1)
+		if groundingAmbiguous && !explicitSelection {
+			// Catalog candidates do not carry MusicBrainz MBIDs, so they cannot
+			// prove which homonymous provider identity the user meant. Require a
+			// more specific prompt instead of presenting an unrelated choice.
+			result.Alternatives = nil
+			result.Status = core.ResolutionAmbiguous
+			result.Selected = nil
+		} else if reference.Grounding != nil && len(reference.Grounding.Candidates) == 1 && !explicitSelection && result.Status == core.ResolutionResolved && result.Selected != nil && !groundingMatchesSelected(reference.Grounding.Candidates[0], *result.Selected) {
+			// A unique provider identity still cannot authenticate a differently
+			// named catalog entity. Preserve it as an explicit confirmation rather
+			// than silently treating a textual catalog hit as the same identity.
+			result.Alternatives = []core.ResolutionCandidate{*result.Selected}
+			result.Status = core.ResolutionAmbiguous
+			result.Selected = nil
 		}
 		reference.Resolution = &result
 		if result.Status == core.ResolutionResolved && result.Selected != nil && len(result.Selected.Representatives) > 0 {
@@ -74,7 +105,11 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 		} else {
 			reference.TrackID = ""
 			issue := Issue{Kind: reference.Kind, Influence: reference.Influence, Query: reference.Query, Status: result.Status, Required: required, Alternatives: result.Alternatives}
-			if reference.SpellingDecision == "" && result.Status == core.ResolutionAmbiguous && len(result.Alternatives) == 1 && IsSpellingCandidate(result.Alternatives[0]) {
+			if reference.Grounding != nil {
+				issue.GroundingCandidates = append([]core.IdentityCandidate(nil), reference.Grounding.Candidates...)
+				issue.GroundingTruncated = reference.Grounding.Truncated
+			}
+			if !groundingAmbiguous && reference.SpellingDecision == "" && result.Status == core.ResolutionAmbiguous && len(result.Alternatives) == 1 && IsSpellingCandidate(result.Alternatives[0]) {
 				candidate := result.Alternatives[0]
 				issue.SpellingSuggestion = &candidate
 			}
@@ -83,6 +118,16 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 		out[i] = reference
 	}
 	return out, issues
+}
+
+func groundingMatchesSelected(identity core.IdentityCandidate, selected core.ResolutionCandidate) bool {
+	if core.NormalizeIdentityPart(identity.Name) != core.NormalizeIdentityPart(selected.Artist) {
+		return false
+	}
+	if identity.Kind == core.ReferenceTrack || identity.Kind == core.ReferenceAlbum {
+		return core.NormalizeIdentityPart(identity.Title) == core.NormalizeIdentityPart(selected.Title)
+	}
+	return identity.Kind == core.ReferenceArtist
 }
 
 // IsSpellingCandidate identifies a proposal that needs a user's identity choice.
@@ -118,13 +163,42 @@ func BlockingError(issues []Issue) error {
 			label = string(issue.Kind)
 		}
 		if issue.Status == core.ResolutionAmbiguous && !issue.Inferred {
-			return fmt.Errorf("%w: %q matches %s", core.ErrAmbiguousReference, label, alternativeNames(issue.Alternatives))
+			matches := ""
+			if len(issue.GroundingCandidates) > 1 || issue.GroundingTruncated {
+				matches = groundingNames(issue.GroundingCandidates, issue.GroundingTruncated)
+			} else {
+				matches = alternativeNames(issue.Alternatives)
+			}
+			return fmt.Errorf("%w: %q matches %s", core.ErrAmbiguousReference, label, matches)
 		}
 		if issue.Required && issue.Status == core.ResolutionUnresolved {
 			return fmt.Errorf("%w: required track %q did not resolve", core.ErrRequiredTrackConflict, label)
 		}
 	}
 	return nil
+}
+
+func groundingNames(candidates []core.IdentityCandidate, truncated bool) string {
+	names := make([]string, 0, len(candidates)+1)
+	for _, candidate := range candidates {
+		name := strings.TrimSpace(candidate.Name)
+		if candidate.Title != "" {
+			name += " - " + candidate.Title
+		}
+		if candidate.Disambiguation != "" {
+			name += " (" + candidate.Disambiguation + ")"
+		}
+		if name != "" {
+			names = append(names, fmt.Sprintf("%q", name))
+		}
+	}
+	if truncated {
+		names = append(names, "additional provider identities")
+	}
+	if len(names) == 0 {
+		return "multiple provider identities"
+	}
+	return strings.Join(names, ", ")
 }
 
 func alternativeNames(alternatives []core.ResolutionCandidate) string {

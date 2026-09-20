@@ -10,15 +10,19 @@ import (
 )
 
 type MetadataBundleInfo struct {
-	MusicBrainzConfigured bool   `json:"musicBrainzConfigured"`
-	MusicBrainzInstalled  bool   `json:"musicBrainzInstalled"`
-	MusicBrainzSnapshot   string `json:"musicBrainzSnapshot"`
-	MusicBrainzRecordings int64  `json:"musicBrainzRecordings"`
+	MusicBrainzConfigured    bool   `json:"musicBrainzConfigured"`
+	MusicBrainzInstalled     bool   `json:"musicBrainzInstalled"`
+	MusicBrainzSnapshot      string `json:"musicBrainzSnapshot"`
+	MusicBrainzRecordings    int64  `json:"musicBrainzRecordings"`
+	GenreVocabularyInstalled bool   `json:"genreVocabularyInstalled"`
+	GenreVocabularyHash      string `json:"genreVocabularyHash"`
 }
 
 func (c *Container) GetMetadataBundleInfo() MetadataBundleInfo {
-	i := MetadataBundleInfo{MusicBrainzConfigured: c.cfg.Metadata.MusicBrainzManifestURL != ""}
-	if store, openErr := mbindex.Open(mbindex.ActivePath(filepath.Join(c.cfg.DataDir, "musicbrainz-metadata"))); openErr == nil {
+	dir := filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")
+	i := MetadataBundleInfo{MusicBrainzConfigured: c.cfg.Metadata.MusicBrainzManifestURL != "", GenreVocabularyHash: mbindex.ActiveGenreHash(dir)}
+	i.GenreVocabularyInstalled = i.GenreVocabularyHash != ""
+	if store, openErr := mbindex.Open(mbindex.ActivePath(dir)); openErr == nil {
 		defer store.Close()
 		info := store.Info()
 		i.MusicBrainzInstalled = true

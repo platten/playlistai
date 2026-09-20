@@ -6,6 +6,12 @@ import (
 	"github.com/platten/playlistai/internal/core"
 )
 
+// DiscoveryProfileCatalog retrieves local musical patterns without network
+// access. These hints must never be treated as recording criterion evidence.
+type DiscoveryProfileCatalog interface {
+	DiscoveryProfiles(context.Context, core.MusicIntent, int) ([]core.DiscoveryProfile, error)
+}
+
 // MusicKnowledge resolves extracted music terms only during explicit generation.
 // Returned identities must map to the supplied catalog before retrieval.
 type MusicKnowledge interface {

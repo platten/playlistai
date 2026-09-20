@@ -11,10 +11,11 @@ import {
 import { AppIcon, Button, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { DiscoveryDataCard } from "../components/DiscoveryDataCard";
 import { waitForSetupStatus } from "../lib/setupReadiness";
 
-type Step = "welcome" | "catalog" | "metadata" | "model" | "analysis" | "mert" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "metadata", "model", "analysis", "mert", "preview", "done"];
+type Step = "welcome" | "catalog" | "metadata" | "discovery" | "model" | "analysis" | "mert" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "metadata", "discovery", "model", "analysis", "mert", "preview", "done"];
 type SetupStatus = Awaited<ReturnType<typeof API.GetSetupStatus>>;
 
 function setupSteps(status: SetupStatus | null): Step[] {
@@ -146,6 +147,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "welcome" && <WelcomeStep onNext={() => void next()} />}
         {step === "catalog" && <CatalogStep onNext={next} />}
         {step === "metadata" && <MetadataStep onNext={next} />}
+        {step === "discovery" && <RequiredDiscoveryStep onNext={next} />}
         {step === "model" && <ModelStep onNext={next} />}
         {step === "analysis" && <RequiredAnalysisStep onNext={next} />}
         {step === "mert" && <RequiredMERTStep onNext={next} />}
@@ -204,6 +206,14 @@ function MetadataStep({ onNext }: { onNext: () => void }) {
       <Button variant="primary" disabled={!canDownload} iconLeft={<Icon.Download size={14} />} onClick={() => void download()}>Download offline music data</Button>}
     {error && <ErrorState variant="inline" message={error} onRetry={() => setRefreshToken((value) => value + 1)} onDismiss={() => setError(null)} />}
   </StepShell>;
+}
+
+function RequiredDiscoveryStep({ onNext }: { onNext: () => void }) {
+  const [ready, setReady] = useState(false);
+  return <div className="flex flex-1 flex-col gap-4">
+    <DiscoveryDataCard setup onReadyChange={setReady} onUnavailable={onNext} />
+    <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
+  </div>;
 }
 
 function RequiredAnalysisStep({ onNext }: { onNext: () => void }) {

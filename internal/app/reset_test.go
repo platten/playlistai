@@ -16,7 +16,7 @@ func TestResetAssetsPreservesPersonalDataAndRequiresSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "model-downloads", "intent-nlu"} {
+	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "discovery-data", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "model-downloads", "intent-nlu"} {
 		path := filepath.Join(cfg.DataDir, name)
 		if err := os.MkdirAll(path, 0700); err != nil {
 			t.Fatal(err)
@@ -54,7 +54,7 @@ func TestResetAssetsPreservesPersonalDataAndRequiresSetup(t *testing.T) {
 	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
 		t.Fatal("legacy model retained", err)
 	}
-	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "model-downloads", "intent-nlu"} {
+	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "discovery-data", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "model-downloads", "intent-nlu"} {
 		if _, err := os.Stat(filepath.Join(cfg.DataDir, name)); !os.IsNotExist(err) {
 			t.Fatal(name, err)
 		}

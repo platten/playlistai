@@ -9,6 +9,10 @@ import (
 
 const EnhancedPolicyVersion = core.EnhancedAudioPolicyVersion
 
+// EnhancedDSPMappingVersion changes when a request is mapped to a different
+// measurement or physical range. It does not invalidate cached measurements.
+const EnhancedDSPMappingVersion = "enhanced-dsp-mapping/v2"
+
 func enhancedWeight(v float64) float64 {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0
@@ -74,6 +78,10 @@ func enhancedDSP(a core.DSPAnalysis, clauses []core.AudioClause) (float64, bool)
 			value, low, high = a.Features.SpectralCentroidHz, 500, 5000
 		case "dark", "dark sound", "darker":
 			value, low, high, sign = a.Features.SpectralCentroidHz, 500, 5000, -1
+		case "treble emphasis", "treble-heavy", "treble heavy", "strong treble", "prominent treble", "more treble", "treble forward", "treble-forward":
+			value, low, high = a.Features.TrebleEnergyRatio, 0, 1
+		case "reduced treble", "less treble", "treble reduction", "rolled-off treble", "rolled off treble", "treble roll-off", "treble rolloff", "softened treble":
+			value, low, high, sign = a.Features.TrebleEnergyRatio, 0, 1, -1
 		case "dynamic", "wide dynamics", "big dynamic swings":
 			value, low, high = a.Features.RMSWindowSpreadDB, 0, 15
 		case "compressed", "compressed dynamics":

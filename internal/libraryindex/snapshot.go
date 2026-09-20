@@ -145,12 +145,13 @@ func snapshotSemanticDigest(ctx context.Context, path string) (string, error) {
 	}
 	defer db.Close()
 	rows, err := db.QueryContext(ctx, `SELECT f.id,f.source_revision,j.kind,j.semantic_key,
-		CASE j.kind WHEN 'metadata' THEN COALESCE(m.data,'') WHEN 'audio' THEN COALESCE(d.data,'') || COALESCE(v.vector,'') ELSE '' END
-		FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.state='completed'
+		CASE j.kind WHEN 'metadata' THEN COALESCE(m.data,'') WHEN 'audio' THEN COALESCE(d.data,'') || COALESCE(v.vector,'') WHEN 'clap' THEN COALESCE(c.data,'') || COALESCE(c.vector,'') ELSE '' END
+		FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.state<>'superseded'
 		LEFT JOIN track_metadata m ON j.kind='metadata' AND m.file_id=f.id AND m.source_revision=f.source_revision AND m.contract=j.semantic_key
 		LEFT JOIN dsp_results d ON j.kind='audio' AND d.file_id=f.id AND d.source_revision=f.source_revision AND d.contract=j.semantic_key
 		LEFT JOIN mert_results v ON j.kind='audio' AND v.file_id=f.id AND v.source_revision=f.source_revision AND v.contract=j.semantic_key
-		WHERE f.status='present' ORDER BY f.id,j.kind,j.semantic_key`)
+		LEFT JOIN clap_results c ON j.kind='clap' AND c.file_id=f.id AND c.source_revision=f.source_revision AND c.contract=j.semantic_key
+		WHERE f.status='present' AND (j.state='completed' OR d.data IS NOT NULL) ORDER BY f.id,j.kind,j.semantic_key`)
 	if err != nil {
 		return "", err
 	}

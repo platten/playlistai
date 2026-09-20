@@ -14,6 +14,11 @@ type cachedAudioRetriever struct {
 	candidates []core.Candidate
 }
 
+func (r *cachedAudioRetriever) SupportsIntentMetadata() bool {
+	metadata, ok := r.base.(interface{ SupportsIntentMetadata() bool })
+	return ok && metadata.SupportsIntentMetadata()
+}
+
 func (r *cachedAudioRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	raw, err := r.base.Retrieve(ctx, request)
 	if err != nil {

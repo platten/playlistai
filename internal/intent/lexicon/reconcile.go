@@ -15,10 +15,52 @@ import (
 // fields. Unknown model interpretations outside those occurrences survive.
 // It never resolves an entity or asserts that a musical property was measured.
 func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.MusicIntent {
+	// A conjunction inside a literal, fully grounded artist name is ambiguous.
+	// Do not let speculative list splitting overwrite a model's intact name.
+	// This applies only to playlist similarity artists; explicit endpoints and
+	// required/excluded identities retain their independently extracted roles.
+	var protectedArtists []core.IntentReference
+	for _, r := range intent.References {
+		if r.Kind != core.ReferenceArtist || r.Influence != core.InfluencePositive || !strings.Contains(strings.ToLower(r.Query), " and ") {
+			continue
+		}
+		for _, e := range r.Evidence {
+			if !knownOccurrence(e) && e.Text != "" && strings.Count(intent.OriginalDescription, e.Text) == 1 {
+				e.Start = strings.Index(intent.OriginalDescription, e.Text)
+				e.End = e.Start + len(e.Text)
+			}
+			if knownOccurrence(e) && e.End <= len(intent.OriginalDescription) && intent.OriginalDescription[e.Start:e.End] == e.Text && wordsContain(r.Query, e.Text) && wordsContain(e.Text, r.Query) {
+				r.Evidence = []core.SourceEvidence{e}
+				protectedArtists = append(protectedArtists, r)
+				break
+			}
+		}
+	}
+	protectedAtom := func(a core.IntentAtom) bool {
+		if a.Kind != "artist" || a.Scope != "playlist" || a.Polarity != "positive" {
+			return false
+		}
+		for _, r := range protectedArtists {
+			for _, e := range r.Evidence {
+				for _, source := range a.Evidence {
+					if source.Start >= e.Start && source.End <= e.End && wordsContain(r.Query, a.Value) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	owningAtoms := make([]core.IntentAtom, 0, len(extracted.Atoms))
+	for _, a := range extracted.Atoms {
+		if !protectedAtom(a) {
+			owningAtoms = append(owningAtoms, a)
+		}
+	}
 	refs := func(in []core.IntentReference) []core.IntentReference {
 		out := make([]core.IntentReference, 0, len(in))
 		for _, r := range in {
-			if !Owned(r.Query, r.Evidence, extracted.Atoms) {
+			if !Owned(r.Query, r.Evidence, owningAtoms) {
 				out = append(out, r)
 			}
 		}
@@ -64,7 +106,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	intent.EssentialCriteria = criteria
 	constraints := make([]core.HardConstraint, 0, len(intent.HardConstraints))
 	for _, c := range intent.HardConstraints {
-		if c.Kind == "require_artist" {
+		if c.Kind == "require_artist" || c.Kind == core.HardConstraintIncludeOtherArtists {
 			continue // rebuilt only from an attached affirmative output-domain atom
 		}
 		if c.Kind != "" && c.Value != "" && (strings.HasPrefix(c.Kind, "require_") || c.Kind == "journey" || c.Kind == "journey_order" || c.Kind == "waypoint_order" || c.Kind == "transition_order" || !Owned(c.Value, c.Evidence, extracted.Atoms)) {
@@ -95,6 +137,9 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	intent.TrackCountExplicit = false
 	hasCount, hasDuration := false, false
 	for _, a := range extracted.Atoms {
+		if protectedAtom(a) {
+			continue
+		}
 		switch a.Kind {
 		case "count":
 			intent.Controls.TotalTrackCount, _ = strconv.Atoi(a.Value)
@@ -126,10 +171,12 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 		case "reference_era":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative artist era is preserved; a supported career-period reference is needed before it can constrain retrieval.", Evidence: a.Evidence})
 		case "required_track":
-			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence})
+			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
 		case "require_artist":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "require_artist", Value: a.Value, Evidence: a.Evidence})
-			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence})
+			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
+		case core.HardConstraintIncludeOtherArtists:
+			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: a.Kind, Value: "true", Supported: true, Evidence: a.Evidence})
 		case "entity_mention":
 			keptReferences := intent.References[:0]
 			for _, r := range intent.References {
@@ -162,7 +209,14 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 					}
 				}
 			}
-			r := core.IntentReference{Kind: kind, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence}
+			influence := core.Influence(a.Polarity)
+			if influence != core.InfluencePositive && influence != core.InfluenceNegative {
+				influence = core.InfluencePositive
+			}
+			if a.Kind == "start" || a.Kind == "destination" {
+				influence = core.InfluencePositive
+			}
+			r := core.IntentReference{Kind: kind, Query: a.Value, Influence: influence, Evidence: a.Evidence, Grounding: a.Grounding}
 			intent.References = append(intent.References, r)
 			if a.Scope == "journey_via" {
 				intent.Journey.Waypoints = append(intent.Journey.Waypoints, r)
@@ -179,7 +233,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			}
 		case "exclude_artist":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "exclude_artist", Value: a.Value, Supported: true, Evidence: a.Evidence})
-			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluenceNegative, Evidence: a.Evidence})
+			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluenceNegative, Evidence: a.Evidence, Grounding: a.Grounding})
 		case "spacing":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "no_back_to_back_artist", Value: "true", Supported: true, Evidence: a.Evidence})
 		case "energy":
@@ -244,6 +298,9 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	if len(intent.Preferences.VocalPreferences) > 0 {
 		first := intent.Preferences.VocalPreferences[0]
 		intent.Preferences.VocalPreference = &first
+	}
+	if len(core.JourneyCriteria(intent.EssentialCriteria)) > 0 {
+		intent.Mode = core.ModeJourney
 	}
 	if intent.Mode == core.ModeJourney && intent.Start == nil && intent.Destination == nil && len(intent.Journey.Waypoints) == 0 && len(intent.Journey.EnergyTrajectory) == 0 && len(core.JourneyCriteria(intent.EssentialCriteria)) == 0 {
 		intent.Mode = core.ModeSimilar
@@ -330,6 +387,14 @@ func FactsMessage(x core.IntentTranslation) string {
 	var b strings.Builder
 	b.WriteString("\n\nProtected source facts. Copy span only from the quoted source text, never from a label or normalized value. A similarity reference does not require that artist in the output.\n")
 	for _, a := range x.Atoms {
+		if a.Grounding != nil {
+			ids := make([]string, 0, len(a.Grounding.Candidates))
+			for _, candidate := range a.Grounding.Candidates {
+				ids = append(ids, candidate.ID)
+			}
+			fmt.Fprintf(&b, "Grounded %s identity=%q; source=%q; provider=%s; match=%s; candidates=%q; snapshot=%q. Preserve this complete occurrence and its role; do not split or replace it.\n", a.Kind, a.Value, a.Evidence[0].Text, a.Grounding.Provider, a.Grounding.MatchType, ids, a.Grounding.SnapshotVersion)
+			continue
+		}
 		if a.Kind == "entity_mention" {
 			fmt.Fprintf(&b, "Possible whole artist mention, not a locked identity or list: value=%q; source=%q. Its %s %s role is %s. Preserve the full name unless the request clearly lists separate artists.\n", a.Value, a.Evidence[0].Text, a.Polarity, a.Scope, a.Strength)
 			continue

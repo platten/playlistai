@@ -28,6 +28,7 @@ type SetupReadiness struct {
 	Pending   bool
 	Catalog   SetupCapability
 	Metadata  SetupCapability
+	Discovery SetupCapability
 	Model     SetupCapability
 	Analysis  SetupCapability
 	MERT      SetupCapability
@@ -70,6 +71,8 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	}
 	musicBrainzSupported := c.cfg.Metadata.MusicBrainzManifestURL != ""
 	status.Metadata = SetupCapability{Ready: !musicBrainzSupported || musicBrainzReady, Supported: musicBrainzSupported, Required: musicBrainzPrior}
+	discovery, discoveryErr := c.GetDiscoveryAssetStatus()
+	status.Discovery = SetupCapability{Ready: discoveryErr == nil && discovery.Installed, Supported: discovery.Configured, Required: discovery.Configured}
 
 	if prefs.ModelDisabled {
 		modelPath = ""
@@ -125,7 +128,7 @@ func (r SetupReadiness) CompletionSteps() []string {
 	for _, step := range []struct {
 		name       string
 		capability SetupCapability
-	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"model", r.Model}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"preview", r.Preview}} {
+	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"discovery", r.Discovery}, {"model", r.Model}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"preview", r.Preview}} {
 		if step.capability.Supported && !step.capability.Ready && (!r.Onboarded || step.capability.Required) {
 			missing = append(missing, step.name)
 		}

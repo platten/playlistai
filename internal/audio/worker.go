@@ -79,6 +79,7 @@ type Worker struct {
 	Executable string
 	BundleDir  string
 	Model      core.AudioModelIdentity
+	Device     string
 	mu         sync.Mutex
 	closed     bool
 	cmd        *exec.Cmd
@@ -113,7 +114,13 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 	if w.closed {
 		return nil, fmt.Errorf("audio: worker is closed")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	timeout := 60 * time.Second
+	if request.Health {
+		// CUDA graph/session initialization is materially slower than steady-state
+		// inference on lower-tier laptop GPUs such as the RTX 5050.
+		timeout = 2 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -130,6 +137,14 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 		}
 		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
 		process.Background(cmd)
+		if w.BundleDir != "" {
+			cmd.Env = prependMERTLibraryPath(cmd.Env, w.BundleDir)
+		}
+		device := w.Device
+		if device == "" {
+			device = "cpu"
+		}
+		cmd.Env = append(cmd.Env, "PLAYLISTAI_CLAP_DEVICE="+device)
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
@@ -168,11 +183,18 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 	case result := <-done:
 		if result.err != nil || result.response.Error != "" || result.response.Protocol != WorkerProtocol || result.response.Model != w.Model {
 			w.stopLocked()
-			return nil, fmt.Errorf("audio: worker failed or model is incompatible")
+			detail := result.response.Error
+			if detail == "" && result.err != nil {
+				detail = result.err.Error()
+			}
+			if detail == "" {
+				detail = "protocol or model identity mismatch"
+			}
+			return nil, fmt.Errorf("%w: %s", ErrNativeWorker, detail)
 		}
 		if !request.Health && !validVector(result.response.Vector, w.Model.Dimension) {
 			w.stopLocked()
-			return nil, fmt.Errorf("audio: invalid embedding")
+			return nil, fmt.Errorf("%w: invalid embedding", ErrNativeWorker)
 		}
 		return result.response.Vector, nil
 	}

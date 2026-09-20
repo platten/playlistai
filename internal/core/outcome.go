@@ -10,7 +10,8 @@ func ReconcileOutcome(outcome GenerationOutcome, intent MusicIntent, actual int,
 		outcome.State = OutcomeFulfilled
 		unverified := len(intent.EssentialCriteria) > 0 || len(intent.Unsupported) > 0 || intent.DurationSeconds > 0
 		for _, constraint := range intent.HardConstraints {
-			if !HardConstraintSupported(constraint.Kind) {
+			if !HardConstraintSupported(constraint.Kind) ||
+				constraint.Kind == HardConstraintIncludeOtherArtists && (intent.Version < includeOtherArtistsIntentVersion || !constraint.RuntimeEnforced) {
 				unverified = true
 			}
 		}

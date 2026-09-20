@@ -7,17 +7,67 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 func (o *Orchestrator) knowledgeTrack(id string) (core.EnrichedTrack, bool) {
+	var result core.EnrichedTrack
+	found := false
 	if o.knowledge != nil {
 		for _, track := range o.knowledge.Tracks {
 			if track.Ref.ID == id {
-				return track, true
+				result, found = track, true
+				break
 			}
 		}
 	}
-	return core.EnrichedTrack{}, false
+	if provider, ok := o.cat.(ports.LibraryMetadataCatalog); ok && o.requestContext != nil {
+		if local, available, err := provider.LibraryRecordingMetadata(o.requestContext, id); err == nil && available {
+			if !found {
+				return local, true
+			}
+			result = mergeRecordingMetadata(result, local)
+			if features, available := provider.LibraryTrackFeatures(o.requestContext, id); available {
+				if features.Conflicts["original_release_date"] {
+					result.OriginalReleaseDate = ""
+				}
+				if features.Conflicts["edition_date"] {
+					result.ReleaseEditionDate, result.Year = "", 0
+				}
+				if features.Conflicts["composition_date"] {
+					result.CompositionStartYear, result.CompositionEndYear = 0, 0
+				}
+			}
+		}
+	}
+	return result, found
+}
+
+// Contradictory dates remain unknown; edition dates never stand in for original
+// recording or composition dates. Identity was established by the catalog join.
+func mergeRecordingMetadata(base, local core.EnrichedTrack) core.EnrichedTrack {
+	mergeDate := func(a, b string) string {
+		if a == "" {
+			return b
+		}
+		if b == "" {
+			return a
+		}
+		if len(a) >= 4 && len(b) >= 4 && a[:4] == b[:4] {
+			return a
+		}
+		return ""
+	}
+	base.OriginalReleaseDate = mergeDate(base.OriginalReleaseDate, local.OriginalReleaseDate)
+	base.ReleaseEditionDate = mergeDate(base.ReleaseEditionDate, local.ReleaseEditionDate)
+	if base.CompositionStartYear == 0 {
+		base.CompositionStartYear, base.CompositionEndYear = local.CompositionStartYear, local.CompositionEndYear
+	} else if local.CompositionStartYear != 0 && (base.CompositionStartYear != local.CompositionStartYear || base.CompositionEndYear != local.CompositionEndYear) {
+		base.CompositionStartYear, base.CompositionEndYear = 0, 0
+	}
+	base.GenreTags = append(append([]core.AttributedGenreTag(nil), base.GenreTags...), local.GenreTags...)
+	base.AllArtists = append(append([]string(nil), base.AllArtists...), local.AllArtists...)
+	return base
 }
 
 func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.MusicalCriterion) core.EvidenceState {
@@ -73,10 +123,14 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 		}
 	}
 	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved && (c.Kind == "genre" || c.Kind == "style") {
+		graph := core.GenreGraph{}
+		if o.knowledge != nil {
+			graph = o.knowledge.Graph
+		}
 		for _, tag := range track.GenreTags {
-			matches := core.StyleMatches(c.Value, tag.Name) || o.knowledge.Graph.Matches(c.Value, tag.Name)
+			matches := core.StyleMatches(c.Value, tag.Name) || graph.Matches(c.Value, tag.Name)
 			if o.enhanced {
-				matches = enhancedCategoryMatches(c.Value, tag.Name, o.knowledge.Graph)
+				matches = enhancedCategoryMatches(c.Value, tag.Name, graph)
 			}
 			if tag.Votes > 0 && tag.Source != "" && matches {
 				return core.EvidenceMatch

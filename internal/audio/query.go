@@ -12,7 +12,7 @@ import (
 // QueryPolicyVersion separates new request assessments from raw-clause scores.
 // Audio embeddings remain reusable; no musical-fit threshold is calibrated by
 // this policy. Each clause retains its own polarity, scope and evidence.
-const QueryPolicyVersion = "typed-clause-ensemble/v2+" + musicconcepts.Version
+const QueryPolicyVersion = "typed-clause-ensemble/v3+" + musicconcepts.Version
 
 // ClauseQueries translates exact reviewed aliases and adds one short musical
 // context. Parent genres are never substituted. Unknown or long descriptions
@@ -42,6 +42,14 @@ func ClauseQueries(clause core.AudioClause) []string {
 	}
 	if concept, ok := musicconcepts.Find(clause.Kind, text); ok && len(concept.Providers.CLAP) > 0 {
 		caption = concept.Providers.CLAP[0]
+	}
+	if clause.Kind == "instrumentation" {
+		switch clause.Degree {
+		case "mostly":
+			caption = "Music led by prominent " + text + ", with " + text + " throughout."
+		case "reduced":
+			caption = "Music with subtle, occasional " + text + " in the background."
+		}
 	}
 	if caption != "" && !strings.EqualFold(caption, text) {
 		queries = append(queries, caption)

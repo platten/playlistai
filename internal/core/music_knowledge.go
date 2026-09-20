@@ -74,22 +74,43 @@ func (g GenreGraph) Matches(want, actual string) bool {
 }
 
 type KnowledgeSnapshot struct {
+	// PackProfiles are immutable retrieval hints, never recording-level facts.
+	// Recorded discoveries replay these profiles without consulting newer packs.
+	PackProfiles []DiscoveryProfile `json:"packProfiles,omitempty"`
 	// ContextPlans are immutable, source-attributed retrieval proposals. They
 	// never supply recording-level genre tags or proof of musical suitability.
 	ContextPlans []ContextSeedPlan `json:"contextPlans,omitempty"`
 	// Discovery records the ordered pull stream, including rejected candidates,
 	// so history replay does not consult a changing external artist search.
-	Discovery         []TrackRef                     `json:"discovery,omitempty"`
-	DiscoveryRecorded bool                           `json:"discoveryRecorded,omitempty"`
-	DiscoveryKey      string                         `json:"discoveryKey,omitempty"`
-	DiscoveryEvidence map[string][]RetrievalEvidence `json:"discoveryEvidence,omitempty"`
-	ArtistPools       []GenreArtistPool              `json:"artistPools,omitempty"`
-	ID                string                         `json:"id"`
-	Graph             GenreGraph                     `json:"graph"`
-	Tracks            []EnrichedTrack                `json:"tracks"`
-	Candidates        []TrackRef                     `json:"candidates"`
-	Sources           []string                       `json:"sources"`
-	Notices           []string                       `json:"notices"`
+	Discovery           []TrackRef                     `json:"discovery,omitempty"`
+	DiscoveryRecorded   bool                           `json:"discoveryRecorded,omitempty"`
+	DiscoveryKey        string                         `json:"discoveryKey,omitempty"`
+	DiscoveryCatalog    string                         `json:"discoveryCatalog,omitempty"`
+	DiscoveryRequestKey string                         `json:"discoveryRequestKey,omitempty"`
+	DiscoveryEvidence   map[string][]RetrievalEvidence `json:"discoveryEvidence,omitempty"`
+	ArtistPools         []GenreArtistPool              `json:"artistPools,omitempty"`
+	ID                  string                         `json:"id"`
+	Graph               GenreGraph                     `json:"graph"`
+	Tracks              []EnrichedTrack                `json:"tracks"`
+	Candidates          []TrackRef                     `json:"candidates"`
+	Sources             []string                       `json:"sources"`
+	Notices             []string                       `json:"notices"`
+}
+
+// DiscoveryProfile describes musical patterns in a bounded, attributed sample
+// of an artist's recordings. Missing years/moods remain unknown. ArtistID is a
+// MusicBrainz artist ID only when independently established.
+type DiscoveryProfile struct {
+	Artist           string          `json:"artist"`
+	Album            string          `json:"album,omitempty"`
+	ArtistID         string          `json:"artistId,omitempty"`
+	Genres           []string        `json:"genres,omitempty"`
+	Moods            []string        `json:"moods,omitempty"`
+	FirstYear        int             `json:"firstYear,omitempty"`
+	LastYear         int             `json:"lastYear,omitempty"`
+	SupportingTracks []string        `json:"supportingTracks,omitempty"`
+	Sources          []ContextSource `json:"sources,omitempty"`
+	PackIDs          []string        `json:"packIds,omitempty"`
 }
 
 type TrackAssessment struct {

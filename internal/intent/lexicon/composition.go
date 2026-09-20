@@ -186,11 +186,11 @@ func negativeEntityRanges(prompt string, start, end int) [][2]int {
 func referenceRole(intro, entityType string) (kind, scope, strength string) {
 	kind, scope, strength = entityType, "playlist", "preferred"
 	switch {
-	case intro == "from" || intro == "begin with" || intro == "start with":
+	case intro == "from" || intro == "begin with" || intro == "start with" || intro == "starts with":
 		kind, scope, strength = "start", "journey_start", "required"
 	case intro == "via" || intro == "through":
 		scope, strength = "journey_via", "required"
-	case intro == "to" || strings.HasPrefix(intro, "ending") || strings.HasPrefix(intro, "finish") || intro == "transitioning to":
+	case intro == "to" || intro == "ends with" || strings.HasPrefix(intro, "ending") || strings.HasPrefix(intro, "finish") || intro == "transitioning to":
 		kind, scope, strength = "destination", "journey_end", "required"
 	}
 	return
@@ -293,6 +293,9 @@ func referenceTextEnd(prompt string, start int) int {
 	if stop := wideReferenceEnd.FindStringIndex(prompt[start:]); stop != nil {
 		end = start + stop[0]
 	}
+	if stop := otherArtistsPattern.FindStringIndex(prompt[start:end]); stop != nil && stop[0] > 0 {
+		end = start + stop[0]
+	}
 	if ambiguousEntityMention(prompt[start:end]) {
 		return end
 	}
@@ -308,8 +311,27 @@ func referenceTextEnd(prompt string, start int) int {
 			return start + at
 		}
 	}
-	if stop := referenceEnd.FindStringIndex(prompt[start:]); stop != nil {
-		return start + stop[0]
+	if stop := referenceEnd.FindStringIndex(prompt[start:end]); stop != nil {
+		firstEnd := start + stop[0]
+		// A comma may separate several explicitly named references. Extend
+		// only across name-like segments, not count or descriptive clauses.
+		if firstEnd < end && prompt[firstEnd] == ',' {
+			at := firstEnd + 1
+			for at < end {
+				next := end
+				if comma := strings.IndexByte(prompt[at:end], ','); comma >= 0 {
+					next = at + comma
+				}
+				value := strings.TrimSpace(prompt[at:next])
+				value = strings.TrimPrefix(value, "and ")
+				if !nameLike(value) && !compoundNameLike(value) {
+					break
+				}
+				firstEnd = next
+				at = next + 1
+			}
+		}
+		return firstEnd
 	}
 	return end
 }
@@ -327,7 +349,7 @@ func trimTrailingCount(prompt string, start, end int) int {
 }
 
 func candidateReference(a core.IntentAtom) core.IntentReference {
-	return core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.Influence(a.Polarity), Evidence: a.Evidence}
+	return core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.Influence(a.Polarity), Evidence: a.Evidence, Grounding: a.Grounding}
 }
 
 // ReconcileFallback keeps an ambiguous full mention available to catalog

@@ -54,10 +54,11 @@ func (s *frozenStore) summary(ctx context.Context) (librarypack.Coverage, librar
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='metadata' AND j.state='completed' WHERE f.status='present'),
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='metadata' AND j.state='completed' WHERE f.status='present'),
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state='completed' JOIN mert_results v ON v.file_id=f.id AND v.source_revision=f.source_revision AND v.contract=j.semantic_key WHERE f.status='present' AND length(v.vector)>0),
+		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='clap' AND j.state='completed' JOIN clap_results c ON c.file_id=f.id AND c.source_revision=f.source_revision AND c.contract=j.semantic_key WHERE f.status='present' AND length(c.vector)>0),
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state='completed' JOIN dsp_results d ON d.file_id=f.id AND d.source_revision=f.source_revision AND d.contract=j.semantic_key WHERE f.status='present' AND length(d.data)>0),
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state='failed' AND j.error_code<>'unsupported' WHERE f.status='present'),
 		(SELECT COUNT(*) FROM files f JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state='failed' AND j.error_code='unsupported' WHERE f.status='present')`).Scan(
-		&coverage.Tracks, &coverage.Metadata, &coverage.MERT, &coverage.DSP, &coverage.Failed, &coverage.Unsupported)
+		&coverage.Tracks, &coverage.Metadata, &coverage.MERT, &coverage.CLAP, &coverage.DSP, &coverage.Failed, &coverage.Unsupported)
 	if err != nil {
 		return coverage, librarypack.VectorSpace{}, 0, err
 	}
@@ -162,7 +163,7 @@ type frozenDSPSource struct{ rows *sql.Rows }
 func (s *frozenStore) dspSource(ctx context.Context) (*frozenDSPSource, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT f.id,d.data
 		FROM files f
-		JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state='completed'
+		JOIN jobs j ON j.file_id=f.id AND j.source_revision=f.source_revision AND j.kind='audio' AND j.state<>'superseded'
 		JOIN dsp_results d ON d.file_id=f.id AND d.source_revision=f.source_revision AND d.contract=j.semantic_key
 		WHERE f.status='present' AND length(d.data)>0 ORDER BY f.id`)
 	if err != nil {
@@ -624,6 +625,7 @@ type frozenPackSource struct {
 	cursor     *assignmentCursor
 	legacy     []librarylearn.ClusterAssignment
 	lastVector []float32
+	lastCLAP   []float32
 }
 
 func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assignmentCursor, legacy []librarylearn.ClusterAssignment) (*frozenPackSource, error) {
@@ -631,7 +633,7 @@ func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assi
 	if err != nil {
 		return nil, err
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,m.data,COALESCE(d.data,X''),COALESCE(v.vector,X''),
+	rows, err := store.db.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,m.data,COALESCE(d.data,X''),COALESCE(v.vector,X''),COALESCE(c.vector,X''),COALESCE(c.data,X''),
 		CASE WHEN ja.state='failed' AND ja.error_code<>'unsupported' THEN ja.error_detail ELSE '' END,
 		CASE WHEN ja.state='failed' AND ja.error_code='unsupported' THEN ja.error_detail ELSE '' END
 		FROM files f JOIN roots r ON r.id=f.root_id
@@ -640,6 +642,8 @@ func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assi
 		LEFT JOIN jobs ja ON ja.file_id=f.id AND ja.source_revision=f.source_revision AND ja.kind='audio' AND ja.state<>'superseded'
 		LEFT JOIN dsp_results d ON d.file_id=f.id AND d.source_revision=f.source_revision AND d.contract=ja.semantic_key
 		LEFT JOIN mert_results v ON v.file_id=f.id AND v.source_revision=f.source_revision AND v.contract=ja.semantic_key
+		LEFT JOIN jobs jc ON jc.file_id=f.id AND jc.source_revision=f.source_revision AND jc.kind='clap' AND jc.state='completed'
+		LEFT JOIN clap_results c ON c.file_id=f.id AND c.source_revision=f.source_revision AND c.contract=jc.semantic_key
 		WHERE f.status='present' ORDER BY f.id`)
 	if err != nil {
 		_ = store.Close()
@@ -651,6 +655,8 @@ func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assi
 func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, error) {
 	clear(s.lastVector)
 	s.lastVector = nil
+	clear(s.lastCLAP)
+	s.lastCLAP = nil
 	if err := ctx.Err(); err != nil {
 		return librarypack.Track{}, false, err
 	}
@@ -658,8 +664,8 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 		return librarypack.Track{}, false, s.rows.Err()
 	}
 	var id, rootAlias, relativePath, failure, unsupported string
-	var metadataRaw, dsp, vectorRaw []byte
-	if err := s.rows.Scan(&id, &rootAlias, &relativePath, &metadataRaw, &dsp, &vectorRaw, &failure, &unsupported); err != nil {
+	var metadataRaw, dsp, vectorRaw, clapRaw, clapData []byte
+	if err := s.rows.Scan(&id, &rootAlias, &relativePath, &metadataRaw, &dsp, &vectorRaw, &clapRaw, &clapData, &failure, &unsupported); err != nil {
 		return librarypack.Track{}, false, err
 	}
 	var record MetadataRecord
@@ -731,6 +737,20 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 			return librarypack.Track{}, false, fmt.Errorf("track %s: %w", id, err)
 		}
 		s.lastVector = packed.MERT
+	}
+	if len(clapRaw) > 0 {
+		packed.CLAP, err = decodeFloat32Vector(clapRaw)
+		if err != nil {
+			return librarypack.Track{}, false, fmt.Errorf("track %s CLAP: %w", id, err)
+		}
+		s.lastCLAP = packed.CLAP
+		if len(clapData) > 0 {
+			var clap CLAPRecord
+			if err := json.Unmarshal(clapData, &clap); err != nil {
+				return librarypack.Track{}, false, fmt.Errorf("track %s CLAP evidence: %w", id, err)
+			}
+			packed.CLAPEvidence = clap.portableEvidence()
+		}
 	}
 	assignment, assigned, err := assignmentForTrack(s.cursor, s.legacy, id)
 	if err != nil {

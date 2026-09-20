@@ -16,6 +16,7 @@ import (
 func newLoadedContainer(t *testing.T) *app.Container {
 	t.Helper()
 	cfg := config.Default()
+	cfg.Discovery.ManifestURL = "" // independent intent fixtures remain offline
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join("..", "catalog", "testdata")
 	cfg.Enrich.CachePath = filepath.Join(cfg.DataDir, "mb.sqlite")

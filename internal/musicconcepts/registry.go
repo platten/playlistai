@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const Version = "music-concepts/v3"
+const Version = "music-concepts/v5"
 
 // ProviderMappings keeps provider class names out of the user's intent. Parent
 // and related concepts are never expanded by Canonical or Find.

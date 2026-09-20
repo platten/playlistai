@@ -7,9 +7,22 @@ import "strings"
 // unchanged while migration, canonicalization and runtime assessment are kept
 // as separate operations.
 func (m MusicIntent) Normalized() MusicIntent {
+	storedVersion := m.Version
 	out := normalizeIntent(migrateStoredIntent(m))
-	// Runtime capabilities are assessed again for each request, never trusted
-	// merely because an older result serialized an enforcement claim.
+	// Version 11 is the first contract that could enforce an explicit request
+	// for artists outside the named references. Preserve an older saved
+	// result's lack of enforcement even though the current runtime supports it;
+	// a newly generated playlist will reassess and mark the constraint itself.
+	if storedVersion > 0 && storedVersion < includeOtherArtistsIntentVersion {
+		for index := range out.HardConstraints {
+			if out.HardConstraints[index].Kind == HardConstraintIncludeOtherArtists {
+				out.HardConstraints[index].RuntimeEnforced = false
+			}
+		}
+	}
+	// Current runtime capabilities are assessed again for each request. The
+	// migration guard above is the exception for a capability that did not
+	// exist when an older result was generated.
 	out.Capabilities = intentCapabilities()
 	out.backfillEngineAdapter()
 	return out
@@ -138,6 +151,7 @@ func cleanReferences(in []IntentReference, required bool) []IntentReference {
 	seen := map[string]struct{}{}
 	for _, ref := range in {
 		ref.Evidence = append([]SourceEvidence(nil), ref.Evidence...)
+		ref.Grounding = cloneIdentityGrounding(ref.Grounding)
 		ref.Query = strings.TrimSpace(ref.Query)
 		ref.TrackID = strings.TrimSpace(ref.TrackID)
 		ref.Resolution = cleanResolution(ref.Resolution)
@@ -222,6 +236,9 @@ func cleanHardConstraints(in []HardConstraint) []HardConstraint {
 	for _, constraint := range in {
 		constraint.Kind = strings.TrimSpace(constraint.Kind)
 		constraint.Value = strings.TrimSpace(constraint.Value)
+		if constraint.Kind == HardConstraintIncludeOtherArtists && strings.EqualFold(constraint.Value, "true") {
+			constraint.Value = "true"
+		}
 		if constraint.Kind != "" && constraint.Value != "" {
 			constraint.Supported = HardConstraintSupported(constraint.Kind)
 			constraint.RuntimeEnforced = constraint.Supported

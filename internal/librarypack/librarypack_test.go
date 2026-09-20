@@ -344,7 +344,7 @@ func TestCancellationAndDiskFullLeaveDestinationUnchanged(t *testing.T) {
 	if err := os.WriteFile(vectors, bytes.Repeat([]byte("v"), 1024), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := writeArchive(context.Background(), &failingWriter{remaining: 100}, []byte(`{"manifest":true}`), metadata, vectors)
+	err := writeArchive(context.Background(), &failingWriter{remaining: 100}, []byte(`{"manifest":true}`), metadata, vectors, "")
 	if !errors.Is(err, syscall.ENOSPC) {
 		t.Fatalf("disk-full error = %v", err)
 	}
@@ -706,6 +706,66 @@ func TestVectorHeaderUsesLittleEndianFloat32(t *testing.T) {
 	}
 	if math.Float32frombits(binary.LittleEndian.Uint32(vectors[32:36])) != 1 {
 		t.Fatal("vector is not little-endian float32")
+	}
+}
+
+func TestCLAPVectorRoundTripRemainsSeparateFromMERT(t *testing.T) {
+	pack := fixturePack("clap")
+	pack.CLAPGeneration = "clap-clap"
+	pack.CLAP = VectorSpace{Name: "library_clap", Dimension: 2, DType: "float32", ByteOrder: "little", Normalized: true, Model: "larger-clap-music", ModelRevision: "fixture", GraphSHA256: strings.Repeat("b", 64), Decoder: "decoder/v1", Preprocessing: "clap-logmel/v1", Sampling: "two-distributed-10s/v1", Pooling: "mean-l2/v1", Scope: "two-excerpts", Missingness: "absent-row"}
+	pack.Tracks[1].CLAP = []float32{0, 1}
+	archive, manifest := writePackAt(t, "clap.paipack", pack)
+	if manifest.Coverage.CLAP != 1 || len(readArchive(t, archive)[CLAPVectorsName]) == 0 {
+		t.Fatalf("CLAP payload missing: %+v", manifest)
+	}
+	manager, err := OpenManager(context.Background(), t.TempDir(), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	staged, err := manager.Stage(context.Background(), archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Activate(context.Background(), staged); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := manager.Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lease.Release()
+	clap, ok, err := lease.Generation().CLAPVector(context.Background(), "local:main:a")
+	if err != nil || !ok || !reflect.DeepEqual(clap, []float32{0, 1}) {
+		t.Fatalf("CLAP round trip=%v %t %v", clap, ok, err)
+	}
+	mert, ok, err := lease.Generation().Vector(context.Background(), "local:main:a")
+	if err != nil || !ok || !reflect.DeepEqual(mert, []float32{1, 0}) {
+		t.Fatalf("MERT changed=%v %t %v", mert, ok, err)
+	}
+}
+
+func TestLegacyV5PackStillOpensOptIn(t *testing.T) {
+	path := os.Getenv("PLAYLISTAI_TEST_LEGACY_PACK")
+	if path == "" {
+		t.Skip("set PLAYLISTAI_TEST_LEGACY_PACK to a version 5 pack")
+	}
+	manager, err := OpenManager(context.Background(), t.TempDir(), Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	staged, err := manager.Stage(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = manager.Discard(staged) }()
+	if staged.Manifest().Version != LegacyFormatVersion {
+		t.Fatalf("version=%d", staged.Manifest().Version)
+	}
+	rows, err := staged.Generation().List(context.Background(), "", 1)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("legacy rows=%d err=%v", len(rows), err)
 	}
 }
 

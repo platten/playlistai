@@ -75,6 +75,9 @@ func openTestCatalog(t *testing.T, tracks []librarypack.Track, mappings map[stri
 	if err != nil {
 		t.Fatalf("open manager: %v", err)
 	}
+	// Manager owns generation-cached SQLite/vector attachments. Register its
+	// close after TempDir so Windows releases file handles before directory cleanup.
+	t.Cleanup(func() { _ = manager.Close() })
 	activatePack(t, manager, pack)
 	lease, err := manager.Pin()
 	if err != nil {
@@ -117,6 +120,43 @@ func TestMetadataAndMERTTracksAreIndependentlyRetrievable(t *testing.T) {
 	}
 	if neighbors[0].Track.Provenance.Source != "local_library" || neighbors[0].Track.Provenance.PackID == "" {
 		t.Fatalf("missing provenance: %#v", neighbors[0].Track.Provenance)
+	}
+}
+
+func TestCLAPNeighborsUseIndependentVectorSpace(t *testing.T) {
+	root := t.TempDir()
+	packPath := filepath.Join(root, "clap.paipack")
+	clapSpace := testSpace()
+	clapSpace.Name, clapSpace.Dimension, clapSpace.Model, clapSpace.GraphSHA256 = "library_clap", 2, "larger-clap-music", strings.Repeat("b", 64)
+	_, err := librarypack.Write(context.Background(), packPath, librarypack.Pack{CorpusGeneration: "clap-corpus", MetadataGeneration: "clap-metadata", MERTGeneration: "clap-mert", CLAPGeneration: "clap-v1", MERT: testSpace(), CLAP: clapSpace, Tracks: []librarypack.Track{
+		{ID: "seed", Artist: "Seed", Title: "Origin", MERT: []float32{1, 0, 0}, CLAP: []float32{1, 0}},
+		{ID: "near", Artist: "Near", Title: "CLAP", MERT: []float32{0, 1, 0}, CLAP: []float32{.8, .6}},
+		{ID: "far", Artist: "Far", Title: "CLAP", MERT: []float32{1, 0, 0}, CLAP: []float32{0, 1}},
+	}}, librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := librarypack.OpenManager(context.Background(), filepath.Join(root, "managed"), librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer manager.Close()
+	activatePack(t, manager, packPath)
+	lease, err := manager.Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Open(lease, Options{SourceID: "main"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer catalog.Close()
+	hits, err := catalog.CLAPNeighbors(context.Background(), NeighborQuery{SeedID: catalog.NamespacedID("seed"), Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 2 || hits[0].Track.LocalID != "near" || hits[0].Evidence.Channel != CLAPChannel || hits[0].Evidence.VectorSpace == nil || hits[0].Evidence.VectorSpace.Name != "library_clap" {
+		t.Fatalf("CLAP neighbors=%+v", hits)
 	}
 }
 
@@ -347,7 +387,7 @@ func TestExecutorMergeDeduplicatesHighConfidenceRecordings(t *testing.T) {
 		{Track: Track{ID: "unrelated", Artist: "Other", Title: "Different", AudioFingerprint: fingerprint}, Evidence: Evidence{Channel: MetadataChannel, Rank: 3}},
 	}}
 	candidates := mergeHits(hits)
-	if len(candidates) != 2 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 || candidates[1].Track.ID != "unrelated" {
+	if len(candidates) != 2 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 1 || candidates[1].Track.ID != "unrelated" || candidates[1].Evidence[0].Rank != 2 {
 		t.Fatalf("deduplicated candidates = %+v", candidates)
 	}
 }
@@ -358,7 +398,7 @@ func TestExecutorMergeDeduplicatesTaggedAcoustID(t *testing.T) {
 		{Track: Track{ID: "first", Artist: "Artist A", Title: "Song A", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 1}},
 		{Track: Track{ID: "second", Artist: "Artist B", Title: "Song B", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 2}},
 	}})
-	if len(candidates) != 1 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 {
+	if len(candidates) != 1 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 1 || candidates[0].Evidence[0].Rank != 1 {
 		t.Fatalf("AcoustID candidates = %+v", candidates)
 	}
 }

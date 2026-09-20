@@ -45,7 +45,7 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	if err := state.Reader().QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "5" {
+	if version != "6" {
 		t.Fatalf("schema version = %q", version)
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT completed_mtime_ns,completed_size FROM directory_frontier LIMIT 1`); err != nil {

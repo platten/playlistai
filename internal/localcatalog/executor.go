@@ -2,8 +2,12 @@ package localcatalog
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -23,6 +27,7 @@ type Executor struct {
 	channelSlots chan struct{}
 	metadata     channelRunner
 	mert         channelRunner
+	clap         channelRunner
 }
 
 // sharedQueryBudget is admission state only. Executors remain catalog-bound so
@@ -127,6 +132,9 @@ func NewExecutor(catalog *Catalog, maxConcurrent int) (*Executor, error) {
 	executor.mert = func(ctx context.Context, value any) ([]Hit, error) {
 		return catalog.Neighbors(ctx, value.(NeighborQuery))
 	}
+	executor.clap = func(ctx context.Context, value any) ([]Hit, error) {
+		return catalog.CLAPNeighbors(ctx, value.(NeighborQuery))
+	}
 	catalog.executor = executor
 	return executor, nil
 }
@@ -135,7 +143,7 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 	if e == nil || e.catalog == nil {
 		return QueryResult{}, errors.New("localcatalog: nil executor")
 	}
-	if query.Metadata == nil && query.MERT == nil {
+	if query.Metadata == nil && query.MERT == nil && query.CLAP == nil {
 		_, done, err := e.catalog.withGeneration()
 		if err != nil {
 			return QueryResult{}, err
@@ -151,7 +159,7 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 	}
 	// Keep this catalog pin open from admission through deterministic merge.
 	// Close waits for admitted work; queued canceled work never acquires it.
-	_, releaseCatalog, err := e.catalog.withGeneration()
+	generation, releaseCatalog, err := e.catalog.withGeneration()
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -161,12 +169,15 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 		runner channelRunner
 		value  any
 	}
-	tasks := make([]task, 0, 2)
+	tasks := make([]task, 0, 3)
 	if query.Metadata != nil {
 		tasks = append(tasks, task{index: 0, runner: e.metadata, value: *query.Metadata})
 	}
 	if query.MERT != nil {
 		tasks = append(tasks, task{index: 1, runner: e.mert, value: *query.MERT})
+	}
+	if query.CLAP != nil {
+		tasks = append(tasks, task{index: 2, runner: e.clap, value: *query.CLAP})
 	}
 	type completed struct {
 		index int
@@ -185,10 +196,28 @@ func (e *Executor) Query(ctx context.Context, query Query) (QueryResult, error) 
 				return
 			}
 			hits, err := item.runner(ctx, item.value)
+			queryID := independentQueryID(item.value)
+			if query, ok := item.value.(NeighborQuery); ok && query.SeedID != "" && err == nil {
+				// File aliases of one reference recording are one retrieval
+				// query, not independent votes for every neighbor they share.
+				if id, idErr := e.catalog.localID(query.SeedID); idErr == nil {
+					if track, found, lookupErr := generation.Lookup(ctx, id); lookupErr != nil {
+						err = lookupErr
+					} else if found {
+						identity := librarypack.RecordingIdentity(packTrack(e.catalog.convertTrack(track)))
+						if identity != "" {
+							queryID = "seed-recording:" + identity
+						}
+					}
+				}
+			}
+			for i := range hits {
+				hits[i].Evidence.QueryID = queryID
+			}
 			results <- completed{index: item.index, hits: hits, err: err}
 		}()
 	}
-	ordered := make([][]Hit, 2)
+	ordered := make([][]Hit, 3)
 	var joined error
 	for range tasks {
 		result := <-results
@@ -222,7 +251,80 @@ func mergeHits(channels [][]Hit) []Candidate {
 		result = append(result, *candidate)
 	}
 	sort.Slice(result, func(i, j int) bool { return candidateLess(result[i], result[j]) })
-	return deduplicateCandidates(result)
+	result = deduplicateCandidates(result)
+	// File copies must not push unrelated recordings down a query's ranking.
+	// This runs on each complete bounded query result, not on the later union
+	// of queries where absent ranks can represent legitimately missing hits.
+	compactRecordingRanks(result)
+	return result
+}
+
+func independentQueryID(value any) string {
+	switch query := value.(type) {
+	case MetadataQuery:
+		text := normalizeUnicode(query.Text)
+		if query.Criterion != nil {
+			return "criterion:" + normalizeUnicode(query.Criterion.Kind) + ":" + normalizeUnicode(query.Criterion.Value) + ":" + text
+		}
+		return text
+	case NeighborQuery:
+		if query.SeedID != "" {
+			return query.SeedID
+		}
+		data := make([]byte, 4*len(query.Vector))
+		for i, value := range query.Vector {
+			binary.LittleEndian.PutUint32(data[i*4:], math.Float32bits(value))
+		}
+		return fmt.Sprintf("vector:%x", sha256.Sum256(data))
+	default:
+		return ""
+	}
+}
+
+func evidenceIdentity(e Evidence) string {
+	// Neither score nor rank identifies an independent observation. Retain the
+	// full provenance and representation contract, including model revisions.
+	key, _ := json.Marshal(struct {
+		Channel, Query string
+		Provenance     Provenance
+		Space          *librarypack.VectorSpace
+	}{e.Channel, e.QueryID, e.Provenance, e.VectorSpace})
+	return string(key)
+}
+
+func uniqueEvidence(input []Evidence) []Evidence {
+	best := make(map[string]Evidence, len(input))
+	for _, evidence := range input {
+		key := evidenceIdentity(evidence)
+		previous, exists := best[key]
+		if !exists || max(1, evidence.Rank) < max(1, previous.Rank) ||
+			(max(1, evidence.Rank) == max(1, previous.Rank) && evidence.Score > previous.Score) {
+			best[key] = evidence
+		}
+	}
+	out := make([]Evidence, 0, len(best))
+	for _, evidence := range best {
+		out = append(out, evidence)
+	}
+	sort.Slice(out, func(i, j int) bool { return evidenceLess(out[i], out[j]) })
+	return out
+}
+
+func compactRecordingRanks(candidates []Candidate) {
+	groups := map[string][]*Evidence{}
+	for i := range candidates {
+		for j := range candidates[i].Evidence {
+			evidence := &candidates[i].Evidence[j]
+			key := evidenceIdentity(*evidence)
+			groups[key] = append(groups[key], evidence)
+		}
+	}
+	for _, group := range groups {
+		sort.SliceStable(group, func(i, j int) bool { return group[i].Rank < group[j].Rank })
+		for i, evidence := range group {
+			evidence.Rank = i + 1
+		}
+	}
 }
 
 func candidateLess(left, right Candidate) bool {
@@ -237,9 +339,6 @@ func candidateLess(left, right Candidate) bool {
 }
 
 func deduplicateCandidates(input []Candidate) []Candidate {
-	if len(input) < 2 {
-		return input
-	}
 	parents := make([]int, len(input))
 	for index := range parents {
 		parents[index] = index
@@ -310,21 +409,32 @@ func deduplicateCandidates(input []Candidate) []Candidate {
 			continue
 		}
 		output[position].Evidence = append(output[position].Evidence, input[index].Evidence...)
-		sort.SliceStable(output[position].Evidence, func(i, j int) bool {
-			return evidenceLess(output[position].Evidence[i], output[position].Evidence[j])
-		})
+	}
+	for i := range output {
+		output[i].Evidence = uniqueEvidence(output[i].Evidence)
 	}
 	return output
 }
 
 func packTrack(track Track) librarypack.Track {
-	return librarypack.Track{
+	result := librarypack.Track{
 		Artist: track.Artist, Title: track.Title,
 		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
 		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		AudioFingerprint: track.AudioFingerprint, DurationMilliseconds: track.DurationMilliseconds,
 		DurationReliable: track.DurationReliable,
 	}
+	identity := strings.ToLower(strings.TrimSpace(track.RecordingIdentity))
+	if value, ok := strings.CutPrefix(identity, "isrc:"); ok && result.ISRC == "" {
+		result.ISRC = value
+	}
+	if value, ok := strings.CutPrefix(identity, "musicbrainz:"); ok && result.MusicBrainzRecording == "" {
+		result.MusicBrainzRecording = value
+	}
+	if value, ok := strings.CutPrefix(identity, "acoustid-id:"); ok && result.AcoustID == "" {
+		result.AcoustID = value
+	}
+	return result
 }
 
 func evidenceLess(left, right Evidence) bool {
@@ -337,7 +447,7 @@ func evidenceLess(left, right Evidence) bool {
 	if left.QueryID != right.QueryID {
 		return left.QueryID < right.QueryID
 	}
-	return false
+	return evidenceIdentity(left) < evidenceIdentity(right)
 }
 
 func channelOrder(channel string) int {
@@ -348,7 +458,9 @@ func channelOrder(channel string) int {
 		return 0
 	case MERTChannel:
 		return 1
-	default:
+	case CLAPChannel:
 		return 2
+	default:
+		return 3
 	}
 }

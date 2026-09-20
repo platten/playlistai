@@ -2,10 +2,24 @@ package multichannel
 
 import (
 	"context"
+	"sort"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
+
+// Bound by retrieval evidence, never source membership. Local and outside
+// recordings compete on the same scale before final musical ranking.
+func boundedMetadataCandidates(candidates []core.Candidate, limit int) []core.Candidate {
+	ordered := append([]core.Candidate(nil), candidates...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Scores.RetrievalFusion != ordered[j].Scores.RetrievalFusion {
+			return ordered[i].Scores.RetrievalFusion > ordered[j].Scores.RetrievalFusion
+		}
+		return ordered[i].Track.ID < ordered[j].Track.ID
+	})
+	return ordered[:min(len(ordered), max(0, limit))]
+}
 
 // Top up a shortlist before analysis when identity exclusions or duplicate
 // recordings shrink retrieval pages. Provisional candidates are excluded only
@@ -39,6 +53,9 @@ func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []
 			}
 		}
 		before := len(request.AttemptedIDs)
+		// A provider's concatenation order must not decide which source owns
+		// the bounded pool. Compare common retrieval evidence before truncation.
+		raw = boundedMetadataCandidates(raw, len(raw))
 		for _, candidate := range raw {
 			id := candidate.Track.ID
 			if _, seen := request.AttemptedIDs[id]; seen {

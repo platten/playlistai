@@ -118,6 +118,9 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 }
 
 func (o *Orchestrator) enhancedSupport(ctx context.Context, candidate core.Candidate, criteria []core.MusicalCriterion) bool {
+	if o.packedSupport(ctx, candidate.Track.ID) {
+		return true
+	}
 	for _, c := range criteria {
 		if o.bestCriterion(ctx, candidate.Track.ID, c) == core.EvidenceMatch {
 			return true
@@ -289,13 +292,17 @@ func (o *Orchestrator) enhancedMetadataFallback(ctx context.Context, candidate c
 			return false
 		}
 	}
-	return anyMatch
+	return anyMatch || o.packedSupport(ctx, candidate.Track.ID)
 }
 func (o *Orchestrator) clauseFitState(ctx context.Context, id string, clause core.AudioClause, preview core.AudioAssessment) core.EvidenceState {
 	for _, p := range preview.Clauses {
 		if p.Clause == clause && p.State != core.EvidenceUnknown && p.State != "" {
 			return p.State // preview assessments already incorporate polarity
 		}
+	}
+	if clause.Kind == "instrumentation" && (clause.Degree == "mostly" || clause.Degree == "reduced") {
+		// Credits establish presence, not how prominent an instrument sounds.
+		return core.EvidenceUnknown
 	}
 	state := o.bestCriterion(ctx, id, core.MusicalCriterion{Kind: clause.Kind, Value: clause.Text, Scope: clause.Scope})
 	if clause.Negative {

@@ -177,6 +177,8 @@ func TestIntentCacheKeyIncludesPromptParserSchemaAndSession(t *testing.T) {
 		{Prompt: "like Justice", Locale: "en-US", SessionID: "session-2"},
 		{Prompt: "like Justice", Locale: "en-US", NowPlaying: &core.TrackRef{ID: "seed0001"}},
 		{Prompt: "like Justice", Locale: "en-US", RecentTracks: []core.TrackRef{{ID: "seed0002"}}},
+		{Prompt: "like Justice", Locale: "en-US", SkipMetadata: true},
+		{Prompt: "like Justice", Locale: "en-US", RecognitionIdentity: "artist-first/v1|snapshot-b"},
 	}
 	for _, variant := range variants {
 		key, err := api.intentCacheKey(variant)

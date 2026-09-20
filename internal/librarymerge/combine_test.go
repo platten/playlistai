@@ -33,19 +33,40 @@ func writeTestPack(t *testing.T, dir, name, generation string, space librarypack
 	t.Helper()
 	path := filepath.Join(dir, name)
 	mertGeneration := ""
+	clapGeneration := ""
 	for _, track := range tracks {
 		if len(track.MERT) > 0 {
 			mertGeneration = "mert-" + generation
-			break
 		}
+		if len(track.CLAP) > 0 {
+			clapGeneration = "clap-" + generation
+		}
+	}
+	clapSpace := librarypack.VectorSpace{}
+	if clapGeneration != "" {
+		clapSpace = librarypack.VectorSpace{Name: "library_clap", Dimension: 2, DType: "float32", ByteOrder: "little", Normalized: true, Model: "clap", ModelRevision: "same", GraphSHA256: strings.Repeat("b", 64), Decoder: "decoder/v1", Preprocessing: "clap/v1", Sampling: "two-excerpts/v1", Pooling: "mean/v1", Scope: "sampled_excerpts", Missingness: "absent"}
 	}
 	if _, err := librarypack.Write(context.Background(), path, librarypack.Pack{
 		CorpusGeneration: "corpus-" + generation, MetadataGeneration: "metadata-" + generation,
-		MERTGeneration: mertGeneration, MERT: space, Tracks: tracks,
+		MERTGeneration: mertGeneration, CLAPGeneration: clapGeneration, MERT: space, CLAP: clapSpace, Tracks: tracks,
 	}, librarypack.DefaultLimits()); err != nil {
 		t.Fatalf("write pack: %v", err)
 	}
 	return path
+}
+
+func TestCombinePreservesCompatibleCLAPVectors(t *testing.T) {
+	dir := t.TempDir()
+	first := writeTestPack(t, dir, "first-clap.paipack", "first", librarypack.VectorSpace{}, []librarypack.Track{{ID: "one", Artist: "A", Title: "One", CLAP: []float32{1, 0}}})
+	second := writeTestPack(t, dir, "second-clap.paipack", "second", librarypack.VectorSpace{}, []librarypack.Track{{ID: "two", Artist: "B", Title: "Two", CLAP: []float32{0, 1}}})
+	output := filepath.Join(dir, "clap-merged.paipack")
+	report, err := Combine(context.Background(), []string{first, second}, output, Options{MaxRAM: 64 << 20, Workers: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Manifest.Coverage.CLAP != 2 || report.Manifest.CLAPGeneration == "" {
+		t.Fatalf("CLAP merge=%+v", report.Manifest)
+	}
 }
 
 func TestCombineDeduplicatesTransitivelyEnrichesAndRebuilds(t *testing.T) {

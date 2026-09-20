@@ -22,6 +22,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 )
@@ -139,6 +140,14 @@ func Combine(ctx context.Context, inputs []string, output string, options Option
 	if err != nil {
 		return report, err
 	}
+	clapSpace, err := compatibleCLAPSpace(staged)
+	if err != nil {
+		return report, err
+	}
+	clapModel, err := compatibleCLAPModel(staged)
+	if err != nil {
+		return report, err
+	}
 	aliasMap, rewrites, err := buildAliasMap(staged)
 	if err != nil {
 		return report, err
@@ -172,6 +181,9 @@ func Combine(ctx context.Context, inputs []string, output string, options Option
 	if err != nil {
 		return report, err
 	}
+	if clapSpace.Dimension > 0 {
+		resources.clapGeneration = generationID("clap", sourcePackIDs(staged), options, membershipDigest)
+	}
 	report.EffectiveTrainingSample = len(resources.trainingSample)
 
 	source, err := store.outputSource(ctx)
@@ -183,9 +195,12 @@ func Combine(ctx context.Context, inputs []string, output string, options Option
 		CorpusGeneration:     resources.corpusGeneration,
 		MetadataGeneration:   resources.metadataGeneration,
 		MERTGeneration:       resources.mertGeneration,
+		CLAPGeneration:       resources.clapGeneration,
 		ClusterGeneration:    resources.clusterGeneration,
 		StatisticsGeneration: resources.statisticsGeneration,
 		MERT:                 vectorSpace,
+		CLAP:                 clapSpace,
+		CLAPModel:            clapModel,
 		Learning:             resources.learning,
 		Statistics:           resources.statistics,
 	}, source, librarypack.DefaultLimits())
@@ -317,6 +332,49 @@ func compatibleVectorSpace(inputs []*stagedInput) (librarypack.VectorSpace, erro
 		}
 	}
 	return space, nil
+}
+
+func compatibleCLAPSpace(inputs []*stagedInput) (librarypack.VectorSpace, error) {
+	var space librarypack.VectorSpace
+	found := false
+	for _, input := range inputs {
+		if input.manifest.Coverage.CLAP == 0 {
+			continue
+		}
+		if !found {
+			space, found = input.manifest.CLAP, true
+			continue
+		}
+		if !reflect.DeepEqual(space, input.manifest.CLAP) {
+			return librarypack.VectorSpace{}, fmt.Errorf("librarymerge: incompatible CLAP representation contracts in pack %s", input.manifest.PackID)
+		}
+	}
+	return space, nil
+}
+
+// Unknown legacy runtime provenance cannot become a manifest-wide paired
+// identity. Rich rows keep their own model identity when such packs are mixed.
+func compatibleCLAPModel(inputs []*stagedInput) (*core.AudioModelIdentity, error) {
+	var model *core.AudioModelIdentity
+	unknown := false
+	for _, input := range inputs {
+		if input.manifest.Coverage.CLAP == 0 {
+			continue
+		}
+		if input.manifest.CLAPModel == nil {
+			unknown = true
+			continue
+		}
+		if model != nil && *model != *input.manifest.CLAPModel {
+			return nil, fmt.Errorf("librarymerge: incompatible paired CLAP model identities in pack %s", input.manifest.PackID)
+		}
+		copy := *input.manifest.CLAPModel
+		model = &copy
+	}
+	if unknown {
+		return nil, nil
+	}
+	return model, nil
 }
 
 type aliasKey struct{ packID, alias string }

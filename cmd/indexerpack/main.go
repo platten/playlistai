@@ -26,15 +26,109 @@ func main() {
 	codec := flag.String("codec", "", "verified codec payload directory")
 	model := flag.String("model", "", "optional verified CPU MERT bundle directory")
 	cudaModel := flag.String("cuda-model", "", "optional verified CUDA MERT bundle directory; requires --model")
+	clapModel := flag.String("clap-model", "", "optional verified CPU CLAP bundle directory")
+	clapCUDAModel := flag.String("clap-cuda-model", "", "optional verified CUDA CLAP bundle directory; requires --clap-model")
 	out := flag.String("out", "", "output executable")
+	validateOffline := flag.Bool("validate-offline", false, "validate complete CPU/CUDA MERT and CLAP inputs without packaging")
+	validatePackage := flag.String("validate-package", "", "validate an already packaged executable")
+	requireOffline := flag.Bool("require-offline", false, "require CPU/CUDA MERT and CLAP payloads with --validate-package")
 	flag.Parse()
-	if err := pack(*launcher, *codec, *model, *cudaModel, *out); err != nil {
+	if *validatePackage != "" {
+		if err := validatePackagedExecutable(*validatePackage, *requireOffline); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, "validated packaged executable:", *validatePackage)
+		return
+	}
+	if *validateOffline {
+		if err := validateOfflineModels(*model, *cudaModel, *clapModel, *clapCUDAModel); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, "validated offline CPU/CUDA MERT and CLAP bundles")
+		return
+	}
+	if err := pack(*launcher, *codec, *model, *cudaModel, *clapModel, *clapCUDAModel, *out); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
-func pack(launcher, codec, model, cudaModel, out string) error {
+func validatePackagedExecutable(path string, requireOffline bool) error {
+	bundle, err := indexerbundle.OpenExecutable(path)
+	if err != nil {
+		return fmt.Errorf("indexerpack: open packaged executable: %w", err)
+	}
+	defer bundle.Close()
+
+	required := []string{"codec"}
+	if requireOffline {
+		required = append(required, "mert/cpu", "mert/cuda", "clap/cpu", "clap/cuda")
+	}
+	for _, prefix := range required {
+		if !bundle.Has(prefix) {
+			return fmt.Errorf("indexerpack: packaged executable is missing %s payload", prefix)
+		}
+	}
+
+	codecDir, err := os.MkdirTemp("", "playlist-indexer-codec-validation-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(codecDir)
+	if err := bundle.Extract("codec", codecDir); err != nil {
+		return fmt.Errorf("indexerpack: extract packaged codec payload: %w", err)
+	}
+	if _, err := localaudio.OpenRuntime(codecDir); err != nil {
+		return fmt.Errorf("indexerpack: invalid packaged codec payload: %w", err)
+	}
+	return nil
+}
+
+func validateOfflineModels(model, cudaModel, clapModel, clapCUDAModel string) error {
+	bundles := []struct{ name, path string }{{"CPU MERT", model}, {"CUDA MERT", cudaModel}, {"CPU CLAP", clapModel}, {"CUDA CLAP", clapCUDAModel}}
+	for _, bundle := range bundles {
+		if strings.TrimSpace(bundle.path) == "" {
+			return fmt.Errorf("indexerpack: offline build requires %s bundle", bundle.name)
+		}
+	}
+	for _, bundle := range bundles {
+		name, path := bundle.name, bundle.path
+		info, err := os.Stat(path)
+		if err != nil {
+			return fmt.Errorf("indexerpack: %s bundle is unavailable: %w", name, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("indexerpack: %s bundle is not a directory", name)
+		}
+	}
+	cpuMERT, err := audio.ReadMERTBundle(model)
+	if err != nil {
+		return fmt.Errorf("indexerpack: invalid CPU MERT payload: %w", err)
+	}
+	cudaMERT, err := audio.ReadMERTBundle(cudaModel)
+	if err != nil {
+		return fmt.Errorf("indexerpack: invalid CUDA MERT payload: %w", err)
+	}
+	if cpuMERT.Backend() != "cpu" || cudaMERT.Backend() != "cuda" || cpuMERT.Model.WeightsSHA256 != cudaMERT.Model.WeightsSHA256 || cpuMERT.Model.Model != cudaMERT.Model.Model || cpuMERT.Model.Revision != cudaMERT.Model.Revision || cpuMERT.Model.Dimension != cudaMERT.Model.Dimension {
+		return errors.New("indexerpack: CPU and CUDA MERT bundles do not describe the same embedding model")
+	}
+	cpuCLAP, err := audio.ReadBundle(clapModel)
+	if err != nil {
+		return fmt.Errorf("indexerpack: invalid CPU CLAP payload: %w", err)
+	}
+	cudaCLAP, err := audio.ReadBundle(clapCUDAModel)
+	if err != nil {
+		return fmt.Errorf("indexerpack: invalid CUDA CLAP payload: %w", err)
+	}
+	if cpuCLAP.Backend() != "cpu" || cudaCLAP.Backend() != "cuda" || cpuCLAP.EmbeddingFingerprint() != cudaCLAP.EmbeddingFingerprint() {
+		return errors.New("indexerpack: CPU and CUDA CLAP bundles do not describe the same embedding model")
+	}
+	return nil
+}
+
+func pack(launcher, codec, model, cudaModel, clapModel, clapCUDAModel, out string) error {
 	if launcher == "" || codec == "" || out == "" {
 		return errors.New("indexerpack: --launcher, --codec, and --out are required")
 	}
@@ -76,6 +170,41 @@ func pack(launcher, codec, model, cudaModel, out string) error {
 				return errors.New("indexerpack: --cuda-model must declare the CUDA backend")
 			}
 			inputs = append(inputs, input{"mert/cpu", modelAbs}, input{"mert/cuda", cudaAbs})
+		}
+	}
+	if clapCUDAModel != "" && clapModel == "" {
+		return errors.New("indexerpack: --clap-cuda-model requires the CPU --clap-model bundle")
+	}
+	if clapModel != "" {
+		cpuAbs, err := filepath.Abs(clapModel)
+		if err != nil {
+			return err
+		}
+		manifest, err := audio.ReadBundle(cpuAbs)
+		if err != nil {
+			return fmt.Errorf("indexerpack: invalid CPU CLAP payload: %w", err)
+		}
+		if manifest.Backend() != "cpu" {
+			return errors.New("indexerpack: --clap-model must declare the CPU backend")
+		}
+		if clapCUDAModel == "" {
+			inputs = append(inputs, input{"clap", cpuAbs})
+		} else {
+			cudaAbs, err := filepath.Abs(clapCUDAModel)
+			if err != nil {
+				return err
+			}
+			cudaManifest, err := audio.ReadBundle(cudaAbs)
+			if err != nil {
+				return fmt.Errorf("indexerpack: invalid CUDA CLAP payload: %w", err)
+			}
+			if cudaManifest.Backend() != "cuda" {
+				return errors.New("indexerpack: --clap-cuda-model must declare the CUDA backend")
+			}
+			if cudaManifest.EmbeddingFingerprint() != manifest.EmbeddingFingerprint() {
+				return errors.New("indexerpack: CPU and CUDA CLAP bundles have different embedding identities")
+			}
+			inputs = append(inputs, input{"clap/cpu", cpuAbs}, input{"clap/cuda", cudaAbs})
 		}
 	}
 	launcherFile, err := os.Open(launcher)
@@ -143,11 +272,7 @@ func pack(launcher, codec, model, cudaModel, out string) error {
 	if err := os.Rename(tmpName, out); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(out))
-	if err != nil {
-		return err
-	}
-	return errors.Join(dir.Sync(), dir.Close())
+	return syncParentDirectory(filepath.Dir(out))
 }
 
 func addTree(zw *zip.Writer, source input) error {

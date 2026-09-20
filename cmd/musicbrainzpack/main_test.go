@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +14,49 @@ import (
 	"testing"
 
 	"github.com/ulikunitz/xz"
+
+	"github.com/platten/playlistai/internal/genrevocab"
+	"github.com/platten/playlistai/internal/mbindex"
 )
+
+func TestRunFetchesAndPackagesOfficialGenreVocabulary(t *testing.T) {
+	root := t.TempDir()
+	artist := filepath.Join(root, "artist.tar.xz")
+	recording := filepath.Join(root, "recording.tar.xz")
+	writeTestArchive(t, artist, "artist", `{"id":"a","name":"Artist"}`)
+	writeTestArchive(t, recording, "recording", `{"id":"r","title":"Track","artist-credit":[{"name":"Artist","artist":{"id":"a","name":"Artist"}}]}`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("fmt") != "json" || r.URL.Query().Get("limit") != "100" || r.Header.Get("User-Agent") != genreUserAgent {
+			t.Errorf("unexpected genre request: query=%v user-agent=%q", r.URL.Query(), r.Header.Get("User-Agent"))
+		}
+		_, _ = w.Write([]byte(`{"genre-count":1,"genres":[{"id":"genre-1","name":"Liquid drum and bass"}]}`))
+	}))
+	defer server.Close()
+	bundle := filepath.Join(root, "bundle")
+	var stdout, stderr bytes.Buffer
+	err := runWithOutput(context.Background(), []string{
+		"-work-dir", root, "-bundle-dir", bundle,
+		"-artist-archive", artist, "-recording-archive", recording,
+		"-snapshot", "20260912-001001", "-genre-endpoint", server.URL,
+	}, &stdout, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := mbindex.VerifyBundle(context.Background(), bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if manifest.GenreVocabulary == nil {
+		t.Fatal("packaged manifest omitted fetched genre vocabulary")
+	}
+	vocabulary, err := genrevocab.Load(filepath.Join(bundle, mbindex.GenreVocabularyName))
+	if err != nil || len(vocabulary.Genres) != 1 || vocabulary.Genres[0].Name != "Liquid drum and bass" {
+		t.Fatalf("packaged vocabulary: %+v %v", vocabulary, err)
+	}
+	if !json.Valid(stdout.Bytes()) || !strings.Contains(stderr.String(), "Fetching official") {
+		t.Fatalf("stdout=%s stderr=%s", &stdout, &stderr)
+	}
+}
 
 func TestRerunReusesCompletedIndexOffline(t *testing.T) {
 	root := t.TempDir()
@@ -21,7 +65,7 @@ func TestRerunReusesCompletedIndexOffline(t *testing.T) {
 	writeTestArchive(t, artist, "artist", `{"id":"a","name":"Artist"}`)
 	writeTestArchive(t, recording, "recording", `{"id":"r","title":"Track","artist-credit":[{"artist":{"id":"a","name":"Artist"}}]}`)
 	var stdout, stderr bytes.Buffer
-	args := []string{"-work-dir", root, "-bundle-dir", filepath.Join(root, "first"), "-artist-archive", artist, "-recording-archive", recording, "-snapshot", "20260912-001001"}
+	args := []string{"-work-dir", root, "-bundle-dir", filepath.Join(root, "first"), "-artist-archive", artist, "-recording-archive", recording, "-snapshot", "20260912-001001", "-skip-genres"}
 	if err := runWithOutput(context.Background(), args, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}

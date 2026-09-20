@@ -38,6 +38,9 @@ func ProvisionalRecordingKey(t TrackRef) string {
 	if strings.HasPrefix(t.ID, "local:") {
 		return "local-id\x00" + t.ID
 	}
+	if strings.HasPrefix(t.ID, "pack:") {
+		return "pack-id\x00" + t.ID
+	}
 	return NormalizeIdentityPart(t.Artist) + "\x00" + NormalizeIdentityPart(t.Title)
 }
 

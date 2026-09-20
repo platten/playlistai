@@ -102,6 +102,21 @@ func clapFromOriginal(ctx context.Context, pcm DecodedPCM) ([]float32, error) {
 	})
 }
 
+// CLAPResampleLocal converts borrowed local-library PCM to the exact sample
+// representation consumed by the paired CLAP preprocessing graph. It returns
+// owned mono 48 kHz samples and never retains the input.
+func CLAPResampleLocal(ctx context.Context, pcm DecodedPCM) ([]float32, error) {
+	if pcm.SampleRate < 8000 || pcm.SampleRate > 192000 || pcm.Channels < 1 || pcm.Channels > 8 || len(pcm.Samples) == 0 || len(pcm.Samples)%pcm.Channels != 0 {
+		return nil, fmt.Errorf("audio: invalid local PCM")
+	}
+	for _, sample := range pcm.Samples {
+		if math.IsNaN(float64(sample)) || math.IsInf(float64(sample), 0) {
+			return nil, fmt.Errorf("audio: nonfinite local PCM")
+		}
+	}
+	return clapFromOriginal(ctx, pcm)
+}
+
 func clapResample(ctx context.Context, frames, rate int, mono func(int) float64) ([]float32, error) {
 	out := make([]float32, frames*SampleRate/rate)
 	ok := false

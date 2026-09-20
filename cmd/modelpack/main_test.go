@@ -37,3 +37,16 @@ func TestRejectsMixedPackAndUnpackModes(t *testing.T) {
 		t.Fatal("mixed mode accepted")
 	}
 }
+
+func TestRecommendedModeRequiresCompleteExclusiveArguments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	for _, args := range [][]string{
+		{"--recommended", "unknown", "--cache", "cache", "--out", "out"},
+		{"--recommended", "mert", "--manifest", "also-set", "--cache", "cache", "--out", "out"},
+		{"--recommended", "clap", "--cache", "cache"},
+	} {
+		if err := run(args, &stdout, &stderr); err == nil {
+			t.Fatalf("invalid recommended arguments accepted: %v", args)
+		}
+	}
+}

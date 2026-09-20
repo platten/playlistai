@@ -68,15 +68,16 @@ type ResolutionCase struct {
 }
 
 type RecommendationCase struct {
-	ID              string             `json:"id"`
-	RequestID       string             `json:"requestId"`
-	ListenerID      string             `json:"listenerId"`
-	OccurredAt      time.Time          `json:"occurredAt"`
-	Prompt          string             `json:"prompt"`
-	Intent          core.MusicIntent   `json:"intent"`
-	Relevance       map[string]float64 `json:"relevance"` // 0..3 graded judgment
-	RecentExposures []string           `json:"recentExposures"`
-	Tags            []string           `json:"tags"`
+	StartingPointJudgments *StartingPointJudgments `json:"startingPointJudgments,omitempty"`
+	ID                     string                  `json:"id"`
+	RequestID              string                  `json:"requestId"`
+	ListenerID             string                  `json:"listenerId"`
+	OccurredAt             time.Time               `json:"occurredAt"`
+	Prompt                 string                  `json:"prompt"`
+	Intent                 core.MusicIntent        `json:"intent"`
+	Relevance              map[string]float64      `json:"relevance"` // 0..3 graded judgment
+	RecentExposures        []string                `json:"recentExposures"`
+	Tags                   []string                `json:"tags"`
 }
 
 type InteractionRecord struct {
@@ -120,6 +121,8 @@ type Latency struct {
 }
 
 type CaseMetrics struct {
+	StartingPoints               *StartingPointMetrics       `json:"startingPoints,omitempty"`
+	SourceQuality                map[string]SourceQuality    `json:"sourceQuality,omitempty"`
 	CaseID                       string                      `json:"caseId"`
 	Generation                   GenerationRecord            `json:"generation"`
 	RecallAtK                    *float64                    `json:"recallAtK,omitempty"`
@@ -140,6 +143,7 @@ type CaseMetrics struct {
 }
 
 type GenerationRecord struct {
+	DiscoverySnapshot  string                      `json:"discoverySnapshot,omitempty"`
 	TrackIDs           []string                    `json:"trackIds"`
 	CatalogVersion     string                      `json:"catalogVersion"`
 	AlgorithmVersion   string                      `json:"algorithmVersion"`
@@ -200,6 +204,7 @@ type ResolutionResult struct {
 }
 
 type Report struct {
+	DiscoverySnapshot  string                 `json:"discoverySnapshot,omitempty"`
 	Version            int                    `json:"version"`
 	DatasetName        string                 `json:"datasetName"`
 	Evidence           EvidenceLevel          `json:"evidence"`

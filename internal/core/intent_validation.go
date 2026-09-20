@@ -14,13 +14,13 @@ func (m MusicIntent) Validate() error {
 	if m.DurationToleranceSeconds < 0 || m.DurationToleranceSeconds > 24*60*60 || m.DurationSeconds == 0 && m.DurationToleranceSeconds != 0 {
 		return fmt.Errorf("intent: duration tolerance requires a target and must be between zero and 24 hours")
 	}
-	spellingGroups := [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)}
+	referenceGroups := [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)}
 	for _, endpoint := range []*IntentReference{m.Start, m.Destination} {
 		if endpoint != nil {
-			spellingGroups = append(spellingGroups, []IntentReference{*endpoint})
+			referenceGroups = append(referenceGroups, []IntentReference{*endpoint})
 		}
 	}
-	for _, group := range spellingGroups {
+	for _, group := range referenceGroups {
 		for _, ref := range group {
 			if ref.SpellingDecision != "" && ref.SpellingDecision != "original" && ref.SpellingDecision != "accepted" {
 				return fmt.Errorf("intent: invalid spelling decision")
@@ -71,7 +71,7 @@ func (m MusicIntent) Validate() error {
 	if len(m.InferredAnchors) > 3 {
 		return fmt.Errorf("intent: at most 3 inferred anchors are allowed")
 	}
-	for _, group := range [][]IntentReference{m.References, m.RequiredTracks, m.Journey.Waypoints, anchorReferences(m.InferredAnchors)} {
+	for _, group := range referenceGroups {
 		for _, ref := range group {
 			if ref.Kind != ReferenceArtist && ref.Kind != ReferenceTrack && ref.Kind != ReferenceAlbum {
 				return fmt.Errorf("intent: invalid reference kind %q", ref.Kind)
@@ -86,6 +86,9 @@ func (m MusicIntent) Validate() error {
 				if err := validateResolution(ref.Kind, *ref.Resolution); err != nil {
 					return err
 				}
+			}
+			if err := validateIdentityGrounding(ref.Kind, ref.Grounding); err != nil {
+				return err
 			}
 		}
 	}
@@ -158,6 +161,9 @@ func (m MusicIntent) Validate() error {
 		if constraint.Supported != HardConstraintSupported(constraint.Kind) {
 			return fmt.Errorf("intent: incorrect capability claim for hard constraint %q", constraint.Kind)
 		}
+		if constraint.Kind == HardConstraintIncludeOtherArtists && !strings.EqualFold(strings.TrimSpace(constraint.Value), "true") {
+			return fmt.Errorf("intent: include-other-artists constraint must be true")
+		}
 	}
 	c := m.Controls
 	if !c.RecommendationMode.Valid() {
@@ -184,6 +190,24 @@ func (m MusicIntent) Validate() error {
 			return fmt.Errorf("intent: energy trajectory positions must be ordered")
 		}
 		lastPosition = point.Position
+	}
+	return nil
+}
+
+func validateIdentityGrounding(kind ReferenceKind, grounding *IdentityGrounding) error {
+	if grounding == nil {
+		return nil
+	}
+	if grounding.Provider != "MusicBrainz" || strings.TrimSpace(grounding.MatchedSpelling) == "" || strings.TrimSpace(grounding.MatchType) == "" || strings.TrimSpace(grounding.SnapshotVersion) == "" || len(grounding.Candidates) == 0 || len(grounding.Candidates) > 64 {
+		return fmt.Errorf("intent: invalid identity grounding")
+	}
+	for _, candidate := range grounding.Candidates {
+		if candidate.Kind != kind || strings.TrimSpace(candidate.ID) == "" || strings.TrimSpace(candidate.Name) == "" {
+			return fmt.Errorf("intent: invalid grounded identity candidate")
+		}
+		if candidate.Kind == ReferenceTrack && strings.TrimSpace(candidate.ArtistID) == "" {
+			return fmt.Errorf("intent: grounded recording has no artist identity")
+		}
 	}
 	return nil
 }

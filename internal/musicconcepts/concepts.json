@@ -1,5 +1,5 @@
 {
-  "version": "music-concepts/v3",
+  "version": "music-concepts/v5",
   "provenance": {
     "description": "Project-authored musical thesaurus: exact contextual aliases, descriptive CLAP captions, and schema-validated AcousticBrainz classes. Captions are hypotheses for similarity ranking, not measured guarantees.",
     "acousticBrainz": "https://acousticbrainz.org/data",
@@ -1093,6 +1093,7 @@
       "kind": "mood",
       "value": "energetic",
       "aliases": [
+        "lively",
         "high energy",
         "high-energy",
         "high powered",
@@ -1444,6 +1445,8 @@
       "value": "cello",
       "aliases": [
         "cellos",
+        "chello",
+        "chellos",
         "violoncello",
         "violoncellos"
       ],
@@ -1650,6 +1653,54 @@
         ],
         "clap": [
           "Music with a dark timbre."
+        ]
+      }
+    },
+    {
+      "id": "texture.treble-emphasis",
+      "kind": "texture",
+      "value": "treble emphasis",
+      "aliases": [
+        "treble-heavy",
+        "treble heavy",
+        "strong treble",
+        "prominent treble",
+        "more treble",
+        "treble forward",
+        "treble-forward"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "treble_energy_ratio:positive"
+        ],
+        "clap": [
+          "Music with prominent treble frequencies."
+        ]
+      }
+    },
+    {
+      "id": "texture.reduced-treble",
+      "kind": "texture",
+      "value": "reduced treble",
+      "aliases": [
+        "less treble",
+        "treble reduction",
+        "rolled-off treble",
+        "rolled off treble",
+        "treble roll-off",
+        "treble rolloff",
+        "softened treble"
+      ],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "dsp": [
+          "treble_energy_ratio:negative"
+        ],
+        "clap": [
+          "Music with reduced treble frequencies."
         ]
       }
     },
@@ -2763,6 +2814,18 @@
         "clap": [
           "Music in the style of ska."
         ]
+      }
+    },
+    {
+      "id": "genre.dance",
+      "kind": "genre",
+      "value": "dance",
+      "aliases": ["dance music"],
+      "source": "project-authored/v1",
+      "license": "GPL-3.0-only",
+      "providers": {
+        "musicBrainz": ["dance"],
+        "clap": ["Dance music with a rhythm suited to dancing."]
       }
     },
     {

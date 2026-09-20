@@ -28,7 +28,7 @@ import (
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-const stateSchemaVersion = 5
+const stateSchemaVersion = 6
 
 var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 		return err
 	}
 	_ = conn.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version)
-	if version != "" && version != "1" && version != "2" && version != "3" && version != "4" && version != strconv.Itoa(stateSchemaVersion) {
+	if version != "" && version != "1" && version != "2" && version != "3" && version != "4" && version != "5" && version != strconv.Itoa(stateSchemaVersion) {
 		return fmt.Errorf("library indexer: unsupported state schema %q", version)
 	}
 	_, err := conn.ExecContext(ctx, `
@@ -227,6 +227,12 @@ CREATE TABLE IF NOT EXISTS mert_results (
  PRIMARY KEY(file_id,contract)
 );
 CREATE INDEX IF NOT EXISTS mert_results_contract ON mert_results(contract,file_id);
+CREATE TABLE IF NOT EXISTS clap_results (
+ file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
+ dimension INTEGER NOT NULL, vector BLOB NOT NULL, data BLOB NOT NULL,
+ PRIMARY KEY(file_id,contract)
+);
+CREATE INDEX IF NOT EXISTS clap_results_contract ON clap_results(contract,file_id);
 CREATE TABLE IF NOT EXISTS runs (
  id TEXT PRIMARY KEY, command TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
  status TEXT NOT NULL, plan BLOB NOT NULL, detail TEXT NOT NULL DEFAULT ''
@@ -1428,6 +1434,7 @@ type JobResult struct {
 	DSPCacheContract string
 	Vector           []byte
 	MERTData         []byte
+	CLAPData         []byte
 	Dimension        int
 }
 
@@ -1498,6 +1505,11 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 			if err == nil && len(result.Vector) != 0 {
 				_, err = tx.ExecContext(ctx, `INSERT INTO mert_results(file_id,source_revision,contract,dimension,vector,data) VALUES(?,?,?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,dimension=excluded.dimension,vector=excluded.vector,data=excluded.data`, result.Job.FileID, source, result.Contract, result.Dimension, result.Vector, result.MERTData)
 			}
+		case "clap":
+			if result.Dimension != 512 || len(result.Vector) != result.Dimension*4 || len(result.CLAPData) == 0 {
+				return errors.New("library indexer: invalid CLAP result")
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO clap_results(file_id,source_revision,contract,dimension,vector,data) VALUES(?,?,?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,dimension=excluded.dimension,vector=excluded.vector,data=excluded.data`, result.Job.FileID, source, result.Contract, result.Dimension, result.Vector, result.CLAPData)
 		default:
 			return fmt.Errorf("library indexer: unknown result kind %q", result.Job.Kind)
 		}
@@ -1619,6 +1631,7 @@ type Status struct {
 	Metadata      int64                       `json:"metadata"`
 	DSP           int64                       `json:"dsp"`
 	MERT          int64                       `json:"mert"`
+	CLAP          int64                       `json:"clap"`
 	JobsByState   map[string]int64            `json:"jobsByState"`
 	JobsByStage   map[string]map[string]int64 `json:"jobsByStage"`
 	ExpiredLeases int64                       `json:"expiredLeases"`
@@ -1704,7 +1717,29 @@ func (s *State) ScanCandidateProgress(ctx context.Context, epoch int64, semantic
 }
 
 func (s *State) ScanDiffProgress(ctx context.Context, epoch int64) (ProgressSnapshot, error) {
+	return s.ScanDiffProgressForJobs(ctx, epoch, nil)
+}
+
+// ScanDiffProgressForJobs reports progress for the selected semantic contracts
+// in a frozen scan diff. An empty selection preserves the historical behavior
+// of reporting every job in the diff.
+func (s *State) ScanDiffProgressForJobs(ctx context.Context, epoch int64, semanticJobs map[string]string) (ProgressSnapshot, error) {
 	var snapshot ProgressSnapshot
+	filter := ""
+	args := []any{epoch}
+	if len(semanticJobs) > 0 {
+		kinds := make([]string, 0, len(semanticJobs))
+		for kind := range semanticJobs {
+			kinds = append(kinds, kind)
+		}
+		sort.Strings(kinds)
+		clauses := make([]string, 0, len(kinds))
+		for _, kind := range kinds {
+			clauses = append(clauses, `(j.kind=? AND j.semantic_key=?)`)
+			args = append(args, kind, semanticJobs[kind])
+		}
+		filter = ` AND (` + strings.Join(clauses, ` OR `) + `)`
+	}
 	err := s.reader.QueryRowContext(ctx, `WITH per_file AS (
 		SELECT j.file_id,
 			MIN(j.state IN ('completed','failed')) AS finished,
@@ -1714,10 +1749,10 @@ func (s *State) ScanDiffProgress(ctx context.Context, epoch int64) (ProgressSnap
 			SUM(j.retry_count) AS retries
 		FROM scan_diff_jobs d
 		JOIN jobs j ON j.id=d.job_id AND j.source_revision=d.source_revision AND j.semantic_key=d.semantic_key
-		WHERE d.epoch_id=? GROUP BY j.file_id
+		WHERE d.epoch_id=?`+filter+` GROUP BY j.file_id
 	) SELECT COUNT(*),COUNT(*),COALESCE(SUM(finished),0),
 		COALESCE(SUM(pending AND NOT leased),0),COALESCE(SUM(leased),0),
-		COALESCE(SUM(failed),0),COALESCE(SUM(retries),0) FROM per_file`, epoch).Scan(&snapshot.Files, &snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
+		COALESCE(SUM(failed),0),COALESCE(SUM(retries),0) FROM per_file`, args...).Scan(&snapshot.Files, &snapshot.Total, &snapshot.Finished, &snapshot.Queued, &snapshot.Leased, &snapshot.Failed, &snapshot.Retries)
 	return snapshot, err
 }
 
@@ -1745,7 +1780,7 @@ func ReadStatus(ctx context.Context, dir string) (Status, error) {
 func queryStatus(ctx context.Context, db *sql.DB) (Status, error) {
 	status := Status{JobsByState: map[string]int64{}, JobsByStage: map[string]map[string]int64{}}
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(status='present'),0),COALESCE(SUM(tombstoned_at IS NOT NULL),0),
-		(SELECT COUNT(*) FROM track_metadata),(SELECT COUNT(*) FROM dsp_results),(SELECT COUNT(*) FROM mert_results) FROM files`).Scan(&status.Files, &status.Present, &status.Tombstoned, &status.Metadata, &status.DSP, &status.MERT)
+		(SELECT COUNT(*) FROM track_metadata),(SELECT COUNT(*) FROM dsp_results),(SELECT COUNT(*) FROM mert_results),(SELECT COUNT(*) FROM clap_results) FROM files`).Scan(&status.Files, &status.Present, &status.Tombstoned, &status.Metadata, &status.DSP, &status.MERT, &status.CLAP)
 	if err != nil {
 		return status, err
 	}
@@ -1800,20 +1835,34 @@ func (s *State) Metadata(ctx context.Context, fileID string) ([]byte, string, er
 }
 
 func (s *State) FinalizeBlockedAudio(ctx context.Context) error {
+	return s.FinalizeBlockedKind(ctx, "audio")
+}
+
+func (s *State) FinalizeBlockedKind(ctx context.Context, kind string) error {
+	if kind != "audio" && kind != "clap" {
+		return errors.New("library indexer: invalid dependent job kind")
+	}
 	return s.write(ctx, true, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, `UPDATE jobs AS audio SET state='failed',error_code='metadata_unavailable',
+		_, err := conn.ExecContext(ctx, `UPDATE jobs SET state='failed',error_code='metadata_unavailable',
 			error_detail='audio analysis prerequisite metadata did not complete',updated_at=?
-			WHERE audio.id IN (SELECT pending.id FROM jobs pending INDEXED BY jobs_claim_order WHERE pending.kind='audio' AND pending.state='pending')
+			WHERE id IN (SELECT pending.id FROM jobs pending INDEXED BY jobs_claim_order WHERE pending.kind=? AND pending.state='pending')
 			AND NOT EXISTS(
-				SELECT 1 FROM jobs metadata WHERE metadata.file_id=audio.file_id AND metadata.kind='metadata'
-				AND metadata.state='completed' AND metadata.source_revision=audio.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano))
+				SELECT 1 FROM jobs metadata WHERE metadata.file_id=jobs.file_id AND metadata.kind='metadata'
+				AND metadata.state='completed' AND metadata.source_revision=jobs.source_revision)`, time.Now().UTC().Format(time.RFC3339Nano), kind)
 		return err
 	})
 }
 
 func (s *State) FinalizeBlockedScanDiffAudio(ctx context.Context, epoch int64) error {
+	return s.FinalizeBlockedScanDiffKind(ctx, epoch, "audio")
+}
+
+func (s *State) FinalizeBlockedScanDiffKind(ctx context.Context, epoch int64, kind string) error {
 	if epoch <= 0 {
 		return errors.New("library indexer: invalid scan diff epoch")
+	}
+	if kind != "audio" && kind != "clap" {
+		return errors.New("library indexer: invalid dependent job kind")
 	}
 	return s.write(ctx, true, func(conn *sql.Conn) error {
 		// The projection contains only exact manifest revisions and semantics.
@@ -1821,7 +1870,7 @@ func (s *State) FinalizeBlockedScanDiffAudio(ctx context.Context, epoch int64) e
 		_, err := conn.ExecContext(ctx, `UPDATE jobs SET state='failed',error_code='metadata_unavailable',
 			error_detail='audio analysis prerequisite metadata did not complete',updated_at=?
 			WHERE id IN (SELECT job_id FROM eligible_jobs
-				WHERE epoch_id=? AND kind='audio' AND ready=0 AND state='pending')`, time.Now().UTC().Format(time.RFC3339Nano), epoch)
+				WHERE epoch_id=? AND kind=? AND ready=0 AND state='pending')`, time.Now().UTC().Format(time.RFC3339Nano), epoch, kind)
 		return err
 	})
 }

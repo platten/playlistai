@@ -45,6 +45,30 @@ func TestReconcileOutcomeDoesNotInventMusicalFulfillment(t *testing.T) {
 	}
 }
 
+func TestReconcileOutcomeDoesNotBackfillOtherArtistEnforcement(t *testing.T) {
+	legacy := MusicIntent{
+		Version: 10, Count: 2, Controls: IntentControls{TotalTrackCount: 2},
+		HardConstraints: []HardConstraint{{Kind: HardConstraintIncludeOtherArtists, Value: "true"}},
+	}.Normalized()
+	if legacy.Version != CurrentIntentVersion || legacy.HardConstraints[0].RuntimeEnforced {
+		t.Fatalf("legacy enforcement was not preserved: %+v", legacy.HardConstraints)
+	}
+	if got := ReconcileOutcome(GenerationOutcome{}, legacy, 2); got.State != OutcomePartial {
+		t.Fatalf("legacy count-only result invented enforcement: %+v", got)
+	}
+
+	current := MusicIntent{
+		Version: CurrentIntentVersion, Count: 2, Controls: IntentControls{TotalTrackCount: 2},
+		HardConstraints: []HardConstraint{{Kind: HardConstraintIncludeOtherArtists, Value: "true"}},
+	}.Normalized()
+	if !current.HardConstraints[0].RuntimeEnforced {
+		t.Fatalf("current enforcement was not assessed: %+v", current.HardConstraints)
+	}
+	if got := ReconcileOutcome(GenerationOutcome{}, current, 2); got.State != OutcomeFulfilled {
+		t.Fatalf("current enforced structural result was not reconciled: %+v", got)
+	}
+}
+
 func TestDurationOutcomeReconciliationRequiresEvidenceAndExplicitCount(t *testing.T) {
 	intent := MusicIntent{DurationSeconds: 4500, Translation: &IntentTranslation{}, Controls: IntentControls{TotalTrackCount: 20}}.Normalized()
 	assessment := &PlaylistDurationAssessment{TargetSeconds: 4500, ToleranceSeconds: 60, KnownMilliseconds: 4500000, State: EvidenceMatch}

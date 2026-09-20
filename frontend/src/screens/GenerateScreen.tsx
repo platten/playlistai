@@ -320,6 +320,7 @@ export function GenerateScreen({
   );
   const outcomeReasons = outcome?.outcome?.reasons ?? outcome?.status?.reasons ?? [];
   const lookupNotices = (outcome?.notices ?? []).filter((notice) => notice.code.startsWith("music_lookup_")).map((notice) => notice.detail);
+  const recognitionNotices = outcome?.status?.parser?.recognitionNotices ?? preview?.parser?.recognitionNotices ?? [];
   const noticeTitle = error
     ? "Playlist generation failed"
     : outcome
@@ -331,11 +332,15 @@ export function GenerateScreen({
     ? [error, "Generation did not complete. Retry, or edit your description and try again. If this keeps happening, open Settings → Application logs for more details."]
     : outcome
       ? outcomeReasons.length > 0
-        ? [...outcomeReasons.map((reason) => `${reason.criterion ? `${reason.criterion}: ` : ""}${reason.detail}${reason.action ? ` Next: ${reason.action}` : ""}`), ...lookupNotices]
-        : [...lookupNotices, "No tracks were returned for this request. The available evidence did not establish a playlist that meets it. Add an artist or track reference, or relax a requirement, then try again."]
+        ? [...outcomeReasons.map((reason) => `${reason.criterion ? `${reason.criterion}: ` : ""}${reason.detail}${reason.action ? ` Next: ${reason.action}` : ""}`), ...lookupNotices, ...recognitionNotices]
+        : [...lookupNotices, ...recognitionNotices, "No tracks were returned for this request. The available evidence did not establish a playlist that meets it. Add an artist or track reference, or relax a requirement, then try again."]
       : !generating && !replaySaved
         ? [
-          ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
+          ...recognitionNotices,
+          ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) =>
+            (issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated
+              ? `MusicBrainz has more than one identity for “${issue.query}”. Add a track title or other identifying detail to your request.`
+              : `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
           ...unresolvedIssues.map((issue) => spellingDecisions.current.selections.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query) && choice.rejectSpelling)
             ? `You kept “${issue.query}”. No artist match has been confirmed for that name. Correct the spelling or choose another artist if the request cannot be fulfilled.`
             : issue.influence === "negative"
@@ -566,13 +571,28 @@ export function GenerateScreen({
             <button type="button" aria-label="Dismiss request message" className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-accent-quiet hover:text-text" onClick={() => { setDismissedNotice(noticeKey); document.getElementById("music-description")?.focus(); }}><Icon.X size={16} /></button>
           </div>
           {ambiguousIssues.map((issue) => (
-            <label key={resolutionIssueKey(issue.kind, issue.query)} className="mt-3 flex flex-col gap-1 text-[13px]">
-              Choose the intended {issue.kind} for “{issue.query}”
-              <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(resolutionIssueKey(issue.kind, issue.query), event.target.value)}>
-                <option value="">Select a match…</option>
-                {(issue.alternatives ?? []).map((alternative) => <option key={alternative.entityId} value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
-              </select>
-            </label>
+            <div key={resolutionIssueKey(issue.kind, issue.query)} className="mt-3 flex flex-col gap-2 text-[13px]">
+              {((issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated) && (
+                <ul aria-label={`MusicBrainz identities for ${issue.query}`} className="list-disc space-y-1 pl-5 text-muted">
+                  {issue.groundingCandidates!.map((candidate) => (
+                    <li key={candidate.id}>
+                      {candidate.title ? `${candidate.name} — ${candidate.title}` : candidate.name}
+                      {candidate.disambiguation ? ` (${candidate.disambiguation})` : ""}
+                    </li>
+                  ))}
+                  {issue.groundingTruncated && <li>Additional identities were omitted because the lookup limit was reached.</li>}
+                </ul>
+              )}
+              {(issue.alternatives ?? []).length > 0 && (
+                <label className="flex flex-col gap-1">
+                  Choose the intended {issue.kind} for “{issue.query}”
+                  <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(resolutionIssueKey(issue.kind, issue.query), event.target.value)}>
+                    <option value="">Select a match…</option>
+                    {(issue.alternatives ?? []).map((alternative) => <option key={alternative.entityId} value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
+                  </select>
+                </label>
+              )}
+            </div>
           ))}
         </div>
       )}

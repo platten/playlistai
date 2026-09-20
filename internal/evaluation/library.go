@@ -23,6 +23,9 @@ type libraryEvaluation struct {
 // production generation takes its own lease and rejects a changed snapshot.
 // The returned release must run after Run and blind-output generation.
 func (r Runner) WithLibrary(ctx context.Context, provider localcatalog.PinProvider, mode localcatalog.RecommendationMode) (Runner, func(), error) {
+	if r.discovery != nil {
+		return r, nil, errors.New("evaluation: library and discovery comparisons are mutually exclusive")
+	}
 	if r.Catalog == nil || r.Resolver == nil || r.Similarity == nil {
 		return r, nil, errors.New("evaluation: base services required before library overlay")
 	}

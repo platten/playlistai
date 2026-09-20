@@ -41,6 +41,30 @@ func TestExtractionRootRejectsRedirectedDirectory(t *testing.T) {
 		t.Fatal("extraction wrote outside staging", err)
 	}
 }
+
+func TestLocalPartCannotEscapeManifestDirectory(t *testing.T) {
+	location, manifest := validFixture(t)
+	outside := filepath.Join(t.TempDir(), "outside.part")
+	part := manifest.Parts[0]
+	payload, err := os.ReadFile(filepath.Join(filepath.Dir(location), part.Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(outside, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(filepath.Dir(location), part.Path)
+	if err = os.Remove(inside); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(outside, inside); err != nil {
+		t.Skipf("symlink creation unavailable: %v", err)
+	}
+	if err = FetchManifest(context.Background(), manifest, location, filepath.Join(t.TempDir(), "cache"), filepath.Join(t.TempDir(), "out"), nil); err == nil {
+		t.Fatal("accepted model part redirected outside manifest directory")
+	}
+}
+
 func fixture(t *testing.T, headers []*tar.Header, payloads []string) (string, Manifest) {
 	t.Helper()
 	dir := t.TempDir()

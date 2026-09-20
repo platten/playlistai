@@ -9,6 +9,8 @@ import (
 	"io"
 	"math"
 	"os"
+	"strconv"
+	"strings"
 
 	ort "github.com/yalue/onnxruntime_go"
 
@@ -44,6 +46,37 @@ func Run(dir string) error {
 		if err != nil {
 			return err
 		}
+	}
+	device := os.Getenv("PLAYLISTAI_CLAP_DEVICE")
+	if device == "" {
+		device = "cpu"
+	}
+	if manifest.Backend() == "cuda" {
+		index := 0
+		if device != "cuda" {
+			var raw string
+			if !strings.HasPrefix(device, "cuda:") {
+				return fmt.Errorf("CLAP CUDA bundle requires a CUDA device")
+			}
+			raw = strings.TrimPrefix(device, "cuda:")
+			index, err = strconv.Atoi(raw)
+			if err != nil || index < 0 {
+				return fmt.Errorf("invalid CLAP CUDA device")
+			}
+		}
+		cudaOptions, cudaErr := ort.NewCUDAProviderOptions()
+		if cudaErr == nil {
+			cudaErr = cudaOptions.Update(map[string]string{"device_id": strconv.Itoa(index), "do_copy_in_default_stream": "1"})
+		}
+		if cudaErr == nil {
+			cudaErr = options.AppendExecutionProviderCUDA(cudaOptions)
+		}
+		destroyErr := cudaOptions.Destroy()
+		if cudaErr != nil || destroyErr != nil {
+			return fmt.Errorf("configure CLAP CUDA execution provider: %w", errors.Join(cudaErr, destroyErr))
+		}
+	} else if device != "cpu" {
+		return fmt.Errorf("CLAP CPU bundle cannot satisfy CUDA device request")
 	}
 	audioOutput, textOutput := "embedding", "embedding"
 	if manifest.Version == 2 {
@@ -90,7 +123,7 @@ func Run(dir string) error {
 		}
 		clear(request.Audio)
 		if err != nil {
-			response.Error = "inference unavailable"
+			response.Error = err.Error()
 		}
 		if err := audio.WriteFrame(os.Stdout, response); err != nil {
 			return err

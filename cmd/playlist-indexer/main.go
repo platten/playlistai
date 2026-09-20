@@ -56,6 +56,13 @@ func runMain() int {
 		}
 		return 0
 	}
+	if len(os.Args) == 3 && (os.Args[1] == "--audio-worker" || os.Args[1] == "--bundle") {
+		if err := audioruntime.Run(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
 	resolvedShutdownNanos.Store(0)
 	signals := make(chan os.Signal, 2)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)

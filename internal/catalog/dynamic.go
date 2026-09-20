@@ -3,6 +3,7 @@ package catalog
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,11 +15,13 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-// DynamicCatalog overlays a persistent set of preview-resolved tracks
+// DynamicCatalog overlays a persistent set of preview-resolved or independently
+// MusicBrainz-identified tracks
 // on the immutable Deej-AI catalog. Its row/vector methods deliberately expose
 // only the base catalog so the two identity spaces cannot corrupt dense search.
 type DynamicCatalog struct {
@@ -60,22 +63,35 @@ func OpenDynamic(base ports.Catalog, resolver ports.ReferenceResolver, path stri
 		_ = db.Close()
 		return nil, err
 	}
-	rows, err := db.Query(`SELECT id, artist, title, preview_url, album, duration_ms, duration_source, recording_id FROM dynamic_tracks`)
+	// Separate keyed metadata preserves authoritative identity across restart
+	// without changing the existing table or persisting expiring preview URLs.
+	if _, err = db.Exec(`CREATE TABLE IF NOT EXISTS dynamic_metadata (id TEXT PRIMARY KEY, metadata_json TEXT NOT NULL)`); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	rows, err := db.Query(`SELECT t.id, artist, title, preview_url, album, duration_ms, duration_source, recording_id, coalesce(m.metadata_json,'') FROM dynamic_tracks t LEFT JOIN dynamic_metadata m ON m.id=t.id`)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, artist, title, preview, album, source, recording string
+		var id, artist, title, preview, album, source, recording, metadata string
 		var duration int64
-		if err := rows.Scan(&id, &artist, &title, &preview, &album, &duration, &source, &recording); err != nil {
+		if err := rows.Scan(&id, &artist, &title, &preview, &album, &duration, &source, &recording, &metadata); err != nil {
 			_ = db.Close()
 			return nil, err
 		}
 		meta := core.TrackMeta{Ref: core.TrackRef{ID: id, Artist: artist, Title: title}, PreviewURL: preview, Album: album, AlbumReliable: album != ""}
 		if duration > 0 {
 			meta.FullRecordingDuration = &core.RecordingDuration{Milliseconds: duration, Source: source, RecordingID: recording}
+		}
+		if metadata != "" {
+			if len(metadata) > 1<<20 || json.Unmarshal([]byte(metadata), &meta) != nil || meta.Ref.ID != id {
+				_ = db.Close()
+				return nil, errors.New("catalog: invalid persisted dynamic metadata")
+			}
+			meta.PreviewURL = ""
 		}
 		d.tracks[id] = meta
 	}
@@ -90,8 +106,17 @@ func (d *DynamicCatalog) Close() error { return d.db.Close() }
 
 func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	id := strings.TrimSpace(meta.Ref.ID)
-	if !strings.HasPrefix(id, "deezer:") || strings.TrimSpace(meta.Ref.Artist) == "" || strings.TrimSpace(meta.Ref.Title) == "" || strings.TrimSpace(meta.PreviewURL) == "" {
+	mbid := librarypack.CanonicalMusicBrainzRecordingID(strings.TrimPrefix(id, "musicbrainz:"))
+	metadataIdentity := strings.HasPrefix(id, "musicbrainz:") && mbid != "" && mbid == meta.MusicBrainzRecording
+	previewIdentity := strings.HasPrefix(id, "deezer:") && strings.TrimSpace(meta.PreviewURL) != ""
+	if (!metadataIdentity && !previewIdentity) || strings.TrimSpace(meta.Ref.Artist) == "" || strings.TrimSpace(meta.Ref.Title) == "" {
 		return errors.New("catalog: invalid dynamic track")
+	}
+	stored := meta
+	stored.PreviewURL = ""
+	raw, err := json.Marshal(stored)
+	if err != nil || len(raw) > 1<<20 {
+		return errors.New("catalog: invalid dynamic metadata")
 	}
 	var duration int64
 	var source, recording string
@@ -102,12 +127,23 @@ func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	// cannot leave the in-memory view older than the database.
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	_, err := d.db.Exec(`INSERT INTO dynamic_tracks(id,artist,title,preview_url,album,duration_ms,duration_source,recording_id,updated_at)
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.Exec(`INSERT INTO dynamic_tracks(id,artist,title,preview_url,album,duration_ms,duration_source,recording_id,updated_at)
 		VALUES(?,?,?,?,?,?,?,?,unixepoch()) ON CONFLICT(id) DO UPDATE SET artist=excluded.artist,title=excluded.title,
 		preview_url=excluded.preview_url,album=excluded.album,duration_ms=excluded.duration_ms,
 		duration_source=excluded.duration_source,recording_id=excluded.recording_id,updated_at=excluded.updated_at`,
 		id, meta.Ref.Artist, meta.Ref.Title, "", meta.Album, duration, source, recording)
 	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT INTO dynamic_metadata(id,metadata_json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET metadata_json=excluded.metadata_json`, id, string(raw)); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	d.tracks[id] = meta
@@ -172,7 +208,7 @@ func (d *DynamicCatalog) searchSnapshot() []dynamicSearchTrack {
 func (d *DynamicCatalog) CatalogVersion() string { return d.resolver.CatalogVersion() }
 
 func (d *DynamicCatalog) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
-	if strings.HasPrefix(ref.TrackID, "deezer:") {
+	if strings.HasPrefix(ref.TrackID, "deezer:") || strings.HasPrefix(ref.TrackID, "musicbrainz:") {
 		if meta, ok := d.Meta(ref.TrackID); ok {
 			candidate := core.ResolutionCandidate{Kind: ref.Kind, EntityID: ref.TrackID, Artist: meta.Ref.Artist, Title: meta.Ref.Title, Confidence: 1,
 				Evidence:        []core.ResolutionEvidence{{Match: "id", NormalizedQuery: core.NormalizeIdentityPart(ref.Query), MatchedText: meta.Ref.Display()}},

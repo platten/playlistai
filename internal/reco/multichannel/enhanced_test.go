@@ -422,6 +422,68 @@ func TestEnhancedPhraseAliasesAndTransientMissingness(t *testing.T) {
 	}
 }
 
+func TestEnhancedTrebleUsesIndependentMonotonicBandRatio(t *testing.T) {
+	known := func(v float64) core.DSPValue { return core.DSPValue{Value: &v, State: core.FeatureKnown} }
+	clauses := []core.AudioClause{{Kind: "texture", Text: "treble emphasis"}}
+	var prior = -2.0
+	for _, ratio := range []float64{0, .25, .5, .75, 1} {
+		analysis := core.DSPAnalysis{Features: core.DSPFeatures{
+			TrebleEnergyRatio:  known(ratio),
+			SpectralCentroidHz: known(5000 - 4500*ratio),
+		}}
+		score, ok := enhancedDSP(analysis, clauses)
+		if !ok || score <= prior {
+			t.Fatalf("treble ratio %v produced score %v after %v", ratio, score, prior)
+		}
+		prior = score
+	}
+	low := core.DSPAnalysis{Features: core.DSPFeatures{TrebleEnergyRatio: known(0), SpectralCentroidHz: known(5000)}}
+	high := core.DSPAnalysis{Features: core.DSPFeatures{TrebleEnergyRatio: known(1), SpectralCentroidHz: known(500)}}
+	for _, clause := range []core.AudioClause{
+		{Kind: "texture", Text: "less treble"},
+		{Kind: "texture", Text: "treble emphasis", Negative: true},
+	} {
+		lowScore, lowOK := enhancedDSP(low, []core.AudioClause{clause})
+		highScore, highOK := enhancedDSP(high, []core.AudioClause{clause})
+		if !lowOK || !highOK || lowScore != 1 || highScore != -1 {
+			t.Fatalf("treble reduction changed direction for %+v: low=%v high=%v", clause, lowScore, highScore)
+		}
+	}
+	full, ok := enhancedDSP(high, clauses)
+	reduced, reducedOK := enhancedDSP(high, []core.AudioClause{{Kind: "texture", Text: "treble emphasis", Degree: "reduced"}})
+	if !ok || !reducedOK || full != 1 || reduced != .5 {
+		t.Fatalf("treble degree lost: full=%v reduced=%v", full, reduced)
+	}
+	if score, ok := enhancedDSP(core.DSPAnalysis{}, clauses); ok || score != 0 {
+		t.Fatalf("unknown treble became evidence: %v %v", score, ok)
+	}
+}
+
+func TestEnhancedTrebleAliasesDeduplicateByAxisAndPolarity(t *testing.T) {
+	intent := core.MusicIntent{Translation: &core.IntentTranslation{}, Preferences: core.SemanticPreferences{TextureDescriptions: []core.IntentPreference{
+		{Value: "treble-heavy", ConceptID: "texture.treble-emphasis", Influence: core.InfluencePositive},
+		{Value: "more treble", ConceptID: "texture.treble-emphasis", Influence: core.InfluencePositive},
+		{Value: "less treble", ConceptID: "texture.reduced-treble", Influence: core.InfluencePositive},
+	}}}
+	clauses := enhancedClauses(intent)
+	if len(clauses) != 2 || clauses[0].Text != "treble emphasis" || clauses[0].Negative || clauses[1].Text != "treble emphasis" || !clauses[1].Negative {
+		t.Fatalf("treble aliases were multiplied or polarity was lost: %+v", clauses)
+	}
+	for _, tt := range []struct {
+		prompt   string
+		negative bool
+	}{
+		{"music with more treble and treble-heavy sound", false},
+		{"music with less treble", true},
+		{"music without treble-heavy sound", true},
+	} {
+		clauses = enhancedClauses(core.MusicIntent{OriginalDescription: tt.prompt})
+		if len(clauses) != 1 || clauses[0].Text != "treble emphasis" || clauses[0].Negative != tt.negative {
+			t.Fatalf("raw treble prompt %q lost meaning: %+v", tt.prompt, clauses)
+		}
+	}
+}
+
 func TestEnhancedStopPreservesEvidenceAndRejectsMalformedReplay(t *testing.T) {
 	cat, input := enhancedFixture(t)
 	snapshot := freezeEnhanced(t, input)

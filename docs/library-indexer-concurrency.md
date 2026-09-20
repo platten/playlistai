@@ -54,9 +54,12 @@ Implemented flags are `--workers`, `--scan-workers`, `--metadata-workers`,
 `--decode-workers`, `--dsp-workers`, `--io-workers`, `--io-profile`,
 `--inference-workers`, `--inference-threads`, `--fit-workers`,
 `--index-workers`, `--queue-depth`, `--max-ram`, `--max-open-files`, and
-`--shutdown-timeout`. `--no-progress` disables the TTY-only PTerm progress bar;
-the same live area contains a PTerm box showing directory enumeration until an
-audio file is found, then the most recent file admitted by scan or analysis.
+`--shutdown-timeout`. `--no-progress` disables the TTY-only PTerm display. The
+live area contains a dedicated PTerm active-phase panel, a phase-scoped progress
+bar, and an activity box showing directory enumeration until an audio file is
+found, then the most recent file admitted by scan or analysis. Phase transitions
+reset the bar and durable counter scope, so metadata/MERT, CLAP, manifest, fit,
+and export work never inherit a previous phase's percentage or ETA.
 Activity rendering does not wait on the SQLite progress snapshot, so a briefly
 busy read connection cannot leave the box stuck at its initial message. A
 file or directory activity event redraws only that transient box; it never
@@ -247,7 +250,8 @@ supersession, and job upserts share prepared statements and one transaction.
 This preserves atomic per-chunk discovery while avoiding a commit round trip for
 every track in a large directory.
 
-Schema v5 stores recording identity beside metadata for indexed MERT reuse and
+Schema v6 stores recording identity beside metadata for indexed MERT reuse,
+plus independently versioned pooled and per-excerpt CLAP results, and
 adds a separate DSP stage cache. Schema v4's immutable epoch work remains in `scan_diff_jobs` and its
 directory-symlink traversal policy on the scan epoch, preventing a resumed
 frontier from mixing enabled and disabled traversal.

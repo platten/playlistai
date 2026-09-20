@@ -3,11 +3,13 @@ package localcatalog
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -21,17 +23,24 @@ import (
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
+	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
 var namespacePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
+
+var indexUpgradeMu sync.Mutex
 
 // Options is immutable after Open. RootMappings maps logical aliases from the
 // pack to absolute roots on this machine. Missing roots are accepted as
 // offline; relative roots and aliases absent from the manifest are rejected.
 type Options struct {
-	SourceID     string
-	RootMappings map[string]string
-	PageSize     int
+	// ProfileGeneration is the verified companion SHA-256 for shared packs.
+	ProfileGeneration string
+	ProfilePath       string
+	Shared            bool
+	SourceID          string
+	RootMappings      map[string]string
+	PageSize          int
 }
 
 // Catalog owns one librarypack lease. Close releases it after in-flight calls
@@ -45,6 +54,7 @@ type Catalog struct {
 	pageSize   int
 	rootMap    map[string]string
 	metadata   *librarylearn.MetadataModel
+	profiles   *sql.DB
 	dspStats   *librarylearn.DSPStatisticsModel
 	indexes    *derivedIndexes
 	closeIndex func()
@@ -97,9 +107,30 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 			PackID: manifest.PackID, PackSHA256: generation.PackSHA256(),
 			CorpusGeneration: manifest.CorpusGeneration, MetadataGeneration: manifest.MetadataGeneration,
 			MERTGeneration: manifest.MERTGeneration,
+			CLAPGeneration: manifest.CLAPGeneration,
 		},
 		prefix: "local:" + options.SourceID + ":", pageSize: pageSize, rootMap: rootMap,
 		budget: acquireQueryBudget(generation),
+	}
+	if options.Shared {
+		catalog.prefix = "pack:" + options.SourceID + ":"
+		catalog.provenance.Source = "shared_pack"
+		catalog.provenance.ProfileGeneration = options.ProfileGeneration
+		catalog.rootMap = nil
+	}
+	// Old derivatives remain recoverable while a new version is built atomically.
+	// Existing but corrupt current indexes still fail verification, never rebuild.
+	indexUpgradeMu.Lock()
+	_, statErr := os.Stat(filepath.Join(generation.Directory(), derivedIndexDir, "manifest.json"))
+	var upgradeErr error
+	if errors.Is(statErr, os.ErrNotExist) {
+		upgradeErr = BuildIndexes(context.Background(), generation, IndexBuildOptions{Workers: 2, ShardRows: 16_384, MaxScratchBytes: 256 << 20})
+	}
+	indexUpgradeMu.Unlock()
+	if upgradeErr != nil {
+		releaseQueryBudget(generation, catalog.budget)
+		lease.Release()
+		return nil, fmt.Errorf("localcatalog: upgrade search indexes: %w", upgradeErr)
 	}
 	indexes, closeIndex, indexErr := openDerivedIndexes(context.Background(), generation)
 	if indexErr != nil {
@@ -108,6 +139,24 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 		return nil, fmt.Errorf("localcatalog: open required search indexes: %w", indexErr)
 	}
 	catalog.indexes, catalog.closeIndex = indexes, closeIndex
+	if options.Shared && options.ProfilePath != "" {
+		dsn, err := sqliteuri.ReadOnly(options.ProfilePath, true)
+		if err != nil {
+			_ = catalog.Close()
+			return nil, err
+		}
+		db, err := sql.Open("sqlite", dsn)
+		if err != nil {
+			_ = catalog.Close()
+			return nil, err
+		}
+		catalog.profiles = db
+		var packID string
+		if err := db.QueryRow("SELECT pack_id FROM packs WHERE pack_id=? AND sha256=?", manifest.PackID, generation.PackSHA256()).Scan(&packID); err != nil {
+			_ = catalog.Close()
+			return nil, fmt.Errorf("localcatalog: companion pack binding: %w", err)
+		}
+	}
 	if learned, learningErr := generation.MetadataBasis(context.Background()); learningErr == nil && learned.Version != "" {
 		catalog.metadata = &learned
 	}
@@ -140,16 +189,24 @@ func (c *Catalog) Close() error {
 	if closeIndex != nil {
 		closeIndex()
 	}
+	if c.profiles != nil {
+		_ = c.profiles.Close()
+	}
 	releaseQueryBudget(generation, budget)
 	lease.Release()
 	return nil
 }
 
-func (c *Catalog) Manifest() librarypack.Manifest       { return c.manifest }
-func (c *Catalog) Provenance() Provenance               { return c.provenance }
-func (c *Catalog) VectorSpace() librarypack.VectorSpace { return c.manifest.MERT }
+func (c *Catalog) Manifest() librarypack.Manifest           { return c.manifest }
+func (c *Catalog) Provenance() Provenance                   { return c.provenance }
+func (c *Catalog) VectorSpace() librarypack.VectorSpace     { return c.manifest.MERT }
+func (c *Catalog) CLAPVectorSpace() librarypack.VectorSpace { return c.manifest.CLAP }
 
 func (c *Catalog) NamespacedID(localID string) string { return c.prefix + localID }
+
+func (c *Catalog) owns(id string) bool {
+	return strings.HasPrefix(id, c.prefix) && len(id) > len(c.prefix)
+}
 
 func (c *Catalog) localID(id string) (string, error) {
 	if !strings.HasPrefix(id, c.prefix) || len(id) == len(c.prefix) {
@@ -234,6 +291,10 @@ func (c *Catalog) Duplicates(ctx context.Context, id string, limit int) ([]Track
 // intentionally separate from fuzzy free-text resolution so artist-only
 // requests do not depend on dense catalog row iteration.
 func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {
+	return c.artistRecordings(ctx, artist, -1)
+}
+
+func (c *Catalog) artistRecordings(ctx context.Context, artist string, limit int) ([]core.TrackRef, error) {
 	key := normalizeUnicode(artist)
 	if key == "" {
 		return []core.TrackRef{}, nil
@@ -243,7 +304,7 @@ func (c *Catalog) ArtistRecordings(ctx context.Context, artist string) ([]core.T
 		return nil, err
 	}
 	defer done()
-	rows, err := c.indexes.metadata.QueryContext(ctx, "SELECT id FROM artists WHERE artist=? ORDER BY id", key)
+	rows, err := c.indexes.metadata.QueryContext(ctx, "SELECT id FROM artists WHERE artist=? ORDER BY id LIMIT ?", key, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +360,7 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 	}
 	normalized := normalizeUnicode(query.Text)
 	terms := strings.Fields(normalized)
-	if len(terms) == 0 {
+	if len(terms) == 0 && query.Criterion == nil {
 		return []Hit{}, nil
 	}
 	// Keep the generated join bounded and comfortably below SQLite's host
@@ -332,6 +393,10 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		arguments = append(arguments, term, term+"\U0010ffff")
 	}
 	querySQL += " ORDER BY t0.id"
+	if query.Criterion != nil {
+		querySQL = "SELECT id FROM terms WHERE term=? ORDER BY id"
+		arguments = []any{criterionPostingTerm(*query.Criterion)}
+	}
 	rows, err := c.indexes.metadata.QueryContext(ctx, querySQL, arguments...)
 	if err != nil {
 		return nil, err
@@ -353,7 +418,15 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		if _, excluded := query.ExcludeIDs[id]; excluded {
 			continue
 		}
+		if query.Criterion != nil {
+			if annotationCriterionEvidence(annotations(track.RawTags), *query.Criterion) != core.EvidenceMatch {
+				continue
+			}
+		}
 		textScore, textOK := metadataScore(normalized, terms, track)
+		if query.Criterion != nil {
+			textScore, textOK = 1, true
+		}
 		learnedScore, learnedOK := c.learnedMetadataScore(ctx, generation, normalized, track)
 		if textOK || learnedOK {
 			score := textScore
@@ -459,10 +532,10 @@ func (c *Catalog) learnedMetadataScore(ctx context.Context, generation *libraryp
 	return baseline + .5*max(0, latent), true
 }
 
-// CriterionEvidence exposes only sourced local genre annotations. Absence is
+// CriterionEvidence exposes sourced recording annotations. Absence is
 // unknown, never proof of a mismatch.
 func (c *Catalog) CriterionEvidence(ctx context.Context, id string, criterion core.MusicalCriterion) core.EvidenceState {
-	if criterion.Kind != "genre" && criterion.Kind != "style" {
+	if !supportsAnnotationCriterion(criterion) {
 		return core.EvidenceUnknown
 	}
 	localID, err := c.localID(id)
@@ -478,12 +551,7 @@ func (c *Catalog) CriterionEvidence(ctx context.Context, id string, criterion co
 	if err != nil || !ok {
 		return core.EvidenceUnknown
 	}
-	for _, annotation := range annotations(track.RawTags) {
-		if annotationMatches(annotation, criterion) {
-			return core.EvidenceMatch
-		}
-	}
-	return core.EvidenceUnknown
+	return annotationCriterionEvidence(annotations(track.RawTags), criterion)
 }
 
 func metadataScore(query string, terms []string, track librarypack.Track) (float64, bool) {
@@ -513,32 +581,13 @@ func metadataScore(query string, terms []string, track librarypack.Track) (float
 }
 
 func rawTagText(raw json.RawMessage) string {
-	var value any
-	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return ""
-	}
 	var values []string
-	var visit func(any)
-	visit = func(item any) {
-		switch typed := item.(type) {
-		case string:
-			values = append(values, typed)
-		case []any:
-			for _, child := range typed {
-				visit(child)
-			}
-		case map[string]any:
-			keys := make([]string, 0, len(typed))
-			for key := range typed {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				visit(typed[key])
-			}
+	for _, annotation := range annotations(raw) {
+		switch annotation.Kind {
+		case "genre", "style", "mood", "instrumentation", "language", "work", "movement", "composer", "album_composer", "title", "artist_credit", "album_artist":
+			values = append(values, annotation.Value)
 		}
 	}
-	visit(value)
 	return strings.Join(values, " ")
 }
 
@@ -615,6 +664,139 @@ func (c *Catalog) Neighbors(ctx context.Context, query NeighborQuery) ([]Hit, er
 			Channel: MERTChannel, Rank: i + 1, Score: item.Score,
 			QueryID: query.SeedID, Provenance: c.provenance, VectorSpace: &space,
 		}}
+	}
+	return hits, nil
+}
+
+// CLAPNeighbors performs exact cosine retrieval in the pack's aligned CLAP
+// audio/text space. It is deliberately separate from MERT retrieval.
+func (c *Catalog) CLAPNeighbors(ctx context.Context, query NeighborQuery) ([]Hit, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if query.Limit <= 0 {
+		return []Hit{}, nil
+	}
+	if query.Limit > 10_000 {
+		query.Limit = 10_000
+	}
+	if query.Space != nil && *query.Space != c.manifest.CLAP {
+		return nil, ErrIncompatibleSpace
+	}
+	if (query.SeedID == "") == (len(query.Vector) == 0) {
+		return nil, errors.New("localcatalog: provide exactly one CLAP seed or vector")
+	}
+	if len(query.Vector) > 0 && query.Space == nil {
+		return nil, ErrIncompatibleSpace
+	}
+	model := c.manifest.CLAPModel
+	if len(query.Vector) > 0 {
+		if model != nil && (query.CLAPModel == nil || *query.CLAPModel != *model) {
+			return nil, ErrIncompatibleSpace
+		}
+		if query.CLAPModel != nil {
+			manifest := c.manifest
+			manifest.CLAPModel = query.CLAPModel
+			if !manifest.CLAPCompatible(*query.CLAPModel) {
+				return nil, ErrIncompatibleSpace
+			}
+		}
+		model = query.CLAPModel
+	}
+	generation, done, err := c.withGeneration()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	vector := append([]float32(nil), query.Vector...)
+	seedLocalID := ""
+	if query.SeedID != "" {
+		seedLocalID, err = c.localID(query.SeedID)
+		if err != nil {
+			return nil, err
+		}
+		var ok bool
+		vector, ok, err = generation.CLAPVector(ctx, seedLocalID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, ErrNoVector
+		}
+		if c.manifest.CLAPModel == nil {
+			evidence, _, evidenceErr := generation.CLAPEvidence(ctx, seedLocalID)
+			if evidenceErr != nil {
+				return nil, evidenceErr
+			}
+			if evidence != nil {
+				model = evidence.Model
+			}
+		}
+	}
+	if !validQueryVector(vector, c.manifest.CLAP.Dimension) {
+		return nil, errors.New("localcatalog: invalid normalized CLAP query vector")
+	}
+	if c.indexes == nil || c.indexes.clap == nil {
+		return nil, ErrNoVector
+	}
+	exclude := make(map[string]struct{}, len(query.ExcludeIDs)+1)
+	if seedLocalID != "" {
+		exclude[seedLocalID] = struct{}{}
+	}
+	for id := range query.ExcludeIDs {
+		if localID, localErr := c.localID(id); localErr == nil {
+			exclude[localID] = struct{}{}
+		}
+	}
+	if c.manifest.Version >= librarypack.FormatVersion && c.manifest.CLAPModel == nil {
+		// Until derivatives index per-row identities, mixed packs need one
+		// streamed compatibility pass. Bound both JSON work and exclusion memory;
+		// larger mixed packs retain metadata/MERT and per-record assessment.
+		const maxMixedCLAPCompatibilityTracks = 50_000
+		if c.manifest.Coverage.Tracks > maxMixedCLAPCompatibilityTracks {
+			return nil, ErrIncompatibleSpace
+		}
+		source, sourceErr := generation.OpenTrackSource(ctx)
+		if sourceErr != nil {
+			return nil, sourceErr
+		}
+		defer source.Close()
+		wanted := c.clapEvidenceSource(model).SpaceID
+		for {
+			track, ok, sourceErr := source.Next(ctx)
+			if sourceErr != nil {
+				return nil, sourceErr
+			}
+			if !ok {
+				break
+			}
+			if len(track.CLAP) == 0 {
+				continue
+			}
+			var rowModel *core.AudioModelIdentity
+			if track.CLAPEvidence != nil {
+				rowModel = track.CLAPEvidence.Model
+			}
+			if c.clapEvidenceSource(rowModel).SpaceID != wanted {
+				exclude[track.ID] = struct{}{}
+			}
+		}
+	}
+	best, err := c.indexes.clap.Search(ctx, librarysearch.Query{Vector: vector, Limit: query.Limit, Exclude: exclude, Workers: 1})
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]Hit, len(best))
+	space := c.manifest.CLAP
+	for i, item := range best {
+		track, ok, lookupErr := generation.Lookup(ctx, item.ID)
+		if lookupErr != nil || !ok {
+			if lookupErr == nil {
+				lookupErr = errors.New("localcatalog: CLAP index refers to a missing track")
+			}
+			return nil, lookupErr
+		}
+		hits[i] = Hit{Track: c.convertTrack(track), Evidence: Evidence{Channel: CLAPChannel, Rank: i + 1, Score: item.Score, QueryID: query.SeedID, Provenance: c.provenance, VectorSpace: &space}}
 	}
 	return hits, nil
 }

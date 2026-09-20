@@ -76,3 +76,22 @@ func TestRecommendationCLIInputFailures(t *testing.T) {
 		t.Fatal("accepted file as parent")
 	}
 }
+
+func TestDiscoveryCLIRejectsConflictingSourcesAndMissingInstallation(t *testing.T) {
+	t.Run("conflict", func(t *testing.T) {
+		args(t, "-dataset", "unused", "-paipack", "library.paipack", "-discovery-state", "installed")
+		if err := run(); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("conflicting sources: %v", err)
+		}
+	})
+	t.Run("missing", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "missing-state")
+		args(t, "-dataset", "../../internal/evaluation/testdata/synthetic.json", "-catalog", "../../internal/catalog/testdata", "-discovery-state", path)
+		if err := run(); err == nil || !strings.Contains(err.Error(), "activation record") {
+			t.Fatalf("missing state: %v", err)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatal("missing state directory was created")
+		}
+	})
+}
