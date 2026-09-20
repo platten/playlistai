@@ -272,11 +272,7 @@ func pack(launcher, codec, model, cudaModel, clapModel, clapCUDAModel, out strin
 	if err := os.Rename(tmpName, out); err != nil {
 		return err
 	}
-	dir, err := os.Open(filepath.Dir(out))
-	if err != nil {
-		return err
-	}
-	return errors.Join(dir.Sync(), dir.Close())
+	return syncParentDirectory(filepath.Dir(out))
 }
 
 func addTree(zw *zip.Writer, source input) error {
