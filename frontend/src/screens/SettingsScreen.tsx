@@ -10,6 +10,7 @@ import {
 import { Button, EmptyState, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { DiscoveryDataCard } from "../components/DiscoveryDataCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
 import { RecommendationSettings } from "../components/RecommendationSettings";
 import {
@@ -338,6 +339,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
       </div>
 
       <RecommendationSettings />
+      <DiscoveryDataCard />
       <LocalLibrarySettings />
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</h2>

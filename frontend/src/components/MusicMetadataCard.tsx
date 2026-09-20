@@ -53,6 +53,7 @@ export function MusicMetadataCard() {
             : "Optional. Download the verified MusicBrainz index from Playlist AI’s Cloudflare R2 archive. It avoids public API delays and can include recordings outside the recommendation catalog."}
         </p>
         {status?.musicBrainzIndexError && <p className="mt-2 text-[12px] text-warn">The installed MusicBrainz index could not be opened. Reinstall it to restore offline discovery.</p>}
+        {bundle?.musicBrainzInstalled && <p className="mt-2 text-[12px] text-faint">Prompt genre recognition: {bundle.genreVocabularyInstalled ? "official MusicBrainz vocabulary plus reviewed aliases" : "embedded reviewed vocabulary"}.</p>}
         {busy === "download" && <div className="mt-3"><ProgressBar label="Downloading offline MusicBrainz data" done={downloadProgress?.done ?? 0} total={downloadProgress?.total ?? 0} note={downloadProgress?.note} /></div>}
         {bundle?.musicBrainzConfigured && !bundle.musicBrainzInstalled && busy !== "download" && <div className="mt-3"><Button size="sm" variant="primary" disabled={busy !== null} onClick={() => void run("download", () => API.InstallMusicBrainzBundle(), "Offline MusicBrainz data installed.")}>Download MusicBrainz data</Button></div>}
       </div>

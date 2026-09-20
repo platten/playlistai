@@ -34,6 +34,7 @@ func disableEnhancedForTest(t *testing.T, c *app.Container) {
 func newTestContainer(t *testing.T) *app.Container {
 	t.Helper()
 	cfg := config.Default()
+	cfg.Discovery.ManifestURL = "" // shared discovery setup has separate required-asset tests
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog")
 	cfg.Catalog.ArchiveURL = "" // tests never hit the network for the catalog

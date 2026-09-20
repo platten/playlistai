@@ -9,7 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-var enhancedPhrasePattern = regexp.MustCompile(`\b(strong sub-bass|strong subbass|bass-heavy|bass heavy|deep bass|more bass|strong bass|lots of transients|sharp attacks|percussive|big dynamic swings|wide dynamics|compressed dynamics|bright sound|dark sound|darker)\b`)
+var enhancedPhrasePattern = regexp.MustCompile(`\b(rolled-off treble|rolled off treble|prominent treble|treble reduction|softened treble|treble roll-off|treble rolloff|treble-forward|treble forward|treble-heavy|treble heavy|strong sub-bass|strong subbass|strong treble|reduced treble|less treble|more treble|bass-heavy|bass heavy|deep bass|more bass|strong bass|lots of transients|sharp attacks|percussive|big dynamic swings|wide dynamics|compressed dynamics|bright sound|dark sound|darker)\b`)
 var enhancedQuotedPattern = regexp.MustCompile(`"[^"\n]*"`)
 var enhancedNegationPattern = regexp.MustCompile(`\b(no|not|less|without|avoid)(\s+[a-z]+){0,2}\s*$`)
 var enhancedAdditivePattern = regexp.MustCompile(`\bnot (?:only|just|merely)\s*$`)
@@ -77,6 +77,8 @@ func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 				text = "strong sub-bass"
 			case "spectral_centroid_hz":
 				text = "bright"
+			case "treble_energy_ratio":
+				text = "treble emphasis"
 			case "short_window_rms_spread_db":
 				text = "dynamic"
 			case "transients":
@@ -97,6 +99,11 @@ func enhancedClauses(intent core.MusicIntent) []core.AudioClause {
 			text = "bright"
 		case "dark", "dark sound", "darker":
 			text = "bright"
+			clause.Negative = !clause.Negative
+		case "treble emphasis", "treble-heavy", "treble heavy", "strong treble", "prominent treble", "more treble", "treble forward", "treble-forward":
+			text = "treble emphasis"
+		case "reduced treble", "less treble", "treble reduction", "rolled-off treble", "rolled off treble", "treble roll-off", "treble rolloff", "softened treble":
+			text = "treble emphasis"
 			clause.Negative = !clause.Negative
 		case "dynamic", "wide dynamics", "big dynamic swings":
 			text = "dynamic"

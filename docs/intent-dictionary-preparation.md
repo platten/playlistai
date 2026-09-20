@@ -7,7 +7,7 @@ model weights, audio, learned embeddings, or a provider database. Desktop users
 need neither Python nor a separately installed dictionary. No new external
 dataset is necessary to use this registry.
 
-The current v3 thesaurus contains 293 concepts and 726 canonical terms/aliases.
+The current v4 thesaurus contains 295 concepts and 742 canonical terms/aliases.
 See [the full prompt thesaurus](prompt-thesaurus.md) for every alias, CLAP caption,
 AcousticBrainz class, ambiguity policy and evaluation limitation. Its checked-in
 legacy classifier schema is `internal/musicconcepts/acoustic_schema.json`;
@@ -65,6 +65,8 @@ archives, downloaded sources, model weights and private data outside Git.
    classifier is deliberately absent because it needs an independent electronic
    applicability gate. Mood darkness and spectral darkness are distinct senses.
    MERT has no text-query or genre-class interface; do not add fabricated labels.
+   Treble energy is a separate physical ratio from spectral-centroid brightness;
+   keep their DSP mappings and reviewed wording distinct.
 5. A CLAP caption describes the positive audible trait. Negation stays in the
    typed clause and scoring direction. Captions and DSP proxies require review;
    an uncalibrated cosine is not a match probability or proof of absence.

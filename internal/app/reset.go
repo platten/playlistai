@@ -33,7 +33,7 @@ func (c *Container) ResetAssets() error {
 		return err
 	}
 	var failures []error
-	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "intent-nlu", "model-downloads", "llama", "catalog.tar.zst", "catalog.tar.zst.part"} {
+	for _, name := range []string{"models", "catalog", "metadata", "musicbrainz-metadata", "discovery-data", "candidate-catalog", "datasets", "music-analysis", "mert-analysis", "intent-nlu", "model-downloads", "llama", "catalog.tar.zst", "catalog.tar.zst.part"} {
 		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
 			failures = append(failures, err)
 		}

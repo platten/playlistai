@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -32,11 +33,11 @@ func (p candidatePreviewFixture) ResolveAudioPreview(context.Context, core.Track
 	return p.result, nil
 }
 
-func TestDynamicMusicBrainzCandidateRequiresResolvedDeezerPreview(t *testing.T) {
+func TestDynamicMusicBrainzCandidateRegistersMetadataWithoutPreview(t *testing.T) {
 	length := int64(241000)
-	recording := mbRecording{ID: "mb-recording", Title: "Outside Song", Length: &length, ISRCs: []string{"USAAA0000001"}, FirstReleaseDate: "2024-02-03"}
+	recording := mbRecording{ID: acousticTestID, Title: "Outside Song", Length: &length, ISRCs: []string{"USAAA0000001"}, FirstReleaseDate: "2024-02-03"}
 	recording.ArtistCredit = []mbArtistCredit{{Name: "Outside Artist"}}
-	recording.ArtistCredit[0].Artist.ID = "mb-artist"
+	recording.ArtistCredit[0].Artist.ID = contextArtistID
 	recording.ArtistCredit[0].Artist.Name = "Outside Artist"
 	recording.Genres = []mbTag{{Name: "dream pop", Count: 8}}
 	cat := &dynamicCatalogFixture{Catalog: fakes.NewCatalog(2)}
@@ -48,10 +49,10 @@ func TestDynamicMusicBrainzCandidateRequiresResolvedDeezerPreview(t *testing.T) 
 	if err := client.addDynamicKnowledgeRecording(context.Background(), recording, cat, &snapshot); err != nil {
 		t.Fatal(err)
 	}
-	if len(cat.registered) != 1 || cat.registered[0].Ref.ID != "deezer:77" || cat.registered[0].FullRecordingDuration == nil {
+	if len(cat.registered) != 1 || cat.registered[0].Ref.ID != "musicbrainz:"+acousticTestID || cat.registered[0].FullRecordingDuration == nil || cat.registered[0].PreviewURL != "" {
 		t.Fatalf("registration = %+v", cat.registered)
 	}
-	if len(snapshot.Candidates) != 1 || snapshot.Candidates[0].ID != "deezer:77" || len(snapshot.Tracks) != 1 || snapshot.Tracks[0].RecordingID != "mb-recording" {
+	if len(snapshot.Candidates) != 1 || snapshot.Candidates[0].ID != "musicbrainz:"+acousticTestID || len(snapshot.Tracks) != 1 || snapshot.Tracks[0].RecordingID != acousticTestID {
 		t.Fatalf("snapshot = %+v", snapshot)
 	}
 	if snapshot.Tracks[0].GenreTags[0].Name != "dream pop" {
@@ -59,7 +60,7 @@ func TestDynamicMusicBrainzCandidateRequiresResolvedDeezerPreview(t *testing.T) 
 	}
 }
 
-func TestDynamicMusicBrainzCandidateRejectsUnresolvedPreview(t *testing.T) {
+func TestDynamicMusicBrainzCandidateRejectsUnidentifiedRecording(t *testing.T) {
 	recording := mbRecording{ID: "mb-recording", Title: "Outside Song", ArtistCredit: []mbArtistCredit{{Name: "Outside Artist"}}}
 	cat := &dynamicCatalogFixture{Catalog: fakes.NewCatalog(2)}
 	client := &Client{candidatePreview: candidatePreviewFixture{result: core.ResolvedAudioPreview{Identity: core.PreviewIdentity{Status: core.ResolutionUnresolved, Provider: "deezer"}}}}
@@ -108,7 +109,8 @@ CREATE TABLE recording_tags(recording_mbid TEXT NOT NULL,tag_key TEXT NOT NULL,t
 		{`INSERT INTO recording_tags VALUES('recording-1','dream pop','dream pop',8)`, nil},
 	}
 	for _, statement := range statements {
-		if _, err := db.Exec(statement.query, statement.args...); err != nil {
+		query := strings.NewReplacer("artist-1", contextArtistID, "recording-1", acousticTestID).Replace(statement.query)
+		if _, err := db.Exec(query, statement.args...); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -126,10 +128,7 @@ CREATE TABLE recording_tags(recording_mbid TEXT NOT NULL,tag_key TEXT NOT NULL,t
 		t.Fatal(err)
 	}
 	defer overlay.Close()
-	client := &Client{offline: offline, candidatePreview: candidatePreviewFixture{result: core.ResolvedAudioPreview{
-		Identity: core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: "77", ISRC: "USAAA0000001"},
-		URL:      "https://cdn.example/77.mp3",
-	}}}
+	client := &Client{offline: offline, candidatePreview: forbiddenCandidatePreview{t: t}}
 	intent := core.MusicIntent{Seed: "42", Count: 1, Controls: core.IntentControls{RecommendationMode: core.EnhancedHybrid}}
 	intent.Preferences.Genres = []core.IntentPreference{{Value: "dream pop", Influence: core.InfluencePositive}}
 	stream := client.OpenCandidates(intent, overlay, overlay)
@@ -137,15 +136,15 @@ CREATE TABLE recording_tags(recording_mbid TEXT NOT NULL,tag_key TEXT NOT NULL,t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if track.ID != "deezer:77" || track.Artist != "Outside Artist" || track.Title != "Outside Song" {
+	if track.ID != "musicbrainz:"+acousticTestID || track.Artist != "Outside Artist" || track.Title != "Outside Song" {
 		t.Fatalf("candidate = %+v", track)
 	}
 	meta, ok := overlay.Meta(track.ID)
-	if !ok || meta.PreviewURL == "" || meta.FullRecordingDuration == nil {
+	if !ok || meta.PreviewURL != "" || meta.FullRecordingDuration == nil {
 		t.Fatalf("dynamic metadata = %+v ok=%v", meta, ok)
 	}
 	snapshot := stream.Snapshot()
-	if len(snapshot.Tracks) != 1 || snapshot.Tracks[0].RecordingID != "recording-1" || len(snapshot.Tracks[0].GenreTags) != 1 {
+	if len(snapshot.Tracks) != 1 || snapshot.Tracks[0].RecordingID != acousticTestID || len(snapshot.Tracks[0].GenreTags) != 1 {
 		t.Fatalf("knowledge snapshot = %+v", snapshot)
 	}
 }

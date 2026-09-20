@@ -15,8 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/platten/playlistai/internal/genrevocab"
 	"github.com/platten/playlistai/internal/mbindex"
 )
+
+const genreUserAgent = "PlaylistAI/musicbrainzpack (https://github.com/platten/playlistai)"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil && err != flag.ErrHelp {
@@ -45,6 +48,9 @@ func runWithOutput(ctx context.Context, args []string, stdout, stderr io.Writer)
 	snapshot := flags.String("snapshot", "", "MusicBrainz snapshot YYYYMMDD-HHMMSS for local archives")
 	downloadOnly := flags.Bool("download-only", false, "download and verify the official dumps, then stop")
 	verify := flags.String("verify-bundle", "", "verify an existing upload directory and exit")
+	genreEndpoint := flags.String("genre-endpoint", genrevocab.DefaultEndpoint, "official MusicBrainz genre API endpoint")
+	genreVocabulary := flags.String("genre-vocabulary", "", "prepared genre vocabulary JSON; skips the API fetch")
+	skipGenres := flags.Bool("skip-genres", false, "package without the optional official genre vocabulary")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -55,8 +61,9 @@ func runWithOutput(ctx context.Context, args []string, stdout, stderr io.Writer)
 		verifyProgress := newProgressDisplay(stderr)
 		verifyProgress.Add("verify-parts", "Verify bundle parts", "bytes")
 		verifyProgress.Add("verify-index", "Verify packed index", "bytes")
+		verifyProgress.Add("verify-genres", "Verify genre vocabulary", "bytes")
 		m, err := mbindex.VerifyBundleWithProgress(ctx, *verify, func(update mbindex.BundleProgress) {
-			label := map[string]string{"verify-parts": "Verify bundle parts", "verify-index": "Verify packed index"}[update.Stage]
+			label := map[string]string{"verify-parts": "Verify bundle parts", "verify-index": "Verify packed index", "verify-genres": "Verify genre vocabulary"}[update.Stage]
 			verifyProgress.Update(update.Stage, label, update.Done, update.Total, 0)
 		})
 		verifyProgress.Close()
@@ -67,6 +74,9 @@ func runWithOutput(ctx context.Context, args []string, stdout, stderr io.Writer)
 	}
 	if *bundle == "" && !*downloadOnly {
 		return errors.New("-bundle-dir is required")
+	}
+	if *skipGenres && *genreVocabulary != "" {
+		return errors.New("-skip-genres cannot be combined with -genre-vocabulary")
 	}
 	if (*artistArchive == "") != (*recordingArchive == "") {
 		return errors.New("supply both local archives or neither")
@@ -161,13 +171,34 @@ func runWithOutput(ctx context.Context, args []string, stdout, stderr io.Writer)
 		}
 		info = builtInfo
 	}
+	preparedGenre := *genreVocabulary
+	if !*skipGenres && preparedGenre == "" {
+		fmt.Fprintln(stderr, "Fetching official MusicBrainz genre vocabulary")
+		vocabulary, err := genrevocab.Fetch(ctx, nil, *genreEndpoint, genreUserAgent, time.Now())
+		if err != nil {
+			return fmt.Errorf("fetch genre vocabulary: %w", err)
+		}
+		file, err := os.CreateTemp(*work, ".musicbrainz-genres-*.json")
+		if err != nil {
+			return err
+		}
+		preparedGenre = file.Name()
+		if err = file.Close(); err != nil {
+			_ = os.Remove(preparedGenre)
+			return err
+		}
+		defer os.Remove(preparedGenre)
+		if err = genrevocab.Write(preparedGenre, vocabulary); err != nil {
+			return err
+		}
+	}
 	packageProgress := newProgressDisplay(stderr)
 	packageProgress.Add("hash-index", "Hash while compressing", "bytes")
 	packageProgress.Add("compress-index", "Compress bundle", "bytes")
-	_, err := mbindex.PackageWithProgress(ctx, index, *bundle, *partBytes, func(update mbindex.BundleProgress) {
+	_, err := mbindex.PackageBundle(ctx, mbindex.BundlePackageOptions{Index: index, GenreVocabulary: preparedGenre, Directory: *bundle, PartBytes: *partBytes, Progress: func(update mbindex.BundleProgress) {
 		label := map[string]string{"hash-index": "Hash while compressing", "compress-index": "Compress bundle"}[update.Stage]
 		packageProgress.Update(update.Stage, label, update.Done, update.Total, 0)
-	})
+	}})
 	packageProgress.Close()
 	if err != nil {
 		return err
@@ -175,8 +206,9 @@ func runWithOutput(ctx context.Context, args []string, stdout, stderr io.Writer)
 	verifyProgress := newProgressDisplay(stderr)
 	verifyProgress.Add("verify-parts", "Verify bundle parts", "bytes")
 	verifyProgress.Add("verify-index", "Verify packed index", "bytes")
+	verifyProgress.Add("verify-genres", "Verify genre vocabulary", "bytes")
 	manifest, err := mbindex.VerifyBundleWithProgress(ctx, *bundle, func(update mbindex.BundleProgress) {
-		label := map[string]string{"verify-parts": "Verify bundle parts", "verify-index": "Verify packed index"}[update.Stage]
+		label := map[string]string{"verify-parts": "Verify bundle parts", "verify-index": "Verify packed index", "verify-genres": "Verify genre vocabulary"}[update.Stage]
 		verifyProgress.Update(update.Stage, label, update.Done, update.Total, 0)
 	})
 	verifyProgress.Close()

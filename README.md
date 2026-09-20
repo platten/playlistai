@@ -20,7 +20,21 @@ Soundiiz.
 Go + [Wails v3](https://v3.wails.io) desktop application for macOS, Windows,
 and Linux, with a React/TypeScript interface.
 
-## Analyze a local music library
+## Shared music discovery
+
+The wizard requires a verified shared discovery collection, downloaded during
+setup. Enhanced hybrid uses its recording tags, artist/album patterns, and
+compatible MERT/DSP evidence to find tracks within the collection and guide
+bounded MusicBrainz/Wikidata discovery outside it. Artist context is a retrieval
+hint, not proof that a recording satisfies a requested mood or genre.
+
+Scanning personal files is completely optional. The hosted paipack manifest
+determines the download parts and checksums. Settings can replace the shared
+collection with your own `.paipack`, switch back to the hosted archive, or save
+its manifest and parts for offline use. See [shared discovery assets](docs/discovery-assets.md)
+for installation, updates, publishing, and validation limits.
+
+## Analyze a local music library (optional)
 
 The Linux amd64 `playlist-indexer` command scans a read-only FLAC, MP3, raw AAC,
 or M4A/AAC library, performs local DSP and MERT analysis, fits unsupervised
@@ -285,8 +299,8 @@ track count. Duration, relative artist eras, and unsupported vocal subtypes rema
 visible when the available evidence cannot verify them. See
 [dictionary preparation](docs/intent-dictionary-preparation.md) for the optional
 offline Python workflow; the desktop dictionary runs entirely in Go.
-The [prompt thesaurus](docs/prompt-thesaurus.md) lists 293 musical concepts and
-726 terms/aliases, with CLAP captions, schema-checked AcousticBrainz mappings,
+The [prompt thesaurus](docs/prompt-thesaurus.md) lists 295 musical concepts and
+742 terms/aliases, with CLAP captions, schema-checked AcousticBrainz mappings,
 and explicit unsupported or ambiguous meanings.
 
 Enhanced hybrid also retrieves cached artist and album context from MusicBrainz

@@ -69,7 +69,8 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 			return ref
 		}
 		local := resolver.ResolveReference(ref)
-		if local.Status == core.ResolutionResolved {
+		groundedArtist, grounded := groundedSeedArtist(ref)
+		if local.Status == core.ResolutionResolved && !grounded {
 			return ref
 		}
 		key := seedNameKey(ref.Query)
@@ -77,7 +78,9 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 			ref.TrackID, ref.Resolution = prior.TrackID, prior.Resolution
 			return ref
 		}
-		if local.Status == core.ResolutionAmbiguous {
+		if grounded {
+			ref = c.findArtistSeedForIdentity(ctx, ref, groundedArtist, cat, resolver, snapshot, p)
+		} else if local.Status == core.ResolutionAmbiguous {
 			ref = c.disambiguateArtist(ctx, ref, local, snapshot, p)
 		} else {
 			ref = c.findArtistSeed(ctx, ref, cat, resolver, snapshot, p)
@@ -97,6 +100,17 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 		intent.Destination = &destination
 	}
 	return intent
+}
+
+func groundedSeedArtist(ref core.IntentReference) (seedArtist, bool) {
+	if ref.Grounding == nil || ref.Grounding.Truncated || len(ref.Grounding.Candidates) != 1 {
+		return seedArtist{}, false
+	}
+	candidate := ref.Grounding.Candidates[0]
+	if candidate.Kind != core.ReferenceArtist || strings.TrimSpace(candidate.ID) == "" || strings.TrimSpace(candidate.Name) == "" {
+		return seedArtist{}, false
+	}
+	return seedArtist{ID: candidate.ID, Name: candidate.Name}, true
 }
 
 // A shortened name may match unrelated catalog artists. Resolve it only when
@@ -142,6 +156,14 @@ func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, c
 		}
 		artist = seedArtist{Name: ref.Query}
 	}
+	return c.findArtistSeedForIdentity(ctx, ref, artist, cat, resolver, snapshot, p)
+}
+
+func (c *Client) findArtistSeedForIdentity(ctx context.Context, ref core.IntentReference, artist seedArtist, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, p ports.Progress) core.IntentReference {
+	notice := func(detail string) {
+		snapshot.Notices = append(snapshot.Notices, detail)
+		p.Report("generation", 0, 0, detail)
+	}
 	checked := 0
 	selectTrack := func(title string, names []string, source, order string) bool {
 		checked++
@@ -161,6 +183,18 @@ func (c *Client) findArtistSeed(ctx context.Context, ref core.IntentReference, c
 		ref.Resolution = &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: resolver.CatalogVersion(), Selected: &candidate}
 		notice(fmt.Sprintf("Found %q online as %q. Using %s as the catalog seed after checking %d recording(s), starting with Deezer's top tracks when available.", ref.Query, artist.Name, track.Display(), checked))
 		return true
+	}
+	if artist.ID != "" {
+		if offline := c.localMusicBrainz(); offline != nil {
+			if rows, err := offline.ArtistRecordings(ctx, artist.ID, artistSeedTrackLimit, 0); err == nil {
+				for _, track := range rows {
+					names := append([]string{track.ArtistCredit}, artist.names()...)
+					if selectTrack(track.Title, names, "offline MusicBrainz snapshot", "MusicBrainz recording") {
+						return ref
+					}
+				}
+			}
+		}
 	}
 	found, err := c.tryPopularArtistTracks(ctx, artist, snapshot, selectTrack)
 	if found {

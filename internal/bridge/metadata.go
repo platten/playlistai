@@ -14,7 +14,6 @@ func (a *API) GetMetadataBundleInfo() app.MetadataBundleInfo { return a.app.GetM
 func (a *API) InstallMusicBrainzBundle(ctx context.Context) error {
 	ctx, _, finish := a.operations.begin(ctx, "musicbrainz-metadata-install")
 	defer finish()
-	a.cancelRecommendationWork()
 	err := a.app.InstallMusicBrainzBundle(ctx, NewWailsProgress())
 	if err == nil {
 		a.intentCache.clear()

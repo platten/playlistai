@@ -136,7 +136,7 @@ func (c *Container) loadCatalog() error {
 			WithEnhancedAudioRefreshProvider(c.RefreshEnhancedAudio).
 			WithEnhancedPreviewProvider(c.EnhancedPreviewService).
 			WithMERTSimilaritySearchProvider(c.SearchMERTSimilarity)
-		runtime.Reco.(*multichannel.Orchestrator).WithRequestOverlayProvider(c.pinLocalRecommendationOverlay)
+		runtime.Reco.(*multichannel.Orchestrator).WithIntentOverlayProvider(c.pinDiscoveryRecommendationOverlay)
 	}
 	c.mu.Lock()
 	if c.closed {

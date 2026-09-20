@@ -19,6 +19,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/platten/playlistai/internal/dataset"
+	"github.com/platten/playlistai/internal/genrevocab"
 	"github.com/platten/playlistai/internal/installlock"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -26,6 +27,9 @@ import (
 const BundleVersion = "playlistai-musicbrainz-bundle/v1"
 const DefaultPartBytes int64 = 199_000_000
 const ProgressOp = "musicbrainz-metadata"
+const GenreVocabularyName = "musicbrainz-genres.json"
+
+const maxGenreVocabularyBytes int64 = 4 << 20
 
 // Keep accepting the larger window used by previously published bundles.
 const bundleWindow = 128 << 20
@@ -38,13 +42,14 @@ type Artifact struct {
 }
 
 type BundleManifest struct {
-	Version      string     `json:"version"`
-	IndexVersion string     `json:"indexVersion"`
-	Snapshot     string     `json:"snapshot"`
-	CoreLicense  string     `json:"coreLicense"`
-	TagsLicense  string     `json:"tagsLicense"`
-	Index        Artifact   `json:"index"`
-	Parts        []Artifact `json:"parts"`
+	Version         string     `json:"version"`
+	IndexVersion    string     `json:"indexVersion"`
+	Snapshot        string     `json:"snapshot"`
+	CoreLicense     string     `json:"coreLicense"`
+	TagsLicense     string     `json:"tagsLicense"`
+	Index           Artifact   `json:"index"`
+	Parts           []Artifact `json:"parts"`
+	GenreVocabulary *Artifact  `json:"genreVocabulary,omitempty"`
 }
 
 type BundleProgress struct {
@@ -71,6 +76,14 @@ func (m BundleManifest) Validate() error {
 			return err
 		}
 	}
+	if m.GenreVocabulary != nil {
+		if m.GenreVocabulary.Name != GenreVocabularyName {
+			return errors.New("invalid MusicBrainz genre vocabulary artifact")
+		}
+		if err := validateArtifact(*m.GenreVocabulary, maxGenreVocabularyBytes, ".json"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -90,6 +103,22 @@ func Package(ctx context.Context, index, dir string, partBytes int64) (m BundleM
 }
 
 func PackageWithProgress(ctx context.Context, index, dir string, partBytes int64, progress func(BundleProgress)) (m BundleManifest, err error) {
+	return PackageBundle(ctx, BundlePackageOptions{Index: index, Directory: dir, PartBytes: partBytes, Progress: progress})
+}
+
+type BundlePackageOptions struct {
+	Index           string
+	GenreVocabulary string
+	Directory       string
+	PartBytes       int64
+	Progress        func(BundleProgress)
+}
+
+// PackageBundle packages an index and, when supplied, a prepared official genre
+// vocabulary. Package and PackageWithProgress remain compatible wrappers for
+// index-only bundles.
+func PackageBundle(ctx context.Context, options BundlePackageOptions) (m BundleManifest, err error) {
+	index, dir, partBytes, progress := options.Index, options.Directory, options.PartBytes, options.Progress
 	if partBytes == 0 {
 		partBytes = DefaultPartBytes
 	}
@@ -152,12 +181,55 @@ func PackageWithProgress(ctx context.Context, index, dir string, partBytes int64
 		progress(BundleProgress{Stage: "compress-index", Done: n, Total: n})
 	}
 	m = BundleManifest{Version: BundleVersion, IndexVersion: IndexVersion, Snapshot: info.Snapshot, CoreLicense: info.CoreLicense, TagsLicense: info.TagsLicense, Index: m.Index, Parts: w.parts}
+	if options.GenreVocabulary != "" {
+		artifact, copyErr := copyGenreVocabulary(ctx, options.GenreVocabulary, filepath.Join(dir, GenreVocabularyName))
+		if copyErr != nil {
+			return m, copyErr
+		}
+		m.GenreVocabulary = &artifact
+	}
 	if err = m.Validate(); err != nil {
 		return m, err
 	}
 	raw, _ := json.MarshalIndent(m, "", "  ")
 	err = os.WriteFile(filepath.Join(dir, "musicbrainz-manifest.json"), append(raw, '\n'), 0o600)
 	return m, err
+}
+
+func copyGenreVocabulary(ctx context.Context, source, target string) (artifact Artifact, err error) {
+	if _, err = genrevocab.Load(source); err != nil {
+		return artifact, fmt.Errorf("validate genre vocabulary: %w", err)
+	}
+	in, err := os.Open(source)
+	if err != nil {
+		return artifact, err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return artifact, err
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			err = errors.Join(err, removeIfPresent(target))
+		}
+	}()
+	h := sha256.New()
+	n, copyErr := io.Copy(io.MultiWriter(out, h), io.LimitReader(&contextReader{ctx: ctx, r: in}, maxGenreVocabularyBytes+1))
+	err = errors.Join(copyErr, out.Sync(), out.Close())
+	if err != nil {
+		return artifact, err
+	}
+	if n > maxGenreVocabularyBytes {
+		return artifact, errors.New("MusicBrainz genre vocabulary exceeds size limit")
+	}
+	if _, err = genrevocab.Load(target); err != nil {
+		return artifact, fmt.Errorf("validate packaged genre vocabulary: %w", err)
+	}
+	artifact = Artifact{Name: GenreVocabularyName, Size: n, SHA256: hex.EncodeToString(h.Sum(nil))}
+	keep = true
+	return artifact, nil
 }
 
 type splitWriter struct {
@@ -274,6 +346,19 @@ func VerifyBundleWithProgress(ctx context.Context, dir string, progress func(Bun
 	}); err != nil {
 		return m, err
 	}
+	if m.GenreVocabulary != nil {
+		path := filepath.Join(dir, m.GenreVocabulary.Name)
+		if err = verifyArtifactProgress(ctx, path, *m.GenreVocabulary, func(update BundleProgress) {
+			if progress != nil {
+				progress(BundleProgress{Stage: "verify-genres", Done: update.Done, Total: update.Total})
+			}
+		}); err != nil {
+			return m, err
+		}
+		if _, err = genrevocab.Load(path); err != nil {
+			return m, fmt.Errorf("validate MusicBrainz genre vocabulary: %w", err)
+		}
+	}
 	return m, nil
 }
 
@@ -326,39 +411,77 @@ func Install(ctx context.Context, source, dir string, p ports.Progress) (install
 		return "", fmt.Errorf("MusicBrainz install: %w", err)
 	}
 	defer func() { err = errors.Join(err, release()) }()
-	name := "musicbrainz-" + strings.ToLower(m.Index.SHA256) + ".sqlite"
-	target := filepath.Join(dir, name)
+	var indexOwned, genreOwned bool
+	installed, indexOwned, err = prepareIndex(ctx, source, dir, m, p)
+	if err != nil {
+		return "", err
+	}
+	preparedIndexPath := installed
+	genrePath := ""
+	activated := false
+	defer func() {
+		if !activated {
+			if indexOwned {
+				err = errors.Join(err, removeIfPresent(preparedIndexPath))
+			}
+			if genreOwned {
+				err = errors.Join(err, removeIfPresent(genrePath), removeIfPresent(genrePath+".part"))
+			}
+		}
+	}()
+	if m.GenreVocabulary != nil {
+		if genrePath, genreOwned, err = prepareGenreVocabulary(ctx, source, dir, *m.GenreVocabulary, p); err != nil {
+			return "", err
+		}
+	}
+	oldIndexMarker, oldIndexExists, err := readActivationMarker(dir, "active")
+	if err != nil {
+		return "", err
+	}
+	if err = activate(dir, filepath.Base(installed)); err != nil {
+		return "", err
+	}
+	if genrePath != "" {
+		if err = activateGenre(dir, filepath.Base(genrePath)); err != nil {
+			rollbackErr := restoreActivationMarker(dir, "active", oldIndexMarker, oldIndexExists)
+			return "", errors.Join(err, rollbackErr)
+		}
+	}
+	activated = true
+	p.Report(ProgressOp, 1, 1, "Offline MusicBrainz metadata ready")
+	return installed, nil
+}
+
+func prepareIndex(ctx context.Context, source, dir string, m BundleManifest, p ports.Progress) (installed string, owned bool, err error) {
+	target := filepath.Join(dir, "musicbrainz-"+strings.ToLower(m.Index.SHA256)+".sqlite")
 	// Repairs may use a fresh sibling when the hash-named file is corrupt and
 	// still open by another reader. Reuse an already repaired active copy too.
 	for _, candidate := range []string{target, ActivePath(dir)} {
 		if verifyArtifact(ctx, candidate, m.Index) == nil {
 			if err := ctx.Err(); err != nil {
-				return "", err
+				return "", false, err
 			}
-			if err := activate(dir, filepath.Base(candidate)); err != nil {
-				return "", err
-			}
-			return candidate, nil
+			return candidate, false, nil
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
 	// Never unlink or overwrite a mapped corrupt database. Always own a fresh
 	// target, including the first install, so cancellation cleanup cannot delete
 	// a file created by another writer after our initial validation.
 	fresh, err := os.CreateTemp(dir, "musicbrainz-"+strings.ToLower(m.Index.SHA256)+"-*.sqlite")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	target, name = fresh.Name(), filepath.Base(fresh.Name())
+	target = fresh.Name()
 	if err := fresh.Close(); err != nil {
 		_ = os.Remove(target)
-		return "", err
+		return "", false, err
 	}
-	activated := false
+	prepared := false
 	defer func() {
-		if !activated {
+		if !prepared {
 			err = errors.Join(err, removeIfPresent(target))
 		}
 	}()
@@ -379,27 +502,102 @@ func Install(ctx context.Context, source, dir string, p ports.Progress) (install
 				p.Report(ProgressOp, base+done, total, fmt.Sprintf("Downloading MusicBrainz data part %d of %d", i+1, len(m.Parts)))
 			}, client)
 			if err != nil {
-				return "", err
+				return "", false, err
 			}
 		}
 		paths[i] = path
 		doneBase += part.Size
 	}
 	if err = expandParts(ctx, paths, target, m, p, nil); err != nil {
-		return "", err
+		return "", false, err
 	}
 	if err = ctx.Err(); err != nil {
-		return "", err
+		return "", false, err
 	}
-	if err = activate(dir, name); err != nil {
-		return "", err
-	}
-	activated = true
+	prepared = true
 	for _, path := range paths {
 		_ = os.Remove(path)
 	}
-	p.Report(ProgressOp, 1, 1, "Offline MusicBrainz index ready")
-	return target, nil
+	return target, true, nil
+}
+
+func prepareGenreVocabulary(ctx context.Context, source, dir string, artifact Artifact, p ports.Progress) (preparedPath string, owned bool, err error) {
+	hash := strings.ToLower(artifact.SHA256)
+	deterministic := filepath.Join(dir, "musicbrainz-genres-"+hash+".json")
+	for _, candidate := range []string{deterministic, ActiveGenrePath(dir)} {
+		if validateGenreVocabularyFile(ctx, candidate, artifact) == nil {
+			if err := ctx.Err(); err != nil {
+				return "", false, err
+			}
+			return candidate, false, nil
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	stage, err := os.CreateTemp(dir, "musicbrainz-genres-"+hash+"-*.json")
+	if err != nil {
+		return "", false, err
+	}
+	target := stage.Name()
+	if err = stage.Close(); err != nil {
+		_ = os.Remove(target)
+		return "", false, err
+	}
+	if err = os.Remove(target); err != nil {
+		return "", false, err
+	}
+	prepared := false
+	defer func() {
+		if !prepared {
+			err = errors.Join(err, removeIfPresent(target), removeIfPresent(target+".part"))
+		}
+	}()
+	u, _ := validateBundleURL(source)
+	remote := u.ResolveReference(&url.URL{Path: artifact.Name}).String()
+	_, err = dataset.DownloadWithClient(ctx, remote, target, artifact.Size, artifact.SHA256, func(done, total int64) {
+		p.Report(ProgressOp, done, total, "Downloading MusicBrainz genre vocabulary")
+	}, bundleClient())
+	if err != nil {
+		return "", false, err
+	}
+	if err = validateGenreVocabularyFile(ctx, target, artifact); err != nil {
+		return "", false, err
+	}
+	if err = ctx.Err(); err != nil {
+		return "", false, err
+	}
+	prepared = true
+	return target, true, nil
+}
+
+func readActivationMarker(dir, marker string) (string, bool, error) {
+	raw, err := os.ReadFile(filepath.Join(dir, marker))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return strings.TrimSpace(string(raw)), true, nil
+}
+
+func restoreActivationMarker(dir, marker, value string, existed bool) error {
+	if !existed {
+		return removeIfPresent(filepath.Join(dir, marker))
+	}
+	return activateMarker(dir, marker, value)
+}
+
+func validateGenreVocabularyFile(ctx context.Context, path string, artifact Artifact) error {
+	if err := verifyArtifact(ctx, path, artifact); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	_, err := genrevocab.Load(path)
+	return err
 }
 
 func removeIfPresent(path string) error {
@@ -535,6 +733,14 @@ func (w *byteProgressWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 func activate(dir, name string) error {
+	return activateMarker(dir, "active", name)
+}
+
+func activateGenre(dir, name string) error {
+	return activateMarker(dir, "active-genres", name)
+}
+
+func activateMarker(dir, marker, name string) error {
 	tmp, err := os.CreateTemp(dir, ".active-*")
 	if err != nil {
 		return err
@@ -550,7 +756,7 @@ func activate(dir, name string) error {
 	if err != nil {
 		return err
 	}
-	return os.Rename(path, filepath.Join(dir, "active"))
+	return os.Rename(path, filepath.Join(dir, marker))
 }
 func ActivePath(dir string) string {
 	raw, err := os.ReadFile(filepath.Join(dir, "active"))
@@ -559,6 +765,36 @@ func ActivePath(dir string) string {
 		return filepath.Join(dir, name)
 	}
 	return filepath.Join(dir, "musicbrainz.sqlite")
+}
+
+// ActiveGenrePath returns the atomically selected optional genre vocabulary.
+// The fallback path supports manually installed vocabularies and may not exist.
+func ActiveGenrePath(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "active-genres"))
+	name := strings.TrimSpace(string(raw))
+	if err == nil && validActiveGenreName(name) {
+		return filepath.Join(dir, name)
+	}
+	return filepath.Join(dir, GenreVocabularyName)
+}
+
+// ActiveGenreHash returns the bundle artifact hash encoded in the active genre
+// filename, or an empty string when no managed vocabulary is active.
+func ActiveGenreHash(dir string) string {
+	name := filepath.Base(ActiveGenrePath(dir))
+	const prefix = "musicbrainz-genres-"
+	if !validActiveGenreName(name) || len(name) < len(prefix)+64 {
+		return ""
+	}
+	hash := name[len(prefix) : len(prefix)+64]
+	if decoded, err := hex.DecodeString(hash); err != nil || len(decoded) != sha256.Size {
+		return ""
+	}
+	return strings.ToLower(hash)
+}
+
+func validActiveGenreName(name string) bool {
+	return filepath.Base(name) == name && strings.HasPrefix(name, "musicbrainz-genres-") && strings.HasSuffix(name, ".json") && !strings.ContainsAny(name, `/\\`)
 }
 func validateBundleURL(value string) (*url.URL, error) {
 	u, err := url.Parse(value)

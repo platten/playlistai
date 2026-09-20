@@ -54,9 +54,11 @@ type Config struct {
 	MinScore int
 	// Interval between live requests. Default 1s; tests set it lower.
 	Interval time.Duration
-	// CandidatePreviewResolver is used only for bounded enhanced discovery.
-	// A recording outside Deej-AI is admitted only after this resolver returns
-	// an exact, unambiguous provider identity and a playable preview.
+	// CandidatePreviewResolver is retained for source compatibility. Discovery
+	// now registers authoritative recording metadata without resolving previews;
+	// the separately configured audio service verifies previews when needed.
+	//
+	// Deprecated: configure the audio service's Resolver instead.
 	CandidatePreviewResolver ports.AudioPreviewResolver
 }
 

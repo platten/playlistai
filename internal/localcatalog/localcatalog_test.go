@@ -347,7 +347,7 @@ func TestExecutorMergeDeduplicatesHighConfidenceRecordings(t *testing.T) {
 		{Track: Track{ID: "unrelated", Artist: "Other", Title: "Different", AudioFingerprint: fingerprint}, Evidence: Evidence{Channel: MetadataChannel, Rank: 3}},
 	}}
 	candidates := mergeHits(hits)
-	if len(candidates) != 2 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 || candidates[1].Track.ID != "unrelated" {
+	if len(candidates) != 2 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 1 || candidates[1].Track.ID != "unrelated" || candidates[1].Evidence[0].Rank != 2 {
 		t.Fatalf("deduplicated candidates = %+v", candidates)
 	}
 }
@@ -358,7 +358,7 @@ func TestExecutorMergeDeduplicatesTaggedAcoustID(t *testing.T) {
 		{Track: Track{ID: "first", Artist: "Artist A", Title: "Song A", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 1}},
 		{Track: Track{ID: "second", Artist: "Artist B", Title: "Song B", AcoustID: acoustID}, Evidence: Evidence{Channel: MetadataChannel, Rank: 2}},
 	}})
-	if len(candidates) != 1 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 2 {
+	if len(candidates) != 1 || candidates[0].Track.ID != "first" || len(candidates[0].Evidence) != 1 || candidates[0].Evidence[0].Rank != 1 {
 		t.Fatalf("AcoustID candidates = %+v", candidates)
 	}
 }

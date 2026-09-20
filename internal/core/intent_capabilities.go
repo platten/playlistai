@@ -24,11 +24,25 @@ func intentCapabilities() []CapabilityStatus {
 // parsers and migrations. Unknown kinds are always preservation-only.
 func HardConstraintSupported(kind string) bool {
 	switch kind {
-	case "exclude_artist", "exclude_reference_artists", "no_back_to_back_artist":
+	case "exclude_artist", "exclude_reference_artists", "no_back_to_back_artist", HardConstraintIncludeOtherArtists:
 		return true
 	default:
 		return false
 	}
+}
+
+// RequiresOtherArtists reports whether the user explicitly required the
+// playlist to contain an artist outside the named positive artist references.
+// Only the canonical affirmative value activates the contract; malformed or
+// preservation-only values remain visible to validation instead of silently
+// changing recommendation behavior.
+func RequiresOtherArtists(intent MusicIntent) bool {
+	for _, constraint := range intent.HardConstraints {
+		if constraint.Kind == HardConstraintIncludeOtherArtists && strings.EqualFold(strings.TrimSpace(constraint.Value), "true") {
+			return true
+		}
+	}
+	return false
 }
 
 func addUnsupportedConstraints(out []UnsupportedRequirement, constraints []HardConstraint) []UnsupportedRequirement {

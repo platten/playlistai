@@ -51,7 +51,7 @@ func (o *Orchestrator) assemblyKey(candidates []core.Candidate, intent core.Musi
 		Knowledge                               *core.KnowledgeSnapshot
 		Assessments                             map[string]core.AudioAssessment
 		EnhancedFingerprint                     string
-	}{candidates, intent, request.Profile, resolvedContextTracks(o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments, request.EnhancedAudio.Fingerprint() + o.enhancedSnapshot.Fingerprint() + EnhancedPolicyVersion})
+	}{candidates, intent, request.Profile, resolvedContextTracks(o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments, request.EnhancedAudio.Fingerprint() + o.enhancedSnapshot.Fingerprint() + EnhancedPolicyVersion + EnhancedDSPMappingVersion})
 }
 
 func (a candidateAssembly) complete(count int) bool {
@@ -173,6 +173,9 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 			}
 		}
 		out.durationMatched = assessment.State == core.EvidenceMatch
+	}
+	if err == nil && !includesOtherArtists(o.cat, intent, out.sequence.Tracks) {
+		out.reserveReasons = append(out.reserveReasons, core.OutcomeReason{Code: "other_artists_missing", Detail: "The retained playlist does not include an eligible artist outside the named references.", Action: "Add another fitting reference, broaden the search, or remove the request to include other artists."})
 	}
 	if err == nil && key != "" && out.complete(intent.Count) {
 		*o.assemblyCache = completedAssembly{key: key, result: out}

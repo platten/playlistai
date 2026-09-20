@@ -31,6 +31,7 @@ type contextEntry struct {
 	vectors    ports.Vectors
 	hasVectors bool
 	artistKey  string
+	performers []string
 	album      string
 	hasAlbum   bool
 }
@@ -45,6 +46,8 @@ type poolEntry struct {
 	vectors       ports.Vectors
 	hasVectors    bool
 	artistKey     string
+	performers    []string
+	outsideNamed  bool
 	album         string
 	hasAlbum      bool
 	relevance     float64
@@ -86,7 +89,7 @@ func (p *poolEntry) fold(entry contextEntry, intent core.MusicIntent) {
 			p.redundancyOK = true
 		}
 	}
-	if p.artistKey != "" && entry.artistKey == p.artistKey {
+	if performersOverlap(p.performers, entry.performers) {
 		p.artistMatches++
 	}
 	if entry.hasAlbum {
@@ -157,6 +160,15 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		}
 	}
 	pool := make([]poolEntry, 0, len(candidates))
+	contextTracks := append([]core.TrackRef(nil), request.Required...)
+	contextTracks = append(contextTracks, request.Waypoints...)
+	contextTracks = append(contextTracks, tailTracks(request.RecentSelections, maxContinuationAnchors)...)
+	named := namedReferenceArtists(s.cat, request.Intent)
+	allTracks := append(append([]core.TrackRef(nil), contextTracks...), named...)
+	for _, candidate := range candidates {
+		allTracks = append(allTracks, candidate.Track)
+	}
+	performers := newPerformerKeys(request.Intent, allTracks)
 	for _, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return ports.SelectionResult{}, err
@@ -170,9 +182,13 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			continue
 		}
 		entry := poolEntry{
-			candidate: candidate,
-			artistKey: core.NormalizeIdentityPart(candidate.Track.Artist),
-			relevance: normalizedRelevance(candidate.Scores.Total, floor, best),
+			candidate:  candidate,
+			artistKey:  core.NormalizeIdentityPart(candidate.Track.Artist),
+			performers: performers.keys(candidate.Track.Artist),
+			relevance:  normalizedRelevance(candidate.Scores.Total, floor, best),
+		}
+		if core.RequiresOtherArtists(request.Intent) {
+			entry.outsideNamed = outsideNamedArtists(performers, candidate.Track, named)
 		}
 		entry.vectors, entry.hasVectors = s.cat.Vectors(candidate.Track.ID)
 		if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
@@ -191,14 +207,12 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		return result, nil
 	}
 
-	contextTracks := append([]core.TrackRef(nil), request.Required...)
-	contextTracks = append(contextTracks, request.Waypoints...)
-	contextTracks = append(contextTracks, tailTracks(request.RecentSelections, maxContinuationAnchors)...)
 	for _, track := range contextTracks {
 		entry, err := s.contextEntry(ctx, track, request.Intent.Controls.RecommendationMode == core.EnhancedHybrid)
 		if err != nil {
 			return ports.SelectionResult{}, err
 		}
+		entry.performers = performers.keys(track.Artist)
 		for index := range pool {
 			pool[index].fold(entry, request.Intent)
 		}
@@ -208,6 +222,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	artistDiversity := genreArtistDiversity(request.Intent)
 	artistUses := map[string]int{}
 	seenRequired := map[string]bool{}
+	needsOther := core.RequiresOtherArtists(request.Intent) && !includesOtherArtists(s.cat, request.Intent, request.Required)
 	for _, track := range request.Required {
 		if !seenRequired[track.ID] {
 			artistUses[core.NormalizeIdentityPart(track.Artist)]++
@@ -224,7 +239,13 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			better := chosen < 0
 			if chosen >= 0 {
 				left, right := pool[index].candidate, pool[chosen].candidate
-				if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && (left.FitTier == fitStrong) != (right.FitTier == fitStrong) {
+				leftOther := pool[index].outsideNamed
+				rightOther := pool[chosen].outsideNamed
+				if needsOther && leftOther != rightOther {
+					// Reserve the explicit requirement before first-N analysis can
+					// stop. Candidates have already passed the applicable floor.
+					better = leftOther
+				} else if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && (left.FitTier == fitStrong) != (right.FitTier == fitStrong) {
 					better = left.FitTier == fitStrong
 				} else if request.Intent.Controls.RecommendationMode != core.EnhancedHybrid && request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
 					better = left.MusicalFit == core.EvidenceMatch
@@ -239,6 +260,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			}
 		}
 		selected := pool[chosen]
+		needsOther = needsOther && !selected.outsideNamed
 		artistUses[selected.artistKey]++
 		result.Candidates = append(result.Candidates, selected.candidate)
 		pool = append(pool[:chosen], pool[chosen+1:]...)
@@ -246,6 +268,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 			library: selected.library, hasLibrary: selected.hasLibrary,
 			vectors: selected.vectors, hasVectors: selected.hasVectors,
 			artistKey: selected.artistKey, album: selected.album, hasAlbum: selected.hasAlbum,
+			performers: selected.performers,
 		}
 		for index := range pool {
 			pool[index].fold(added, request.Intent)

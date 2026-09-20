@@ -27,6 +27,7 @@ func TestGetCatalogInfoUnconfigured(t *testing.T) {
 func TestGetCatalogInfoConfiguredButNotLoaded(t *testing.T) {
 	t.Parallel()
 	cfg := config.Default()
+	cfg.Discovery.ManifestURL = "" // this fixture exercises catalog setup independently
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join(cfg.DataDir, "catalog") // empty, nothing to load
 	cfg.Catalog.ManifestURL = "https://example.invalid/catalog-manifest.json"

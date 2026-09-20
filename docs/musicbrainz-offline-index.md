@@ -146,8 +146,9 @@ The upload directory contains only the manifest and ordered compressed parts:
 
 | File | Purpose |
 | --- | --- |
-| `musicbrainz-manifest.json` | Snapshot, format and license metadata; extracted file and ordered part sizes/SHA-256 values |
+| `musicbrainz-manifest.json` | Snapshot, format and license metadata; extracted file, optional genre vocabulary, and ordered part sizes/SHA-256 values |
 | `musicbrainz.sqlite.zst.part-00001` ... | Consecutive sections of one Zstandard stream |
+| `musicbrainz-genres.json` | Optional versioned official genre names and MBIDs, retrieval date, provenance, license, and content hash |
 
 The default part limit is **199,000,000 bytes**, safely below a decimal 200 MB
 object limit. `-part-bytes` may lower it but cannot exceed 200,000,000. The
@@ -213,6 +214,23 @@ memory-bounded Zstandard decoder, verifies the SQLite file and embedded
 snapshot, then switches the active pointer. It removes downloaded part files
 after successful activation. A failed update leaves the prior active index
 available.
+
+The packer fetches the documented paginated MusicBrainz `/ws/2/genre/all`
+resource by default. `-genre-vocabulary` accepts an already prepared artifact
+for reproducible builds, while `-skip-genres` retains compatibility with older
+index-only bundles. The desktop installs the small vocabulary independently, so
+a vocabulary-only update reuses an unchanged SQLite index. It verifies and
+activates the vocabulary atomically; an invalid or interrupted update keeps the
+last valid artifact. Prompt parsing never requests genres from the network.
+
+Before either parser runs, Playlist AI uses the active immutable index to match
+complete artist names, aliases, credited spellings, and artist-scoped recording
+titles. Exact matches protect their source byte ranges from later genre, mood,
+and sound interpretation. Homonymous identities remain explicit until a unique
+recording or additional prompt detail distinguishes them; catalog text matches
+cannot silently choose a provider identity. Missing indexes, bounded lookup
+limits, and lookup failures fall back to the original text without inventing
+provider identities.
 
 The checksums detect corruption and mismatched objects; they are not signatures.
 The HTTPS manifest host is the trust root. Resetting app-managed assets removes

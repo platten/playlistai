@@ -14,6 +14,33 @@ func TestDefaultValidates(t *testing.T) {
 	}
 }
 
+func TestDiscoveryManifestConfiguration(t *testing.T) {
+	for _, source := range []string{"", "https://music.example/discovery.json", "http://music.example/discovery.json", "https://user:secret@music.example/discovery.json", "https://music.example/discovery.json#v1"} {
+		cfg := Default()
+		cfg.Discovery.ManifestURL = source
+		valid := source == "" || source == "https://music.example/discovery.json"
+		if err := cfg.Validate(); (err == nil) != valid {
+			t.Fatalf("source %q valid=%v err=%v", source, valid, err)
+		}
+	}
+}
+
+func TestDefaultDiscoverySourceAndExistingConfigMigration(t *testing.T) {
+	const hosted = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/paipack/manifest.json"
+	if got := Default().Discovery.ManifestURL; got != hosted {
+		t.Fatalf("default discovery source = %q", got)
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	// An existing config without the new section inherits the required asset.
+	if err := os.WriteFile(path, []byte("[preview]\nprovider = \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.Discovery.ManifestURL != hosted {
+		t.Fatalf("existing config discovery=%+v err=%v", cfg.Discovery, err)
+	}
+}
+
 func TestDefaultMusicBrainzWizardSourceAndOverrides(t *testing.T) {
 	t.Parallel()
 	musicBrainzURL, err := url.Parse(Default().Metadata.MusicBrainzManifestURL)

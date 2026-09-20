@@ -37,8 +37,18 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 			if ref.Kind != selection.Kind || !strings.EqualFold(strings.TrimSpace(ref.Query), strings.TrimSpace(selection.Query)) {
 				continue
 			}
+			if ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) {
+				return nil, fmt.Errorf("reference choice for %q cannot select among unresolved provider identities", selection.Query)
+			}
 			ref.TrackID, ref.Resolution, ref.SpellingDecision = "", nil, ""
 			result := resolver.ResolveReference(ref)
+			if ref.Grounding != nil && !ref.Grounding.Truncated && len(ref.Grounding.Candidates) == 1 && result.Status == core.ResolutionResolved && result.Selected != nil {
+				for _, track := range result.Selected.Representatives {
+					if selection.TrackID != "" && track.TrackID == selection.TrackID {
+						valid = true
+					}
+				}
+			}
 			if result.Status != core.ResolutionAmbiguous {
 				continue
 			}

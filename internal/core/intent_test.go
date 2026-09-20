@@ -180,6 +180,42 @@ func TestIntentSemanticValidation(t *testing.T) {
 	if err := falseClaim.Validate(); err == nil {
 		t.Fatal("unsupported hard constraint claimed enforcement")
 	}
+	invalidOtherArtists := MusicIntent{
+		Version:         CurrentIntentVersion,
+		HardConstraints: []HardConstraint{{Kind: HardConstraintIncludeOtherArtists, Value: "false", Supported: true}},
+		Controls:        IntentControls{TotalTrackCount: 10, AudioWeight: 0.5, CooccurrenceWeight: 0.5},
+	}
+	if err := invalidOtherArtists.Validate(); err == nil {
+		t.Fatal("non-affirmative include-other-artists constraint passed validation")
+	}
+	invalidEndpointGrounding := MusicIntent{
+		Version: CurrentIntentVersion,
+		Start: &IntentReference{Kind: ReferenceArtist, Query: "Start", Influence: InfluencePositive, Grounding: &IdentityGrounding{
+			Provider: "MusicBrainz", MatchedSpelling: "Start", MatchType: "canonical", SnapshotVersion: "snapshot", Candidates: []IdentityCandidate{{Kind: ReferenceTrack, ID: "wrong-kind", ArtistID: "artist", Name: "Start", Title: "Song"}},
+		}},
+		Controls: IntentControls{TotalTrackCount: 10, AudioWeight: 0.5, CooccurrenceWeight: 0.5},
+	}
+	if err := invalidEndpointGrounding.Validate(); err == nil {
+		t.Fatal("invalid journey endpoint grounding passed validation")
+	}
+}
+
+func TestIncludeOtherArtistsContract(t *testing.T) {
+	t.Parallel()
+
+	intent := MusicIntent{HardConstraints: []HardConstraint{{Kind: HardConstraintIncludeOtherArtists, Value: " TRUE "}}}.Normalized()
+	if !RequiresOtherArtists(intent) {
+		t.Fatal("normalized explicit output-diversity requirement was not detected")
+	}
+	if got := intent.HardConstraints[0]; got.Value != "true" || !got.Supported || !got.RuntimeEnforced {
+		t.Fatalf("constraint was not normalized as enforceable: %+v", got)
+	}
+	if err := intent.Validate(); err != nil {
+		t.Fatalf("valid include-other-artists contract failed validation: %v", err)
+	}
+	if RequiresOtherArtists(MusicIntent{HardConstraints: []HardConstraint{{Kind: HardConstraintIncludeOtherArtists, Value: "false"}}}) {
+		t.Fatal("non-affirmative value activated output-diversity requirement")
+	}
 }
 
 func TestParseDisplay(t *testing.T) {

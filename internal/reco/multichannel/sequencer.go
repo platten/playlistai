@@ -542,7 +542,7 @@ func (s *GreedySequencer) candidateReason(candidate core.Candidate, request port
 			core.ComponentEvidence{Component: "library_dsp_preference", Score: candidate.Scores.LibraryDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.LibraryDSP, Detail: "Signed library-relative measured preference; sampled audio only"})
 	}
 	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
-		evidence = append(evidence, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference/taste similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; preview measurements, never hard musical evidence"})
+		evidence = append(evidence, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference/taste similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; " + EnhancedDSPMappingVersion + "; preview measurements, never hard musical evidence"})
 	}
 	evidence = append(evidence,
 		core.ComponentEvidence{Component: "selection_relevance", Score: candidate.Scores.SelectionRelevance, Weight: 1, Available: candidate.Available.SelectionRelevance},

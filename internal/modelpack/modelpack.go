@@ -233,6 +233,20 @@ func FetchPinned(ctx context.Context, manifestLocation, checksum, cacheDir, dest
 	if e != nil {
 		return e
 	}
+	return FetchManifest(ctx, m, manifestLocation, cacheDir, destination, p)
+}
+
+// FetchManifest installs one already-fetched manifest snapshot. It never
+// refetches the manifest, so callers can validate narrower asset-specific
+// limits without a remote manifest changing between validation and download.
+func FetchManifest(ctx context.Context, m Manifest, manifestLocation, cacheDir, destination string, p ports.Progress) error {
+	if e := ctx.Err(); e != nil {
+		return e
+	}
+	if e := m.Validate(); e != nil {
+		return e
+	}
+	var e error
 	if _, e = os.Lstat(destination); !os.IsNotExist(e) {
 		if e != nil {
 			return e

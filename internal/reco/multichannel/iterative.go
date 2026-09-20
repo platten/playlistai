@@ -51,7 +51,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	// Stop/budget cancellation interrupts provider I/O as well as analysis, but
 	// must not discard already accepted tracks. Parent cancellation still does.
 	defer func() {
-		if outErr != nil && ctx.Err() != nil && parent.Err() == nil {
+		if outErr != nil && !errors.Is(outErr, ports.ErrDiscoveryGenerationMismatch) && ctx.Err() != nil && parent.Err() == nil {
 			out, outErr = accepted, nil
 			outNotices = append(outNotices, core.PlaylistNotice{Code: "discovery_stopped", Detail: "Discovery stopped; only eligible tracks were retained."})
 		}
@@ -79,6 +79,23 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 	}
 	var prepared []preparedCandidate
 	retrievalInterrupted := false
+	orderPool := func(batch []core.Candidate) ([]core.Candidate, error) {
+		ranked, err := o.rankCandidates(ctx, batch, ports.RankRequest{Intent: intent, Profile: request.Profile})
+		if err != nil {
+			return nil, err
+		}
+		selection, err := NewSelector(o.cat, o.cfg).shortlist(ctx, ranked, ports.SelectionRequest{
+			Intent: intent, Required: required, Waypoints: waypoints, RecentSelections: recent,
+			Count: min(o.cfg.MaxCandidates, recommendationPoolSize(batchCount, len(required))),
+		})
+		if err != nil {
+			return nil, err
+		}
+		// Unselected IDs are not marked attempted: later bounded retrieval can
+		// reconsider them, but they must not turn this 2N analysis queue into
+		// the entire (up to MaxCandidates) raw retrieval union.
+		return selection.Candidates, nil
+	}
 	refill := func() error {
 		if request.Progress != nil && len(accepted) > 0 {
 			request.Progress.Report("generation", int64(min(len(accepted), target)), int64(target), "Finding additional similar tracks with Deej-AI")
@@ -94,20 +111,12 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			retrievalInterrupted = true
 			notices = append(notices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Candidate retrieval was interrupted; retained candidates were still checked without relaxing requirements."})
 		}
-		batch, err = o.rankCandidates(ctx, batch, ports.RankRequest{Intent: intent, Profile: request.Profile})
-		if err != nil {
-			return err
-		}
 		// Give MMR alternatives before early stopping: taking only the first N
 		// passing relevance-ranked tracks would leave artist diversity no choice.
-		selection, err := NewSelector(o.cat, o.cfg).shortlist(ctx, batch, ports.SelectionRequest{
-			Intent: intent, Required: required, Waypoints: waypoints, RecentSelections: recent,
-			Count: recommendationPoolSize(batchCount, len(required)),
-		})
+		queue, err = orderPool(batch)
 		if err != nil {
 			return err
 		}
-		queue = selection.Candidates
 		if request.Progress != nil {
 			request.Progress.Report("generation", int64(len(queue)+len(required)), int64(2*batchCount), "Prepared recommendation shortlist; checking musical fit")
 		}
@@ -117,11 +126,22 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		// Existing sound matches take part before a metadata stream can fill N.
 		queue = append([]core.Candidate(nil), initial...)
 		initial = nil
+		if o.enhanced {
+			ordered, err := orderPool(queue)
+			if err != nil {
+				return nil, notices, err
+			}
+			// Retain the bounded alternatives until fit checks finish. Applying
+			// the relevance floor before checking unknowns can discard the only
+			// grounded recording; final assembly applies ordinary MMR selection.
+			queue = ordered
+		}
 	}
 	if len(required) == intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
 		return accepted, notices, nil // required tracks were already validated
 	}
-	for attempts := 0; attempts < iterativeAttempts; attempts++ {
+	attempts := 0
+	for ; attempts < iterativeAttempts; attempts++ {
 		if err := parent.Err(); err != nil {
 			return nil, notices, err
 		}
@@ -135,6 +155,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			break
 		}
 		if o.audioSession != nil && o.audioSession.ShouldStop() {
+			notices = append(notices, core.PlaylistNotice{Code: "analysis_limit", Detail: "Audio checking stopped or reached its analysis budget; the catalog was not exhausted."})
 			break
 		}
 		var (
@@ -149,22 +170,45 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			preparedErr = prepared[0].err
 			prepared = prepared[1:]
 		} else if stream != nil && len(queue) == 0 {
-			track, err := stream.Next(ctx)
-			if err != nil {
-				if parent.Err() != nil {
-					return nil, notices, parent.Err()
+			// Enhanced provider candidates use the same bounded, diversity-aware
+			// preparation as the local pack. Registration is metadata-only; this
+			// does not perform extra preview checks merely to fill the batch.
+			pullLimit := 1
+			if o.enhanced {
+				pullLimit = min(o.cfg.MaxCandidates, max(1, recommendationPoolSize(batchCount, len(required))))
+			}
+			for pulled := 0; pulled < pullLimit; pulled++ {
+				track, err := stream.Next(ctx)
+				if err != nil {
+					if errors.Is(err, ports.ErrDiscoveryGenerationMismatch) {
+						return nil, notices, err
+					}
+					if parent.Err() != nil {
+						return nil, notices, parent.Err()
+					}
+					if !errors.Is(err, io.EOF) {
+						notices = append(notices, core.PlaylistNotice{Code: "discovery_unavailable", Detail: "Online artist discovery was interrupted; continuing with available catalog candidates."})
+					}
+					stream = nil
+					break
 				}
-				if !errors.Is(err, io.EOF) {
-					notices = append(notices, core.PlaylistNotice{Code: "discovery_unavailable", Detail: "Online artist discovery was interrupted; continuing with available catalog candidates."})
+				next := core.Candidate{Track: track, Sources: []core.RetrievalEvidence{{Channel: "metadata_discovery", Rank: len(attempted) + pulled + 1, QueryWeight: 1}}}
+				if source, ok := stream.(ports.MusicCandidateEvidence); ok {
+					next.Sources = source.Evidence(track.ID)
 				}
-				stream = nil
-				queue = nil // refill with attempted IDs removed, including replay
+				queue = append(queue, next)
+			}
+			if len(queue) == 0 {
 				continue
 			}
-			candidate = core.Candidate{Track: track, Sources: []core.RetrievalEvidence{{Channel: "metadata_discovery", Rank: len(attempted) + 1, QueryWeight: 1}}}
-			if source, ok := stream.(ports.MusicCandidateEvidence); ok {
-				candidate.Sources = source.Evidence(track.ID)
+			if o.enhanced {
+				var err error
+				queue, err = orderPool(queue)
+				if err != nil {
+					return nil, notices, err
+				}
 			}
+			candidate, queue = queue[0], queue[1:]
 		} else {
 			if len(queue) == 0 {
 				if retrievalInterrupted {
@@ -223,7 +267,7 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			var assessment core.AudioAssessment
 			if prechecked {
 				assessment, err = preparedAssessment, preparedErr
-			} else if stream == nil && o.audioSession.Parallelism() > 1 {
+			} else if o.audioSession.Parallelism() > 1 && (stream == nil || o.enhanced && len(queue) > 0) {
 				batch := []core.Candidate{candidate}
 				for len(batch) < o.audioSession.Parallelism() && len(queue) > 0 {
 					next := queue[0]
@@ -299,10 +343,14 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			}
 		}
 		if intent.DurationSeconds > 0 && len(accepted)+len(required) >= o.cfg.MaxCandidates {
+			notices = append(notices, core.PlaylistNotice{Code: "discovery_budget", Detail: "The candidate budget was reached before the requested duration was fulfilled; the catalog was not exhausted."})
 			break // keep duration alternatives inside the configured candidate budget
 		}
 		// Keep the rest of the shortlist: refilling after every passing track
 		// discards the 2N pool and needlessly repeats similarity queries.
+	}
+	if attempts == iterativeAttempts {
+		notices = append(notices, core.PlaylistNotice{Code: "discovery_budget", Detail: "The discovery attempt budget was reached; the catalog was not exhausted."})
 	}
 	if len(accepted)+len(required) >= intent.Count || intent.DurationSeconds > 0 && !intent.HasExplicitTrackCount() {
 		complete, err := o.iterativeComplete(parent, accepted, intent, request, references, required, waypoints, seed)

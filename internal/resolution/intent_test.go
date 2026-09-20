@@ -13,6 +13,18 @@ type testResolver struct {
 	result core.ReferenceResolution
 }
 
+type groundedTrackResolver struct{}
+
+func (groundedTrackResolver) CatalogVersion() string { return "catalog-v2" }
+func (groundedTrackResolver) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	id, artist, title := "text-track", "Wrong Artist", "Right Title"
+	if ref.TrackID == "musicbrainz:recording-mbid" {
+		id, artist = "musicbrainz:recording-mbid", "Right Artist"
+	}
+	selected := &core.ResolutionCandidate{Kind: core.ReferenceTrack, EntityID: id, Artist: artist, Title: title, Representatives: []core.WeightedTrack{{TrackID: id, Weight: 1}}}
+	return core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: "catalog-v2", Selected: selected}
+}
+
 func (r *testResolver) CatalogVersion() string { return "catalog-v2" }
 func (r *testResolver) ResolveReference(core.IntentReference) core.ReferenceResolution {
 	r.calls++
@@ -75,6 +87,46 @@ func TestResolutionCacheAndRepresentative(t *testing.T) {
 				t.Fatalf("calls=%d refs=%+v issues=%+v", r.calls, refs, issues)
 			}
 		})
+	}
+}
+
+func TestAmbiguousGroundingCannotBeSilentlyResolved(t *testing.T) {
+	selected := &core.ResolutionCandidate{Kind: core.ReferenceArtist, EntityID: "catalog-artist", Artist: "Shared Name", Representatives: []core.WeightedTrack{{TrackID: "catalog-track", Weight: 1}}}
+	r := &testResolver{result: core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: "catalog-v2", Selected: selected}}
+	grounding := &core.IdentityGrounding{
+		Provider: "musicbrainz", MatchedSpelling: "Shared Name", MatchType: "canonical", SnapshotVersion: "snapshot-1",
+		Candidates: []core.IdentityCandidate{
+			{Kind: core.ReferenceArtist, ID: "artist-a", Name: "Shared Name", Disambiguation: "US group"},
+			{Kind: core.ReferenceArtist, ID: "artist-b", Name: "Shared Name", Disambiguation: "UK group"},
+		},
+	}
+	refs, issues := applyList(r, []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Shared Name", Grounding: grounding}}, false, nil)
+	if refs[0].TrackID != "" || refs[0].Resolution == nil || refs[0].Resolution.Status != core.ResolutionAmbiguous || refs[0].Resolution.Selected != nil {
+		t.Fatalf("ambiguous grounding was selected: %+v", refs[0])
+	}
+	if len(issues) != 1 || len(issues[0].GroundingCandidates) != 2 || len(issues[0].Alternatives) != 0 {
+		t.Fatalf("grounding ambiguity was not exposed: %+v", issues)
+	}
+	if err := BlockingError(issues); !errors.Is(err, core.ErrAmbiguousReference) || !strings.Contains(err.Error(), "US group") {
+		t.Fatalf("unexpected blocking error: %v", err)
+	}
+}
+
+func TestUniqueGroundingRejectsDifferentlyNamedCatalogIdentity(t *testing.T) {
+	selected := &core.ResolutionCandidate{Kind: core.ReferenceArtist, EntityID: "catalog-artist", Artist: "Different Artist", Representatives: []core.WeightedTrack{{TrackID: "catalog-track", Weight: 1}}}
+	r := &testResolver{result: core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: "catalog-v2", Selected: selected}}
+	grounding := &core.IdentityGrounding{Provider: "MusicBrainz", MatchedSpelling: "Alias", MatchType: "alias", SnapshotVersion: "snapshot-1", Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "artist-a", Name: "Canonical Artist"}}}
+	refs, issues := applyList(r, []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Alias", Grounding: grounding}}, false, nil)
+	if refs[0].TrackID != "" || refs[0].Resolution.Status != core.ResolutionAmbiguous || len(issues) != 1 || len(issues[0].Alternatives) != 1 {
+		t.Fatalf("mismatched catalog identity was selected: refs=%+v issues=%+v", refs, issues)
+	}
+}
+
+func TestGroundedRecordingUsesCatalogMBIDCorrelation(t *testing.T) {
+	grounding := &core.IdentityGrounding{Provider: "MusicBrainz", MatchedSpelling: "Right Artist — Right Title", MatchType: "artist_scoped_title", SnapshotVersion: "snapshot-1", Candidates: []core.IdentityCandidate{{Kind: core.ReferenceTrack, ID: "recording-mbid", ArtistID: "artist-mbid", Name: "Right Artist", Title: "Right Title"}}}
+	refs, issues := applyList(groundedTrackResolver{}, []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Right Artist — Right Title", Grounding: grounding}}, false, nil)
+	if len(issues) != 0 || refs[0].TrackID != "musicbrainz:recording-mbid" || refs[0].Resolution == nil || refs[0].Resolution.Selected == nil || refs[0].Resolution.Selected.Artist != "Right Artist" {
+		t.Fatalf("catalog MBID correlation was not preferred: refs=%+v issues=%+v", refs, issues)
 	}
 }
 

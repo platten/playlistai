@@ -168,6 +168,24 @@ func TestBundleManifestRejectsUnsafeOrOversizedParts(t *testing.T) {
 	if err := oversized.Validate(); err == nil {
 		t.Fatal("oversized part accepted")
 	}
+	genre := base
+	genre.GenreVocabulary = &Artifact{Name: GenreVocabularyName, Size: 1024, SHA256: strings.Repeat("c", 64)}
+	if err := genre.Validate(); err != nil {
+		t.Fatalf("valid optional genre artifact rejected: %v", err)
+	}
+	for name, artifact := range map[string]Artifact{
+		"name": {Name: "../" + GenreVocabularyName, Size: 1024, SHA256: strings.Repeat("c", 64)},
+		"size": {Name: GenreVocabularyName, Size: maxGenreVocabularyBytes + 1, SHA256: strings.Repeat("c", 64)},
+		"hash": {Name: GenreVocabularyName, Size: 1024, SHA256: "invalid"},
+	} {
+		t.Run("genre-"+name, func(t *testing.T) {
+			candidate := base
+			candidate.GenreVocabulary = &artifact
+			if err := candidate.Validate(); err == nil {
+				t.Fatalf("invalid genre artifact accepted: %+v", artifact)
+			}
+		})
+	}
 }
 
 func TestParseSHA256Sums(t *testing.T) {

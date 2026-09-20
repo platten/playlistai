@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -19,6 +20,7 @@ type Config struct {
 
 	Catalog        CatalogConfig        `toml:"catalog"`
 	Metadata       MetadataConfig       `toml:"metadata"`
+	Discovery      DiscoveryConfig      `toml:"discovery"`
 	AI             AIConfig             `toml:"ai"`
 	Enrich         EnrichConfig         `toml:"enrich"`
 	Preview        PreviewConfig        `toml:"preview"`
@@ -30,6 +32,14 @@ type Config struct {
 // pins every part plus the expanded SQLite database by SHA-256. Override with
 // TOML or a release linker value when testing another published bundle.
 var DefaultMusicBrainzManifestURL = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/musicbrainz/musicbrainz-manifest.json"
+
+// DefaultDiscoveryManifestURL identifies the required shared paipack transport.
+// Fetch the current manifest at installation time; filenames and hashes may change.
+var DefaultDiscoveryManifestURL = "https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/paipack/manifest.json"
+
+type DiscoveryConfig struct {
+	ManifestURL string `toml:"manifest_url"`
+}
 
 type MetadataConfig struct {
 	MusicBrainzManifestURL string `toml:"musicbrainz_manifest_url"`
@@ -159,8 +169,9 @@ func Default() Config {
 	data := fallbackDataDir()
 
 	cfg := Config{
-		DataDir:  data,
-		Metadata: MetadataConfig{MusicBrainzManifestURL: DefaultMusicBrainzManifestURL},
+		DataDir:   data,
+		Metadata:  MetadataConfig{MusicBrainzManifestURL: DefaultMusicBrainzManifestURL},
+		Discovery: DiscoveryConfig{ManifestURL: DefaultDiscoveryManifestURL},
 		Catalog: CatalogConfig{
 			Dir: filepath.Join(data, "catalog"),
 			// Deej-AI catalog (~957k tracks), tar+zstd, ~210 MB. Hosted on
@@ -233,6 +244,12 @@ func Load(path string) (Config, error) {
 
 // Validate checks invariants that must hold before the app starts.
 func (c Config) Validate() error {
+	if c.Discovery.ManifestURL != "" {
+		u, err := url.Parse(c.Discovery.ManifestURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return errors.New("config: discovery.manifest_url must be an HTTPS URL without credentials or fragment")
+		}
+	}
 	if c.DataDir == "" {
 		return errors.New("config: data_dir is empty")
 	}

@@ -19,7 +19,7 @@ import (
 
 // Version keys model wire grammar and compiler behavior independently of the
 // saved core intent contract. Historical MusicIntent loading is unchanged.
-const Version = 10
+const Version = 11
 
 type WireReference struct {
 	Kind      string `json:"kind"`
