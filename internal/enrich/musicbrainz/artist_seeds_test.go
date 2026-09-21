@@ -270,6 +270,75 @@ func TestGroundedSeedArtistUsesPinnedIdentity(t *testing.T) {
 	}
 }
 
+func TestConfirmedArtistNeverUsesUncorrelatedDeezerIdentity(t *testing.T) {
+	for _, available := range []bool{false, true} {
+		t.Run(fmt.Sprintf("recording_available_%t", available), func(t *testing.T) {
+			c, calls := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/search/artist":
+					t.Error("confirmed MusicBrainz identity must not use name-only Deezer search")
+					_, _ = fmt.Fprint(w, `{"total":1,"data":[{"id":7,"name":"Nirvana"}]}`)
+				case "/artist/7/top":
+					_, _ = fmt.Fprint(w, `{"data":[{"id":3,"title":"Smells Like Teen Spirit","artist":{"id":7,"name":"Nirvana"}}]}`)
+				case "/ws/2/recording":
+					if r.URL.Query().Get("query") != "arid:uk-nirvana" {
+						t.Errorf("wrong identity query: %s", r.URL)
+					}
+					if available {
+						_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"uk-recording","title":"Pentecost Hotel","artist-credit":[{"name":"Nirvana","artist":{"id":"uk-nirvana"}}]}]}`)
+					} else {
+						_, _ = fmt.Fprint(w, `{"count":0,"recordings":[]}`)
+					}
+				default:
+					t.Errorf("unexpected lookup: %s", r.URL)
+					http.NotFound(w, r)
+				}
+			})
+			cat := fakes.NewCatalog(2,
+				fakes.CatalogTrack{ID: "us-track", Display: "Nirvana - Smells Like Teen Spirit", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+				fakes.CatalogTrack{ID: "uk-track", Display: "Nirvana - Pentecost Hotel", Audio: []float32{1, 0}, Track: []float32{1, 0}},
+			)
+			ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Nirvana", Influence: core.InfluencePositive,
+				Grounding: &core.IdentityGrounding{Provider: "MusicBrainz", Confirmed: true, Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "uk-nirvana", Name: "Nirvana"}}},
+			}
+			intent, _ := resolution.Apply(cat, core.MusicIntent{Version: core.CurrentIntentVersion, References: []core.IntentReference{ref}})
+			got := c.resolveMissingArtists(context.Background(), intent, cat, cat, &core.KnowledgeSnapshot{}, ports.NopProgress{})
+			got, _ = resolution.Apply(cat, got)
+			want := ""
+			if available {
+				want = "uk-track"
+			}
+			if got.References[0].TrackID != want || calls.Load() != 1 {
+				t.Fatalf("chosen identity was not preserved: %+v; calls=%d", got.References[0], calls.Load())
+			}
+		})
+	}
+}
+
+func TestConfirmedJourneyStartSharesRecoveredReference(t *testing.T) {
+	c, calls := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws/2/recording" || r.URL.Query().Get("query") != "arid:mb-artist" {
+			t.Errorf("unexpected lookup: %s", r.URL)
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"recording","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
+	})
+	cat := seedTestCatalog()
+	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Canonical Artist", Influence: core.InfluencePositive,
+		Grounding: &core.IdentityGrounding{Provider: "MusicBrainz", Confirmed: true, Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "mb-artist", Name: "Canonical Artist"}}},
+	}
+	intent, _ := resolution.Apply(cat, core.MusicIntent{Version: core.CurrentIntentVersion, Start: &ref, References: []core.IntentReference{ref}})
+	got := c.resolveMissingArtists(context.Background(), intent, cat, cat, &core.KnowledgeSnapshot{}, ports.NopProgress{})
+	got, issues := resolution.Apply(cat, got)
+	if got.Start.TrackID != "match" || got.References[0].TrackID != "match" || calls.Load() != 1 {
+		t.Fatalf("start did not share recovered reference: start=%+v reference=%+v calls=%d", got.Start, got.References[0], calls.Load())
+	}
+	if err := resolution.BlockingError(issues); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProviderAliasBridgesNativeScriptToCatalogArtist(t *testing.T) {
 	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "utada", Display: "Hikaru Utada - First Love", Audio: []float32{1, 0}, Track: []float32{1, 0}})
 	artist := seedArtist{ID: "mb-utada", Name: "宇多田ヒカル"}
