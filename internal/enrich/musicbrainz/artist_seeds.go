@@ -95,9 +95,11 @@ func (c *Client) resolveMissingArtists(ctx context.Context, intent core.MusicInt
 		}
 		*group = refs
 	}
-	if intent.Destination != nil {
-		destination := resolve(*intent.Destination)
-		intent.Destination = &destination
+	for _, endpoint := range []**core.IntentReference{&intent.Start, &intent.Destination} {
+		if *endpoint != nil {
+			ref := resolve(**endpoint)
+			*endpoint = &ref
+		}
 	}
 	return intent
 }
@@ -203,7 +205,7 @@ func (c *Client) findArtistSeedForIdentity(ctx context.Context, ref core.IntentR
 		}
 		ref.TrackID = track.ID
 		ref.Resolution = &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: resolver.CatalogVersion(), Selected: &candidate}
-		notice(fmt.Sprintf("Found %q online as %q. Using %s as the catalog seed after checking %d recording(s), starting with Deezer's top tracks when available.", ref.Query, artist.Name, track.Display(), checked))
+		notice(fmt.Sprintf("Found %q as %q. Using %s as the catalog seed after checking %d recording(s) from %s.", ref.Query, artist.Name, track.Display(), checked, source))
 		return true
 	}
 	if artist.ID != "" {
@@ -218,15 +220,21 @@ func (c *Client) findArtistSeedForIdentity(ctx context.Context, ref core.IntentR
 			}
 		}
 	}
-	found, err := c.tryPopularArtistTracks(ctx, artist, snapshot, selectTrack)
-	if found {
-		return ref
-	}
-	if err != nil {
-		notice(fmt.Sprintf("Deezer's popular-track lookup could not be completed: %v.", err))
+	// A same-name Deezer result does not authenticate a MusicBrainz identity
+	// explicitly chosen among homonyms. Keep that choice pinned to MBID-backed
+	// recordings even when the local snapshot contains no usable catalog seed.
+	confirmedIdentity := ref.Grounding != nil && ref.Grounding.Confirmed
+	if !confirmedIdentity {
+		found, err := c.tryPopularArtistTracks(ctx, artist, snapshot, selectTrack)
+		if found {
+			return ref
+		}
+		if err != nil {
+			notice(fmt.Sprintf("Deezer's popular-track lookup could not be completed: %v.", err))
+		}
 	}
 	if artist.ID != "" && ctx.Err() == nil {
-		notice("No usable seed from the popular-track lookup. Checking additional MusicBrainz recordings; their order does not indicate popularity.")
+		notice("Checking additional MusicBrainz recordings for the artist identity; their order does not indicate popularity.")
 		if c.tryOtherArtistTracks(ctx, artist, snapshot, selectTrack) {
 			return ref
 		}
