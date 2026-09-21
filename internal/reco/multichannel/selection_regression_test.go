@@ -136,7 +136,11 @@ func TestIncludeOtherArtistsReservesEligibleOutputAndReportsMissing(t *testing.T
 			o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig()).WithCandidateSource(&metadataPriorityStream{})
 			o.retriever = &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, ids...))}}
 			pl, err := o.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent})
-			if err != nil || len(pl.Tracks) != 2 {
+			wantTracks := 2
+			if !other {
+				wantTracks = 1 // hard default spacing never pads with adjacent repeats
+			}
+			if err != nil || len(pl.Tracks) != wantTracks {
 				t.Fatalf("tracks=%v outcome=%+v err=%v", pl.Tracks, pl.Outcome, err)
 			}
 			if other {

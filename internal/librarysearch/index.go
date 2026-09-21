@@ -13,6 +13,8 @@ import (
 	"sync"
 
 	mmap "github.com/edsrzf/mmap-go"
+
+	"github.com/platten/playlistai/internal/searchwork"
 )
 
 const MaxSearchLimit = 10_000
@@ -286,6 +288,11 @@ func (i *Index) Search(ctx context.Context, query Query) ([]Hit, error) {
 }
 
 func (i *Index) searchShard(ctx context.Context, shardIndex int, query []float32, limit int, exclude map[string]struct{}) ([]Hit, error) {
+	release, err := searchwork.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	shard := &i.shards[shardIndex]
 	best := make(worstHeap, 0, limit)
 	dimension := i.manifest.Dimension

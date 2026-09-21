@@ -68,6 +68,7 @@ func TestEnhancedEvidenceCLIReplayIsFrozenAndDeterministic(t *testing.T) {
 			t.Fatal("CLI merely accepts mode; MERT did not reach ranking")
 		}
 		got[0].Milliseconds = 0
+		got[0].StageTimings = stageTimings{}
 		if i == 0 {
 			first = got
 		} else if !reflect.DeepEqual(first, got) {

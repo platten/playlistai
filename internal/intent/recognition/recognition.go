@@ -19,9 +19,12 @@ import (
 )
 
 const (
-	Version         = "artist-first/v2"
+	Version         = "artist-first/v5"
 	MaxPromptBytes  = 8 << 10
 	MaxLexicalWords = 256
+	// MaxGroundingCandidates keeps the immutable identity evidence inside the
+	// default 4096-token parser budget. Provider lookup can inspect more rows.
+	MaxGroundingCandidates = 8
 )
 
 var (
@@ -124,8 +127,14 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 			continue
 		}
 		for _, bounds := range ranges {
-			candidate := span{start: bounds[0], end: bounds[1], text: prompt[bounds[0]:bounds[1]], artists: match.Candidates, truncated: match.Truncated}
-			if artistContext(prompt, candidate) {
+			artists := match.Candidates
+			truncated := match.Truncated
+			if len(artists) > MaxGroundingCandidates {
+				artists = artists[:MaxGroundingCandidates]
+				truncated = true
+			}
+			candidate := span{start: bounds[0], end: bounds[1], text: prompt[bounds[0]:bounds[1]], artists: artists, truncated: truncated}
+			if artistContext(prompt, candidate) && !descriptiveModifierOfMusicalAtom(prompt, source.Atoms, candidate) {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -164,10 +173,78 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 		source.Atoms = append(source.Atoms, atom)
 		protected = append(protected, bounds)
 	}
+	source.Atoms = suppressArtistsNestedInTracks(prompt, source.Atoms)
 	sort.SliceStable(source.Atoms, func(i, j int) bool {
 		return source.Atoms[i].Evidence[0].Start < source.Atoms[j].Evidence[0].Start
 	})
 	return addProviderGenres(prompt, source, vocabulary, protected)
+}
+
+// A track phrase such as “'So What' by Miles Davis” already preserves both
+// recording and artist identity. Retaining a second artist reference from the
+// contained byline creates an unintended independent seed and repeats provider
+// preparation. Separate artist mentions outside the track span remain intact.
+func suppressArtistsNestedInTracks(prompt string, atoms []core.IntentAtom) []core.IntentAtom {
+	keep := make([]core.IntentAtom, 0, len(atoms))
+	for _, atom := range atoms {
+		if atom.Kind != "artist" || len(atom.Evidence) == 0 {
+			keep = append(keep, atom)
+			continue
+		}
+		nested := false
+		artist := atom.Evidence[0]
+		for _, track := range atoms {
+			if track.Kind != "track" || len(track.Evidence) == 0 {
+				continue
+			}
+			evidence := track.Evidence[0]
+			trackText := evidence.Text
+			if trackText == "" && evidence.Start >= 0 && evidence.End <= len(prompt) && evidence.Start < evidence.End {
+				trackText = prompt[evidence.Start:evidence.End]
+			}
+			if track.Grounding == nil && !strings.ContainsAny(trackText, "\"'“”‘’") {
+				continue
+			}
+			if !strings.Contains(strings.ToLower(trackText), " by ") || !strings.Contains(core.NormalizeIdentityPart(track.Value), core.NormalizeIdentityPart(atom.Value)) {
+				continue
+			}
+			if artist.Start < evidence.Start || artist.Start >= evidence.End || artist.End < evidence.End || artist.End > len(prompt) {
+				continue
+			}
+			suffix := strings.TrimSpace(prompt[evidence.End:artist.End])
+			if strings.Trim(suffix, ".,;:!?\"'“”‘’()[]{}") == "" {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			keep = append(keep, atom)
+		}
+	}
+	return keep
+}
+
+// Provider identity indexes can contain bracketed credit placeholders such as
+// "[traditional]". A lowercase word directly modifying an already recognized
+// musical concept is descriptive language, not an artist reference.
+func descriptiveModifierOfMusicalAtom(prompt string, atoms []core.IntentAtom, candidate span) bool {
+	words := lexicalTokens(candidate.text)
+	if len(words) != 1 || candidate.text != strings.ToLower(candidate.text) {
+		return false
+	}
+	for _, atom := range atoms {
+		switch atom.Kind {
+		case "genre", "style", "mood", "texture", "instrumentation", "vocal", "activity", "energy":
+		default:
+			continue
+		}
+		for _, evidence := range atom.Evidence {
+			if evidence.Start >= candidate.end && strings.TrimSpace(prompt[candidate.end:evidence.Start]) == "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func incomplete(source core.IntentTranslation, notice string) core.IntentTranslation {
@@ -304,7 +381,7 @@ func recognizeReference(ctx context.Context, prompt string, source core.IntentTr
 		for _, result := range results {
 			truncated = truncated || result.Truncated
 			for _, recording := range result.Candidates {
-				if len(candidates) == mbindex.MaxLookupCandidates {
+				if len(candidates) == MaxGroundingCandidates {
 					truncated = true
 					break
 				}
@@ -352,7 +429,6 @@ func provider(store IdentityLookup) string {
 }
 
 func artistAtom(prompt string, source core.IntentTranslation, artist span, store IdentityLookup) core.IntentAtom {
-	atom := referenceAtom(prompt, source, artist.start, artist.end, core.ReferenceArtist, artist.text)
 	candidates := make([]core.IdentityCandidate, 0, len(artist.artists))
 	matchType := "exact"
 	for _, identity := range artist.artists {
@@ -361,6 +437,18 @@ func artistAtom(prompt string, source core.IntentTranslation, artist span, store
 		}
 		candidates = append(candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: identity.MBID, Name: identity.Name, Disambiguation: identity.Disambiguation})
 	}
+	value := strings.TrimSpace(strings.TrimRight(artist.text, ".,;:!?"))
+	if len(candidates) > 0 {
+		canonical := candidates[0].Name
+		same := true
+		for _, candidate := range candidates[1:] {
+			same = same && core.NormalizeIdentityPart(candidate.Name) == core.NormalizeIdentityPart(canonical)
+		}
+		if same {
+			value = canonical
+		}
+	}
+	atom := referenceAtom(prompt, source, artist.start, artist.end, core.ReferenceArtist, value)
 	atom.Grounding = &core.IdentityGrounding{Provider: provider(store), MatchedSpelling: artist.text, MatchType: matchType, SnapshotVersion: source.Recognition.ReferenceSnapshot, Candidates: candidates, Truncated: artist.truncated}
 	return atom
 }
@@ -601,14 +689,17 @@ func addProviderGenres(prompt string, source core.IntentTranslation, vocabulary 
 	})
 	occupied := append([][2]int(nil), protected...)
 	for _, atom := range source.Atoms {
-		if atom.Kind == "genre" && len(atom.Evidence) > 0 {
-			occupied = append(occupied, [2]int{atom.Evidence[0].Start, atom.Evidence[0].End})
+		switch atom.Kind {
+		case "genre", "style", "mood", "texture", "instrumentation", "vocal", "activity", "energy":
+			if len(atom.Evidence) > 0 {
+				occupied = append(occupied, [2]int{atom.Evidence[0].Start, atom.Evidence[0].End})
+			}
 		}
 	}
 	for _, item := range terms {
 		pattern := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(item.value))
 		for _, loc := range pattern.FindAllStringIndex(prompt, -1) {
-			if overlapsRanges(loc[0], loc[1], occupied) || !wordBoundary(prompt, loc[0], loc[1]) {
+			if overlapsRanges(loc[0], loc[1], occupied) || !wordBoundary(prompt, loc[0], loc[1]) || nonMusicalOther(prompt, item.value, loc[1]) {
 				continue
 			}
 			role := semanticRole(prompt, loc[0])
@@ -619,6 +710,19 @@ func addProviderGenres(prompt string, source core.IntentTranslation, vocabulary 
 	sort.SliceStable(source.Atoms, func(i, j int) bool { return source.Atoms[i].Evidence[0].Start < source.Atoms[j].Evidence[0].Start })
 	coordinateGenres(prompt, source.Atoms)
 	return source
+}
+
+func nonMusicalOther(prompt, value string, end int) bool {
+	if !strings.EqualFold(strings.TrimSpace(value), "other") {
+		return false
+	}
+	suffix := strings.ToLower(strings.TrimSpace(prompt[end:]))
+	for _, noun := range []string{"artist", "artists", "song", "songs", "track", "tracks", "album", "albums"} {
+		if suffix == noun || strings.HasPrefix(suffix, noun+" ") || strings.HasPrefix(suffix, noun+",") || strings.HasPrefix(suffix, noun+".") {
+			return true
+		}
+	}
+	return false
 }
 
 func coordinateGenres(prompt string, atoms []core.IntentAtom) {

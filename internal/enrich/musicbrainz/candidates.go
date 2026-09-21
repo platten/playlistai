@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
-	"net/url"
+	"strings"
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
@@ -45,6 +45,7 @@ type candidateStream struct {
 	dynamicRegistrations int
 	dynamicBudgetNotice  bool
 	acousticSpent        time.Duration
+	prefetch             *discoveryPrefetch
 	replayError          error
 }
 
@@ -122,10 +123,19 @@ func (s *candidateStream) recordEvidence(trackID, channel, source string) {
 
 func (c *Client) OpenCandidates(intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver) ports.MusicCandidateStream {
 	genres := contextualDiscoveryGenres(intent, contextPlans(intent))
-	if len(genres) == 0 && core.WantsInstrumental(intent) {
+	if core.WantsInstrumental(intent) {
 		// MusicBrainz's instrumental tag is a discovery hint. Every proposed
 		// recording still has to pass catalog identity and CLAP vocal screening.
-		genres = []string{"instrumental"}
+		// Retain it alongside requested genres: otherwise a strict no-vocals
+		// request with genre preferences would never continue its instrumental
+		// candidate pool after the preparatory lookup.
+		found := false
+		for _, genre := range genres {
+			found = found || strings.EqualFold(strings.TrimSpace(genre), "instrumental")
+		}
+		if !found {
+			genres = append([]string{"instrumental"}, genres...)
+		}
 	}
 	hasPackProfiles := intent.Controls.RecommendationMode == core.EnhancedHybrid && intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0
 	if len(genres) == 0 && !hasPackProfiles || cat == nil || resolver == nil {
@@ -192,58 +202,8 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 		s.position++
 		return track, nil
 	}
-	if !s.initialized {
-		s.initialized = true
-		var pools [][]core.GenreArtist
-		if s.intent.Controls.RecommendationMode == core.EnhancedHybrid && len(s.snapshot.PackProfiles) > 0 {
-			pools = append(pools, s.packDiscoveryArtists(ctx))
-		}
-		unavailableGenre := ""
-		for _, genre := range s.genres {
-			var pool core.GenreArtistPool
-			for _, cached := range s.snapshot.ArtistPools {
-				if core.NormalizeIdentityPart(cached.Genre) == core.NormalizeIdentityPart(genre) {
-					pool = cached
-					break
-				}
-			}
-			if len(pool.Artists) == 0 {
-				pool = s.client.genreArtists(ctx, genre)
-				s.snapshot.ArtistPools = append(s.snapshot.ArtistPools, pool)
-			}
-			if len(pool.Sources) == 0 {
-				if err := ctx.Err(); err != nil {
-					return core.TrackRef{}, err
-				}
-				unavailableGenre = genre
-				continue
-			}
-			artists := make([]core.GenreArtist, 0, len(pool.Artists))
-			for _, i := range s.rng.Perm(len(pool.Artists)) {
-				artists = append(artists, pool.Artists[i])
-			}
-			pools = append(pools, artists)
-		}
-		// Interleave genres so a journey's first stage cannot consume the pool.
-		used := map[string]bool{}
-		for round := 0; round < genreArtistTarget && len(s.artists) < discoveryArtists; round++ {
-			for _, pool := range pools {
-				if round >= len(pool) || len(s.artists) >= discoveryArtists {
-					continue
-				}
-				a := pool[round]
-				if !used[a.ID] && !excludedArtist(a.Name, s.intent.Constraints.ArtistsExclude) {
-					s.artists = append(s.artists, a)
-					used[a.ID] = true
-				}
-			}
-		}
-		if unavailableGenre != "" {
-			if len(s.artists) == 0 {
-				return core.TrackRef{}, fmt.Errorf("artist lookup unavailable for %q", unavailableGenre)
-			}
-			s.snapshot.Notices = append(s.snapshot.Notices, "Some genre spelling lookups were unavailable; using retrieved candidates with the same musical checks.")
-		}
+	if err := s.prepareDiscovery(ctx); err != nil {
+		return core.TrackRef{}, err
 	}
 	for len(s.artists) > 0 || len(s.pending) > 0 || len(s.deferredArtists) > 0 {
 		if err := ctx.Err(); err != nil {
@@ -348,14 +308,10 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					return tracks[0], nil
 				}
 			}
-			values := url.Values{"query": {"arid:" + artist.ID}, "fmt": {"json"}, "limit": {"100"}}
-			if offset := s.recordingOffsets[artist.ID]; offset > 0 {
-				values.Set("offset", fmt.Sprint(offset))
-			}
-			path := "/ws/2/recording?" + values.Encode()
+			path := recordingPagePath(artist.ID, s.recordingOffsets[artist.ID])
 			s.recordingReads++
 			s.windowReads++
-			raw, err := s.client.knowledgeGet(ctx, path, false)
+			raw, err := s.recordingPage(ctx, path)
 			if err != nil {
 				s.failures++
 				s.lastError = err
@@ -422,6 +378,7 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 					}
 				}
 			}
+			s.schedulePrefetch()
 			s.enrichAcoustic(ctx)
 		} else {
 			tracks = s.pending[0]
@@ -454,4 +411,60 @@ func (s *candidateStream) enrichAcoustic(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, remaining)
 	defer cancel()
 	s.client.acousticTracks(ctx, s.snapshot.Tracks, 25)
+}
+
+func (s *candidateStream) initializeDiscovery(ctx context.Context) error {
+	s.initialized = true
+	var pools [][]core.GenreArtist
+	if s.intent.Controls.RecommendationMode == core.EnhancedHybrid && len(s.snapshot.PackProfiles) > 0 {
+		pools = append(pools, s.packDiscoveryArtists(ctx))
+	}
+	unavailableGenre := ""
+	for _, genre := range s.genres {
+		var pool core.GenreArtistPool
+		for _, cached := range s.snapshot.ArtistPools {
+			if core.NormalizeIdentityPart(cached.Genre) == core.NormalizeIdentityPart(genre) {
+				pool = cached
+				break
+			}
+		}
+		if len(pool.Artists) == 0 {
+			pool = s.client.genreArtists(ctx, genre)
+			s.snapshot.ArtistPools = append(s.snapshot.ArtistPools, pool)
+		}
+		if len(pool.Sources) == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			unavailableGenre = genre
+			continue
+		}
+		artists := make([]core.GenreArtist, 0, len(pool.Artists))
+		for _, i := range s.rng.Perm(len(pool.Artists)) {
+			artists = append(artists, pool.Artists[i])
+		}
+		pools = append(pools, artists)
+	}
+	// Interleave genres so a journey's first stage cannot consume the pool.
+	used := map[string]bool{}
+	for round := 0; round < genreArtistTarget && len(s.artists) < discoveryArtists; round++ {
+		for _, pool := range pools {
+			if round >= len(pool) || len(s.artists) >= discoveryArtists {
+				continue
+			}
+			a := pool[round]
+			if !used[a.ID] && !excludedArtist(a.Name, s.intent.Constraints.ArtistsExclude) {
+				s.artists = append(s.artists, a)
+				used[a.ID] = true
+			}
+		}
+	}
+	if unavailableGenre != "" {
+		if len(s.artists) == 0 {
+			return fmt.Errorf("artist lookup unavailable for %q", unavailableGenre)
+		}
+		s.snapshot.Notices = append(s.snapshot.Notices, "Some genre spelling lookups were unavailable; using retrieved candidates with the same musical checks.")
+	}
+
+	return nil
 }

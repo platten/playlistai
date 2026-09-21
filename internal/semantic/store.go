@@ -20,6 +20,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/searchwork"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
@@ -208,6 +209,9 @@ func validateFeature(feature core.TrackFeatures) error {
 	return nil
 }
 
+// ConcurrentSearch uses independent SQLite readers over immutable sidecar data.
+func (s *Store) ConcurrentSearch() bool { return true }
+
 func (s *Store) Search(ctx context.Context, text string, limit int, exclude map[string]struct{}) ([]core.SemanticHit, error) {
 	if strings.TrimSpace(text) == "" || limit <= 0 {
 		return []core.SemanticHit{}, nil
@@ -219,6 +223,11 @@ func (s *Store) Search(ctx context.Context, text string, limit int, exclude map[
 	if err != nil {
 		return nil, err
 	}
+	release, err := searchwork.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	rows, err := s.db.QueryContext(ctx, "SELECT track_id, embedding FROM semantic_vectors ORDER BY track_id")
 	if err != nil {
 		return nil, err

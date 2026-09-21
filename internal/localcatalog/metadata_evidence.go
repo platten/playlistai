@@ -90,6 +90,11 @@ func (c *CompositeCatalog) LibraryPreferenceScore(ctx context.Context, id string
 				break
 			}
 		}
+		if !entry.ScoreAvailable && compoundGenreAnnotations(m.Annotations, criterion) {
+			// Component tags corroborate the discovery phrase but do not
+			// establish the complete compound category.
+			entry.Score, entry.ScoreAvailable = .75, true
+		}
 		if score, ok := descriptorPreference(m, clause); ok {
 			entry.Score, entry.ScoreAvailable = score, true
 		}
@@ -105,6 +110,25 @@ func (c *CompositeCatalog) LibraryPreferenceScore(ctx context.Context, id string
 	var result core.Candidate
 	audio.ApplyScores(&result, a)
 	return result.Scores.SemanticMatch - result.Scores.SemanticNegativeMatch, true
+}
+
+// CompoundGenreSupport is separate from CriterionEvidence: two sourced
+// component tags are partial support, not proof of the named subgenre.
+func (c *CompositeCatalog) CompoundGenreSupport(ctx context.Context, id string, criterion core.MusicalCriterion) bool {
+	m, _, found := c.mergedMusicalMetadata(ctx, id)
+	return found && compoundGenreAnnotations(m.Annotations, criterion)
+}
+
+func compoundGenreAnnotations(annotations []core.MetadataAnnotation, criterion core.MusicalCriterion) bool {
+	for _, pair := range musicconcepts.CompoundGenreLeads(criterion.Kind, criterion.Value) {
+		first := core.MusicalCriterion{Kind: "genre", Value: pair[0]}
+		second := core.MusicalCriterion{Kind: "genre", Value: pair[1]}
+		if annotationCriterionEvidence(annotations, first) == core.EvidenceMatch &&
+			annotationCriterionEvidence(annotations, second) == core.EvidenceMatch {
+			return true
+		}
+	}
+	return false
 }
 
 // Collect claims before normalization: a conflict must not become an empty

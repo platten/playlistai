@@ -33,7 +33,10 @@ func (c *Client) outputBudget(ctx context.Context, messages []chatMessage, want 
 		tokens += len(m.Content) + 64
 	}
 	if c.measureTokens {
-		measureCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		// Both calls share one deadline. Native tokenization can briefly queue
+		// behind server housekeeping after a prior completion, so retain enough
+		// time to avoid rejecting an otherwise valid default-context request.
+		measureCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		var template struct {
 			Prompt string `json:"prompt"`

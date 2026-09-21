@@ -46,6 +46,60 @@ func TestReferenceListRetainsIndependentArtistsInSourceOrder(t *testing.T) {
 	}
 }
 
+func TestGroundedArtistUsesCanonicalValueWithoutSentencePunctuation(t *testing.T) {
+	store := recognitionStore(t)
+	defer store.Close()
+	prompt := "music by Portishead."
+	atom := artistAtom(prompt, lexicon.Extract(prompt), span{start: 9, end: len(prompt), text: "Portishead.", artists: []mbindex.ArtistIdentity{{MBID: "artist", Name: "Portishead", MatchType: mbindex.ArtistMatchCanonical}}}, store)
+	if atom.Value != "Portishead" || atom.Evidence[0].Text != "Portishead." {
+		t.Fatalf("canonical value or verbatim evidence lost: %+v", atom)
+	}
+}
+
+func TestProviderGenreCannotReclassifyVocalFact(t *testing.T) {
+	prompt := "10 instrumental tracks"
+	vocabulary := &genrevocab.Vocabulary{Genres: []genrevocab.Genre{{Name: "instrumental"}}}
+	got := Apply(context.Background(), prompt, lexicon.Extract(prompt), nil, vocabulary)
+	var vocals, genres int
+	for _, atom := range got.Atoms {
+		if atom.Value != "instrumental" {
+			continue
+		}
+		if atom.Kind == "vocal" {
+			vocals++
+		}
+		if atom.Kind == "genre" {
+			genres++
+		}
+	}
+	if vocals != 1 || genres != 0 {
+		t.Fatalf("provider genre overrode vocal classification: %+v", got.Atoms)
+	}
+}
+
+func TestProviderGenreDoesNotTreatOtherArtistsAsGenre(t *testing.T) {
+	prompt := "songs like Portishead, including other artists"
+	vocabulary := &genrevocab.Vocabulary{Genres: []genrevocab.Genre{{Name: "other"}}}
+	got := Apply(context.Background(), prompt, lexicon.Extract(prompt), nil, vocabulary)
+	for _, atom := range got.Atoms {
+		if atom.Kind == "genre" && atom.Value == "other" {
+			t.Fatalf("non-musical determiner became a genre: %+v", got.Atoms)
+		}
+	}
+}
+
+func TestProviderPlaceholderDoesNotReplaceGenreModifier(t *testing.T) {
+	store := recognitionStore(t)
+	defer store.Close()
+	prompt := "moving from traditional soul through funk into disco"
+	got := Apply(context.Background(), prompt, lexicon.Extract(prompt), store, nil)
+	for _, atom := range groundedAtoms(got) {
+		if strings.EqualFold(atom.Value, "[traditional]") || strings.EqualFold(atom.Value, "traditional") {
+			t.Fatalf("genre modifier became a provider artist: %+v", got.Atoms)
+		}
+	}
+}
+
 func TestNegativeSingleWordArtistUsesContextWithoutConsumingDescription(t *testing.T) {
 	store := recognitionStore(t)
 	defer store.Close()
@@ -156,6 +210,19 @@ func TestArtistTitlesRespectDescriptorsTitleByArtistAndQuotedAdjacency(t *testin
 	}
 }
 
+func TestTrackBylineDoesNotBecomeIndependentArtistReference(t *testing.T) {
+	prompt := "inspired by 'Song A' by Artist A."
+	grounding := &core.IdentityGrounding{Provider: "fixture"}
+	atoms := []core.IntentAtom{
+		{Kind: "track", Value: "Song A by Artist A", Evidence: []core.SourceEvidence{{Start: 12, End: 32}}, Grounding: grounding},
+		{Kind: "artist", Value: "Artist A", Evidence: []core.SourceEvidence{{Start: 24, End: 33}}, Grounding: grounding},
+	}
+	got := suppressArtistsNestedInTracks(prompt, atoms)
+	if len(got) != 1 || got[0].Kind != "track" {
+		t.Fatalf("track byline became a second seed: %+v", got)
+	}
+}
+
 func TestAliasAndUTF8OffsetsSurvive(t *testing.T) {
 	store := recognitionStore(t)
 	defer store.Close()
@@ -254,7 +321,7 @@ func TestRecordingGroundingHasOneGlobalCandidateBound(t *testing.T) {
 	prompt := "like Shared Name — Crowded"
 	got := Apply(context.Background(), prompt, lexicon.Extract(prompt), crowdedLookup{}, nil)
 	grounded := groundedAtoms(got)
-	if len(grounded) != 1 || grounded[0].Grounding == nil || len(grounded[0].Grounding.Candidates) != mbindex.MaxLookupCandidates || !grounded[0].Grounding.Truncated {
+	if len(grounded) != 1 || grounded[0].Grounding == nil || len(grounded[0].Grounding.Candidates) != MaxGroundingCandidates || !grounded[0].Grounding.Truncated {
 		t.Fatalf("combined recording candidates were not bounded: %+v", grounded)
 	}
 }
@@ -314,6 +381,7 @@ CREATE INDEX recording_artist_name ON recording_artists(name_key,recording_mbid)
 		{"shared-b", "Shared Name", "shared name", "second"},
 		{"artist-a", "Artist A", "artist a", ""},
 		{"artist-b", "Artist B", "artist b", ""},
+		{"traditional", "[traditional]", "traditional", "credit placeholder"},
 	}
 	for _, artist := range artists {
 		if _, err = db.Exec(`INSERT INTO artists VALUES(?,?,?,?,?)`, artist[0], artist[1], artist[2], artist[1], artist[3]); err != nil {

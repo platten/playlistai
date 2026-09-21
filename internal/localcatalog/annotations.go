@@ -84,7 +84,7 @@ func annotations(raw json.RawMessage) []core.MetadataAnnotation {
 			}
 			seen[value] = true
 			origin := "embedded_tag"
-			if strings.HasPrefix(kind, "acousticbrainz:") || strings.HasPrefix(kind, "curated_flag:") {
+			if strings.HasPrefix(kind, "acousticbrainz:") || strings.HasPrefix(kind, "curated_flag:") || normalized == "ab:mood" {
 				origin = "trusted_curated_tag"
 			}
 			result = append(result, core.MetadataAnnotation{Kind: kind, Value: value, SourceKey: key, Origin: origin, Scale: scale})
@@ -93,12 +93,20 @@ func annotations(raw json.RawMessage) []core.MetadataAnnotation {
 	return result
 }
 
-func supportsAnnotationCriterion(criterion core.MusicalCriterion) bool {
+func supportsDirectAnnotationCriterion(criterion core.MusicalCriterion) bool {
 	switch criterion.Kind {
 	case "genre", "style", "mood", "instrumentation", "language", "original_release_date", "edition_date", "tempo", "key", "work", "composer":
 		return true
 	}
 	return false
+}
+
+func supportsAnnotationCriterion(criterion core.MusicalCriterion) bool {
+	if supportsDirectAnnotationCriterion(criterion) {
+		return true
+	}
+	concept, ok := musicconcepts.Find(criterion.Kind, criterion.Value)
+	return ok && len(concept.Providers.AcousticBrainz) > 0
 }
 
 func (c *Catalog) Annotations(ctx context.Context, id string) []core.MetadataAnnotation {
@@ -119,6 +127,19 @@ func (c *Catalog) Annotations(ctx context.Context, id string) []core.MetadataAnn
 }
 
 func annotationMatches(annotation core.MetadataAnnotation, criterion core.MusicalCriterion) bool {
+	// Imported AB:MOOD lists flatten several archived AcousticBrainz binary
+	// classifiers into one sourced recording annotation. Reconnect an exact
+	// positive class only through the reviewed provider map; similar wording,
+	// negative labels, and unrelated free text remain non-evidence.
+	if strings.EqualFold(strings.TrimSpace(annotation.SourceKey), "AB:MOOD") {
+		if concept, ok := musicconcepts.Find(criterion.Kind, criterion.Value); ok {
+			for _, label := range concept.Providers.AcousticBrainz {
+				if normalizeUnicode(label) == normalizeUnicode(annotation.Value) {
+					return true
+				}
+			}
+		}
+	}
 	// Genre and style share the reviewed vocabulary. No inference is made
 	// from an artist's genre, free text, or a related (non-parent) concept.
 	annotationIsGenre := annotation.Kind == "genre" || annotation.Kind == "style"

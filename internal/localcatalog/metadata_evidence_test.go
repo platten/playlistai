@@ -133,3 +133,33 @@ func TestPackedRecordingMetadataAndUnknownPreference(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCompoundGenreSupportRequiresTwoSourcedTagsOnSameRecording(t *testing.T) {
+	local, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
+		{ID: "ambient", Artist: "B", Title: "Two", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient"}`)},
+		{ID: "electronic", Artist: "C", Title: "Three", RawTags: json.RawMessage(`{"AB:GENRE":"Electronic"}`)},
+		{ID: "title", Artist: "D", Title: "Ambient electronic", RawTags: json.RawMessage(`{"comment":"ambient electronic"}`)},
+	}, nil)
+	defer manager.Close()
+	defer local.Close()
+	catalog := &CompositeCatalog{base: testBase{}, local: local, mode: ModeCombined}
+	criterion := core.MusicalCriterion{Kind: "genre", Value: "ambient electronica"}
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{criterion}}
+	ctx := context.Background()
+	for _, id := range []string{"ambient", "electronic", "title"} {
+		if catalog.CompoundGenreSupport(ctx, local.NamespacedID(id), criterion) {
+			t.Fatalf("unsupported %q admitted", id)
+		}
+	}
+	id := local.NamespacedID("both")
+	if !catalog.CompoundGenreSupport(ctx, id, criterion) {
+		t.Fatal("same-recording reviewed tags lost")
+	}
+	if got := catalog.CriterionEvidence(ctx, id, criterion); got == core.EvidenceMatch {
+		t.Fatal("partial support was promoted to categorical proof")
+	}
+	if score, ok := catalog.LibraryPreferenceScore(ctx, id, intent, "playlist"); !ok || score != .75 {
+		t.Fatalf("partial score=%g available=%v", score, ok)
+	}
+}

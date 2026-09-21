@@ -270,4 +270,15 @@ func (p *Parser) RuntimeMemoryBytes() int64 {
 	return p.srv.ResidentBytes()
 }
 
+// ServerURL returns the loopback endpoint of the server owned by this parser.
+// It is intentionally empty for parsers connected to an externally managed
+// server. Evaluation supervisors use it to share one model process across
+// isolated per-case workers without transferring process ownership.
+func (p *Parser) ServerURL() string {
+	if p == nil || p.srv == nil {
+		return ""
+	}
+	return p.srv.BaseURL()
+}
+
 var _ ports.IntentParser = (*Parser)(nil)

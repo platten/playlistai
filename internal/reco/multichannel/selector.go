@@ -152,6 +152,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	}
 	floor := math.Max(s.cfg.SelectionMinimumRelevance, best-s.cfg.SelectionRelevanceWindow)
 	requestFloor := s.cfg.SelectionMinimumRelevance
+	requestRelevance := enhancedRequestRelevances(candidates, request.Intent)
 	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		for _, candidate := range candidates {
 			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); ok {
@@ -169,16 +170,18 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		allTracks = append(allTracks, candidate.Track)
 	}
 	performers := newPerformerKeys(request.Intent, allTracks)
-	for _, candidate := range candidates {
+	for index, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return ports.SelectionResult{}, err
 		}
+		passesEnhancedRequestFloor := false
 		if enforceFloor && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && candidate.FitTier == fitClose && candidate.MusicalFit != core.EvidenceMatch {
-			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); !ok || relevance < requestFloor {
+			if relevance, ok := requestRelevance[index]; !ok || !relevance.ok || relevance.value < requestFloor {
 				continue
 			}
+			passesEnhancedRequestFloor = true
 		}
-		if enforceFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
+		if enforceFloor && !passesEnhancedRequestFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
 			continue
 		}
 		entry := poolEntry{

@@ -49,6 +49,9 @@ func TestInstrumentalPromptUsesCLAPWithoutGeneralCalibration(t *testing.T) {
 	if resolver.calls != 0 || result.AudioEvidence == nil || !noticeCode(result.Notices, "vocal_preview_screening") {
 		t.Fatal("missing cache/coverage evidence")
 	}
+	if len(result.Intent.HardConstraints) == 0 || !result.Intent.HardConstraints[0].RuntimeEnforced {
+		t.Fatalf("vocal exclusion was not recorded as enforced: %+v", result.Intent.HardConstraints)
+	}
 	var preparing, checking bool
 	for _, row := range progress.Snapshot() {
 		preparing = preparing || row.Note == "Preparing vocal screening"

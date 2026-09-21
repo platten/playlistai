@@ -8,10 +8,13 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/searchwork"
 )
 
 type RecommendationMode string
@@ -433,13 +436,17 @@ func NewCombinedRetriever(base ports.CandidateRetriever, local *Catalog, mode Re
 }
 
 func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	var baseWork sync.WaitGroup
+	defer func() { cancel(); baseWork.Wait() }()
 	var baseCandidates []core.Candidate
 	var baseErr error
 	if r.mode != ModeLibraryOnly {
-		baseCandidates, baseErr = r.base.Retrieve(ctx, request)
-	}
-	if baseErr != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
+		baseWork.Add(1)
+		go func() {
+			defer baseWork.Done()
+			baseCandidates, baseErr = r.base.Retrieve(ctx, request)
+		}()
 	}
 	executor, err := NewExecutor(r.local, r.workers)
 	if err != nil {
@@ -530,11 +537,22 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		if profile.Album != "" {
 			continue
 		}
-		queries = append(queries, Query{Metadata: &MetadataQuery{Text: profile.Artist, Limit: 30, ExcludeIDs: request.AttemptedIDs}})
+		queries = append(queries, Query{Metadata: &MetadataQuery{Artist: profile.Artist, Limit: 30, ExcludeIDs: request.AttemptedIDs}})
+	}
+	type queryResult struct {
+		result QueryResult
+		err    error
+	}
+	results := make([]queryResult, len(queries))
+	searchwork.Run(ctx, len(queries), func(index int) {
+		results[index].result, results[index].err = executor.Query(ctx, queries[index])
+	})
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	localByID := map[string]*Candidate{}
-	for _, query := range queries {
-		result, queryErr := executor.Query(ctx, query)
+	for _, completed := range results {
+		result, queryErr := completed.result, completed.err
 		if queryErr != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -567,6 +585,10 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	}
 	sort.Slice(localCandidates, func(i, j int) bool { return candidateLess(localCandidates[i], localCandidates[j]) })
 	localCandidates = deduplicateCandidates(localCandidates)
+	baseWork.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	all := append([]core.Candidate(nil), baseCandidates...)
 	for _, candidate := range localCandidates {
 		duplicateIndex := -1
@@ -776,6 +798,64 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 			if text := strings.TrimSpace(criterion.Value); text != "" && !seenText[criterion.Kind+":"+text] {
 				queries = append(queries, Query{Metadata: &MetadataQuery{Text: text, Criterion: &criterion, Limit: 100, ExcludeIDs: exclude}})
 				seenText[criterion.Kind+":"+text] = true
+			}
+		}
+		if (criterion.Kind == "genre" || criterion.Kind == "style") && len(strings.Fields(criterion.Value)) > 1 {
+			// A reviewed compound genre can be absent as an exact recording tag
+			// even when its documented discovery components are present. Search
+			// sourced component annotations for leads, never as proof of the
+			// complete compound category.
+			terms := strings.Fields(criterion.Value)
+			if concept, ok := musicconcepts.Find(criterion.Kind, criterion.Value); ok {
+				for _, phrase := range concept.Providers.MusicBrainzDiscovery {
+					terms = append(terms, strings.Fields(phrase)...)
+				}
+			}
+			for _, term := range terms {
+				if len(strings.Fields(term)) != 1 {
+					continue
+				}
+				component, ok := musicconcepts.Find("genre", term)
+				if !ok || component.ID == criterion.ConceptID {
+					continue
+				}
+				key := "component:genre:" + normalizeUnicode(component.Value)
+				if seenText[key] {
+					continue
+				}
+				seenText[key] = true
+				lead := core.MusicalCriterion{Kind: "genre", Value: component.Value}
+				queries = append(queries, Query{Metadata: &MetadataQuery{Text: component.Value, Criterion: &lead, Limit: 100, ExcludeIDs: exclude}})
+			}
+			for _, pair := range musicconcepts.CompoundGenreLeads(criterion.Kind, criterion.Value) {
+				all := []core.MusicalCriterion{{Kind: "genre", Value: pair[0]}, {Kind: "genre", Value: pair[1]}}
+				queries = append(queries, Query{Metadata: &MetadataQuery{Text: criterion.Value, AllCriteria: all, Limit: 100, ExcludeIDs: exclude}})
+			}
+		}
+		// Exact annotations are often sparse for compound categories and
+		// descriptive audio language. Untyped metadata searches provide only
+		// retrieval leads: downstream evidence comparison still decides whether
+		// each candidate satisfies the complete criterion.
+		if criterion.Kind == "genre" || criterion.Kind == "style" || criterion.Kind == "mood" || criterion.Kind == "instrumentation" || criterion.Kind == "texture" {
+			text := strings.TrimSpace(criterion.Value)
+			// A single-term genre already has an indexed typed query. Repeating
+			// it as a free-text search can scan every title/tag occurrence in a
+			// common genre and consume the whole prompt budget without adding
+			// evidence or useful supply.
+			if (criterion.Kind == "genre" || criterion.Kind == "style") && len(strings.Fields(text)) == 1 && supportsDirectAnnotationCriterion(criterion) {
+				continue
+			}
+			if key := "discovery:" + normalizeUnicode(text); text != "" && !seenText[key] {
+				seenText[key] = true
+				queries = append(queries, Query{Metadata: &MetadataQuery{Text: text, Limit: 100, ExcludeIDs: exclude}})
+			}
+			for _, term := range strings.Fields(text) {
+				key := "discovery:" + normalizeUnicode(term)
+				if len([]rune(term)) < 4 || seenText[key] {
+					continue
+				}
+				seenText[key] = true
+				queries = append(queries, Query{Metadata: &MetadataQuery{Text: term, Limit: 100, ExcludeIDs: exclude}})
 			}
 		}
 	}

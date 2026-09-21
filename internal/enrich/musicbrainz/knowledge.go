@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/html"
@@ -25,8 +26,11 @@ const KnowledgeBudget = 30 * time.Second
 const KnowledgeRequests = 20
 
 type knowledgeBudgetKey struct{}
+type metadataNamespaceKey struct{}
+type metadataAttemptLimitKey struct{}
 type cacheOnlyKey struct{}
 type knowledgeBudget struct {
+	mu       sync.Mutex
 	requests int
 	backoffs map[string]time.Time
 }
@@ -94,10 +98,14 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 		return nil, err
 	}
 	if budget != nil {
-		if budget.requests >= limit {
+		budget.mu.Lock()
+		exhausted := budget.requests >= limit
+		delay := time.Until(budget.backoffs[namespace])
+		budget.mu.Unlock()
+		if exhausted {
 			return fallback(fmt.Errorf("metadata request budget exhausted"))
 		}
-		if delay := time.Until(budget.backoffs[namespace]); delay > 0 {
+		if delay > 0 {
 			timer := time.NewTimer(delay)
 			defer timer.Stop()
 			select {
@@ -106,14 +114,21 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 			case <-timer.C:
 			}
 		}
-		ctx = httpretry.WithAttemptCheck(ctx, func() error {
-			if budget.requests >= limit {
-				return fmt.Errorf("metadata request budget exhausted")
-			}
-			budget.requests++
-			return nil
-		})
+		if _, limited := client.Transport.(*limitedTransport); limited {
+			ctx = context.WithValue(ctx, metadataAttemptLimitKey{}, limit)
+		} else {
+			ctx = httpretry.WithAttemptCheck(ctx, func() error {
+				budget.mu.Lock()
+				defer budget.mu.Unlock()
+				if budget.requests >= limit {
+					return fmt.Errorf("metadata request budget exhausted")
+				}
+				budget.requests++
+				return nil
+			})
+		}
 	}
+	ctx = context.WithValue(ctx, metadataNamespaceKey{}, namespace)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
 		return fallback(err)
@@ -132,10 +147,12 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 			if value := resp.Header.Get("Retry-After"); value != "" {
 				wait = httpretry.RetryAfter(value, time.Now())
 			}
+			budget.mu.Lock()
 			if budget.backoffs == nil {
 				budget.backoffs = make(map[string]time.Time)
 			}
 			budget.backoffs[namespace] = time.Now().Add(wait)
+			budget.mu.Unlock()
 		}
 		return fallback(fmt.Errorf("music metadata HTTP %d", resp.StatusCode))
 	}

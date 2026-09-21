@@ -3,6 +3,7 @@ package multichannel
 import (
 	"context"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/platten/playlistai/internal/audio"
@@ -106,5 +107,43 @@ func TestEnhancedPackedCandidatesSurviveExpiredPreviewBudget(t *testing.T) {
 				t.Fatal("exhausted preview budget performed reads")
 			}
 		})
+	}
+}
+
+func TestParallelPackedAssessmentsKeepShortlistOrder(t *testing.T) {
+	var serial []string
+	for _, workers := range []int{1, 4} {
+		base, service, retriever := recommendationPoolFixture(t, 4, 0)
+		service.Analyzer = &parallelTestAudioAnalyzer{AudioAnalyzer: service.Analyzer, parallelism: workers}
+		intent := testIntent(4).Normalized()
+		intent.Controls.RecommendationMode = core.EnhancedHybrid
+		intent.VerificationPolicy = core.BestAvailable
+		intent.Preferences.Moods = []core.IntentPreference{{Value: "dreamy", Influence: core.InfluencePositive, Scope: "playlist"}}
+		cat := packedSequenceFixture{libraryEvidenceFixture: libraryEvidenceFixture{Catalog: base}, assessments: map[string]core.AudioAssessment{}}
+		a := core.AudioAssessment{TrackID: "p002", AnalysisID: "synthetic-packed", Eligible: true}
+		for _, clause := range audio.Clauses(intent) {
+			a.Clauses = append(a.Clauses, core.AudioClauseAssessment{Clause: clause, Score: .5, ScoreAvailable: true, State: core.EvidenceUnknown})
+		}
+		cat.assessments["p002"] = a
+		session, err := service.Begin(context.Background(), intent, base.CatalogVersion(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := DefaultConfig()
+		cfg.LibraryEvidenceEnabled = true
+		engine := New(cat, fakes.NewSimilarityEngine(base), base, cfg)
+		engine.audioSession, engine.retriever, engine.enhanced, engine.bestAvailable = session, retriever, true, true
+		var checked []string
+		request := ports.RecommendationRequest{Intent: intent, OnChecked: func(track core.TrackRef) { checked = append(checked, track.ID) }}
+		got, _, err := engine.collectIteratively(context.Background(), retriever.candidates, nil, intent, request, newEligibility(intent, nil, nil), nil, nil, nil, 42)
+		session.Close()
+		if err != nil || len(got) != 4 {
+			t.Fatalf("workers=%d got=%v err=%v", workers, got, err)
+		}
+		if workers == 1 {
+			serial = checked
+		} else if !reflect.DeepEqual(checked, serial) {
+			t.Fatalf("completion changed shortlist order: serial=%v parallel=%v", serial, checked)
+		}
 	}
 }

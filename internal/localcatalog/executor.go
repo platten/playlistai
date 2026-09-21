@@ -263,6 +263,16 @@ func independentQueryID(value any) string {
 	switch query := value.(type) {
 	case MetadataQuery:
 		text := normalizeUnicode(query.Text)
+		if query.Artist != "" {
+			return "artist:" + normalizeUnicode(query.Artist)
+		}
+		if len(query.AllCriteria) > 0 {
+			parts := make([]string, 0, len(query.AllCriteria))
+			for _, criterion := range query.AllCriteria {
+				parts = append(parts, criterionPostingTerm(criterion))
+			}
+			return "all:" + strings.Join(parts, "&")
+		}
 		if query.Criterion != nil {
 			return "criterion:" + normalizeUnicode(query.Criterion.Kind) + ":" + normalizeUnicode(query.Criterion.Value) + ":" + text
 		}

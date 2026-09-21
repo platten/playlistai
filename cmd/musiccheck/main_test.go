@@ -31,6 +31,28 @@ func TestMetadataConfigAcousticBrainzParity(t *testing.T) {
 	}
 }
 
+func TestGenerateExampleNegativeMoodIsAsserted(t *testing.T) {
+	raw, err := os.ReadFile("../../frontend/src/lib/generateSamples.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []promptCase
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) != 4 || cases[1].NegativeMood != "sleepy" {
+		t.Fatalf("Generate examples lost the negative mood expectation: %+v", cases)
+	}
+	intent := core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Bonobo", Influence: core.InfluencePositive}}, Preferences: core.SemanticPreferences{Moods: []core.IntentPreference{{Value: "relaxing", Influence: core.InfluencePositive}}}}
+	if issues := checkIntent(cases[1], intent); !strings.Contains(strings.Join(issues, " "), "negative mood missing") {
+		t.Fatalf("missing negation passed the example: %v", issues)
+	}
+	intent.Preferences.Moods = append(intent.Preferences.Moods, core.IntentPreference{Value: "sleepy", Influence: core.InfluenceNegative})
+	if issues := checkIntent(cases[1], intent); len(issues) != 0 {
+		t.Fatalf("preserved negation failed the example: %v", issues)
+	}
+}
+
 // These tests exercise reviewed interpretation contracts through real parsing,
 // resolution and generation with synthetic recordings. The musiccheck command
 // separately measures the actual model; this is not a musical-quality test.

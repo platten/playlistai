@@ -228,24 +228,73 @@ func (o *Orchestrator) refineArtistRepresentatives(ctx context.Context, intent c
 	if !ok {
 		return intent, nil
 	}
+	type refinement struct {
+		ref core.IntentReference
+		err error
+	}
+	refined := map[string]refinement{}
 	refine := func(ref core.IntentReference, scope string) (core.IntentReference, error) {
 		if ref.Kind != core.ReferenceArtist || ref.Influence == core.InfluenceNegative || ref.Resolution == nil || ref.Resolution.Selected == nil || ref.Resolution.Status != core.ResolutionResolved {
 			return ref, nil
 		}
+		key := referenceKey(ref) + "\x00" + scope
+		if prior, exists := refined[key]; exists {
+			return prior.ref, prior.err
+		}
+		remember := func(result core.IntentReference, err error) (core.IntentReference, error) {
+			refined[key] = refinement{ref: result, err: err}
+			return result, err
+		}
+		scoped := seedStageIntent(intent, scope)
+		// Ordinary reference representatives already carry resolver weights and
+		// seed retrieval directly. Discography refinement is useful only when an
+		// endpoint must become output or a scoped musical criterion can choose a
+		// demonstrably better recording; otherwise it spends bounded generation
+		// time without changing the request contract.
+		if scope != "journey_start" && scope != "journey_end" && len(scoped.EssentialCriteria) == 0 {
+			return remember(ref, nil)
+		}
 		tracks, err := indexed.ArtistRecordings(ctx, ref.Resolution.Selected.Artist)
 		if err != nil {
-			return ref, err
+			return remember(ref, err)
+		}
+		// With no stage description and a large discography, the resolver's
+		// representative is a better endpoint contract than an arbitrary bounded
+		// medoid. Small artist pools can still use the established cohesion rule.
+		if (scope == "journey_start" || scope == "journey_end") && len(scoped.EssentialCriteria) == 0 && len(tracks) > 16 {
+			return remember(ref, nil)
+		}
+		// Composite catalogs sort stable IDs, which can put hundreds of base
+		// recordings before the installed pack. Collect affirmative recording
+		// matches before applying the bound; stop after a small useful set rather
+		// than probing every recording for optional preview/embedding evidence.
+		if len(scoped.EssentialCriteria) > 0 {
+			grounded := make([]core.TrackRef, 0, 12)
+			for _, track := range tracks {
+				matched := true
+				for _, criterion := range scoped.EssentialCriteria {
+					matched = matched && o.bestCriterion(ctx, track.ID, criterion) == core.EvidenceMatch
+				}
+				if matched {
+					grounded = append(grounded, track)
+					if len(grounded) == 12 {
+						break
+					}
+				}
+			}
+			if len(grounded) > 0 {
+				tracks = grounded
+			}
 		}
 		if len(tracks) > seedCandidateLimit {
 			tracks = tracks[:seedCandidateLimit]
 		}
-		scoped := seedStageIntent(intent, scope)
 		ranked, err := o.rankGroundedSeeds(ctx, candidatesForTracks(tracks), scoped, nil)
 		if err != nil {
-			return ref, err
+			return remember(ref, err)
 		}
 		if len(ranked) == 0 {
-			return ref, nil
+			return remember(ref, nil)
 		}
 		if len(scoped.EssentialCriteria) == 0 {
 			// No requested substyle: use same-artist neighborhood cohesion as
@@ -255,7 +304,7 @@ func (o *Orchestrator) refineArtistRepresentatives(ctx context.Context, intent c
 			}
 		}
 		if err := o.preferViableSeedNeighborhoods(ctx, ranked); err != nil {
-			return ref, err
+			return remember(ref, err)
 		}
 		resolution := *ref.Resolution
 		selected := *resolution.Selected
@@ -266,7 +315,7 @@ func (o *Orchestrator) refineArtistRepresentatives(ctx context.Context, intent c
 		resolution.Selected = &selected
 		ref.Resolution = &resolution
 		ref.TrackID = selected.Representatives[0].TrackID
-		return ref, nil
+		return remember(ref, nil)
 	}
 	scopeFor := func(ref core.IntentReference) string {
 		if intent.Start != nil && referenceKey(ref) == referenceKey(*intent.Start) {

@@ -7,12 +7,18 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/resolution"
 )
+
+// MERT similarity is optional evidence. Keep its live acquisition bounded so
+// an unavailable preview/provider cannot consume the complete generation
+// budget and prevent Deej-AI or packed evidence from producing a result.
+const mertSearchBudget = 25 * time.Second
 
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
@@ -768,6 +774,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if reasons := artistRestrictionConflict(intent); len(reasons) > 0 {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
 	}
+	// Fetch only raw discovery pages while local retrieval and analysis proceed.
+	// Registered after the snapshot defer so all workers join before replay is saved.
+	defer startCandidatePrefetch(ctx, discovery, request.StopChecking)()
 	if o.audioProvider != nil && len(audio.Clauses(intent)) > 0 {
 		if service := o.audioProvider(); service.ReadyFor(intent) {
 			if request.Progress != nil {
@@ -817,6 +826,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			note = "Checking instrumental starting points"
 		}
 		request.Progress.Report("generation", 0, 0, note)
+	}
+	if o.enhanced {
+		intent = deferInstrumentalCandidateAnchors(intent)
 	}
 	intent, err = o.refineArtistRepresentatives(ctx, intent)
 	if err != nil {
@@ -931,35 +943,48 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		input := request.EnhancedAudio.Input()
 		o.mertSearch = input.MERTSearch
 	} else if intent.Controls.RecommendationMode == core.EnhancedHybrid && o.mertSearchProvider != nil {
-		queries := mertSimilarityQueries(o.cat, intent)
+		allQueries := mertSimilarityQueries(o.cat, intent)
+		queries := make([]core.MERTSimilarityQuery, 0, len(allQueries))
+		for _, query := range allQueries {
+			_, packed, lookupErr := lookupLibraryVector(ctx, o.cat, query.Track.ID)
+			if lookupErr != nil {
+				return core.Playlist{}, lookupErr
+			}
+			if !packed {
+				queries = append(queries, query)
+			}
+		}
+		queries = primaryMERTQueries(queries)
 		excluded := map[string]struct{}{}
 		for _, group := range [][]core.TrackRef{references, required, waypoints, recentSelections} {
 			for _, track := range group {
 				excluded[track.ID] = struct{}{}
 			}
 		}
-		for _, query := range queries {
+		for _, query := range allQueries {
 			excluded[query.Track.ID] = struct{}{}
 		}
-		searchCtx, cancelSearch := context.WithCancel(ctx)
-		if request.StopChecking != nil {
-			go func() {
-				select {
-				case <-request.StopChecking:
-					cancelSearch()
-				case <-searchCtx.Done():
-				}
-			}()
-		}
-		o.mertSearch, err = o.mertSearchProvider(searchCtx, intent, request.Profile, queries, excluded,
-			min(o.cfg.MaxCandidates, max(o.cfg.SemanticBudget, 2*intent.Count)))
-		cancelSearch()
-		if err != nil && ctx.Err() != nil {
-			return core.Playlist{}, ctx.Err()
-		}
-		if err != nil {
-			anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "mert_search_incomplete", Detail: "MERT similarity search was unavailable; Deej-AI and other compatible evidence will continue filling the playlist."})
-			o.mertSearch = nil
+		if len(queries) > 0 {
+			searchCtx, cancelSearch := context.WithTimeout(ctx, mertSearchBudget)
+			if request.StopChecking != nil {
+				go func() {
+					select {
+					case <-request.StopChecking:
+						cancelSearch()
+					case <-searchCtx.Done():
+					}
+				}()
+			}
+			o.mertSearch, err = o.mertSearchProvider(searchCtx, intent, request.Profile, queries, excluded,
+				min(o.cfg.MaxCandidates, max(o.cfg.SemanticBudget, 2*intent.Count)))
+			cancelSearch()
+			if err != nil && ctx.Err() != nil {
+				return core.Playlist{}, ctx.Err()
+			}
+			if err != nil {
+				anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "mert_search_incomplete", Detail: "MERT similarity search was unavailable; Deej-AI and other compatible evidence will continue filling the playlist."})
+				o.mertSearch = nil
+			}
 		}
 	}
 	mertAudio = o.mertCandidates(o.mertSearch)
@@ -1035,16 +1060,21 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	if o.audioSession != nil {
 		for _, track := range required {
+			if !o.previewNeededForEnhanced(ctx, core.Candidate{Track: track}, intent) {
+				continue
+			}
 			assessment, err := o.audioSession.Check(ctx, track, false)
 			if err != nil {
 				return core.Playlist{}, err
 			}
-			if !assessment.Eligible && !o.enhancedMetadataFallback(ctx, core.Candidate{Track: track}, intent) {
+			missingArtistEndpointPreview := assessment.AnalysisID == "" && o.allowUnknownArtistEndpoint(ctx, intent, track.ID)
+			if !assessment.Eligible && !missingArtistEndpointPreview && !o.enhancedMetadataFallback(ctx, core.Candidate{Track: track}, intent) {
 				return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_audio_conflict", Detail: "A required track lacks preview evidence for the description and exclusions.", Criterion: track.Display(), Action: "remove the required track or refine the conflicting requirement"}}), nil
 			}
 		}
 	}
 	candidates := append(append([]core.Candidate(nil), cachedAudio...), mertAudio...)
+	candidates = append(candidates, instrumentalKnowledgeCandidates(intent)...)
 	if o.groundedSeedPool != nil {
 		candidates = append(candidates, o.groundedSeedPool...)
 	} else if o.candidateSource == nil {
@@ -1141,6 +1171,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			playlist.Notices = append(playlist.Notices, semanticNotices...)
 			return playlist, nil
 		}
+		for _, track := range required {
+			if !requiredReport.Eligible[track.ID] && o.allowUnknownArtistEndpoint(ctx, intent, track.ID) {
+				requiredReport.Eligible[track.ID] = true
+			}
+		}
 		if !requiredTracksEligible(required, requiredReport.Eligible) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_essential_conflict", Detail: "a required track lacks affirmative evidence for the essential musical criterion", Criterion: essentialSummary(intent.EssentialCriteria), Action: "remove the required track or make the cross-genre exception explicit"}}), nil
 		}
@@ -1223,7 +1258,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 		for index := range intent.HardConstraints {
-			if intent.HardConstraints[index].Kind == "exclude_style" || intent.HardConstraints[index].Kind == "require_style" {
+			if o.audioSession.SupportsConstraint(intent.HardConstraints[index].Kind) {
 				intent.HardConstraints[index].RuntimeEnforced = true
 			}
 		}
@@ -1315,6 +1350,59 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	return playlist, nil
 }
 
+func artistEndpointScope(intent core.MusicIntent, trackID string) (string, bool) {
+	for index, endpoint := range []*core.IntentReference{intent.Start, intent.Destination} {
+		if endpoint == nil || endpoint.Kind != core.ReferenceArtist || endpoint.Influence == core.InfluenceNegative {
+			continue
+		}
+		scope := "journey_start"
+		if index == 1 {
+			scope = "journey_end"
+		}
+		if endpoint.TrackID == trackID {
+			return scope, true
+		}
+		if endpoint.Resolution != nil && endpoint.Resolution.Selected != nil {
+			for _, representative := range endpoint.Resolution.Selected.Representatives {
+				if representative.TrackID == trackID {
+					return scope, true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// An artist endpoint is an explicit output requirement, unlike an arbitrary
+// recommendation candidate. It may remain as an honestly labeled close match
+// when its representative has no preview and positive stage evidence is
+// unknown. Known contradictions and every applicable strict clause still win.
+func (o *Orchestrator) allowUnknownArtistEndpoint(ctx context.Context, intent core.MusicIntent, trackID string) bool {
+	scope, ok := artistEndpointScope(intent, trackID)
+	if !ok {
+		return false
+	}
+	if o.audioSession != nil {
+		if assessment, found := o.audioSession.Assessment(trackID); found && assessment.AnalysisID != "" {
+			return false
+		}
+	}
+	applies := func(clauseScope string) bool {
+		return clauseScope == "" || clauseScope == "playlist" || clauseScope == scope
+	}
+	for _, clause := range audio.Clauses(intent) {
+		if clause.Strict && applies(clause.Scope) {
+			return false
+		}
+	}
+	for _, criterion := range intent.EssentialCriteria {
+		if applies(criterion.Scope) && o.bestCriterion(ctx, trackID, criterion) == core.EvidenceMismatch {
+			return false
+		}
+	}
+	return true
+}
+
 func journeyCriteria(criteria []core.MusicalCriterion) []core.MusicalCriterion {
 	return core.JourneyCriteria(criteria)
 }
@@ -1337,6 +1425,15 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 		best = ranked[0].Scores.Total
 	}
 	floor := maxFloat(o.cfg.SelectionMinimumRelevance, best-o.cfg.SelectionRelevanceWindow)
+	requestRelevance := enhancedRequestRelevances(ranked, intent)
+	requestFloor := o.cfg.SelectionMinimumRelevance
+	if o.enhanced {
+		for _, candidate := range ranked {
+			if relevance, ok := enhancedRequestRelevance(candidate, intent); ok {
+				requestFloor = max(requestFloor, relevance-o.cfg.SelectionRelevanceWindow)
+			}
+		}
+	}
 	var reserved []core.Candidate
 	var reasons []core.OutcomeReason
 	assignedFixed := map[string]bool{}
@@ -1361,9 +1458,34 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 		if err != nil {
 			return nil, nil, nil, err
 		}
+		// CLAP comparisons are uncalibrated cosines. Compare a stage candidate
+		// with the best still-available positive comparison for that same stage,
+		// rather than with another stage's numerically larger text embedding.
+		// This preserves the configured relevance floor while allowing overlapping
+		// adjacent journey descriptions to receive distinct recordings.
+		stageScores := make(map[int]float64)
+		stageBest := 0.0
+		if o.enhanced && o.audioSession != nil {
+			for index, candidate := range ranked {
+				if used[candidate.Track.ID] || !report.Eligible[candidate.Track.ID] {
+					continue
+				}
+				if score, available := o.stageSimilarity(candidate.Track.ID, criterion); available && score > 0 {
+					stageScores[index] = score
+					stageBest = max(stageBest, score)
+				}
+			}
+		}
 		chosen := -1
 		for index, candidate := range ranked {
-			if !used[candidate.Track.ID] && report.Eligible[candidate.Track.ID] && candidate.Scores.Total >= floor {
+			relevant := candidate.Scores.Total >= floor
+			if direct := requestRelevance[index]; o.enhanced && direct.ok && direct.value >= requestFloor {
+				relevant = true
+			}
+			if score := stageScores[index]; stageBest > 0 && score/stageBest >= requestFloor {
+				relevant = true
+			}
+			if !used[candidate.Track.ID] && report.Eligible[candidate.Track.ID] && relevant {
 				if chosen < 0 {
 					chosen = index
 				}

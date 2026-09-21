@@ -164,6 +164,28 @@ func (c *Client) findArtistSeedForIdentity(ctx context.Context, ref core.IntentR
 		snapshot.Notices = append(snapshot.Notices, detail)
 		p.Report("generation", 0, 0, detail)
 	}
+	// A provider alias can bridge scripts even when the user's spelling is not
+	// present in the recommendation catalog (for example a native-script name
+	// whose catalog credit is romanized). Require an exact, uniquely resolved
+	// local artist and provider-backed alias; fuzzy catalog search alone is not
+	// identity evidence.
+	for _, alias := range artist.Aliases {
+		if seedNameMatches(alias.Name, []string{ref.Query}) {
+			continue
+		}
+		local := resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: alias.Name, Influence: ref.Influence})
+		if local.Status != core.ResolutionResolved || local.Selected == nil || len(local.Selected.Representatives) == 0 || !seedNameMatches(local.Selected.Artist, []string{alias.Name}) {
+			continue
+		}
+		candidate := *local.Selected
+		candidate.EntityID = artist.ID
+		candidate.Confidence = 1
+		candidate.Evidence = append(candidate.Evidence, core.ResolutionEvidence{Match: "musicbrainz_alias", NormalizedQuery: seedNameKey(ref.Query), MatchedText: artist.ID + ": " + alias.Name})
+		ref.TrackID = candidate.Representatives[0].TrackID
+		ref.Resolution = &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: resolver.CatalogVersion(), Selected: &candidate}
+		notice(fmt.Sprintf("Resolved %q to catalog artist %q using a MusicBrainz alias.", ref.Query, candidate.Artist))
+		return ref
+	}
 	checked := 0
 	selectTrack := func(title string, names []string, source, order string) bool {
 		checked++

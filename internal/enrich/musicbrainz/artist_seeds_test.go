@@ -14,6 +14,7 @@ import (
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/fakes"
+	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/resolution"
 )
 
@@ -266,5 +267,23 @@ func TestGroundedSeedArtistUsesPinnedIdentity(t *testing.T) {
 	ref.Grounding.Candidates = append(ref.Grounding.Candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: "other", Name: "Alias"})
 	if _, ok := groundedSeedArtist(ref); ok {
 		t.Fatal("ambiguous grounding selected an artist")
+	}
+}
+
+func TestProviderAliasBridgesNativeScriptToCatalogArtist(t *testing.T) {
+	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "utada", Display: "Hikaru Utada - First Love", Audio: []float32{1, 0}, Track: []float32{1, 0}})
+	artist := seedArtist{ID: "mb-utada", Name: "宇多田ヒカル"}
+	artist.Aliases = append(artist.Aliases, struct {
+		Name string `json:"name"`
+	}{Name: "Hikaru Utada"})
+	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "宇多田ヒカル", Influence: core.InfluencePositive}
+	snapshot := &core.KnowledgeSnapshot{}
+	client := &Client{}
+	got := client.findArtistSeedForIdentity(context.Background(), ref, artist, cat, cat, snapshot, ports.NopProgress{})
+	if got.TrackID != "utada" || got.Resolution == nil || got.Resolution.Status != core.ResolutionResolved || got.Resolution.Selected == nil || got.Resolution.Selected.Artist != "Hikaru Utada" {
+		t.Fatalf("provider alias did not bridge scripts: %+v", got)
+	}
+	if len(got.Resolution.Selected.Evidence) == 0 || got.Resolution.Selected.Evidence[len(got.Resolution.Selected.Evidence)-1].Match != "musicbrainz_alias" {
+		t.Fatalf("alias resolution lacks provider evidence: %+v", got.Resolution.Selected.Evidence)
 	}
 }

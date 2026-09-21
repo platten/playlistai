@@ -54,7 +54,9 @@ func (c *Client) prepareContext(ctx context.Context, intent core.MusicIntent, ca
 	defer cancel()
 	limit := contextRequests
 	if budget, ok := ctx.Value(knowledgeBudgetKey{}).(*knowledgeBudget); ok {
+		budget.mu.Lock()
 		limit += budget.requests
+		budget.mu.Unlock()
 	} else {
 		ctx = context.WithValue(ctx, knowledgeBudgetKey{}, &knowledgeBudget{})
 	}
