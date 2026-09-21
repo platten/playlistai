@@ -287,10 +287,24 @@ export function GenerateScreen({
       return;
     }
     setPreview(null);
-  }, [prompt, trackCount]);
+  }, [prompt, trackCount, source]);
 
   useEffect(() => {
-    setResolutionChoices({});
+    // Generation reparses the original request. Keep the user's visible choice
+    // for retry only while that exact choice is still offered by the new parse.
+    setResolutionChoices((previous) => Object.fromEntries(
+      (preview?.resolutionIssues ?? []).flatMap((issue) => {
+        const key = resolutionIssueKey(issue.kind, issue.query);
+        const choice = previous[key];
+        if (!choice || issue.inferred || issue.status !== "ambiguous") return [];
+        const offered = choice === DESCRIPTION_CHOICE
+          ? issue.kind === "artist"
+          : (issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated
+            ? (issue.groundingCandidates ?? []).some((candidate) => candidate.id === choice)
+            : (issue.alternatives ?? []).some((candidate) => candidate.representatives?.[0]?.trackId === choice);
+        return offered ? [[key, choice]] : [];
+      }),
+    ));
   }, [preview]);
 
   useEffect(() => {
