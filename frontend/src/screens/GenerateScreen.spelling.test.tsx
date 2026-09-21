@@ -282,6 +282,51 @@ it("confirms a provider identity and starts generation for a homonymous artist",
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([{ kind: "artist", query: "Shared Name", trackId: "", identityId: "artist-b" }]);
 });
 
+it.each(["catalog", "provider"])("preserves the offered %s identity when retrying a failed generation", async (provider) => {
+  const choiceIssue = {
+    kind: "artist", query: "Shared Name", status: "ambiguous", inferred: false,
+    ...(provider === "provider"
+      ? { groundingCandidates: [{ kind: "artist", id: "a", name: "Shared Name" }, { kind: "artist", id: "b", name: "Shared Name" }] }
+      : { alternatives: [{ entityId: "a", artist: "First Artist", representatives: [{ trackId: "a" }] }, { entityId: "b", artist: "Second Artist", representatives: [{ trackId: "b" }] }] }),
+  };
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([choiceIssue])));
+  bridge.GenerateFromPromptResolvedWithContext.mockImplementationOnce(() =>
+    Object.assign(Promise.reject(new Error("temporary lookup failure")), { cancel: vi.fn() }));
+  renderScreen();
+  await submit("Music by Shared Name");
+  fireEvent.change(await screen.findByRole("combobox", { name: /Choose the intended artist/ }), { target: { value: "b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and generate" }));
+  await screen.findByText(/temporary lookup failure/);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Confirm and generate" }) as HTMLButtonElement).disabled).toBe(false));
+  expect((screen.getByRole("combobox", { name: /Choose the intended artist/ }) as HTMLSelectElement).value).toBe("b");
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(bridge.GenerateFromPromptResolvedWithContext).toHaveBeenCalledTimes(2);
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[1][1]).toEqual(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]);
+});
+
+it.each(["catalog", "provider"])("clears a %s identity no longer offered by a fresh preview", async (provider) => {
+  let calls = 0;
+  bridge.ParseIntentWithContext.mockImplementation(() => {
+    const ids = ++calls === 1 ? ["a", "b"] : ["a", "c"];
+    return completed(preview([{
+      kind: "artist", query: "Shared Name", status: "ambiguous", inferred: false,
+      ...(provider === "provider"
+        ? { groundingCandidates: ids.map((id) => ({ kind: "artist", id, name: "Shared Name" })) }
+        : { alternatives: ids.map((id) => ({ entityId: id, artist: "Shared Name", representatives: [{ trackId: id }] })) }),
+    }]));
+  });
+  bridge.GenerateFromPromptResolvedWithContext.mockImplementationOnce(() =>
+    Object.assign(Promise.reject(new Error("reference choice is no longer offered")), { cancel: vi.fn() }));
+  renderScreen();
+  await submit("Music by Shared Name");
+  fireEvent.change(await screen.findByRole("combobox", { name: /Choose the intended artist/ }), { target: { value: "b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and generate" }));
+  await screen.findByText(/reference choice is no longer offered/);
+  expect((screen.getByRole("combobox", { name: /Choose the intended artist/ }) as HTMLSelectElement).value).toBe("");
+  expect((screen.getByRole("button", { name: "Confirm and generate" }) as HTMLButtonElement).disabled).toBe(true);
+});
+
 it("shows an incomplete offline recognition notice without blocking generation", async () => {
   bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([])));
   bridge.GenerateFromPromptWithContext.mockImplementation((_text, context) => completed({

@@ -12,6 +12,7 @@ repository test gate, not a claim that every code path has been audited.
 | MusicBrainz ambiguity only displayed advice | A request such as “Music like Nirvana” could not continue by choosing an identity | Offer identity details in a dropdown and an explicit confirmation button; selection alone does not submit |
 | Name-only Deezer recovery after identity confirmation | A chosen UK Nirvana identity could use a US Nirvana recording | Confirmed choices use MBID-backed recordings; no uncorrelated name fallback |
 | Artist recovery omitted the journey start | A confirmed start remained unresolved even when the same reference recovered | Recover both endpoints through the shared, deduplicated lookup |
+| A fresh preview cleared confirmed choices after failure | Retrying required selecting the same artist again | Retain only choices still offered in the fresh preview; clear on request/source edits |
 | Light-theme accent and status colors lacked small-text contrast | Status messages and controls were difficult to read | Darken shared light-theme tokens; verify at least 4.5:1 against background, surface, and inset tokens |
 | Two-column controls at 390px | Long slider labels wrapped unevenly and reduced usable slider width | Use one column below the existing small-screen breakpoint |
 | Stale browser fixtures | Export interception missed cache-busted modules; Playlist fixture used outdated enums and a separate provider import | Match versioned module URLs and reuse the current enum contract and component entry point |
@@ -48,9 +49,10 @@ All screenshots use synthetic fixtures, not listening history or private prompts
 
 ## Reproducible checks
 
-- `pnpm test -- GenerateScreen.spelling.test.tsx`: 19 passed.
+- `pnpm test -- GenerateScreen.spelling.test.tsx`: 23 passed, including catalog and
+  provider failure/retry and removal of stale choices.
 - `go test ./internal/enrich/musicbrainz`: passed.
-- `bash scripts/test.sh`: full gate, including generated bindings, frontend tests,
+- `bash scripts/test.sh`: passed with 239 frontend tests, including generated bindings,
   typecheck/build, Go vet, race-enabled tests, and lint.
 - Browser scripts: `capture-artist-spelling.mjs`, `capture-generate-settings.mjs`,
   `capture-populated-playlist.mjs`, and `capture-export-ui.mjs`.
