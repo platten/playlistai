@@ -53,22 +53,30 @@ go build -o /tmp/playlist-ai-musiccheck ./cmd/musiccheck
   -prompts internal/evaluation/testdata/varied-prompts-v1.json \
   -model /path/to/model.gguf -runtime /path/to/llama \
   -catalog /path/to/catalog \
-  -bundle /path/to/validated/clap-bundle -online \
+  -mode enhanced_hybrid \
+  -discovery-state /path/to/shared-discovery-state \
+  -bundle /path/to/validated/clap-bundle \
+  -mert-bundle /path/to/validated/mert-bundle -online \
   -min-tracks 5 -min-artists 3 \
+  -case-timeout 120s -cleanup-timeout 10s \
   -analysis-dir /path/to/evaluation-analysis \
   -cache /path/to/evaluation-metadata.sqlite \
   -output /path/to/forty-prompts.json
 ```
 
-No count override is needed: the parser must preserve the count in the actual prompt. The command uses the desktop's iterative metadata preparation and discovery, exact recommendation engine, and native CLAP worker. Public metadata and verified previews require network access. Keep the evaluation caches between runs; only derived audio features are persisted, not previews. Models and catalogs remain external setup assets.
+No count override is needed: the parser must preserve the count in the actual prompt. The command uses the desktop's preparser recognition, writable candidate catalog, request-pinned discovery overlay, iterative metadata preparation, recommendation engine, CLAP worker pool, and DSP/MERT preparation path. Public metadata and verified previews require network access. Use new writable metadata and analysis paths for an acceptance run; never point the command at real user stores. Only derived audio features are persisted, not previews. Models, catalogs, discovery packs, caches, and full reports remain external setup assets.
+
+Multi-case runs start one llama server and supervise one isolated child process per prompt. A child receives a graceful evidence-search stop before the 120-second prompt boundary when audio comparison is active. The supervisor separately bounds child startup, then requests cancellation at its watchdog deadline, allows ten seconds for cleanup, kills the owned process tree if necessary, synthesizes an explicit timeout record, and continues. Any completed prompt over 120 seconds fails the report. The aggregate report is rewritten after every case.
 
 Historical runner parity gap: the recorded runs below did not configure the AcousticBrainz endpoint and therefore do not test its lookup or ranking/filtering contribution. The current `musiccheck -online` enables that endpoint, matching the desktop, and records `acousticBrainzEnabled`. Use `-acousticbrainz=false` for the older disabled-archive configuration. The newer [three-mode regression](three-mode-regression.md) exercises the v18 settings modes with shared parsed inputs and preserves its observed failures. It does not replace the historical results below or claim held-out listening quality.
 
-Use `-case "exact prompt"` for a single recheck, `-replay previous.json` to reuse interpretations and recorded discovery, or `-cached-audio-only` with replay to prohibit new previews. `-parse-only` evaluates interpretation without claiming playlist acceptance. Run the complete command again for a fresh complete measurement; execution uses the current engine rather than caching playlist results.
+Use `-case "exact prompt"` for a single recheck, `-replay previous.json -replay-parsed` to freeze raw interpretations while diagnosing recommendation behavior, or `-cached-audio-only` to prohibit new previews. `-parse-only` evaluates interpretation without claiming playlist acceptance. A release-gating result must be a new complete command with fresh parsing; frozen replay is diagnostic evidence only.
 
 ## Evidence and limitations
 
 These are public example prompts and executable acceptance cases, **not human listening judgments or a held-out musical-quality dataset**. A sufficiently long playlist can still have a `partial` musical-fit outcome. Reports retain intent, selected track IDs, evidence, timing, seed, and version information; they do not turn CLAP similarities into probabilities.
+
+Each report also records completion/timeout state, parse/prepare/build timings, selected-track evidence coverage by source, CLAP cache state, provider notices, catalog and discovery identities, model/bundle fingerprints, parser and algorithm versions, and embedded VCS revision/modified state. `groundedSelected` may include a positive validated metadata, DSP, AcousticBrainz, semantic, packed-CLAP, or preview-CLAP request comparison. The source-specific counters remain separate: a close result supported by catalog metadata is never reported as CLAP coverage or as categorical proof. Retrieval frequency, taste, novelty, and MERT-neighbor affinity alone do not satisfy the grounded-evidence assertion.
 
 The installed [LAION CLAP model](https://github.com/LAION-AI/CLAP) compares audio with text descriptions and was trained on music and speech. It can supply relative genre, texture, instrumentation, and mood similarity, not a guarantee that every adjective applies to a whole recording. DSP cannot establish arbitrary genre or emotional meaning from unavailable audio. Missing previews, ambiguous identities, unsupported strict demands, and contradictory exclusions remain real limits; the engine must not silently remove those requirements to pass a count test.
 
@@ -103,7 +111,15 @@ Count syntax includes hyphenated forms (`10-song`, including Unicode hyphens) an
 
 For a simple request such as `Make a 10-song salsa playlist`, metadata can corroborate the category even if the model omitted it. This uses the installed/provider genre graph, not a new genre whitelist. Reports retain `parserIssues` before that recovery and check end-to-end interpretation after metadata preparation; recovered omissions are not reported as flawless LLM parsing.
 
-Recommendation algorithm version is `multichannel/v16`; parser versions are `llama/v12` and `rules/v11`. Existing intent/history JSON remains readable. No default model, model bundle, or privacy policy changed, and no new inference download or Python dependency was added.
+For the historical 2026-09-09 run below, recommendation algorithm version was `multichannel/v16` and parser versions were `llama/v12` and `rules/v11`. Existing intent/history JSON remains readable. No default model, model bundle, or privacy policy changed, and no new inference download or Python dependency was added.
+
+## Enhanced Hybrid acceptance — 2026-09-21
+
+One fresh, unstitched run of the unchanged fixture with the default language model, seed `42`, an empty taste profile, no count override, the installed production catalog/shared discovery pack, and validated CLAP/MERT bundles passed **40/40** existing assertions. All 40 completed without a timeout or parser fallback; 392 recordings were selected (5–10 per prompt), with a median measured prompt time of 85.9 seconds and a maximum of 116.3 seconds. Outcomes were 11 fulfilled and 29 honestly partial; count and assertion success do not imply verified whole-recording musical quality. Frozen-intent replay separately passed 40/40 but was not used as the acceptance result.
+
+The run used Linux/WSL2 on an Intel Core Ultra 9 285H (16 logical CPUs, 15 GiB RAM), the 956,917-track catalog, a 67,913-track shared discovery pack, Qwen3.5-9B Q4_K_M, and CPU ONNX CLAP/MERT workers. Report identities include `llama/v17`, `artist-first/v5`, and `multichannel/v42+iterative/v2`; the catalog, discovery snapshot, model, bundles, and modified working-tree revision are fingerprinted in the private report. Fresh writable metadata and analysis stores were isolated under `/tmp`; no user store was reset. Full diagnostics, tracks, cache data, previews, and downloaded assets are not committed.
+
+The previous 2026-09-09 observations below used a different binary and configuration and remain historical rather than part of this acceptance pass.
 
 ## Executed results — 2026-09-09
 
