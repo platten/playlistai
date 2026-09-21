@@ -456,6 +456,23 @@ func (o *Orchestrator) scoreSemanticUnion(ctx context.Context, candidates []core
 }
 
 func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Candidate, criteria []core.MusicalCriterion) ([]core.Candidate, essentialEvidenceReport, error) {
+	// Composer requests are recording-identity restrictions. Apply them before
+	// any best-available or semantic path can admit an unknown close fit.
+	for _, criterion := range criteria {
+		if criterion.Kind != "composer" || criterion.Scope != "" && criterion.Scope != "playlist" {
+			continue
+		}
+		verified := make([]core.Candidate, 0, len(candidates))
+		for _, candidate := range candidates {
+			if err := ctx.Err(); err != nil {
+				return nil, essentialEvidenceReport{}, err
+			}
+			if o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceMatch {
+				verified = append(verified, candidate)
+			}
+		}
+		candidates = verified
+	}
 	if o.enhanced && o.bestAvailable {
 		return o.filterEnhancedEssential(ctx, candidates, criteria)
 	}
@@ -505,6 +522,10 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 			// evidence sources. Do not overwrite a match with a sparse facet.
 			for _, id := range ids {
 				states[criterionIndex][id] = core.EvidenceMatch
+			}
+		} else if criterion.Kind == "composer" {
+			for _, id := range ids {
+				states[criterionIndex][id] = o.bestCriterion(ctx, id, criterion)
 			}
 		} else if o.audioSession != nil {
 			for _, id := range ids {

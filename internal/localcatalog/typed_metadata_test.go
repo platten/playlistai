@@ -94,6 +94,31 @@ func TestConjunctiveTypedSearchRequiresSameRecording(t *testing.T) {
 	}
 }
 
+func TestComposerSearchUsesRecordingCreditNotPerformerOrTitle(t *testing.T) {
+	c, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "chopin", Artist: "Pianist A", Title: "Nocturne", RawTags: json.RawMessage(`{"composer":"Fryderyk Chopin","genre":"Classical"}`)},
+		{ID: "performer", Artist: "Fryderyk Chopin", Title: "Piano Piece", RawTags: json.RawMessage(`{"composer":"Ludwig van Beethoven"}`)},
+		{ID: "title", Artist: "Pianist B", Title: "Tribute to Fryderyk Chopin"},
+		{ID: "album", Artist: "Pianist C", Title: "Prelude", RawTags: json.RawMessage(`{"album_composer":"Fryderyk Chopin"}`)},
+		{ID: "mixed", Artist: "Pianist D", Title: "Duet", RawTags: json.RawMessage(`{"composer":["Fryderyk Chopin","Other Composer"]}`)},
+	}, nil)
+	defer manager.Close()
+	defer c.Close()
+	criterion := core.MusicalCriterion{Kind: "composer", Value: "Fryderyk Chopin", Scope: "playlist", Strength: "required"}
+	hits, err := c.Search(context.Background(), MetadataQuery{Text: criterion.Value, Criterion: &criterion, Limit: 10})
+	if err != nil || len(hits) != 1 || hits[0].Track.ID != c.NamespacedID("chopin") {
+		t.Fatalf("composer query included a performer, title, album credit or conflicting co-credit: %+v %v", hits, err)
+	}
+	for id, want := range map[string]core.EvidenceState{
+		"chopin": core.EvidenceMatch, "performer": core.EvidenceMismatch,
+		"title": core.EvidenceUnknown, "album": core.EvidenceUnknown, "mixed": core.EvidenceMismatch,
+	} {
+		if got := c.CriterionEvidence(context.Background(), c.NamespacedID(id), criterion); got != want {
+			t.Fatalf("%s composer evidence = %s, want %s", id, got, want)
+		}
+	}
+}
+
 func TestArtistProfileSearchUsesExactArtistIndex(t *testing.T) {
 	c, manager := openTestCatalog(t, []librarypack.Track{
 		{ID: "one", Artist: "Axis", Title: "One"},

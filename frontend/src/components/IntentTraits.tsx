@@ -1,4 +1,5 @@
 type Trait = {
+  kind?: string;
   value: string;
   influence?: string;
   degree?: string;
@@ -54,6 +55,6 @@ export function IntentTraits({ preferences, criteria = [] }: { preferences: Pref
       return text ? <p key={label}>{label}: {text}</p> : null;
     })}
     {alternatives.length > 0 && <p>Alternatives: {groupedText(alternatives, traitText).join(" · ")}</p>}
-    {criteria.length > 0 && <p>Essential: {groupedText(criteria, (item) => `${item.value}${item.scope?.startsWith("journey_") ? ` (${item.scope.replace("journey_", "")})` : ""}`).join(", ")}</p>}
+    {criteria.length > 0 && <p>Essential: {groupedText(criteria, (item) => `${item.kind === "composer" ? "composed by " : ""}${item.value}${item.scope?.startsWith("journey_") ? ` (${item.scope.replace("journey_", "")})` : ""}`).join(", ")}</p>}
   </>;
 }

@@ -35,6 +35,28 @@ func TestArtistFirstRecognitionUsesLongestNamesAndContext(t *testing.T) {
 	}
 }
 
+func TestComposerOccurrenceIsNotReclassifiedAsPerformer(t *testing.T) {
+	store := recognitionStore(t)
+	defer store.Close()
+	prompt := "music composed only by Low"
+	got := Apply(context.Background(), prompt, lexicon.Extract(prompt), store, nil)
+	var composers, performers int
+	for _, atom := range got.Atoms {
+		if atom.Value != "Low" {
+			continue
+		}
+		if atom.Kind == "composer" {
+			composers++
+		}
+		if atom.Kind == "artist" {
+			performers++
+		}
+	}
+	if composers != 1 || performers != 0 {
+		t.Fatalf("composer was turned into a performer: %+v", got.Atoms)
+	}
+}
+
 func TestReferenceListRetainsIndependentArtistsInSourceOrder(t *testing.T) {
 	store := recognitionStore(t)
 	defer store.Close()

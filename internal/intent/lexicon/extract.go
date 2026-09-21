@@ -15,7 +15,7 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v9"
+const Version = "source-atoms/v10"
 
 var (
 	durationPattern    = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
@@ -32,6 +32,7 @@ var (
 	reducedPrefix      = regexp.MustCompile(`(?i)\b(?:less|not too|nothing too)\s*$`)
 	strictPrefix       = regexp.MustCompile(`(?i)\b(?:must be|must have|only|strictly|always|absolutely)\s*$`)
 	openTexturePattern = regexp.MustCompile(`(?i)\bwith\s+(?:(?:lots|plenty|a lot)\s+of|(?:a|an)\s+(?:good|strong|rich|delicate))\s+(.+?)(?:\s+(?:transitioning|leading|ending|moving|and then)\b|[,;.]|$)`)
+	composerIntro      = regexp.MustCompile(`(?i)\b(?:only\s+)?composed\s+(?:only\s+)?by\s+`)
 )
 
 type mention struct {
@@ -153,6 +154,22 @@ func Extract(prompt string) core.IntentTranslation {
 	for _, r := range requiredTrackOccurrences(prompt) {
 		e := r.Evidence[0]
 		add("required_track", r.Query, "playlist", "positive", "required", "plain", "", e.Start, e.End)
+	}
+	// A composer credit is a recording property, not the displayed performer.
+	// The required criterion prevents unrelated or uncredited recordings from
+	// satisfying an explicit "composed by" instruction.
+	for _, loc := range composerIntro.FindAllStringIndex(prompt, -1) {
+		if insideQuoted(prompt, loc[0], loc[1]) {
+			continue
+		}
+		start, end := trimRange(prompt, loc[1], referenceTextEnd(prompt, loc[1]))
+		if stop := artistReferenceSuffix.FindStringIndex(prompt[start:end]); stop != nil {
+			end = start + stop[0]
+		}
+		start, end = trimRange(prompt, start, end)
+		if end > start && !genericReference(prompt[start:end]) && !quantityReference(prompt[start:end]) {
+			add("composer", prompt[start:end], scopeAt(prompt, loc[0]), "positive", "required", "plain", "", start, end)
+		}
 	}
 	// First protect explicitly introduced entities. Descriptive clauses such as
 	// "from quiet to loud" must not turn into artist endpoints.
@@ -580,7 +597,7 @@ func insideQuoted(s string, start, end int) bool {
 	return false
 }
 func entityKind(k string) bool {
-	return k == "artist" || k == "track" || k == "album" || k == "start" || k == "destination" || k == "exclude_artist" || k == "require_artist" || k == "required_track" || k == "entity_mention"
+	return k == "artist" || k == "track" || k == "album" || k == "composer" || k == "start" || k == "destination" || k == "exclude_artist" || k == "require_artist" || k == "required_track" || k == "entity_mention"
 }
 func musicalKind(k string) bool {
 	switch k {

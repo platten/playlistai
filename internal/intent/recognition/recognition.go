@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	Version         = "artist-first/v5"
+	Version         = "artist-first/v6"
 	MaxPromptBytes  = 8 << 10
 	MaxLexicalWords = 256
 	// MaxGroundingCandidates keeps the immutable identity evidence inside the
@@ -134,7 +134,7 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 				truncated = true
 			}
 			candidate := span{start: bounds[0], end: bounds[1], text: prompt[bounds[0]:bounds[1]], artists: artists, truncated: truncated}
-			if artistContext(prompt, candidate) && !descriptiveModifierOfMusicalAtom(prompt, source.Atoms, candidate) {
+			if artistContext(prompt, candidate) && !descriptiveModifierOfMusicalAtom(prompt, source.Atoms, candidate) && !composerOccurrence(source.Atoms, candidate) {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -178,6 +178,20 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 		return source.Atoms[i].Evidence[0].Start < source.Atoms[j].Evidence[0].Start
 	})
 	return addProviderGenres(prompt, source, vocabulary, protected)
+}
+
+func composerOccurrence(atoms []core.IntentAtom, candidate span) bool {
+	for _, atom := range atoms {
+		if atom.Kind != "composer" {
+			continue
+		}
+		for _, evidence := range atom.Evidence {
+			if candidate.start >= evidence.Start && candidate.end <= evidence.End {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // A track phrase such as “'So What' by Miles Davis” already preserves both

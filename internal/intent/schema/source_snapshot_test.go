@@ -43,6 +43,30 @@ func TestSourceSnapshotRejectsDifferentPrompt(t *testing.T) {
 	}
 }
 
+func TestModelPerformerGuessCannotOverrideComposedBySource(t *testing.T) {
+	prompt := "Relaxing Classical music composed only by Fryderyk Chopin"
+	source := lexicon.Extract(prompt)
+	wire := Wire{Genres: []WirePreference{{Value: "classical", Influence: "positive", Explicit: true, Span: "Classical"}},
+		References:      []WireReference{{Kind: "artist", Value: "Fryderyk Chopin", Influence: "positive", Explicit: true, Span: "Fryderyk Chopin"}},
+		HardConstraints: []WireConstraint{{Kind: "require_artist", Value: "Fryderyk Chopin", Span: "Fryderyk Chopin"}},
+		Mode:            "similar", TotalCount: 20}
+	raw, _ := json.Marshal(wire)
+	got, err := ParseForPromptWithSource(raw, prompt, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.References) != 0 || len(got.HardConstraints) != 0 {
+		t.Fatalf("composer was converted to performer: %+v", got)
+	}
+	found := false
+	for _, criterion := range got.EssentialCriteria {
+		found = found || criterion.Kind == "composer" && criterion.Value == "Fryderyk Chopin" && criterion.Strength == "required"
+	}
+	if !found {
+		t.Fatalf("composer requirement lost: %+v", got.EssentialCriteria)
+	}
+}
+
 func TestWirePayloadPreservesStartDurationAndScopedPreferences(t *testing.T) {
 	const prompt = "One hour and fifteen minutes of music. Begin with Nine Inch Nails and finish with Marilyn Manson. Keep the opening section instrumental."
 	const raw = `{"genres":[],"temporal":[],"destination":[{"kind":"artist","value":"Marilyn Manson","influence":"positive","explicit":true,"span":"Marilyn Manson"}],"genre_expansions":[],"references":[],"inferred_anchors":[],"required_tracks":[],"essential_criteria":[],"styles":[],"moods":[],"instrumentation":[],"vocal_preference":{"value":"instrumental","influence":"positive","explicit":true,"span":"opening section instrumental","scope":"journey_start","strength":"required"},"textures":[],"hard_constraints":[],"unsupported_requirements":[],"mode":"journey","journey_waypoints":[],"energy_trajectory":[],"total_count":20,"audio_weight":0.5,"cooccurrence_weight":0.5,"discovery":0.2,"artist_diversity":0.7,"transition_smoothness":0.6,"notes":"","start":[{"kind":"artist","value":"Nine Inch Nails","influence":"positive","explicit":true,"span":"Nine Inch Nails"}],"duration_seconds":4500}`
