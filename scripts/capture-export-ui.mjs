@@ -26,7 +26,7 @@ try {
     export const System={IsMac:()=>false};
     export const Browser={OpenURL:async()=>{}};
   ` }));
-  await page.route("**/src/lib/api.ts", route => route.fulfill({ contentType: "application/javascript", body: `
+  await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     ${bridgeEnums}
     const rows=[{id:'one',artist:'Local artist',title:'First track',album:'Local album'},{id:'two',artist:'Second artist',title:'Second track',album:''}];
     let failed=false, completionAttempts=0;

@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 import assert from "node:assert/strict";
+import { bridgeEnums } from "./browser-fixture-contract.mjs";
 
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4];
@@ -11,15 +12,14 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 
 const bridge = `
-export const FeedbackScope={FeedbackScopeRequest:'request',FeedbackScopeDurable:'durable'};
-export const FeedbackType={FeedbackLike:'like',FeedbackDislike:'dislike',FeedbackMoreLike:'more_like',FeedbackLessLike:'less_like',FeedbackAccepted:'accepted',FeedbackRemoved:'removed'};
+${bridgeEnums}
 export const API=new Proxy({}, {get:(_target,name)=>(...args)=>{const p=Promise.resolve(name==='GetPreviewURL'?{url:''}:null);p.cancel=()=>{};return p;}});`;
 
 const entry = `
 import React from '/node_modules/.vite/deps/react.js';
 import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
 import {PlaylistScreen} from '/src/screens/PlaylistScreen.tsx';
-import {PreviewPlayerProvider} from '/src/components/PreviewPlayer.tsx';
+import {PreviewPlayerProvider} from '/src/components/index.ts';
 import '/src/design/tokens.css';
 const controls={audioWeight:.58,cooccurrenceWeight:.42,discovery:.16,artistDiversity:.78,transitionSmoothness:.6,totalTrackCount:10,recommendationMode:'enhanced_hybrid'};
 const intent={version:5,originalDescription:'Warm late-night electronic with a steady pulse and a cinematic finish',mode:'journey',seed:'424242',trackCountExplicit:true,controls,constraints:{excludeSeedArtists:false},references:[{kind:'artist',query:'Bonobo',influence:'positive'}],requiredTracks:[],essentialCriteria:[],hardConstraints:[],preferences:{genres:[{value:'downtempo',influence:'positive',strength:'preferred'}]},journey:{waypoints:[],energyCurve:[]},capabilities:[],unsupportedRequirements:[]};
@@ -43,7 +43,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(app);`;
 const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
-  page.on("pageerror", error => errors.push(error.message));
+  page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
   await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: entry }));
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: bridge }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: "export const Events={On:()=>()=>{}};export const Browser={OpenURL:()=>{}};export const System={IsMac:()=>false};export const Clipboard={SetText:()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;" }));
@@ -51,9 +51,19 @@ try {
   await page.getByText("Cirrus", { exact: true }).waitFor();
   assert.equal(await page.getByText("MERT-v1-95M · optional").count(), 0);
   assert.equal(await page.getByText(/10 tracks/).count() > 0, true);
-  await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-  await page.screenshot({ path: path.join(output, "populated-playlist-dark.png"), fullPage: true, animations: "disabled" });
-  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "horizontal overflow");
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    for (const width of [1100, 390]) {
+      await page.setViewportSize({ width, height: 850 });
+      await page.screenshot({ path: path.join(output, `populated-playlist-${theme}-${width}.png`), fullPage: true, animations: "disabled" });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "horizontal overflow");
+      await page.getByText("Adjust playlist", { exact: true }).click();
+      await page.getByRole("slider", { name: "Audio similarity" }).waitFor();
+      await page.screenshot({ path: path.join(output, `playlist-controls-${theme}-${width}.png`), fullPage: true, animations: "disabled" });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "expanded controls overflow");
+      await page.getByText("Adjust playlist", { exact: true }).click();
+    }
+  }
   assert.deepEqual(errors, []);
   console.log("PASS: populated Playlist screen rendered without the MERT setup card");
 } finally {
