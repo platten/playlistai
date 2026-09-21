@@ -34,6 +34,10 @@ async function submit(text = prompt) {
   fireEvent.change(await screen.findByLabelText("Your description"), { target: { value: text } });
   fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
 }
+function confirmSpelling(dialog: HTMLElement, choice: "suggested" | "original") {
+  fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: choice } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+}
 beforeEach(() => {
   onGenerated.mockReset();
   for (const mock of Object.values(bridge)) mock.mockReset();
@@ -58,20 +62,27 @@ it("pauses for spelling confirmation and accepts the catalog artist in the origi
   const dialog = await screen.findByRole("dialog", { name: "Did you mean Christian Löffler?" });
   expect(bridge.GenerateFromPromptWithContext).not.toHaveBeenCalled();
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
-  fireEvent.click(within(dialog).getByRole("button", { name: "Use Christian Löffler" }));
+  expect((within(dialog).getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  confirmSpelling(dialog, "suggested");
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   expect(bridge.ParseIntentWithContext).toHaveBeenCalledOnce();
   expect(bridge.GenerateFromPromptResolvedWithContext).toHaveBeenCalledWith(prompt,
     [{ kind: "artist", query: "christrian loeffler", trackId: "loffler-track" }], bridge.ParseIntentWithContext.mock.calls[0][1]);
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).toBe(prompt);
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value)
+    .toBe("Relaxing electronic like Christian Löffler, 20 tracks");
 });
 
 it.each(["accept", "keep"])("remembers the %s decision on retry and clears it when the description changes", async (action) => {
+  if (action === "accept") {
+    bridge.ParseIntentWithContext.mockImplementation((text: string) => completed(
+      text.includes("Christian Löffler") ? preview([]) : preview(),
+    ));
+  }
   renderScreen();
   await submit();
   const dialog = await screen.findByRole("dialog");
-  fireEvent.click(within(dialog).getByRole("button", { name: action === "accept" ? "Use Christian Löffler" : "Keep “christrian loeffler”" }));
+  confirmSpelling(dialog, action === "accept" ? "suggested" : "original");
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   const expected = action === "accept"
     ? { kind: "artist", query: "christrian loeffler", trackId: "loffler-track" }
@@ -79,6 +90,7 @@ it.each(["accept", "keep"])("remembers the %s decision on retry and clears it wh
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([expected]);
   fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
   await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(2));
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[1][0]).toBe(prompt);
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[1][1]).toEqual([expected]);
   expect(screen.queryByRole("dialog")).toBeNull();
   await submit(`${prompt}, no vocals`);
@@ -121,7 +133,7 @@ it("does not resume a pending confirmation after unmount", async () => {
   const view = renderScreen();
   await submit();
   const dialog = await screen.findByRole("dialog");
-  const accept = within(dialog).getByRole("button", { name: "Use Christian Löffler" });
+  const accept = within(dialog).getByRole("button", { name: "Continue" });
   view.unmount();
   await act(async () => { fireEvent.click(accept); });
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
@@ -134,10 +146,10 @@ it("collects multiple spelling decisions before generation", async () => {
   }])));
   renderScreen();
   await submit();
-  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Use Christian Löffler" }));
+  confirmSpelling(await screen.findByRole("dialog"), "suggested");
   const next = await screen.findByRole("dialog", { name: "Did you mean Aerosmith?" });
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
-  fireEvent.click(within(next).getByRole("button", { name: "Keep “aerosmit”" }));
+  confirmSpelling(next, "original");
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([
     { kind: "artist", query: "christrian loeffler", trackId: "loffler-track" },
@@ -149,22 +161,28 @@ it("confirms a repeated artist with different capitalization only once", async (
   bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([issue, { ...issue, query: "Christrian Loeffler" }])));
   renderScreen();
   await submit(`${prompt}, then Christrian Loeffler`);
-  fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Use Christian Löffler" }));
+  confirmSpelling(await screen.findByRole("dialog"), "suggested");
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([
     { kind: "artist", query: "christrian loeffler", trackId: "loffler-track" },
   ]);
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value)
+    .toBe("Relaxing electronic like Christian Löffler, 20 tracks, then Christian Löffler");
 });
 
 it.each(["accept", "keep"])("retains the %s spelling decision while resolving a separate ambiguous artist", async (action) => {
-  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([issue, {
-    kind: "artist", query: "Shared name", status: "ambiguous", alternatives: [{ entityId: "other-artist", artist: "Other artist", representatives: [{ trackId: "other-track" }] }],
-  }])));
+  const otherIssue = {
+    kind: "artist", query: "Shared name", status: "ambiguous",
+    alternatives: [{ entityId: "other-artist", artist: "Other artist", representatives: [{ trackId: "other-track" }] }],
+  };
+  bridge.ParseIntentWithContext.mockImplementation((text: string) => completed(preview(
+    action === "accept" && text.includes("Christian Löffler") ? [otherIssue] : [issue, otherIssue],
+  )));
   renderScreen();
   await submit();
   const dialog = await screen.findByRole("dialog");
-  fireEvent.click(within(dialog).getByRole("button", { name: action === "accept" ? "Use Christian Löffler" : "Keep “christrian loeffler”" }));
+  confirmSpelling(dialog, action === "accept" ? "suggested" : "original");
   const chooser = await screen.findByRole("combobox", { name: /Choose the intended artist/ });
   if (action === "keep") {
     expect(screen.queryByText(/Generate playlist will search MusicBrainz/)).toBeNull();
@@ -172,11 +190,15 @@ it.each(["accept", "keep"])("retains the %s spelling decision while resolving a 
   fireEvent.change(chooser, { target: { value: "other-track" } });
   fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
-  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([
-    action === "accept" ? { kind: "artist", query: "christrian loeffler", trackId: "loffler-track" }
-      : { kind: "artist", query: "christrian loeffler", trackId: "", rejectSpelling: true },
-    { kind: "artist", query: "Shared name", trackId: "other-track" },
-  ]);
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][0]).toBe(prompt);
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual(action === "accept"
+    ? [
+      { kind: "artist", query: "christrian loeffler", trackId: "loffler-track" },
+      { kind: "artist", query: "Shared name", trackId: "other-track" },
+    ] : [
+      { kind: "artist", query: "christrian loeffler", trackId: "", rejectSpelling: true },
+      { kind: "artist", query: "Shared name", trackId: "other-track" },
+    ]);
 });
 
 it("generates exact artist references without opening the dialog", async () => {
@@ -186,6 +208,49 @@ it("generates exact artist references without opening the dialog", async () => {
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
+  expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+});
+
+it("updates an uncertain artist in the description while generating with its catalog identity", async () => {
+  const uncertain = "Ambient music by Shared name, 10 tracks";
+  const alternatives = [
+    { entityId: "other-artist", artist: "Other artist", representatives: [{ trackId: "other-track" }] },
+    { entityId: "right-artist", artist: "Right artist", representatives: [{ trackId: "right-track" }] },
+  ];
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([{
+    kind: "artist", query: "Shared name", status: "ambiguous", inferred: false, alternatives,
+  }])));
+  renderScreen();
+  await submit(uncertain);
+  const chooser = await screen.findByRole("combobox", { name: "Choose the intended artist for “Shared name”" });
+  expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+  fireEvent.change(chooser, { target: { value: "other-track" } });
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value)
+    .toBe("Ambient music by Other artist, 10 tracks");
+  fireEvent.change(chooser, { target: { value: "right-track" } });
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value)
+    .toBe("Ambient music by Right artist, 10 tracks");
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][0]).toBe(uncertain);
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([
+    { kind: "artist", query: "Shared name", trackId: "right-track" },
+  ]);
+  expect(bridge.GenerateFromPromptWithContext).not.toHaveBeenCalled();
+});
+
+it("drops an uncertain artist choice when the corrected description is edited", async () => {
+  bridge.ParseIntentWithContext.mockImplementation((text: string) => completed(preview(text.includes("Shared name") ? [{
+    kind: "artist", query: "Shared name", status: "ambiguous", inferred: false,
+    alternatives: [{ entityId: "right-artist", artist: "Right artist", representatives: [{ trackId: "right-track" }] }],
+  }] : [])));
+  renderScreen();
+  await submit("Music by Shared name");
+  fireEvent.change(await screen.findByRole("combobox", { name: /Choose the intended artist/ }), { target: { value: "right-track" } });
+  fireEvent.change(screen.getByLabelText("Your description"), { target: { value: "Music by Justice" } });
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(bridge.GenerateFromPromptWithContext.mock.calls[0][0]).toBe("Music by Justice");
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
 });
 
