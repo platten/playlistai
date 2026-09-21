@@ -20,6 +20,7 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 			refs = append(refs, *ref)
 		}
 	}
+	explicitRefCount := len(refs)
 	for _, anchor := range intent.InferredAnchors {
 		refs = append(refs, anchor.Reference)
 	}
@@ -28,16 +29,32 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 	for i := range out {
 		selection := &out[i]
 		key := string(selection.Kind) + "\x00" + strings.ToLower(strings.TrimSpace(selection.Query))
-		if seen[key] || (selection.RejectSpelling && selection.TrackID != "") {
+		if seen[key] || (selection.RejectSpelling && (selection.TrackID != "" || selection.IdentityID != "")) || (selection.IdentityID != "" && selection.TrackID != "") ||
+			(selection.KeepAsDescription && (selection.Kind != core.ReferenceArtist || selection.RejectSpelling || selection.TrackID != "" || selection.IdentityID != "")) {
 			return nil, fmt.Errorf("invalid or repeated reference choice")
 		}
 		seen[key] = true
 		valid := false
-		for _, ref := range refs {
+		for index, ref := range refs {
 			if ref.Kind != selection.Kind || !strings.EqualFold(strings.TrimSpace(ref.Query), strings.TrimSpace(selection.Query)) {
 				continue
 			}
+			if selection.KeepAsDescription {
+				if index < explicitRefCount {
+					ref.TrackID, ref.Resolution, ref.SpellingDecision = "", nil, ""
+					valid = valid || ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) || resolver.ResolveReference(ref).Status == core.ResolutionAmbiguous
+				}
+				continue
+			}
 			if ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) {
+				if selection.IdentityID != "" {
+					for _, candidate := range ref.Grounding.Candidates {
+						if candidate.ID == selection.IdentityID && candidate.Kind == selection.Kind {
+							valid = true
+						}
+					}
+					continue
+				}
 				return nil, fmt.Errorf("reference choice for %q cannot select among unresolved provider identities", selection.Query)
 			}
 			ref.TrackID, ref.Resolution, ref.SpellingDecision = "", nil, ""

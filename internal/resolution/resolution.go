@@ -84,7 +84,11 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 			result = resolver.ResolveReference(reference)
 		}
 		groundingAmbiguous := reference.Grounding != nil && (reference.Grounding.Truncated || len(reference.Grounding.Candidates) > 1)
-		if groundingAmbiguous && !explicitSelection {
+		if reference.Grounding != nil && reference.Grounding.Confirmed && reference.Grounding.Provider == "MusicBrainz" && reference.Kind == core.ReferenceArtist && !explicitSelection {
+			// A name-only catalog hit cannot distinguish homonyms. Let provider
+			// recovery retrieve recordings for the identity the user confirmed.
+			result = core.ReferenceResolution{CatalogVersion: resolver.CatalogVersion(), Status: core.ResolutionUnresolved}
+		} else if groundingAmbiguous && !explicitSelection {
 			// Catalog candidates do not carry MusicBrainz MBIDs, so they cannot
 			// prove which homonymous provider identity the user meant. Require a
 			// more specific prompt instead of presenting an unrelated choice.

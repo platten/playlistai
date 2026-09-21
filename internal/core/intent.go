@@ -70,6 +70,7 @@ type IdentityGrounding struct {
 	SnapshotVersion string              `json:"snapshotVersion"`
 	Candidates      []IdentityCandidate `json:"candidates"`
 	Truncated       bool                `json:"truncated,omitempty"`
+	Confirmed       bool                `json:"confirmed,omitempty"`
 }
 
 type ResolutionStatus string

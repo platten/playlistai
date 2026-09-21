@@ -317,6 +317,16 @@ pre-parser protects compound durations, negation and journey roles before and
 after the LLM step. See [implementation and validation](docs/music-context-implementation-results.md)
 and the [larger-model evaluation guide](docs/music-context-and-preparser-plan.md).
 
+When an artist name matches multiple MusicBrainz identities, Generate offers a
+dropdown with identity details. Choose the intended artist and click **Confirm
+and generate** to start the query with that identity.
+
+If an adjective is mistaken for an artist, choose **Keep as an adjective /
+description** in the match dropdown or spelling dialog. The original wording
+stays in your prompt and becomes a musical preference. The choice is retained
+when retrying the same description and in the saved playlist interpretation;
+editing the prompt clears the choice.
+
 Artist spelling suggestions ask for confirmation before changing the selected
 artist. Duration-only requests allow a variable track count and use full-recording
 metadata to seek the target within 60 seconds; missing duration evidence stays
