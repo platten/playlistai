@@ -198,7 +198,7 @@ func validateIdentityGrounding(kind ReferenceKind, grounding *IdentityGrounding)
 	if grounding == nil {
 		return nil
 	}
-	if grounding.Provider != "MusicBrainz" || strings.TrimSpace(grounding.MatchedSpelling) == "" || strings.TrimSpace(grounding.MatchType) == "" || strings.TrimSpace(grounding.SnapshotVersion) == "" || len(grounding.Candidates) == 0 || len(grounding.Candidates) > 64 {
+	if !ValidIdentityGroundingProvider(grounding.Provider) || strings.TrimSpace(grounding.MatchedSpelling) == "" || strings.TrimSpace(grounding.MatchType) == "" || strings.TrimSpace(grounding.SnapshotVersion) == "" || len(grounding.Candidates) == 0 || len(grounding.Candidates) > 64 {
 		return fmt.Errorf("intent: invalid identity grounding")
 	}
 	for _, candidate := range grounding.Candidates {
@@ -210,6 +210,21 @@ func validateIdentityGrounding(kind ReferenceKind, grounding *IdentityGrounding)
 		}
 	}
 	return nil
+}
+
+// ValidIdentityGroundingProvider accepts only immutable offline identity
+// sources. Combined lookup names join these source names with '+'.
+func ValidIdentityGroundingProvider(provider string) bool {
+	parts := strings.Split(provider, "+")
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if part != "MusicBrainz" && part != "paipack" {
+			return false
+		}
+	}
+	return true
 }
 
 func validateResolution(kind ReferenceKind, resolution ReferenceResolution) error {

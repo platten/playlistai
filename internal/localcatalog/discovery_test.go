@@ -39,10 +39,19 @@ func TestSharedDiscoveryMoodProfilesAndNamespaces(t *testing.T) {
 	}
 	intent := core.MusicIntent{Preferences: core.SemanticPreferences{Moods: []core.IntentPreference{{Value: "calm", Influence: core.InfluencePositive}}}}
 	queries := recommendationQueries(ports.RetrievalRequest{Intent: intent})
-	if len(queries) != 1 {
+	if len(queries) != 2 {
 		t.Fatalf("queries %+v", queries)
 	}
-	hits, err := shared.Search(ctx, *queries[0].Metadata)
+	var typed *MetadataQuery
+	for _, query := range queries {
+		if query.Metadata != nil && query.Metadata.Criterion != nil {
+			typed = query.Metadata
+		}
+	}
+	if typed == nil {
+		t.Fatal("typed mood query missing")
+	}
+	hits, err := shared.Search(ctx, *typed)
 	if err != nil || len(hits) != 2 {
 		t.Fatalf("typed mood hits=%+v err=%v", hits, err)
 	}

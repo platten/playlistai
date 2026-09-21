@@ -394,9 +394,6 @@ func (c *Container) RefreshEnhancedAudio(ctx context.Context, intent core.MusicI
 }
 
 func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicIntent, profile core.TasteProfile, refs []core.TrackRef, acquire bool, previous *core.EnhancedAudioSnapshot) (*core.EnhancedAudioSnapshot, error) {
-	if acquire {
-		ctx = audio.WithLazyEnhancedBudget(ctx, EnhancedAnalysisLimit, audio.EnhancedTimeLimit)
-	}
 	e := &c.enhanced
 	e.opMu.Lock()
 	defer e.opMu.Unlock()
@@ -408,80 +405,20 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 		return nil, nil
 	}
 	catalog := runtime.Resolver.CatalogVersion()
-	input := core.EnhancedAudioInput{CatalogVersion: catalog, DSPVersion: audio.DSPAnalysisVersion, DSP: map[string]core.DSPAnalysis{}, Representations: map[string]core.AudioRepresentation{}}
+	var model core.AudioRepresentationIdentity
 	if e.mertEnabled && e.manifest != nil {
-		input.Model = e.manifest.Model
-	}
-	if !acquire && previous != nil {
-		prior := previous.Input()
-		if prior.CatalogVersion != input.CatalogVersion || prior.Model != input.Model || prior.PolicyVersion != core.EnhancedAudioPolicyVersion {
-			return nil, fmt.Errorf("enhanced audio refresh requires the same catalog, model and policy as the initial snapshot")
-		}
-		input.PositiveCentroid, input.NegativeCentroid = prior.PositiveCentroid, prior.NegativeCentroid
-		input.MERTSearch = prior.MERTSearch
+		model = e.manifest.Model
 	}
 	p, m := c.enhancedServices()
-	seen := map[string]bool{}
-	budget := audio.EnhancedBudgetFor(ctx)
-	for _, ref := range refs {
-		if seen[ref.ID] {
-			continue
-		}
-		seen[ref.ID] = true
-		if err := ctx.Err(); err != nil {
-			completed, freezeErr := core.NewEnhancedAudioSnapshot(input)
-			if freezeErr != nil {
-				return nil, freezeErr
-			}
-			return completed, err
-		}
-		dspHit := p.DSPStore == nil
-		if p.DSPStore != nil {
-			dspCached, hit, _ := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion)
-			dspHit = hit
-			if hit {
-				input.DSP[ref.ID] = dspCached
-			}
-		}
-		mertHit := m == nil
-		if m != nil {
-			cached, hit, _ := m.Store.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), input.Model)
-			mertHit = hit
-			if hit {
-				input.Representations[ref.ID] = cached
-			}
-		}
-		if acquire && (!dspHit || !mertHit) && ctx.Err() == nil && budget.Allow(ref.ID) {
-			budgetCtx, cancel := budget.Context(ctx)
-			if m != nil {
-				_, _, _, _ = m.AnalyzeEnhancedPreview(budgetCtx, ref, catalog)
-			} else {
-				_, _, _ = p.AnalyzeDSPPreview(budgetCtx, ref, catalog)
-			}
-			cancel()
-		}
-		if p.DSPStore != nil {
-			if a, ok, err := p.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), audio.DSPAnalysisVersion); err == nil && ok {
-				input.DSP[ref.ID] = a
-			}
-		}
-		if m != nil {
-			if a, ok, err := m.Store.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), input.Model); err == nil && ok {
-				input.Representations[ref.ID] = a
-			}
-		}
+	snapshot, err := audio.PrepareEnhancedEvidence(ctx, p, m, catalog, model, refs, acquire, previous)
+	if err != nil && (ctx.Err() != nil || snapshot == nil) {
+		return snapshot, err
 	}
-	if err := ctx.Err(); err != nil {
-		completed, freezeErr := core.NewEnhancedAudioSnapshot(input)
-		if freezeErr != nil {
-			return nil, freezeErr
-		}
-		return completed, err
-	}
+	input := snapshot.Input()
 	if acquire && m != nil && c.Feedback != nil {
-		events, err := c.Feedback.ListFeedback(ctx, ports.FeedbackQuery{RequestID: profile.RequestID, SessionID: profile.SessionID})
-		if err != nil {
-			return nil, err
+		events, feedbackErr := c.Feedback.ListFeedback(ctx, ports.FeedbackQuery{RequestID: profile.RequestID, SessionID: profile.SessionID})
+		if feedbackErr != nil {
+			return nil, feedbackErr
 		}
 		cached := map[string]core.AudioRepresentation{}
 		for _, event := range taste.ContentFeedback(events, profile) {

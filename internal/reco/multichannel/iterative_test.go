@@ -94,7 +94,7 @@ func TestIterativeDiscoveryRejectsAndAdvancesUntilCount(t *testing.T) {
 	}
 }
 
-func TestBestAvailableDiscoveryDoesNotExtendForSoftArtistDiversity(t *testing.T) {
+func TestBestAvailableDiscoveryReportsPartialWhenThreeArtistPolicyExhausted(t *testing.T) {
 	for _, mode := range []core.RecommendationMode{core.AcousticBrainzFirst, core.CLAPFirst} {
 		t.Run(string(mode), func(t *testing.T) {
 			var artists []string
@@ -115,13 +115,13 @@ func TestBestAvailableDiscoveryDoesNotExtendForSoftArtistDiversity(t *testing.T)
 			engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(source).WithAudioProvider(func() *audio.Service { return service })
 			engine.retriever = retriever
 			got, err := engine.Build(context.Background(), intent)
-			// The complete cached pool now avoids provider discovery entirely;
-			// a genre-only request still stops after N actual assessments.
-			if err != nil || len(got.Tracks) != 10 || source.pulls != 0 || len(retriever.calls) != 0 {
+			// Only two artists exist. Exhaust the bounded sources, retain the
+			// longest safely spaced result, and report partial rather than padding.
+			if err != nil || len(got.Tracks) != 9 || source.pulls != 20 || len(retriever.calls) != 2 || got.Outcome.State != core.OutcomePartial {
 				t.Fatalf("tracks=%d pulls=%d retrievals=%d err=%v", len(got.Tracks), source.pulls, len(retriever.calls), err)
 			}
-			if got.AudioEvidence == nil || len(got.AudioEvidence.Assessments) != 10 {
-				t.Fatalf("surplus analysis: %+v", got.AudioEvidence)
+			if got.AudioEvidence == nil || len(got.AudioEvidence.Assessments) < len(got.Tracks) || len(got.AudioEvidence.Assessments) > 20 {
+				t.Fatalf("unbounded analysis: %+v", got.AudioEvidence)
 			}
 			for i := 1; i < len(got.Tracks); i++ {
 				if got.Tracks[i].Artist == got.Tracks[i-1].Artist {

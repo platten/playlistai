@@ -3,6 +3,7 @@ package multichannel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -172,5 +173,41 @@ func TestArtistRepresentativeRefinementRespectsJourneyStagesAndIdentity(t *testi
 	got, err = o.refineArtistRepresentatives(context.Background(), intent)
 	if err != nil || got.Start.TrackID != "a-wrong" {
 		t.Fatal("explicit recording replaced")
+	}
+}
+
+type longArtistCatalog struct {
+	*fakes.Catalog
+	ids []string
+}
+
+func (c longArtistCatalog) ArtistRecordings(_ context.Context, _ string) ([]core.TrackRef, error) {
+	return refs(c.Catalog, c.ids...), nil
+}
+
+func (c longArtistCatalog) CriterionEvidence(_ context.Context, id string, _ core.MusicalCriterion) core.EvidenceState {
+	if id == c.ids[len(c.ids)-1] {
+		return core.EvidenceMatch
+	}
+	return core.EvidenceUnknown
+}
+
+func TestArtistRepresentativeRefinementPrioritizesGroundingBeforeBound(t *testing.T) {
+	tracks, ids := make([]fakes.CatalogTrack, seedCandidateLimit+1), make([]string, seedCandidateLimit+1)
+	for i := range tracks {
+		ids[i] = fmt.Sprintf("track-%03d", i)
+		tracks[i] = fakes.CatalogTrack{ID: ids[i], Display: "Artist - " + ids[i], Audio: []float32{1, 0}, Track: []float32{1, 0}}
+	}
+	base := fakes.NewCatalog(2, tracks...)
+	cat := longArtistCatalog{Catalog: base, ids: ids}
+	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Artist", TrackID: ids[0], Influence: core.InfluencePositive, Resolution: &core.ReferenceResolution{Status: core.ResolutionResolved, Selected: &core.ResolutionCandidate{Kind: core.ReferenceArtist, Artist: "Artist", Representatives: []core.WeightedTrack{{TrackID: ids[0], Weight: 1}}}}}
+	intent := enhancedIntent(3)
+	intent.Mode, intent.Start = core.ModeJourney, &ref
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}}
+	o := New(cat, fakes.NewSimilarityEngine(base), cat, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	got, err := o.refineArtistRepresentatives(context.Background(), intent)
+	if err != nil || got.Start.TrackID != ids[len(ids)-1] {
+		t.Fatalf("grounded endpoint was hidden by seed bound: %+v %v", got.Start, err)
 	}
 }

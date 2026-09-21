@@ -19,25 +19,24 @@ func enhancedIntent(count int) core.MusicIntent {
 	return intent
 }
 
-func TestEnhancedDiversityRemainsSoftAndRespectsZero(t *testing.T) {
+func TestEnhancedDiversityPolicyBroadensAndSpacesUnlessExplicitlyRestricted(t *testing.T) {
 	cat := diversityCatalog()
 	intent := enhancedIntent(2)
 	intent.Preferences.Genres = []core.IntentPreference{{Value: "rock", Influence: core.InfluencePositive}}
 	intent.Controls.ArtistDiversity = 0
 	input := []core.Candidate{selectionCandidate(cat, "a1", 1), selectionCandidate(cat, "a2", .99), selectionCandidate(cat, "b", .8)}
 	selected, err := NewSelector(cat, DefaultConfig()).Select(context.Background(), input, ports.SelectionRequest{Intent: intent, Count: 2})
-	if err != nil || candidateIDs(selected.Candidates) != "a1,a2" {
-		t.Fatalf("diversity overrode relevance/control: %s %v", candidateIDs(selected.Candidates), err)
+	if err != nil || candidateIDs(selected.Candidates) != "a1,b" {
+		t.Fatalf("category diversity was not applied: %s %v", candidateIDs(selected.Candidates), err)
 	}
 	sequencer := NewSequencer(cat, DefaultConfig())
 	result, err := sequencer.Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates})
 	if err != nil || len(result.Tracks) != 2 {
-		t.Fatalf("unrequested adjacency truncated output: %+v %v", result, err)
+		t.Fatalf("diverse Enhanced output was truncated: %+v %v", result, err)
 	}
-	intent.Constraints.NoRepeatArtistBackToBack = true
-	result, err = sequencer.Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates})
-	if err != nil || len(result.Tracks) != 1 {
-		t.Fatalf("explicit adjacency was relaxed: %+v %v", result, err)
+	intent.HardConstraints = []core.HardConstraint{{Kind: "require_artist", Value: "Artist A"}}
+	if genreArtistDiversity(intent) {
+		t.Fatal("explicit artist-only restriction did not opt out")
 	}
 }
 
@@ -56,8 +55,8 @@ func TestEnhancedStrongTierPrecedesCloseWithoutMovingJourneyEndpoints(t *testing
 		t.Fatalf("strong tier displaced: %+v %v", selected, err)
 	}
 	result, err := NewSequencer(cat, DefaultConfig()).Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates, ReferenceAnchors: refs(cat, "a1")})
-	if err != nil || len(result.Tracks) != 3 || result.Tracks[0].ID != "b" {
-		t.Fatalf("ordering interleaved fit tiers: %+v %v", result, err)
+	if err != nil || trackIDs(result.Tracks) != "a1,b,a2" {
+		t.Fatalf("hard artist spacing was not preserved: %+v %v", result, err)
 	}
 }
 
@@ -118,6 +117,20 @@ func TestEnhancedExplicitEndpointsAreActualOutputAndCountedOnce(t *testing.T) {
 	conflict, err := engine.Build(context.Background(), intent)
 	if err == nil && (len(conflict.Tracks) != 0 || conflict.Outcome.State != core.OutcomeNeedsClarification) {
 		t.Fatalf("excluded endpoint bypassed requirement: %+v", conflict)
+	}
+}
+
+func TestEnhancedArtistEndpointWithoutPreviewRemainsExplicitCloseOutput(t *testing.T) {
+	cat := testCatalog()
+	service, _ := cachedAudioService(t, cat, "cooc")
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
+	intent := enhancedIntent(1)
+	intent.Mode = core.ModeJourney
+	intent.Start = &core.IntentReference{Kind: core.ReferenceArtist, Query: "Seed Artist", Influence: core.InfluencePositive}
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}}
+	playlist, err := engine.Build(context.Background(), intent)
+	if err != nil || len(playlist.Tracks) != 1 || playlist.Tracks[0].ID != "seed" || playlist.Outcome.State == core.OutcomeNeedsClarification {
+		t.Fatalf("missing preview erased explicit artist endpoint: %+v %v", playlist, err)
 	}
 }
 
@@ -183,6 +196,42 @@ func TestEnhancedCriterionORGroupsPreserveAlternativesAndIndependentDemands(t *t
 	got, _, err = o.filterEssential(context.Background(), got, criteria)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("independent required facet bypassed: %+v %v", got, err)
+	}
+}
+
+func TestEnhancedInstrumentalRecordingTagIsVocalEvidenceButPreviewMismatchWins(t *testing.T) {
+	cat := testCatalog()
+	criterion := core.MusicalCriterion{Kind: "vocal", Value: "instrumental", Scope: "playlist", Strength: "required"}
+	track := core.EnrichedTrack{
+		Ref: refs(cat, "audio")[0], IdentityStatus: core.ResolutionResolved,
+		GenreTags: []core.AttributedGenreTag{{Name: "instrumental", Votes: 1, Source: "musicbrainz", Facet: "genre"}},
+	}
+	o := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	o.knowledge = &core.KnowledgeSnapshot{Tracks: []core.EnrichedTrack{track}}
+	if got := o.bestCriterion(context.Background(), "audio", criterion); got != core.EvidenceMatch {
+		t.Fatalf("instrumental recording tag = %q, want match", got)
+	}
+	if got := o.bestCriterion(context.Background(), "audio", core.MusicalCriterion{Kind: "vocal", Value: "vocals", Scope: "playlist", Strength: "required"}); got != core.EvidenceMismatch {
+		t.Fatalf("instrumental recording tag did not oppose vocals: %q", got)
+	}
+	clause := core.AudioClause{Kind: "vocal", Text: "instrumental", Scope: "playlist", Strict: true, Essential: true}
+	preview := core.AudioAssessment{TrackID: "audio", Clauses: []core.AudioClauseAssessment{{Clause: clause, State: core.EvidenceMismatch}}}
+	if got := o.clauseFitState(context.Background(), "audio", clause, preview); got != core.EvidenceMismatch {
+		t.Fatalf("preview mismatch was hidden by metadata: %q", got)
+	}
+	intent := enhancedIntent(1)
+	intent.Preferences.VocalPreference = &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}
+	if !o.previewNeededForEnhanced(context.Background(), candidatesForTracks(refs(cat, "audio"))[0], intent) {
+		t.Fatal("instrumental metadata bypassed preview vocal screening")
+	}
+	criteria := []core.MusicalCriterion{criterion, {Kind: "genre", Value: "ambient", Scope: "playlist", Strength: "essential"}}
+	got, _, err := o.filterEssential(context.Background(), candidatesForTracks(refs(cat, "audio")), criteria)
+	if err != nil || len(got) != 1 || !got[0].Available.LibraryMetadata || got[0].Scores.LibraryMetadata != .5 || got[0].FitTier != fitClose {
+		t.Fatalf("partial recording-tag evidence was not carried to selection: %+v %v", got, err)
+	}
+	if score, available := enhancedRequestRelevance(got[0], intent); !available || score != .5 {
+		t.Fatalf("recording-tag relevance = %v,%v", score, available)
 	}
 }
 
@@ -345,5 +394,117 @@ func TestEnhancedGroupedTierUsesAnyAllowedAlternativeAndCategoryAliasesStayDirec
 	intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: "genre", Value: "rock", Scope: "journey_end"})
 	if stages := journeyStageCriteria(intent); len(stages) != 2 {
 		t.Fatalf("OR alternatives became separate sequential stages: %+v", stages)
+	}
+}
+
+func TestEnhancedJourneyReservationUsesDirectRequestEvidenceAtUnchangedFloor(t *testing.T) {
+	cat := testCatalog()
+	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{
+		"audio": completeStyleFeature("audio", "rock"),
+		"cooc":  completeStyleFeature("cooc", "classical"),
+	}}
+	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	intent := enhancedIntent(2)
+	intent.Mode = core.ModeJourney
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "rock", Scope: "journey_start"}, {Kind: "genre", Value: "classical", Scope: "journey_end"}}
+	candidates := candidatesForTracks(refs(cat, "audio", "cooc"))
+	for i := range candidates {
+		candidates[i].FitTier = fitClose
+		candidates[i].Scores.Total = .01
+		candidates[i].Scores.SemanticMatch = .01 - float64(i)*.002
+		candidates[i].Available.SemanticMatch = true
+	}
+	reserved, _, reasons, err := o.reserveJourneyStages(context.Background(), candidates, nil, intent)
+	if err != nil || len(reserved) != 2 || len(reasons) != 0 {
+		t.Fatalf("direct evidence did not preserve journey stages: reserved=%+v reasons=%+v error=%v", reserved, reasons, err)
+	}
+}
+
+func TestEnhancedJourneyReservationAllowsOverlappingPositiveStageComparisons(t *testing.T) {
+	cat := testCatalog()
+	service, _ := cachedAudioService(t, cat, "audio", "cooc", "last")
+	service.Policy = audio.Policy{}
+	intent := enhancedIntent(3)
+	intent.Mode = core.ModeJourney
+	intent.EssentialCriteria = []core.MusicalCriterion{
+		{Kind: "genre", Value: "ambient", Scope: "journey_start"},
+		{Kind: "genre", Value: "rock", Scope: "journey_via"},
+		{Kind: "genre", Value: "melodic", Scope: "journey_end"},
+	}
+	session, err := service.Begin(context.Background(), intent, cat.CatalogVersion(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	for _, track := range refs(cat, "audio", "cooc", "last") {
+		if _, err := session.Check(context.Background(), track, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
+	o.enhanced, o.bestAvailable, o.audioSession = true, true, session
+	candidates := candidatesForTracks(refs(cat, "audio", "cooc", "last"))
+	for i := range candidates {
+		candidates[i].FitTier = fitClose
+		candidates[i].Scores.Total = .01
+		candidates[i].Scores.SemanticMatch = .001 * float64(len(candidates)-i)
+		candidates[i].Available.SemanticMatch = true
+	}
+	reserved, _, reasons, err := o.reserveJourneyStages(context.Background(), candidates, nil, intent)
+	if err != nil || len(reserved) != 3 || len(reasons) != 0 {
+		t.Fatalf("overlapping direct comparisons did not cover journey: reserved=%+v reasons=%+v error=%v", reserved, reasons, err)
+	}
+}
+
+func TestEnhancedPreviewNeededOnlyForIncompleteCatalogEvidence(t *testing.T) {
+	cat := testCatalog()
+	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{"audio": completeStyleFeature("audio", "classical")}}
+	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	candidate := candidatesForTracks(refs(cat, "audio"))[0]
+	intent := enhancedIntent(1)
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "classical", Scope: "playlist"}}
+	if o.previewNeededForEnhanced(context.Background(), candidate, intent) {
+		t.Fatal("fully grounded category requested a redundant preview")
+	}
+	intent.Preferences.TextureDescriptions = []core.IntentPreference{{Value: "sparkle", Influence: core.InfluencePositive}}
+	if !o.previewNeededForEnhanced(context.Background(), candidate, intent) {
+		t.Fatal("unknown texture bypassed preview evidence")
+	}
+	intent.Preferences.TextureDescriptions = nil
+	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_vocals"}}
+	if !o.previewNeededForEnhanced(context.Background(), candidate, intent) {
+		t.Fatal("strict vocal exclusion bypassed preview evidence")
+	}
+}
+
+type compoundSupportFixture struct {
+	ports.Catalog
+	trackID string
+}
+
+func (c compoundSupportFixture) CompoundGenreSupport(_ context.Context, id string, criterion core.MusicalCriterion) bool {
+	return id == c.trackID && criterion.Kind == "genre" && criterion.Value == "ambient electronica"
+}
+
+func TestEnhancedCompoundGenreSupportStaysCloseAndCannotBypassStrictClause(t *testing.T) {
+	base := testCatalog()
+	cat := compoundSupportFixture{Catalog: base, trackID: "audio"}
+	o := New(cat, fakes.NewSimilarityEngine(base), base, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	candidate := candidatesForTracks(refs(base, "audio"))[0]
+	intent := enhancedIntent(1)
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient electronica"}}
+	intent.Preferences.TextureDescriptions = []core.IntentPreference{{Value: "gentle pulse", Influence: core.InfluencePositive}}
+	if !o.enhancedMetadataFallback(context.Background(), candidate, intent) || o.previewNeededForEnhanced(context.Background(), candidate, intent) {
+		t.Fatal("sourced compound category did not retain a bounded close suggestion")
+	}
+	if tier, detail := o.enhancedTier(context.Background(), candidate, intent); tier != fitClose || !strings.Contains(detail, "gentle pulse") {
+		t.Fatalf("unsupported texture was hidden: %s %s", tier, detail)
+	}
+	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_vocals"}}
+	if o.enhancedMetadataFallback(context.Background(), candidate, intent) || !o.previewNeededForEnhanced(context.Background(), candidate, intent) {
+		t.Fatal("partial compound support bypassed strict vocal screening")
 	}
 }

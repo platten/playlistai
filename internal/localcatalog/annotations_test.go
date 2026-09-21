@@ -39,3 +39,18 @@ func TestAnnotationMatchingDoesNotInferGenreFromArtist(t *testing.T) {
 		t.Fatal("reviewed genre/style equivalent lost")
 	}
 }
+
+func TestAnnotationMatchingReconnectsReviewedAcousticBrainzClass(t *testing.T) {
+	values := annotations(json.RawMessage(`{"AB:MOOD":"Acoustic;Not relaxed"}`))
+	matchedAcoustic, matchedWarm := false, false
+	for _, value := range values {
+		if value.SourceKey == "AB:MOOD" && value.Origin != "trusted_curated_tag" {
+			t.Fatalf("archived classifier lost provenance: %+v", value)
+		}
+		matchedAcoustic = matchedAcoustic || annotationMatches(value, core.MusicalCriterion{Kind: "texture", Value: "acoustic"})
+		matchedWarm = matchedWarm || annotationMatches(value, core.MusicalCriterion{Kind: "texture", Value: "warm"})
+	}
+	if !matchedAcoustic || matchedWarm {
+		t.Fatalf("reviewed provider mapping mismatch: acoustic=%v warm=%v values=%+v", matchedAcoustic, matchedWarm, values)
+	}
+}

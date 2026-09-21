@@ -40,7 +40,7 @@ func validateSource(source core.IntentTranslation, prompt string) error {
 			}
 		}
 		if grounding := atom.Grounding; grounding != nil {
-			if grounding.Provider != "MusicBrainz" || grounding.MatchedSpelling == "" || grounding.MatchType == "" || grounding.SnapshotVersion == "" || len(grounding.Candidates) == 0 || len(grounding.Candidates) > 64 {
+			if !core.ValidIdentityGroundingProvider(grounding.Provider) || grounding.MatchedSpelling == "" || grounding.MatchType == "" || grounding.SnapshotVersion == "" || len(grounding.Candidates) == 0 || len(grounding.Candidates) > 64 {
 				return fmt.Errorf("schema: source atom %q has invalid identity grounding", atom.ID)
 			}
 			for _, candidate := range grounding.Candidates {

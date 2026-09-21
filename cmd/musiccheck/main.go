@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,12 +17,13 @@ import (
 	"github.com/platten/playlistai/internal/audioruntime"
 	"github.com/platten/playlistai/internal/catalog"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/intent/llama"
 	"github.com/platten/playlistai/internal/intent/rules"
+	"github.com/platten/playlistai/internal/localcatalog"
 	"github.com/platten/playlistai/internal/logging"
 	"github.com/platten/playlistai/internal/ports"
-	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/reco/deejai"
 	"github.com/platten/playlistai/internal/reco/multichannel"
 	"github.com/platten/playlistai/internal/resolution"
@@ -40,6 +42,7 @@ type promptCase struct {
 	Destination     string              `json:"destination"`
 	Vocal           string              `json:"vocal"`
 	Mood            string              `json:"mood"`
+	NegativeMood    string              `json:"negativeMood"`
 	NegativeMoods   []string            `json:"negativeMoods"`
 	Texture         string              `json:"texture"`
 	Artists         []string            `json:"artists"`
@@ -51,6 +54,14 @@ type promptCase struct {
 	OnlyArtist      string              `json:"onlyArtist"`
 }
 type result struct {
+	Completed                   bool                    `json:"completed"`
+	CompletionState             string                  `json:"completionState"`
+	TimedOut                    bool                    `json:"timedOut"`
+	Identities                  runIdentities           `json:"identities"`
+	StageTimings                stageTimings            `json:"stageTimings"`
+	EvidenceCoverage            evidenceCoverage        `json:"evidenceCoverage"`
+	CacheState                  cacheState              `json:"cacheState"`
+	ProviderNotices             []string                `json:"providerNotices,omitempty"`
 	EnhancedEvidenceSHA256      string                  `json:"enhancedEvidenceSha256,omitempty"`
 	EnhancedSnapshotFingerprint string                  `json:"enhancedSnapshotFingerprint,omitempty"`
 	RecommendationMode          core.RecommendationMode `json:"recommendationMode"`
@@ -87,6 +98,13 @@ func (cachedPreviewsOnly) ResolveAudioPreview(context.Context, core.TrackRef, co
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--mert-worker" {
+		if err := audioruntime.RunMERT(os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--audio-worker" {
 		if err := audioruntime.Run(os.Args[2]); err != nil { //nolint:staticcheck // cgo worker can also return nil after clean EOF.
 			fmt.Fprintln(os.Stderr, err)
@@ -120,11 +138,17 @@ func run() error {
 	acousticBrainz := flag.Bool("acousticbrainz", true, "include optional archived AcousticBrainz evidence with -online; disable for historical baselines")
 	single := flag.String("case", "", "optional exact prompt")
 	bundle := flag.String("bundle", "", "optional parity-validated CLAP bundle; permits Deezer preview analysis")
+	mertBundle := flag.String("mert-bundle", "", "optional parity-validated MERT bundle; Enhanced Hybrid only")
 	analysisDir := flag.String("analysis-dir", "/tmp/musiccheck-analysis", "persistent derived-feature directory (no audio files)")
+	discoveryState := flag.String("discovery-state", "", "installed shared discovery state directory containing active.json")
 	count := flag.Int("count", 0, "override track count for every evaluated prompt")
 	replay := flag.String("replay", "", "reuse LLM intents and metadata from an earlier musiccheck report")
 	replayParsed := flag.Bool("replay-parsed", false, "with -replay, use raw parsed intents rather than discovered metadata for a paired mode comparison")
 	cacheOnly := flag.Bool("cached-audio-only", false, "check reusable CLAP features without retrieving new previews")
+	caseTimeout := flag.Duration("case-timeout", 120*time.Second, "hard limit for each supervised prompt")
+	cleanupTimeout := flag.Duration("cleanup-timeout", 10*time.Second, "grace period for timed-out case cleanup")
+	supervisedChild := flag.Bool("supervised-child", false, "internal: execute one supervisor-owned case")
+	cancelFile := flag.String("cancel-file", "", "internal: supervisor cancellation marker")
 	if err := flag.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -141,11 +165,47 @@ func run() error {
 	if *enhancedEvidence != "" && (mode != core.EnhancedHybrid || *online || (*bundle != "" && !*cacheOnly)) {
 		return fmt.Errorf("enhanced-evidence requires enhanced_hybrid, offline metadata, and cached-audio-only when a CLAP bundle is supplied")
 	}
-	if *count < 0 || *minimum < 1 || *minArtists < 0 || (*count > 0 && *minimum > *count) || *cacheOnly && *bundle == "" {
-		return fmt.Errorf("count must be nonnegative and at least min-tracks; min-tracks must be positive; cached-audio-only requires a bundle")
+	if *mertBundle != "" && mode != core.EnhancedHybrid {
+		return fmt.Errorf("mert-bundle requires enhanced_hybrid")
+	}
+	if *count < 0 || *minimum < 1 || *minArtists < 0 || (*count > 0 && *minimum > *count) || *cacheOnly && *bundle == "" && *mertBundle == "" {
+		return fmt.Errorf("count must be nonnegative and at least min-tracks; min-tracks must be positive; cached-audio-only requires an audio bundle")
+	}
+	if *caseTimeout <= 0 || *cleanupTimeout <= 0 || *cleanupTimeout > time.Minute {
+		return fmt.Errorf("case-timeout and cleanup-timeout must be positive; cleanup-timeout must not exceed one minute")
+	}
+	raw, err := os.ReadFile(*fixture)
+	if err != nil {
+		return err
+	}
+	var cases []promptCase
+	if err = json.Unmarshal(raw, &cases); err != nil {
+		return err
+	}
+	selected := selectedCases(cases, *single)
+	if len(selected) == 0 {
+		return fmt.Errorf("no prompt cases selected")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if *cancelFile != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		stopWatching := watchCancellationFile(ctx, *cancelFile, cancel)
+		defer stopWatching()
+	}
+	identities, err := collectRunIdentities(ctx, identityOptions{Model: *model, DiscoveryState: *discoveryState, CLAPBundle: *bundle, MERTBundle: *mertBundle})
+	if err != nil {
+		return err
+	}
+	if !*supervisedChild && len(selected) > 1 {
+		return superviseCases(ctx, selected, supervisorConfig{
+			Output: *output, Model: *model, Runtime: *runtime, ServerURL: *serverURL,
+			ContextSize: *contextSize, CaseTimeout: *caseTimeout, CleanupTimeout: *cleanupTimeout,
+			Identities: identities,
+		})
+	}
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Minute)
 	defer cancel()
 	var diagnostics *logging.Store
@@ -155,7 +215,6 @@ func run() error {
 		ctx = logging.WithDiagnostics(ctx, diagnostics)
 	}
 	var parser *llama.Parser
-	var err error
 	prior := map[string]core.MusicIntent{}
 	priorReports := map[string]result{}
 	if *replay != "" {
@@ -171,7 +230,7 @@ func run() error {
 			priorReports[r.Prompt] = r
 			if *replayParsed {
 				if r.ParsedIntent.Version == 0 {
-					return fmt.Errorf("replay report has no raw parsed intent for %q", r.Prompt)
+					continue // a timeout may synthesize a record before parsing finishes
 				}
 				prior[r.Prompt] = r.ParsedIntent
 			} else if len(r.Playlist.Tracks) > 0 {
@@ -200,11 +259,21 @@ func run() error {
 		return err
 	}
 	defer cat.Close()
-	enhancedSnapshot, enhancedHash, err := readEnhancedEvidence(*enhancedEvidence, cat.CatalogVersion())
+	var recommendationCatalog ports.Catalog = cat
+	var recommendationResolver ports.ReferenceResolver = cat
+	if *online && mode != core.DeejAIOnly {
+		dynamic, openErr := catalog.OpenDynamic(cat, cat, filepath.Join(*analysisDir, "candidate-catalog", "tracks.sqlite"))
+		if openErr != nil {
+			return openErr
+		}
+		defer dynamic.Close()
+		recommendationCatalog, recommendationResolver = dynamic, dynamic
+	}
+	enhancedSnapshot, enhancedHash, err := readEnhancedEvidence(*enhancedEvidence, recommendationResolver.CatalogVersion())
 	if err != nil {
 		return err
 	}
-	engine := multichannel.New(cat, brute.New(cat), cat, multichannel.DefaultConfig())
+	engine := multichannel.New(recommendationCatalog, brute.New(cat), recommendationResolver, multichannel.DefaultConfig())
 	if parser != nil {
 		engine.WithAnchorProposer(parser.ProposeAnchors)
 	}
@@ -217,37 +286,57 @@ func run() error {
 		defer mb.Close()
 		engine.WithCandidateSource(mb)
 	}
-	if *bundle != "" && mode != core.DeejAIOnly {
-		manifest, e := audio.ReadRuntimeBundle(*bundle)
-		if e != nil {
-			return e
+	var discovery *discoveryasset.Manager
+	if *discoveryState != "" {
+		manager, openErr := discoveryasset.Open(ctx, *discoveryState)
+		if openErr != nil {
+			return openErr
 		}
-		worker := &audio.Worker{Executable: manifest.File(*bundle, "worker"), BundleDir: *bundle, Model: manifest.Model}
-		defer func() { _ = worker.Close() }()
-		if e := worker.Health(ctx); e != nil {
-			return e
+		defer manager.Close()
+		discovery = manager
+		status := manager.Status()
+		if !status.Installed {
+			return fmt.Errorf("shared discovery state is not installed: %s", status.Error)
 		}
-		store, e := audio.OpenStore(*analysisDir)
-		if e != nil {
-			return e
-		}
-		defer func() { _ = store.Close() }()
-		service := &audio.Service{Resolver: deezer.New(deezer.Config{}), Analyzer: worker, Store: store, Policy: manifest.Policy, Authorized: true, ParityValidated: manifest.Parity.Valid()}
-		if *cacheOnly {
-			service.Resolver = cachedPreviewsOnly{}
-		}
+		engine.WithIntentOverlayProvider(func(overlayCtx context.Context, intent core.MusicIntent, base ports.Catalog, resolver ports.ReferenceResolver, retriever ports.CandidateRetriever) (multichannel.RequestOverlay, error) {
+			if intent.Controls.RecommendationMode != core.EnhancedHybrid {
+				return multichannel.RequestOverlay{Catalog: base, Resolver: resolver, Retriever: retriever}, nil
+			}
+			packs, release, pinErr := manager.Pin(overlayCtx)
+			if pinErr != nil {
+				return multichannel.RequestOverlay{}, pinErr
+			}
+			overlay, overlayErr := localcatalog.NewDiscoveryOverlay(overlayCtx, packs, base, resolver, retriever, 2)
+			if overlayErr != nil {
+				release()
+				return multichannel.RequestOverlay{}, overlayErr
+			}
+			return multichannel.RequestOverlay{Catalog: overlay.Catalog, Resolver: overlay.Resolver, Retriever: overlay.Retriever, EnableLibraryEvidence: true, Release: func() {
+				overlay.Close()
+				release()
+			}}, nil
+		})
+	}
+	if (*bundle != "" || *mertBundle != "") && mode != core.DeejAIOnly {
+		var recordings ports.CachedRecordingReader
 		if mb != nil {
-			service.Recordings = mb
+			recordings = mb
 		}
-		engine.WithAudioProvider(func() *audio.Service { return service })
-	}
-	raw, err := os.ReadFile(*fixture)
-	if err != nil {
-		return err
-	}
-	var cases []promptCase
-	if err = json.Unmarshal(raw, &cases); err != nil {
-		return err
+		enhanced, openErr := openLiveEnhanced(ctx, liveEnhancedOptions{
+			CLAPBundle: *bundle, MERTBundle: *mertBundle, AnalysisDir: *analysisDir,
+			CacheOnly: *cacheOnly, Recordings: recordings, CatalogVersion: recommendationResolver.CatalogVersion(),
+		})
+		if openErr != nil {
+			return openErr
+		}
+		defer enhanced.Close()
+		engine.WithAudioProvider(enhanced.Preview)
+		if mode == core.EnhancedHybrid {
+			engine.WithEnhancedPreviewProvider(enhanced.Preview).
+				WithEnhancedAudioProvider(enhanced.Prepare).
+				WithEnhancedAudioRefreshProvider(enhanced.Refresh).
+				WithMERTSimilaritySearchProvider(enhanced.SearchMERT)
+		}
 	}
 	results := []result{}
 	failed := false
@@ -260,7 +349,9 @@ func run() error {
 		}
 		started := time.Now()
 		fmt.Printf("Checking: %s\n", c.Prompt)
-		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly, ParseOnly: *parseOnly, Algorithm: engine.AlgorithmVersion(), Catalog: cat.CatalogVersion()}
+		caseIdentities := identities
+		caseIdentities.CatalogVersion = recommendationResolver.CatalogVersion()
+		r := result{Prompt: c.Prompt, Replayed: *replay != "", CachedAudioOnly: *cacheOnly, ParseOnly: *parseOnly, Algorithm: engine.AlgorithmVersion(), Catalog: recommendationResolver.CatalogVersion(), CompletionState: "running", Identities: caseIdentities}
 		r.RecommendationMode, r.ReplayedParsedIntent = mode, *replayParsed
 		r.EnhancedEvidenceSHA256, r.EnhancedSnapshotFingerprint = enhancedHash, enhancedSnapshot.Fingerprint()
 		if mode == core.DeejAIOnly {
@@ -273,20 +364,22 @@ func run() error {
 		if *rulesParser {
 			r.Parser = rules.New().Info()
 		}
+		parseStarted := time.Now()
 		var intent core.MusicIntent
 		var parseErr error
 		if *replay == "" && (parser != nil || *rulesParser) {
+			parserInput := prepareIntentInput(ctx, c.Prompt, discovery)
 			if *rulesParser {
-				intent, parseErr = rules.New().Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+				intent, parseErr = rules.New().Parse(ctx, parserInput)
 			} else {
-				intent, parseErr = parser.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+				intent, parseErr = parser.Parse(ctx, parserInput)
 			}
 			if parseErr != nil && ctx.Err() == nil && !*parseOnly {
 				// Match the desktop fallback, while retaining the model failure
 				// and still checking whether the fallback preserved the request.
 				r.ParserFallback = parseErr.Error()
 				fallback := rules.New()
-				intent, parseErr = fallback.Parse(ctx, ports.IntentInput{Prompt: c.Prompt})
+				intent, parseErr = fallback.Parse(ctx, parserInput)
 				r.Parser = fallback.Info()
 			}
 		} else {
@@ -299,6 +392,7 @@ func run() error {
 			r.ParserFallback = priorReports[c.Prompt].ParserFallback
 		}
 		r.ParsedIntent = intent
+		r.StageTimings.ParseMilliseconds = time.Since(parseStarted).Milliseconds()
 		fmt.Printf("  Parsed in %s\n", time.Since(started).Round(time.Millisecond))
 		if parseErr != nil {
 			r.Errors = append(r.Errors, parseErr.Error())
@@ -306,6 +400,7 @@ func run() error {
 			r.Intent = intent
 			r.Errors = append(r.Errors, checkIntent(c, intent)...)
 		} else {
+			prepareStarted := time.Now()
 			intent.VerificationPolicy = core.BestAvailable
 			intent.Controls.RecommendationMode = mode
 			r.ParserIssues = checkIntent(c, intent)
@@ -317,12 +412,13 @@ func run() error {
 			}
 			intent.Seed = "42"
 			if mb != nil {
-				intent, err = mb.PrepareMusic(ctx, intent, cat, cat, nil)
+				intent, err = mb.PrepareMusic(ctx, intent, recommendationCatalog, recommendationResolver, nil)
 				if err != nil {
 					r.Errors = append(r.Errors, err.Error())
 				}
 			}
-			intent, _ = resolution.Apply(cat, intent)
+			intent, _ = resolution.Apply(recommendationResolver, intent)
+			r.StageTimings.PrepareMilliseconds = time.Since(prepareStarted).Milliseconds()
 			// Metadata can corroborate a category omitted by the model. Check
 			// end-to-end meaning here, while retaining raw parser issues above.
 			r.Errors = append(r.Errors, checkIntent(expected, intent)...)
@@ -336,28 +432,39 @@ func run() error {
 					lastNote, lastDone = note, done
 				}
 			})
+			buildStarted := time.Now()
+			var stopChecking <-chan struct{}
+			var softTimer *time.Timer
+			if *supervisedChild {
+				softStop := make(chan struct{})
+				stopChecking = softStop
+				// Reserve the configured cleanup allowance for result assembly,
+				// report writing and the supervisor's cancellation handshake.
+				// Reference-only requests can still start optional MERT acquisition,
+				// so every supervised case
+				// receives the same graceful work budget. Already eligible tracks
+				// are retained without relaxing fit.
+				softBudget := gracefulCaseBudgetForIntent(*caseTimeout, *cleanupTimeout, time.Since(started), intent)
+				softTimer = time.AfterFunc(softBudget, func() { close(softStop) })
+			}
 			if mode == core.DeejAIOnly {
 				r.Playlist, err = deejai.BuildOnly(ctx, deejai.New(cat, brute.New(cat), cat), intent)
 			} else {
-				r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress, EnhancedAudio: enhancedSnapshot})
+				r.Playlist, err = engine.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: progress, EnhancedAudio: enhancedSnapshot, StopChecking: stopChecking})
 			}
+			if softTimer != nil {
+				softTimer.Stop()
+			}
+			r.StageTimings.BuildMilliseconds = time.Since(buildStarted).Milliseconds()
 			if err != nil {
 				r.Errors = append(r.Errors, err.Error())
 			}
 			r.Errors = append(r.Errors, checkPlaylist(r.Playlist, *minimum, intent.Controls.TotalTrackCount)...)
 			r.Errors = append(r.Errors, checkVariety(r.Playlist, c, *minArtists)...)
 			if *bundle != "" && mode != core.DeejAIOnly && len(audio.Clauses(intent)) > 0 && len(r.Playlist.Tracks) > 0 {
-				if r.Playlist.AudioEvidence == nil {
-					r.Errors = append(r.Errors, "CLAP evidence missing")
-				} else {
-					for _, track := range r.Playlist.Tracks {
-						checked := false
-						for _, a := range r.Playlist.AudioEvidence.Assessments {
-							checked = checked || a.TrackID == track.ID && a.Eligible && a.AnalysisID != ""
-						}
-						if !checked {
-							r.Errors = append(r.Errors, "selected track lacks CLAP assessment: "+track.ID)
-						}
+				for _, track := range r.Playlist.Tracks {
+					if !hasGroundedMusicalEvidence(r.Playlist, track.ID) {
+						r.Errors = append(r.Errors, "selected track lacks grounded musical-fit evidence: "+track.ID)
 					}
 				}
 			}
@@ -376,6 +483,13 @@ func run() error {
 			}
 		}
 		r.Milliseconds = time.Since(started).Milliseconds()
+		r.Completed = true
+		if len(r.Errors) > 0 {
+			r.CompletionState = "failed"
+		} else {
+			r.CompletionState = "passed"
+		}
+		populateEvidenceReport(&r)
 		results = append(results, r)
 		if diagnostics != nil {
 			rawDiagnostics, diagnosticErr := json.MarshalIndent(diagnostics.Read(0), "", "  ")
@@ -490,8 +604,9 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 			}
 		}
 		found := true
-		for _, word := range strings.Fields(strings.ToLower(c.Genre)) {
-			found = found && strings.Contains(strings.Join(words, " "), word)
+		actual := normalizeFacet(strings.Join(words, " "))
+		for _, word := range strings.Fields(normalizeFacet(c.Genre)) {
+			found = found && strings.Contains(actual, word)
 		}
 		if !found {
 			issues = append(issues, "genre not preserved")
@@ -557,7 +672,10 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 			}
 		}
 	}
-	for _, mood := range c.NegativeMoods {
+	for _, mood := range append(c.NegativeMoods, c.NegativeMood) {
+		if mood == "" {
+			continue
+		}
 		found := false
 		for _, p := range m.Preferences.Moods {
 			if p.Influence == core.InfluenceNegative && strings.EqualFold(p.Value, mood) {
@@ -569,6 +687,18 @@ func checkIntent(c promptCase, m core.MusicIntent) []string {
 		}
 	}
 	return issues
+}
+
+func normalizeFacet(value string) string {
+	value = strings.Map(func(r rune) rune {
+		switch r {
+		case '-', '‐', '‑', '‒', '–', '—':
+			return ' '
+		default:
+			return r
+		}
+	}, value)
+	return core.NormalizeIdentityPart(value)
 }
 
 // Count acceptance is separate from musical fulfillment. Never pad, retry away

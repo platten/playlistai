@@ -116,3 +116,15 @@ func TestEnhancedReferenceFloorRequiresGroundedPositiveLocalComparison(t *testin
 		t.Fatal("required anchor displaced explicit reference priority")
 	}
 }
+
+func TestEnhancedReferenceFloorAcceptsValidatedLiveMERTQuery(t *testing.T) {
+	intent := testIntent(1)
+	candidate := core.Candidate{Sources: []core.RetrievalEvidence{{Channel: ChannelMERTAudio, QueryID: "artist:origin:seed", Score: .8}}}
+	if score, ok := enhancedRequestRelevance(candidate, intent); !ok || score != .8 {
+		t.Fatalf("live MERT comparison lost: %v %v", score, ok)
+	}
+	candidate.Sources[0].QueryID = "artist:unrelated:other"
+	if _, ok := enhancedRequestRelevance(candidate, intent); ok {
+		t.Fatal("unrelated live MERT query became request evidence")
+	}
+}

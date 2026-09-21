@@ -79,6 +79,57 @@ func TestTypedSearchUsesReviewedParentMembership(t *testing.T) {
 	}
 }
 
+func TestConjunctiveTypedSearchRequiresSameRecording(t *testing.T) {
+	c, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
+		{ID: "ambient", Artist: "B", Title: "Two", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient"}`)},
+		{ID: "electronic", Artist: "C", Title: "Three", RawTags: json.RawMessage(`{"AB:GENRE":"Electronic"}`)},
+	}, nil)
+	defer manager.Close()
+	defer c.Close()
+	query := MetadataQuery{Text: "ambient electronica", AllCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "ambient"}, {Kind: "genre", Value: "electronic"}}, Limit: 5}
+	hits, err := c.Search(context.Background(), query)
+	if err != nil || len(hits) != 1 || hits[0].Track.ID != c.NamespacedID("both") {
+		t.Fatalf("conjunctive search: %+v %v", hits, err)
+	}
+}
+
+func TestArtistProfileSearchUsesExactArtistIndex(t *testing.T) {
+	c, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "one", Artist: "Axis", Title: "One"},
+		{ID: "two", Artist: "Another", Title: "Axis"},
+		{ID: "three", Artist: "Axis", Title: "Three"},
+	}, nil)
+	defer manager.Close()
+	defer c.Close()
+	query := MetadataQuery{Artist: "Axis", Limit: 2, ExcludeIDs: map[string]struct{}{c.NamespacedID("one"): {}}}
+	hits, err := c.Search(context.Background(), query)
+	if err != nil || len(hits) != 1 || hits[0].Track.ID != c.NamespacedID("three") {
+		t.Fatalf("artist index admitted title-only match or ignored exclusion: %+v %v", hits, err)
+	}
+}
+
+func TestCriterionEvidenceUsesReviewedAcousticBrainzClass(t *testing.T) {
+	c, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "acoustic", Artist: "Artist", Title: "Track", RawTags: json.RawMessage(`{"AB:MOOD":"Acoustic;Not electronic"}`)},
+		{ID: "electronic", Artist: "Other", Title: "Track", RawTags: json.RawMessage(`{"AB:MOOD":"Not acoustic;Electronic"}`)},
+	}, nil)
+	defer manager.Close()
+	defer c.Close()
+	criterion := core.MusicalCriterion{Kind: "texture", Value: "acoustic"}
+	if got := c.CriterionEvidence(context.Background(), c.NamespacedID("acoustic"), criterion); got != core.EvidenceMatch {
+		t.Fatalf("reviewed AcousticBrainz mapping unavailable: %s", got)
+	}
+	hits, err := c.Search(context.Background(), MetadataQuery{Text: "acoustic", Criterion: &criterion, Limit: 5})
+	if err != nil || len(hits) != 1 || hits[0].Track.ID != c.NamespacedID("acoustic") {
+		t.Fatalf("provider-mapped typed search included a negative class: hits=%+v err=%v", hits, err)
+	}
+	criterion.Value = "warm"
+	if got := c.CriterionEvidence(context.Background(), c.NamespacedID("acoustic"), criterion); got != core.EvidenceUnknown {
+		t.Fatalf("unrelated texture inferred: %s", got)
+	}
+}
+
 func TestOpenBuildsMissingDerivativeAndRejectsCorruptManifest(t *testing.T) {
 	for _, corrupt := range []bool{false, true} {
 		t.Run(map[bool]string{false: "missing", true: "corrupt"}[corrupt], func(t *testing.T) {

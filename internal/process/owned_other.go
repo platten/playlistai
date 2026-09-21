@@ -2,8 +2,11 @@
 
 package process
 
-import "os/exec"
+import (
+	"os/exec"
+	"syscall"
+)
 
-// Owned applies the platform's managed background-process policy. Platforms
-// without a parent-death primitive still rely on pipes and explicit reap.
-func Owned(cmd *exec.Cmd) { Background(cmd) }
+// Owned isolates the helper in a process group. Platforms without Linux's
+// parent-death signal still receive explicit group interruption and reaping.
+func Owned(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }

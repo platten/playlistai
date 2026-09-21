@@ -39,6 +39,69 @@ func TestRecommendationPoolBoundsByEvidenceBeforeProviderOrder(t *testing.T) {
 	}
 }
 
+func TestInstrumentalKnowledgePrecedesBroadRetrievalInsideAnalysisBound(t *testing.T) {
+	cat := testCatalog()
+	intent := enhancedIntent(2)
+	intent.Preferences.VocalPreference = &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}
+	meta, _ := cat.Meta("audio")
+	intent.Knowledge = &core.KnowledgeSnapshot{Candidates: []core.TrackRef{meta.Ref}}
+	input := candidatesForTracks(refs(cat, "audio", "cooc", "last"))
+	input[0].Scores.RetrievalFusion = .1
+	input[1].Scores.RetrievalFusion = .9
+	input[2].Scores.RetrievalFusion = .8
+	got, err := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).prepareRecommendationPool(
+		context.Background(), input, ports.RetrievalRequest{Intent: intent, AttemptedIDs: map[string]struct{}{}},
+		newEligibility(intent, nil, nil), nil, 2,
+	)
+	if err != nil || len(got) < 2 || got[0].Track.ID != "audio" {
+		t.Fatalf("instrumental evidence candidate was hidden: %s %v", candidateIDs(got), err)
+	}
+}
+
+func TestJourneyCandidateSupplyRoundRobinsSparseStagesBeforeAnalysis(t *testing.T) {
+	intent := enhancedIntent(6)
+	intent.Mode = core.ModeJourney
+	intent.EssentialCriteria = []core.MusicalCriterion{
+		{Kind: "genre", Value: "ambient electronic", Scope: "journey_start"},
+		{Kind: "genre", Value: "downtempo", Scope: "journey_via"},
+		{Kind: "genre", Value: "melodic house", Scope: "journey_end"},
+	}
+	makeCandidate := func(id, query string) core.Candidate {
+		return core.Candidate{Track: core.TrackRef{ID: id}, Sources: []core.RetrievalEvidence{{Channel: "library_metadata", QueryID: query}}}
+	}
+	input := []core.Candidate{
+		makeCandidate("d1", "criterion:genre:downtempo"), makeCandidate("d2", "criterion:genre:downtempo"),
+		makeCandidate("d3", "criterion:genre:downtempo"), makeCandidate("a1", "metadata:ambient"),
+		makeCandidate("h1", "metadata:house"), makeCandidate("other", "metadata:jazz"),
+	}
+	got := prioritizeJourneySupply(input, intent)
+	if len(got) != len(input) || got[0].Track.ID != "a1" || got[1].Track.ID != "d1" || got[2].Track.ID != "h1" {
+		t.Fatalf("journey supply was not stage-balanced: %s", candidateIDs(got))
+	}
+}
+
+func TestEnhancedRecommendationPoolLooksPastConcentratedArtistPage(t *testing.T) {
+	cat, _, retriever := recommendationPoolFixture(t, 12, 0,
+		"Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A",
+		"Artist B", "Artist C", "Artist D", "Artist E")
+	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
+	engine.retriever = retriever
+	intent := poolIntent(6)
+	intent.VerificationPolicy = core.BestAvailable
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	got, err := engine.prepareRecommendationPool(context.Background(), nil, ports.RetrievalRequest{Intent: intent, AttemptedIDs: map[string]struct{}{}}, newEligibility(intent, nil, nil), nil, 8)
+	if err != nil || len(got) != 6 || len(retriever.calls) < 2 {
+		t.Fatalf("pool=%v calls=%d err=%v", candidateIDs(got), len(retriever.calls), err)
+	}
+	uses := map[string]int{}
+	for _, candidate := range got {
+		uses[candidate.Track.Artist]++
+	}
+	if uses["Artist A"] > 2 || len(uses) < 5 {
+		t.Fatalf("concentrated page hid alternatives: %+v", uses)
+	}
+}
+
 func (r *poolRetriever) Retrieve(_ context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	copyRequest := request
 	copyRequest.AttemptedIDs = make(map[string]struct{}, len(request.AttemptedIDs))
@@ -266,7 +329,7 @@ func TestRecommendationPoolPreservesDiversityBeforeEarlyStop(t *testing.T) {
 	intent := poolIntent(10)
 	intent.Controls.ArtistDiversity = 1
 	got, err := engine.Build(context.Background(), intent)
-	if err != nil || len(got.Tracks) != 10 || len(retriever.calls) != 1 || len(got.AudioEvidence.Assessments) != 10 {
+	if err != nil || len(got.Tracks) != 10 || len(retriever.calls) != 2 || len(got.AudioEvidence.Assessments) != 10 {
 		t.Fatalf("tracks=%d calls=%d err=%v", len(got.Tracks), len(retriever.calls), err)
 	}
 	counts := map[string]int{}
@@ -299,7 +362,7 @@ func TestRecommendationShortlistDoesNotEnforceProvisionalFloor(t *testing.T) {
 	}
 }
 
-func TestRecommendationPoolKeepsSearchingForLaterJourneyStage(t *testing.T) {
+func TestRecommendationPoolSurfacesLaterJourneyStageFromRetrievedUnion(t *testing.T) {
 	cat, service, retriever := recommendationPoolFixture(t, 6, 4)
 	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithCandidateSource(&fixtureDiscovery{}).WithAudioProvider(func() *audio.Service { return service })
 	engine.retriever = retriever
@@ -307,11 +370,93 @@ func TestRecommendationPoolKeepsSearchingForLaterJourneyStage(t *testing.T) {
 	intent.Mode = core.ModeJourney
 	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "style", Value: "rock", Scope: "journey_start"}, {Kind: "style", Value: "electronic", Scope: "journey_end"}}
 	got, err := engine.Build(context.Background(), intent)
-	if err != nil || len(got.Tracks) != 2 || got.Outcome.State != core.OutcomeFulfilled || len(retriever.calls) != 3 || len(got.AudioEvidence.Assessments) != 5 {
-		t.Fatalf("incomplete journey stopped early: tracks=%v calls=%d outcome=%+v err=%v", got.Tracks, len(retriever.calls), got.Outcome, err)
+	if err != nil || len(got.Tracks) != 2 || got.Outcome.State != core.OutcomeFulfilled || len(retriever.calls) != 1 || len(got.AudioEvidence.Assessments) != 5 {
+		t.Fatalf("incomplete journey stopped early: tracks=%v calls=%d assessments=%d outcome=%+v err=%v", got.Tracks, len(retriever.calls), len(got.AudioEvidence.Assessments), got.Outcome, err)
 	}
 	if got.Tracks[0].ID >= "p004" || got.Tracks[1].ID < "p004" {
 		t.Fatalf("journey order lost: %v", got.Tracks)
+	}
+}
+
+func TestGroundedJourneySupplyPrecedesBroaderDiscoveryAndBalancesStages(t *testing.T) {
+	cat := testCatalog()
+	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{
+		"audio": completeStyleFeature("audio", "acoustic folk"),
+		"cooc":  completeStyleFeature("cooc", "folk rock"),
+		"last":  completeStyleFeature("last", "alternative rock"),
+	}}
+	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	o.enhanced, o.bestAvailable = true, true
+	intent := enhancedIntent(3)
+	intent.Mode = core.ModeJourney
+	intent.EssentialCriteria = []core.MusicalCriterion{
+		{Kind: "genre", Value: "acoustic folk", Scope: "journey_start"},
+		{Kind: "genre", Value: "folk rock", Scope: "journey_via"},
+		{Kind: "genre", Value: "alternative rock", Scope: "journey_end"},
+	}
+	input := candidatesForTracks(refs(cat, "other", "audio", "cooc", "last"))
+	got := o.prioritizeGroundedJourneySupply(context.Background(), input, intent)
+	if ids := candidateIDs(got[:3]); ids != "audio,cooc,last" {
+		t.Fatalf("grounded stages did not lead the bounded queue: %s", ids)
+	}
+}
+
+func TestGroundedRequestSupplyPrecedesLexicalLeads(t *testing.T) {
+	cat, intent := localPriorityFixture()
+	intent.EssentialCriteria = nil
+	input := candidatesForTracks(refs(cat, "unknown", "pack:fixture:local:one"))
+	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
+	o.enhanced = true
+	got := o.prioritizeGroundedRequestSupply(context.Background(), input, intent)
+	if len(got) != 2 || got[0].Track.ID != "pack:fixture:local:one" || got[1].Track.ID != "unknown" {
+		t.Fatalf("grounded request supply was not prioritized: %+v", got)
+	}
+}
+
+func TestInstrumentalKnowledgeLeavesRoomForInstalledCandidates(t *testing.T) {
+	intent := enhancedIntent(5)
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "vocal", Value: "instrumental", Strength: "required"}}
+	intent.Preferences.VocalPreference = &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}
+	intent.Knowledge = &core.KnowledgeSnapshot{Candidates: []core.TrackRef{
+		{ID: "knowledge-1"}, {ID: "knowledge-2"}, {ID: "knowledge-3"}, {ID: "knowledge-4"},
+		{ID: "knowledge-5"}, {ID: "knowledge-6"}, {ID: "knowledge-7"}, {ID: "knowledge-8"},
+	}}
+	input := candidatesForTracks([]core.TrackRef{
+		{ID: "knowledge-1"}, {ID: "knowledge-2"}, {ID: "knowledge-3"}, {ID: "knowledge-4"},
+		{ID: "knowledge-5"}, {ID: "knowledge-6"}, {ID: "knowledge-7"}, {ID: "knowledge-8"},
+		{ID: "installed-1"}, {ID: "installed-2"},
+	})
+	got, prefix := prioritizeInstrumentalKnowledgePrefix(input, intent)
+	if prefix != 5 || len(got) != len(input) || got[5].Track.ID != "installed-1" || got[len(got)-1].Track.ID != "knowledge-8" {
+		t.Fatalf("provider instrumental leads consumed bounded pool: prefix=%d candidates=%s", prefix, candidateIDs(got))
+	}
+}
+
+func TestInstrumentalKnowledgeCandidatesEnterInitialPoolWithProvenance(t *testing.T) {
+	intent := enhancedIntent(5)
+	intent.Preferences.VocalPreference = &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}
+	intent.Knowledge = &core.KnowledgeSnapshot{Candidates: []core.TrackRef{{ID: "one"}, {ID: "two"}}}
+	got := instrumentalKnowledgeCandidates(intent)
+	if len(got) != 2 || got[0].Track.ID != "one" || len(got[0].Sources) != 1 || got[0].Sources[0].Channel != "metadata_discovery" || got[0].Sources[0].QueryID != "instrumental" || got[1].Sources[0].Rank != 2 {
+		t.Fatalf("prepared instrumental candidates lost: %+v", got)
+	}
+	intent.Preferences.VocalPreference = nil
+	if got := instrumentalKnowledgeCandidates(intent); len(got) != 0 {
+		t.Fatalf("ordinary knowledge candidates bypassed the stream: %+v", got)
+	}
+}
+
+func TestInstrumentalCandidateAnchorsWaitForIterativeScreening(t *testing.T) {
+	intent := enhancedIntent(5)
+	intent.Preferences.VocalPreference = &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"}
+	intent.Knowledge = &core.KnowledgeSnapshot{Candidates: []core.TrackRef{{ID: "candidate"}}}
+	intent.InferredAnchors = []core.InferredAnchor{
+		{Reference: core.IntentReference{TrackID: "candidate"}, Role: "online instrumental candidate; requires CLAP screening"},
+		{Reference: core.IntentReference{TrackID: "named"}, Role: "explicit context"},
+	}
+	got := deferInstrumentalCandidateAnchors(intent)
+	if len(got.InferredAnchors) != 1 || got.InferredAnchors[0].Reference.TrackID != "named" || len(got.AnchorAttempts) != 1 || got.AnchorAttempts[0].Reference.TrackID != "candidate" {
+		t.Fatalf("unscreened instrumental anchor was retained: %+v", got)
 	}
 }
 

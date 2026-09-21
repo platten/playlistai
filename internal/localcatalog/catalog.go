@@ -23,6 +23,7 @@ import (
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
+	"github.com/platten/playlistai/internal/searchwork"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
@@ -358,9 +359,36 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 	if query.Limit > 10_000 {
 		query.Limit = 10_000
 	}
+	if query.Artist != "" {
+		refs, err := c.artistRecordings(ctx, query.Artist, -1)
+		if err != nil {
+			return nil, err
+		}
+		hits := make([]Hit, 0, min(len(refs), query.Limit))
+		for _, ref := range refs {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			if _, excluded := query.ExcludeIDs[ref.ID]; excluded {
+				continue
+			}
+			track, found, err := c.Lookup(ctx, ref.ID)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return nil, errors.New("localcatalog: artist index refers to a missing track")
+			}
+			hits = append(hits, Hit{Track: track, Evidence: Evidence{Channel: MetadataChannel, Rank: len(hits) + 1, Score: 1, QueryID: query.Artist, Provenance: c.provenance}})
+			if len(hits) >= query.Limit {
+				break
+			}
+		}
+		return hits, nil
+	}
 	normalized := normalizeUnicode(query.Text)
 	terms := strings.Fields(normalized)
-	if len(terms) == 0 && query.Criterion == nil {
+	if len(terms) == 0 && query.Criterion == nil && len(query.AllCriteria) == 0 {
 		return []Hit{}, nil
 	}
 	// Keep the generated join bounded and comfortably below SQLite's host
@@ -373,6 +401,12 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		return nil, err
 	}
 	defer done()
+
+	releaseCPU, err := searchwork.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseCPU()
 
 	type scored struct {
 		track librarypack.Track
@@ -393,7 +427,30 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		arguments = append(arguments, term, term+"\U0010ffff")
 	}
 	querySQL += " ORDER BY t0.id"
-	if query.Criterion != nil {
+	if len(query.AllCriteria) > 0 {
+		if len(query.AllCriteria) > 8 {
+			return nil, errors.New("localcatalog: too many conjunctive criteria")
+		}
+		querySQL = "SELECT t0.id FROM terms t0"
+		arguments = arguments[:0]
+		for index, criterion := range query.AllCriteria {
+			if !supportsDirectAnnotationCriterion(criterion) {
+				return nil, errors.New("localcatalog: conjunctive criterion has no posting")
+			}
+			if index > 0 {
+				querySQL += fmt.Sprintf(" JOIN terms t%d ON t%d.id=t0.id", index, index)
+			}
+			arguments = append(arguments, criterionPostingTerm(criterion))
+		}
+		querySQL += " WHERE "
+		for index := range query.AllCriteria {
+			if index > 0 {
+				querySQL += " AND "
+			}
+			querySQL += fmt.Sprintf("t%d.term=?", index)
+		}
+		querySQL += " ORDER BY t0.id"
+	} else if query.Criterion != nil && supportsDirectAnnotationCriterion(*query.Criterion) {
 		querySQL = "SELECT id FROM terms WHERE term=? ORDER BY id"
 		arguments = []any{criterionPostingTerm(*query.Criterion)}
 	}
@@ -418,15 +475,38 @@ func (c *Catalog) Search(ctx context.Context, query MetadataQuery) ([]Hit, error
 		if _, excluded := query.ExcludeIDs[id]; excluded {
 			continue
 		}
+		if len(query.AllCriteria) > 0 {
+			valid := true
+			for _, criterion := range query.AllCriteria {
+				if annotationCriterionEvidence(annotations(track.RawTags), criterion) != core.EvidenceMatch {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				continue
+			}
+			best = append(best, scored{track: track, score: 1})
+			if len(best) >= query.Limit {
+				break
+			}
+			continue
+		}
 		if query.Criterion != nil {
 			if annotationCriterionEvidence(annotations(track.RawTags), *query.Criterion) != core.EvidenceMatch {
 				continue
 			}
+			// A typed posting already establishes the requested annotation.
+			// It is a bounded retrieval page, not a learned free-text ranking:
+			// scanning every matching recording to refine its metadata score can
+			// consume the entire prompt budget for common genres.
+			best = append(best, scored{track: track, score: 1})
+			if len(best) >= query.Limit {
+				break
+			}
+			continue
 		}
 		textScore, textOK := metadataScore(normalized, terms, track)
-		if query.Criterion != nil {
-			textScore, textOK = 1, true
-		}
 		learnedScore, learnedOK := c.learnedMetadataScore(ctx, generation, normalized, track)
 		if textOK || learnedOK {
 			score := textScore

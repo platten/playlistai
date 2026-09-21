@@ -20,6 +20,19 @@ type artistRecordingFixture struct {
 	reads int
 }
 
+func TestInstrumentalDiscoveryRetainsRequestedGenresAndVocalConstraint(t *testing.T) {
+	client := &Client{}
+	cat := fakes.NewCatalog(2, fakes.CatalogTrack{ID: "a", Display: "A - One"})
+	intent := core.MusicIntent{Seed: "42", Preferences: core.SemanticPreferences{
+		Genres:          []core.IntentPreference{{Value: "ambient", Influence: core.InfluencePositive}},
+		VocalPreference: &core.IntentPreference{Value: "instrumental", Influence: core.InfluencePositive, Strength: "required"},
+	}}
+	stream, ok := client.OpenCandidates(intent, cat, cat).(*candidateStream)
+	if !ok || len(stream.genres) != 2 || stream.genres[0] != "instrumental" || stream.genres[1] != "ambient" {
+		t.Fatalf("strict instrumental discovery dimensions = %+v", stream)
+	}
+}
+
 func (c *artistRecordingFixture) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

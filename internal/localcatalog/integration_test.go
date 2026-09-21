@@ -23,6 +23,86 @@ func (testBase) ID(i int) string {
 	}
 	return ""
 }
+
+func TestRecommendationQueriesUseCompoundCategoryTermsOnlyForDiscovery(t *testing.T) {
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{
+		{Kind: "genre", Value: "ambient electronic", Scope: "journey_start"},
+		{Kind: "genre", Value: "melodic house", Scope: "journey_end"},
+	}}
+	queries := recommendationQueries(ports.RetrievalRequest{Intent: intent})
+	typed, discovery := map[string]bool{}, map[string]bool{}
+	for _, query := range queries {
+		if query.Metadata == nil {
+			continue
+		}
+		if query.Metadata.Criterion == nil {
+			discovery[query.Metadata.Text] = true
+		} else {
+			typed[query.Metadata.Text] = true
+		}
+	}
+	if !typed["ambient electronic"] || !typed["melodic house"] || !discovery["ambient"] || !discovery["electronic"] || !discovery["melodic"] || !discovery["house"] {
+		t.Fatalf("compound category queries lost exact evidence or broad supply: typed=%v discovery=%v", typed, discovery)
+	}
+}
+
+func TestRecommendationQueriesUseReviewedCompoundComponentsAsLeads(t *testing.T) {
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "ambient electronica", ConceptID: "genre.ambient-electronica"}}}
+	queries := recommendationQueries(ports.RetrievalRequest{Intent: intent})
+	components := map[string]bool{}
+	for _, query := range queries {
+		if query.Metadata != nil && query.Metadata.Criterion != nil {
+			components[query.Metadata.Criterion.Value] = true
+		}
+	}
+	if !components["ambient electronica"] || !components["ambient"] || !components["electronica"] || !components["electronic"] {
+		t.Fatalf("reviewed compound components were unavailable for discovery: %v", components)
+	}
+}
+
+func TestRecommendationQueriesDoNotDuplicateBroadTypedGenreAsFreeText(t *testing.T) {
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "electronic"}}}
+	queries := recommendationQueries(ports.RetrievalRequest{Intent: intent})
+	typed, freeText := false, false
+	for _, query := range queries {
+		if query.Metadata == nil || query.Metadata.Text != "electronic" {
+			continue
+		}
+		typed = typed || query.Metadata.Criterion != nil
+		freeText = freeText || query.Metadata.Criterion == nil
+	}
+	if !typed || freeText {
+		t.Fatalf("common genre lost indexed evidence or retained exhaustive free text: typed=%v free=%v", typed, freeText)
+	}
+}
+
+func TestRecommendationQueriesUseDescriptivePreferencesOnlyForDiscovery(t *testing.T) {
+	intent := core.MusicIntent{Preferences: core.SemanticPreferences{
+		Moods:               []core.IntentPreference{{Value: "gentle", Influence: core.InfluencePositive}},
+		TextureDescriptions: []core.IntentPreference{{Value: "warm and acoustic", Influence: core.InfluencePositive}},
+	}}
+	queries := recommendationQueries(ports.RetrievalRequest{Intent: intent})
+	typed, discovery := map[string]bool{}, map[string]bool{}
+	for _, query := range queries {
+		if query.Metadata == nil {
+			continue
+		}
+		if query.Metadata.Criterion == nil {
+			discovery[query.Metadata.Text] = true
+		} else {
+			typed[query.Metadata.Text] = true
+		}
+	}
+	if !typed["gentle"] {
+		t.Fatalf("supported mood lost exact evidence query: typed=%v", typed)
+	}
+	if typed["warm and acoustic"] {
+		t.Fatalf("unsupported texture was treated as annotation evidence: typed=%v", typed)
+	}
+	if !discovery["gentle"] || !discovery["warm and acoustic"] || !discovery["warm"] || !discovery["acoustic"] {
+		t.Fatalf("descriptive preference supply missing: discovery=%v", discovery)
+	}
+}
 func (testBase) RowOf(id string) (int, bool) { return 0, id == "bundled" }
 func (testBase) Meta(id string) (core.TrackMeta, bool) {
 	if id == "bundled" {

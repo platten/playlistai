@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/platten/playlistai/internal/ports"
+	"github.com/platten/playlistai/internal/searchwork"
 )
 
 const dequantScale = 1.0 / 127.0
@@ -58,6 +59,9 @@ func NewWithWorkers(cat ports.Catalog, workers int) *Engine {
 
 // Len implements ports.SimilarityEngine.
 func (e *Engine) Len() int { return e.n }
+
+// ConcurrentSearch advertises independent read-only scan support.
+func (e *Engine) ConcurrentSearch() bool { return true }
 
 // Search implements ports.SimilarityEngine. Results are score-descending with
 // ties broken by ascending row, so the ordering is deterministic.
@@ -120,6 +124,11 @@ func (e *Engine) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.M
 }
 
 func (e *Engine) searchRange(ctx context.Context, q ports.SimilarityQuery, excludeRows map[int]struct{}, useAudio, useTrack bool, w0, w1 float32, start, end, k int) ([]ports.Match, error) {
+	release, err := searchwork.Acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	h := make(worstFirst, 0, k)
 	for row := start; row < end; row++ {
 		if row&1023 == 0 {

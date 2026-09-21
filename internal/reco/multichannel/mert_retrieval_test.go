@@ -2,7 +2,9 @@ package multichannel
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -12,6 +14,18 @@ type mertRefillRetriever struct {
 	cat   ports.Catalog
 	pages [][]string
 	calls int
+}
+
+func TestPrimaryMERTQueriesBoundsLiveWorkPerReferenceGroup(t *testing.T) {
+	queries := []core.MERTSimilarityQuery{
+		{GroupID: "artist:a", Track: core.TrackRef{ID: "a-low"}, Weight: .1},
+		{GroupID: "artist:b", Track: core.TrackRef{ID: "b"}, Weight: 1},
+		{GroupID: "artist:a", Track: core.TrackRef{ID: "a-high"}, Weight: .9},
+	}
+	got := primaryMERTQueries(queries)
+	if len(got) != 2 || got[0].Track.ID != "a-high" || got[1].Track.ID != "b" {
+		t.Fatalf("queries=%+v", got)
+	}
 }
 
 func (r *mertRefillRetriever) Retrieve(_ context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
@@ -102,6 +116,34 @@ func TestEnhancedHybridUsesDeejAIRefillWithoutMERTCoverage(t *testing.T) {
 	}
 	if len(playlist.Tracks) != 3 || retriever.calls < 3 {
 		t.Fatalf("tracks=%v Deej-AI pages=%d", playlist.Tracks, retriever.calls)
+	}
+}
+
+func TestMERTSearchHasIndependentBudgetAndProviderExhaustionFallsBack(t *testing.T) {
+	cat, _ := enhancedFixture(t)
+	retriever := &mertRefillRetriever{cat: cat, pages: [][]string{{"a"}, {"b"}}}
+	engine := New(cat, nil, cat, DefaultConfig())
+	engine.retriever = retriever
+	engine.WithMERTSimilaritySearchProvider(func(ctx context.Context, _ core.MusicIntent, _ core.TasteProfile, _ []core.MERTSimilarityQuery, _ map[string]struct{}, _ int) (*core.MERTSimilaritySearch, error) {
+		deadline, ok := ctx.Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining <= 0 || remaining > mertSearchBudget {
+			t.Fatalf("MERT context has no independent budget: deadline=%v remaining=%v", ok, remaining)
+		}
+		return nil, context.DeadlineExceeded
+	})
+	intent := testIntent(2)
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	playlist, err := engine.Build(context.Background(), intent)
+	if err != nil || len(playlist.Tracks) != 2 {
+		t.Fatalf("optional MERT exhaustion blocked fallback: tracks=%v error=%v", playlist.Tracks, err)
+	}
+	found := false
+	for _, notice := range playlist.Notices {
+		found = found || notice.Code == "mert_search_incomplete"
+	}
+	if !found || errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("missing MERT exhaustion notice: %+v error=%v", playlist.Notices, err)
 	}
 }
 

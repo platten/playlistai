@@ -22,7 +22,10 @@ func (s *candidateStream) packDiscoveryArtists(ctx context.Context) []core.Genre
 		budget = &knowledgeBudget{}
 		ctx = context.WithValue(ctx, knowledgeBudgetKey{}, budget)
 	}
-	ctx = context.WithValue(ctx, contextRequestLimitKey{}, budget.requests+contextRequests)
+	budget.mu.Lock()
+	limit := budget.requests + contextRequests
+	budget.mu.Unlock()
+	ctx = context.WithValue(ctx, contextRequestLimitKey{}, limit)
 	var result []core.GenreArtist
 	seen := map[string]bool{}
 	appendArtist := func(artist core.GenreArtist) {

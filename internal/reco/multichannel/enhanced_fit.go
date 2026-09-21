@@ -62,16 +62,23 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 			return nil, report, err
 		}
 		eligible, allMatched := true, len(groups) > 0
+		metadataMatched := 0
+		metadata, metadataAvailable := o.knowledgeTrack(candidate.Track.ID)
 		stages, failedStages, matchedStages := map[string]bool{}, map[string]bool{}, map[string]bool{}
 		for _, group := range groups {
 			state := o.criterionGroupState(ctx, candidate.Track.ID, group)
 			required := false
+			metadataGroupMatched := false
 			for _, c := range group {
 				required = required || requiredCriterion(c)
+				metadataGroupMatched = metadataGroupMatched || metadataAvailable && o.recordingTagCriterion(metadata, c) == core.EvidenceMatch
 				if o.bestCriterion(ctx, candidate.Track.ID, c) == core.EvidenceMatch {
 					report.Matched[criterionKey(c)]++
 					report.Scores[candidate.Track.ID] = 1
 				}
+			}
+			if metadataGroupMatched {
+				metadataMatched++
 			}
 			fails := state == core.EvidenceMismatch || required && state != core.EvidenceMatch
 			scope := group[0].Scope
@@ -105,6 +112,10 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 		if !eligible {
 			continue
 		}
+		if metadataMatched > 0 && len(groups) > 0 {
+			candidate.Available.LibraryMetadata = true
+			candidate.Scores.LibraryMetadata = max(candidate.Scores.LibraryMetadata, float64(metadataMatched)/float64(len(groups)))
+		}
 		candidate.MusicalFit, candidate.FitTier = core.EvidenceUnknown, fitClose
 		candidate.MatchDetail = "Close suggestion; some requested characteristics have incomplete evidence."
 		if allMatched {
@@ -125,6 +136,9 @@ func (o *Orchestrator) enhancedSupport(ctx context.Context, candidate core.Candi
 		if o.bestCriterion(ctx, candidate.Track.ID, c) == core.EvidenceMatch {
 			return true
 		}
+		if o.compoundGenreSupport(ctx, candidate.Track.ID, c) {
+			return true
+		}
 	}
 	if o.audioSession != nil {
 		if a, ok := o.audioSession.Assessment(candidate.Track.ID); ok && a.AnalysisID != "" {
@@ -139,11 +153,23 @@ func (o *Orchestrator) enhancedSupport(ctx context.Context, candidate core.Candi
 	return candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch > max(0, candidate.Scores.SemanticNegativeMatch)
 }
 
+func (o *Orchestrator) compoundGenreSupport(ctx context.Context, id string, criterion core.MusicalCriterion) bool {
+	if support, ok := o.cat.(interface {
+		CompoundGenreSupport(context.Context, string, core.MusicalCriterion) bool
+	}); ok {
+		return support.CompoundGenreSupport(ctx, id, criterion)
+	}
+	return false
+}
+
 // Direct request comparisons, without taste, exposure, retrieval frequency or
 // optional DSP/MERT bonuses. The existing selection-floor parameters are an
 // engineering ranking guard, never a calibrated musical-fit claim.
 func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent) (float64, bool) {
 	best, available := 0.0, false
+	if candidate.Available.LibraryMetadata {
+		best, available = candidate.Scores.LibraryMetadata, true
+	}
 	references := intent.References
 	hasPositive := false
 	for _, ref := range references {
@@ -164,17 +190,22 @@ func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent)
 	// a taste/ownership bonus or categorical musical proof. Keep its native
 	// cosine scale and require provenance plus an explicit positive anchor.
 	for _, source := range candidate.Sources {
-		if source.Channel != "library_mert" || source.LibrarySource == nil || source.LibrarySource.SpaceID == "" || math.IsNaN(source.Score) || math.IsInf(source.Score, 0) {
+		liveMERT := source.Channel == ChannelMERTAudio
+		libraryMERT := source.Channel == "library_mert" && source.LibrarySource != nil && source.LibrarySource.SpaceID != ""
+		if (!liveMERT && !libraryMERT) || math.IsNaN(source.Score) || math.IsInf(source.Score, 0) {
 			continue
 		}
 		for _, ref := range references {
 			if ref.Influence == core.InfluenceNegative {
 				continue
 			}
-			matches := ref.TrackID == source.QueryID && ref.TrackID != ""
+			matchesQuery := func(trackID string) bool {
+				return trackID != "" && (trackID == source.QueryID || liveMERT && strings.HasSuffix(source.QueryID, ":"+trackID))
+			}
+			matches := matchesQuery(ref.TrackID)
 			if ref.Resolution != nil && ref.Resolution.Selected != nil {
 				for _, rep := range ref.Resolution.Selected.Representatives {
-					matches = matches || rep.TrackID == source.QueryID && rep.Weight > 0
+					matches = matches || rep.Weight > 0 && matchesQuery(rep.TrackID)
 				}
 			}
 			if matches && (!available || source.Score > best) {
@@ -211,6 +242,48 @@ func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent)
 		available = true
 	}
 	return best, available
+}
+
+// CLAP bundles expose cosine comparisons, not probabilities or a globally
+// calibrated relevance scale. Preserve their direct-evidence ordering by
+// expressing positive comparisons relative to the best observed comparison in
+// the request pool. Non-positive and unsupported candidates stay below the
+// unchanged floor; stronger metadata and reference scores keep native values.
+func enhancedRequestRelevances(candidates []core.Candidate, intent core.MusicIntent) map[int]struct {
+	value float64
+	ok    bool
+} {
+	type relevance struct {
+		value float64
+		ok    bool
+	}
+	values := make([]relevance, len(candidates))
+	bestSemantic := 0.0
+	for i, candidate := range candidates {
+		values[i].value, values[i].ok = enhancedRequestRelevance(candidate, intent)
+		if candidate.Available.SemanticMatch {
+			direct := candidate.Scores.SemanticMatch - max(0, candidate.Scores.SemanticNegativeMatch)
+			bestSemantic = max(bestSemantic, direct)
+		}
+	}
+	out := make(map[int]struct {
+		value float64
+		ok    bool
+	}, len(values))
+	for i, item := range values {
+		if bestSemantic > 0 && candidates[i].Available.SemanticMatch {
+			direct := candidates[i].Scores.SemanticMatch - max(0, candidates[i].Scores.SemanticNegativeMatch)
+			if direct > 0 {
+				item.value = max(item.value, direct/bestSemantic)
+				item.ok = true
+			}
+		}
+		out[i] = struct {
+			value float64
+			ok    bool
+		}{item.value, item.ok}
+	}
+	return out
 }
 
 func enhancedCategoryMatches(want, actual string, graph core.GenreGraph) bool {
@@ -262,6 +335,9 @@ func (o *Orchestrator) enhancedMetadataFallback(ctx context.Context, candidate c
 	for i, clause := range audio.Clauses(intent) {
 		state := o.clauseFitState(ctx, candidate.Track.ID, clause, preview)
 		anyMatch = anyMatch || !clause.Negative && state == core.EvidenceMatch
+		if !clause.Negative && !clause.Strict && o.compoundGenreSupport(ctx, candidate.Track.ID, core.MusicalCriterion{Kind: clause.Kind, Value: clause.Text}) {
+			anyMatch = true
+		}
 		if strings.HasPrefix(clause.Scope, "journey_") {
 			stages[clause.Scope] = true
 		}
@@ -417,7 +493,40 @@ func (o *Orchestrator) enhancedTier(ctx context.Context, candidate core.Candidat
 		}
 		return fitClose, "Close suggestion; incomplete or conflicting evidence for " + strings.Join(gaps, ", ") + "."
 	}
-	return fitStrong, "Grounded evidence supports the requested musical characteristics; preview evidence covers only the sampled audio."
+	if preview.AnalysisID != "" {
+		return fitStrong, "Grounded evidence supports the requested musical characteristics; preview evidence covers only the sampled audio."
+	}
+	return fitStrong, "Grounded catalog evidence supports the requested musical characteristics."
+}
+
+// previewNeededForEnhanced avoids remote preview acquisition only when the
+// request-owned catalog evidence already proves every applicable facet. Close
+// matches and strict vocal exclusions still require the normal preview path.
+func (o *Orchestrator) previewNeededForEnhanced(ctx context.Context, candidate core.Candidate, intent core.MusicIntent) bool {
+	if !o.enhanced || !o.bestAvailable {
+		return true
+	}
+	// Recording metadata may corroborate an instrumental request, but the
+	// available preview must still be screened so detected vocals take
+	// precedence over that tag.
+	if core.WantsInstrumental(intent) {
+		return true
+	}
+	// Conjunctive recording tags can admit a labeled close fit without
+	// exhausting the prompt budget on preview acquisition. Strict and
+	// negative clauses retain their ordinary verification path.
+	if o.enhancedMetadataFallback(ctx, candidate, intent) {
+		for _, clause := range audio.Clauses(intent) {
+			if clause.Negative || clause.Strict {
+				return true
+			}
+			if o.compoundGenreSupport(ctx, candidate.Track.ID, core.MusicalCriterion{Kind: clause.Kind, Value: clause.Text}) {
+				return false
+			}
+		}
+	}
+	tier, _ := o.enhancedTier(ctx, candidate, intent)
+	return tier != fitStrong
 }
 func (o *Orchestrator) annotateEnhancedFit(ctx context.Context, playlist *core.Playlist) {
 	closeCount := 0

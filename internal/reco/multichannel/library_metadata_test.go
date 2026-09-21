@@ -58,6 +58,22 @@ func TestPackedMetadataRankingIsSourceNeutralAndModeBounded(t *testing.T) {
 	}
 }
 
+func TestPackedMetadataRankingPreservesProviderComparisonWhenPackIsMissingOrNeutral(t *testing.T) {
+	cat := metadataFixture{Catalog: testCatalog(), scores: map[string]float64{"audio": 0}}
+	candidate := []core.Candidate{{Track: core.TrackRef{ID: "audio"}}}
+	candidate[0].Scores.Total = .1
+	candidate[0].Scores.LibraryMetadata, candidate[0].Available.LibraryMetadata = .5, true
+	cfg := DefaultConfig()
+	cfg.LibraryEvidenceEnabled = true
+	intent := enhancedIntent(1)
+	if err := NewRanker(cat, cfg).libraryMetadataScores(context.Background(), candidate, ports.RankRequest{Intent: intent}); err != nil {
+		t.Fatal(err)
+	}
+	if !candidate[0].Available.LibraryMetadata || candidate[0].Scores.LibraryMetadata != .5 || candidate[0].Scores.Total <= .1 {
+		t.Fatalf("provider comparison was erased: %+v", candidate[0])
+	}
+}
+
 func TestPackedMetadataDatesPreserveOriginalVersusEditionAndConflicts(t *testing.T) {
 	cat := metadataFixture{Catalog: testCatalog(), metadata: map[string]core.EnrichedTrack{"audio": {OriginalReleaseDate: "1994", ReleaseEditionDate: "2024", Year: 2024, IdentityStatus: core.ResolutionResolved}}}
 	o := New(cat, nil, testCatalog(), DefaultConfig())

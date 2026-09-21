@@ -92,8 +92,11 @@ type Client struct {
 }
 
 type requestLimiter struct {
-	gate chan struct{}
-	last time.Time
+	priorityMu sync.Mutex
+	required   int
+	changed    chan struct{}
+	gate       chan struct{}
+	last       time.Time
 }
 
 type MetadataStatus struct {

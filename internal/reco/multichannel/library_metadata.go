@@ -25,8 +25,14 @@ func (r *TransparentRanker) libraryMetadataScores(ctx context.Context, candidate
 			return err
 		}
 		c := &candidates[i]
-		c.Scores.LibraryMetadata, c.Available.LibraryMetadata = catalog.LibraryPreferenceScore(ctx, c.Track.ID, request.Intent, "playlist")
-		c.Scores.LibraryMetadata = clamp(c.Scores.LibraryMetadata, -1, 1)
+		score, available := catalog.LibraryPreferenceScore(ctx, c.Track.ID, request.Intent, "playlist")
+		if available {
+			score = clamp(score, -1, 1)
+			if !c.Available.LibraryMetadata || score > c.Scores.LibraryMetadata {
+				c.Scores.LibraryMetadata = score
+			}
+			c.Available.LibraryMetadata = true
+		}
 		active = active || c.Available.LibraryMetadata
 	}
 	if active {

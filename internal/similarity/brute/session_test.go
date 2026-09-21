@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/platten/playlistai/internal/fakes"
@@ -154,5 +156,150 @@ func TestSearchSessionParallelIsolation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Only the initial underlying query is blocked; its callers exercise coalescing
+// and cancellation without relying on completion timing.
+type blockedSearch struct {
+	ports.SimilarityEngine
+	calls   atomic.Int32
+	started chan struct{}
+	proceed chan struct{}
+}
+
+func (s *blockedSearch) Search(ctx context.Context, q ports.SimilarityQuery) ([]ports.Match, error) {
+	if s.calls.Add(1) == 1 {
+		close(s.started)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-s.proceed:
+		}
+	}
+	return s.SimilarityEngine.Search(ctx, q)
+}
+
+func TestSearchSessionConcurrentCoalescingAndCanceledWaiter(t *testing.T) {
+	engine := sessionFixture(400)
+	session := engine.NewSearchSession().(*searchSession)
+	blocked := &blockedSearch{SimilarityEngine: engine, started: make(chan struct{}), proceed: make(chan struct{})}
+	session.engine = blocked
+	q := ports.SimilarityQuery{AudioSum: []float32{1, .5, .2, .1}, Weights: [2]float32{1, 0}, K: 8}
+	want, _ := engine.Search(context.Background(), q)
+	owner := make(chan error, 1)
+	go func() { _, err := session.Search(context.Background(), q); owner <- err }()
+	<-blocked.started
+	ctx, cancel := context.WithCancel(context.Background())
+	waiter := make(chan error, 1)
+	go func() { _, err := session.Search(ctx, q); waiter <- err }()
+	cancel()
+	if err := <-waiter; !errors.Is(err, context.Canceled) {
+		t.Fatalf("waiter cancellation: %v", err)
+	}
+	var wg sync.WaitGroup
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := session.Search(context.Background(), q)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("concurrent result differs: %v", err)
+			}
+		}()
+	}
+	close(blocked.proceed)
+	wg.Wait()
+	if err := <-owner; err != nil {
+		t.Fatal(err)
+	}
+	if blocked.calls.Load() != 1 {
+		t.Fatalf("duplicate scans: %d", blocked.calls.Load())
+	}
+}
+
+func TestSearchSessionConcurrentEviction(t *testing.T) {
+	engine := sessionFixture(400)
+	session := engine.NewSearchSession().(*searchSession)
+	var wg sync.WaitGroup
+	for i := range sessionQueries * 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q := ports.SimilarityQuery{AudioSum: []float32{1, float32(i), .2, .1}, Weights: [2]float32{1, 0}, K: 8}
+			got, err := session.Search(context.Background(), q)
+			want, _ := engine.Search(context.Background(), q)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("query %d differs: %v", i, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if session.lru.Len() != sessionQueries || len(session.queries) != sessionQueries || len(session.pending) != 0 {
+		t.Fatal("cache bounds or in-flight cleanup violated")
+	}
+}
+
+func TestSearchSessionCanceledOwnerDoesNotPoisonWaiters(t *testing.T) {
+	engine := sessionFixture(400)
+	session := engine.NewSearchSession().(*searchSession)
+	blocked := &blockedSearch{SimilarityEngine: engine, started: make(chan struct{}), proceed: make(chan struct{})}
+	session.engine = blocked
+	q := ports.SimilarityQuery{AudioSum: []float32{1, .5, .2, .1}, Weights: [2]float32{1, 0}, K: 8}
+	ctx, cancel := context.WithCancel(context.Background())
+	owner := make(chan error, 1)
+	go func() { _, err := session.Search(ctx, q); owner <- err }()
+	<-blocked.started
+	waiter := make(chan error, 1)
+	go func() {
+		got, err := session.Search(context.Background(), q)
+		if err == nil && len(got) != q.K {
+			err = fmt.Errorf("got %d matches", len(got))
+		}
+		waiter <- err
+	}()
+	cancel()
+	if err := <-owner; !errors.Is(err, context.Canceled) {
+		t.Fatalf("owner cancellation: %v", err)
+	}
+	if err := <-waiter; err != nil {
+		t.Fatalf("waiter inherited canceled owner: %v", err)
+	}
+	if blocked.calls.Load() != 2 {
+		t.Fatalf("expected one successful retry, got %d calls", blocked.calls.Load())
+	}
+}
+
+func TestSearchSessionCachedSearchReadiness(t *testing.T) {
+	engine := sessionFixture(400)
+	session := engine.NewSearchSession().(*searchSession)
+	q := ports.SimilarityQuery{AudioSum: []float32{1, .5, .2, .1}, Weights: [2]float32{1, 0}, K: 8}
+	if session.CachedSearch(q) {
+		t.Fatal("cold search reported ready")
+	}
+	if _, err := session.Search(context.Background(), q); err != nil {
+		t.Fatal(err)
+	}
+	if !session.CachedSearch(q) {
+		t.Fatal("warm prefix not ready")
+	}
+	q.K = 129
+	if session.CachedSearch(q) {
+		t.Fatal("short prefix reported ready")
+	}
+	q.K = 8
+	q.Exclude = make(map[string]struct{})
+	matches, _ := engine.Search(context.Background(), ports.SimilarityQuery{AudioSum: q.AudioSum, Weights: q.Weights, K: 128})
+	for _, match := range matches {
+		q.Exclude[match.ID] = struct{}{}
+	}
+	if session.CachedSearch(q) {
+		t.Fatal("excluded prefix reported ready")
+	}
+	if _, err := session.Search(context.Background(), q); err != nil {
+		t.Fatal(err)
+	}
+	if !session.CachedSearch(q) {
+		t.Fatal("expanded prefix not ready")
 	}
 }

@@ -95,10 +95,15 @@ type Candidate struct {
 }
 
 type MetadataQuery struct {
-	Criterion  *core.MusicalCriterion
-	Text       string
-	Limit      int
-	ExcludeIDs map[string]struct{}
+	Criterion *core.MusicalCriterion
+	// Artist uses the exact artist index for discovery-profile leads.
+	Artist string
+	// AllCriteria is an indexed conjunction of sourced annotations on one
+	// recording. It supplies leads, not categorical proof of a compound label.
+	AllCriteria []core.MusicalCriterion
+	Text        string
+	Limit       int
+	ExcludeIDs  map[string]struct{}
 }
 
 type NeighborQuery struct {

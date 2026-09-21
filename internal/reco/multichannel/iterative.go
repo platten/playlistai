@@ -39,6 +39,9 @@ func recommendationBatchCount(intent core.MusicIntent, required int) int {
 func (o *Orchestrator) collectIteratively(parent context.Context, initial []core.Candidate, stream ports.MusicCandidateStream, intent core.MusicIntent, request ports.RecommendationRequest, eligible *eligibility, references, required, waypoints []core.TrackRef, seed int64) (out []core.Candidate, outNotices []core.PlaylistNotice, outErr error) {
 	ctx, cancel := context.WithTimeout(parent, iterativeBudget)
 	defer cancel()
+	if prefetch, ok := stream.(ports.CandidatePrefetcher); ok {
+		defer prefetch.StopPrefetch()
+	}
 	var accepted []core.Candidate
 	var notices []core.PlaylistNotice
 	go func() {
@@ -113,10 +116,18 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		}
 		// Give MMR alternatives before early stopping: taking only the first N
 		// passing relevance-ranked tracks would leave artist diversity no choice.
-		queue, err = orderPool(batch)
+		batch = prioritizeJourneySupply(batch, intent)
+		priority := 0
+		if intent.Mode == core.ModeJourney && len(journeyStageCriteria(intent)) > 1 {
+			priority = len(batch)
+		}
+		var ordered []core.Candidate
+		ordered, err = orderPool(batch[priority:])
 		if err != nil {
 			return err
 		}
+		queue = append(queue, batch[:priority]...)
+		queue = append(queue, ordered...)
 		if request.Progress != nil {
 			request.Progress.Report("generation", int64(len(queue)+len(required)), int64(2*batchCount), "Prepared recommendation shortlist; checking musical fit")
 		}
@@ -126,15 +137,32 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 		// Existing sound matches take part before a metadata stream can fill N.
 		queue = append([]core.Candidate(nil), initial...)
 		initial = nil
+		if concentratedArtistPool(queue, intent) {
+			var err error
+			queue, err = o.prepareRecommendationPool(ctx, queue, ports.RetrievalRequest{
+				Intent: intent, Profile: request.Profile, RecentSelections: recent, Seed: seed, AttemptedIDs: attempted,
+			}, eligible, recordings, recommendationPoolSize(batchCount, len(required)))
+			if err != nil {
+				return nil, notices, err
+			}
+		}
 		if o.enhanced {
-			ordered, err := orderPool(queue)
+			var priority int
+			queue = prioritizeJourneySupply(queue, intent)
+			if intent.Mode == core.ModeJourney && len(journeyStageCriteria(intent)) > 1 {
+				priority = len(queue)
+			}
+			if instrumental, instrumentalPriority := prioritizeInstrumentalKnowledgePrefix(queue, intent); instrumentalPriority > 0 {
+				queue, priority = instrumental, max(priority, instrumentalPriority)
+			}
+			ordered, err := orderPool(queue[priority:])
 			if err != nil {
 				return nil, notices, err
 			}
 			// Retain the bounded alternatives until fit checks finish. Applying
 			// the relevance floor before checking unknowns can discard the only
 			// grounded recording; final assembly applies ordinary MMR selection.
-			queue = ordered
+			queue = append(queue[:priority], ordered...)
 		}
 	}
 	if len(required) == intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
@@ -170,6 +198,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 			}
 			// Retain queued and locally retrievable evidence, without opening a
 			// new external discovery page after the preview acquisition budget.
+			if prefetch, ok := stream.(ports.CandidatePrefetcher); ok {
+				prefetch.StopPrefetch()
+			}
 			stream = nil
 		}
 		var (
@@ -202,6 +233,9 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 					}
 					if !errors.Is(err, io.EOF) {
 						notices = append(notices, core.PlaylistNotice{Code: "discovery_unavailable", Detail: "Online artist discovery was interrupted; continuing with available catalog candidates."})
+					}
+					if prefetch, ok := stream.(ports.CandidatePrefetcher); ok {
+						prefetch.StopPrefetch()
 					}
 					stream = nil
 					break
@@ -284,50 +318,60 @@ func (o *Orchestrator) collectIteratively(parent context.Context, initial []core
 				continue
 			}
 		} else if o.audioSession != nil {
-			var assessment core.AudioAssessment
-			if prechecked {
-				assessment, err = preparedAssessment, preparedErr
-			} else if o.audioSession.Parallelism() > 1 && (stream == nil || o.enhanced && len(queue) > 0) {
-				batch := []core.Candidate{candidate}
-				for len(batch) < o.audioSession.Parallelism() && len(queue) > 0 {
-					next := queue[0]
-					queue = queue[1:]
-					if _, seen := attempted[next.Track.ID]; seen {
-						continue
-					}
-					attempted[next.Track.ID] = struct{}{}
-					next, _, keep, prepareErr := o.prepareIterativeCandidate(ctx, next, intent, eligible, recordings)
-					if prepareErr != nil {
-						return nil, notices, prepareErr
-					}
-					if keep {
-						if packed, ok := o.packedOnly(ctx, next.Track.ID, intent); ok {
-							prepared = append(prepared, preparedCandidate{candidate: next, assessment: packed})
+			// In Enhanced Hybrid, pinned catalog evidence can fully establish a
+			// candidate's requested facets. Do not spend network/provider budget
+			// obtaining a redundant preview in that case.
+			if !o.previewNeededForEnhanced(ctx, candidate, intent) {
+				// The ordinary essential filters below still enforce the request.
+			} else {
+				var assessment core.AudioAssessment
+				if prechecked {
+					assessment, err = preparedAssessment, preparedErr
+				} else if o.audioSession.Parallelism() > 1 && (stream == nil || o.enhanced && len(queue) > 0) {
+					batch := []core.Candidate{candidate}
+					var batchSlots []int
+					for len(batch) < o.audioSession.Parallelism() && len(queue) > 0 {
+						next := queue[0]
+						queue = queue[1:]
+						if _, seen := attempted[next.Track.ID]; seen {
 							continue
 						}
-						batch = append(batch, next)
+						attempted[next.Track.ID] = struct{}{}
+						next, _, keep, prepareErr := o.prepareIterativeCandidate(ctx, next, intent, eligible, recordings)
+						if prepareErr != nil {
+							return nil, notices, prepareErr
+						}
+						if keep {
+							if packed, ok := o.packedOnly(ctx, next.Track.ID, intent); ok {
+								prepared = append(prepared, preparedCandidate{candidate: next, assessment: packed})
+								continue
+							}
+							batchSlots = append(batchSlots, len(prepared))
+							prepared = append(prepared, preparedCandidate{candidate: next})
+							batch = append(batch, next)
+						}
 					}
+					tracks := make([]core.TrackRef, len(batch))
+					for index := range batch {
+						tracks[index] = batch[index].Track
+					}
+					assessments, checkErrs := o.audioSession.CheckMany(ctx, tracks, false)
+					assessment = assessments[0]
+					err = checkErrs[0]
+					for index := 1; index < len(batch); index++ {
+						prepared[batchSlots[index-1]] = preparedCandidate{candidate: batch[index], assessment: assessments[index], err: checkErrs[index]}
+					}
+				} else {
+					assessment, err = o.audioSession.Check(ctx, candidate.Track, false)
 				}
-				tracks := make([]core.TrackRef, len(batch))
-				for index := range batch {
-					tracks[index] = batch[index].Track
+				if err != nil {
+					return nil, notices, err
 				}
-				assessments, checkErrs := o.audioSession.CheckMany(parent, tracks, false)
-				assessment = assessments[0]
-				err = checkErrs[0]
-				for index := 1; index < len(batch); index++ {
-					prepared = append(prepared, preparedCandidate{candidate: batch[index], assessment: assessments[index], err: checkErrs[index]})
+				if !assessment.Eligible && !o.enhancedMetadataFallback(ctx, candidate, intent) {
+					continue
 				}
-			} else {
-				assessment, err = o.audioSession.Check(parent, candidate.Track, false)
+				audio.ApplyScores(&candidate, assessment)
 			}
-			if err != nil {
-				return nil, notices, err
-			}
-			if !assessment.Eligible && !o.enhancedMetadataFallback(ctx, candidate, intent) {
-				continue
-			}
-			audio.ApplyScores(&candidate, assessment)
 		} else if len(audio.Clauses(intent)) > 0 && o.enhanced && !o.enhancedMetadataFallback(ctx, candidate, intent) {
 			continue
 		}

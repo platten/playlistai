@@ -113,67 +113,84 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
 		}
 	}
-	if err := r.retrieveMusicContext(ctx, intent, byID, exclude); err != nil {
-		return nil, err
+	var jobs []retrievalJob
+	addJob := func(backend any, run func(map[string]*core.Candidate, *[]explorationOption) error) {
+		jobs = append(jobs, retrievalJob{backend: backend, run: run})
 	}
+	addSearch := func(channel, queryID string, audio, track []float32, weights [2]float32, queryWeight float64, budget, extra int) {
+		if (weights[0] == 0 || len(audio) == 0) && (weights[1] == 0 || len(track) == 0) {
+			return
+		}
+		var backend any = r.sim
+		if cache, ok := r.sim.(interface {
+			CachedSearch(ports.SimilarityQuery) bool
+		}); ok && cache.CachedSearch(ports.SimilarityQuery{
+			AudioSum: audio, TrackSum: track, Weights: weights, K: minInt(r.sim.Len(), budget+extra), Exclude: exclude,
+		}) {
+			backend = nil
+		}
+		addJob(backend, func(byID map[string]*core.Candidate, exploration *[]explorationOption) error {
+			return r.searchChannel(ctx, byID, exploration, exclude, channel, queryID, audio, track, weights, queryWeight, budget, extra)
+		})
+	}
+	jobs = append(jobs, r.musicContextJobs(ctx, intent, exclude)...)
 	// Model descriptions and related genres broaden only retrieval. Eligibility
 	// continues to assess the original essential genre, never these hints.
 	if r.semantic != nil {
 		for _, hint := range intent.GenreExpansions {
 			queries := append([]string{hint.Characteristics}, hint.RelatedGenres...)
 			for _, query := range queries {
-				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4), exclude)
-				if err != nil {
-					if ctx.Err() != nil {
-						return nil, ctx.Err()
+				addJob(r.semantic, func(byID map[string]*core.Candidate, _ *[]explorationOption) error {
+					hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4), exclude)
+					if err != nil {
+						if ctx.Err() != nil {
+							return ctx.Err()
+						}
+						return nil
 					}
-					continue
-				}
-				for index, hit := range hits {
-					r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
-				}
+					for index, hit := range hits {
+						r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
+					}
+					return nil
+				})
 			}
 		}
 	}
-	var exploration []explorationOption
 	positiveSemantic, _ := semanticQueryText(intent)
 	if positiveSemantic != "" && r.semantic != nil {
-		hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget, exclude)
-		if err != nil {
-			if len(references) == 0 {
-				return nil, fmt.Errorf("semantic seed retrieval: %w", err)
-			}
-		} else {
-			for index, hit := range hits {
-				if hit.Score < r.cfg.SemanticMinimumScore {
-					continue
+		addJob(r.semantic, func(byID map[string]*core.Candidate, _ *[]explorationOption) error {
+			hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget, exclude)
+			if err != nil {
+				if len(references) == 0 {
+					return fmt.Errorf("semantic seed retrieval: %w", err)
 				}
-				match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
-				r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
+			} else {
+				for index, hit := range hits {
+					if hit.Score < r.cfg.SemanticMinimumScore {
+						continue
+					}
+					match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
+					r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
+				}
 			}
-		}
+			return nil
+		})
 	}
 	for _, reference := range references {
 		for repIndex, representative := range reference.reps {
 			queryID := reference.id + ":" + representative.id + ":" + itoa(repIndex)
-			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelSeedAudio, queryID,
-				representative.v.Audio, nil, [2]float32{1, 0}, representative.weight, r.cfg.SeedAudioBudget, extraPerQuery); err != nil {
-				return nil, err
-			}
-			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelSeedCooccurrence, queryID,
-				nil, representative.v.Track, [2]float32{0, 1}, representative.weight, r.cfg.SeedCooccurrenceBudget, extraPerQuery); err != nil {
-				return nil, err
-			}
+			addSearch(ChannelSeedAudio, queryID,
+				representative.v.Audio, nil, [2]float32{1, 0}, representative.weight, r.cfg.SeedAudioBudget, extraPerQuery)
+			addSearch(ChannelSeedCooccurrence, queryID,
+				nil, representative.v.Track, [2]float32{0, 1}, representative.weight, r.cfg.SeedCooccurrenceBudget, extraPerQuery)
 		}
 	}
 	for index := 0; index < clusterLimit; index++ {
 		cluster := request.Profile.Clusters[index]
-		if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelTasteCluster, cluster.ID,
+		addSearch(ChannelTasteCluster, cluster.ID,
 			normalizeVector(cluster.Affinity.Audio), normalizeVector(cluster.Affinity.Cooccurrence),
 			normalizedWeights(intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight),
-			cluster.Weight, r.cfg.TasteClusterBudget, extraPerQuery); err != nil {
-			return nil, err
-		}
+			cluster.Weight, r.cfg.TasteClusterBudget, extraPerQuery)
 	}
 	if len(recent) > 0 {
 		budget := maxInt(1, r.cfg.ContinuationBudget/len(recent))
@@ -183,15 +200,15 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 				continue
 			}
 			queryID := track.ID + ":" + itoa(index)
-			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelContinuationAudio, queryID,
-				normalizeVector(vectors.Audio), nil, [2]float32{1, 0}, 1, budget, extraPerQuery); err != nil {
-				return nil, err
-			}
-			if err := r.searchChannel(ctx, byID, &exploration, exclude, ChannelContinuationCooccurrence, queryID,
-				nil, normalizeVector(vectors.Track), [2]float32{0, 1}, 1, budget, extraPerQuery); err != nil {
-				return nil, err
-			}
+			addSearch(ChannelContinuationAudio, queryID,
+				normalizeVector(vectors.Audio), nil, [2]float32{1, 0}, 1, budget, extraPerQuery)
+			addSearch(ChannelContinuationCooccurrence, queryID,
+				nil, normalizeVector(vectors.Track), [2]float32{0, 1}, 1, budget, extraPerQuery)
 		}
+	}
+	var exploration []explorationOption
+	if err := runRetrievalJobs(ctx, jobs, byID, &exploration); err != nil {
+		return nil, err
 	}
 	// Exploration is part of the bounded candidate union. Semantic scoring is a
 	// later orchestrator stage and therefore applies to these candidates too.

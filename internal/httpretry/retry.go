@@ -19,6 +19,24 @@ const maxWait = 30 * time.Second
 
 type attemptCheckKey struct{}
 
+type permanentError struct{ error }
+
+func (e *permanentError) Unwrap() error { return e.error }
+
+// Permanent marks a local admission failure that another network attempt cannot
+// repair, such as an exhausted generation request budget.
+func Permanent(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &permanentError{err}
+}
+
+func isPermanent(err error) bool {
+	var terminal *permanentError
+	return errors.As(err, &terminal)
+}
+
 // WithAttemptCheck lets a request owner charge every dispatch, including retries
 // and redirects, to its existing budget. A rejected attempt never reaches next.
 func WithAttemptCheck(ctx context.Context, check func() error) context.Context {
@@ -84,7 +102,7 @@ func RoundTrip(req *http.Request, next func(*http.Request) (*http.Response, erro
 			closeResponse(resp)
 			return nil, ctxErr
 		}
-		if attempt == attempts-1 || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || err == nil && (resp == nil || !retryableStatus(resp.StatusCode)) {
+		if attempt == attempts-1 || isPermanent(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || err == nil && (resp == nil || !retryableStatus(resp.StatusCode)) {
 			return resp, err
 		}
 		base := time.Second << attempt

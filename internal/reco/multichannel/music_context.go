@@ -189,6 +189,16 @@ func (r *Retriever) retrieveMusicContext(ctx context.Context, intent core.MusicI
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	for _, job := range r.musicContextJobs(ctx, intent, exclude) {
+		if err := job.run(byID, nil); err != nil {
+			return err
+		}
+	}
+	return ctx.Err()
+}
+
+func (r *Retriever) musicContextJobs(ctx context.Context, intent core.MusicIntent, exclude map[string]struct{}) []retrievalJob {
+	var jobs []retrievalJob
 	if r.semantic == nil || intent.Knowledge == nil || intent.Controls.RecommendationMode != core.EnhancedHybrid {
 		return nil
 	}
@@ -204,21 +214,24 @@ func (r *Retriever) retrieveMusicContext(ctx context.Context, intent core.MusicI
 				continue
 			}
 			seen[key] = true
-			hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4), exclude)
-			if err != nil && ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if err == nil {
-				for index, hit := range hits {
-					r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{
-						Channel: ChannelMusicContext, QueryID: plan.Profile.ID + ":" + query, Rank: index + 1, Score: hit.Score, QueryWeight: .5,
-					})
+			jobs = append(jobs, retrievalJob{backend: r.semantic, run: func(byID map[string]*core.Candidate, _ *[]explorationOption) error {
+				hits, err := r.semantic.Search(ctx, query, maxInt(1, r.cfg.SemanticBudget/4), exclude)
+				if err != nil && ctx.Err() != nil {
+					return ctx.Err()
 				}
-			}
-			if len(seen) == 4 {
+				if err == nil {
+					for index, hit := range hits {
+						r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{
+							Channel: ChannelMusicContext, QueryID: plan.Profile.ID + ":" + query, Rank: index + 1, Score: hit.Score, QueryWeight: .5,
+						})
+					}
+				}
 				return nil
+			}})
+			if len(seen) == 4 {
+				return jobs
 			}
 		}
 	}
-	return ctx.Err()
+	return jobs
 }

@@ -122,19 +122,9 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 			}
 		}
 	}
-	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved && (c.Kind == "genre" || c.Kind == "style") {
-		graph := core.GenreGraph{}
-		if o.knowledge != nil {
-			graph = o.knowledge.Graph
-		}
-		for _, tag := range track.GenreTags {
-			matches := core.StyleMatches(c.Value, tag.Name) || graph.Matches(c.Value, tag.Name)
-			if o.enhanced {
-				matches = enhancedCategoryMatches(c.Value, tag.Name, graph)
-			}
-			if tag.Votes > 0 && tag.Source != "" && matches {
-				return core.EvidenceMatch
-			}
+	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved {
+		if state := o.recordingTagCriterion(track, c); state != core.EvidenceUnknown {
+			return state
 		}
 	}
 	// A compatible grounded-description index is also musical evidence. Score
@@ -147,6 +137,46 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 					return core.EvidenceMatch
 				}
 			}
+		}
+	}
+	return core.EvidenceUnknown
+}
+
+func (o *Orchestrator) recordingTagCriterion(track core.EnrichedTrack, c core.MusicalCriterion) core.EvidenceState {
+	if track.IdentityStatus != core.ResolutionResolved {
+		return core.EvidenceUnknown
+	}
+	if c.Kind == "vocal" {
+		// Positive recording-level tags are direct evidence that a recording is
+		// instrumental. A conclusive preview assessment is checked above and
+		// therefore still wins when sampled audio contains vocals.
+		for _, tag := range track.GenreTags {
+			value := strings.ToLower(strings.TrimSpace(tag.Name))
+			if tag.Votes > 0 && tag.Source != "" && (value == "instrumental" || value == "no vocals") {
+				switch strings.ToLower(strings.TrimSpace(c.Value)) {
+				case "instrumental", "no vocals":
+					return core.EvidenceMatch
+				case "vocal", "vocals", "voice", "singing":
+					return core.EvidenceMismatch
+				}
+			}
+		}
+		return core.EvidenceUnknown
+	}
+	if c.Kind != "genre" && c.Kind != "style" {
+		return core.EvidenceUnknown
+	}
+	graph := core.GenreGraph{}
+	if o.knowledge != nil {
+		graph = o.knowledge.Graph
+	}
+	for _, tag := range track.GenreTags {
+		matches := core.StyleMatches(c.Value, tag.Name) || graph.Matches(c.Value, tag.Name)
+		if o.enhanced {
+			matches = enhancedCategoryMatches(c.Value, tag.Name, graph)
+		}
+		if tag.Votes > 0 && tag.Source != "" && matches {
+			return core.EvidenceMatch
 		}
 	}
 	return core.EvidenceUnknown
@@ -414,25 +444,36 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 	result := make([]core.Candidate, 0, len(eligible))
 	for _, candidate := range eligible {
 		fits := true
-		// Incomplete tags do not mean a known destination track also belongs
-		// at the start. Prefer its affirmative stage evidence to an unknown fit.
+		// Incomplete tags do not prove that a recording belongs to every stage.
+		// A positive direct preview comparison can nevertheless support an
+		// overlapping adjacent stage; known categories are not mutually exclusive.
 		if o.bestAvailable && (criterion.Kind == "" || o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceUnknown) {
-			for _, other := range journeyStageCriteria(intent) {
-				if other.Scope != criterion.Scope && o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMatch {
-					fits = false
-					break
+			stageScore, stageCompared := 0.0, false
+			if o.audioSession != nil {
+				stageScore, stageCompared = o.stageSimilarity(candidate.Track.ID, criterion)
+			}
+			if !stageCompared || stageScore <= 0 {
+				for _, other := range journeyStageCriteria(intent) {
+					if other.Scope != criterion.Scope && o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMatch {
+						fits = false
+						break
+					}
 				}
 			}
-			// When metadata cannot place a preview, prefer the stage whose
-			// description is closer in CLAP space. This is approximate placement;
-			// bestCriterion stays unknown and final coverage still reports it.
-			if fits && o.audioSession != nil {
-				if score, ok := o.stageSimilarity(candidate.Track.ID, criterion); ok {
+			// A positive preview comparison is direct evidence for this stage, but
+			// it is not categorical proof. Do not force an uncalibrated CLAP vector
+			// into only its numerically closest stage: adjacent journey descriptions
+			// commonly overlap, and reservation below still assigns distinct tracks.
+			// Non-positive comparisons cannot displace a positive eligible stage;
+			// bestCriterion stays unknown so final coverage reports this as a close
+			// rather than strong fit.
+			if fits && stageCompared {
+				if stageScore <= 0 {
 					for _, other := range journeyStageCriteria(intent) {
 						if other.Scope == criterion.Scope || !o.stageDateEligible(candidate.Track.ID, other.Scope, intent) || o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMismatch {
 							continue
 						}
-						if otherScore, available := o.stageSimilarity(candidate.Track.ID, other); available && otherScore > score+1e-6 {
+						if otherScore, available := o.stageSimilarity(candidate.Track.ID, other); available && otherScore > stageScore+1e-6 {
 							fits = false
 							break
 						}

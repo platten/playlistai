@@ -67,6 +67,26 @@ func mertSimilarityQueries(cat ports.Catalog, intent core.MusicIntent) []core.ME
 	return out
 }
 
+// primaryMERTQueries bounds live provider acquisition to one representative
+// per resolved reference group. The full representative set still drives
+// catalog/library retrieval; this only prevents optional preview inference
+// from consuming the whole request deadline.
+func primaryMERTQueries(queries []core.MERTSimilarityQuery) []core.MERTSimilarityQuery {
+	out := make([]core.MERTSimilarityQuery, 0, len(queries))
+	positions := map[string]int{}
+	for _, query := range queries {
+		if index, ok := positions[query.GroupID]; ok {
+			if query.Weight > out[index].Weight {
+				out[index] = query
+			}
+			continue
+		}
+		positions[query.GroupID] = len(out)
+		out = append(out, query)
+	}
+	return out
+}
+
 func (o *Orchestrator) mertCandidates(search *core.MERTSimilaritySearch) []core.Candidate {
 	if search == nil || !search.Recorded || search.CatalogVersion == "" || !validEnhancedModel(search.Model) {
 		return nil

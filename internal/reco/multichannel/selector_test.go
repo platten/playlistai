@@ -66,6 +66,29 @@ func TestMMRRelevanceFloorReturnsStructuredPartial(t *testing.T) {
 	}
 }
 
+func TestEnhancedFloorUsesRelativeScaleForUncalibratedPositivePreviewCosines(t *testing.T) {
+	cat := diversityCatalog()
+	intent := testIntent(3)
+	intent.Controls.RecommendationMode = core.EnhancedHybrid
+	candidates := []core.Candidate{
+		selectionCandidate(cat, "a1", .01),
+		selectionCandidate(cat, "b", .01),
+		selectionCandidate(cat, "low", .01),
+	}
+	for i, score := range []float64{.012, .006, -.002} {
+		candidates[i].FitTier = fitClose
+		candidates[i].Available.SemanticMatch = true
+		candidates[i].Scores.SemanticMatch = score
+	}
+	result, err := NewSelector(cat, DefaultConfig()).Select(context.Background(), candidates, ports.SelectionRequest{Intent: intent, Count: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := candidateIDs(result.Candidates); got != "a1,b" {
+		t.Fatalf("relative preview evidence selected %s, want positive direct comparisons only", got)
+	}
+}
+
 func TestAlbumConcentrationUsesOnlyReliableMetadata(t *testing.T) {
 	t.Parallel()
 	cat := diversityCatalog()
