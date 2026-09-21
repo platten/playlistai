@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button";
 
 /** Native modal keeps the decision keyboard-accessible and the prompt inert. */
@@ -10,6 +10,7 @@ export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel
   onCancel: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const [choice, setChoice] = useState("");
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
@@ -21,7 +22,7 @@ export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel
       onCancel={(event) => { event.preventDefault(); onCancel(); }}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
-        const controls = event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)");
+        const controls = event.currentTarget.querySelectorAll<HTMLElement>("select:not(:disabled), button:not(:disabled)");
         const first = controls[0];
         const last = controls[controls.length - 1];
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -31,11 +32,17 @@ export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel
       <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-accent">Confirm artist</p>
       <h2 id="artist-spelling-title" className="break-words text-xl font-semibold tracking-tight">Did you mean {artist}?</h2>
       <p id="artist-spelling-description" className="mt-3 break-words text-sm leading-relaxed text-muted">
-        Your description names “{query}”. Choose the suggested artist, or continue with the name you entered. A matching artist may not be available.
+        Your description names “{query}”. Choose the catalog artist or keep the name you entered. A matching artist may not be available if you keep it.
       </p>
       <div className="mt-6 flex flex-col gap-2">
-        <Button variant="primary" autoFocus onClick={onAccept} className="h-auto min-h-9 whitespace-normal break-words py-2">Use {artist}</Button>
-        <Button onClick={onKeep} className="h-auto min-h-9 whitespace-normal break-words py-2">Keep “{query}”</Button>
+        <label htmlFor="artist-spelling-choice" className="text-sm font-medium">Choose the intended artist for “{query}”</label>
+        <select id="artist-spelling-choice" autoFocus value={choice} onChange={(event) => setChoice(event.target.value)}
+          className="w-full min-w-0 rounded-control border border-line bg-bg p-2 text-text focus-visible:outline-2 focus-visible:outline-accent">
+          <option value="">Select a match…</option>
+          <option value="suggested">{artist}</option>
+          <option value="original">Keep “{query}”</option>
+        </select>
+        <Button variant="primary" disabled={!choice} onClick={() => choice === "suggested" ? onAccept() : onKeep()}>Continue</Button>
         <Button variant="subtle" onClick={onCancel}>Cancel</Button>
       </div>
     </dialog>

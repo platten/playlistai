@@ -107,4 +107,8 @@ func TestGenerateRequiresArtistSpellingConfirmation(t *testing.T) {
 	if generated.Request.Intent.References[0].SpellingDecision != "accepted" || generated.Request.Intent.References[0].Query != "Daft Punq" {
 		t.Fatal("accepted decision lost")
 	}
+	selected := generated.Request.Intent.References[0]
+	if selected.TrackID != candidate.Representatives[0].TrackID || selected.Resolution == nil || selected.Resolution.Selected == nil || selected.Resolution.Selected.Artist != candidate.Artist {
+		t.Fatalf("generated request used a different artist than the selected catalog match: %+v", selected)
+	}
 }

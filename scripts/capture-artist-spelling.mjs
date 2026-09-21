@@ -43,29 +43,34 @@ try {
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'horizontal overflow');
     }
   }
-  const use=dialog.getByRole('button',{name:'Use Christian Löffler'});
+  const choice=dialog.getByRole('combobox',{name:'Choose the intended artist for “christrian loeffler”'});
+  const use=dialog.getByRole('button',{name:'Continue'});
   const cancel=dialog.getByRole('button',{name:'Cancel'});
-  await use.focus();
+  assert.equal(await use.isDisabled(),true);
+  await choice.focus();
   await page.keyboard.press('Shift+Tab');
   assert.equal(await cancel.evaluate(el=>el===document.activeElement),true,'backward focus containment');
   await page.keyboard.press('Tab');
-  assert.equal(await use.evaluate(el=>el===document.activeElement),true,'forward focus containment');
+  assert.equal(await choice.evaluate(el=>el===document.activeElement),true,'forward focus containment');
   await page.keyboard.press('Escape');
   await dialog.waitFor({state:'detached'});
   await page.waitForFunction(()=>document.activeElement?.id==='music-description');
   assert.equal(await page.evaluate(()=>window.__generated.length),0);
   await page.getByRole('button',{name:'Generate playlist'}).click();
-  await dialog.getByRole('button',{name:'Use Christian Löffler'}).click();
+  await choice.selectOption('suggested');
+  await use.click();
   await page.waitForFunction(()=>window.__displayed===1);
   assert.deepEqual(await page.evaluate(()=>window.__generated[0].selections),[{kind:'artist',query:'christrian loeffler',trackId:'loffler-track'}]);
-  assert.equal(await composer.inputValue(),original);
+  assert.equal(await composer.inputValue(),'Relaxing electronic like Christian Löffler, 20 tracks');
+  assert.equal(await page.evaluate(()=>window.__generated[0].prompt),original);
   assert.deepEqual(await page.evaluate(()=>window.__generated[0].context),await page.evaluate(()=>window.__parse[1].context));
   await page.getByRole('button',{name:'Generate playlist'}).click();
   await page.waitForFunction(()=>window.__displayed===2);
   assert.equal(await dialog.count(),0);
   await composer.fill(original+', no vocals');
   await page.getByRole('button',{name:'Generate playlist'}).click();
-  await dialog.getByRole('button',{name:'Keep “christrian loeffler”'}).click();
+  await choice.selectOption('original');
+  await use.click();
   await page.waitForFunction(()=>window.__displayed===3);
   assert.deepEqual(await page.evaluate(()=>window.__generated[2].selections),[{kind:'artist',query:'christrian loeffler',trackId:'',rejectSpelling:true}]);
   await composer.fill('Relaxing electronic like Christian Löffler, 20 tracks');
@@ -74,5 +79,5 @@ try {
   assert.deepEqual(await page.evaluate(()=>window.__generated[3].selections),[]);
   assert.equal(await dialog.count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Artist spelling UI passed: accept/keep/cancel, unchanged retry, edited reset, original generation context, exact artist bypass, keyboard focus and Escape, dark/light narrow/wide.');
+  console.log('Artist spelling UI passed: dropdown accept/keep/cancel, corrected prompt, selected catalog identity on retry, edited reset, exact artist bypass, keyboard focus and Escape, dark/light narrow/wide.');
 } finally { await browser.close(); }

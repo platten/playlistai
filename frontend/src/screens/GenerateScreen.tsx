@@ -46,6 +46,13 @@ const DEEJAI_SURPRISES = [
 
 const resolutionIssueKey = (kind: string, query: string) => `${kind.toLowerCase()}\u0000${query.toLowerCase()}`;
 
+const replacePromptReference = (prompt: string, query: string, replacement: string) => {
+  const trimmedQuery = query.trim();
+  if (!trimmedQuery || !replacement.trim()) return prompt;
+  const escaped = trimmedQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return prompt.replace(new RegExp(escaped, "giu"), () => replacement);
+};
+
 interface SpellingConfirmation {
   prompt: string;
   source: "fresh" | "saved";
@@ -120,6 +127,10 @@ export function GenerateScreen({
   const regenerationPending = Boolean(regeneration?.prompt.trim() && regenerationStarted.current !== regeneration.id);
   const [info, setInfo] = useState<CatalogInfo | null>(null);
   const [preview, setPreview] = useState<IntentPreview | null>(null);
+  const preservePreviewForPromptChange = useRef(false);
+  // Validate choices against the originally parsed reference even when the
+  // visible description now shows the selected catalog spelling.
+  const resolutionOrigin = useRef<{ prompt: string; displayPrompt: string; source: "fresh" | "saved" } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [processingSeconds, setProcessingSeconds] = useState(0);
@@ -215,6 +226,9 @@ export function GenerateScreen({
     if (spellingDecisions.current.prompt !== prompt || spellingDecisions.current.source !== source) {
       spellingDecisions.current = { prompt, source, selections: [] };
     }
+    if (resolutionOrigin.current && (resolutionOrigin.current.displayPrompt !== prompt || resolutionOrigin.current.source !== source)) {
+      resolutionOrigin.current = null;
+    }
     if (pendingSpelling.current && (pendingSpelling.current.prompt !== prompt || pendingSpelling.current.source !== source)) cancelGeneration();
   }, [prompt, source, cancelGeneration]);
 
@@ -266,6 +280,10 @@ export function GenerateScreen({
   };
 
   useEffect(() => {
+    if (preservePreviewForPromptChange.current) {
+      preservePreviewForPromptChange.current = false;
+      return;
+    }
     setPreview(null);
   }, [prompt, trackCount]);
 
@@ -340,7 +358,13 @@ export function GenerateScreen({
           ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) =>
             (issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated
               ? `MusicBrainz has more than one identity for “${issue.query}”. Add a track title or other identifying detail to your request.`
-              : `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`),
+              : (issue.alternatives ?? []).some((candidate) => candidate.representatives?.[0]?.trackId)
+                ? `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`
+                : `“${issue.query}” could not be tied to a catalog recording. Add a track title or other identifying detail before generating.`),
+          ...ambiguousIssues.filter((issue) => resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => {
+            const selected = issue.alternatives?.find((candidate) => candidate.representatives?.[0]?.trackId === resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]);
+            return `Using ${selected?.artist ?? "the selected catalog match"} for “${issue.query}”. You can change the match before generating.`;
+          }),
           ...unresolvedIssues.map((issue) => spellingDecisions.current.selections.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query) && choice.rejectSpelling)
             ? `You kept “${issue.query}”. No artist match has been confirmed for that name. Correct the spelling or choose another artist if the request cannot be fulfilled.`
             : issue.influence === "negative"
@@ -356,18 +380,27 @@ export function GenerateScreen({
   const noticeKey = JSON.stringify(noticeDetails);
   const showNotice = noticeDetails.length > 0 && dismissedNotice !== noticeKey;
 
-  const selectReference = (key: string, trackId: string) => {
+  const selectReference = (issue: NonNullable<IntentPreview["resolutionIssues"]>[number], trackId: string) => {
+    const key = resolutionIssueKey(issue.kind, issue.query);
+    const prior = issue.alternatives?.find((candidate) => candidate.representatives?.[0]?.trackId === resolutionChoices[key]);
+    const chosen = issue.alternatives?.find((candidate) => candidate.representatives?.[0]?.trackId === trackId);
+    const priorLabel = prior ? (issue.kind === "artist" ? prior.artist : prior.title || issue.query) : issue.query;
+    const chosenLabel = chosen ? (issue.kind === "artist" ? chosen.artist : chosen.title || issue.query) : issue.query;
+    const corrected = replacePromptReference(prompt, priorLabel, chosenLabel);
     const choices = { ...resolutionChoices, [key]: trackId };
     setResolutionChoices(choices);
-    if (ambiguousIssues.every((issue) => choices[resolutionIssueKey(issue.kind, issue.query)])) {
-      // The last selection can remove the notice; keep keyboard focus useful.
-      window.requestAnimationFrame(() => document.getElementById("generate-playlist")?.focus());
+    if (corrected !== prompt) {
+      resolutionOrigin.current = { prompt: resolutionOrigin.current?.prompt ?? prompt, displayPrompt: corrected, source };
+      spellingDecisions.current = { ...spellingDecisions.current, prompt: corrected, source };
+      preservePreviewForPromptChange.current = true;
+      setPrompt(corrected);
     }
   };
 
   const runGenerate = useCallback(
     (text: string, selections: ResolutionSelection[] = []) => {
-      const q = text.trim();
+      const q = (resolutionOrigin.current?.displayPrompt === text && resolutionOrigin.current.source === source
+        ? resolutionOrigin.current.prompt : text).trim();
       if (q === "" || activeGenerationId.current) return;
       if (spellingDecisions.current.prompt !== text || spellingDecisions.current.source !== source) {
         spellingDecisions.current = { prompt: text, source, selections: [] };
@@ -394,6 +427,7 @@ export function GenerateScreen({
           if (sequence !== generationSequence.current) return;
           setParsing(false);
           setPreview(summary ?? null);
+          let correctedPrompt = text;
           for (const issue of summary?.resolutionIssues ?? []) {
             const candidate = issue.spellingSuggestion;
             const trackId = candidate?.representatives?.[0]?.trackId;
@@ -405,6 +439,15 @@ export function GenerateScreen({
             });
             if (!choice || sequence !== generationSequence.current) return;
             selected.push(choice);
+            if (choice.trackId) {
+              correctedPrompt = replacePromptReference(correctedPrompt, issue.query, candidate.artist);
+            }
+          }
+          if (correctedPrompt !== text) {
+            resolutionOrigin.current = { prompt: q, displayPrompt: correctedPrompt, source };
+            spellingDecisions.current = { ...spellingDecisions.current, prompt: correctedPrompt, source };
+            preservePreviewForPromptChange.current = true;
+            setPrompt(correctedPrompt);
           }
           // Only genuine identity ambiguity pauses a submitted request.
           const unresolvedChoices = (summary?.resolutionIssues ?? []).some((issue) =>
@@ -583,12 +626,12 @@ export function GenerateScreen({
                   {issue.groundingTruncated && <li>Additional identities were omitted because the lookup limit was reached.</li>}
                 </ul>
               )}
-              {(issue.alternatives ?? []).length > 0 && (
+              {(issue.alternatives ?? []).some((alternative) => alternative.representatives?.[0]?.trackId) && (
                 <label className="flex flex-col gap-1">
                   Choose the intended {issue.kind} for “{issue.query}”
-                  <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(resolutionIssueKey(issue.kind, issue.query), event.target.value)}>
+                  <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2 text-text focus-visible:outline-2 focus-visible:outline-accent" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(issue, event.target.value)}>
                     <option value="">Select a match…</option>
-                    {(issue.alternatives ?? []).map((alternative) => <option key={alternative.entityId} value={alternative.representatives?.[0]?.trackId ?? alternative.entityId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
+                    {(issue.alternatives ?? []).filter((alternative) => alternative.representatives?.[0]?.trackId).map((alternative) => <option key={alternative.entityId} value={alternative.representatives![0].trackId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
                   </select>
                 </label>
               )}
@@ -667,7 +710,10 @@ export function GenerateScreen({
           autoFocus
           disabled={generating || regenerationPending}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => {
+            resolutionOrigin.current = null;
+            setPrompt(e.target.value);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !generating) {
               e.preventDefault();
