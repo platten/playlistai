@@ -54,6 +54,9 @@ All screenshots use synthetic fixtures, not listening history or private prompts
 - `go test ./internal/enrich/musicbrainz`: passed.
 - `bash scripts/test.sh`: passed with 239 frontend tests, including generated bindings,
   typecheck/build, Go vet, race-enabled tests, and lint.
+- After the final frontend retry fix: all 243 frontend tests, typecheck, production
+  build, and artist-choice browser checks passed. The build reports a non-failing
+  JavaScript chunk-size warning (about 525 kB minified).
 - Browser scripts: `capture-artist-spelling.mjs`, `capture-generate-settings.mjs`,
   `capture-populated-playlist.mjs`, and `capture-export-ui.mjs`.
 - `git diff --check`.
