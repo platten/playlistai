@@ -9,7 +9,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const OnlyAlgorithmVersion = AlgorithmVersion + "+engine-only/v3"
+const OnlyAlgorithmVersion = AlgorithmVersion + "+engine-only/v4"
 
 // BuildOnly adds honest capability reporting around the unchanged evaluation
 // baseline. It performs no metadata lookup, preview analysis or personalization.
@@ -26,6 +26,12 @@ func BuildOnly(ctx context.Context, engine ports.RecommendationEngine, intent co
 		out.Duration = &core.PlaylistDurationAssessment{TargetSeconds: intent.DurationSeconds, ToleranceSeconds: intent.DurationTolerance(), State: core.EvidenceUnsupported}
 		out.Outcome = core.GenerationOutcome{State: core.OutcomeUnsupported, Reasons: []core.OutcomeReason{{Code: "engine_only_duration", Detail: "Deej-AI-only does not verify full-recording durations or select for a duration target.", Action: "Choose an analysis-enabled recommendation mode to fit a duration using verified recording metadata."}}}
 		return out, nil
+	}
+	for _, criterion := range intent.EssentialCriteria {
+		if criterion.Kind == "composer" {
+			out.Outcome = core.GenerationOutcome{State: core.OutcomeUnsupported, Reasons: []core.OutcomeReason{{Code: "engine_only_composer", Criterion: criterion.Value, Detail: "Deej-AI-only cannot verify recording composer credits.", Action: "Choose an analysis-enabled recommendation mode with indexed composer metadata."}}}
+			return out, nil
+		}
 	}
 	if genre, singleGenre := core.SinglePlaylistGenre(intent); singleGenre {
 		out.Outcome = core.GenerationOutcome{State: core.OutcomeUnsupported, Reasons: []core.OutcomeReason{{Code: "single_genre_check_unavailable", Criterion: genre.Value, Detail: "Deej-AI-only cannot verify each track's genre.", Action: "Choose AcousticBrainz-first or CLAP-first in Settings to check musical fit."}}}

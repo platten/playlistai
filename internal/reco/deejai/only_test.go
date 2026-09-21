@@ -74,3 +74,12 @@ func TestEngineOnlyDoesNotClaimAnUnverifiedDuration(t *testing.T) {
 		t.Fatalf("duration capability was misrepresented: %+v %v", got, err)
 	}
 }
+
+func TestEngineOnlyDoesNotClaimComposerCredits(t *testing.T) {
+	intent := baseIntent().Normalized()
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "composer", Value: "Fryderyk Chopin", Scope: "playlist", Strength: "required"}}
+	got, err := deejai.BuildOnly(context.Background(), nil, intent)
+	if err != nil || got.Outcome.State != core.OutcomeUnsupported || len(got.Tracks) != 0 || len(got.Outcome.Reasons) != 1 || got.Outcome.Reasons[0].Code != "engine_only_composer" {
+		t.Fatalf("composer credit was not rejected without metadata: %+v %v", got, err)
+	}
+}

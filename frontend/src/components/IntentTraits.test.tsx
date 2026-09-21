@@ -24,3 +24,10 @@ it("keeps vocal degree and independent journey scopes visible", () => {
   ] }} />);
   expect(screen.getByText("Alternatives: mostly instrumental at the start · avoid singing at the end")).toBeTruthy();
 });
+
+it("labels a composer credit separately from the performer", () => {
+  render(<IntentTraits preferences={{ genres: [{ value: "classical" }] }} criteria={[
+    { kind: "genre", value: "classical" }, { kind: "composer", value: "Fryderyk Chopin" },
+  ]} />);
+  expect(screen.getByText("Essential: classical, composed by Fryderyk Chopin")).toBeTruthy();
+});

@@ -71,6 +71,16 @@ func mergeRecordingMetadata(base, local core.EnrichedTrack) core.EnrichedTrack {
 }
 
 func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.MusicalCriterion) core.EvidenceState {
+	if c.Kind == "composer" {
+		// Composer is an identity credit. CLAP, semantic similarity, performer
+		// names, and titles cannot prove it, even for a close partial result.
+		if catalog, ok := o.cat.(interface {
+			CriterionEvidence(context.Context, string, core.MusicalCriterion) core.EvidenceState
+		}); ok {
+			return catalog.CriterionEvidence(ctx, id, c)
+		}
+		return core.EvidenceUnknown
+	}
 	if o.audioSession != nil {
 		if state := o.audioSession.Criterion(id, c); state != core.EvidenceUnknown && state != "" {
 			return state

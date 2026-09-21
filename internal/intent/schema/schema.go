@@ -19,7 +19,7 @@ import (
 
 // Version keys model wire grammar and compiler behavior independently of the
 // saved core intent contract. Historical MusicIntent loading is unchanged.
-const Version = 11
+const Version = 12
 
 type WireReference struct {
 	Kind      string `json:"kind"`
@@ -119,7 +119,7 @@ ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," 
 anchorlist ::= "[" ws (anchor (ws "," ws anchor (ws "," ws anchor)?)?)? ws "]"
 anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"role\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
 criterionlist ::= "[" ws (criterion (ws "," ws criterion){0,7})? ws "]"
-criterion ::= "{" ws "\"kind\":" ws ("\"genre\"" | "\"texture\"" | "\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
+criterion ::= "{" ws "\"kind\":" ws ("\"genre\"" | "\"texture\"" | "\"style\"" | "\"mood\"" | "\"instrumentation\"" | "\"vocal\"" | "\"composer\"") ws "," ws "\"value\":" ws str ws "," ws "\"scope\":" ws ("\"playlist\"" | "\"journey_start\"" | "\"journey_end\"" | "\"journey_via\"") ws "," ws "\"span\":" ws str ws "}"
 preflist ::= "[" ws (pref (ws "," ws pref){0,7})? ws "]"
 pref ::= "{" ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws ("," ws "\"scope\":" ws scope ws)? ("," ws "\"strength\":" ws strength ws)? ("," ws "\"degree\":" ws str ws)? ("," ws "\"group\":" ws str ws)? "}"
 scope ::= "\"playlist\"" | "\"journey_start\"" | "\"journey_via\"" | "\"journey_end\""

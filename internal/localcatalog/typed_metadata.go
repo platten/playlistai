@@ -163,6 +163,24 @@ func criterionPostingTerm(c core.MusicalCriterion) string {
 }
 
 func annotationCriterionEvidence(a []core.MetadataAnnotation, criterion core.MusicalCriterion) core.EvidenceState {
+	if criterion.Kind == "composer" {
+		// A performer, title, or album-level credit cannot establish who wrote
+		// this recording. Every explicit track-composer value must agree.
+		found := false
+		for _, item := range a {
+			if item.Kind != "composer" {
+				continue
+			}
+			found = true
+			if normalizeUnicode(item.Value) != normalizeUnicode(criterion.Value) {
+				return core.EvidenceMismatch
+			}
+		}
+		if found {
+			return core.EvidenceMatch
+		}
+		return core.EvidenceUnknown
+	}
 	meta := NormalizeMusicalMetadata(a)
 	if meta.Conflicts[criterion.Kind] {
 		return core.EvidenceUnknown

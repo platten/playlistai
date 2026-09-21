@@ -97,7 +97,7 @@ func (m MusicIntent) Validate() error {
 			return err
 		}
 		switch criterion.Kind {
-		case "genre", "style", "texture", "mood", "instrumentation", "vocal":
+		case "genre", "style", "texture", "mood", "instrumentation", "vocal", "composer":
 		default:
 			return fmt.Errorf("intent: invalid essential criterion kind %q", criterion.Kind)
 		}

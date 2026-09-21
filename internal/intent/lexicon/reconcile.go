@@ -172,6 +172,8 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative artist era is preserved; a supported career-period reference is needed before it can constrain retrieval.", Evidence: a.Evidence})
 		case "required_track":
 			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
+		case "composer":
+			intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: "composer", Value: a.Value, Scope: a.Scope, Strength: "required", Evidence: a.Evidence})
 		case "require_artist":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "require_artist", Value: a.Value, Evidence: a.Evidence})
 			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
