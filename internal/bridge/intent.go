@@ -148,11 +148,13 @@ func (a *API) GenerateFromPromptWithContext(ctx context.Context, prompt string, 
 }
 
 type ResolutionSelection struct {
-	Kind             core.ReferenceKind `json:"kind"`
-	Query            string             `json:"query"`
-	TrackID          string             `json:"trackId"`
-	RejectSpelling   bool               `json:"rejectSpelling,omitempty"`
-	spellingAccepted bool
+	Kind              core.ReferenceKind `json:"kind"`
+	Query             string             `json:"query"`
+	TrackID           string             `json:"trackId"`
+	IdentityID        string             `json:"identityId,omitempty"`
+	RejectSpelling    bool               `json:"rejectSpelling,omitempty"`
+	KeepAsDescription bool               `json:"keepAsDescription,omitempty"`
+	spellingAccepted  bool
 }
 
 // GenerateFromPromptResolved applies choices made only for references that the
@@ -219,6 +221,7 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	m = applyDescriptionSelections(m, selections)
 	m.References = applySelections(m.References, selections)
 	m.InferredAnchors = applyAnchorSelections(m.InferredAnchors, selections)
 	m.Journey.Waypoints = applySelections(m.Journey.Waypoints, selections)
@@ -354,6 +357,18 @@ func applySelections(references []core.IntentReference, selections []ResolutionS
 			if selection.Kind == out[i].Kind && strings.EqualFold(strings.TrimSpace(selection.Query), strings.TrimSpace(out[i].Query)) {
 				out[i].TrackID = selection.TrackID
 				out[i].Resolution = nil
+				if selection.IdentityID != "" && out[i].Grounding != nil {
+					grounding := *out[i].Grounding
+					for _, candidate := range grounding.Candidates {
+						if candidate.ID == selection.IdentityID && candidate.Kind == selection.Kind {
+							grounding.Candidates = []core.IdentityCandidate{candidate}
+							grounding.Truncated = false
+							grounding.Confirmed = true
+							out[i].Grounding = &grounding
+							break
+						}
+					}
+				}
 				if selection.RejectSpelling {
 					out[i].SpellingDecision = "original"
 				} else if selection.spellingAccepted {

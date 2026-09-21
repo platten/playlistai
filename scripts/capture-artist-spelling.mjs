@@ -17,6 +17,10 @@ ParseIntentWithContext:(prompt,context)=>{window.__parse.push({prompt,context});
 GenerateFromPromptResolvedWithContext:(prompt,selections,context)=>{window.__generated.push({prompt,selections,context});return {request:{},name:"Playlist",playlist:{generationId:context.generationId,tracks:[{id:"result"}]}}},
 GenerateFromPromptWithContext:(prompt,context)=>methods.GenerateFromPromptResolvedWithContext(prompt,[],context),
 };
+const parseOriginal=methods.ParseIntentWithContext;
+methods.ParseIntentWithContext=(prompt,context)=>prompt.includes('Dreamy')?{count:10,creativity:.5,noise:.1,lookback:3,intent:{preferences:{}},resolutionIssues:[{kind:'artist',query:'Dreamy',status:'ambiguous',alternatives:[{entityId:'dreamy-artist',artist:'Dreamy',representatives:[{trackId:'dreamy-track'}]}]}]}:parseOriginal(prompt,context);
+const parseWithDescription=methods.ParseIntentWithContext;
+methods.ParseIntentWithContext=(prompt,context)=>prompt.includes('Nirvana')?{count:20,creativity:.5,noise:.1,lookback:3,intent:{preferences:{}},resolutionIssues:[{kind:'artist',query:'Nirvana',status:'ambiguous',groundingCandidates:[{kind:'artist',id:'us',name:'Nirvana',disambiguation:'US grunge band'},{kind:'artist',id:'uk',name:'Nirvana',disambiguation:'UK psychedelic band'}]}]}:parseWithDescription(prompt,context);
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve().then(()=>o[k](...args));p.cancel=()=>{};return p;}});`;
 const runtime = `export const Events={On:()=>()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;`;
 const entry = `import React from '/node_modules/.vite/deps/react.js';import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';import {GenerateScreen} from '/src/screens/GenerateScreen.tsx';import {PreviewPlayerProvider} from '/src/components/index.ts';import '/src/design/tokens.css';ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(PreviewPlayerProvider,null,React.createElement(GenerateScreen,{sessionId:'fixture',parserBackend:'llama',onGenerated:()=>window.__displayed++,onNeedSetup:()=>{}})));`;
@@ -39,7 +43,7 @@ try {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     for (const width of [1000,390]) {
       await page.setViewportSize({width,height:760});
-      await page.screenshot({path:path.join(output,`artist-spelling-${theme}-${width}.png`),fullPage:true});
+      await page.screenshot({path:path.join(output,`artist-spelling-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'horizontal overflow');
     }
   }
@@ -79,5 +83,43 @@ try {
   assert.deepEqual(await page.evaluate(()=>window.__generated[3].selections),[]);
   assert.equal(await dialog.count(),0);
   assert.deepEqual(errors,[]);
-  console.log('Artist spelling UI passed: dropdown accept/keep/cancel, corrected prompt, selected catalog identity on retry, edited reset, exact artist bypass, keyboard focus and Escape, dark/light narrow/wide.');
+  await composer.fill('Music like Nirvana');
+  await page.getByRole('button',{name:'Generate playlist'}).click();
+  const identities=page.getByRole('combobox',{name:/Choose the intended artist/});
+  await identities.waitFor();
+  const confirm=page.getByRole('button',{name:'Confirm and generate'});
+  assert.equal(await confirm.isDisabled(),true);
+  await identities.selectOption('uk');
+  assert.equal(await page.evaluate(()=>window.__displayed),4);
+  for (const theme of ['dark','light']) {
+    await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
+    for (const width of [1000,390]) {
+      await page.setViewportSize({width,height:760});
+      await page.screenshot({path:path.join(output,`artist-identity-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+    }
+  }
+  await confirm.click();
+  await page.waitForFunction(()=>window.__displayed===5);
+  assert.deepEqual(await page.evaluate(()=>window.__generated[4].selections),[{kind:'artist',query:'Nirvana',trackId:'',identityId:'uk'}]);
+  await composer.fill('Dreamy electronic music, 10 tracks');
+  await page.getByRole('button',{name:'Generate playlist'}).click();
+  await identities.selectOption({label:'Keep “Dreamy” as an adjective / description'});
+  for (const theme of ['dark','light']) {
+    await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
+    for (const width of [1000,390]) {
+      await page.setViewportSize({width,height:760});
+      await page.screenshot({path:path.join(output,`artist-description-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
+    }
+  }
+  await confirm.click();
+  await page.waitForFunction(()=>window.__displayed===6);
+  assert.equal(await composer.inputValue(),'Dreamy electronic music, 10 tracks');
+  assert.deepEqual(await page.evaluate(()=>window.__generated[5].selections),[{kind:'artist',query:'Dreamy',trackId:'',keepAsDescription:true}]);
+  await page.getByRole('button',{name:'Generate playlist'}).click();
+  await page.waitForFunction(()=>window.__displayed===7);
+  assert.deepEqual(await page.evaluate(()=>window.__generated[6].selections),[{kind:'artist',query:'Dreamy',trackId:'',keepAsDescription:true}]);
+  assert.deepEqual(errors,[]);
+  console.log('Artist choice UI passed: spelling, MusicBrainz identities, description choice, corrected prompt, retry, keyboard focus, dark/light narrow/wide.');
 } finally { await browser.close(); }

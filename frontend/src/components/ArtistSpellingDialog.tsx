@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "./Button";
 
 /** Native modal keeps the decision keyboard-accessible and the prompt inert. */
-export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel }: {
+export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onDescribe, onCancel }: {
   query: string;
   artist: string;
   onAccept: () => void;
   onKeep: () => void;
+  onDescribe: () => void;
   onCancel: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -32,7 +33,7 @@ export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel
       <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-accent">Confirm artist</p>
       <h2 id="artist-spelling-title" className="break-words text-xl font-semibold tracking-tight">Did you mean {artist}?</h2>
       <p id="artist-spelling-description" className="mt-3 break-words text-sm leading-relaxed text-muted">
-        Your description names “{query}”. Choose the catalog artist or keep the name you entered. A matching artist may not be available if you keep it.
+        “{query}” may be an artist name or a description of the music. Choose the suggested artist, keep the name you entered, or use the wording as an adjective or description.
       </p>
       <div className="mt-6 flex flex-col gap-2">
         <label htmlFor="artist-spelling-choice" className="text-sm font-medium">Choose the intended artist for “{query}”</label>
@@ -41,8 +42,9 @@ export function ArtistSpellingDialog({ query, artist, onAccept, onKeep, onCancel
           <option value="">Select a match…</option>
           <option value="suggested">{artist}</option>
           <option value="original">Keep “{query}”</option>
+          <option value="description">Keep “{query}” as an adjective / description</option>
         </select>
-        <Button variant="primary" disabled={!choice} onClick={() => choice === "suggested" ? onAccept() : onKeep()}>Continue</Button>
+        <Button variant="primary" disabled={!choice} onClick={() => choice === "suggested" ? onAccept() : choice === "description" ? onDescribe() : onKeep()}>Continue</Button>
         <Button variant="subtle" onClick={onCancel}>Cancel</Button>
       </div>
     </dialog>

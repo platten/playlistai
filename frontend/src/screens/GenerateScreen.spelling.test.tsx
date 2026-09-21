@@ -254,7 +254,7 @@ it("drops an uncertain artist choice when the corrected description is edited", 
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
 });
 
-it("shows provider identities and requires a more specific prompt for a homonymous artist", async () => {
+it("confirms a provider identity and starts generation for a homonymous artist", async () => {
   bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([{
     kind: "artist", query: "Shared Name", status: "ambiguous", inferred: false,
     groundingCandidates: [
@@ -267,15 +267,19 @@ it("shows provider identities and requires a more specific prompt for a homonymo
   await submit("Music by Shared Name");
 
   expect(await screen.findByText(/MusicBrainz has more than one identity/)).toBeTruthy();
-  const identities = screen.getByRole("list", { name: "MusicBrainz identities for Shared Name" });
+  const identities = screen.getByRole("combobox", { name: /Choose the intended artist/ });
   expect(within(identities).getByText("Shared Name (US group)")).toBeTruthy();
   expect(within(identities).getByText("Shared Name (UK group)")).toBeTruthy();
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
 
-  expect(screen.queryByRole("combobox", { name: /Choose the intended artist/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  const confirm = screen.getByRole("button", { name: "Confirm and generate" });
+  expect((confirm as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(identities, { target: { value: "artist-b" } });
   expect(onGenerated).not.toHaveBeenCalled();
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([{ kind: "artist", query: "Shared Name", trackId: "", identityId: "artist-b" }]);
 });
 
 it("shows an incomplete offline recognition notice without blocking generation", async () => {
@@ -295,4 +299,47 @@ it("shows an incomplete offline recognition notice without blocking generation",
   await submit("Music by an unusually long artist name");
   expect(await screen.findByText("Reference lookup reached its request limit; text-only parsing was used.")).toBeTruthy();
   expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
+});
+
+it.each(["catalog", "provider"])("keeps a %s artist match as a description, including on retry", async (provider) => {
+  const descriptionIssue = {
+    kind: "artist", query: "Dreamy", status: "ambiguous", inferred: false,
+    ...(provider === "catalog"
+      ? { alternatives: [{ entityId: "dreamy-artist", artist: "Dreamy", representatives: [{ trackId: "dreamy-track" }] }] }
+      : { groundingCandidates: [{ kind: "artist", id: "a", name: "Dreamy" }, { kind: "artist", id: "b", name: "Dreamy" }] }),
+  };
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([descriptionIssue])));
+  renderScreen();
+  const description = "Dreamy electronic music, 10 tracks";
+  await submit(description);
+  const chooser = await screen.findByRole("combobox", { name: /Choose the intended artist/ });
+  const option = within(chooser).getByRole("option", { name: "Keep “Dreamy” as an adjective / description" }) as HTMLOptionElement;
+  fireEvent.change(chooser, { target: { value: option.value } });
+  expect(onGenerated).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and generate" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  const selection = [{ kind: "artist", query: "Dreamy", trackId: "", keepAsDescription: true }];
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0].slice(0, 2)).toEqual([description, selection]);
+  expect((screen.getByLabelText("Your description") as HTMLTextAreaElement).value).toBe(description);
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(2));
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[1][1]).toEqual(selection);
+  await submit(`${description}, no vocals`);
+  await screen.findByRole("combobox", { name: /Choose the intended artist/ });
+  expect(onGenerated).toHaveBeenCalledTimes(2);
+});
+
+it("can keep a spelling suggestion as a musical description", async () => {
+  renderScreen();
+  await submit();
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByRole("combobox", { name: /Choose the intended artist/ }), { target: { value: "description" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([
+    { kind: "artist", query: "christrian loeffler", trackId: "", keepAsDescription: true },
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Generate playlist" }));
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

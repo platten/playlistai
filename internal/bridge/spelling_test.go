@@ -112,3 +112,29 @@ func TestGenerateRequiresArtistSpellingConfirmation(t *testing.T) {
 		t.Fatalf("generated request used a different artist than the selected catalog match: %+v", selected)
 	}
 }
+
+func TestProviderIdentityChoicePreservesSourceAndRejectsForgedIDs(t *testing.T) {
+	m := core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Nirvana", Grounding: &core.IdentityGrounding{
+		Provider: "MusicBrainz", Truncated: true, Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "us", Name: "Nirvana"}, {Kind: core.ReferenceArtist, ID: "uk", Name: "Nirvana"}},
+	}}}}
+	choice := ResolutionSelection{Kind: core.ReferenceArtist, Query: "Nirvana", IdentityID: "uk"}
+	selections, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := applySelections(m.References, selections)[0]
+	resolved, issues := resolution.Apply(spellingResolver{}, core.MusicIntent{References: []core.IntentReference{got}})
+	if resolved.References[0].Resolution.Status != core.ResolutionUnresolved || len(issues) != 1 || issues[0].SpellingSuggestion != nil {
+		t.Fatal("provider choice bypassed identity lookup", resolved.References)
+	}
+	if got.Query != "Nirvana" || got.TrackID != "" || got.Grounding.Truncated || len(got.Grounding.Candidates) != 1 || got.Grounding.Candidates[0].ID != "uk" {
+		t.Fatalf("choice lost: %+v", got)
+	}
+	if len(m.References[0].Grounding.Candidates) != 2 || !m.References[0].Grounding.Truncated {
+		t.Fatal("cached preview mutated")
+	}
+	choice.IdentityID = "forged"
+	if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
+		t.Fatal("forged identity accepted")
+	}
+}

@@ -45,6 +45,7 @@ const DEEJAI_SURPRISES = [
 ];
 
 const resolutionIssueKey = (kind: string, query: string) => `${kind.toLowerCase()}\u0000${query.toLowerCase()}`;
+const DESCRIPTION_CHOICE = "__keep_as_description__";
 
 const replacePromptReference = (prompt: string, query: string, replacement: string) => {
   const trimmedQuery = query.trim();
@@ -202,7 +203,7 @@ export function GenerateScreen({
     setCheckedTracks([]);
   }, []);
 
-  const chooseSpelling = (accept: boolean) => {
+  const chooseSpelling = (choice: "accept" | "keep" | "description") => {
     const pending = pendingSpelling.current;
     if (!pending || pending.sequence !== generationSequence.current) return;
     pendingSpelling.current = null;
@@ -213,8 +214,9 @@ export function GenerateScreen({
     }
     const selection = {
       kind: "artist", query: pending.query,
-      trackId: accept ? pending.trackId : "",
-      ...(!accept ? { rejectSpelling: true } : {}),
+      trackId: choice === "accept" ? pending.trackId : "",
+      ...(choice === "keep" ? { rejectSpelling: true } : {}),
+      ...(choice === "description" ? { keepAsDescription: true } : {}),
     } as ResolutionSelection;
     spellingDecisions.current.selections = [
       ...spellingDecisions.current.selections.filter((choice) => resolutionIssueKey(choice.kind, choice.query) !== resolutionIssueKey(selection.kind, selection.query)), selection,
@@ -328,7 +330,8 @@ export function GenerateScreen({
     ? preview === null || !hasResolvedSeed
     : catalogOnly && !instrumentalRequest &&
       (preview === null || (!hasResolvedSeed && (preview.intent.preferences.genres ?? []).length === 0 && (preview.intent.essentialCriteria ?? []).length === 0)));
-  const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred);
+  const explicitIssues = (preview?.resolutionIssues ?? []).filter((issue) => !issue.inferred && !spellingDecisions.current.selections.some(
+    (choice) => choice.keepAsDescription && resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query)));
   const inferredIssues = (preview?.resolutionIssues ?? []).filter((issue) => issue.inferred);
   const ambiguousIssues = explicitIssues.filter((issue) => issue.status === "ambiguous" && !issue.spellingSuggestion);
   const unresolvedIssues = explicitIssues.filter((issue) => issue.status === "unresolved" && !spellingDecisions.current.selections.some(
@@ -355,15 +358,17 @@ export function GenerateScreen({
       : !generating && !replaySaved
         ? [
           ...recognitionNotices,
-          ...ambiguousIssues.filter((issue) => !resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) =>
+          ...ambiguousIssues.map((issue) =>
             (issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated
-              ? `MusicBrainz has more than one identity for “${issue.query}”. Add a track title or other identifying detail to your request.`
+              ? `MusicBrainz has more than one identity for “${issue.query}”. Choose the intended match below, then confirm to generate your playlist.`
               : (issue.alternatives ?? []).some((candidate) => candidate.representatives?.[0]?.trackId)
                 ? `“${issue.query}” matches more than one ${issue.kind}. Choose the intended match below so the playlist uses the right reference.`
                 : `“${issue.query}” could not be tied to a catalog recording. Add a track title or other identifying detail before generating.`),
           ...ambiguousIssues.filter((issue) => resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]).map((issue) => {
             const selected = issue.alternatives?.find((candidate) => candidate.representatives?.[0]?.trackId === resolutionChoices[resolutionIssueKey(issue.kind, issue.query)]);
-            return `Using ${selected?.artist ?? "the selected catalog match"} for “${issue.query}”. You can change the match before generating.`;
+            if (selected) return `Using ${selected.artist} for “${issue.query}”. You can change the match before generating.`;
+            if (resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] === DESCRIPTION_CHOICE) return `Using “${issue.query}” as a musical description.`;
+            return "You can change the selected MusicBrainz identity before generating.";
           }),
           ...unresolvedIssues.map((issue) => spellingDecisions.current.selections.some((choice) => resolutionIssueKey(choice.kind, choice.query) === resolutionIssueKey(issue.kind, issue.query) && choice.rejectSpelling)
             ? `You kept “${issue.query}”. No artist match has been confirmed for that name. Correct the spelling or choose another artist if the request cannot be fulfilled.`
@@ -407,6 +412,7 @@ export function GenerateScreen({
       }
       const selected = Array.from(new Map([...spellingDecisions.current.selections, ...selections]
         .map((choice) => [resolutionIssueKey(choice.kind, choice.query), choice])).values());
+      spellingDecisions.current.selections = selected;
       const id = newRequestID();
       activeGenerationId.current = id;
       setGenerationId(id);
@@ -508,8 +514,11 @@ export function GenerateScreen({
     }
     const selections = ambiguousIssues.flatMap((issue) => {
       const trackId = resolutionChoices[resolutionIssueKey(issue.kind, issue.query)];
+      if (trackId === DESCRIPTION_CHOICE) {
+        return [{ kind: issue.kind, query: issue.query, trackId: "", keepAsDescription: true } as ResolutionSelection];
+      }
       return trackId
-        ? [{ kind: issue.kind, query: issue.query, trackId } as ResolutionSelection]
+        ? [{ kind: issue.kind, query: issue.query, ...((issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated ? { identityId: trackId, trackId: "" } : { trackId }) } as ResolutionSelection]
         : [];
     });
     runGenerate(prompt, selections);
@@ -589,7 +598,8 @@ export function GenerateScreen({
       {spellingConfirmation && <ArtistSpellingDialog
         key={resolutionIssueKey("artist", spellingConfirmation.query)}
         query={spellingConfirmation.query} artist={spellingConfirmation.artist}
-        onAccept={() => chooseSpelling(true)} onKeep={() => chooseSpelling(false)}
+        onAccept={() => chooseSpelling("accept")} onKeep={() => chooseSpelling("keep")}
+        onDescribe={() => chooseSpelling("description")}
         onCancel={() => { cancelGeneration(); window.requestAnimationFrame(() => document.getElementById("music-description")?.focus()); }}
       />}
       <div className="flex w-full flex-col gap-3">
@@ -616,27 +626,35 @@ export function GenerateScreen({
           {ambiguousIssues.map((issue) => (
             <div key={resolutionIssueKey(issue.kind, issue.query)} className="mt-3 flex flex-col gap-2 text-[13px]">
               {((issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated) && (
-                <ul aria-label={`MusicBrainz identities for ${issue.query}`} className="list-disc space-y-1 pl-5 text-muted">
-                  {issue.groundingCandidates!.map((candidate) => (
-                    <li key={candidate.id}>
-                      {candidate.title ? `${candidate.name} — ${candidate.title}` : candidate.name}
-                      {candidate.disambiguation ? ` (${candidate.disambiguation})` : ""}
-                    </li>
-                  ))}
-                  {issue.groundingTruncated && <li>Additional identities were omitted because the lookup limit was reached.</li>}
-                </ul>
-              )}
-              {(issue.alternatives ?? []).some((alternative) => alternative.representatives?.[0]?.trackId) && (
                 <label className="flex flex-col gap-1">
                   Choose the intended {issue.kind} for “{issue.query}”
-                  <select className="w-full min-w-0 rounded-control border border-line bg-bg p-2 text-text focus-visible:outline-2 focus-visible:outline-accent" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(issue, event.target.value)}>
+                <select disabled={generating} className="w-full min-w-0 rounded-control border border-line bg-bg p-2 text-text focus-visible:outline-2 focus-visible:outline-accent" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(issue, event.target.value)}>
+                  <option value="">Select a match…</option>
+                  {issue.kind === "artist" && <option value={DESCRIPTION_CHOICE}>Keep “{issue.query}” as an adjective / description</option>}
+                  {(issue.groundingCandidates ?? []).map((candidate) => (
+                    <option key={candidate.id} value={candidate.id}>
+                      {candidate.title ? `${candidate.name} — ${candidate.title}` : candidate.name}
+                      {candidate.disambiguation ? ` (${candidate.disambiguation})` : ""}
+                      {!candidate.disambiguation ? ` (${candidate.id})` : ""}
+                    </option>
+                  ))}
+                </select>
+                  {issue.groundingTruncated && <span className="text-muted">More identities may exist. Refine your description if your artist is not listed.</span>}
+                </label>
+              )}
+              {!((issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated) && (issue.alternatives ?? []).some((alternative) => alternative.representatives?.[0]?.trackId) && (
+                <label className="flex flex-col gap-1">
+                  Choose the intended {issue.kind} for “{issue.query}”
+                  <select disabled={generating} className="w-full min-w-0 rounded-control border border-line bg-bg p-2 text-text focus-visible:outline-2 focus-visible:outline-accent" value={resolutionChoices[resolutionIssueKey(issue.kind, issue.query)] ?? ""} onChange={(event) => selectReference(issue, event.target.value)}>
                     <option value="">Select a match…</option>
+                    {issue.kind === "artist" && <option value={DESCRIPTION_CHOICE}>Keep “{issue.query}” as an adjective / description</option>}
                     {(issue.alternatives ?? []).filter((alternative) => alternative.representatives?.[0]?.trackId).map((alternative) => <option key={alternative.entityId} value={alternative.representatives![0].trackId}>{alternative.artist}{alternative.title ? ` — ${alternative.title}` : ""}</option>)}
                   </select>
                 </label>
               )}
             </div>
           ))}
+          {ambiguousIssues.length > 0 && <Button className="mt-3" disabled={ambiguityNeedsChoice || generating} onClick={generate}>Confirm and generate</Button>}
         </div>
       )}
 
