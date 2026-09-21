@@ -5,6 +5,9 @@ implementation evidence, see the [2026-09-15 remediation plan](codebase-remediat
 and [remediation results](codebase-remediation-results-2026-09-15.md).
 Measurements below retain their original scope and date.
 
+See also the focused [2026-09-21 correctness and UI review](correctness-ui-review-2026-09-21.md)
+for artist identity confirmation, recovery regressions, and rendered UI checks.
+
 ## Baseline and scope
 
 Reviewed `main` at `b79c031` on 2026-09-11. The implementation is being revised

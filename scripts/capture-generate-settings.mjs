@@ -29,6 +29,25 @@ try {
   assert.deepEqual(await count.locator('option').allTextContents(),['5','10','20','40']);
   for(const theme of ['dark','light']) {
     await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+    const contrastFailures = await page.evaluate(() => {
+      const style = getComputedStyle(document.documentElement);
+      const luminance = (token) => {
+        const hex = style.getPropertyValue(`--pai-${token}`).trim().replace('#', '');
+        const channels = hex.match(/../g).map(part => parseInt(part, 16) / 255)
+          .map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+        return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+      };
+      const failures = [];
+      for (const foreground of ['text','muted','faint','accent','good','warn','bad']) {
+        for (const background of ['bg','surface','inset']) {
+          const values = [luminance(foreground), luminance(background)].sort((a,b) => b-a);
+          const ratio = (values[0] + 0.05) / (values[1] + 0.05);
+          if (ratio < 4.5) failures.push(`${foreground}/${background}: ${ratio.toFixed(2)}`);
+        }
+      }
+      return failures;
+    });
+    assert.deepEqual(contrastFailures, [], `${theme} small-text token contrast`);
     for(const width of [1000,390]) {
       await page.setViewportSize({width,height:760});
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'horizontal overflow');

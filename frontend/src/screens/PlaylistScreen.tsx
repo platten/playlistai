@@ -338,7 +338,7 @@ export function PlaylistScreen({
 
       <details className="rounded-card border border-line bg-surface px-4 py-3">
         <summary className="cursor-pointer text-[13px] font-medium text-muted">Adjust playlist</summary>
-        <div className="mt-4 grid grid-cols-2 gap-x-8 gap-y-4">
+        <div className="mt-4 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
         <Slider
           label="Audio similarity"
           help="How much a song's sound influences its selection. Higher values favor songs that sound closer to your reference tracks; lower values give other recommendation signals more influence."
@@ -395,7 +395,7 @@ export function PlaylistScreen({
           <span>Track count follows the requested duration.</span>
           <Button size="sm" variant="ghost" onClick={() => setCountExplicit(true)}>Set a track count</Button>
         </div>}
-        <label className="col-span-2 flex items-center gap-2 text-[12.5px] text-muted">
+        <label className="flex items-center gap-2 text-[12.5px] text-muted sm:col-span-2">
           <input
             type="checkbox"
             checked={excludeSeedArtists}
