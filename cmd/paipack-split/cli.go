@@ -16,9 +16,12 @@ import (
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/platten/playlistai/internal/modelpack"
 )
 
 const manifestName = "manifest.json"
+const maxHostedBytes int64 = 3_000_000_000 // discoveryasset.MaxDownloadBytes
 
 type manifest struct {
 	SchemaVersion int        `json:"schemaVersion"`
@@ -47,9 +50,11 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 	flags := flag.NewFlagSet("paipack-split", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var output, partSizeText, compression string
+	var hosted bool
 	flags.StringVar(&output, "out", "", "output directory (default: <input>.parts)")
-	flags.StringVar(&partSizeText, "part-size", "1900MiB", "maximum part size, such as 1900MiB or 500MB")
+	flags.StringVar(&partSizeText, "part-size", "", "maximum part size (default: 1900MiB, or 190MB with --hosted)")
 	flags.StringVar(&compression, "compression", "none", "transport compression: none or zstd")
+	flags.BoolVar(&hosted, "hosted", false, "create a desktop-compatible multipart tar.zst release for HTTPS hosting")
 	flags.Usage = func() {
 		_, _ = fmt.Fprintln(stderr, "Usage: paipack-split [options] input.paipack")
 		flags.PrintDefaults()
@@ -65,6 +70,12 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 	if !strings.EqualFold(filepath.Ext(input), ".paipack") {
 		return 2, errors.New("paipack-split: input must have a .paipack extension")
 	}
+	if partSizeText == "" {
+		partSizeText = "1900MiB"
+		if hosted {
+			partSizeText = "190MB"
+		}
+	}
 	partSize, err := parseByteSize(partSizeText)
 	if err != nil {
 		return 2, fmt.Errorf("paipack-split: --part-size: %w", err)
@@ -73,8 +84,25 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 	if compression != "none" && compression != "zstd" {
 		return 2, errors.New("paipack-split: --compression must be none or zstd")
 	}
+	if hosted && compression != "none" {
+		return 2, errors.New("paipack-split: --hosted manages tar.zst compression; omit --compression")
+	}
 	if output == "" {
 		output = input + ".parts"
+	}
+	if hosted {
+		if partSize < 1024 || partSize >= modelpack.MaxPartBytes {
+			return 2, fmt.Errorf("paipack-split: hosted part size must be between 1024 and %d bytes (exclusive)", modelpack.MaxPartBytes)
+		}
+		report, err := splitHosted(ctx, input, output, partSize)
+		if err != nil {
+			return 1, err
+		}
+		_, err = fmt.Fprintf(stdout, "Packaged %s into %d hosted part(s) in %s\nManifest: %s\n", input, len(report.Parts), output, filepath.Join(output, manifestName))
+		if err != nil {
+			return 1, err
+		}
+		return 0, nil
 	}
 	report, err := splitPack(ctx, input, output, partSize, compression)
 	if err != nil {
@@ -85,6 +113,57 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 		return 1, err
 	}
 	return 0, nil
+}
+
+func splitHosted(ctx context.Context, input, output string, partSize int64) (modelpack.Manifest, error) {
+	info, err := os.Stat(input)
+	if err != nil {
+		return modelpack.Manifest{}, err
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxHostedBytes {
+		return modelpack.Manifest{}, errors.New("paipack-split: hosted paipack must be a regular file no larger than 3 GB")
+	}
+	output, err = filepath.Abs(output)
+	if err != nil {
+		return modelpack.Manifest{}, err
+	}
+	if _, err := os.Lstat(output); err == nil {
+		return modelpack.Manifest{}, fmt.Errorf("paipack-split: output already exists: %s", output)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return modelpack.Manifest{}, err
+	}
+	parent := filepath.Dir(output)
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		return modelpack.Manifest{}, err
+	}
+	temporary, err := os.MkdirTemp(parent, ".paipack-hosted-*")
+	if err != nil {
+		return modelpack.Manifest{}, err
+	}
+	defer os.RemoveAll(temporary)
+	name := strings.TrimSuffix(filepath.Base(input), filepath.Ext(input))
+	report, err := modelpack.PackageFile(ctx, name, input, temporary, partSize)
+	if err != nil {
+		return modelpack.Manifest{}, err
+	}
+	manifestInfo, err := os.Stat(filepath.Join(temporary, manifestName))
+	if err != nil {
+		return modelpack.Manifest{}, err
+	}
+	transportBytes := manifestInfo.Size()
+	for _, part := range report.Parts {
+		transportBytes += part.Size
+	}
+	if transportBytes > maxHostedBytes {
+		return modelpack.Manifest{}, errors.New("paipack-split: hosted bundle exceeds the 3 GB desktop download limit")
+	}
+	if err := os.Rename(temporary, output); err != nil {
+		return modelpack.Manifest{}, fmt.Errorf("paipack-split: publish hosted output: %w", err)
+	}
+	if err := syncParentDirectory(parent); err != nil {
+		return modelpack.Manifest{}, err
+	}
+	return report, nil
 }
 
 func splitPack(ctx context.Context, input, output string, partSize int64, compression string) (manifest, error) {

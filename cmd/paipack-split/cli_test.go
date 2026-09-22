@@ -13,6 +13,9 @@ import (
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+
+	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/modelpack"
 )
 
 func TestExecuteSplitsPackAndWritesManifest(t *testing.T) {
@@ -42,6 +45,43 @@ func TestExecuteSplitsPackAndWritesManifest(t *testing.T) {
 	assertDigest(t, report.Payload, contents)
 	if !strings.Contains(stdout.String(), "3 part(s)") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestHostedOutputInstallsThroughModelPack(t *testing.T) {
+	root := t.TempDir()
+	input := filepath.Join(root, "library.paipack")
+	_, err := librarypack.Write(context.Background(), input, librarypack.Pack{CorpusGeneration: "hosted-test", MetadataGeneration: "hosted-test", Tracks: []librarypack.Track{{ID: "one", Artist: "Artist", Title: "Song"}}}, librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(root, "hosted")
+	var stdout bytes.Buffer
+	code, err := execute(context.Background(), []string{"--hosted", "--part-size", "1024B", "--out", output, input}, &stdout, io.Discard)
+	if err != nil || code != 0 {
+		t.Fatalf("hosted split = code %d, err %v", code, err)
+	}
+	manifest, err := modelpack.ReadManifest(context.Background(), filepath.Join(output, "manifest.json"))
+	if err != nil {
+		t.Fatalf("desktop cannot read hosted manifest: %v", err)
+	}
+	if manifest.Name != "library" || len(manifest.Files) != 1 || manifest.Files[0].Path != "library.paipack" || len(manifest.Parts) == 0 {
+		t.Fatalf("invalid hosted manifest: %+v", manifest)
+	}
+	destination := filepath.Join(root, "unpacked")
+	if err := modelpack.Fetch(context.Background(), filepath.Join(output, "manifest.json"), filepath.Join(root, "cache"), destination, nil); err != nil {
+		t.Fatalf("desktop cannot unpack hosted parts: %v", err)
+	}
+	want, err := os.ReadFile(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(destination, "library.paipack"))
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("round trip changed paipack: %v", err)
+	}
+	if !strings.Contains(stdout.String(), "hosted part(s)") {
+		t.Fatalf("hosted output status = %q", stdout.String())
 	}
 }
 
@@ -89,6 +129,9 @@ func TestExecuteRejectsInvalidArgumentsAndExistingOutput(t *testing.T) {
 		{"--part-size", "0", input},
 		{"--compression", "gzip", input},
 		{"--out", output, input},
+		{"--hosted", "--compression", "zstd", input},
+		{"--hosted", "--part-size", "200MB", input},
+		{"--hosted", "--out", output, input},
 		{filepath.Join(root, "not-a-pack.zip")},
 	} {
 		code, err := execute(context.Background(), args, io.Discard, io.Discard)
@@ -102,6 +145,20 @@ func TestExecuteRejectsInvalidArgumentsAndExistingOutput(t *testing.T) {
 	}
 	if code, err := execute(context.Background(), []string{empty}, io.Discard, io.Discard); err == nil || code == 0 {
 		t.Fatalf("empty input = code %d, err %v", code, err)
+	}
+	oversized := filepath.Join(root, "oversized.paipack")
+	file, err := os.Create(oversized)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(maxHostedBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if code, err := execute(context.Background(), []string{"--hosted", "--out", filepath.Join(root, "oversized-hosted"), oversized}, io.Discard, io.Discard); err == nil || code == 0 {
+		t.Fatalf("oversized hosted pack = code %d, err %v", code, err)
 	}
 }
 

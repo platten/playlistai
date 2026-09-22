@@ -29,24 +29,47 @@ type sourceFile struct {
 // Package creates a deterministic, checksummed multipart tar.zst distribution.
 // The source tree is never modified and output must be a new or empty directory.
 func Package(ctx context.Context, name, source, output string, partBytes int64) (Manifest, error) {
-	var manifest Manifest
-	if !safeName(name) {
-		return manifest, errors.New("model pack name must contain only letters, digits, dot, underscore, or hyphen")
-	}
-	if partBytes == 0 {
-		partBytes = DefaultPartBytes
-	}
-	if partBytes < 1024 || partBytes >= MaxPartBytes {
-		return manifest, fmt.Errorf("model pack part size must be between 1024 and %d bytes (exclusive)", MaxPartBytes)
+	if err := validatePackageOptions(name, partBytes); err != nil {
+		return Manifest{}, err
 	}
 	files, err := collectSourceFiles(ctx, source)
 	if err != nil {
-		return manifest, err
+		return Manifest{}, err
+	}
+	return packageFiles(ctx, name, files, output, partBytes)
+}
+
+// PackageFile wraps one regular file in the same verified multipart format.
+// This is used for hosted paipacks without copying a large source into a
+// staging directory or accidentally packaging neighboring files.
+func PackageFile(ctx context.Context, name, source, output string, partBytes int64) (Manifest, error) {
+	if err := ctx.Err(); err != nil {
+		return Manifest{}, err
+	}
+	if err := validatePackageOptions(name, partBytes); err != nil {
+		return Manifest{}, err
+	}
+	path := filepath.Base(source)
+	if !safePath(path) {
+		return Manifest{}, errors.New("model pack source has an unsafe file name")
+	}
+	file, err := hashRegularFile(ctx, source)
+	if err != nil {
+		return Manifest{}, err
+	}
+	file.Path = path
+	return packageFiles(ctx, name, []sourceFile{{manifest: file, path: source}}, output, partBytes)
+}
+
+func packageFiles(ctx context.Context, name string, files []sourceFile, output string, partBytes int64) (Manifest, error) {
+	var manifest Manifest
+	if partBytes == 0 {
+		partBytes = DefaultPartBytes
 	}
 	if len(files) == 0 {
 		return manifest, errors.New("model pack source is empty")
 	}
-	if err = ensureEmptyDirectory(output); err != nil {
+	if err := ensureEmptyDirectory(output); err != nil {
 		return manifest, err
 	}
 
@@ -100,6 +123,16 @@ func Package(ctx context.Context, name, source, output string, partBytes int64) 
 		return Manifest{}, err
 	}
 	return manifest, nil
+}
+
+func validatePackageOptions(name string, partBytes int64) error {
+	if !safeName(name) {
+		return errors.New("model pack name must contain only letters, digits, dot, underscore, or hyphen")
+	}
+	if partBytes != 0 && (partBytes < 1024 || partBytes >= MaxPartBytes) {
+		return fmt.Errorf("model pack part size must be between 1024 and %d bytes (exclusive)", MaxPartBytes)
+	}
+	return nil
 }
 
 var unixEpoch = time.Unix(0, 0).UTC()

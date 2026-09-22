@@ -23,6 +23,20 @@ type transportFixture struct {
 }
 type progressCallback func(string, int64, int64, string)
 
+func TestManualSplitManifestExplainsHostedFormat(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"schemaVersion":1,"format":"playlist-ai-paipack-parts","parts":[{"name":"library.paipack.part000"}]}`))
+	}))
+	defer server.Close()
+	previous := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = previous }()
+	_, err := fetchRemote(context.Background(), server.URL+"/manifest.json")
+	if err == nil || !strings.Contains(err.Error(), "paipack-split --hosted") {
+		t.Fatalf("manual split manifest did not explain the recovery: %v", err)
+	}
+}
+
 func (f progressCallback) Report(op string, done, total int64, note string) { f(op, done, total, note) }
 
 func TestLocalImportRejectsSourceChangedAfterInitialHash(t *testing.T) {
