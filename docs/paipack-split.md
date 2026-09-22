@@ -19,7 +19,11 @@ go run ./cmd/paipack-split --hosted \
 
 Hosted parts default to 190 MB each, below the downloader's 200 MB exclusive
 limit. The source pack and complete download must each fit within the app's
-3 GB limit. Verify the resulting bundle before uploading:
+3 GB limit. The app generates a separate local search index when installing
+an uncurated pack; its size is additional disk usage, not download size. App
+versions before the generated-index size fix may reject a valid pack near the
+3 GB limit after building that index. Verify the resulting bundle before
+uploading:
 
 ```sh
 go run ./cmd/modelpack \

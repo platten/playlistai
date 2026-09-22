@@ -17,6 +17,7 @@ import (
 
 const ProgressOp = "discovery-data"
 const MaxDownloadBytes int64 = 3_000_000_000
+const maxGeneratedCompanionBytes int64 = 12_000_000_000
 const Format = "playlist-ai-discovery"
 
 type Config struct {
@@ -69,6 +70,14 @@ func (m Manifest) TotalBytes() int64 {
 	}
 	return n
 }
+func (m Manifest) hasGeneratedCompanion() bool {
+	return validHash(m.ManifestDigest) &&
+		((m.Source == "local" && m.TransportFormat == "paipack-v5") ||
+			(m.Source == "hosted" && m.TransportFormat == "modelpack-v1"))
+}
+func (m Manifest) hasActivationFields() bool {
+	return m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0
+}
 func (m Manifest) Validate() error {
 	if m.Format != Format || m.SchemaVersion != 1 || !safeName.MatchString(m.Version) || len(m.Packs) == 0 || len(m.Packs) > 128 {
 		return errors.New("discoveryasset: invalid release manifest")
@@ -76,12 +85,23 @@ func (m Manifest) Validate() error {
 	seen := map[string]bool{}
 	ids := map[string]bool{}
 	var total int64
-	for _, f := range append(append([]File(nil), m.Packs...), m.Companion) {
+	for _, f := range m.Packs {
 		if !safeName.MatchString(f.Name) || seen[f.Name] || !validURL(f.URL) || f.Size <= 0 || f.Size > MaxDownloadBytes-total || !validHash(f.SHA256) {
 			return errors.New("discoveryasset: invalid file or release exceeds 3 GB")
 		}
 		seen[f.Name] = true
 		total += f.Size
+	}
+	// Curated releases download their companion, so it counts against the 3 GB
+	// transport limit. Local and multipart installs build it on this machine;
+	// only their downloaded/input paipacks belong under that limit.
+	companion := m.Companion
+	companionLimit := MaxDownloadBytes - total
+	if m.hasGeneratedCompanion() {
+		companionLimit = maxGeneratedCompanionBytes
+	}
+	if !safeName.MatchString(companion.Name) || seen[companion.Name] || !validURL(companion.URL) || companion.Size <= 0 || companion.Size > companionLimit || !validHash(companion.SHA256) {
+		return errors.New("discoveryasset: invalid companion or release exceeds its size limit")
 	}
 	if m.Companion.Name != "discovery.sqlite" || m.Companion.PackID != "" {
 		return errors.New("discoveryasset: missing companion index")
@@ -145,6 +165,9 @@ func FetchManifest(ctx context.Context, rawURL string) (Manifest, error) {
 	}
 	if e = json.Unmarshal(b, &m); e != nil {
 		return m, e
+	}
+	if m.hasActivationFields() {
+		return m, errors.New("discoveryasset: remote manifest contains local activation fields")
 	}
 	return m, m.Validate()
 }

@@ -92,7 +92,7 @@ func fetchRemote(ctx context.Context, location string) (remoteManifest, error) {
 		if e = json.Unmarshal(r.raw, &m); e != nil {
 			return r, e
 		}
-		if m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0 {
+		if m.hasActivationFields() {
 			return r, errors.New("discoveryasset: remote manifest contains local activation fields")
 		}
 		if e = m.Validate(); e != nil {

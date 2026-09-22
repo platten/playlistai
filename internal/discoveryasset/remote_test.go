@@ -37,6 +37,28 @@ func TestManualSplitManifestExplainsHostedFormat(t *testing.T) {
 	}
 }
 
+func TestRemoteManifestCannotClaimGeneratedCompanion(t *testing.T) {
+	_, manifest := fixtureRelease(t, "remote-generated-forgery")
+	manifest.Packs[0].Size = 2_456_997_645
+	manifest.Companion.Size = 600_000_000
+	manifest.Source = "local"
+	manifest.ManifestDigest = strings.Repeat("a", 64)
+	manifest.TransportFormat = "paipack-v5"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(manifest)
+	}))
+	defer server.Close()
+	previous := http.DefaultTransport
+	http.DefaultTransport = server.Client().Transport
+	defer func() { http.DefaultTransport = previous }()
+	if _, err := fetchRemote(context.Background(), server.URL+"/manifest.json"); err == nil || !strings.Contains(err.Error(), "local activation fields") {
+		t.Fatalf("remote manifest spoofed locally generated companion: %v", err)
+	}
+	if _, err := FetchManifest(context.Background(), server.URL+"/manifest.json"); err == nil || !strings.Contains(err.Error(), "local activation fields") {
+		t.Fatalf("direct manifest fetch accepted local activation fields: %v", err)
+	}
+}
+
 func (f progressCallback) Report(op string, done, total int64, note string) { f(op, done, total, note) }
 
 func TestLocalImportRejectsSourceChangedAfterInitialHash(t *testing.T) {
@@ -50,6 +72,9 @@ func TestLocalImportRejectsSourceChangedAfterInitialHash(t *testing.T) {
 	installed, e := m.ImportLocal(ctx, first.pack, nil)
 	if e != nil {
 		t.Fatal(e)
+	}
+	if installed.DownloadBytes != 0 {
+		t.Fatalf("local import reported a network download: %d bytes", installed.DownloadBytes)
 	}
 	replacement, e := os.ReadFile(second.pack)
 	if e != nil {
@@ -70,6 +95,28 @@ func TestLocalImportRejectsSourceChangedAfterInitialHash(t *testing.T) {
 	if m.Status().ManifestDigest != installed.ManifestDigest {
 		t.Fatal("source mutation replaced active override")
 	}
+}
+
+func TestRealLocalPaipackImportOptIn(t *testing.T) {
+	path := os.Getenv("PLAYLISTAI_DISCOVERY_PAIPACK")
+	if path == "" {
+		t.Skip("set PLAYLISTAI_DISCOVERY_PAIPACK to explicitly test a local paipack import")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	m, err := Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	status, err := m.ImportLocal(ctx, path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.Installed || status.Source != "local" || status.Tracks == 0 {
+		t.Fatalf("unexpected import status: %+v", status)
+	}
+	t.Logf("imported %d tracks; pack bytes=%d, generated companion bytes=%d", status.Tracks, m.active.manifest.Packs[0].Size, m.active.manifest.Companion.Size)
 }
 
 func TestAbsolutePartExportIncludesOfflineManifest(t *testing.T) {
