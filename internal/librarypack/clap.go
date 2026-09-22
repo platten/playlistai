@@ -17,6 +17,10 @@ import (
 const CLAPEvidenceScope = "recording-relative-excerpts"
 const maxCLAPSegments = 128
 
+// ErrInvalidCLAPSegmentCoverage identifies stored excerpt intervals that cannot
+// be represented as non-overlapping recording-relative evidence.
+var ErrInvalidCLAPSegmentCoverage = errors.New("librarypack: invalid CLAP segment coverage")
+
 // CLAPSegment describes observed recording audio separately from encoder input.
 // Repetition/padding never contributes to ObservedSeconds or CoveredSeconds.
 // Invalid/unavailable segments have no vector and retain their failure reason.
@@ -82,7 +86,7 @@ func validateCLAPEvidence(e *CLAPEvidence, dim int, pooled []float32, durationMS
 			!finiteNonnegative(segment.ObservedSeconds) || !finiteNonnegative(segment.InputSeconds) || segment.EndSeconds < segment.StartSeconds ||
 			segment.StartSeconds < previousEnd-1e-6 || math.Abs(segment.EndSeconds-segment.StartSeconds-segment.ObservedSeconds) > 1e-5 ||
 			durationMS > 0 && segment.EndSeconds > float64(durationMS)/1000+.002 {
-			return errors.New("librarypack: invalid CLAP segment coverage")
+			return ErrInvalidCLAPSegmentCoverage
 		}
 		previousIndex, previousEnd = segment.Index, segment.EndSeconds
 		switch segment.Padding {
@@ -134,6 +138,12 @@ func validateCLAPEvidence(e *CLAPEvidence, dim int, pooled []float32, durationMS
 		}
 	}
 	return nil
+}
+
+// ValidateCLAPEvidence checks the same contract used by the pack writer. It is
+// exposed so producers can omit invalid legacy evidence before writing a pack.
+func ValidateCLAPEvidence(e *CLAPEvidence, pooled []float32, durationMS int64) error {
+	return validateCLAPEvidence(e, len(pooled), pooled, durationMS)
 }
 
 func finiteNonnegative(v float64) bool { return v >= 0 && !math.IsNaN(v) && !math.IsInf(v, 0) }
