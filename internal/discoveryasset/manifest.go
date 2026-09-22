@@ -78,7 +78,7 @@ func (m Manifest) hasGeneratedCompanion() bool {
 			(m.Source == "hosted" && m.TransportFormat == "modelpack-v1"))
 }
 func (m Manifest) hasActivationFields() bool {
-	return m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0 || m.EmbeddedIndexes
+	return m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0
 }
 func (m Manifest) Validate() error {
 	if m.Format != Format || m.SchemaVersion != 1 || !safeName.MatchString(m.Version) || len(m.Packs) == 0 || len(m.Packs) > 128 {
@@ -98,12 +98,13 @@ func (m Manifest) Validate() error {
 		seen[f.Name] = true
 		total += f.Size
 	}
-	// Curated releases download their companion, so it counts against the 3 GB
-	// transport limit. New local and multipart installs carry their profiles
-	// inside each indexed paipack; legacy installed releases may retain an
-	// external companion under the older activation format.
+	// Legacy curated releases download their companion under the 3 GB limit.
+	// New curated, local, and multipart releases carry profiles inside each
+	// indexed paipack; already installed releases may retain an external one.
 	if m.EmbeddedIndexes {
-		if (m.Source != "local" || m.TransportFormat != "paipack-v8") && (m.Source != "hosted" || m.TransportFormat != "modelpack-v1") || !validHash(m.ManifestDigest) || m.Companion != (File{}) {
+		published := m.Source == "" && m.TransportFormat == "" && m.ManifestDigest == "" && m.TransportBytes == 0
+		installed := validHash(m.ManifestDigest) && ((m.Source == "local" && m.TransportFormat == "paipack-v8") || (m.Source == "hosted" && (m.TransportFormat == "modelpack-v1" || m.TransportFormat == "discovery-v8")))
+		if (!published && !installed) || m.Companion != (File{}) {
 			return errors.New("discoveryasset: invalid embedded-index release")
 		}
 	} else {

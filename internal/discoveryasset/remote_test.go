@@ -228,6 +228,57 @@ func TestIndexedPackImportUsesEmbeddedIndexesAfterRestart(t *testing.T) {
 	}
 }
 
+func TestIndexedImportBudgetsExtractedIndexBytes(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	source := filepath.Join(root, "source.paipack")
+	if _, err := librarypack.Write(ctx, source, librarypack.Pack{CorpusGeneration: "large-index", MetadataGeneration: "large-index", Tracks: []librarypack.Track{{ID: "one", Artist: "Artist", Title: "One"}}}, librarypack.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	staging, err := librarypack.OpenManager(ctx, filepath.Join(root, "staging"), packLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer staging.Close()
+	staged, err := staging.Stage(ctx, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = staging.Discard(staged) }()
+	if err := localcatalog.BuildIndexes(ctx, staged.Generation(), localcatalog.IndexBuildOptions{Workers: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := BuildEmbeddedCompanion(ctx, staged.Generation()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staged.Generation().Directory(), "local-index-v3", "padding.bin"), bytes.Repeat([]byte("x"), 5<<20), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pack := filepath.Join(root, "indexed.paipack")
+	manifest, err := librarypack.WriteIndexed(ctx, pack, staged.Generation(), packLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inner int64
+	for _, file := range manifest.IndexFiles {
+		inner += file.Size
+	}
+	if inner <= 4<<20 {
+		t.Fatalf("fixture did not exceed the former index expansion allowance: %d", inner)
+	}
+	m, err := Open(ctx, filepath.Join(root, "installed"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, err := m.ImportLocal(ctx, pack, nil); err != nil {
+		t.Fatalf("indexed pack rejected after accounting for its extracted index bytes: %v", err)
+	}
+	if m.active.manifest.Packs[0].ExpandedBytes != expandedPackBytes(manifest) {
+		t.Fatal("release omitted extracted index bytes from its expansion budget")
+	}
+}
+
 func TestLocalImportRejectsPackWithoutPrebuiltIndexes(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "old.paipack")

@@ -129,13 +129,14 @@ musical tag multiplicity is retained. The selected corpus gets freshly fitted
 metadata TF-IDF/SVD and DSP distributions. Previous cluster assignments and
 population statistics are not copied into the new corpus.
 
-The output includes one or more `.paipack` files, `discovery.sqlite`, and
-`manifest.json`. The companion contains exact pack ID/checksum bindings,
-recording annotations with embedded-tag attribution, and artist/album/original-
-decade distributions. Original-decade profiles use original-release tags;
-edition/reissue dates are not substituted. Conflicting original years remain
-unknown. Shared catalogs read the companion directly and reject mismatched
-pack bindings.
+New output includes one or more indexed version-8 `.paipack` files and
+`manifest.json`. Each pack embeds its own checksummed `discovery.sqlite` with
+exact metadata-member binding, recording annotations with embedded-tag
+attribution, and artist/album/original-decade distributions. Original-decade
+profiles use original-release tags; edition/reissue dates are not substituted.
+Conflicting original years remain unknown. Shared catalogs read the embedded
+profiles directly and reject mismatched pack bindings. Earlier curated releases
+with a separate companion remain readable when already installed.
 
 The manifest identifies immutable release and schema versions, each file's
 HTTPS URL, byte size and SHA-256, and each pack's semantic ID and expanded
@@ -143,7 +144,8 @@ member size. Limits are:
 
 | Limit | Value |
 | --- | ---: |
-| Combined download, including companion | 3,000,000,000 bytes |
+| Combined indexed-pack download | 6,000,000,000 bytes |
+| Earlier curated release download, including companion | 3,000,000,000 bytes |
 | Combined expanded pack members | 12,000,000,000 bytes |
 | Packs per release | 128 |
 | Default selected tracks | 100,000 |
@@ -181,8 +183,9 @@ of scratch allowance. This is a conservative staging estimate, not a measured
 installation footprint. An update also needs space for its existing installed
 release while active requests continue reading it.
 
-All packs and the companion are verified and retrieval indexes built before a
-single activation record changes. Catalog leases pin the complete release set;
+All pack members, embedded profiles, and retrieval indexes are verified before a
+single activation record changes; the desktop does not build indexes. Catalog
+leases pin the complete release set;
 retired files are removed only after readers release them. A failed pre-commit
 update preserves the working release. If the activation rename succeeds but
 the subsequent directory sync fails, the manager retains both release sets,
@@ -203,7 +206,7 @@ URL can remain unchanged. The supplied R2 endpoint is now configured; this work
 does not upload or change its objects. Hosting does not establish redistribution
 rights or measured musical-quality gains.
 
-## Hosted multipart validation on 2026-09-19
+## Historical hosted multipart validation on 2026-09-19 (pre-v8)
 
 The actual supplied R2 endpoint was tested with an empty temporary cache:
 
@@ -212,14 +215,16 @@ PLAYLISTAI_DISCOVERY_MANIFEST_URL=https://pub-233adf724b7e476db67cf787cd301c9e.r
   go test ./internal/discoveryasset -run TestHostedMultipartOptIn -v -count=1
 ```
 
-The production install path downloaded and verified three parts totaling
+The then-current production install path downloaded and verified three parts totaling
 541,536,374 bytes, plus a 720-byte manifest. It reconstructed the unchanged
 541,522,368-byte source paipack, validated it, built search indexes and a local
 companion, and activated/pinned all 67,913 tracks. The operation passed in
 6m7.7s on this Linux host (368.03s including test cleanup). Those byte counts
 describe manifest/part payloads, not HTTP/TLS overhead. Original metadata index
 building dominated the first installation; the wizard reports this stage
-explicitly. Timing is one observation, not a cross-platform guarantee.
+explicitly. This historical test predates indexed version-8 packs and does not
+validate the current install path. Timing is one observation, not a
+cross-platform guarantee.
 
 All installation data and caches were temporary and cleaned after the test;
 neither the supplied files nor the application's real user data was changed.
@@ -231,7 +236,7 @@ archive parts without changing the active source, in both themes at 390/1000 px.
 Native picker interaction and native Windows/macOS execution were not tested;
 package cross-compilation passed on those targets.
 
-## Local corpus validation on 2026-09-19
+## Historical local corpus validation on 2026-09-19 (pre-v8)
 
 The validated source was a readable v5 pack of 541,522,368 bytes. Audit results
 and the latest local curated candidate:
@@ -252,7 +257,7 @@ These are metadata coverage counts, not verified musical labels. The source
 uses 768-dimensional `m-a-p/MERT-v1-95M` sampled-window vectors, model revision
 `12af15fef9d0ac838c3f475bfbbf26d2060dd4f5`.
 
-The latest candidate contains a 292,198,760-byte pack and a 230,047,744-byte companion, totaling
+The candidate at that date contained a 292,198,760-byte pack and a 230,047,744-byte companion, totaling
 522,246,504 bytes. Pack members expand to 556,270,624 bytes. The earlier v1
 candidate was preserved. These artifacts live outside the repository and must
 not be committed.

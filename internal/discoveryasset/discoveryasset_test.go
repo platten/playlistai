@@ -49,6 +49,44 @@ func fixtureRelease(t *testing.T, version string) (string, Manifest) {
 	return out, m
 }
 
+func fixtureLegacyRelease(t *testing.T, version string) (string, Manifest) {
+	t.Helper()
+	dir, manifest := fixtureRelease(t, version)
+	tracks := make([][]librarypack.Track, 0, len(manifest.Packs))
+	for _, pack := range manifest.Packs {
+		var rows []librarypack.Track
+		if err := withPack(context.Background(), filepath.Join(dir, pack.Name), func(g *librarypack.Generation) error {
+			var listErr error
+			rows, listErr = g.List(context.Background(), "", 100)
+			return listErr
+		}); err != nil {
+			t.Fatal(err)
+		}
+		tracks = append(tracks, rows)
+	}
+	manifest.EmbeddedIndexes = false
+	for i, pack := range manifest.Packs {
+		declared, err := inspectPackManifest(context.Background(), filepath.Join(dir, pack.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		manifest.Packs[i].ExpandedBytes = 0
+		for _, member := range declared.Files {
+			manifest.Packs[i].ExpandedBytes += member.Size
+		}
+	}
+	path := filepath.Join(dir, "discovery.sqlite")
+	if err := createCompanion(context.Background(), path, manifest, tracks); err != nil {
+		t.Fatal(err)
+	}
+	var err error
+	manifest.Companion, err = describeFile(context.Background(), path, "https://example.invalid/releases/"+version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir, manifest
+}
+
 func TestRealReleaseOptIn(t *testing.T) {
 	dir := os.Getenv("PLAYLISTAI_DISCOVERY_RELEASE")
 	if dir == "" {
@@ -232,15 +270,37 @@ func TestHTTPSInstallAndCorruptionRollback(t *testing.T) {
 	for i := range current.Packs {
 		current.Packs[i].URL = server.URL + "/" + current.Packs[i].Name
 	}
-	current.Companion.URL = server.URL + "/" + current.Companion.Name
+	if !current.EmbeddedIndexes {
+		current.Companion.URL = server.URL + "/" + current.Companion.Name
+	}
 	m, e := Open(ctx, t.TempDir())
 	if e != nil {
 		t.Fatal(e)
 	}
 	defer m.Close()
+	update, e := m.CheckUpdate(ctx, server.URL+"/manifest.json")
+	if e != nil || update.Files != len(manifest.Packs) || update.DownloadBytes != manifest.TotalBytes() {
+		t.Fatalf("indexed release update=%+v error=%v", update, e)
+	}
 	status, e := m.Install(ctx, server.URL+"/manifest.json", nil)
 	if e != nil || !status.Installed {
 		t.Fatalf("install status=%+v error=%v", status, e)
+	}
+	if !m.active.manifest.EmbeddedIndexes || m.active.manifest.TransportFormat != "discovery-v8" {
+		t.Fatalf("curated release did not use embedded indexes: %+v", m.active.manifest)
+	}
+	if _, e := os.Stat(filepath.Join(m.active.dir, "discovery.sqlite")); !os.IsNotExist(e) {
+		t.Fatalf("curated install copied a redundant companion: %v", e)
+	}
+	catalogs, release, e := m.Pin(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	profiles, e := catalogs[0].DiscoveryProfiles(ctx, core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Artist first"}}}, 5)
+	profileGeneration := catalogs[0].Provenance().ProfileGeneration
+	release()
+	if e != nil || len(profiles) == 0 || profileGeneration == "" {
+		t.Fatalf("embedded artist profiles unavailable: count=%d error=%v", len(profiles), e)
 	}
 	corrupt = true
 	current.Version = "bad"
@@ -260,7 +320,11 @@ func cacheRelease(t *testing.T, m *Manager, dir string, manifest Manifest) {
 	if e := os.MkdirAll(filepath.Join(m.root, "downloads"), 0700); e != nil {
 		t.Fatal(e)
 	}
-	for _, f := range append(append([]File(nil), manifest.Packs...), manifest.Companion) {
+	files := append([]File(nil), manifest.Packs...)
+	if !manifest.EmbeddedIndexes {
+		files = append(files, manifest.Companion)
+	}
+	for _, f := range files {
 		target := filepath.Join(m.root, "downloads", f.SHA256)
 		if _, e := os.Stat(target); e == nil {
 			continue
@@ -276,8 +340,17 @@ func TestBuildSanitizesAndProfilesOriginalPeriods(t *testing.T) {
 	if _, e := Verify(ctx, dir); e != nil {
 		t.Fatal(e)
 	}
-	if m.TotalBytes() > MaxDownloadBytes {
+	if m.TotalBytes() > MaxIndexedDownloadBytes || !m.EmbeddedIndexes || m.Companion != (File{}) {
 		t.Fatal("oversized")
+	}
+	for _, pack := range m.Packs {
+		declared, err := inspectPackManifest(ctx, filepath.Join(dir, pack.Name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pack.ExpandedBytes != expandedPackBytes(declared) || len(declared.IndexFiles) < 2 {
+			t.Fatalf("curated expansion excludes embedded indexes: file=%+v pack=%+v", pack, declared)
+		}
 	}
 	if e := withPack(ctx, filepath.Join(dir, m.Packs[0].Name), func(g *librarypack.Generation) error {
 		rows, e := g.List(ctx, "", 100)
@@ -303,21 +376,34 @@ func TestBuildSanitizesAndProfilesOriginalPeriods(t *testing.T) {
 	}); e != nil {
 		t.Fatal(e)
 	}
-	u, e := sqliteuri.ReadOnly(filepath.Join(dir, m.Companion.Name), true)
-	if e != nil {
-		t.Fatal(e)
+	var original, reissue int
+	for _, pack := range m.Packs {
+		if e := withPack(ctx, filepath.Join(dir, pack.Name), func(g *librarypack.Generation) error {
+			u, err := sqliteuri.ReadOnly(filepath.Join(g.Directory(), "discovery.sqlite"), true)
+			if err != nil {
+				return err
+			}
+			db, err := sql.Open("sqlite", u)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+			var n int
+			if err = db.QueryRow("SELECT count(*) FROM profiles WHERE period='1990' AND kind='mood' AND value='calm'").Scan(&n); err != nil {
+				return err
+			}
+			original += n
+			if err = db.QueryRow("SELECT count(*) FROM profiles WHERE period='2020'").Scan(&n); err != nil {
+				return err
+			}
+			reissue += n
+			return nil
+		}); e != nil {
+			t.Fatal(e)
+		}
 	}
-	db, e := sql.Open("sqlite", u)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer db.Close()
-	var n int
-	if e = db.QueryRow("SELECT count(*) FROM profiles WHERE period='1990' AND kind='mood' AND value='calm'").Scan(&n); e != nil || n != 2 {
-		t.Fatalf("original decade count=%d err=%v", n, e)
-	}
-	if e = db.QueryRow("SELECT count(*) FROM profiles WHERE period='2020'").Scan(&n); e != nil || n != 0 {
-		t.Fatalf("reissue date polluted periods: %d %v", n, e)
+	if original != 2 || reissue != 0 {
+		t.Fatalf("embedded original-decade profiles: original=%d reissue=%d", original, reissue)
 	}
 }
 func TestAtomicInstallPinsRollbackAndRepair(t *testing.T) {
@@ -387,9 +473,14 @@ func TestAtomicInstallPinsRollbackAndRepair(t *testing.T) {
 	if reopened.Status().Version != "v2" {
 		t.Fatalf("reopen: %+v", reopened.Status())
 	}
-	active := reopened.active.dir
+	lease, e := reopened.active.managers[0].Pin()
+	if e != nil {
+		t.Fatal(e)
+	}
+	activeProfile := filepath.Join(lease.Generation().Directory(), "discovery.sqlite")
+	lease.Release()
 	_ = reopened.Close()
-	if e = os.WriteFile(filepath.Join(active, "discovery.sqlite"), []byte("corrupt"), 0600); e != nil {
+	if e = os.WriteFile(activeProfile, []byte("corrupt"), 0600); e != nil {
 		t.Fatal(e)
 	}
 	repair, e := Open(ctx, root)
@@ -410,7 +501,7 @@ func TestManifestRejectsUnsafeOversizedAndDuplicateEntries(t *testing.T) {
 		"http":      func(m *Manifest) { m.Packs[0].URL = "http://example.com/a" },
 		"path":      func(m *Manifest) { m.Packs[0].Name = "../a.paipack" },
 		"duplicate": func(m *Manifest) { m.Packs[1].PackID = m.Packs[0].PackID },
-		"size":      func(m *Manifest) { m.Packs[0].Size = MaxDownloadBytes },
+		"size":      func(m *Manifest) { m.Packs[0].Size = MaxIndexedDownloadBytes },
 		"expanded":  func(m *Manifest) { m.Packs[0].ExpandedBytes = 12_000_000_001 },
 		"companion": func(m *Manifest) { m.Companion.Name = "other.sqlite" },
 	}
@@ -427,7 +518,7 @@ func TestManifestRejectsUnsafeOversizedAndDuplicateEntries(t *testing.T) {
 }
 
 func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
-	_, base := fixtureRelease(t, "large-generated-index")
+	_, base := fixtureLegacyRelease(t, "large-generated-index")
 	base.Packs[0].Size = 2_456_997_645
 	base.Companion.Size = 600_000_000
 	for _, tc := range []struct {

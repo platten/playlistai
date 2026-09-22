@@ -35,7 +35,7 @@ var indexUpgradeMu sync.Mutex
 // pack to absolute roots on this machine. Missing roots are accepted as
 // offline; relative roots and aliases absent from the manifest are rejected.
 type Options struct {
-	// ProfileGeneration is the verified companion SHA-256 for shared packs.
+	// ProfileGeneration is the verified profile SHA-256 for shared packs.
 	ProfileGeneration string
 	ProfilePath       string
 	ProfileBinding    string

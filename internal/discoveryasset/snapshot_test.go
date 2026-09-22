@@ -12,7 +12,7 @@ import (
 
 func TestCompanionOnlyUpdateChangesSnapshotAndPinnedCatalogVersion(t *testing.T) {
 	ctx := context.Background()
-	dir, manifest := fixtureRelease(t, "same-label")
+	dir, manifest := fixtureLegacyRelease(t, "same-label")
 	m, err := Open(ctx, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
