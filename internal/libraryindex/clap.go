@@ -17,7 +17,10 @@ import (
 	"github.com/platten/playlistai/internal/localaudio"
 )
 
-const CLAPSamplingVersion = "two-distributed-10s-thirds-or-edges/v1"
+const (
+	legacyCLAPSamplingVersion = "two-distributed-10s-thirds-or-edges/v1"
+	CLAPSamplingVersion       = "two-distributed-10s-thirds-or-edges/v2"
+)
 
 type CLAPSegmentRecord struct {
 	Index           int       `json:"index"`
@@ -62,7 +65,7 @@ func (r CLAPRecord) portableEvidence() *librarypack.CLAPEvidence {
 		}
 		if segment.Padding == "" {
 			segment.Padding = "unknown"
-			if r.Sampling == CLAPSamplingVersion && segment.Validity == "valid" && segment.ObservedSeconds > 0 && segment.ObservedSeconds <= 10 {
+			if (r.Sampling == CLAPSamplingVersion || r.Sampling == legacyCLAPSamplingVersion) && segment.Validity == "valid" && segment.ObservedSeconds > 0 && segment.ObservedSeconds <= 10 {
 				segment.InputSeconds, segment.Padding = 10, "none"
 				if segment.ObservedSeconds < 10 {
 					segment.Padding = "repeat"
@@ -95,6 +98,14 @@ func CLAPWindows(duration float64) ([]SampleWindow, error) {
 
 func CLAPSemanticKey(runtimeID string, modelID string) string {
 	return audio.PreprocessingVersion + ";local-pcm/v1;" + runtimeID + ";" + CLAPSamplingVersion + ";mean-duration-pool/v1;" + modelID
+}
+
+func boundedCLAPPCM(window localaudio.PCMWindow, requested localaudio.Window, sampled SampleWindow) (audio.DecodedPCM, float64) {
+	frames := len(window.Samples) / window.Channels
+	requestedFrames := int(math.Ceil(requested.Duration.Seconds() * float64(window.SampleRate)))
+	frames = min(frames, requestedFrames)
+	observed := math.Min(float64(frames)/float64(window.SampleRate), sampled.Duration)
+	return audio.DecodedPCM{Samples: window.Samples[:frames*window.Channels], SampleRate: window.SampleRate, Channels: window.Channels}, math.Min(observed, 10)
 }
 
 func (a *Analyzer) runCLAP(ctx context.Context, discoveryDone <-chan struct{}, report *AnalysisReport) error {
@@ -195,7 +206,9 @@ func (a *Analyzer) processCLAP(ctx context.Context, job Job) error {
 		}
 		func() {
 			defer clear(window.Samples)
-			pcm := audio.DecodedPCM{Samples: window.Samples, SampleRate: window.SampleRate, Channels: window.Channels}
+			// FFmpeg may emit a codec/filter tail beyond -t. Do not embed or
+			// report frames outside the requested recording-relative window.
+			pcm, observed := boundedCLAPPCM(window, requested, sampled)
 			var samples []float32
 			samples, err = audio.CLAPResampleLocal(ctx, pcm)
 			if err != nil {
@@ -215,7 +228,6 @@ func (a *Analyzer) processCLAP(ctx context.Context, job Job) error {
 			if err != nil {
 				return
 			}
-			observed := math.Min(window.ObservedDuration.Seconds(), 10)
 			owned := append([]float32(nil), vector...)
 			clear(vector)
 			padding := "none"

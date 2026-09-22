@@ -168,6 +168,64 @@ func TestStoredCLAPExportsSegmentsWithoutInference(t *testing.T) {
 	}
 }
 
+func TestStoredCLAPInvalidCoverageOmitsOnlySegmentEvidence(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		duration float64
+		record   CLAPRecord
+	}{
+		{"past_duration", 16.9, storedCLAPFixture()},
+		{"overlapping_windows", 15, func() CLAPRecord {
+			record := storedCLAPFixture()
+			record.Segments = []CLAPSegmentRecord{
+				{Index: 0, StartSeconds: 0, EndSeconds: 7.51, ObservedSeconds: 7.51, InputSeconds: 10, Padding: "repeat", Validity: "valid", Vector: []float32{1, 0}},
+				{Index: 1, StartSeconds: 7.5, EndSeconds: 15, ObservedSeconds: 7.5, InputSeconds: 10, Padding: "repeat", Validity: "valid", Vector: []float32{1, 0}},
+			}
+			record.Coverage = 15.01
+			record.Incomplete = false
+			return record
+		}()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, path := evidenceSnapshotDB(t)
+			insertStoredCLAP(t, db, "one", test.record)
+			metadata := MetadataRecord{Probe: localaudio.ProbeResult{Duration: localaudio.Duration{Seconds: test.duration, Provenance: "fixture", Reliable: true}, Metadata: localaudio.Metadata{Title: &localaudio.TagValue{Value: "Song"}, ArtistCredits: []localaudio.TagValue{{Value: "Artist"}}}}}
+			raw, _ := json.Marshal(metadata)
+			if _, err := db.Exec("UPDATE track_metadata SET data=?", raw); err != nil {
+				t.Fatal(err)
+			}
+			source, err := openFrozenPackSource(ctx, path, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer source.Close()
+			track, ok, err := source.Next(ctx)
+			if err != nil || !ok {
+				t.Fatalf("track available=%v err=%v", ok, err)
+			}
+			if track.CLAPEvidence != nil || !reflect.DeepEqual(track.CLAP, test.record.Pooled) || !strings.Contains(string(track.Missingness), "invalid_stored_segment_coverage") {
+				t.Fatalf("invalid evidence was not marked unavailable: %+v", track)
+			}
+			if _, ok, err := source.Next(ctx); err != nil || ok {
+				t.Fatal(err)
+			}
+			space, model, generation, err := clapVectorSpace(ctx, path, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := openFrozenPackSource(ctx, path, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer fresh.Close()
+			if _, err := librarypack.WriteSource(ctx, filepath.Join(t.TempDir(), "export.paipack"), librarypack.Pack{CorpusGeneration: "corpus-test", MetadataGeneration: "metadata-test", CLAPGeneration: generation, CLAP: space, CLAPModel: model}, fresh, librarypack.Limits{}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestCLAPExportRejectsMixedModelIdentity(t *testing.T) {
 	db, path := evidenceSnapshotDB(t)
 	one := storedCLAPFixture()
@@ -187,8 +245,14 @@ func TestCLAPPooledRecordDoesNotInventSegments(t *testing.T) {
 		t.Fatal("pooled-only record gained nominal coverage")
 	}
 	record = storedCLAPFixture()
-	record.Sampling = "unknown-producer"
+	record.Sampling = legacyCLAPSamplingVersion
 	evidence := record.portableEvidence()
+	if evidence.Segments[0].Padding != "repeat" || evidence.Segments[0].InputSeconds != 10 {
+		t.Fatal("legacy producer lost its known repeat-padding contract")
+	}
+	record = storedCLAPFixture()
+	record.Sampling = "unknown-producer"
+	evidence = record.portableEvidence()
 	if evidence.Segments[0].Padding != "unknown" || evidence.Segments[0].InputSeconds != 0 {
 		t.Fatal("unknown producer acquired guessed padding")
 	}

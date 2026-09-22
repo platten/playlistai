@@ -1,6 +1,23 @@
 package libraryindex
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/platten/playlistai/internal/localaudio"
+)
+
+func TestBoundedCLAPPCMOmitsDecoderTail(t *testing.T) {
+	window := localaudio.PCMWindow{Samples: make([]float32, 1010), SampleRate: 100, Channels: 1, ObservedDuration: 10*time.Second + 100*time.Millisecond}
+	pcm, observed := boundedCLAPPCM(window, localaudio.Window{Duration: 10 * time.Second}, SampleWindow{Duration: 10})
+	if len(pcm.Samples) != 1000 || observed != 10 {
+		t.Fatalf("bounded samples=%d observed=%v", len(pcm.Samples), observed)
+	}
+	pcm, observed = boundedCLAPPCM(window, localaudio.Window{Duration: 7 * time.Second}, SampleWindow{Duration: 7})
+	if len(pcm.Samples) != 700 || observed != 7 {
+		t.Fatalf("bounded short samples=%d observed=%v", len(pcm.Samples), observed)
+	}
+}
 
 func TestCLAPWindowsUseTwoDistributedTenSecondExcerpts(t *testing.T) {
 	tests := []struct {

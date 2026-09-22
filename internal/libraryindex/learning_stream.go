@@ -750,6 +750,20 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 				return librarypack.Track{}, false, fmt.Errorf("track %s CLAP evidence: %w", id, err)
 			}
 			packed.CLAPEvidence = clap.portableEvidence()
+			if packed.CLAPEvidence != nil {
+				if err := librarypack.ValidateCLAPEvidence(packed.CLAPEvidence, packed.CLAP, packed.DurationMilliseconds); errors.Is(err, librarypack.ErrInvalidCLAPSegmentCoverage) {
+					// Older decoder output could exceed its requested excerpt. Keep
+					// the pooled vector, but do not claim invalid segment coverage.
+					packed.CLAPEvidence = nil
+					missing["clapEvidence"] = map[string]string{"status": "unavailable", "provenance": "invalid_stored_segment_coverage"}
+					packed.Missingness, err = json.Marshal(missing)
+					if err != nil {
+						return librarypack.Track{}, false, err
+					}
+				} else if err != nil {
+					return librarypack.Track{}, false, fmt.Errorf("track %s CLAP evidence: %w", id, err)
+				}
+			}
 		}
 	}
 	assignment, assigned, err := assignmentForTrack(s.cursor, s.legacy, id)
