@@ -16,7 +16,6 @@ import (
 )
 
 const ProgressOp = "discovery-data"
-const MaxDownloadBytes int64 = 3_000_000_000
 const MaxIndexedDownloadBytes int64 = 6_000_000_000
 const maxGeneratedCompanionBytes int64 = 12_000_000_000
 const Format = "playlist-ai-discovery"
@@ -87,18 +86,15 @@ func (m Manifest) Validate() error {
 	seen := map[string]bool{}
 	ids := map[string]bool{}
 	var total int64
-	packLimit := MaxDownloadBytes
-	if m.EmbeddedIndexes {
-		packLimit = MaxIndexedDownloadBytes
-	}
 	for _, f := range m.Packs {
-		if !safeName.MatchString(f.Name) || seen[f.Name] || !validURL(f.URL) || f.Size <= 0 || f.Size > packLimit-total || !validHash(f.SHA256) {
+		if !safeName.MatchString(f.Name) || seen[f.Name] || !validURL(f.URL) || f.Size <= 0 || f.Size > MaxIndexedDownloadBytes-total || !validHash(f.SHA256) {
 			return errors.New("discoveryasset: invalid file or release exceeds its download limit")
 		}
 		seen[f.Name] = true
 		total += f.Size
 	}
-	// Legacy curated releases download their companion under the 3 GB limit.
+	// Legacy curated releases download their companion under the same bounded
+	// hosted-data budget as indexed releases.
 	// New curated, local, and multipart releases carry profiles inside each
 	// indexed paipack; already installed releases may retain an external one.
 	if m.EmbeddedIndexes {
@@ -109,7 +105,7 @@ func (m Manifest) Validate() error {
 		}
 	} else {
 		companion := m.Companion
-		companionLimit := MaxDownloadBytes - total
+		companionLimit := MaxIndexedDownloadBytes - total
 		if m.hasGeneratedCompanion() {
 			companionLimit = maxGeneratedCompanionBytes
 		}

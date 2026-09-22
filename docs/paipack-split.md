@@ -23,9 +23,9 @@ limit. The source pack and complete download must each fit within the app's
 `playlist-indexer run --out` or `playlist-indexer export --out` now includes
 prebuilt retrieval and discovery-profile indexes by default. The desktop does
 not build indexes while installing. An older unindexed pack must be re-exported
-from the indexer's durable state before hosting. New indexed curated discovery
-manifests share the 6 GB pack limit; older companion-based curated manifests
-retain their 3 GB combined download limit. Verify the hosted bundle
+from the indexer's durable state before hosting. All curated discovery manifests
+share the 6 GB hosted-data limit, including older companion-based releases.
+Verify the hosted bundle
 before uploading:
 
 ```sh
