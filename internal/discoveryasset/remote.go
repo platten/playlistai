@@ -268,8 +268,8 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 			return m.Status(), errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
 		}
 		declaredBytes := expandedPackBytes(declared)
-		if declaredBytes > 12_000_000_000-expanded {
-			return m.Status(), errors.New("discoveryasset: expanded set exceeds 12 GB")
+		if declaredBytes > maxExpandedReleaseBytes-expanded {
+			return m.Status(), errors.New("discoveryasset: expanded set exceeds 18 GB")
 		}
 		if err := checkDisk(m.root, declaredBytes*3+(256<<20)); err != nil {
 			return m.Status(), err
@@ -299,10 +299,10 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 		}
 		size := expandedPackBytes(pack)
 		expanded += size
-		if expanded > 12_000_000_000 || seen[pack.PackID] {
+		if expanded > maxExpandedReleaseBytes || seen[pack.PackID] {
 			_ = pm.Discard(staged)
 			_ = pm.Close()
-			return m.Status(), errors.New("discoveryasset: duplicate pack or expanded set exceeds 12 GB")
+			return m.Status(), errors.New("discoveryasset: duplicate pack or expanded set exceeds 18 GB")
 		}
 		seen[pack.PackID] = true
 		p.Report(ProgressOp, int64(i), int64(len(paths)), "Verifying prebuilt discovery indexes")

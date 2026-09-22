@@ -146,7 +146,7 @@ func openRelease(ctx context.Context, dir string, manifest Manifest) (*release, 
 	return r, nil
 }
 func packLimits() librarypack.Limits {
-	return librarypack.Limits{MaxArchiveBytes: MaxIndexedDownloadBytes, MaxExpandedBytes: 12_000_000_000 + (4 << 20), MaxMemberBytes: 12_000_000_000}
+	return librarypack.Limits{MaxArchiveBytes: MaxIndexedDownloadBytes, MaxExpandedBytes: maxExpandedReleaseBytes + (4 << 20), MaxMemberBytes: maxExpandedReleaseBytes}
 }
 func expandedPackBytes(pack librarypack.Manifest) int64 {
 	var size int64

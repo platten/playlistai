@@ -406,6 +406,35 @@ func TestBuildSanitizesAndProfilesOriginalPeriods(t *testing.T) {
 		t.Fatalf("embedded original-decade profiles: original=%d reissue=%d", original, reissue)
 	}
 }
+
+func TestPackLimitsAllowIndexedExpansionAboveFormerTwelveGB(t *testing.T) {
+	dir, release := fixtureRelease(t, "large-indexed")
+	manifest, err := inspectPackManifest(context.Background(), filepath.Join(dir, release.Packs[0].Name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range manifest.Files {
+		if manifest.Files[i].Name == librarypack.IndexBundleName {
+			manifest.Files[i].Size = 13_000_000_000
+		}
+	}
+	for i := range manifest.IndexFiles {
+		if manifest.IndexFiles[i].Path == "discovery.sqlite" {
+			manifest.IndexFiles[i].Size = 3_000_000_000
+		}
+	}
+	if expandedPackBytes(manifest) <= 12_000_000_000 || expandedPackBytes(manifest) > maxExpandedReleaseBytes {
+		t.Fatalf("fixture expansion=%d", expandedPackBytes(manifest))
+	}
+	legacy := packLimits()
+	legacy.MaxExpandedBytes = 12_000_000_000 + (4 << 20)
+	if manifest.Validate(legacy) == nil {
+		t.Fatal("fixture did not reproduce former expansion failure")
+	}
+	if err := manifest.Validate(packLimits()); err != nil {
+		t.Fatalf("indexed expansion within hosted budget rejected: %v", err)
+	}
+}
 func TestAtomicInstallPinsRollbackAndRepair(t *testing.T) {
 	ctx := context.Background()
 	dir, manifest := fixtureRelease(t, "v1")
@@ -502,7 +531,7 @@ func TestManifestRejectsUnsafeOversizedAndDuplicateEntries(t *testing.T) {
 		"path":      func(m *Manifest) { m.Packs[0].Name = "../a.paipack" },
 		"duplicate": func(m *Manifest) { m.Packs[1].PackID = m.Packs[0].PackID },
 		"size":      func(m *Manifest) { m.Packs[0].Size = MaxIndexedDownloadBytes },
-		"expanded":  func(m *Manifest) { m.Packs[0].ExpandedBytes = 12_000_000_001 },
+		"expanded":  func(m *Manifest) { m.Packs[0].ExpandedBytes = maxExpandedReleaseBytes + 1 },
 		"companion": func(m *Manifest) { m.Companion.Name = "other.sqlite" },
 	}
 	for name, change := range tests {
