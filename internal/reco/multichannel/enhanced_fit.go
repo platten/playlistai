@@ -62,24 +62,28 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 			return nil, report, err
 		}
 		eligible, allMatched := true, len(groups) > 0
-		metadataMatched := 0
+		metadataScore := 0.0
 		metadata, metadataAvailable := o.knowledgeTrack(candidate.Track.ID)
 		stages, failedStages, matchedStages := map[string]bool{}, map[string]bool{}, map[string]bool{}
 		for _, group := range groups {
 			state := o.criterionGroupState(ctx, candidate.Track.ID, group)
 			required := false
-			metadataGroupMatched := false
+			metadataGroupScore := 0.0
 			for _, c := range group {
 				required = required || requiredCriterion(c)
-				metadataGroupMatched = metadataGroupMatched || metadataAvailable && o.recordingTagCriterion(metadata, c) == core.EvidenceMatch
+				if metadataAvailable && o.recordingTagCriterion(metadata, c) == core.EvidenceMatch {
+					metadataGroupScore = 1
+				} else if metadataGroupScore < .75 && o.compoundGenreSupport(ctx, candidate.Track.ID, c) {
+					// Two sourced component tags are useful direct request
+					// evidence, but remain weaker than an exact category tag.
+					metadataGroupScore = .75
+				}
 				if o.bestCriterion(ctx, candidate.Track.ID, c) == core.EvidenceMatch {
 					report.Matched[criterionKey(c)]++
 					report.Scores[candidate.Track.ID] = 1
 				}
 			}
-			if metadataGroupMatched {
-				metadataMatched++
-			}
+			metadataScore += metadataGroupScore
 			fails := state == core.EvidenceMismatch || required && state != core.EvidenceMatch
 			scope := group[0].Scope
 			if strings.HasPrefix(scope, "journey_") {
@@ -112,9 +116,9 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 		if !eligible {
 			continue
 		}
-		if metadataMatched > 0 && len(groups) > 0 {
+		if metadataScore > 0 && len(groups) > 0 {
 			candidate.Available.LibraryMetadata = true
-			candidate.Scores.LibraryMetadata = max(candidate.Scores.LibraryMetadata, float64(metadataMatched)/float64(len(groups)))
+			candidate.Scores.LibraryMetadata = max(candidate.Scores.LibraryMetadata, metadataScore/float64(len(groups)))
 		}
 		candidate.MusicalFit, candidate.FitTier = core.EvidenceUnknown, fitClose
 		candidate.MatchDetail = "Close suggestion; some requested characteristics have incomplete evidence."

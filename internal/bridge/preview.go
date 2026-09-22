@@ -26,10 +26,17 @@ func (a *API) GetPreviewURL(ctx context.Context, id string) (PreviewResult, erro
 		return PreviewResult{}, err
 	}
 	provider := a.app.PreviewProvider()
-	catalog := a.runtime().Catalog
-	if provider == nil || catalog == nil {
+	runtime := a.runtime()
+	if provider == nil || runtime.Catalog == nil {
 		return PreviewResult{}, nil
 	}
+	catalog, releaseCatalog, err := a.app.PinFeedbackCatalogFor(ctx, runtime)
+	if err != nil {
+		// Preview misses are non-fatal. A stale optional library must not
+		// prevent base-catalog playback while it is being replaced.
+		catalog, releaseCatalog = runtime.Catalog, func() {}
+	}
+	defer releaseCatalog()
 	meta, ok := catalog.Meta(id)
 	if !ok {
 		return PreviewResult{}, nil

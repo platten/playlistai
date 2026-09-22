@@ -31,6 +31,24 @@ func TestGetPreviewURLUnknownID(t *testing.T) {
 	}
 }
 
+func TestPreviewMetadataResolvesLocalLibraryTrackAfterGenerationOverlayCloses(t *testing.T) {
+	c := newLoadedContainer(t)
+	id := importBridgeLibraryTrack(t, c)
+	runtime := c.Runtime()
+	if _, ok := runtime.Catalog.Meta(id); ok {
+		t.Fatal("base catalog unexpectedly retained the request-scoped local track")
+	}
+	catalog, release, err := c.PinFeedbackCatalogFor(context.Background(), runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	meta, ok := catalog.Meta(id)
+	if !ok || meta.Ref.Artist != "Local Artist" || meta.Ref.Title != "Gentle Pulse" {
+		t.Fatalf("preview metadata unavailable for local track: %+v, %v", meta, ok)
+	}
+}
+
 func TestSetAndGetPreviewProviderName(t *testing.T) {
 	t.Parallel()
 	api := New(newTestContainer(t), nil)

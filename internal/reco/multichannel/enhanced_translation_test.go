@@ -503,6 +503,17 @@ func TestEnhancedCompoundGenreSupportStaysCloseAndCannotBypassStrictClause(t *te
 	if tier, detail := o.enhancedTier(context.Background(), candidate, intent); tier != fitClose || !strings.Contains(detail, "gentle pulse") {
 		t.Fatalf("unsupported texture was hidden: %s %s", tier, detail)
 	}
+	filtered, _, err := o.filterEnhancedEssential(context.Background(), []core.Candidate{candidate}, intent.EssentialCriteria)
+	if err != nil || len(filtered) != 1 {
+		t.Fatalf("compound genre candidate was filtered: %+v %v", filtered, err)
+	}
+	if relevance, available := enhancedRequestRelevance(filtered[0], intent); !available || relevance != .75 {
+		t.Fatalf("compound genre request relevance = %v,%v, want .75,true", relevance, available)
+	}
+	selected, err := NewSelector(base, DefaultConfig()).Select(context.Background(), filtered, ports.SelectionRequest{Intent: intent, Count: 1})
+	if err != nil || len(selected.Candidates) != 1 {
+		t.Fatalf("compound genre support did not survive final selection: %+v %v", selected, err)
+	}
 	intent.HardConstraints = []core.HardConstraint{{Kind: "exclude_vocals"}}
 	if o.enhancedMetadataFallback(context.Background(), candidate, intent) || !o.previewNeededForEnhanced(context.Background(), candidate, intent) {
 		t.Fatal("partial compound support bypassed strict vocal screening")
