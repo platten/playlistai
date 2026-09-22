@@ -425,3 +425,44 @@ func TestManifestRejectsUnsafeOversizedAndDuplicateEntries(t *testing.T) {
 		})
 	}
 }
+
+func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
+	_, base := fixtureRelease(t, "large-generated-index")
+	base.Packs[0].Size = 2_456_997_645
+	base.Companion.Size = 600_000_000
+	for _, tc := range []struct {
+		name            string
+		source          string
+		transportFormat string
+		wantValid       bool
+	}{
+		{name: "curated remote", wantValid: false},
+		{name: "local generated", source: "local", transportFormat: "paipack-v5", wantValid: true},
+		{name: "hosted generated", source: "hosted", transportFormat: "modelpack-v1", wantValid: true},
+		{name: "unrecognized provenance", source: "hosted", transportFormat: "paipack-v5", wantValid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			candidate := base
+			candidate.Source = tc.source
+			candidate.TransportFormat = tc.transportFormat
+			candidate.ManifestDigest = strings.Repeat("a", 64)
+			if got := candidate.Validate() == nil; got != tc.wantValid {
+				t.Fatalf("valid=%v, want %v", got, tc.wantValid)
+			}
+		})
+	}
+	generated := base
+	generated.Source = "local"
+	generated.TransportFormat = "paipack-v5"
+	generated.ManifestDigest = strings.Repeat("a", 64)
+	generated.Companion.Size = maxGeneratedCompanionBytes + 1
+	if generated.Validate() == nil {
+		t.Fatal("oversized generated companion accepted")
+	}
+	generated.Companion.Size = 600_000_000
+	generated.Packs = append([]File(nil), base.Packs...)
+	generated.Packs[0].Size = MaxDownloadBytes
+	if generated.Validate() == nil {
+		t.Fatal("oversized input pack set accepted")
+	}
+}

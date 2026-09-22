@@ -146,14 +146,17 @@ func (m *Manager) statusLocked() Status {
 	s.Installed = true
 	s.Version = r.manifest.Version
 	s.Tracks = r.tracks
-	s.DownloadBytes = r.manifest.TotalBytes()
 	s.Source = r.manifest.Source
 	if s.Source == "" {
 		s.Source = "hosted"
 	}
 	s.ManifestDigest = r.manifest.ManifestDigest
-	if r.manifest.TransportBytes > 0 {
+	if r.manifest.Source == "local" {
+		s.DownloadBytes = 0
+	} else if r.manifest.TransportBytes > 0 {
 		s.DownloadBytes = r.manifest.TransportBytes
+	} else {
+		s.DownloadBytes = r.manifest.TotalBytes()
 	}
 	for _, f := range r.manifest.Packs {
 		s.PackIDs = append(s.PackIDs, f.PackID)
