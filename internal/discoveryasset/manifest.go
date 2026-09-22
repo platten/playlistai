@@ -17,6 +17,7 @@ import (
 
 const ProgressOp = "discovery-data"
 const MaxIndexedDownloadBytes int64 = 6_000_000_000
+const maxExpandedReleaseBytes int64 = 3 * MaxIndexedDownloadBytes
 const maxGeneratedCompanionBytes int64 = 12_000_000_000
 const Format = "playlist-ai-discovery"
 
@@ -121,8 +122,8 @@ func (m Manifest) Validate() error {
 		if !strings.HasSuffix(f.Name, ".paipack") || !validHash(f.PackID) || ids[f.PackID] {
 			return errors.New("discoveryasset: invalid or duplicate pack identity")
 		}
-		if f.ExpandedBytes <= 0 || f.ExpandedBytes > 12_000_000_000-expanded {
-			return errors.New("discoveryasset: invalid expansion size or release exceeds 12 GB expanded")
+		if f.ExpandedBytes <= 0 || f.ExpandedBytes > maxExpandedReleaseBytes-expanded {
+			return errors.New("discoveryasset: invalid expansion size or release exceeds 18 GB expanded")
 		}
 		expanded += f.ExpandedBytes
 		ids[f.PackID] = true

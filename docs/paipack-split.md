@@ -22,7 +22,10 @@ limit. The source pack and complete download must each fit within the app's
 6 GB indexed-pack limit. The indexed paipack is larger because
 `playlist-indexer run --out` or `playlist-indexer export --out` now includes
 prebuilt retrieval and discovery-profile indexes by default. The desktop does
-not build indexes while installing. An older unindexed pack must be re-exported
+not build indexes while installing. The declared outer members plus extracted
+embedded indexes may occupy up to 18 GB; installation also preflights the
+larger temporary disk requirement before extraction. An older unindexed pack
+must be re-exported
 from the indexer's durable state before hosting. All curated discovery manifests
 share the 6 GB hosted-data limit, including older companion-based releases.
 Verify the hosted bundle
