@@ -268,8 +268,10 @@ controls, and static build instructions.
 Large packs can be divided into checksummed transport parts with the standalone
 `paipack-split` utility. It writes fixed-width numbered parts plus a
 `manifest.json`, preserves the source bytes by default, and can optionally add
-an outer Zstandard stream. See the [paipack splitting guide](docs/paipack-split.md)
-for usage, verification, and reassembly commands.
+an outer Zstandard stream. For a manifest the desktop app can download from
+R2, use `paipack-split --hosted`; its parts and manifest use the app's multipart
+archive format. See the [paipack splitting guide](docs/paipack-split.md) for
+usage, verification, and reassembly commands.
 
 Choose **5, 10, 20, or 40 tracks** beside Generate (default: 20). This explicit
 selection takes precedence over a count in the description; replaying a saved

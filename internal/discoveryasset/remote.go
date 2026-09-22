@@ -103,6 +103,9 @@ func fetchRemote(ctx context.Context, location string) (remoteManifest, error) {
 		r.update = Update{Version: m.Version, Digest: r.digest, DownloadBytes: m.TotalBytes(), Files: len(m.Packs) + 1, Source: "hosted", Format: Format}
 		return r, nil
 	}
+	if header.Format == "playlist-ai-paipack-parts" {
+		return r, errors.New("discoveryasset: this manifest contains manual paipack transport parts; create a desktop-compatible hosted bundle with paipack-split --hosted and publish its parts and manifest")
+	}
 	var m modelpack.Manifest
 	if e = json.Unmarshal(r.raw, &m); e != nil {
 		return r, e
