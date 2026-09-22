@@ -517,9 +517,9 @@ func TestManifestRejectsUnsafeOversizedAndDuplicateEntries(t *testing.T) {
 	}
 }
 
-func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
+func TestManifestUsesHostedBudgetForLegacyCompanion(t *testing.T) {
 	_, base := fixtureLegacyRelease(t, "large-generated-index")
-	base.Packs[0].Size = 2_456_997_645
+	base.Packs[0].Size = 5_456_997_645
 	base.Companion.Size = 600_000_000
 	for _, tc := range []struct {
 		name            string
@@ -542,6 +542,12 @@ func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
 			}
 		})
 	}
+	withinHostedBudget := base
+	withinHostedBudget.Packs = append([]File(nil), base.Packs...)
+	withinHostedBudget.Packs[0].Size = 2_456_997_645
+	if err := withinHostedBudget.Validate(); err != nil {
+		t.Fatalf("legacy hosted data above former 3 GB limit rejected: %v", err)
+	}
 	generated := base
 	generated.Source = "local"
 	generated.TransportFormat = "paipack-v5"
@@ -552,7 +558,7 @@ func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
 	}
 	generated.Companion.Size = 600_000_000
 	generated.Packs = append([]File(nil), base.Packs...)
-	generated.Packs[0].Size = MaxDownloadBytes
+	generated.Packs[0].Size = MaxIndexedDownloadBytes
 	if generated.Validate() == nil {
 		t.Fatal("oversized input pack set accepted")
 	}
@@ -562,7 +568,7 @@ func TestEmbeddedIndexManifestRequiresNewProvenanceAndNoExternalCompanion(t *tes
 	_, base := fixtureRelease(t, "embedded-indexes")
 	base.EmbeddedIndexes = true
 	base.Companion = File{}
-	base.Packs[0].Size = MaxDownloadBytes + 1
+	base.Packs[0].Size = 3_000_000_001
 	base.Source = "local"
 	base.TransportFormat = "paipack-v8"
 	base.ManifestDigest = strings.Repeat("a", 64)
