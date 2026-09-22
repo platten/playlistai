@@ -1,5 +1,27 @@
 # Recommendation Correctness
 
+## Compound-genre results remain usable (2026-09-22)
+
+`multichannel/v48` carries sourced compound-genre support into Enhanced
+Hybrid's final request-relevance check. A recording tagged with both components
+of a requested category such as “ambient electronica” remains an explicitly
+close suggestion at a lower metadata score than an exact category tag; an
+unsupported preference such as “gentle pulse” is still reported as unknown.
+The final selector no longer discards every otherwise eligible candidate simply
+because the support came from two component tags. Relevance floors and strict
+requirements are unchanged.
+
+Preview lookup and export preparation now pin the active local-library catalog
+for the duration of the read. As a result, recordings selected from an embedded
+paipack remain resolvable after the request-scoped generation overlay closes.
+The pin is released immediately after each operation, and saved playlists and
+intent schemas require no migration.
+
+Focused regressions cover final selection for compound categories, preservation
+of the close/unknown evidence wording, strict no-vocals behavior, and export
+metadata resolution after the generation overlay has closed. These are
+contract tests, not a held-out musical-quality claim.
+
 ## Stop analysis at the requested count (2026-09-11)
 
 `multichannel/v20` removes the metadata-stream accepted-track oversampling

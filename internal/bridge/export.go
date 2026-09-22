@@ -32,10 +32,17 @@ func (a *API) PrepareExport(trackIDs []string) ([]ExportTrackDTO, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	catalog := a.runtime().Catalog
-	if catalog == nil {
+	runtime := a.runtime()
+	if runtime.Catalog == nil {
 		return nil, errors.New("catalog not loaded")
 	}
+	catalog, releaseCatalog, err := a.app.PinFeedbackCatalogFor(ctx, runtime)
+	if err != nil {
+		// Preserve base-catalog export if an optional local generation is
+		// temporarily unreadable. Its IDs remain honest unknowns and are skipped.
+		catalog, releaseCatalog = runtime.Catalog, func() {}
+	}
+	defer releaseCatalog()
 	out := make([]ExportTrackDTO, 0, len(trackIDs))
 	for _, id := range trackIDs {
 		if err := ctx.Err(); err != nil {
