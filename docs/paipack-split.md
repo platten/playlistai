@@ -19,11 +19,13 @@ go run ./cmd/paipack-split --hosted \
 
 Hosted parts default to 190 MB each, below the downloader's 200 MB exclusive
 limit. The source pack and complete download must each fit within the app's
-3 GB limit. The app generates a separate local search index when installing
-an uncurated pack; its size is additional disk usage, not download size. App
-versions before the generated-index size fix may reject a valid pack near the
-3 GB limit after building that index. Verify the resulting bundle before
-uploading:
+6 GB indexed-pack limit. The indexed paipack is larger because
+`playlist-indexer run --out` or `playlist-indexer export --out` now includes
+prebuilt retrieval and discovery-profile indexes by default. The desktop does
+not build indexes while installing. An older unindexed pack must be re-exported
+from the indexer's durable state before hosting. Curated discovery manifests
+still have a separate 3 GB combined download limit. Verify the hosted bundle
+before uploading:
 
 ```sh
 go run ./cmd/modelpack \

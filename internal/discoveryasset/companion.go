@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -75,6 +76,60 @@ func createCompanion(ctx context.Context, path string, m Manifest, packs [][]lib
 		}
 		return nil
 	})
+}
+
+// BuildEmbeddedCompanion writes the discovery profiles beside a staged pack.
+// Binding to the metadata member checksum avoids a circular dependency on the
+// final archive checksum, which itself includes this embedded index.
+func BuildEmbeddedCompanion(ctx context.Context, generation *librarypack.Generation) error {
+	if generation == nil || generation.Manifest().Version != librarypack.FormatVersion {
+		return errors.New("discoveryasset: a staged v7 pack is required for indexed export")
+	}
+	path := filepath.Join(generation.Directory(), "discovery.sqlite")
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("discoveryasset: embedded companion destination already exists")
+	}
+	metadataHash, err := embeddedMetadataHash(generation.Manifest())
+	if err != nil {
+		return err
+	}
+	manifest := Manifest{Packs: []File{{PackID: generation.Manifest().PackID, SHA256: metadataHash}}}
+	return createCompanionSources(ctx, path, manifest, func(_ int, yield func(librarypack.Track) error) error {
+		stream, err := generation.OpenTrackSource(ctx)
+		if err != nil {
+			return err
+		}
+		defer stream.Close()
+		for {
+			track, ok, err := stream.Next(ctx)
+			if err != nil || !ok {
+				return err
+			}
+			if err := yield(track); err != nil {
+				return err
+			}
+		}
+	})
+}
+
+func VerifyEmbeddedCompanion(ctx context.Context, generation *librarypack.Generation) error {
+	if generation == nil || generation.Manifest().Version != librarypack.IndexedFormatVersion {
+		return errors.New("discoveryasset: indexed pack is required")
+	}
+	metadataHash, err := embeddedMetadataHash(generation.Manifest())
+	if err != nil {
+		return err
+	}
+	return verifyCompanion(ctx, filepath.Join(generation.Directory(), "discovery.sqlite"), Manifest{Packs: []File{{PackID: generation.Manifest().PackID, SHA256: metadataHash}}})
+}
+
+func embeddedMetadataHash(manifest librarypack.Manifest) (string, error) {
+	for _, f := range manifest.Files {
+		if f.Name == librarypack.MetadataName {
+			return f.SHA256, nil
+		}
+	}
+	return "", errors.New("discoveryasset: pack metadata identity is missing")
 }
 
 // createCompanionSources streams annotations; full vector/DSP payloads never

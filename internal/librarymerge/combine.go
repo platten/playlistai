@@ -23,6 +23,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 )
@@ -191,7 +192,8 @@ func Combine(ctx context.Context, inputs []string, output string, options Option
 		return report, err
 	}
 	defer source.Close()
-	manifest, err := librarypack.WriteSource(ctx, output, librarypack.Pack{
+	rawOutput := filepath.Join(work, "combined-unindexed.paipack")
+	_, err = librarypack.WriteSource(ctx, rawOutput, librarypack.Pack{
 		CorpusGeneration:     resources.corpusGeneration,
 		MetadataGeneration:   resources.metadataGeneration,
 		MERTGeneration:       resources.mertGeneration,
@@ -206,6 +208,10 @@ func Combine(ctx context.Context, inputs []string, output string, options Option
 	}, source, librarypack.DefaultLimits())
 	if err != nil {
 		return report, fmt.Errorf("librarymerge: write output: %w", err)
+	}
+	manifest, err := discoveryasset.BuildIndexedFromPack(ctx, rawOutput, output, librarypack.DefaultLimits())
+	if err != nil {
+		return report, fmt.Errorf("librarymerge: index output: %w", err)
 	}
 	report.Manifest = manifest
 	return report, nil

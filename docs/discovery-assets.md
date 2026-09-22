@@ -55,8 +55,11 @@ The hosted manifest uses the existing version-1 multipart `modelpack` transport.
 The installer reads the manifest for each explicit install/update, resolves its
 listed parts relative to the manifest's directory, and verifies lengths and
 SHA-256 hashes. It reconstructs the ordered tar+Zstandard stream, verifies the
-listed extracted `.paipack` files, validates their pack schema, creates a local
-companion profile index, and activates only after retrieval indexes are ready.
+listed extracted `.paipack` files, validates their pack schema and embedded
+prebuilt search/profile indexes, and activates without building local indexes.
+New local and hosted imports require an indexed version-8 paipack; re-export
+older packs from `playlist-indexer` state. Existing installed legacy releases
+with valid indexes remain usable.
 Part counts, filenames, and the bundle's display name are not hard-coded.
 Updates are detected by manifest content, even when its name stays unchanged.
 One immutable manifest snapshot governs an entire download; publication changes
@@ -81,9 +84,10 @@ go run ./cmd/modelpack --manifest /path/to/download/manifest.json \
   --cache /path/to/segment-cache --out /path/to/new-unpacked-directory
 ```
 
-Then choose an extracted `.paipack` in Settings. The hosted archive presently
-contains the original source pack, not the earlier curated candidate described
-below. Installing does not curate or refit its representations. Shared discovery
+Then choose an extracted indexed version-8 `.paipack` in Settings. An older
+hosted archive must be rebuilt and republished before a fresh installation can
+use it; the app will not construct missing indexes during setup. Installing
+does not curate or refit its representations. Shared discovery
 still does not expose paths from the pack as playable local files.
 
 If a custom multipart manifest uses absolute part URLs, the saved original

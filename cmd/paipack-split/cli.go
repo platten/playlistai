@@ -21,7 +21,7 @@ import (
 )
 
 const manifestName = "manifest.json"
-const maxHostedBytes int64 = 3_000_000_000 // discoveryasset.MaxDownloadBytes
+const maxHostedBytes int64 = 6_000_000_000 // discoveryasset.MaxIndexedDownloadBytes
 
 type manifest struct {
 	SchemaVersion int        `json:"schemaVersion"`
@@ -121,7 +121,7 @@ func splitHosted(ctx context.Context, input, output string, partSize int64) (mod
 		return modelpack.Manifest{}, err
 	}
 	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxHostedBytes {
-		return modelpack.Manifest{}, errors.New("paipack-split: hosted paipack must be a regular file no larger than 3 GB")
+		return modelpack.Manifest{}, errors.New("paipack-split: hosted paipack must be a regular file no larger than 6 GB")
 	}
 	output, err = filepath.Abs(output)
 	if err != nil {
@@ -155,7 +155,7 @@ func splitHosted(ctx context.Context, input, output string, partSize int64) (mod
 		transportBytes += part.Size
 	}
 	if transportBytes > maxHostedBytes {
-		return modelpack.Manifest{}, errors.New("paipack-split: hosted bundle exceeds the 3 GB desktop download limit")
+		return modelpack.Manifest{}, errors.New("paipack-split: hosted bundle exceeds the 6 GB desktop download limit")
 	}
 	if err := os.Rename(temporary, output); err != nil {
 		return modelpack.Manifest{}, fmt.Errorf("paipack-split: publish hosted output: %w", err)

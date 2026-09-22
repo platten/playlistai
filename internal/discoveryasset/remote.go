@@ -136,15 +136,15 @@ func validateMultipart(m modelpack.Manifest, manifestBytes int64) error {
 	}
 	total := manifestBytes
 	for _, part := range m.Parts {
-		if part.Size > MaxDownloadBytes-total {
-			return errors.New("discoveryasset: multipart download exceeds 3 GB")
+		if part.Size > MaxIndexedDownloadBytes-total {
+			return errors.New("discoveryasset: multipart download exceeds 6 GB")
 		}
 		total += part.Size
 	}
 	total = 0
 	for _, f := range m.Files {
-		if !strings.HasSuffix(strings.ToLower(f.Path), ".paipack") || f.Size <= 0 || f.Size > MaxDownloadBytes-total {
-			return errors.New("discoveryasset: multipart files must be v5 paipacks totaling at most 3 GB")
+		if !strings.HasSuffix(strings.ToLower(f.Path), ".paipack") || f.Size <= 0 || f.Size > MaxIndexedDownloadBytes-total {
+			return errors.New("discoveryasset: multipart files must be indexed paipacks totaling at most 6 GB")
 		}
 		total += f.Size
 	}
@@ -214,8 +214,15 @@ func (m *Manager) ImportLocal(ctx context.Context, path string, p ports.Progress
 	if e != nil {
 		return m.Status(), e
 	}
-	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxDownloadBytes {
-		return m.Status(), errors.New("discoveryasset: choose a regular paipack no larger than 3 GB")
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > MaxIndexedDownloadBytes {
+		return m.Status(), errors.New("discoveryasset: choose a regular indexed paipack no larger than 6 GB")
+	}
+	declared, e := inspectPackManifest(ctx, path)
+	if e != nil {
+		return m.Status(), e
+	}
+	if declared.Version != librarypack.IndexedFormatVersion {
+		return m.Status(), errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
 	}
 	file, e := describeFile(ctx, path, "https://local.invalid")
 	if e != nil {
@@ -241,16 +248,10 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 			_ = os.RemoveAll(dir)
 		}
 	}()
-	manifest := Manifest{Format: Format, SchemaVersion: 1, Version: version, Source: source, ManifestDigest: digest, TransportFormat: "modelpack-v1", TransportBytes: transportBytes}
+	manifest := Manifest{Format: Format, SchemaVersion: 1, Version: version, Source: source, ManifestDigest: digest, TransportFormat: "modelpack-v1", TransportBytes: transportBytes, EmbeddedIndexes: true}
 	if source == "local" {
-		manifest.TransportFormat = "paipack-v5"
+		manifest.TransportFormat = "paipack-v8"
 	}
-	managers := make([]*librarypack.Manager, 0, len(paths))
-	defer func() {
-		for _, pm := range managers {
-			_ = pm.Close()
-		}
-	}()
 	seen := map[string]bool{}
 	var expanded int64
 	for i, path := range paths {
@@ -258,6 +259,9 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 		declared, inspectErr := inspectPackManifest(ctx, path)
 		if inspectErr != nil {
 			return m.Status(), inspectErr
+		}
+		if declared.Version != librarypack.IndexedFormatVersion {
+			return m.Status(), errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
 		}
 		var declaredBytes int64
 		for _, member := range declared.Files {
@@ -282,6 +286,11 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 			return m.Status(), err
 		}
 		pack := staged.Manifest()
+		if pack.Version != librarypack.IndexedFormatVersion {
+			_ = pm.Discard(staged)
+			_ = pm.Close()
+			return m.Status(), errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
+		}
 		if pack.PackID != declared.PackID {
 			_ = pm.Discard(staged)
 			_ = pm.Close()
@@ -298,9 +307,10 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 			return m.Status(), errors.New("discoveryasset: duplicate pack or expanded set exceeds 12 GB")
 		}
 		seen[pack.PackID] = true
-		if err = checkDisk(m.root, size*2+(256<<20)); err == nil {
-			p.Report(ProgressOp, int64(i), int64(len(paths)), "Building local discovery search indexes (this can take several minutes)")
-			err = localcatalog.BuildIndexes(ctx, staged.Generation(), localcatalog.IndexBuildOptions{Workers: 1, MaxScratchBytes: 256 << 20})
+		p.Report(ProgressOp, int64(i), int64(len(paths)), "Verifying prebuilt discovery indexes")
+		err = localcatalog.VerifyPrebuilt(ctx, staged.Generation())
+		if err == nil {
+			err = VerifyEmbeddedCompanion(ctx, staged.Generation())
 		}
 		if err != nil {
 			_ = pm.Discard(staged)
@@ -322,47 +332,11 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 		if err = os.Rename(stageDir, target); err != nil {
 			return m.Status(), err
 		}
-		pm, err = librarypack.OpenManager(ctx, target, packLimits())
-		if err != nil {
-			return m.Status(), err
-		}
-		managers = append(managers, pm)
 		info, err := os.Stat(path)
 		if err != nil {
 			return m.Status(), err
 		}
 		manifest.Packs = append(manifest.Packs, File{Name: fmt.Sprintf("pack-%03d.paipack", i+1), URL: location, Size: info.Size(), SHA256: packHash, PackID: pack.PackID, ExpandedBytes: size})
-	}
-	p.Report(ProgressOp, 0, 1, "Indexing artist, album and mood profiles")
-	if e = createCompanionSources(ctx, filepath.Join(dir, "discovery.sqlite"), manifest, func(i int, yield func(librarypack.Track) error) error {
-		lease, err := managers[i].Pin()
-		if err != nil {
-			return err
-		}
-		defer lease.Release()
-		stream, err := lease.Generation().OpenTrackSource(ctx)
-		if err != nil {
-			return err
-		}
-		defer stream.Close()
-		for {
-			track, ok, err := stream.Next(ctx)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				return nil
-			}
-			if err = yield(track); err != nil {
-				return err
-			}
-		}
-	}); e != nil {
-		return m.Status(), e
-	}
-	manifest.Companion, e = describeFile(ctx, filepath.Join(dir, "discovery.sqlite"), location)
-	if e != nil {
-		return m.Status(), e
 	}
 	if e = manifest.Validate(); e != nil {
 		return m.Status(), e
@@ -511,6 +485,10 @@ func DownloadArchive(ctx context.Context, location, destination string, p ports.
 }
 
 func inspectPackManifest(ctx context.Context, path string) (librarypack.Manifest, error) {
+	return inspectPackManifestWithLimits(ctx, path, packLimits())
+}
+
+func inspectPackManifestWithLimits(ctx context.Context, path string, limits librarypack.Limits) (librarypack.Manifest, error) {
 	var manifest librarypack.Manifest
 	file, e := os.Open(path)
 	if e != nil {
@@ -528,7 +506,7 @@ func inspectPackManifest(ctx context.Context, path string) (librarypack.Manifest
 		return manifest, e
 	}
 	if header.Name != librarypack.ManifestName || header.Typeflag != tar.TypeReg || header.Size <= 0 || header.Size > 4<<20 {
-		return manifest, errors.New("discoveryasset: pack must begin with its bounded v5 manifest")
+		return manifest, errors.New("discoveryasset: pack must begin with its bounded manifest")
 	}
 	raw, e := io.ReadAll(io.LimitReader(reader, (4<<20)+1))
 	if e != nil {
@@ -537,5 +515,5 @@ func inspectPackManifest(ctx context.Context, path string) (librarypack.Manifest
 	if e = json.Unmarshal(raw, &manifest); e != nil {
 		return manifest, e
 	}
-	return manifest, manifest.Validate(packLimits())
+	return manifest, manifest.Validate(limits)
 }

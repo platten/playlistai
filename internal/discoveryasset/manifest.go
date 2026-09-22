@@ -17,6 +17,7 @@ import (
 
 const ProgressOp = "discovery-data"
 const MaxDownloadBytes int64 = 3_000_000_000
+const MaxIndexedDownloadBytes int64 = 6_000_000_000
 const maxGeneratedCompanionBytes int64 = 12_000_000_000
 const Format = "playlist-ai-discovery"
 
@@ -41,6 +42,7 @@ type Manifest struct {
 	ManifestDigest  string `json:"manifestDigest,omitempty"`
 	TransportFormat string `json:"transportFormat,omitempty"`
 	TransportBytes  int64  `json:"transportBytes,omitempty"`
+	EmbeddedIndexes bool   `json:"embeddedIndexes,omitempty"`
 }
 type Status struct {
 	Installed      bool     `json:"installed"`
@@ -76,7 +78,7 @@ func (m Manifest) hasGeneratedCompanion() bool {
 			(m.Source == "hosted" && m.TransportFormat == "modelpack-v1"))
 }
 func (m Manifest) hasActivationFields() bool {
-	return m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0
+	return m.Source != "" || m.ManifestDigest != "" || m.TransportFormat != "" || m.TransportBytes != 0 || m.EmbeddedIndexes
 }
 func (m Manifest) Validate() error {
 	if m.Format != Format || m.SchemaVersion != 1 || !safeName.MatchString(m.Version) || len(m.Packs) == 0 || len(m.Packs) > 128 {
@@ -85,26 +87,37 @@ func (m Manifest) Validate() error {
 	seen := map[string]bool{}
 	ids := map[string]bool{}
 	var total int64
+	packLimit := MaxDownloadBytes
+	if m.EmbeddedIndexes {
+		packLimit = MaxIndexedDownloadBytes
+	}
 	for _, f := range m.Packs {
-		if !safeName.MatchString(f.Name) || seen[f.Name] || !validURL(f.URL) || f.Size <= 0 || f.Size > MaxDownloadBytes-total || !validHash(f.SHA256) {
-			return errors.New("discoveryasset: invalid file or release exceeds 3 GB")
+		if !safeName.MatchString(f.Name) || seen[f.Name] || !validURL(f.URL) || f.Size <= 0 || f.Size > packLimit-total || !validHash(f.SHA256) {
+			return errors.New("discoveryasset: invalid file or release exceeds its download limit")
 		}
 		seen[f.Name] = true
 		total += f.Size
 	}
 	// Curated releases download their companion, so it counts against the 3 GB
-	// transport limit. Local and multipart installs build it on this machine;
-	// only their downloaded/input paipacks belong under that limit.
-	companion := m.Companion
-	companionLimit := MaxDownloadBytes - total
-	if m.hasGeneratedCompanion() {
-		companionLimit = maxGeneratedCompanionBytes
-	}
-	if !safeName.MatchString(companion.Name) || seen[companion.Name] || !validURL(companion.URL) || companion.Size <= 0 || companion.Size > companionLimit || !validHash(companion.SHA256) {
-		return errors.New("discoveryasset: invalid companion or release exceeds its size limit")
-	}
-	if m.Companion.Name != "discovery.sqlite" || m.Companion.PackID != "" {
-		return errors.New("discoveryasset: missing companion index")
+	// transport limit. New local and multipart installs carry their profiles
+	// inside each indexed paipack; legacy installed releases may retain an
+	// external companion under the older activation format.
+	if m.EmbeddedIndexes {
+		if (m.Source != "local" || m.TransportFormat != "paipack-v8") && (m.Source != "hosted" || m.TransportFormat != "modelpack-v1") || !validHash(m.ManifestDigest) || m.Companion != (File{}) {
+			return errors.New("discoveryasset: invalid embedded-index release")
+		}
+	} else {
+		companion := m.Companion
+		companionLimit := MaxDownloadBytes - total
+		if m.hasGeneratedCompanion() {
+			companionLimit = maxGeneratedCompanionBytes
+		}
+		if !safeName.MatchString(companion.Name) || seen[companion.Name] || !validURL(companion.URL) || companion.Size <= 0 || companion.Size > companionLimit || !validHash(companion.SHA256) {
+			return errors.New("discoveryasset: invalid companion or release exceeds its size limit")
+		}
+		if m.Companion.Name != "discovery.sqlite" || m.Companion.PackID != "" {
+			return errors.New("discoveryasset: missing companion index")
+		}
 	}
 	var expanded int64
 	for _, f := range m.Packs {
@@ -121,7 +134,8 @@ func (m Manifest) Validate() error {
 }
 
 // RequiredDiskBytes is a conservative staging estimate including downloads,
-// pack extraction, vector search derivatives, and metadata indexing scratch.
+// pack extraction, and bounded verification scratch. Older curated releases
+// may also retain separate derived files on disk.
 func (m Manifest) RequiredDiskBytes() int64 {
 	n := m.TotalBytes() + 256<<20
 	for _, f := range m.Packs {

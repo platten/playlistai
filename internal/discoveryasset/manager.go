@@ -79,11 +79,13 @@ func openRelease(ctx context.Context, dir string, manifest Manifest) (*release, 
 	if e := manifest.Validate(); e != nil {
 		return nil, e
 	}
-	if e := dataset.VerifyFile(ctx, filepath.Join(dir, manifest.Companion.Name), manifest.Companion.Size, manifest.Companion.SHA256); e != nil {
-		return nil, e
-	}
-	if e := verifyCompanion(ctx, filepath.Join(dir, manifest.Companion.Name), manifest); e != nil {
-		return nil, e
+	if !manifest.EmbeddedIndexes {
+		if e := dataset.VerifyFile(ctx, filepath.Join(dir, manifest.Companion.Name), manifest.Companion.Size, manifest.Companion.SHA256); e != nil {
+			return nil, e
+		}
+		if e := verifyCompanion(ctx, filepath.Join(dir, manifest.Companion.Name), manifest); e != nil {
+			return nil, e
+		}
 	}
 	r := &release{dir: dir, manifest: manifest}
 	good := false
@@ -108,8 +110,32 @@ func openRelease(ctx context.Context, dir string, manifest Manifest) (*release, 
 			lease.Release()
 			return nil, errors.New("discoveryasset: installed pack identity mismatch")
 		}
-		// Opening the catalog verifies that derived retrieval indexes are usable.
-		c, e := localcatalog.Open(lease, localcatalog.Options{SourceID: sourceID(f), Shared: true, ProfilePath: filepath.Join(dir, manifest.Companion.Name), ProfileGeneration: manifest.Companion.SHA256})
+		profilePath := filepath.Join(dir, manifest.Companion.Name)
+		profileGeneration := manifest.Companion.SHA256
+		profileBinding := ""
+		if manifest.EmbeddedIndexes {
+			if gm.Version != librarypack.IndexedFormatVersion {
+				lease.Release()
+				return nil, errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
+			}
+			if e := VerifyEmbeddedCompanion(ctx, g); e != nil {
+				lease.Release()
+				return nil, e
+			}
+			profilePath = filepath.Join(g.Directory(), "discovery.sqlite")
+			profileBinding, e = embeddedMetadataHash(gm)
+			if e != nil {
+				lease.Release()
+				return nil, e
+			}
+			for _, embedded := range gm.IndexFiles {
+				if embedded.Path == "discovery.sqlite" {
+					profileGeneration = embedded.SHA256
+				}
+			}
+		}
+		// Opening the catalog verifies that prebuilt retrieval indexes are usable.
+		c, e := localcatalog.Open(lease, localcatalog.Options{SourceID: sourceID(f), Shared: true, ProfilePath: profilePath, ProfileGeneration: profileGeneration, ProfileBinding: profileBinding, RequirePrebuilt: true})
 		if e != nil {
 			return nil, e
 		}
@@ -120,7 +146,7 @@ func openRelease(ctx context.Context, dir string, manifest Manifest) (*release, 
 	return r, nil
 }
 func packLimits() librarypack.Limits {
-	return librarypack.Limits{MaxArchiveBytes: MaxDownloadBytes, MaxExpandedBytes: 12_000_000_000, MaxMemberBytes: 12_000_000_000}
+	return librarypack.Limits{MaxArchiveBytes: MaxIndexedDownloadBytes, MaxExpandedBytes: 12_000_000_000, MaxMemberBytes: 12_000_000_000}
 }
 func sourceID(f File) string      { return "discovery-" + f.PackID }
 func (m *Manager) Status() Status { m.mu.Lock(); defer m.mu.Unlock(); return m.statusLocked() }
@@ -207,7 +233,11 @@ func (m *Manager) install(ctx context.Context, manifest Manifest, p ports.Progre
 		}
 	}()
 	var done int64
-	for _, f := range append(append([]File(nil), manifest.Packs...), manifest.Companion) {
+	files := append([]File(nil), manifest.Packs...)
+	if !manifest.EmbeddedIndexes {
+		files = append(files, manifest.Companion)
+	}
+	for _, f := range files {
 		cached := filepath.Join(m.root, "downloads", f.SHA256)
 		if e = dataset.VerifyFile(ctx, cached, f.Size, f.SHA256); e != nil {
 			base := done
@@ -319,7 +349,7 @@ func installPack(ctx context.Context, pm *librarypack.Manager, path string, f Fi
 	if expanded != f.ExpandedBytes {
 		return errors.New("discoveryasset: expansion size does not match release manifest")
 	}
-	if e = localcatalog.BuildIndexes(ctx, s.Generation(), localcatalog.IndexBuildOptions{Workers: 1, MaxScratchBytes: 256 << 20}); e != nil {
+	if e = localcatalog.VerifyPrebuilt(ctx, s.Generation()); e != nil {
 		return e
 	}
 	if e = pm.Activate(ctx, s); e != nil {
@@ -346,7 +376,25 @@ func (m *Manager) Pin(ctx context.Context) ([]*localcatalog.Catalog, func(), err
 		lease, e := pm.Pin()
 		if e == nil {
 			var c *localcatalog.Catalog
-			c, e = localcatalog.Open(lease, localcatalog.Options{SourceID: sourceID(r.manifest.Packs[i]), Shared: true, ProfilePath: filepath.Join(r.dir, r.manifest.Companion.Name), ProfileGeneration: r.manifest.Companion.SHA256})
+			profilePath := filepath.Join(r.dir, r.manifest.Companion.Name)
+			profileGeneration := r.manifest.Companion.SHA256
+			profileBinding := ""
+			if r.manifest.EmbeddedIndexes {
+				profilePath = filepath.Join(lease.Generation().Directory(), "discovery.sqlite")
+				packManifest := lease.Generation().Manifest()
+				profileBinding, e = embeddedMetadataHash(packManifest)
+				if e != nil {
+					lease.Release()
+				}
+				for _, embedded := range packManifest.IndexFiles {
+					if embedded.Path == "discovery.sqlite" {
+						profileGeneration = embedded.SHA256
+					}
+				}
+			}
+			if e == nil {
+				c, e = localcatalog.Open(lease, localcatalog.Options{SourceID: sourceID(r.manifest.Packs[i]), Shared: true, ProfilePath: profilePath, ProfileGeneration: profileGeneration, ProfileBinding: profileBinding, RequirePrebuilt: true})
+			}
 			if e == nil {
 				catalogs = append(catalogs, c)
 			}

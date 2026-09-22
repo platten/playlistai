@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/fakes"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/ports"
@@ -59,6 +60,10 @@ func TestEnhancedManagedDiscoveryChecksLocalCandidatesBeforeColdProvider(t *test
 		{ID: "unknown", Artist: "Unknown Artist", Title: "Ambient words", RawTags: []byte(`{"comment":"ambient"}`)},
 	}
 	manifest, err := librarypack.Write(ctx, packPath, librarypack.Pack{CorpusGeneration: "latency-fixture", MetadataGeneration: "latency-metadata", Tracks: tracks}, librarypack.Limits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err = discoveryasset.BuildIndexedFromPack(ctx, packPath, packPath, librarypack.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

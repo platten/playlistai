@@ -254,12 +254,11 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 			_ = state.manager.Discard(staged)
 		}
 	}()
-	// Copying, decompression, verification, and deterministic index construction
-	// deliberately occur without opMu. Existing pinned readers continue using
-	// the old generation throughout this potentially long operation.
+	// Copying, decompression, and verification occur without opMu. Indexes must
+	// have been built by playlist-indexer and embedded in the archive.
 	if generation := staged.Generation(); generation != nil {
-		if err := localcatalog.BuildIndexes(ctx, generation, localcatalog.IndexBuildOptions{Workers: 2, ShardRows: 16_384, MaxScratchBytes: 256 << 20}); err != nil {
-			return LocalLibraryStatus{}, fmt.Errorf("build local library indexes: %w", err)
+		if err := localcatalog.VerifyPrebuilt(ctx, generation); err != nil {
+			return LocalLibraryStatus{}, fmt.Errorf("verify prebuilt local library indexes: %w", err)
 		}
 	}
 	state.opMu.Lock()
@@ -433,7 +432,7 @@ func (c *Container) PinLocalCatalog() (*localcatalog.Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	return localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings})
+	return localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings, RequirePrebuilt: true})
 }
 
 // PinFeedbackCatalog keeps one local generation alive through validation and
@@ -491,7 +490,7 @@ func (c *Container) pinLocalRecommendationOverlay(ctx context.Context, base port
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
-	local, err := localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings})
+	local, err := localcatalog.Open(snapshot.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: snapshot.rootMappings, RequirePrebuilt: true})
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}

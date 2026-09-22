@@ -38,10 +38,12 @@ type Options struct {
 	// ProfileGeneration is the verified companion SHA-256 for shared packs.
 	ProfileGeneration string
 	ProfilePath       string
+	ProfileBinding    string
 	Shared            bool
 	SourceID          string
 	RootMappings      map[string]string
 	PageSize          int
+	RequirePrebuilt   bool
 }
 
 // Catalog owns one librarypack lease. Close releases it after in-flight calls
@@ -125,7 +127,11 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 	_, statErr := os.Stat(filepath.Join(generation.Directory(), derivedIndexDir, "manifest.json"))
 	var upgradeErr error
 	if errors.Is(statErr, os.ErrNotExist) {
-		upgradeErr = BuildIndexes(context.Background(), generation, IndexBuildOptions{Workers: 2, ShardRows: 16_384, MaxScratchBytes: 256 << 20})
+		if options.RequirePrebuilt || manifest.Version == librarypack.IndexedFormatVersion {
+			upgradeErr = errors.New("localcatalog: required prebuilt search indexes are missing; re-export with playlist-indexer")
+		} else {
+			upgradeErr = BuildIndexes(context.Background(), generation, IndexBuildOptions{Workers: 2, ShardRows: 16_384, MaxScratchBytes: 256 << 20})
+		}
 	}
 	indexUpgradeMu.Unlock()
 	if upgradeErr != nil {
@@ -153,7 +159,11 @@ func Open(lease *librarypack.Lease, options Options) (*Catalog, error) {
 		}
 		catalog.profiles = db
 		var packID string
-		if err := db.QueryRow("SELECT pack_id FROM packs WHERE pack_id=? AND sha256=?", manifest.PackID, generation.PackSHA256()).Scan(&packID); err != nil {
+		binding := options.ProfileBinding
+		if binding == "" {
+			binding = generation.PackSHA256()
+		}
+		if err := db.QueryRow("SELECT pack_id FROM packs WHERE pack_id=? AND sha256=?", manifest.PackID, binding).Scan(&packID); err != nil {
 			_ = catalog.Close()
 			return nil, fmt.Errorf("localcatalog: companion pack binding: %w", err)
 		}

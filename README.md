@@ -49,6 +49,13 @@ system FFmpeg installation:
   --accept-model-license --out ./my-library.paipack
 ```
 
+`run --out` and `export --out` now build search and discovery-profile indexes
+inside a version-8 paipack by default. The desktop verifies and loads these
+indexes; it does not build them during import. Older unindexed packs need a new
+export from the indexer's durable state (`playlist-indexer export --state DIR
+--out NEW.paipack`) before they can be newly imported. Already installed packs
+with valid on-disk indexes remain available.
+
 `auto` is the default bounded resource plan. On Linux it intersects affinity
 and cgroup quota with sysfs physical-core topology, then reserves one physical
 core for control, storage, and SQLite work; an explicit `--workers` value may

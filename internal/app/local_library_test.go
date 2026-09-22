@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/librarypack"
 )
 
@@ -28,14 +29,35 @@ func writeAppLibraryPack(t *testing.T, path, generation, trackID string, relativ
 	if relativePath != "" {
 		track.RootAlias, track.RelativePath = "music-main", relativePath
 	}
-	manifest, err := librarypack.Write(context.Background(), path, librarypack.Pack{
+	_, err := librarypack.Write(context.Background(), path, librarypack.Pack{
 		CorpusGeneration: generation, MetadataGeneration: "metadata-" + generation,
 		MERTGeneration: "mert-" + generation, MERT: appLibrarySpace(), Tracks: []librarypack.Track{track},
 	}, librarypack.Limits{})
 	if err != nil {
 		t.Fatalf("write pack: %v", err)
 	}
+	manifest, err := discoveryasset.BuildIndexedFromPack(context.Background(), path, path, librarypack.Limits{})
+	if err != nil {
+		t.Fatalf("index pack: %v", err)
+	}
 	return manifest
+}
+
+func TestLocalLibraryRejectsUnindexedPackWithoutBuildingIndexes(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "legacy.paipack")
+	if _, err := librarypack.Write(ctx, path, librarypack.Pack{CorpusGeneration: "legacy", MetadataGeneration: "legacy", Tracks: []librarypack.Track{{ID: "one", Artist: "Artist", Title: "One"}}}, librarypack.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	c := &Container{cfg: testConfig(t)}
+	defer c.Close()
+	if _, err := c.ImportLocalLibrary(ctx, path); err == nil || !strings.Contains(err.Error(), "re-export") {
+		t.Fatalf("unindexed pack was accepted: %v", err)
+	}
+	status, err := c.LocalLibraryStatus()
+	if err != nil || status.Installed {
+		t.Fatalf("failed import changed active library: %+v %v", status, err)
+	}
 }
 
 func fileDigest(t *testing.T, path string) [sha256.Size]byte {
