@@ -160,7 +160,7 @@ func TestReimportIdenticalPackRebuildsMissingDerivedIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := c.ImportLocalLibrary(context.Background(), packPath); err != nil {
-		t.Fatalf("identical reimport did not rebuild index: %v", err)
+		t.Fatalf("identical reimport did not reuse prebuilt index: %v", err)
 	}
 	catalog, err := c.PinLocalCatalog()
 	if err != nil {

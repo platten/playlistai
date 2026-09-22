@@ -16,6 +16,7 @@ import (
 	"github.com/platten/playlistai/internal/dataset"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/localcatalog"
 )
 
 type BuildOptions struct {
@@ -113,7 +114,7 @@ func AuditPack(ctx context.Context, path string) (Audit, error) {
 // Build creates a fresh release directory. It refuses to overwrite an existing
 // output, emits no source locations, and never performs network enrichment.
 func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
-	m := Manifest{Format: Format, SchemaVersion: 1, Version: o.Version}
+	m := Manifest{Format: Format, SchemaVersion: 1, Version: o.Version, EmbeddedIndexes: true}
 	if !safeName.MatchString(o.Version) || !validURL(strings.TrimRight(o.BaseURL, "/")+"/manifest.json") || len(o.Inputs) == 0 || len(o.Inputs) > 128 {
 		return m, errors.New("discoveryasset: version, HTTPS base URL and input packs required")
 	}
@@ -141,7 +142,6 @@ func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
 		return m, e
 	}
 	defer os.RemoveAll(stage)
-	var all [][]librarypack.Track
 	var retainedBytes int64
 	spaceSeen := map[string]map[string][]librarypack.Track{}
 	remaining := o.MaxTracks
@@ -225,24 +225,11 @@ func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
 			return m, err
 		}
 		f.PackID = written.PackID
-		for _, member := range written.Files {
-			f.ExpandedBytes += member.Size
-		}
+		f.ExpandedBytes = expandedPackBytes(written)
 		m.Packs = append(m.Packs, f)
-		all = append(all, tracks)
 		remaining -= len(tracks)
 	}
-	if e = createCompanion(ctx, filepath.Join(stage, "discovery.sqlite"), m, all); e != nil {
-		return m, e
-	}
-	m.Companion, e = describeFile(ctx, filepath.Join(stage, "discovery.sqlite"), o.BaseURL)
-	if e != nil {
-		return m, e
-	}
 	if e = m.Validate(); e != nil {
-		return m, e
-	}
-	if e = verifyCompanion(ctx, filepath.Join(stage, "discovery.sqlite"), m); e != nil {
 		return m, e
 	}
 	b, e := json.MarshalIndent(m, "", "  ")
@@ -484,7 +471,7 @@ func copyFile(ctx context.Context, source, target string) error {
 	return errors.Join(e, out.Close())
 }
 
-// Verify checks all release archives and companion checksums and schemas offline.
+// Verify checks all release archives and their profile checksums and schemas offline.
 func Verify(ctx context.Context, dir string) (Manifest, error) {
 	var m Manifest
 	b, e := os.ReadFile(filepath.Join(dir, "manifest.json"))
@@ -497,7 +484,11 @@ func Verify(ctx context.Context, dir string) (Manifest, error) {
 	if e = m.Validate(); e != nil {
 		return m, e
 	}
-	for _, f := range append(append([]File(nil), m.Packs...), m.Companion) {
+	files := append([]File(nil), m.Packs...)
+	if !m.EmbeddedIndexes {
+		files = append(files, m.Companion)
+	}
+	for _, f := range files {
 		if e = dataset.VerifyFile(ctx, filepath.Join(dir, f.Name), f.Size, f.SHA256); e != nil {
 			return m, e
 		}
@@ -506,12 +497,21 @@ func Verify(ctx context.Context, dir string) (Manifest, error) {
 				if g.Manifest().PackID != f.PackID {
 					return errors.New("discoveryasset: pack identity mismatch")
 				}
+				if err := localcatalog.VerifyPrebuilt(ctx, g); err != nil {
+					return err
+				}
+				if m.EmbeddedIndexes {
+					return VerifyEmbeddedCompanion(ctx, g)
+				}
 				return nil
 			})
 			if e != nil {
 				return m, e
 			}
 		}
+	}
+	if m.EmbeddedIndexes {
+		return m, nil
 	}
 	return m, verifyCompanion(ctx, filepath.Join(dir, m.Companion.Name), m)
 }

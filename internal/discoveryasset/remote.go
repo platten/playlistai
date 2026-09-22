@@ -100,7 +100,11 @@ func fetchRemote(ctx context.Context, location string) (remoteManifest, error) {
 		}
 		r.discovery = &m
 		r.digest = manifestHash(m)
-		r.update = Update{Version: m.Version, Digest: r.digest, DownloadBytes: m.TotalBytes(), Files: len(m.Packs) + 1, Source: "hosted", Format: Format}
+		files := len(m.Packs)
+		if !m.EmbeddedIndexes {
+			files++
+		}
+		r.update = Update{Version: m.Version, Digest: r.digest, DownloadBytes: m.TotalBytes(), Files: files, Source: "hosted", Format: Format}
 		return r, nil
 	}
 	if header.Format == "playlist-ai-paipack-parts" {
@@ -263,10 +267,7 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 		if declared.Version != librarypack.IndexedFormatVersion {
 			return m.Status(), errors.New("discoveryasset: pack lacks prebuilt indexes; re-export with playlist-indexer")
 		}
-		var declaredBytes int64
-		for _, member := range declared.Files {
-			declaredBytes += member.Size
-		}
+		declaredBytes := expandedPackBytes(declared)
 		if declaredBytes > 12_000_000_000-expanded {
 			return m.Status(), errors.New("discoveryasset: expanded set exceeds 12 GB")
 		}
@@ -296,10 +297,7 @@ func (m *Manager) installArchives(ctx context.Context, paths []string, version, 
 			_ = pm.Close()
 			return m.Status(), errors.New("discoveryasset: pack changed after expansion preflight")
 		}
-		var size int64
-		for _, f := range pack.Files {
-			size += f.Size
-		}
+		size := expandedPackBytes(pack)
 		expanded += size
 		if expanded > 12_000_000_000 || seen[pack.PackID] {
 			_ = pm.Discard(staged)

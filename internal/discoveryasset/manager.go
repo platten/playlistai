@@ -146,13 +146,23 @@ func openRelease(ctx context.Context, dir string, manifest Manifest) (*release, 
 	return r, nil
 }
 func packLimits() librarypack.Limits {
-	return librarypack.Limits{MaxArchiveBytes: MaxIndexedDownloadBytes, MaxExpandedBytes: 12_000_000_000, MaxMemberBytes: 12_000_000_000}
+	return librarypack.Limits{MaxArchiveBytes: MaxIndexedDownloadBytes, MaxExpandedBytes: 12_000_000_000 + (4 << 20), MaxMemberBytes: 12_000_000_000}
+}
+func expandedPackBytes(pack librarypack.Manifest) int64 {
+	var size int64
+	for _, file := range pack.Files {
+		size += file.Size
+	}
+	for _, file := range pack.IndexFiles {
+		size += file.Size
+	}
+	return size
 }
 func sourceID(f File) string      { return "discovery-" + f.PackID }
 func (m *Manager) Status() Status { m.mu.Lock(); defer m.mu.Unlock(); return m.statusLocked() }
 
-// SnapshotID binds the entire active release manifest, including its companion
-// checksum. Human release labels alone need not change when an artifact does.
+// SnapshotID binds the entire active release manifest, including pack and
+// profile checksums. Human labels need not change when an artifact does.
 func (m *Manager) SnapshotID() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -210,6 +220,9 @@ func (m *Manager) Install(ctx context.Context, manifestURL string, p ports.Progr
 	manifest := *remote.discovery
 	manifest.Source = "hosted"
 	manifest.ManifestDigest = remote.digest
+	if manifest.EmbeddedIndexes {
+		manifest.TransportFormat = "discovery-v8"
+	}
 	return m.install(ctx, manifest, p)
 }
 func (m *Manager) install(ctx context.Context, manifest Manifest, p ports.Progress) (Status, error) {
@@ -254,14 +267,11 @@ func (m *Manager) install(ctx context.Context, manifest Manifest, p ports.Progre
 			}
 			continue
 		}
-		limits := packLimits()
-		limits.MaxExpandedBytes = f.ExpandedBytes + (4 << 20)
-		limits.MaxMemberBytes = f.ExpandedBytes
-		pm, err := librarypack.OpenManager(ctx, filepath.Join(dir, f.PackID), limits)
+		pm, err := librarypack.OpenManager(ctx, filepath.Join(dir, f.PackID), packLimits())
 		if err != nil {
 			return m.Status(), err
 		}
-		err = installPack(ctx, pm, cached, f)
+		err = installPack(ctx, pm, cached, f, manifest.EmbeddedIndexes)
 		_ = pm.Close()
 		if err != nil {
 			return m.Status(), err
@@ -328,7 +338,7 @@ func (m *Manager) activate(ctx context.Context, dir string, manifest Manifest, p
 	p.Report(ProgressOp, total, total, "Ready")
 	return status, true, publishErr
 }
-func installPack(ctx context.Context, pm *librarypack.Manager, path string, f File) error {
+func installPack(ctx context.Context, pm *librarypack.Manager, path string, f File, embeddedIndexes bool) error {
 	s, e := pm.Stage(ctx, path)
 	if e != nil {
 		return e
@@ -345,6 +355,11 @@ func installPack(ctx context.Context, pm *librarypack.Manager, path string, f Fi
 	var expanded int64
 	for _, member := range s.Manifest().Files {
 		expanded += member.Size
+	}
+	if embeddedIndexes {
+		for _, member := range s.Manifest().IndexFiles {
+			expanded += member.Size
+		}
 	}
 	if expanded != f.ExpandedBytes {
 		return errors.New("discoveryasset: expansion size does not match release manifest")
