@@ -1,7 +1,7 @@
 # Combining portable library packs
 
-`paipack-combine` creates one format-v5 `.paipack` from two or more existing
-format-v5 packs. The executable is pure Go and works offline. It does not load
+`paipack-combine` creates one indexed format-v8 `.paipack` from two or more existing
+format-v5 through v8 packs. The executable is pure Go and works offline. It does not load
 audio, codecs, native inference runtimes, model files, or network services.
 
 ```sh

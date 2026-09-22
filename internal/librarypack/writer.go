@@ -164,7 +164,7 @@ func writeSource(ctx context.Context, out string, pack Pack, source TrackSource,
 			return clapVectorsPath
 		}
 		return ""
-	}()); err == nil {
+	}(), ""); err == nil {
 		err = tmp.Sync()
 	}
 	if closeErr := tmp.Close(); err == nil {
@@ -536,7 +536,11 @@ func normalizePortableIdentity(value string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(value)), " "))
 }
 
-func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, metadataPath, vectorsPath, clapVectorsPath string) error {
+func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, metadataPath, vectorsPath, clapVectorsPath string, indexBundlePaths ...string) error {
+	indexBundlePath := ""
+	if len(indexBundlePaths) > 0 {
+		indexBundlePath = indexBundlePaths[0]
+	}
 	zw, err := zstd.NewWriter(destination, zstd.WithEncoderLevel(zstd.SpeedBetterCompression), zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(8<<20))
 	if err != nil {
 		return err
@@ -572,6 +576,17 @@ func writeArchive(ctx context.Context, destination io.Writer, manifest []byte, m
 			size int64
 			open func() (io.ReadCloser, error)
 		}{CLAPVectorsName, info.Size(), func() (io.ReadCloser, error) { return os.Open(file) }})
+	}
+	if indexBundlePath != "" {
+		info, statErr := os.Stat(indexBundlePath)
+		if statErr != nil {
+			return statErr
+		}
+		entries = append(entries, struct {
+			name string
+			size int64
+			open func() (io.ReadCloser, error)
+		}{IndexBundleName, info.Size(), func() (io.ReadCloser, error) { return os.Open(indexBundlePath) }})
 	}
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {

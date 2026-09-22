@@ -21,15 +21,17 @@ import (
 )
 
 const (
-	Format              = "playlist-ai-library-pack"
-	FormatVersion       = 7
-	PooledCLAPVersion   = 6
-	LegacyFormatVersion = 5
-	ManifestName        = "manifest.json"
-	MetadataName        = "metadata.sqlite"
-	MERTVectorsName     = "mert.f32"
-	CLAPVectorsName     = "clap.f32"
-	vectorFormatVersion = 1
+	Format               = "playlist-ai-library-pack"
+	FormatVersion        = 7
+	IndexedFormatVersion = 8
+	PooledCLAPVersion    = 6
+	LegacyFormatVersion  = 5
+	ManifestName         = "manifest.json"
+	MetadataName         = "metadata.sqlite"
+	MERTVectorsName      = "mert.f32"
+	CLAPVectorsName      = "clap.f32"
+	IndexBundleName      = "indexes.tar"
+	vectorFormatVersion  = 1
 )
 
 var (
@@ -62,7 +64,7 @@ func DefaultLimits() Limits {
 		MaxExpandedBytes: 128 << 30,
 		MaxMemberBytes:   96 << 30,
 		MaxManifestBytes: 4 << 20,
-		MaxMembers:       4,
+		MaxMembers:       5,
 		MaxTracks:        5_000_000,
 		MaxVectorDim:     4096,
 		MaxRecordBytes:   1 << 20,
@@ -105,6 +107,14 @@ func (l Limits) normalized() Limits {
 type File struct {
 	Name   string `json:"name"`
 	Kind   string `json:"kind"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+// IndexedFile is a verified member of the embedded, precomputed index bundle.
+// Paths are relative to the extracted generation, never to the source library.
+type IndexedFile struct {
+	Path   string `json:"path"`
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 }
@@ -155,6 +165,7 @@ type Manifest struct {
 	CLAPModel            *core.AudioModelIdentity `json:"clapModel,omitempty"`
 	RootAliases          []string                 `json:"rootAliases"`
 	Files                []File                   `json:"files"`
+	IndexFiles           []IndexedFile            `json:"indexFiles,omitempty"`
 }
 
 type legacyCoverageV5 struct {
@@ -463,7 +474,7 @@ type Pack struct {
 
 func (m Manifest) Validate(limits Limits) error {
 	limits = limits.normalized()
-	if m.Format != Format || (m.Version != FormatVersion && m.Version != PooledCLAPVersion && m.Version != LegacyFormatVersion) {
+	if m.Format != Format || (m.Version != IndexedFormatVersion && m.Version != FormatVersion && m.Version != PooledCLAPVersion && m.Version != LegacyFormatVersion) {
 		return fmt.Errorf("librarypack: unsupported format %q version %d", m.Format, m.Version)
 	}
 	if !validIdentifier(m.CorpusGeneration) || !validIdentifier(m.MetadataGeneration) {
@@ -506,12 +517,20 @@ func (m Manifest) Validate(limits Limits) error {
 	if m.Coverage.CLAP > 0 {
 		wantFiles++
 	}
+	if m.Version == IndexedFormatVersion {
+		wantFiles++
+	} else if len(m.IndexFiles) != 0 {
+		return errors.New("librarypack: index files require an indexed pack")
+	}
 	if len(m.Files) != wantFiles || len(m.RootAliases) > 1024 {
 		return errors.New("librarypack: manifest has an invalid vector file set")
 	}
 	want := map[string]string{MetadataName: "metadata_sqlite", MERTVectorsName: "mert_float32"}
 	if m.Coverage.CLAP > 0 {
 		want[CLAPVectorsName] = "clap_float32"
+	}
+	if m.Version == IndexedFormatVersion {
+		want[IndexBundleName] = "prebuilt_indexes_tar"
 	}
 	seen := map[string]bool{}
 	var total int64
@@ -527,6 +546,26 @@ func (m Manifest) Validate(limits Limits) error {
 	}
 	if len(seen) != len(want) || total > limits.MaxExpandedBytes {
 		return errors.New("librarypack: manifest exceeds expansion limits")
+	}
+	if m.Version == IndexedFormatVersion {
+		if len(m.IndexFiles) < 2 || len(m.IndexFiles) > 256 {
+			return errors.New("librarypack: invalid embedded index file set")
+		}
+		indexSeen := map[string]bool{}
+		var indexBytes int64
+		for _, f := range m.IndexFiles {
+			if !validIndexedPath(f.Path) || indexSeen[f.Path] || f.Size <= 0 || f.Size > limits.MaxMemberBytes || !validHash(f.SHA256) || f.Size > limits.MaxExpandedBytes-indexBytes {
+				return errors.New("librarypack: invalid embedded index entry")
+			}
+			indexSeen[f.Path] = true
+			indexBytes += f.Size
+		}
+		if !indexSeen["discovery.sqlite"] || !indexSeen["local-index-v3/manifest.json"] {
+			return errors.New("librarypack: required embedded indexes are missing")
+		}
+		if indexBytes > limits.MaxExpandedBytes-total {
+			return errors.New("librarypack: embedded indexes exceed expansion limit")
+		}
 	}
 	aliases := append([]string(nil), m.RootAliases...)
 	sort.Strings(aliases)
@@ -563,6 +602,17 @@ func semanticID(m Manifest) string {
 		sum := sha256.Sum256(raw)
 		return hex.EncodeToString(sum[:])
 	}
+	if m.Version == IndexedFormatVersion {
+		m.Version = FormatVersion
+		m.IndexFiles = nil
+		files := make([]File, 0, len(m.Files)-1)
+		for _, f := range m.Files {
+			if f.Name != IndexBundleName {
+				files = append(files, f)
+			}
+		}
+		m.Files = files
+	}
 	m.PackID = ""
 	m.Files = append([]File(nil), m.Files...)
 	sort.Slice(m.Files, func(i, j int) bool { return m.Files[i].Name < m.Files[j].Name })
@@ -571,6 +621,21 @@ func semanticID(m Manifest) string {
 	raw, _ := json.Marshal(m)
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+func validIndexedPath(path string) bool {
+	if path == "discovery.sqlite" {
+		return true
+	}
+	if !strings.HasPrefix(path, "local-index-v3/") || strings.ContainsAny(path, `\:`) || strings.HasSuffix(path, "/") {
+		return false
+	}
+	for _, part := range strings.Split(path, "/") {
+		if part == "" || part == "." || part == ".." || !validIdentifier(part) {
+			return false
+		}
+	}
+	return true
 }
 
 func validIdentifier(s string) bool { return identifierPattern.MatchString(strings.TrimSpace(s)) }

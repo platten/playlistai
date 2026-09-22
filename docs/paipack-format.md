@@ -1,6 +1,7 @@
 # Playlist AI portable library pack (`.paipack`)
 
-Status: format version 7; readers retain version 5 and 6 compatibility.
+Status: `playlist-indexer` exports indexed format version 8 by default;
+low-level readers retain versions 5, 6, and 7 compatibility.
 
 A paipack is a portable, immutable recommendation-data snapshot. It contains
 metadata and derived analysis only. It never contains audio or PCM. Source
@@ -11,10 +12,19 @@ mount mappings are not portable pack data.
 The Go implementation is `internal/librarypack`. It has no Wails dependency and
 is shared by the analyzer and desktop integration.
 
+Version 8 embeds prebuilt search indexes and per-pack discovery profiles.
+Desktop imports require version 8, so indexing takes place during
+`playlist-indexer run --out` or `playlist-indexer export --out`, not inside the
+desktop app. Existing installed older packs with valid on-disk indexes remain
+usable. Re-export an older pack from the indexer's durable state before a new
+desktop import.
+
 Version 7 adds optional paired CLAP model identity and per-excerpt evidence in a
 bounded `clap_evidence` SQLite table. Version 6 added optional pooled CLAP
-vectors. Current writers emit version 7; existing version 5/6 archives retain
-their original semantic IDs and are never rewritten during import. Missing
+vectors. The indexer and combiner now emit indexed version 8; the underlying
+metadata writer still emits version 7 before offline index packaging. Existing
+version 5/6 archives retain their original semantic IDs and are never rewritten
+during import. Missing
 legacy CLAP segments, observed coverage, padding, or runtime identity remain
 unavailable. Re-exporting stored indexer CLAP records can recover the segments
 without new inference; the pooled-only version 6 file cannot reconstruct them.
@@ -33,10 +43,16 @@ regular-file members, in this order:
 1. `manifest.json`
 2. `metadata.sqlite`
 3. `mert.f32`
-4. `clap.f32`, only in version 6/7 when CLAP vector coverage is nonzero
+4. `clap.f32`, only in version 6/7/8 when CLAP vector coverage is nonzero
+5. `indexes.tar`, only in version 8
 
-Version 7's segment evidence stays inside the checksummed SQLite payload;
-it adds no archive member. Version 5 contains only the first three members.
+Version 8 retains the version-7 metadata and optional CLAP member. Its
+`indexes.tar` contains `discovery.sqlite` and the `local-index-v3/` metadata,
+MERT, and CLAP search files. The outer manifest records the tar member hash and
+the path, size, and hash of every contained index file. Extraction accepts only
+declared regular files under those fixed paths, checks every hash, and discards
+the temporary tar after extraction. Version 7's segment evidence stays inside
+the checksummed SQLite payload; version 5 contains only the first three members.
 
 No directories, links, devices, sparse files, duplicate names, alternate data
 streams, absolute paths, or nested member paths are accepted. Tar timestamps
@@ -73,10 +89,12 @@ observed-audio scope, and missingness semantics. Vector encoding version 1 permi
 little-endian normalized float32 vectors. Cosine scores from unequal contracts
 must remain in separate spaces.
 
-`packId` is SHA-256 over canonical JSON for the manifest with an empty
-`packId`, sorted file entries, and sorted root aliases. It identifies semantic
-contents and provenance. Import also records a SHA-256 over the complete
-compressed archive; that distinct hash identifies the exact imported file.
+For versions 5–7, `packId` is SHA-256 over canonical JSON for the manifest with
+an empty `packId`, sorted file entries, and sorted root aliases. Version 8
+retains the version-7 semantic pack ID of its source payload; derived index
+entries do not change that semantic identity. Import separately records the
+SHA-256 of the complete compressed archive, which binds the embedded indexes
+and identifies the exact imported file.
 
 ## Metadata snapshot
 
@@ -141,10 +159,10 @@ claimed only when all manifest inputs, including that timestamp, are equal.
 ## Combining packs
 
 The standalone `paipack-combine` command combines two or more fully validated
-version-5/6/7 packs and writes version 7. It does not accept version 4 or
-older packs; rebuild those with the current `playlist-indexer`. Combining never
-uses paths, track IDs, source identities, or previously stored
-`recording_identity` strings as duplicate evidence. See
+version-5/6/7/8 packs and writes indexed version 8 by default. It does not
+accept version 4 or older packs; rebuild those with the current
+`playlist-indexer`. Combining never uses paths, track IDs, source identities,
+or previously stored `recording_identity` strings as duplicate evidence. See
 [paipack-combine.md](paipack-combine.md) for the complete merge and resource
 rebuild contract.
 
@@ -242,17 +260,19 @@ state/
       manifest.json
       metadata.sqlite
       mert.f32
-      local-index-v1/  # consumer-built derivative; not an archive member
+      discovery.sqlite        # extracted from indexed pack v8
+      local-index-v3/         # extracted from indexed pack v8
 ```
 
 `Stage` extracts into a unique private directory, verifies every member hash,
 validates the manifest, SQLite rows, capability/missingness data, vector header,
 file length, row mapping, and every vector, and then opens an immutable
-generation. The desktop builds deterministic metadata/artist inverted indexes
-and exact MERT shards in that private directory before activation. A derivative
-manifest and atomic directory rename prevent partial indexes from becoming
-visible. Only one mutation may be staged at a time; overlapping mutation
-attempts receive `ErrMutationInProgress`. Read pins continue concurrently.
+generation. An indexed version-8 archive includes deterministic
+metadata/artist inverted indexes, exact MERT/CLAP shards, and discovery
+profiles produced by the offline indexer. The desktop verifies their hashes and
+schemas before activation, without rebuilding them. Only one mutation may be
+staged at a time; overlapping mutation attempts receive
+`ErrMutationInProgress`. Read pins continue concurrently.
 
 `Activate` writes and syncs a temporary `active.json`, atomically renames it,
 syncs the state directory, and only then publishes the new in-process pointer.

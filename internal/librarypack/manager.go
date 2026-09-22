@@ -104,6 +104,7 @@ func (s *Staged) Manifest() Manifest {
 	}
 	m := s.manifest
 	m.Files = append([]File(nil), m.Files...)
+	m.IndexFiles = append([]IndexedFile(nil), m.IndexFiles...)
 	m.RootAliases = append([]string(nil), m.RootAliases...)
 	return m
 }
@@ -115,9 +116,9 @@ func (s *Staged) PackSHA256() string {
 }
 
 // Generation returns the verified generation while it is staged so bounded
-// derivative indexes can be constructed before the short activation step. For
-// an identical active generation it returns that immutable generation, allowing
-// a missing app-owned derivative index to be rebuilt without restaging the pack.
+// packaged indexes can be verified before the short activation step. Offline
+// tooling may also build indexes for a staged source pack. For an identical
+// active generation it returns that immutable generation.
 func (s *Staged) Generation() *Generation {
 	if s == nil || s.entry == nil {
 		return nil

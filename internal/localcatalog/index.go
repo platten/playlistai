@@ -37,7 +37,7 @@ type derivedIndexManifest struct {
 	CLAP           string `json:"clap,omitempty"`
 }
 
-// IndexBuildOptions bounds import-time scratch and CPU use. The generated
+// IndexBuildOptions bounds offline packaging scratch and CPU use. The generated
 // files are derivatives owned by the staged pack generation, never source pack
 // members or user audio.
 type IndexBuildOptions struct {
@@ -132,6 +132,20 @@ func BuildIndexes(ctx context.Context, generation *librarypack.Generation, optio
 	}
 	keep = true
 	return syncIndexDirectory(root)
+}
+
+// VerifyPrebuilt opens and checks the packaged search indexes without building
+// any derivative. Desktop import uses this before publishing a new generation.
+func VerifyPrebuilt(ctx context.Context, generation *librarypack.Generation) error {
+	if generation == nil || generation.Manifest().Version != librarypack.IndexedFormatVersion {
+		return errors.New("localcatalog: re-export this pack with playlist-indexer to include prebuilt indexes")
+	}
+	_, closeIndex, err := openDerivedIndexes(ctx, generation)
+	if err != nil {
+		return err
+	}
+	closeIndex()
+	return nil
 }
 
 type generationVectorSource struct {

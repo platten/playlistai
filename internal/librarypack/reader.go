@@ -48,6 +48,7 @@ type generationAttachment struct {
 func (g *Generation) Manifest() Manifest {
 	m := g.manifest
 	m.Files = append([]File(nil), m.Files...)
+	m.IndexFiles = append([]IndexedFile(nil), m.IndexFiles...)
 	m.RootAliases = append([]string(nil), m.RootAliases...)
 	if m.CLAPModel != nil {
 		model := *m.CLAPModel
@@ -611,16 +612,22 @@ func extractArchive(ctx context.Context, archivePath, destination string, limits
 			return Manifest{}, "", fmt.Errorf("librarypack: checksum mismatch for %s", header.Name)
 		}
 	}
-	requiredMembers := 3
-	if manifest.Coverage.CLAP > 0 {
-		requiredMembers++
-	}
-	if len(expected) != requiredMembers-1 || !seen[MetadataName] || !seen[MERTVectorsName] || manifest.Coverage.CLAP > 0 && !seen[CLAPVectorsName] || len(seen) != requiredMembers {
+	if len(seen) != len(expected)+1 {
 		return Manifest{}, "", errors.New("librarypack: archive is incomplete")
+	}
+	for name := range expected {
+		if !seen[name] {
+			return Manifest{}, "", errors.New("librarypack: archive is incomplete")
+		}
 	}
 	var trailing [1]byte
 	if n, trailingErr := zr.Read(trailing[:]); n != 0 || trailingErr != io.EOF {
 		return Manifest{}, "", errors.New("librarypack: trailing expanded payload")
+	}
+	if manifest.Version == IndexedFormatVersion {
+		if err := extractIndexBundle(ctx, destination, manifest, limits); err != nil {
+			return Manifest{}, "", err
+		}
 	}
 	if err := syncDirectory(destination); err != nil {
 		return Manifest{}, "", err
@@ -654,12 +661,24 @@ func openGeneration(ctx context.Context, dir, packSHA256 string, limits Limits) 
 		return nil, err
 	}
 	for _, file := range manifest.Files {
+		if manifest.Version == IndexedFormatVersion && file.Name == IndexBundleName {
+			continue // extracted members are checked below; the tar is discarded.
+		}
 		actual, err := hashFile(ctx, filepath.Join(dir, file.Name))
 		if err != nil {
 			return nil, err
 		}
 		if actual.Size != file.Size || actual.SHA256 != file.SHA256 {
 			return nil, fmt.Errorf("librarypack: installed %s checksum mismatch", file.Name)
+		}
+	}
+	for _, file := range manifest.IndexFiles {
+		actual, err := hashFile(ctx, filepath.Join(dir, filepath.FromSlash(file.Path)))
+		if err != nil {
+			return nil, err
+		}
+		if actual.Size != file.Size || actual.SHA256 != file.SHA256 {
+			return nil, fmt.Errorf("librarypack: installed index %s checksum mismatch", file.Path)
 		}
 	}
 	vectors, err := os.Open(filepath.Join(dir, MERTVectorsName))
@@ -704,7 +723,11 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='format'").Scan(&format); err != nil || format != Format {
 		return errors.New("librarypack: invalid metadata database format")
 	}
-	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='version'").Scan(&version); err != nil || version != fmt.Sprint(g.manifest.Version) {
+	metadataVersion := g.manifest.Version
+	if metadataVersion == IndexedFormatVersion {
+		metadataVersion = FormatVersion
+	}
+	if err := g.db.QueryRowContext(ctx, "SELECT value FROM pack_info WHERE key='version'").Scan(&version); err != nil || version != fmt.Sprint(metadataVersion) {
 		return errors.New("librarypack: invalid metadata database version")
 	}
 	var resourcesFormat string

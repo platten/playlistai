@@ -37,7 +37,7 @@ func runLearningCommand(ctx context.Context, args []string, stdout, stderr io.Wr
 	refit := flags.Bool("refit", false, "force fitting instead of compatible reuse")
 	trackID := flags.String("track-id", "", "stable local track ID")
 	limit := flags.Int("limit", 20, "maximum neighbors")
-	out := flags.String("out", "", "portable .paipack destination")
+	out := flags.String("out", "", "portable .paipack destination (with prebuilt indexes)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 1, err
 	}

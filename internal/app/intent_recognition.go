@@ -63,7 +63,7 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 	if state, stateErr := c.localLibrary(); stateErr == nil {
 		if pinned, pinErr := state.pinRequestSnapshot(); pinErr == nil {
 			libraryOnly = pinned.mode == LocalLibraryOnly
-			if local, openErr := localcatalog.Open(pinned.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: pinned.rootMappings}); openErr == nil {
+			if local, openErr := localcatalog.Open(pinned.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: pinned.rootMappings, RequirePrebuilt: true}); openErr == nil {
 				defer local.Close()
 				lookup = recognition.Combine(lookup, local)
 			}

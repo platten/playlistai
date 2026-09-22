@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -18,6 +19,10 @@ func TestImportedLibraryFeedbackAndAcceptanceUsePinnedEvidence(t *testing.T) {
 	archive := filepath.Join(t.TempDir(), "feedback.paipack")
 	space := librarypack.VectorSpace{Name: "library_mert", Dimension: 2, DType: "float32", ByteOrder: "little", Normalized: true, Model: "mert", ModelRevision: "rev", GraphSHA256: strings.Repeat("a", 64), Decoder: "fixture", Preprocessing: "prep", Sampling: "sample", Pooling: "pool", Scope: "sampled_windows", Missingness: "absent"}
 	manifest, err := librarypack.Write(ctx, archive, librarypack.Pack{CorpusGeneration: "corpus", MetadataGeneration: "metadata", MERTGeneration: "mert", MERT: space, Tracks: []librarypack.Track{{ID: "liked", Artist: "Local Artist", Title: "Liked Track", MERT: []float32{1, 0}}, {ID: "accepted", Artist: "Local Artist", Title: "Accepted Track", MERT: []float32{0, 1}}}}, librarypack.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err = discoveryasset.BuildIndexedFromPack(ctx, archive, archive, librarypack.DefaultLimits())
 	if err != nil {
 		t.Fatal(err)
 	}

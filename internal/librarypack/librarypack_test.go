@@ -839,3 +839,26 @@ func TestManifestFileOrderingHelper(t *testing.T) {
 		t.Fatal("files not sorted")
 	}
 }
+
+func TestIndexedManifestPreservesSemanticIDAndRejectsUnsafePaths(t *testing.T) {
+	_, base := writeFixture(t, "source.paipack", "indexed-manifest")
+	indexed := base
+	indexed.Version = IndexedFormatVersion
+	indexed.Files = append(append([]File(nil), base.Files...), File{Name: IndexBundleName, Kind: "prebuilt_indexes_tar", Size: 1024, SHA256: strings.Repeat("a", 64)})
+	indexed.IndexFiles = []IndexedFile{
+		{Path: "discovery.sqlite", Size: 32, SHA256: strings.Repeat("b", 64)},
+		{Path: "local-index-v3/manifest.json", Size: 32, SHA256: strings.Repeat("c", 64)},
+	}
+	indexed.PackID = semanticID(indexed)
+	if indexed.PackID != base.PackID || indexed.Validate(DefaultLimits()) != nil {
+		t.Fatalf("indexed derivative changed semantic identity or failed validation: %s vs %s", indexed.PackID, base.PackID)
+	}
+	for _, path := range []string{"../escape", "local-index-v3/../escape", "local-index-v3/./manifest.json", "local-index-v3/unsafe\\file", "local-index-v3/C:drive"} {
+		candidate := indexed
+		candidate.IndexFiles = append([]IndexedFile(nil), indexed.IndexFiles...)
+		candidate.IndexFiles[1].Path = path
+		if candidate.Validate(DefaultLimits()) == nil {
+			t.Fatalf("unsafe embedded index path %q accepted", path)
+		}
+	}
+}

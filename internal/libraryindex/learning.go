@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/librarylearn"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/librarysearch"
@@ -395,7 +396,23 @@ func (s *State) ExportPack(ctx context.Context, output string) (librarypack.Mani
 	if err != nil {
 		return librarypack.Manifest{}, err
 	}
-	return librarypack.WriteSource(ctx, output, librarypack.Pack{CreatedAt: time.Now().UTC(), CorpusGeneration: generation.Snapshot.Generation, MetadataGeneration: generation.ID + "-metadata", MERTGeneration: generation.ID + "-mert", CLAPGeneration: clapGeneration, ClusterGeneration: clusterGeneration, StatisticsGeneration: statisticsGeneration, MERT: generation.VectorSpace, CLAP: clapSpace, CLAPModel: clapModel, Learning: portableLearning, Statistics: portableStatistics}, trackSource, librarypack.DefaultLimits())
+	outputAbs, err := filepath.Abs(output)
+	if err != nil {
+		return librarypack.Manifest{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputAbs), 0o755); err != nil {
+		return librarypack.Manifest{}, err
+	}
+	work, err := os.MkdirTemp(filepath.Dir(outputAbs), ".indexer-export-*")
+	if err != nil {
+		return librarypack.Manifest{}, err
+	}
+	defer os.RemoveAll(work)
+	rawPack := filepath.Join(work, "source.paipack")
+	if _, err := librarypack.WriteSource(ctx, rawPack, librarypack.Pack{CreatedAt: time.Now().UTC(), CorpusGeneration: generation.Snapshot.Generation, MetadataGeneration: generation.ID + "-metadata", MERTGeneration: generation.ID + "-mert", CLAPGeneration: clapGeneration, ClusterGeneration: clusterGeneration, StatisticsGeneration: statisticsGeneration, MERT: generation.VectorSpace, CLAP: clapSpace, CLAPModel: clapModel, Learning: portableLearning, Statistics: portableStatistics}, trackSource, librarypack.DefaultLimits()); err != nil {
+		return librarypack.Manifest{}, err
+	}
+	return discoveryasset.BuildIndexedFromPack(ctx, rawPack, outputAbs, librarypack.DefaultLimits())
 }
 
 func clapVectorSpace(ctx context.Context, snapshotPath, generationID string) (librarypack.VectorSpace, *core.AudioModelIdentity, string, error) {

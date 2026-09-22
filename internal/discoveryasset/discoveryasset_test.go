@@ -466,3 +466,30 @@ func TestManifestDownloadCapExcludesGeneratedCompanion(t *testing.T) {
 		t.Fatal("oversized input pack set accepted")
 	}
 }
+
+func TestEmbeddedIndexManifestRequiresNewProvenanceAndNoExternalCompanion(t *testing.T) {
+	_, base := fixtureRelease(t, "embedded-indexes")
+	base.EmbeddedIndexes = true
+	base.Companion = File{}
+	base.Packs[0].Size = MaxDownloadBytes + 1
+	base.Source = "local"
+	base.TransportFormat = "paipack-v8"
+	base.ManifestDigest = strings.Repeat("a", 64)
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid indexed release rejected: %v", err)
+	}
+	for name, change := range map[string]func(*Manifest){
+		"legacy local format": func(m *Manifest) { m.TransportFormat = "paipack-v5" },
+		"external companion":  func(m *Manifest) { m.Companion = File{Name: "discovery.sqlite"} },
+		"over download cap":   func(m *Manifest) { m.Packs[0].Size = MaxIndexedDownloadBytes },
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := base
+			candidate.Packs = append([]File(nil), base.Packs...)
+			change(&candidate)
+			if candidate.Validate() == nil {
+				t.Fatal("invalid indexed release accepted")
+			}
+		})
+	}
+}

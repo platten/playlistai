@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/localcatalog"
 	"github.com/platten/playlistai/internal/modelpack"
 )
 
@@ -116,7 +117,7 @@ func TestRealLocalPaipackImportOptIn(t *testing.T) {
 	if !status.Installed || status.Source != "local" || status.Tracks == 0 {
 		t.Fatalf("unexpected import status: %+v", status)
 	}
-	t.Logf("imported %d tracks; pack bytes=%d, generated companion bytes=%d", status.Tracks, m.active.manifest.Packs[0].Size, m.active.manifest.Companion.Size)
+	t.Logf("imported %d tracks; indexed pack bytes=%d", status.Tracks, m.active.manifest.Packs[0].Size)
 }
 
 func TestAbsolutePartExportIncludesOfflineManifest(t *testing.T) {
@@ -175,12 +176,115 @@ func makeTransport(t *testing.T, label string) transportFixture {
 	if e != nil {
 		t.Fatal(e)
 	}
+	if _, e = BuildIndexedFromPack(context.Background(), pack, pack, librarypack.Limits{}); e != nil {
+		t.Fatal(e)
+	}
 	dir := filepath.Join(root, "transport")
 	m, e := modelpack.Package(context.Background(), "same-name", source, dir, 1024)
 	if e != nil {
 		t.Fatal(e)
 	}
 	return transportFixture{dir, pack, m}
+}
+
+func TestIndexedPackImportUsesEmbeddedIndexesAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	fixture := makeTransport(t, "indexed-round-trip")
+	pack, err := inspectPackManifest(ctx, fixture.pack)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pack.Version != librarypack.IndexedFormatVersion || len(pack.IndexFiles) < 2 {
+		t.Fatalf("indexer output lacks packaged indexes: %+v", pack)
+	}
+	root := t.TempDir()
+	m, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := m.ImportLocal(ctx, fixture.pack, nil)
+	if err != nil || !status.Installed || status.Tracks != 1 || !m.active.manifest.EmbeddedIndexes || m.active.manifest.TransportFormat != "paipack-v8" || m.active.manifest.Companion != (File{}) {
+		t.Fatalf("indexed import: status=%+v err=%v", status, err)
+	}
+	if _, err := os.Stat(filepath.Join(m.active.dir, "discovery.sqlite")); !os.IsNotExist(err) {
+		t.Fatalf("installer generated an external companion: %v", err)
+	}
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	catalogs, release, err := m.Pin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	hits, err := catalogs[0].Search(ctx, localcatalog.MetadataQuery{Text: "ambient", Limit: 5})
+	if err != nil || len(hits) != 1 {
+		t.Fatalf("packaged search index is unusable: hits=%d err=%v", len(hits), err)
+	}
+}
+
+func TestLocalImportRejectsPackWithoutPrebuiltIndexes(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "old.paipack")
+	if _, err := librarypack.Write(ctx, path, librarypack.Pack{CorpusGeneration: "old", MetadataGeneration: "old", Tracks: []librarypack.Track{{ID: "one", Artist: "Artist", Title: "One"}}}, librarypack.Limits{}); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if _, err := m.ImportLocal(ctx, path, nil); err == nil || !strings.Contains(err.Error(), "re-export with playlist-indexer") {
+		t.Fatalf("unindexed import was accepted: %v", err)
+	}
+	if m.Status().Installed {
+		t.Fatal("unindexed pack replaced active discovery")
+	}
+}
+
+func TestIndexedPackTamperedSearchIndexFailsRestart(t *testing.T) {
+	ctx := context.Background()
+	fixture := makeTransport(t, "indexed-tamper")
+	root := t.TempDir()
+	m, err := Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.ImportLocal(ctx, fixture.pack, nil); err != nil {
+		t.Fatal(err)
+	}
+	lease, err := m.active.managers[0].Pin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(lease.Generation().Directory(), "local-index-v3", "metadata.sqlite")
+	lease.Release()
+	if err := m.Close(); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.OpenFile(indexPath, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := file.WriteAt([]byte{0}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m, err = Open(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if status := m.Status(); status.Installed || !strings.Contains(status.Error, "checksum mismatch") {
+		t.Fatalf("tampered packaged index was accepted: %+v", status)
+	}
 }
 
 type transportServer struct {
@@ -347,11 +451,16 @@ func TestMultipartRejectsWrongFilesAndOversizedDownload(t *testing.T) {
 	}
 	bad = fixture.manifest
 	bad.Parts = append([]modelpack.Part(nil), bad.Parts...)
-	for len(bad.Parts) < 20 {
+	total := int64(100)
+	for _, part := range bad.Parts {
+		total += part.Size
+	}
+	for total <= MaxIndexedDownloadBytes {
 		part := bad.Parts[0]
 		part.Path = strings.Repeat("x", len(bad.Parts)) + ".part"
 		part.Size = 190000000
 		bad.Parts = append(bad.Parts, part)
+		total += part.Size
 	}
 	if validateMultipart(bad, 100) == nil {
 		t.Fatal("oversized transport accepted")

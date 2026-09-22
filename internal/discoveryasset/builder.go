@@ -201,7 +201,11 @@ func Build(ctx context.Context, o BuildOptions) (Manifest, error) {
 					p.CLAPGeneration = generation
 				}
 			}
-			written, err = librarypack.Write(ctx, filepath.Join(stage, name), p, packLimits())
+			path := filepath.Join(stage, name)
+			if _, err = librarypack.Write(ctx, path, p, packLimits()); err != nil {
+				return err
+			}
+			written, err = BuildIndexedFromPack(ctx, path, path, packLimits())
 			return err
 		})
 		if e != nil {

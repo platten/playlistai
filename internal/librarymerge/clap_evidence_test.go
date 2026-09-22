@@ -35,7 +35,7 @@ func TestCombinePreservesCLAPSegmentsAndPairing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Manifest.Version != librarypack.FormatVersion || report.OutputTracks != 1 || report.Manifest.CLAPModel == nil || *report.Manifest.CLAPModel != model {
+	if report.Manifest.Version != librarypack.IndexedFormatVersion || report.OutputTracks != 1 || report.Manifest.CLAPModel == nil || *report.Manifest.CLAPModel != model {
 		t.Fatalf("merged pairing=%+v", report)
 	}
 	manager, err := librarypack.OpenManager(ctx, t.TempDir(), librarypack.Limits{})
