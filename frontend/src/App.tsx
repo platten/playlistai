@@ -114,16 +114,17 @@ function AppContent() {
         }
       } catch {
         initialStatusSettled = true;
-        if (validatingInstalledModels) {
+        const saved = await savedChoice;
+        if (validatingInstalledModels || saved.done || saved.failed) {
           // An interrupted status read cannot establish that the audio models
           // are ready. Keep submission blocked and offer a local retry.
-          if (active) setSetupCheckError(true);
+          if (active) { setOnboarded(true); setSetupPending(true); setSetupCheckError(true); }
           return;
         }
-        // Fall back to the saved choice if the initial read is unavailable.
+        // A fresh install can still enter the setup wizard without a status read.
       }
       const saved = await savedChoice;
-      if (active) { setSetupPending(false); setOnboarded(saved.failed || saved.done); } // never trap startup over a failed local read
+      if (active) { setSetupPending(false); setOnboarded(saved.done); }
     })();
     return () => { active = false; };
   }, [setupRetry]);
