@@ -61,6 +61,7 @@ beforeEach(() => {
   clipboard.mockReset().mockResolvedValue(undefined);
   for (const mock of Object.values(bridge)) mock.mockReset().mockImplementation(() => completed(null));
   bridge.GetOnboarded.mockImplementation(() => completed(true));
+  bridge.GetSetupStatus.mockImplementation(() => completed({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }));
   bridge.GetStatus.mockImplementation(() => completed({ parserBackend: "llama", version: "0.14.0" }));
   bridge.GetCatalogInfo.mockImplementation(() => completed({ loaded: true }));
   bridge.ListSavedPlaylists.mockImplementation(() => completed([]));
@@ -151,6 +152,23 @@ it("keeps generation blocked when model validation cannot finish and allows retr
   expect(bridge.GetOnboarded).toHaveBeenCalledTimes(2);
   await waitFor(() => expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(false));
   expect((description as HTMLTextAreaElement).value).toBe("Ambient electronica");
+});
+
+it("keeps generation blocked if the first detailed setup read fails after opening the shell", async () => {
+  bridge.GetSetupStatus.mockRejectedValueOnce(new Error("read failed"));
+  render(<App />);
+  await screen.findByLabelText("Your description");
+  await screen.findByRole("button", { name: "Retry check" });
+  expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(bridge.GetOnboarded).toHaveBeenCalledOnce();
+});
+
+it("keeps generation blocked if both startup reads fail", async () => {
+  bridge.GetOnboarded.mockRejectedValueOnce(new Error("preference unavailable"));
+  bridge.GetSetupStatus.mockRejectedValueOnce(new Error("status unavailable"));
+  render(<App />);
+  await screen.findByRole("button", { name: "Retry check" });
+  expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
 it("retains a pending export across navigation and exports its captured selection", async () => {
@@ -809,6 +827,9 @@ it("supports UUID-less hosts and deduplicates display acknowledgment through Str
 });
 
 it("opens setup when catalog loading fails and keeps the required catalog step blocked", async () => {
+  bridge.GetSetupStatus
+    .mockImplementationOnce(() => completed({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }))
+    .mockImplementation(() => completed(null));
   bridge.GetStatus.mockRejectedValueOnce(new Error("status unavailable"));
   bridge.GetCatalogInfo.mockImplementation(() => Promise.reject(new Error("catalog unavailable")));
   bridge.ListSavedPlaylists.mockRejectedValueOnce(new Error("history unavailable"));
