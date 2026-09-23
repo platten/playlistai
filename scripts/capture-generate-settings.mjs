@@ -6,13 +6,14 @@ import path from "node:path";
 import assert from "node:assert/strict";
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4];
+const port = process.env.PLAYLISTAI_CAPTURE_PORT || '9245';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-window.__calls=[];
+window.__calls=[];window.__setupReady=false;
 let modelDevice='CUDA0';
 const intent={preferences:{},journey:{waypoints:[],energyCurve:[]},references:[],essentialCriteria:[],hardConstraints:[],controls:{totalTrackCount:10}};
-const methods={GetOnboarded:()=>true,GetStatus:()=>({parserBackend:'llama',version:'0.14.2'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'enhanced_hybrid',GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
+const methods={GetOnboarded:()=>true,GetSetupStatus:()=>({pending:!window.__setupReady,onboarded:true,needsSetup:false,pendingSteps:[],repairSteps:[]}),GetStatus:()=>({parserBackend:'llama',version:'0.14.2'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'enhanced_hybrid',GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
 export const RecommendationMode={AcousticBrainzFirst:'acousticbrainz_first',CLAPFirst:'clap_first',DeejAIOnly:'deejai_only',EnhancedHybrid:'enhanced_hybrid'};
 export const FeedbackScope={};export const FeedbackType={};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{window.__calls.push([k,...args]);const p=Promise.resolve().then(()=>o[k]?.(...args)??null);p.cancel=()=>{window.__calls.push(['cancel',k])};return p;}});`;
@@ -22,7 +23,22 @@ try {
   page.on('pageerror',error=>{errors.push(error.message);console.error(error.message)});
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/,route=>route.fulfill({contentType:'application/javascript',body:fixture}));
   await page.route(/.*@wailsio_runtime\.js.*/,route=>route.fulfill({contentType:'application/javascript',body:'export const Browser={OpenURL:()=>{}};export const Events={On:()=>()=>{}};export const System={IsMac:()=>false};export const Clipboard={SetText:()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;'}));
-  await page.goto('http://127.0.0.1:9245');
+  await page.goto(`http://127.0.0.1:${port}`);
+  await page.getByText(/Checking installed audio models/).waitFor();
+  await page.getByLabel('Your description').fill('Ambient electronica with a gentle pulse');
+  assert.equal(await page.getByRole('button',{name:'Generate playlist'}).isDisabled(),true);
+  for(const theme of ['dark','light']) {
+    await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+    for(const width of [1000,390]) {
+      await page.setViewportSize({width,height:760});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'startup horizontal overflow');
+      await page.screenshot({path:path.join(output,`generate-startup-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+    }
+  }
+  await page.evaluate(()=>window.__setupReady=true);
+  await page.getByText(/Checking installed audio models/).waitFor({state:'hidden'});
+  assert.equal(await page.getByLabel('Your description').inputValue(),'Ambient electronica with a gentle pulse');
+  assert.equal(await page.getByRole('button',{name:'Generate playlist'}).isEnabled(),true);
   const count=page.getByRole('combobox',{name:'Number of tracks'});
   await count.waitFor();
   assert.equal(await count.inputValue(),'20');
@@ -100,5 +116,5 @@ try {
   await page.getByRole('heading',{name:'Ready for a fresh setup'}).waitFor();
   assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c[0]==='ResetAssets').length),1);
   assert.deepEqual(errors,[]);
-  console.log('PASS: dark/light 390/1000 Generate; Settings; count selection; navigation during generation; reset cancel/confirm');
+  console.log('PASS: startup validation and dark/light 390/1000 Generate; Settings; count selection; navigation during generation; reset cancel/confirm');
 } finally {await browser.close();}

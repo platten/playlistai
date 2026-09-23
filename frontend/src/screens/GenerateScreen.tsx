@@ -94,6 +94,7 @@ export function GenerateScreen({
   active = true,
   sessionId,
   parserBackend,
+  setupPending = false,
   onGenerated,
   onNeedSetup,
   regeneration,
@@ -102,6 +103,7 @@ export function GenerateScreen({
   active?: boolean;
   sessionId: string;
   parserBackend: string;
+  setupPending?: boolean;
   onGenerated: (
     request: BuildPlaylistRequest,
     heading: string,
@@ -420,7 +422,7 @@ export function GenerateScreen({
     (text: string, selections: ResolutionSelection[] = []) => {
       const q = (resolutionOrigin.current?.displayPrompt === text && resolutionOrigin.current.source === source
         ? resolutionOrigin.current.prompt : text).trim();
-      if (q === "" || activeGenerationId.current) return;
+      if (q === "" || activeGenerationId.current || setupPending) return;
       if (spellingDecisions.current.prompt !== text || spellingDecisions.current.source !== source) {
         spellingDecisions.current = { prompt: text, source, selections: [] };
       }
@@ -501,11 +503,11 @@ export function GenerateScreen({
           }
         });
     },
-    [intentContext, onGenerated, source],
+    [intentContext, onGenerated, source, setupPending],
   );
 
   const generate = useCallback(() => {
-    if (activeGenerationId.current || regenerationPending) return;
+    if (activeGenerationId.current || regenerationPending || setupPending) return;
     if (source === "saved" && savedSelection.state !== "ready") return;
     setDismissedNotice(null);
     if (replaySaved && savedRequest) {
@@ -554,13 +556,14 @@ export function GenerateScreen({
     ambiguityNeedsChoice,
     preview,
     regenerationPending,
+    setupPending,
   ]);
 
   // Regenerate is an explicit submission from Playlist, not parsing while
   // typing. Defer startup so StrictMode cleanup can cancel the first setup;
   // consume the command only when it actually runs, and never on tab revisits.
   useEffect(() => {
-    if (!regeneration || !info?.loaded || regenerationStarted.current === regeneration.id) return;
+    if (!regeneration || !info?.loaded || setupPending || regenerationStarted.current === regeneration.id) return;
     const timer = window.setTimeout(() => {
       regenerationStarted.current = regeneration.id;
       onRegenerationStarted?.(regeneration.id);
@@ -568,7 +571,7 @@ export function GenerateScreen({
       if (regeneration.prompt.trim()) runGenerate(regeneration.prompt);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [info?.loaded, onRegenerationStarted, regeneration, runGenerate]);
+  }, [info?.loaded, onRegenerationStarted, regeneration, runGenerate, setupPending]);
 
   const surprise = useCallback(() => {
     const choices = deejAIOnly ? DEEJAI_SURPRISES : SURPRISES;
@@ -668,7 +671,7 @@ export function GenerateScreen({
               )}
             </div>
           ))}
-          {ambiguousIssues.length > 0 && <Button className="mt-3" disabled={ambiguityNeedsChoice || generating} onClick={generate}>Confirm and generate</Button>}
+          {ambiguousIssues.length > 0 && <Button className="mt-3" disabled={setupPending || ambiguityNeedsChoice || generating} onClick={generate}>Confirm and generate</Button>}
         </div>
       )}
 
@@ -747,7 +750,7 @@ export function GenerateScreen({
             setPrompt(e.target.value);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !generating) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && !generating && !setupPending) {
               e.preventDefault();
               generate();
             }
@@ -803,7 +806,7 @@ export function GenerateScreen({
             className="disabled:bg-panel disabled:text-faint disabled:opacity-100"
             variant="primary"
             iconRight={<Icon.ArrowRight size={14} />}
-            disabled={generating || regenerationPending || prompt.trim() === "" || (source === "saved" && !savedRequest)}
+            disabled={setupPending || generating || regenerationPending || prompt.trim() === "" || (source === "saved" && !savedRequest)}
             onClick={generate}
           >
             {generating ? "Generating…" : "Generate playlist"}

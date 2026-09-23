@@ -47,6 +47,9 @@ function AppContent() {
   const [review, setReview] = useState<ReviewState | null>(null);
   const [onboarded, setOnboarded] = useState<boolean | null>(null);
   const [setupStatus, setSetupStatus] = useState<Awaited<ReturnType<typeof API.GetSetupStatus>> | null>(null);
+  const [setupPending, setSetupPending] = useState(false);
+  const [setupCheckError, setSetupCheckError] = useState(false);
+  const [setupRetry, setSetupRetry] = useState(0);
   const [parserBackend, setParserBackend] = useState("rules");
   const presentations = useRef(new Map<string, Promise<void>>());
   const displayed = useCallback((id: string) => {
@@ -78,32 +81,63 @@ function AppContent() {
 
   useEffect(() => {
     let active = true;
+    let validatingInstalledModels = false;
+    let initialStatusSettled = false;
+    const savedChoice = API.GetOnboarded()
+      .then((done) => {
+        if (active && !initialStatusSettled && done) {
+          // The saved choice is cheap to read. The complete readiness query
+          // still decides whether this installation needs a repair.
+          setOnboarded(true);
+          setSetupPending(true);
+        }
+        return { done, failed: false };
+      })
+      .catch(() => ({ done: false, failed: true }));
     void (async () => {
       try {
-        const status = await waitForSetupStatus(() => active);
+        const initial = await API.GetSetupStatus();
+        initialStatusSettled = true;
+        if (!active) return;
+        // Installed audio models are verified asynchronously. Returning users
+        // can prepare a description while that validation finishes.
+        if (initial.pending && initial.onboarded) {
+          validatingInstalledModels = true;
+          setOnboarded(true);
+          setSetupPending(true);
+          setSetupCheckError(false);
+        }
+        const status = initial.pending ? await waitForSetupStatus(() => active, initial) : initial;
         if (status) {
-          if (active) { setSetupStatus(status); setOnboarded(!status.needsSetup); }
+          if (active) { setSetupStatus(status); setSetupPending(false); setSetupCheckError(false); setOnboarded(!status.needsSetup); }
           return;
         }
-      } catch { /* Fall back to the saved choice if readiness cannot be read. */ }
-      try {
-        const done = await API.GetOnboarded();
-        if (active) setOnboarded(Boolean(done));
-      } catch { if (active) setOnboarded(true); } // never trap startup over a failed local read
+      } catch {
+        initialStatusSettled = true;
+        if (validatingInstalledModels) {
+          // An interrupted status read cannot establish that the audio models
+          // are ready. Keep submission blocked and offer a local retry.
+          if (active) setSetupCheckError(true);
+          return;
+        }
+        // Fall back to the saved choice if the initial read is unavailable.
+      }
+      const saved = await savedChoice;
+      if (active) { setSetupPending(false); setOnboarded(saved.failed || saved.done); } // never trap startup over a failed local read
     })();
     return () => { active = false; };
-  }, []);
+  }, [setupRetry]);
 
   // Re-check on every screen change so Generate immediately reflects model
   // changes made in Settings. Generate itself is always available.
   useEffect(() => {
-    if (onboarded !== true) return;
+    if (onboarded !== true || setupPending) return;
     let active = true;
     API.GetStatus()
       .then((s) => { if (active) setParserBackend(s?.parserBackend || "rules"); })
       .catch(() => { if (active) setParserBackend("rules"); });
     return () => { active = false; };
-  }, [onboarded, screen]);
+  }, [onboarded, screen, setupPending]);
 
   const openPlaylist = (request: BuildPlaylistRequest, heading: string, initialResult?: PlaylistResult, savedPresentationId?: string) => {
     setPlaylist({ request, heading, initialResult, savedPresentationId });
@@ -120,8 +154,7 @@ function AppContent() {
 
   if (resetDone) return <div className="flex h-full items-center justify-center bg-bg p-8 text-text"><div className="max-w-md"><h1 className="text-2xl font-semibold">Ready for a fresh setup</h1><p role="status" className="mt-3 text-muted">Models and datasets have been removed. Close and reopen Playlist AI to run the setup wizard.</p></div></div>;
   if (onboarded === null) {
-    // Avoid a flash of the wizard (or the main shell) while the one check
-    // resolves — this is a local read, effectively instant.
+    // A new installation still needs its first readiness result before routing.
     return <div role="status" className="flex h-full items-center justify-center bg-bg p-8 text-sm text-muted">Checking installed models and setup…</div>;
   }
   if (!onboarded) {
@@ -183,6 +216,10 @@ function AppContent() {
           </button>
         </header>
 
+        {setupPending && <div role="status" className="border-b border-line bg-accent-quiet px-4 py-2 text-sm text-muted">
+          {setupCheckError ? <>Installed model checks could not finish. <button type="button" className="font-medium text-accent underline focus-visible:outline-2 focus-visible:outline-accent" onClick={() => setSetupRetry((value) => value + 1)}>Retry check</button></>
+            : "Checking installed audio models… You can write your description while this finishes."}
+        </div>}
         <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
           <div hidden={screen !== "generate" && !(screen === "playlist" && !playlist) && !(screen === "reviewexport" && !review)}>
             <GenerateScreen
@@ -191,8 +228,9 @@ function AppContent() {
               onRegenerationStarted={(id) => setRegeneration((current) => current?.id === id ? null : current)}
               sessionId={sessionId}
               parserBackend={parserBackend}
+              setupPending={setupPending}
               onGenerated={openPlaylist}
-              onNeedSetup={() => { setSetupStatus(null); setOnboarded(false); }}
+              onNeedSetup={() => { setSetupStatus(null); setSetupPending(false); setOnboarded(false); }}
             />
           </div>
           {screen === "playlist" && playlist && (

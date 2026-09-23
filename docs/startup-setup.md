@@ -30,9 +30,13 @@ The readiness query uses activated state, local bundle metadata, file presence,
 expected sizes and a bounded GGUF header check. The overall startup also verifies
 audio pack hashes and launches native workers for health checks, asynchronously.
 Window construction no longer waits for these operations. Pending validation
-is shown as loading, with download and completion disabled until the result is
-known. Cancellation and stale-operation protection prevent an old startup result
-from replacing a newer selection. Startup does not download assets automatically.
+opens the main screen immediately for returning users. They can edit a playlist
+description or browse Settings while a visible banner reports that installed
+audio models are being checked. Generate stays disabled until validation finishes;
+if a selected asset needs repair, the app then opens the relevant setup step.
+First setup still waits for validation before offering downloads or completion.
+Cancellation and stale-operation protection prevent an old startup result from
+replacing a newer selection. Startup does not download assets automatically.
 
 Clearing the language model now persists `modelDisabled` in preferences. Older
 preferences retain their existing configured-model behavior; selecting a model
