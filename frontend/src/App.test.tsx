@@ -91,16 +91,66 @@ async function generate() {
   await screen.findByText("Original song 1");
 }
 
-it("waits for native model validation before routing into setup or generation", async () => {
+it("shows the main screen while installed audio models validate and holds generation until ready", async () => {
+  const pending = deferred();
   bridge.GetSetupStatus
     .mockImplementationOnce(() => completed({ pending: true, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }))
+    .mockReturnValueOnce(pending.promise);
+  render(<App />);
+  const description = await screen.findByLabelText("Your description");
+  expect(screen.getByText(/Checking installed audio models/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
+  fireEvent.change(description, { target: { value: "Ambient electronica with a gentle pulse" } });
+  const submit = screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement;
+  expect(submit.disabled).toBe(true);
+  fireEvent.keyDown(description, { key: "Enter", code: "Enter" });
+  expect(bridge.ParseIntentWithContext).not.toHaveBeenCalled();
+  await waitFor(() => expect(bridge.GetSetupStatus).toHaveBeenCalledTimes(2));
+  await act(async () => pending.resolve({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }));
+  await waitFor(() => expect(submit.disabled).toBe(false));
+  expect(screen.queryByText(/Checking installed audio models/)).toBeNull();
+  expect((description as HTMLTextAreaElement).value).toBe("Ambient electronica with a gentle pulse");
+});
+
+it("opens a returning user's shell before a slow detailed setup read completes", async () => {
+  const readiness = deferred();
+  bridge.GetSetupStatus.mockReturnValueOnce(readiness.promise);
+  render(<App />);
+  const description = await screen.findByLabelText("Your description");
+  fireEvent.change(description, { target: { value: "Gentle pulse" } });
+  expect(screen.getByText(/Checking installed audio models/)).toBeTruthy();
+  expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => readiness.resolve({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }));
+  await waitFor(() => expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(false));
+  expect((description as HTMLTextAreaElement).value).toBe("Gentle pulse");
+});
+
+it("routes a returning user to repair when background validation finds a missing model", async () => {
+  const pending = deferred();
+  bridge.GetSetupStatus
+    .mockImplementationOnce(() => completed({ pending: true, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }))
+    .mockReturnValueOnce(pending.promise)
+    .mockImplementation(() => completed({ pending: false, onboarded: true, needsSetup: true, pendingSteps: ["model"], repairSteps: ["model"] }));
+  render(<App />);
+  await screen.findByLabelText("Your description");
+  await waitFor(() => expect(bridge.GetSetupStatus).toHaveBeenCalledTimes(2));
+  await act(async () => pending.resolve({ pending: false, onboarded: true, needsSetup: true, pendingSteps: ["model"], repairSteps: ["model"] }));
+  await screen.findByRole("heading", { name: "Install llama.cpp" });
+  expect(screen.queryByLabelText("Your description")).toBeNull();
+});
+
+it("keeps generation blocked when model validation cannot finish and allows retry", async () => {
+  bridge.GetSetupStatus
+    .mockImplementationOnce(() => completed({ pending: true, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }))
+    .mockRejectedValueOnce(new Error("read failed"))
     .mockImplementation(() => completed({ pending: false, onboarded: true, needsSetup: false, pendingSteps: [], repairSteps: [] }));
   render(<App />);
-  await screen.findByText("Checking installed models and setup…");
-  expect(screen.queryByLabelText("Your description")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Get started" })).toBeNull();
-  await screen.findByLabelText("Your description");
-  expect(bridge.GetSetupStatus).toHaveBeenCalledTimes(2);
+  const description = await screen.findByLabelText("Your description");
+  fireEvent.change(description, { target: { value: "Ambient electronica" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Retry check" }));
+  expect(bridge.GetOnboarded).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect((screen.getByRole("button", { name: "Generate playlist" }) as HTMLButtonElement).disabled).toBe(false));
+  expect((description as HTMLTextAreaElement).value).toBe("Ambient electronica");
 });
 
 it("retains a pending export across navigation and exports its captured selection", async () => {
@@ -788,7 +838,7 @@ it("opens a completed installation directly when startup assets are ready", asyn
   bridge.GetSetupStatus.mockImplementation(() => completed({ onboarded: true, needsSetup: false, pendingSteps: ["analysis"], repairSteps: [] }));
   render(<App />);
   await screen.findByLabelText("Your description");
-  expect(bridge.GetOnboarded).not.toHaveBeenCalled();
+  expect(bridge.GetOnboarded).toHaveBeenCalledOnce();
   expect(screen.queryByText("Welcome to Playlist AI")).toBeNull();
 });
 
