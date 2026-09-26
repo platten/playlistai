@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +33,9 @@ func main() {
 
 func run() error {
 	flag := flag.NewFlagSet("intenteval", flag.ContinueOnError)
-	var datasetPath, modelPath, modelID, runtimePath, outputPath, markdownPath, caseID, backend, device string
+	var datasetPath, modelPath, modelID, runtimePath, outputPath, markdownPath, caseID, backend, device, appData, contextPolicy, split string
+	var recognitionFixture bool
+	var rescorePath string
 	var repeat, nctx, threads, gpuLayers int
 	flag.StringVar(&datasetPath, "dataset", "", "versioned evaluation dataset JSON")
 	flag.StringVar(&backend, "backend", "llama", "parser backend: llama or rules")
@@ -42,6 +45,11 @@ func run() error {
 	flag.StringVar(&outputPath, "output", "intent-model-report.json", "JSON report path")
 	flag.StringVar(&markdownPath, "markdown", "intent-model-report.md", "Markdown report path")
 	flag.StringVar(&caseID, "case", "", "optional single intent case ID")
+	flag.StringVar(&appData, "app-data", "", "isolated evaluation data directory for desktop source recognition (created if empty)")
+	flag.BoolVar(&recognitionFixture, "recognition-fixture", false, "install the tiny synthetic recognition fixture into isolated app data")
+	flag.StringVar(&contextPolicy, "context-policy", "baseline", "parsing context: baseline or enriched")
+	flag.StringVar(&split, "split", "", "optional frozen dataset split: development or heldout")
+	flag.StringVar(&rescorePath, "rescore", "", "score a saved report with current labels without starting a parser")
 	flag.IntVar(&repeat, "repeat", 1, "attempts per labeled case")
 	flag.IntVar(&nctx, "n-ctx", 4096, "llama context size")
 	flag.IntVar(&threads, "threads", 0, "llama CPU threads; zero lets the runtime decide")
@@ -53,9 +61,33 @@ func run() error {
 	if datasetPath == "" {
 		return fmt.Errorf("-dataset is required")
 	}
+	if contextPolicy != "baseline" && contextPolicy != "enriched" {
+		return fmt.Errorf("-context-policy must be baseline or enriched")
+	}
+	if split != "" && split != "development" && split != "heldout" {
+		return fmt.Errorf("-split must be development or heldout")
+	}
+	if recognitionFixture && appData == "" {
+		return fmt.Errorf("-recognition-fixture requires -app-data")
+	}
 	dataset, err := evaluation.LoadDataset(datasetPath)
 	if err != nil {
 		return err
+	}
+	if split != "" {
+		var selected []evaluation.IntentCase
+		for _, item := range dataset.IntentCases {
+			for _, tag := range item.Tags {
+				if tag == "split:"+split {
+					selected = append(selected, item)
+					break
+				}
+			}
+		}
+		if len(selected) == 0 {
+			return fmt.Errorf("no intent cases in split %q", split)
+		}
+		dataset.IntentCases = selected
 	}
 	if caseID != "" {
 		var selected []evaluation.IntentCase
@@ -69,14 +101,44 @@ func run() error {
 		}
 		dataset.IntentCases = selected
 	}
+	if rescorePath != "" {
+		raw, err := os.ReadFile(rescorePath)
+		if err != nil {
+			return err
+		}
+		var report evaluation.IntentModelReport
+		if err := json.Unmarshal(raw, &report); err != nil {
+			return err
+		}
+		report, err = evaluation.RescoreIntentModelReport(report, dataset)
+		if err != nil {
+			return err
+		}
+		return writeReports(outputPath, markdownPath, report)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+	options := evaluation.IntentModelOptions{EnrichParsingContext: contextPolicy == "enriched"}
+	if appData != "" {
+		started := time.Now()
+		container, err := prepareApplicationData(ctx, appData, recognitionFixture)
+		if err != nil {
+			return err
+		}
+		defer container.Close()
+		elapsed := time.Since(started).Microseconds()
+		options.PreparationStartupMicros = &elapsed
+		options.PrepareInput = container.PrepareIntentInput
+	}
 	var parser ports.IntentParser
 	var identity evaluation.IntentModelIdentity
 	closeParser := func() {}
 	switch backend {
 	case "rules":
+		started := time.Now()
 		parser = rules.New()
+		elapsed := time.Since(started).Microseconds()
+		options.StartupMicros = &elapsed
 		identity = evaluation.IntentModelIdentity{
 			ID: "rules/v3", Runtime: "built-in Go",
 			Environment: evaluation.IntentBenchmarkEnvironment{
@@ -108,21 +170,28 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		started := time.Now()
 		localParser, err := llama.New(ctx, llama.Options{BinaryPath: runtimePath, ModelPath: modelPath, NCtx: nctx, NThreads: threads, GPULayers: gpuLayers, Device: device, StartTimeout: 5 * time.Minute})
 		if err != nil {
 			return err
 		}
 		parser = localParser
+		elapsed := time.Since(started).Microseconds()
+		options.StartupMicros = &elapsed
 		identity = evaluation.IntentModelIdentity{ID: modelID, Path: modelPath, ArtifactBytes: stat.Size(), SHA256: hash, Runtime: runtimeVersion(runtimePath), Environment: environment}
 		closeParser = func() { _ = localParser.Close() }
 	default:
 		return fmt.Errorf("unknown backend %q", backend)
 	}
 	defer closeParser()
-	report, err := evaluation.EvaluateIntentModel(ctx, parser, dataset, identity, repeat)
+	report, err := evaluation.EvaluateIntentModelWithOptions(ctx, parser, dataset, identity, repeat, options)
 	if err != nil {
 		return err
 	}
+	return writeReports(outputPath, markdownPath, report)
+}
+
+func writeReports(outputPath, markdownPath string, report evaluation.IntentModelReport) error {
 	if err := ensureParent(outputPath); err != nil {
 		return err
 	}

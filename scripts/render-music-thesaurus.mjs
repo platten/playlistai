@@ -38,6 +38,13 @@ const lines = [
  '| dissonant / atonal | Dissonance can occur in tonal music. Only explicit atonal terminology maps to tonal_atonal.atonal. |',
  '| dreamy, nostalgic, lo-fi, piano, workout | CLAP descriptions with no direct archive class; do not map to relaxed, sad, acoustic, instrumental or aggressive by association. |',
  '| artist or song names, quoted titles | Keep in the identity resolver and protected source spans, not lexical substitution. |', '',
+ '## Reviewed parsing explanations', '',
+ 'Explanations define canonical meanings for parsing. They are project-authored reference prose, separate from CLAP query captions and evidence about recordings. The matched source alias and its polarity, strength, alternatives and journey scope remain authoritative. Parent and related entries are labeled relationships, never synonyms or additional user requirements.', '',
+ '| Canonical term (facet) | Explanation | Parent relationships | Related relationships |', '| --- | --- | --- | --- |',
+ ...dictionary.concepts.filter(c => c.explanation).map(c => '| '+[
+  `${c.value} (${c.kind})`, c.explanation,
+  c.parents?.join('; ') || '—', c.related?.join('; ') || '—'
+ ].map(escape).join(' | ')+' |'), '',
  '## Full vocabulary', '',
  'Aliases are matched case-insensitively within their typed facet. The parser uses token boundaries and prefers longer phrases, so specific subgenres are retained. Provider mapping never expands parent or related concepts. English is the authored language; a few conventional accented spellings are included, not general multilingual coverage.', ''
 ];

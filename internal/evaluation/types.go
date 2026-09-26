@@ -33,13 +33,14 @@ type Dataset struct {
 }
 
 type IntentCase struct {
-	ID           string          `json:"id"`
-	Prompt       string          `json:"prompt"`
-	NowPlaying   *core.TrackRef  `json:"nowPlaying,omitempty"`
-	RecentTracks []core.TrackRef `json:"recentTracks,omitempty"`
-	Locale       string          `json:"locale,omitempty"`
-	Expected     IntentLabels    `json:"expected"`
-	Tags         []string        `json:"tags"`
+	ParsingContext *ParsingContextLabels `json:"parsingContext,omitempty"`
+	ID             string                `json:"id"`
+	Prompt         string                `json:"prompt"`
+	NowPlaying     *core.TrackRef        `json:"nowPlaying,omitempty"`
+	RecentTracks   []core.TrackRef       `json:"recentTracks,omitempty"`
+	Locale         string                `json:"locale,omitempty"`
+	Expected       IntentLabels          `json:"expected"`
+	Tags           []string              `json:"tags"`
 }
 
 type IntentLabels struct {

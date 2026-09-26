@@ -2,23 +2,30 @@ package evaluation
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/ports"
 )
 
 type recordingIntentParser struct {
 	inputs []ports.IntentInput
+	parse  func(ports.IntentInput) (core.MusicIntent, error)
 }
 
 func (p *recordingIntentParser) Parse(_ context.Context, input ports.IntentInput) (core.MusicIntent, error) {
 	p.inputs = append(p.inputs, input)
+	if p.parse != nil {
+		return p.parse(input)
+	}
 	if input.Prompt == "fail" {
 		return core.MusicIntent{}, errors.New("parse failed")
 	}
@@ -169,3 +176,253 @@ func TestIntentModelDatasetCoversContractCases(t *testing.T) {
 }
 
 var _ ports.IntentParser = (*recordingIntentParser)(nil)
+
+func TestIntentEvaluationPreparedSnapshotAndAttemptObservations(t *testing.T) {
+	t.Parallel()
+	prepared := 0
+	parser := &recordingIntentParser{parse: func(input ports.IntentInput) (core.MusicIntent, error) {
+		if !input.EnrichParsingContext || input.SourceFacts == nil || input.SourceFacts.ParsingContext == nil {
+			t.Fatal("parser did not receive prepared enriched input")
+		}
+		tokens, indexes := 100, []int{0}
+		input.ObserveParseAttempt(ports.ParseAttemptObservation{Attempt: 1, MandatoryTokens: &tokens, OutputAllowance: 800, OptionalByteBound: 120, UsedHintIndexes: indexes, Truncated: true})
+		indexes[0], tokens = 7, 200
+		input.ObserveParseAttempt(ports.ParseAttemptObservation{Attempt: 2, OutputAllowance: 800, OmittedHints: 1})
+		input.SourceFacts.ParsingContext.Hints[0].Text = "parser mutation"
+		return core.MusicIntent{Version: core.CurrentIntentVersion, OriginalDescription: input.Prompt, Translation: input.SourceFacts}, nil
+	}}
+	startup := int64(234)
+	report, err := EvaluateIntentModelWithOptions(context.Background(), parser, Dataset{Name: "snapshot", IntentCases: []IntentCase{{ID: "warm", Prompt: "warm timbre"}}}, IntentModelIdentity{}, 2, IntentModelOptions{
+		EnrichParsingContext: true, StartupMicros: &startup,
+		PrepareInput: func(_ context.Context, input ports.IntentInput) ports.IntentInput {
+			prepared++
+			source := lexicon.Extract(input.Prompt)
+			input.SourceFacts = &source
+			input.RecognitionIdentity = "fixture/v1"
+			return lexicon.PrepareParsingContext(input)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared != 2 || len(parser.inputs) != 2 || report.ContextPolicy != "enriched" || report.StartupMicros == nil || *report.StartupMicros != startup {
+		t.Fatalf("preparation metadata lost: %+v", report)
+	}
+	if report.FirstPass == nil || report.FirstPass.Runs != 1 || report.WarmRepeat == nil || report.WarmRepeat.Runs != 1 {
+		t.Fatalf("timing phases not separated: %+v", report)
+	}
+	for _, run := range report.Cases {
+		if run.PreparationMicros == nil || run.ParsingMicros == nil || run.Retries == nil || *run.Retries != 1 || len(run.ParseAttempts) != 2 {
+			t.Fatalf("missing diagnostics: %+v", run)
+		}
+		if run.PreparedSourceFacts.ParsingContext.Hints[0].Text == "parser mutation" || *run.ParseAttempts[0].MandatoryTokens != 100 || run.ParseAttempts[0].UsedHintIndexes[0] != 0 {
+			t.Fatal("saved diagnostics changed after observation")
+		}
+		if run.ParseAttempts[1].MandatoryTokens != nil {
+			t.Fatal("missing tokenizer measurement invented")
+		}
+	}
+}
+
+func TestParsingContextLabelsDetectScopeSpanAndAmbiguityLoss(t *testing.T) {
+	t.Parallel()
+	grounding := &core.IdentityGrounding{Candidates: []core.IdentityCandidate{{ID: "one"}, {ID: "two"}}}
+	source := core.IntentTranslation{Atoms: []core.IntentAtom{{ID: "a", Value: "Muse", Scope: "journey_start", Group: "or-1", Grounding: grounding, Evidence: []core.SourceEvidence{{Text: "Muse", Start: 0, End: 4}}}, {ID: "b", Value: "Moby", Group: "or-1", Evidence: []core.SourceEvidence{{Text: "Moby", Start: 8, End: 12}}}}}
+	for i := range source.Atoms {
+		source.Atoms[i].Kind, source.Atoms[i].Polarity = "artist", "positive"
+	}
+	labels := &ParsingContextLabels{Atoms: []ParsingAtomLabel{{Text: "Muse", Scope: "journey_start"}}, ValidSourceSpans: true, PreserveAmbiguity: true, AlternativeValues: []string{"Muse", "Moby"}}
+	intent := core.MusicIntent{OriginalDescription: "Muse or Moby", Translation: &source}
+	for _, atom := range source.Atoms {
+		intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: atom.Value, Influence: core.InfluencePositive, Evidence: atom.Evidence, Grounding: atom.Grounding})
+	}
+	intent.Start = &intent.References[0]
+	for _, check := range parsingContextChecks(intent, &source, labels) {
+		if !check {
+			t.Fatal("correct labels rejected")
+		}
+	}
+	changed := source.Clone()
+	changed.Atoms[0].Scope = "playlist"
+	changed.Atoms[0].Evidence[0].Start = 1
+	changed.Atoms[0].Grounding.Candidates = changed.Atoms[0].Grounding.Candidates[:1]
+	changed.Atoms[1].Group = ""
+	intent.Translation = &changed
+	for _, check := range parsingContextChecks(intent, &source, labels) {
+		if check {
+			t.Fatal("protected-field regression concealed")
+		}
+	}
+	empty := core.IntentTranslation{}
+	intent.Translation = &empty
+	if parsingContextChecks(intent, &empty, &ParsingContextLabels{PreserveAmbiguity: true})[0] {
+		t.Fatal("ambiguity check passed without an ambiguous source")
+	}
+}
+
+func TestParsingContextLabelsRequireOperationalFields(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, prompt string
+		label        ParsingAtomLabel
+		mutate       func(*core.MusicIntent)
+	}{
+		{"missing timbre", "warm timbre", ParsingAtomLabel{Text: "warm timbre", Kind: "texture"}, func(m *core.MusicIntent) { m.Preferences.TextureDescriptions = nil }},
+		{"wrong facet", "warm timbre", ParsingAtomLabel{Text: "warm timbre", Kind: "texture"}, func(m *core.MusicIntent) {
+			m.Preferences.Moods, m.Preferences.TextureDescriptions = m.Preferences.TextureDescriptions, nil
+		}},
+		{"wrong strength", "mostly instrumental", ParsingAtomLabel{Text: "instrumental", Strength: "preferred"}, func(m *core.MusicIntent) { m.Preferences.VocalPreferences[0].Strength = "required" }},
+		{"missing essential criterion", "romantic classical", ParsingAtomLabel{Text: "romantic classical", ConceptID: "genre.romantic-classical"}, func(m *core.MusicIntent) { m.EssentialCriteria = nil }},
+		{"missing start", "from Muse to Moby", ParsingAtomLabel{Text: "Muse", Scope: "journey_start"}, func(m *core.MusicIntent) { m.Start = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			source := lexicon.Extract(tc.prompt)
+			intent := lexicon.Reconcile(core.MusicIntent{OriginalDescription: tc.prompt}, source)
+			labels := &ParsingContextLabels{Atoms: []ParsingAtomLabel{tc.label}}
+			if !parsingContextChecks(intent, &source, labels)[0] {
+				t.Fatalf("valid operational mapping rejected: %+v", intent)
+			}
+			tc.mutate(&intent)
+			if parsingContextChecks(intent, &source, labels)[0] {
+				t.Fatal("retained source atom concealed broken operational field")
+			}
+		})
+	}
+	const prompt = "warm timbre"
+	source := lexicon.Extract(prompt)
+	intent := lexicon.Reconcile(core.MusicIntent{OriginalDescription: prompt}, source).Normalized()
+	intent.Preferences.TextureDescriptions[0].Evidence[0].Start++
+	if parsingContextChecks(intent, &source, &ParsingContextLabels{ValidSourceSpans: true})[0] {
+		t.Fatal("invalid operational evidence span accepted")
+	}
+	intent = lexicon.Reconcile(core.MusicIntent{OriginalDescription: prompt}, source).Normalized()
+	intent.Preferences.TextureDescriptions[0].Evidence = nil
+	if parsingContextChecks(intent, &source, &ParsingContextLabels{ValidSourceSpans: true})[0] {
+		t.Fatal("missing explicit preference evidence accepted")
+	}
+	artistSource := lexicon.Extract("like Air")
+	artistIntent := lexicon.Reconcile(core.MusicIntent{OriginalDescription: "like Air"}, artistSource).Normalized()
+	artistIntent.References[0].Evidence = nil
+	if parsingContextChecks(artistIntent, &artistSource, &ParsingContextLabels{ValidSourceSpans: true})[0] {
+		t.Fatal("missing explicit reference evidence accepted")
+	}
+	for _, mutate := range []func(*core.IntentReference){
+		func(ref *core.IntentReference) { ref.Grounding.Candidates = ref.Grounding.Candidates[:1] },
+		func(ref *core.IntentReference) { ref.TrackID = "silently-selected" },
+		func(ref *core.IntentReference) {
+			ref.Resolution = &core.ReferenceResolution{Status: core.ResolutionResolved, Selected: &core.ResolutionCandidate{EntityID: "chosen"}}
+		},
+	} {
+		source := lexicon.Extract("like Phoenix")
+		source.Atoms[0].Grounding = &core.IdentityGrounding{Candidates: []core.IdentityCandidate{{ID: "one"}, {ID: "two"}}}
+		intent := lexicon.Reconcile(core.MusicIntent{OriginalDescription: "like Phoenix"}, source).Normalized()
+		labels := &ParsingContextLabels{PreserveAmbiguity: true}
+		if !parsingContextChecks(intent, &source, labels)[0] {
+			t.Fatal("valid ambiguity rejected")
+		}
+		mutate(&intent.References[0])
+		if parsingContextChecks(intent, &source, labels)[0] {
+			t.Fatal("operational reference silently narrowed ambiguity")
+		}
+	}
+}
+
+func TestRescorePreservesObservedTimingAndPreparedEvidence(t *testing.T) {
+	t.Parallel()
+	const prompt = "warm timbre"
+	source := lexicon.Extract(prompt)
+	output := lexicon.Reconcile(core.MusicIntent{OriginalDescription: prompt}, source)
+	output.Preferences.TextureDescriptions = nil
+	dataset := Dataset{Name: "rescore", IntentCases: []IntentCase{{ID: "warm", Prompt: prompt, ParsingContext: &ParsingContextLabels{Atoms: []ParsingAtomLabel{{Text: prompt, Kind: "texture"}}}}}}
+	report := IntentModelReport{Version: 3, DatasetName: dataset.Name, Aggregate: IntentModelAggregate{PeakResidentBytes: 1234}, Cases: []IntentModelRun{{CaseID: "warm", Phase: "first-pass", SchemaValid: true, Exact: true, CorrectFields: 1, LabeledFields: 1, LatencyMillis: 42, Output: output, PreparedSourceFacts: &source}}}
+	rescored, err := RescoreIntentModelReport(report, dataset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rescored.Cases[0].CorrectFields != 0 || rescored.Cases[0].Exact || rescored.ScoringVersion != IntentModelScoringVersion || rescored.Cases[0].LatencyMillis != 42 || rescored.Cases[0].PreparedSourceFacts != &source || rescored.Aggregate.PeakResidentBytes != 1234 || rescored.FirstPass.CorrectFields != 0 {
+		t.Fatalf("incorrect rescore: %+v", rescored)
+	}
+	if report.Cases[0].CorrectFields != 1 {
+		t.Fatal("rescore mutated the original report")
+	}
+}
+
+func TestIntentModelLegacyReportMeasurementsRemainUnknown(t *testing.T) {
+	t.Parallel()
+	var report IntentModelReport
+	if err := json.Unmarshal([]byte(`{"version":2,"datasetName":"legacy","cases":[{"caseId":"old","attempt":1,"latencyMillis":12}],"aggregate":{"runs":1}}`), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Version != 2 || report.StartupMicros != nil || report.FirstPass != nil || report.Cases[0].Retries != nil || report.Cases[0].PreparationMicros != nil || report.Cases[0].PreparedSourceFacts != nil {
+		t.Fatal("legacy report synthesized new evidence")
+	}
+}
+
+func TestDirectEvaluationFailureRetainsPreparedContext(t *testing.T) {
+	t.Parallel()
+	parser := &recordingIntentParser{parse: func(input ports.IntentInput) (core.MusicIntent, error) {
+		if input.SourceFacts == nil || input.SourceFacts.ParsingContext == nil {
+			t.Fatal("direct parsing skipped preparation")
+		}
+		return core.MusicIntent{}, errors.New("model unavailable")
+	}}
+	report, err := EvaluateIntentModelWithOptions(context.Background(), parser, Dataset{IntentCases: []IntentCase{{ID: "failure", Prompt: "warm timbre"}}}, IntentModelIdentity{}, 1, IntentModelOptions{EnrichParsingContext: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := report.Cases[0]
+	if run.PreparedSourceFacts == nil || run.PreparedSourceFacts.ParsingContext == nil || run.PreparedSourceFacts.ParsingContext.Fingerprint == "" || run.PreparationMicros == nil || run.SchemaValid || run.Error == "" {
+		t.Fatalf("direct failure lost prepared evidence: %+v", run)
+	}
+	if run.PreparedSourceFacts.Recognition.ReferenceLookup != "" {
+		t.Fatal("direct text-only path invented source availability")
+	}
+}
+
+func TestParsingContextDatasetFrozenSplitAndCoverage(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join("testdata", "parsing-context-v1.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprintf("%x", sha256.Sum256(raw)); got != "f1ac5d9c3460af53588d91804d41684449a69125ded4c3ea51160eb592bfe5f4" {
+		t.Fatal("frozen labels changed; create a new version before evaluating another set")
+	}
+	dataset, err := LoadDataset(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dataset.IntentCases) != 32 || dataset.Evidence != EvidenceSynthetic {
+		t.Fatal("wrong evaluation scope/evidence")
+	}
+	counts, familySplits, tags := map[string]int{}, map[string]string{}, map[string]bool{}
+	for _, item := range dataset.IntentCases {
+		family, split := "", ""
+		for _, tag := range item.Tags {
+			tags[tag] = true
+			if strings.HasPrefix(tag, "family:") {
+				family = strings.TrimPrefix(tag, "family:")
+			}
+			if strings.HasPrefix(tag, "split:") {
+				split = strings.TrimPrefix(tag, "split:")
+			}
+		}
+		if family == "" || split != "development" && split != "heldout" || item.ParsingContext == nil || intentLabelCount(item.Expected) == 0 {
+			t.Fatalf("unlabeled/unassigned case: %s", item.ID)
+		}
+		if prior, ok := familySplits[family]; ok && prior != split {
+			t.Fatalf("family leaked across splits: %s", family)
+		}
+		familySplits[family] = split
+		counts[split]++
+	}
+	if counts["development"] != 16 || counts["heldout"] != 16 || len(familySplits) != 16 {
+		t.Fatalf("unbalanced split: %v", counts)
+	}
+	for _, tag := range []string{"artist_common_word", "reviewed_alias", "homonyms", "compound_names", "non_latin", "exclusions", "required_tracks", "or_alternatives", "journey_scope", "mood_timbre", "romantic_period", "vocal_strength", "unknown_wording", "unavailable_sources", "crowded_matches", "long_requests"} {
+		if !tags[tag] {
+			t.Fatalf("missing category %s", tag)
+		}
+	}
+}

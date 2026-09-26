@@ -25,6 +25,22 @@ type IntentInput struct {
 	// SourceFacts is the immutable extraction snapshot shared by every model
 	// attempt for this request. Callers may omit it; the local client prepares it.
 	SourceFacts *core.IntentTranslation
+	// EnrichParsingContext is opt-in until the paired model evaluation passes.
+	EnrichParsingContext bool
+	// ObserveParseAttempt reports budgets without logging private prompt text.
+	ObserveParseAttempt func(ParseAttemptObservation)
+}
+
+type ParseAttemptObservation struct {
+	Attempt            int    `json:"attempt"`
+	MandatoryTokens    *int   `json:"mandatoryTokens,omitempty"`
+	MandatoryByteBound int    `json:"mandatoryByteBound"`
+	OptionalByteBound  int    `json:"optionalByteBound"`
+	OutputAllowance    int    `json:"outputAllowance"`
+	UsedHintIndexes    []int  `json:"usedHintIndexes,omitempty"`
+	OmittedHints       int    `json:"omittedHints"`
+	Truncated          bool   `json:"truncated"`
+	Error              string `json:"error,omitempty"`
 }
 
 // ParserInfo describes the active backend for the UI badge.

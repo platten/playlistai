@@ -1,5 +1,5 @@
 {
-  "version": "music-concepts/v5",
+  "version": "music-concepts/v6",
   "provenance": {
     "description": "Project-authored musical thesaurus: exact contextual aliases, descriptive CLAP captions, and schema-validated AcousticBrainz classes. Captions are hypotheses for similarity ranking, not measured guarantees.",
     "acousticBrainz": "https://acousticbrainz.org/data",
@@ -928,7 +928,8 @@
         "clap": [
           "Music in the style of romantic classical."
         ]
-      }
+      },
+      "explanation": "The Romantic tradition of Western classical music; a historical style rather than a requirement for a romantic mood."
     },
     {
       "id": "genre.contemporary-classical",
@@ -1161,7 +1162,8 @@
         "clap": [
           "Music with a dark mood."
         ]
-      }
+      },
+      "explanation": "A somber, ominous, or brooding emotional character; distinct from the spectral character of dark timbre."
     },
     {
       "id": "mood.calm",
@@ -1241,7 +1243,8 @@
         "clap": [
           "Music with a romantic mood."
         ]
-      }
+      },
+      "explanation": "An affectionate or intimate emotional character; distinct from the Romantic tradition of classical music."
     },
     {
       "id": "mood.sleepy",
@@ -1518,7 +1521,8 @@
         "clap": [
           "Instrumental music without a singing voice."
         ]
-      }
+      },
+      "explanation": "Music performed by instruments without vocals. Modifiers such as mostly or preferably still determine the requested strength."
     },
     {
       "id": "vocal.vocals",
@@ -1629,7 +1633,8 @@
         "clap": [
           "Music with a bright timbre."
         ]
-      }
+      },
+      "explanation": "A brilliant or sparkling timbre; describes tone color rather than a happy mood."
     },
     {
       "id": "texture.dark",
@@ -1654,7 +1659,8 @@
         "clap": [
           "Music with a dark timbre."
         ]
-      }
+      },
+      "explanation": "A subdued, less brilliant timbre; describes tone color rather than a sad or ominous mood."
     },
     {
       "id": "texture.treble-emphasis",
@@ -1724,7 +1730,8 @@
         "dsp": [
           "short_window_rms_spread_db:positive"
         ]
-      }
+      },
+      "explanation": "Wide variation between quiet and loud passages; distinct from consistently high loudness or energy."
     },
     {
       "id": "texture.compressed-dynamics",
@@ -1743,7 +1750,8 @@
       "aliases": [
         "narrow dynamic range",
         "compressed dynamic range"
-      ]
+      ],
+      "explanation": "A narrow difference between quiet and loud passages; does not by itself specify overall loudness or energy."
     },
     {
       "id": "texture.bass-heavy",
@@ -1950,7 +1958,8 @@
         "clap": [
           "Music with a warm timbre."
         ]
-      }
+      },
+      "explanation": "A rounded, full, mellow timbre; describes perceived tone color rather than an affectionate mood."
     },
     {
       "id": "texture.gentle-pulse",

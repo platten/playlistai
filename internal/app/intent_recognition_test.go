@@ -76,3 +76,28 @@ func TestIntentRecognitionSharedPacksRespectLibraryOnly(t *testing.T) {
 		t.Fatal("library-only retained shared recognition")
 	}
 }
+
+func TestParsingContextPreparedBeforeCacheIdentity(t *testing.T) {
+	c := &Container{cfg: testConfig(t)}
+	t.Cleanup(func() { _ = c.Close() })
+	input := ports.IntentInput{Prompt: "warm timbre"}
+	baseline := c.PrepareIntentInput(context.Background(), input)
+	input.EnrichParsingContext = true
+	enriched := c.PrepareIntentInput(context.Background(), input)
+	if baseline.SourceFacts.ParsingContext != nil || enriched.SourceFacts.ParsingContext == nil || baseline.RecognitionIdentity == enriched.RecognitionIdentity {
+		t.Fatal("policy did not separate parse caches")
+	}
+	if again := c.PrepareIntentInput(context.Background(), enriched); again.SourceFacts != enriched.SourceFacts || again.RecognitionIdentity != enriched.RecognitionIdentity {
+		t.Fatal("context not prepared exactly once")
+	}
+	changed := enriched.SourceFacts.Clone()
+	changed.ParsingContext.PolicyVersion = "future-policy"
+	enriched.SourceFacts = &changed
+	if future := c.PrepareIntentInput(context.Background(), enriched); future.RecognitionIdentity == enriched.RecognitionIdentity {
+		t.Fatal("policy version did not invalidate cache")
+	}
+	enriched.EnrichParsingContext = false
+	if restored := c.PrepareIntentInput(context.Background(), enriched); restored.RecognitionIdentity != baseline.RecognitionIdentity || restored.SourceFacts.ParsingContext != nil {
+		t.Fatal("switching policy retained enriched context")
+	}
+}

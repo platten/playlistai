@@ -22,7 +22,7 @@ func TestLivePublicArtistCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	intent, completion, err := p.cli.parseAttemptCorrected(ctx, ports.IntentInput{Prompt: "Make a 10-song playlist inspired by Daft Punk."}, nil, 1800, "")
+	intent, completion, err := p.cli.parseAttemptCorrected(ctx, ports.IntentInput{Prompt: "Make a 10-song playlist inspired by Daft Punk."}, nil, 1800, "", 1)
 	t.Logf("termination=%s content=%s", completion.FinishReason, completion.Content)
 	if err != nil || completion.FinishReason == "length" {
 		t.Fatalf("intent=%+v err=%v", intent, err)

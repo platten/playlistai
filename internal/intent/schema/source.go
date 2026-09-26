@@ -7,20 +7,7 @@ import (
 )
 
 func copySource(source core.IntentTranslation) core.IntentTranslation {
-	source.Atoms = append([]core.IntentAtom(nil), source.Atoms...)
-	source.Quoted = append([]core.SourceRegion(nil), source.Quoted...)
-	source.Markers = append([]core.SyntacticMarker(nil), source.Markers...)
-	source.Repairs = append([]string(nil), source.Repairs...)
-	source.Recognition.Notices = append([]string(nil), source.Recognition.Notices...)
-	for i := range source.Atoms {
-		source.Atoms[i].Evidence = append([]core.SourceEvidence(nil), source.Atoms[i].Evidence...)
-		if grounding := source.Atoms[i].Grounding; grounding != nil {
-			copy := *grounding
-			copy.Candidates = append([]core.IdentityCandidate(nil), grounding.Candidates...)
-			source.Atoms[i].Grounding = &copy
-		}
-	}
-	return source
+	return source.Clone()
 }
 
 func validateSource(source core.IntentTranslation, prompt string) error {

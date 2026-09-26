@@ -23,7 +23,7 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 			status := in.SourceFacts.Recognition
 			in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s", status.MatcherVersion, musicconcepts.Version, status.GenreVocabularyHash, status.ReferenceSnapshot)
 		}
-		return in
+		return lexicon.PrepareParsingContext(in)
 	}
 	source := lexicon.Extract(in.Prompt)
 	metadataDir := filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")
@@ -101,5 +101,5 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 	}
 	in.SourceFacts = &source
 	in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s", recognition.Version, musicconcepts.Version, genreHash, snapshot)
-	return in
+	return lexicon.PrepareParsingContext(in)
 }
