@@ -1,0 +1,719 @@
+{
+  "version": 1,
+  "name": "parsing-context-v1",
+  "evidence": "synthetic",
+  "catalogVersion": "synthetic-recognition-20260925-v1",
+  "createdAt": "2026-09-25T00:00:00Z",
+  "intentCases": [
+    {
+      "id": "air-artist",
+      "prompt": "Give me 8 tracks like Air",
+      "expected": {
+        "totalTrackCount": 8,
+        "typedReferences": [
+          "artist:positive:Air"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:air-collision",
+        "split:development",
+        "artist_common_word",
+        "references"
+      ]
+    },
+    {
+      "id": "air-exclusion",
+      "prompt": "Give me 8 tracks like Portishead; no Air",
+      "expected": {
+        "totalTrackCount": 8,
+        "positiveReferences": [
+          "Portishead"
+        ],
+        "negativeReferences": [
+          "Air"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:air-collision",
+        "split:development",
+        "artist_common_word",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "bjork-reviewed-alias",
+      "prompt": "Music like Bjork, mostly instrumental",
+      "expected": {
+        "positiveReferences": [
+          "Björk"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "instrumental",
+            "conceptId": "vocal.instrumental",
+            "strength": "preferred"
+          }
+        ]
+      },
+      "tags": [
+        "family:bjork-alias",
+        "split:development",
+        "reviewed_alias",
+        "vocal_strength"
+      ]
+    },
+    {
+      "id": "bjork-canonical",
+      "prompt": "Give me 11 tracks like Björk",
+      "expected": {
+        "totalTrackCount": 11,
+        "positiveReferences": [
+          "Björk"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:bjork-alias",
+        "split:development",
+        "reviewed_alias",
+        "non_latin"
+      ]
+    },
+    {
+      "id": "compound-canonical",
+      "prompt": "Give me 10 tracks like Earth, Wind & Fire",
+      "expected": {
+        "totalTrackCount": 10,
+        "positiveReferences": [
+          "Earth, Wind & Fire"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:earth-wind-fire",
+        "split:development",
+        "compound_names"
+      ]
+    },
+    {
+      "id": "compound-reviewed-alias",
+      "prompt": "Music like Earth Wind and Fire; avoid Air",
+      "expected": {
+        "positiveReferences": [
+          "Earth, Wind & Fire"
+        ],
+        "negativeReferences": [
+          "Air"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:earth-wind-fire",
+        "split:development",
+        "compound_names",
+        "reviewed_alias",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "dark-mood",
+      "prompt": "Give me 12 tracks with a dark mood",
+      "expected": {
+        "totalTrackCount": 12,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "dark",
+            "kind": "mood",
+            "conceptId": "mood.dark"
+          }
+        ]
+      },
+      "tags": [
+        "family:dark-facets",
+        "split:development",
+        "mood_timbre"
+      ]
+    },
+    {
+      "id": "dark-timbre",
+      "prompt": "Give me 12 tracks with dark timbre",
+      "expected": {
+        "totalTrackCount": 12,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "dark timbre",
+            "kind": "texture",
+            "conceptId": "texture.dark"
+          }
+        ]
+      },
+      "tags": [
+        "family:dark-facets",
+        "split:development",
+        "mood_timbre"
+      ]
+    },
+    {
+      "id": "romantic-mood",
+      "prompt": "Give me 9 electronic tracks with a romantic mood",
+      "expected": {
+        "totalTrackCount": 9,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "romantic mood",
+            "kind": "mood",
+            "conceptId": "mood.romantic"
+          }
+        ]
+      },
+      "tags": [
+        "family:romantic-facets",
+        "split:development",
+        "romantic_period"
+      ]
+    },
+    {
+      "id": "romantic-period",
+      "prompt": "Give me 9 romantic classical tracks",
+      "expected": {
+        "totalTrackCount": 9,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "romantic classical",
+            "kind": "genre",
+            "conceptId": "genre.romantic-classical"
+          }
+        ]
+      },
+      "tags": [
+        "family:romantic-facets",
+        "split:development",
+        "romantic_period"
+      ]
+    },
+    {
+      "id": "vocal-preferred",
+      "prompt": "Give me 7 tracks, preferably instrumental",
+      "expected": {
+        "totalTrackCount": 7,
+        "typedReferences": [],
+        "hardConstraints": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "instrumental",
+            "kind": "vocal",
+            "conceptId": "vocal.instrumental",
+            "strength": "preferred"
+          }
+        ]
+      },
+      "tags": [
+        "family:instrumental-strength",
+        "split:development",
+        "vocal_strength"
+      ]
+    },
+    {
+      "id": "vocal-essential",
+      "prompt": "Give me 7 instrumental tracks; absolutely no vocals",
+      "expected": {
+        "totalTrackCount": 7,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "no vocals",
+            "kind": "vocal",
+            "strength": "required"
+          }
+        ]
+      },
+      "tags": [
+        "family:instrumental-strength",
+        "split:development",
+        "vocal_strength",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "required-track",
+      "prompt": "Give me 10 tracks like Portishead; include Karma Police by Radiohead",
+      "expected": {
+        "totalTrackCount": 10,
+        "positiveReferences": [
+          "Portishead"
+        ],
+        "requiredTracks": [
+          "track:positive:Karma Police by Radiohead"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:karma-police-required",
+        "split:development",
+        "required_tracks"
+      ]
+    },
+    {
+      "id": "reference-track",
+      "prompt": "Give me 10 tracks like Karma Police by Radiohead",
+      "expected": {
+        "totalTrackCount": 10,
+        "typedReferences": [
+          "track:positive:Karma Police by Radiohead"
+        ],
+        "requiredTracks": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:karma-police-required",
+        "split:development",
+        "required_tracks",
+        "references"
+      ]
+    },
+    {
+      "id": "unknown-artist",
+      "prompt": "Give me 8 tracks like Zzqx Local Ensemble; preserve a moonlace texture",
+      "expected": {
+        "totalTrackCount": 8,
+        "positiveReferences": [
+          "Zzqx Local Ensemble"
+        ],
+        "positivePreferences": [
+          "moonlace texture"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:unknown-wording",
+        "split:development",
+        "unknown_wording",
+        "unavailable_sources"
+      ]
+    },
+    {
+      "id": "unknown-description",
+      "prompt": "Give me 8 tracks with a moonlace texture; no artist references",
+      "expected": {
+        "totalTrackCount": 8,
+        "typedReferences": [],
+        "positivePreferences": [
+          "moonlace texture"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:unknown-wording",
+        "split:development",
+        "unknown_wording",
+        "unavailable_sources"
+      ]
+    },
+    {
+      "id": "phoenix-homonym",
+      "prompt": "Give me 13 tracks like Phoenix",
+      "expected": {
+        "totalTrackCount": 13,
+        "positiveReferences": [
+          "Phoenix"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "preserveAmbiguity": true
+      },
+      "tags": [
+        "family:phoenix-homonym",
+        "split:heldout",
+        "homonyms",
+        "ambiguity"
+      ]
+    },
+    {
+      "id": "phoenix-exclusion",
+      "prompt": "Give me 13 tracks; no Phoenix",
+      "expected": {
+        "totalTrackCount": 13,
+        "negativeReferences": [
+          "Phoenix"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "preserveAmbiguity": true
+      },
+      "tags": [
+        "family:phoenix-homonym",
+        "split:heldout",
+        "homonyms",
+        "ambiguity",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "sakamoto-non-latin",
+      "prompt": "Give me 6 tracks like 坂本龍一",
+      "expected": {
+        "totalTrackCount": 6,
+        "positiveReferences": [
+          "坂本龍一"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:sakamoto-alias",
+        "split:heldout",
+        "non_latin",
+        "references"
+      ]
+    },
+    {
+      "id": "sakamoto-reviewed-alias",
+      "prompt": "Give me 6 tracks like Ryuichi Sakamoto",
+      "expected": {
+        "totalTrackCount": 6,
+        "positiveReferences": [
+          "坂本龍一"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:sakamoto-alias",
+        "split:heldout",
+        "non_latin",
+        "reviewed_alias"
+      ]
+    },
+    {
+      "id": "crowded-artist",
+      "prompt": "Give me 14 tracks like John Williams",
+      "expected": {
+        "totalTrackCount": 14,
+        "positiveReferences": [
+          "John Williams"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "preserveAmbiguity": true
+      },
+      "tags": [
+        "family:john-williams-crowded",
+        "split:heldout",
+        "crowded_matches",
+        "ambiguity"
+      ]
+    },
+    {
+      "id": "crowded-artist-exclusion",
+      "prompt": "Give me 14 tracks; no John Williams",
+      "expected": {
+        "totalTrackCount": 14,
+        "negativeReferences": [
+          "John Williams"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "preserveAmbiguity": true
+      },
+      "tags": [
+        "family:john-williams-crowded",
+        "split:heldout",
+        "crowded_matches",
+        "ambiguity",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "warm-timbre",
+      "prompt": "Give me 15 tracks with warm timbre",
+      "expected": {
+        "totalTrackCount": 15,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "warm timbre",
+            "kind": "texture",
+            "conceptId": "texture.warm"
+          }
+        ]
+      },
+      "tags": [
+        "family:warm-bright-facets",
+        "split:heldout",
+        "timbre"
+      ]
+    },
+    {
+      "id": "bright-timbre",
+      "prompt": "Give me 15 tracks with bright timbre",
+      "expected": {
+        "totalTrackCount": 15,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "bright timbre",
+            "kind": "texture",
+            "conceptId": "texture.bright"
+          }
+        ]
+      },
+      "tags": [
+        "family:warm-bright-facets",
+        "split:heldout",
+        "timbre"
+      ]
+    },
+    {
+      "id": "wide-dynamics",
+      "prompt": "Give me 16 tracks with wide dynamic range",
+      "expected": {
+        "totalTrackCount": 16,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "wide dynamic range",
+            "kind": "texture",
+            "conceptId": "texture.dynamic"
+          }
+        ]
+      },
+      "tags": [
+        "family:dynamics",
+        "split:heldout",
+        "dynamics"
+      ]
+    },
+    {
+      "id": "compressed-dynamics",
+      "prompt": "Give me 16 tracks with compressed dynamics",
+      "expected": {
+        "totalTrackCount": 16,
+        "typedReferences": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "compressed dynamics",
+            "kind": "texture",
+            "conceptId": "texture.compressed-dynamics"
+          }
+        ]
+      },
+      "tags": [
+        "family:dynamics",
+        "split:heldout",
+        "dynamics"
+      ]
+    },
+    {
+      "id": "artist-alternatives",
+      "prompt": "Give me 17 tracks like Muse or Moby",
+      "expected": {
+        "totalTrackCount": 17,
+        "positiveReferences": [
+          "Muse",
+          "Moby"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "alternativeValues": [
+          "Muse",
+          "Moby"
+        ]
+      },
+      "tags": [
+        "family:muse-moby-alternatives",
+        "split:heldout",
+        "or_alternatives"
+      ]
+    },
+    {
+      "id": "excluded-alternatives",
+      "prompt": "Give me 17 tracks; no Muse or Moby",
+      "expected": {
+        "totalTrackCount": 17,
+        "negativeReferences": [
+          "Muse",
+          "Moby"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:muse-moby-alternatives",
+        "split:heldout",
+        "or_alternatives",
+        "exclusions"
+      ]
+    },
+    {
+      "id": "journey-artist-scopes",
+      "prompt": "A 12-track journey from Nick Drake to Aphex Twin",
+      "expected": {
+        "mode": "journey",
+        "totalTrackCount": 12,
+        "journeyWaypoints": [
+          "artist:positive:Nick Drake",
+          "artist:positive:Aphex Twin"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "Nick Drake",
+            "scope": "journey_start"
+          },
+          {
+            "text": "Aphex Twin",
+            "scope": "journey_end"
+          }
+        ]
+      },
+      "tags": [
+        "family:nick-drake-aphex-journey",
+        "split:heldout",
+        "journey_scope"
+      ]
+    },
+    {
+      "id": "journey-reversed-scopes",
+      "prompt": "A 12-track journey from Aphex Twin to Nick Drake",
+      "expected": {
+        "mode": "journey",
+        "totalTrackCount": 12,
+        "journeyWaypoints": [
+          "artist:positive:Aphex Twin",
+          "artist:positive:Nick Drake"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true,
+        "atoms": [
+          {
+            "text": "Aphex Twin",
+            "scope": "journey_start"
+          },
+          {
+            "text": "Nick Drake",
+            "scope": "journey_end"
+          }
+        ]
+      },
+      "tags": [
+        "family:nick-drake-aphex-journey",
+        "split:heldout",
+        "journey_scope"
+      ]
+    },
+    {
+      "id": "long-required-track",
+      "prompt": "Give me 18 tracks like Massive Attack; include Teardrop by Massive Attack. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request.",
+      "expected": {
+        "totalTrackCount": 18,
+        "positiveReferences": [
+          "Massive Attack"
+        ],
+        "requiredTracks": [
+          "track:positive:Teardrop by Massive Attack"
+        ]
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:massive-attack-long",
+        "split:heldout",
+        "long_requests",
+        "required_tracks"
+      ]
+    },
+    {
+      "id": "long-reference-track",
+      "prompt": "Give me 18 tracks like Teardrop by Massive Attack. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request. I will be listening while sorting a collection of old postcards, then arranging them in a box, then writing a few notes about each one. The room is quiet and I have time to settle in without rushing. This is background information about the activity, and the explicit artist and track instructions remain the important part of my request.",
+      "expected": {
+        "totalTrackCount": 18,
+        "typedReferences": [
+          "track:positive:Teardrop by Massive Attack"
+        ],
+        "requiredTracks": []
+      },
+      "parsingContext": {
+        "validSourceSpans": true
+      },
+      "tags": [
+        "family:massive-attack-long",
+        "split:heldout",
+        "long_requests",
+        "references"
+      ]
+    }
+  ],
+  "resolutionCases": [],
+  "recommendationCases": [],
+  "interactions": [],
+  "tuningGrid": []
+}

@@ -24,7 +24,7 @@ def key(value: str) -> str:
 
 
 def validate(document: dict) -> None:
-    if document.get("version") != "music-concepts/v4":
+    if document.get("version") != "music-concepts/v6":
         raise ValueError("unsupported registry version; update both Go and preparation contracts")
     concepts = document.get("concepts", [])
     if not concepts or not document.get("provenance"):
@@ -36,6 +36,9 @@ def validate(document: dict) -> None:
             if not isinstance(concept.get(field), str) or not concept[field].strip():
                 raise ValueError(f"missing {field}: {concept.get('id')}")
         identity = concept["id"]
+        explanation = concept.get("explanation", "")
+        if not isinstance(explanation, str) or explanation != explanation.strip() or "\n" in explanation or "\r" in explanation:
+            raise ValueError(f"explanation must be a single trimmed paragraph: {identity}")
         if identity in ids or concept["kind"] not in KINDS:
             raise ValueError(f"duplicate identity or unsupported kind: {identity}")
         ids[identity] = concept

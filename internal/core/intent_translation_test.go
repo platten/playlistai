@@ -79,3 +79,28 @@ func TestPluralVocalsOverrideLegacyViewAndCloneEvidence(t *testing.T) {
 		t.Fatal("preferred criterion became mandatory genre")
 	}
 }
+
+func TestParsingContextHistoryAndClone(t *testing.T) {
+	m := MusicIntent{Translation: &IntentTranslation{Version: "test", ParsingContext: &ParsingContextEvidence{PolicyVersion: "parsing-context/v1", Fingerprint: "content", Hints: []ParsingContextHint{{AtomID: "a", Kind: "concept", Text: "quoted definition\n"}}, UsedHintIndexes: []int{0}, OmittedRecords: 2}}}
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved MusicIntent
+	if err = json.Unmarshal(data, &saved); err != nil {
+		t.Fatal(err)
+	}
+	clone := saved.Normalized()
+	clone.Translation.ParsingContext.Hints[0].Text = "modified"
+	clone.Translation.ParsingContext.UsedHintIndexes[0] = 9
+	if saved.Translation.ParsingContext.Hints[0].Text != "quoted definition\n" || saved.Translation.ParsingContext.UsedHintIndexes[0] != 0 {
+		t.Fatal("cloned context aliases history")
+	}
+	var legacy MusicIntent
+	if err = json.Unmarshal([]byte(`{"translation":{"version":"old","atoms":[]}}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Normalized().Translation.ParsingContext != nil {
+		t.Fatal("history synthesized new context")
+	}
+}
