@@ -107,7 +107,7 @@ func (c *Client) parse(ctx context.Context, in ports.IntentInput, onDelta func(c
 	in = withSourceFacts(in)
 	correction := ""
 	for attempt, tokenBudget := range []int{1800, 2400} {
-		intent, result, err := c.parseAttemptCorrected(ctx, in, onDelta, tokenBudget, correction)
+		intent, result, err := c.parseAttemptCorrected(ctx, in, onDelta, tokenBudget, correction, attempt+1)
 		if err == nil && result.FinishReason != "length" {
 			return intent, nil
 		}
@@ -136,8 +136,16 @@ func retryableParseTransport(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.As(err, &requestError)
 }
 
-func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int, correction string) (core.MusicIntent, completionResult, error) {
+func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput, onDelta func(chars int), tokenBudget int, correction string, attempt int) (intent core.MusicIntent, result completionResult, err error) {
 	in = withSourceFacts(in)
+	observation := ports.ParseAttemptObservation{Attempt: attempt}
+	defer func() {
+		observation.Truncated = result.FinishReason == "length"
+		observation.Error = errorString(err)
+		if in.ObserveParseAttempt != nil {
+			in.ObserveParseAttempt(observation)
+		}
+	}()
 	body := chatRequest{
 		Messages:           buildMessages(in),
 		Grammar:            schema.GBNF,
@@ -150,11 +158,16 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 	if correction != "" {
 		body.Messages[len(body.Messages)-1].Content += "\n\nValidation feedback (not part of the music request): " + correction
 	}
-	budget, budgetErr := c.outputBudget(ctx, body.Messages, tokenBudget)
+	observation, budgetErr := c.measureBudget(ctx, body.Messages, tokenBudget)
+	observation.Attempt = attempt
+	if evidence := in.SourceFacts.ParsingContext; evidence != nil {
+		observation.OmittedHints = evidence.OmittedRecords + len(evidence.Hints)
+	}
 	if budgetErr != nil {
 		return core.MusicIntent{}, completionResult{}, budgetErr
 	}
-	body.NPredict = budget
+	body.NPredict = observation.OutputAllowance
+	c.admitHints(body.Messages, in.SourceFacts.ParsingContext, &observation)
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return core.MusicIntent{}, completionResult{}, err
@@ -182,7 +195,6 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 		return core.MusicIntent{}, completionResult{}, fmt.Errorf("llama: HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
 
-	var result completionResult
 	if strings.Contains(resp.Header.Get("Content-Type"), "event-stream") {
 		result, err = readSSECompletion(resp.Body, onDelta)
 	} else {
@@ -195,7 +207,10 @@ func (c *Client) parseAttemptCorrected(ctx context.Context, in ports.IntentInput
 		return core.MusicIntent{}, result, fmt.Errorf("llama: empty completion (finish_reason=%q)", result.FinishReason)
 	}
 	logging.Diagnostic(ctx, "llm.response", map[string]any{"operation": "parse_intent", "content": result.Content, "finishReason": result.FinishReason})
-	intent, err := schema.ParseForPromptWithSource([]byte(result.Content), in.Prompt, *in.SourceFacts)
+	intent, err = schema.ParseForPromptWithSource([]byte(result.Content), in.Prompt, *in.SourceFacts)
+	if err == nil && intent.Translation != nil && intent.Translation.ParsingContext != nil {
+		intent.Translation.ParsingContext.UsedHintIndexes = append([]int(nil), observation.UsedHintIndexes...)
+	}
 	return intent, result, err
 }
 
@@ -364,7 +379,11 @@ func buildMessages(in ports.IntentInput) []chatMessage {
 	if in.Locale != "" {
 		content += "\n\nRequest locale (context, not music instructions): " + in.Locale
 	}
-	content += lexicon.FactsMessage(*in.SourceFacts)
+	if in.EnrichParsingContext {
+		content += lexicon.FactsMessage(*in.SourceFacts)
+	} else {
+		content += lexicon.BaselineFactsMessage(*in.SourceFacts)
+	}
 	msgs = append(msgs, chatMessage{Role: "user", Content: content})
 	return msgs
 }
@@ -374,7 +393,7 @@ func withSourceFacts(in ports.IntentInput) ports.IntentInput {
 		source := lexicon.Extract(in.Prompt)
 		in.SourceFacts = &source
 	}
-	return in
+	return lexicon.PrepareParsingContext(in)
 }
 
 func userMessage(in ports.IntentInput) string {

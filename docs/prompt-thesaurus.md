@@ -1,6 +1,6 @@
 # Prompt thesaurus reference
 
-Generated from `music-concepts/v4`: **295 concepts and 742 canonical terms/aliases**.
+Generated from `music-concepts/v6`: **296 concepts and 747 canonical terms/aliases**.
 
 Regenerate with `node scripts/render-music-thesaurus.mjs`; verify with `--check`.
 
@@ -60,6 +60,22 @@ Combined Dortmund classes are not aliases for their narrower members: `folkcount
 | dissonant / atonal | Dissonance can occur in tonal music. Only explicit atonal terminology maps to tonal_atonal.atonal. |
 | dreamy, nostalgic, lo-fi, piano, workout | CLAP descriptions with no direct archive class; do not map to relaxed, sad, acoustic, instrumental or aggressive by association. |
 | artist or song names, quoted titles | Keep in the identity resolver and protected source spans, not lexical substitution. |
+
+## Reviewed parsing explanations
+
+Explanations define canonical meanings for parsing. They are project-authored reference prose, separate from CLAP query captions and evidence about recordings. The matched source alias and its polarity, strength, alternatives and journey scope remain authoritative. Parent and related entries are labeled relationships, never synonyms or additional user requirements.
+
+| Canonical term (facet) | Explanation | Parent relationships | Related relationships |
+| --- | --- | --- | --- |
+| romantic classical (genre) | The Romantic tradition of Western classical music; a historical style rather than a requirement for a romantic mood. | genre.classical | — |
+| dark (mood) | A somber, ominous, or brooding emotional character; distinct from the spectral character of dark timbre. | — | — |
+| romantic (mood) | An affectionate or intimate emotional character; distinct from the Romantic tradition of classical music. | — | — |
+| instrumental (vocal) | Music performed by instruments without vocals. Modifiers such as mostly or preferably still determine the requested strength. | — | — |
+| bright (texture) | A brilliant or sparkling timbre; describes tone color rather than a happy mood. | — | — |
+| dark (texture) | A subdued, less brilliant timbre; describes tone color rather than a sad or ominous mood. | — | — |
+| dynamic (texture) | Wide variation between quiet and loud passages; distinct from consistently high loudness or energy. | — | — |
+| compressed dynamics (texture) | A narrow difference between quiet and loud passages; does not by itself specify overall loudness or energy. | — | — |
+| warm (texture) | A rounded, full, mellow timbre; describes perceived tone color rather than an affectionate mood. | — | — |
 
 ## Full vocabulary
 
@@ -157,6 +173,7 @@ Aliases are matched case-insensitively within their typed facet. The parser uses
 | vaporwave | vapor wave | Music in the style of vaporwave. | — |
 | dub | dub music | Music in the style of dub. | — |
 | ska | ska music | Music in the style of ska. | — |
+| dance | dance music | Dance music with a rhythm suited to dancing. | — |
 | dancehall | dance hall | Music in the style of dancehall. | — |
 | reggaeton | reggaetón | Music in the style of reggaeton. | — |
 | bossa nova | bossa-nova | Music in the style of bossa nova. | — |
@@ -193,7 +210,7 @@ Aliases are matched case-insensitively within their typed facet. The parser uses
 | happy | cheerful; joyful; joyous; happy sounding | Music with a happy mood. | mood_happy:happy |
 | sad | sorrowful; sad sounding; sorrowful mood | Music with a sad mood. | mood_sad:sad |
 | party | party music; party atmosphere | Music with a party mood. | mood_party:party |
-| energetic | high energy; high-energy; high powered; full of energy; energetic mood | Music with an energetic mood. | — |
+| energetic | lively; high energy; high-energy; high powered; full of energy; energetic mood | Music with an energetic mood. | — |
 | dramatic | — | Music with a dramatic mood. | — |
 | melancholic | melancholy; melancholia | Music with a melancholic mood. | — |
 | comforting | reassuring | Music with a comforting mood. | — |
@@ -239,7 +256,7 @@ Aliases are matched case-insensitively within their typed facet. The parser uses
 | drums | drum kit; drumkit; drum set | Music featuring drums. | — |
 | synthesizer | synthesizers; synths; synth; synthesiser; synthesisers | Music featuring synthesizer. | — |
 | violin | violins | Music featuring violin. | — |
-| cello | cellos; violoncello; violoncellos | Music featuring cello. | — |
+| cello | cellos; chello; chellos; violoncello; violoncellos | Music featuring cello. | — |
 | orchestra | — | Music featuring orchestra. | — |
 | saxophone | saxophones; sax | Music featuring saxophone. | — |
 | bass guitar | electric bass guitar | Music featuring bass guitar. | — |

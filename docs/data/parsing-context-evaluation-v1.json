@@ -1,0 +1,214 @@
+{
+  "version": 1,
+  "status": "not accepted; baseline remains default",
+  "evaluatedAt": "2026-09-26T01:04:22.285889447Z",
+  "evidence": "synthetic parser cases; no musical-quality or desktop-fallback claim",
+  "baseCommit": "7b608bfccc5543b7221dce4db9000845a670ec13",
+  "baselineWorkingTreePatchSHA256": "f76dca19147ae52563ebe38f9cddf0184454a3d35fea16461a5d1e8f4dd53d1e",
+  "baselineWorkingTreeFileHashesSHA256": "3f53a3dba15289669b9ddca625ea34f94c16a33766ec07704f714cce05cd9de5",
+  "datasetSHA256": "f1ac5d9c3460af53588d91804d41684449a69125ded4c3ea51160eb592bfe5f4",
+  "scoringVersion": "context-operational/v1",
+  "scorerSHA256": "19bb30599ba7190e0fd7d0aebf3f60dca542e03e0e304e4c296294623b241099",
+  "parserVersion": "llama/v18",
+  "recognitionIdentity": "artist-first/v6|music-concepts/v6|embedded|musicbrainz-offline/v1:20260925-000000",
+  "sourceFactsIdentical": true,
+  "fixtureHashes": {
+    "artist.jsonl": "f6dfe14999bc24d7181acbab6db87b8756d5c439b53c348be541ab8892c259b3",
+    "recording.jsonl": "1e1878830b5f0dd3d37e82bb0407100fcd382935adf0bd07ff9025eb5fb46334"
+  },
+  "model": {
+    "id": "qwen2.5-3b-instruct-q4km",
+    "artifactBytes": 1929903264,
+    "sha256": "9c9f56a391a3abbd5b89d0245bf6106081bcc3173119d4229235dd9d23253f94",
+    "runtime": "version: 0.4.0-dev (build 10826, commit 73a43d1f6)",
+    "environment": {
+      "goos": "linux",
+      "goarch": "amd64",
+      "logicalCpus": 16,
+      "executionMode": "gpu",
+      "selectedDevice": "CUDA0",
+      "contextSize": 4096,
+      "threads": 8,
+      "gpuLayers": 99,
+      "devices": [
+        {
+          "id": "CUDA0",
+          "name": "NVIDIA GeForce RTX 5060 Laptop GPU",
+          "totalBytes": 8517582848,
+          "freeBytes": 7374635008
+        }
+      ]
+    }
+  },
+  "hostCPU": "Intel Core Ultra 9 285H; WSL2 Linux amd64",
+  "baseline": {
+    "all": {
+      "runs": 64,
+      "correctFields": 210,
+      "labeledFields": 250,
+      "fieldAccuracy": 0.84,
+      "exactRuns": 40,
+      "parseErrors": 4
+    },
+    "development": {
+      "runs": 32,
+      "correctFields": 100,
+      "labeledFields": 120,
+      "fieldAccuracy": 0.8333333333333334,
+      "exactRuns": 20,
+      "parseErrors": 2
+    },
+    "heldout": {
+      "runs": 32,
+      "correctFields": 110,
+      "labeledFields": 130,
+      "fieldAccuracy": 0.8461538461538461,
+      "exactRuns": 20,
+      "parseErrors": 2
+    },
+    "startupMicros": 1503186,
+    "preparationMedianMicros": 4876.5,
+    "firstPass": {
+      "runs": 32,
+      "schemaValidRuns": 30,
+      "exactRuns": 20,
+      "labeledFields": 125,
+      "correctFields": 105,
+      "schemaValidity": 0.9375,
+      "exactCaseAccuracy": 0.625,
+      "fieldAccuracy": 0.84,
+      "medianLatencyMillis": 3495,
+      "p95LatencyMillis": 5473,
+      "peakResidentBytes": 0
+    },
+    "warmRepeat": {
+      "runs": 32,
+      "schemaValidRuns": 30,
+      "exactRuns": 20,
+      "labeledFields": 125,
+      "correctFields": 105,
+      "schemaValidity": 0.9375,
+      "exactCaseAccuracy": 0.625,
+      "fieldAccuracy": 0.84,
+      "medianLatencyMillis": 3504,
+      "p95LatencyMillis": 5511,
+      "peakResidentBytes": 0
+    },
+    "attempts": 68,
+    "retries": 4,
+    "truncatedAttempts": 0,
+    "contextOverflowErrors": 0,
+    "measuredAttempts": 68,
+    "mandatoryTokensMin": 2373,
+    "mandatoryTokensMax": 2759,
+    "outputAllowanceMin": 1209,
+    "outputAllowanceMax": 1595,
+    "attemptsUsingHints": 0,
+    "omittedHintRecords": 0
+  },
+  "enriched": {
+    "all": {
+      "runs": 64,
+      "correctFields": 204,
+      "labeledFields": 250,
+      "fieldAccuracy": 0.816,
+      "exactRuns": 40,
+      "parseErrors": 6
+    },
+    "development": {
+      "runs": 32,
+      "correctFields": 94,
+      "labeledFields": 120,
+      "fieldAccuracy": 0.7833333333333333,
+      "exactRuns": 20,
+      "parseErrors": 4
+    },
+    "heldout": {
+      "runs": 32,
+      "correctFields": 110,
+      "labeledFields": 130,
+      "fieldAccuracy": 0.8461538461538461,
+      "exactRuns": 20,
+      "parseErrors": 2
+    },
+    "startupMicros": 1003811,
+    "preparationMedianMicros": 5047.5,
+    "firstPass": {
+      "runs": 32,
+      "schemaValidRuns": 29,
+      "exactRuns": 20,
+      "labeledFields": 125,
+      "correctFields": 102,
+      "schemaValidity": 0.90625,
+      "exactCaseAccuracy": 0.625,
+      "fieldAccuracy": 0.816,
+      "medianLatencyMillis": 4166,
+      "p95LatencyMillis": 8811,
+      "peakResidentBytes": 0
+    },
+    "warmRepeat": {
+      "runs": 32,
+      "schemaValidRuns": 29,
+      "exactRuns": 20,
+      "labeledFields": 125,
+      "correctFields": 102,
+      "schemaValidity": 0.90625,
+      "exactCaseAccuracy": 0.625,
+      "fieldAccuracy": 0.816,
+      "medianLatencyMillis": 4074,
+      "p95LatencyMillis": 8679,
+      "peakResidentBytes": 0
+    },
+    "attempts": 76,
+    "retries": 12,
+    "truncatedAttempts": 0,
+    "contextOverflowErrors": 0,
+    "measuredAttempts": 76,
+    "mandatoryTokensMin": 2403,
+    "mandatoryTokensMax": 2716,
+    "outputAllowanceMin": 1252,
+    "outputAllowanceMax": 1565,
+    "attemptsUsingHints": 0,
+    "omittedHintRecords": 94
+  },
+  "changedCaseScores": [
+    {
+      "caseId": "reference-track",
+      "repeat": 1,
+      "baselineCorrect": 3,
+      "enrichedCorrect": 0,
+      "labeledFields": 4,
+      "enrichedError": "schema: ungrounded constraint \"10 tracks\""
+    },
+    {
+      "caseId": "reference-track",
+      "repeat": 2,
+      "baselineCorrect": 3,
+      "enrichedCorrect": 0,
+      "labeledFields": 4,
+      "enrichedError": "schema: ungrounded constraint \"10 tracks\""
+    }
+  ],
+  "reportHashes": {
+    "baseline": "f35324b6a623312de6fbdd9e4269632a037d880866705341b3e048af255ee8f0",
+    "enriched": "7f8bc04de2d13f38822776324b3db855346e7d990a28e438c7796009f16db1d7"
+  },
+  "unavailableSourceSupplement": {
+    "baseline": {
+      "runs": 4,
+      "correctFields": 8,
+      "labeledFields": 16,
+      "fieldAccuracy": 0.5,
+      "exactRuns": 0,
+      "parseErrors": 0
+    },
+    "enriched": {
+      "runs": 4,
+      "correctFields": 8,
+      "labeledFields": 16,
+      "fieldAccuracy": 0.5,
+      "exactRuns": 0,
+      "parseErrors": 0
+    }
+  }
+}

@@ -380,9 +380,63 @@ func wordsContain(text, value string) bool {
 	return v != "" && strings.Contains(" "+words(text)+" ", " "+v+" ")
 }
 
-// FactsMessage is intentionally compact; the full versioned evidence remains
-// in the local translation snapshot rather than consuming model context.
+// FactsMessage preserves every protected occurrence without opaque provider IDs.
 func FactsMessage(x core.IntentTranslation) string {
+	if len(x.Atoms) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nProtected source facts. Copy spans only from quoted source text. Similarity does not require output tracks. Preserve each whole occurrence and its role. Candidate recognition is not identity resolution: never choose an ambiguous identity; retain it for clarification.\n")
+	for _, a := range x.Atoms {
+		for _, e := range a.Evidence {
+			fmt.Fprintf(&b, "%s=%q; source=%q; polarity=%s; scope=%s; strength=%s; degree=%q; alternative-group=%q", a.Kind, a.Value, e.Text, a.Polarity, a.Scope, a.Strength, a.Degree, a.Group)
+			if g := a.Grounding; g != nil {
+				state := "no candidates"
+				if len(g.Candidates) == 1 {
+					state = "one candidate"
+				}
+				if len(g.Candidates) > 1 {
+					state = "multiple candidates"
+				}
+				if g.Truncated {
+					state += ", truncated results"
+				}
+				if g.Confirmed {
+					state += ", user-confirmed identity"
+				}
+				fmt.Fprintf(&b, "; match=%q; recognition=%q", g.MatchType, state)
+				canonical := ""
+				for i, c := range g.Candidates {
+					name := c.Name
+					if c.Title != "" {
+						name += " — " + c.Title
+					}
+					if i == 0 {
+						canonical = name
+					} else if name != canonical {
+						canonical = ""
+						break
+					}
+				}
+				if canonical != "" {
+					fmt.Fprintf(&b, "; canonical=%q", canonical)
+				}
+			}
+			if a.Kind == "entity_mention" {
+				b.WriteString("; possible whole mention, identity unresolved")
+			}
+			if a.Kind == "duration" {
+				b.WriteString("; seconds, not track count")
+			}
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+// BaselineFactsMessage retains the evaluation baseline until enrichment passes
+// the paired model gate. Full grounding evidence remains in saved translations.
+func BaselineFactsMessage(x core.IntentTranslation) string {
 	if len(x.Atoms) == 0 {
 		return ""
 	}

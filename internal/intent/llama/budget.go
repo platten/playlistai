@@ -8,6 +8,10 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/intent/lexicon"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 // NewClientWithContext enables tokenizer-based budgeting for a managed or
@@ -22,16 +26,23 @@ func NewClientWithContext(baseURL string, contextSize int) *Client {
 }
 
 func (c *Client) outputBudget(ctx context.Context, messages []chatMessage, want int) (int, error) {
+	observation, err := c.measureBudget(ctx, messages, want)
+	return observation.OutputAllowance, err
+}
+
+func (c *Client) measureBudget(ctx context.Context, messages []chatMessage, want int) (ports.ParseAttemptObservation, error) {
+	observation := ports.ParseAttemptObservation{}
+	for _, m := range messages {
+		observation.MandatoryByteBound += len(m.Content) + 64
+	}
 	if c.contextSize <= 0 {
-		return want, ctx.Err()
+		observation.OutputAllowance = want
+		return observation, ctx.Err()
 	}
 	// Byte-level tokenizers need at most one token per UTF-8 byte. Reserve
 	// template overhead separately; never apply an English-only chars/4 guess
 	// to JSON, unusual spelling, or non-Latin requests.
-	tokens := 0
-	for _, m := range messages {
-		tokens += len(m.Content) + 64
-	}
+	tokens := observation.MandatoryByteBound
 	if c.measureTokens {
 		// Both calls share one deadline. Native tokenization can briefly queue
 		// behind server housekeeping after a prior completion, so retain enough
@@ -47,17 +58,46 @@ func (c *Client) outputBudget(ctx context.Context, messages []chatMessage, want 
 			}
 			if err := c.budgetRPC(measureCtx, "/tokenize", map[string]any{"content": template.Prompt}, &measured); err == nil && len(measured.Tokens) > 0 {
 				tokens = len(measured.Tokens)
+				observation.MandatoryTokens = &tokens
 			}
 		}
 	}
 	if err := ctx.Err(); err != nil {
-		return 0, err
+		return observation, err
 	}
 	remaining := c.contextSize - tokens - 128
 	if remaining < min(want, 256) {
-		return 0, fmt.Errorf("llama: request needs more context: measured input or conservative byte bound %d, configured context %d", tokens, c.contextSize)
+		return observation, fmt.Errorf("llama: request needs more context: measured input or conservative byte bound %d, configured context %d", tokens, c.contextSize)
 	}
-	return min(want, remaining), nil
+	observation.OutputAllowance = min(want, remaining)
+	return observation, nil
+}
+
+// Admit only whole records into space left after the mandatory-only output
+// allowance. No tokenizer RPC is added, and unavailable measurements admit none.
+func (c *Client) admitHints(messages []chatMessage, evidence *core.ParsingContextEvidence, observation *ports.ParseAttemptObservation) {
+	if evidence == nil {
+		return
+	}
+	observation.OmittedHints = evidence.OmittedRecords + len(evidence.Hints)
+	if observation.MandatoryTokens == nil || c.contextSize <= 0 || len(messages) == 0 {
+		return
+	}
+	const boundaryAllowance = 32
+	space := min(lexicon.MaxContextBytes, c.contextSize-*observation.MandatoryTokens-observation.OutputAllowance-128-boundaryAllowance)
+	text := lexicon.ContextHeader
+	for i, hint := range evidence.Hints {
+		if len(observation.UsedHintIndexes) >= lexicon.MaxContextRecords || len(text)+len(hint.Text) > space {
+			continue
+		}
+		text += hint.Text
+		observation.UsedHintIndexes = append(observation.UsedHintIndexes, i)
+		observation.OmittedHints--
+	}
+	if len(observation.UsedHintIndexes) > 0 {
+		messages[len(messages)-1].Content += text
+		observation.OptionalByteBound = len(text)
+	}
 }
 
 func (c *Client) budgetRPC(ctx context.Context, path string, input, output any) error {

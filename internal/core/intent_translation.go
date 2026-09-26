@@ -3,14 +3,34 @@ package core
 // IntentTranslation records the source-grounded interpretation used by this
 // request. It is persisted as evidence; loading history never reruns extraction.
 type IntentTranslation struct {
-	Version      string            `json:"version"`
-	OriginalText string            `json:"originalText,omitempty"`
-	Quoted       []SourceRegion    `json:"quotedRegions,omitempty"`
-	Markers      []SyntacticMarker `json:"syntacticMarkers,omitempty"`
-	Atoms        []IntentAtom      `json:"atoms"`
-	Recognition  RecognitionStatus `json:"recognition,omitempty"`
-	Repairs      []string          `json:"repairs,omitempty"`
+	Version        string                  `json:"version"`
+	OriginalText   string                  `json:"originalText,omitempty"`
+	Quoted         []SourceRegion          `json:"quotedRegions,omitempty"`
+	Markers        []SyntacticMarker       `json:"syntacticMarkers,omitempty"`
+	Atoms          []IntentAtom            `json:"atoms"`
+	Recognition    RecognitionStatus       `json:"recognition,omitempty"`
+	Repairs        []string                `json:"repairs,omitempty"`
+	ParsingContext *ParsingContextEvidence `json:"parsingContext,omitempty"`
 }
+
+// ParsingContextEvidence is prepared once for parsing, never on history load.
+// Hint text is quoted reference data, not additional listener requirements.
+type ParsingContextEvidence struct {
+	PolicyVersion   string               `json:"policyVersion"`
+	Fingerprint     string               `json:"fingerprint"`
+	Hints           []ParsingContextHint `json:"hints,omitempty"`
+	UsedHintIndexes []int                `json:"usedHintIndexes,omitempty"`
+	OmittedRecords  int                  `json:"omittedRecords,omitempty"`
+}
+
+type ParsingContextHint struct {
+	AtomID string `json:"atomId"`
+	Kind   string `json:"kind"`
+	Text   string `json:"text"`
+}
+
+// Clone isolates saved evidence and request-local parser snapshots.
+func (in IntentTranslation) Clone() IntentTranslation { return *cloneTranslation(&in) }
 
 type SourceRegion struct {
 	Text  string `json:"text"`
@@ -64,6 +84,12 @@ func cloneTranslation(in *IntentTranslation) *IntentTranslation {
 	out.Quoted = append([]SourceRegion(nil), in.Quoted...)
 	out.Markers = append([]SyntacticMarker(nil), in.Markers...)
 	out.Recognition.Notices = append([]string(nil), in.Recognition.Notices...)
+	if in.ParsingContext != nil {
+		context := *in.ParsingContext
+		context.Hints = append([]ParsingContextHint(nil), context.Hints...)
+		context.UsedHintIndexes = append([]int(nil), context.UsedHintIndexes...)
+		out.ParsingContext = &context
+	}
 	out.Atoms = append([]IntentAtom(nil), in.Atoms...)
 	for i := range out.Atoms {
 		out.Atoms[i].Evidence = append([]SourceEvidence(nil), in.Atoms[i].Evidence...)

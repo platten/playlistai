@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const Version = "music-concepts/v5"
+const Version = "music-concepts/v6"
 
 // ProviderMappings keeps provider class names out of the user's intent. Parent
 // and related concepts are never expanded by Canonical or Find.
@@ -32,6 +32,9 @@ type Concept struct {
 	Providers ProviderMappings `json:"providers,omitempty"`
 	Source    string           `json:"source"`
 	License   string           `json:"license"`
+	// Explanation is reviewed reference prose, separate from provider query
+	// captions. It defines a concept without changing its aliases or requirements.
+	Explanation string `json:"explanation,omitempty"`
 }
 
 // The small hand-reviewed registry contains no model weights, audio, user data
@@ -70,6 +73,9 @@ func loadRegistry() ([]Concept, map[string]int, map[string]int) {
 	for i, c := range document.Concepts {
 		if c.ID == "" || c.Kind == "" || c.Value == "" || c.Source == "" || c.License == "" {
 			panic("musicconcepts: incomplete concept")
+		}
+		if c.Explanation != strings.TrimSpace(c.Explanation) || strings.ContainsAny(c.Explanation, "\r\n") {
+			panic("musicconcepts: explanation must be a single trimmed paragraph")
 		}
 		if _, exists := ids[c.ID]; exists {
 			panic("musicconcepts: duplicate concept identity")

@@ -1,10 +1,64 @@
 package musicconcepts
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"testing"
 )
+
+func TestReviewedExplanationsAreOptionalReferenceProse(t *testing.T) {
+	explained := []string{
+		"mood.dark", "texture.dark", "texture.bright", "texture.warm", "mood.romantic",
+		"genre.romantic-classical", "vocal.instrumental", "texture.dynamic", "texture.compressed-dynamics",
+	}
+	for _, id := range explained {
+		concept, ok := FindID(id)
+		if !ok || concept.Explanation == "" || slices.Contains(concept.Providers.CLAP, concept.Explanation) {
+			t.Fatalf("missing distinct reviewed explanation: %+v", concept)
+		}
+		for _, alias := range append([]string{concept.Value}, concept.Aliases...) {
+			matched, _ := Find(concept.Kind, alias)
+			if matched.Explanation != concept.Explanation {
+				t.Fatalf("alias %q lost explanation for %s", alias, id)
+			}
+		}
+	}
+	for _, concept := range Concepts() {
+		if !slices.Contains(explained, concept.ID) && concept.Explanation != "" {
+			t.Fatalf("unexpected explanation: %s", concept.ID)
+		}
+	}
+	var legacy Concept
+	if err := json.Unmarshal([]byte(`{"id":"mood.dark","kind":"mood","value":"dark"}`), &legacy); err != nil || legacy.Explanation != "" {
+		t.Fatalf("explanation must remain optional: %+v, %v", legacy, err)
+	}
+}
+
+func TestRegistryRejectsMalformedExplanation(t *testing.T) {
+	original := registryJSON
+	t.Cleanup(func() { registryJSON = original })
+	for _, explanation := range []string{" whitespace ", "first\nsecond", "first\rsecond"} {
+		t.Run(explanation, func(t *testing.T) {
+			var document map[string]any
+			if err := json.Unmarshal(original, &document); err != nil {
+				t.Fatal(err)
+			}
+			document["concepts"].([]any)[0].(map[string]any)["explanation"] = explanation
+			var err error
+			registryJSON, err = json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if recover() == nil {
+					t.Fatal("invalid explanation was accepted")
+				}
+			}()
+			loadRegistry()
+		})
+	}
+}
 
 func TestExactAliasesDoNotCollapseTaxonomyOrPolarity(t *testing.T) {
 	for _, alias := range []string{"hip hop", "HIP-HOP", "hiphop", "  hip   hop "} {
