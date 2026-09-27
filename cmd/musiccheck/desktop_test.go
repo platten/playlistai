@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/platten/playlistai/internal/bridge"
@@ -33,6 +34,31 @@ func TestDesktopEvaluationRejectsNormalAndLinkedWritableStores(t *testing.T) {
 	}
 	if _, err := isolatedEvaluationDirectory(root); err == nil {
 		t.Fatal("linked writable preferences accepted")
+	}
+}
+
+func TestDesktopEvaluationAllowsSystemTempAlias(t *testing.T) {
+	parent := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "temp-alias")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	t.Setenv("TMPDIR", alias)
+	t.Setenv("TMP", alias)
+	t.Setenv("TEMP", alias)
+	if os.TempDir() != alias {
+		t.Skip("temporary directory cannot be redirected on this host")
+	}
+	root, err := isolatedEvaluationDirectory(filepath.Join(alias, "isolated"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalParent, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != filepath.Join(canonicalParent, "isolated") {
+		t.Fatalf("expected canonical root, got %q", root)
 	}
 }
 
@@ -146,7 +172,9 @@ func TestDesktopReportAtomicPermissionsAndRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if info.Mode().Perm()&0077 != 0 {
+		// Windows reports ACL-backed files as 0666; Unix mode bits do not
+		// describe who can read them there.
+		if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 			t.Fatalf("report permissions=%v", info.Mode())
 		}
 	}

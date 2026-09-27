@@ -55,6 +55,10 @@ func TestDesktopDiagnosticsRejectsLinkedParentCollision(t *testing.T) {
 	if err := validateDesktopDiagnostics(options, 1); err == nil {
 		t.Fatal("symlink-parent output collision accepted")
 	}
+	options.Diagnostics = filepath.Join(alias, "report.json.cases", "case-001.json")
+	if err := validateDesktopDiagnostics(options, 1); err == nil {
+		t.Fatal("symlink-parent nested case collision accepted")
+	}
 	options.DataDir = root
 	options.Diagnostics = filepath.Join(alias, "evaluation.log")
 	if err := validateDesktopDiagnostics(options, 1); err == nil {

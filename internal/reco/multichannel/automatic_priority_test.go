@@ -79,18 +79,33 @@ func TestAutomaticCachedPreviewSurvivesBlockingMetadata(t *testing.T) {
 	b.ids = append(b.ids, "audio")
 	b.meta["audio"] = m
 	b.clap["audio"] = core.LibraryVector{Source: core.LibraryEvidenceSource{SpaceID: "prepared"}, Values: []float32{1, 0}}
+	ready := make(chan bool, 1)
 	f := &durationVerifierFixture{update: func(ctx context.Context, row core.EnrichedTrack) (core.EnrichedTrack, error) {
-		if b.assessments["audio"].AnalysisID == "" {
-			t.Fatal("metadata preceded cached assessment")
-		}
+		ready <- b.assessments["audio"].AnalysisID != ""
 		<-ctx.Done()
 		return row, ctx.Err()
 	}}
 	a := NewAutomatic(cat, cat, nil, DefaultConfig()).WithEnricher(f).WithAudioProvider(func() *audio.Service { return service })
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := a.acquireAutomaticEvidence(ctx, cat, b, testIntent(2), cat.CatalogVersion(), nil)
-	if !errors.Is(err, context.DeadlineExceeded) || f.calls != 1 || b.assessments["audio"].AnalysisID == "" || b.clap["audio"].Source.SpaceID != "prepared" {
+	done := make(chan error, 1)
+	go func() { done <- a.acquireAutomaticEvidence(ctx, cat, b, testIntent(2), cat.CatalogVersion(), nil) }()
+	select {
+	case cached := <-ready:
+		if !cached {
+			t.Fatal("metadata preceded cached assessment")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("metadata verifier was not reached")
+	}
+	cancel()
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("canceled metadata verification did not stop")
+	}
+	if !errors.Is(err, context.Canceled) || f.calls != 1 || b.assessments["audio"].AnalysisID == "" || b.clap["audio"].Source.SpaceID != "prepared" {
 		t.Fatal("cache/vector lost on stop", err)
 	}
 }
