@@ -128,7 +128,11 @@ func TestPreparationUnavailableSourcesAndIsolation(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resolved != filepath.Join(parent, "isolated") {
+		canonicalParent, err := filepath.EvalSymlinks(parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != filepath.Join(canonicalParent, "isolated") {
 			t.Fatalf("expected canonical root, got %q", resolved)
 		}
 	})

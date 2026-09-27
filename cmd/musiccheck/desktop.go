@@ -351,13 +351,19 @@ func validateDesktopDiagnostics(options desktopEvaluationOptions, selected int) 
 		if err != nil {
 			return "", err
 		}
-		if resolved, err := filepath.EvalSymlinks(absolute); err == nil {
-			return resolved, nil
+		for current := absolute; ; current = filepath.Dir(current) {
+			resolved, err := filepath.EvalSymlinks(current)
+			if err == nil {
+				relative, err := filepath.Rel(current, absolute)
+				if err != nil {
+					return "", err
+				}
+				return filepath.Join(resolved, relative), nil
+			}
+			if !os.IsNotExist(err) || filepath.Dir(current) == current {
+				return "", err
+			}
 		}
-		if parent, err := filepath.EvalSymlinks(filepath.Dir(absolute)); err == nil {
-			absolute = filepath.Join(parent, filepath.Base(absolute))
-		}
-		return absolute, nil
 	}
 	diagnostics, err := canonical(options.Diagnostics)
 	if err != nil {
@@ -497,10 +503,23 @@ func isolatedEvaluationDirectory(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	entry, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
 	defaultResolved, _ := filepath.EvalSymlinks(defaultRoot)
-	if root != resolved || root == defaultRoot || root == defaultResolved || filepath.Dir(root) == root {
+	if entry.Mode()&os.ModeSymlink != 0 || root == defaultRoot || resolved == defaultResolved {
 		return "", fmt.Errorf("app evaluation requires an isolated directory, not normal or linked user state")
 	}
+	if root != resolved {
+		temp := os.TempDir()
+		tempResolved, tempErr := filepath.EvalSymlinks(temp)
+		relative, relErr := filepath.Rel(temp, root)
+		if tempErr != nil || relErr != nil || !filepath.IsLocal(relative) || filepath.Join(tempResolved, relative) != resolved {
+			return "", fmt.Errorf("app evaluation requires an isolated directory, not normal or linked user state")
+		}
+	}
+	root = resolved
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
