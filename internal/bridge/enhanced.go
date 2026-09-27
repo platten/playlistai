@@ -33,6 +33,13 @@ func (a *API) InstallRecommendedMERT(ctx context.Context) error {
 	a.operations.cancel("enhanced-analysis")
 	return a.app.InstallRecommendedMERT(ctx, NewWailsProgress())
 }
+func (a *API) InstallCPUMERT(ctx context.Context) error {
+	ctx, _, finish := a.operations.begin(ctx, "mert-install")
+	defer finish()
+	a.cancelRecommendationWork()
+	a.operations.cancel("enhanced-analysis")
+	return a.app.InstallCPUMERT(ctx, NewWailsProgress())
+}
 func (a *API) RemoveMERT() error {
 	a.cancelRecommendationWork()
 	a.operations.cancel("mert-install")

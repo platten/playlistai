@@ -88,6 +88,11 @@ checkpoint and graph identity, decoder, preprocessing, sampling, pooling,
 observed-audio scope, and missingness semantics. Vector encoding version 1 permits only
 little-endian normalized float32 vectors. Cosine scores from unequal contracts
 must remain in separate spaces.
+New exports also record the MERT execution runtime (`.../cpu` or `.../cuda`) in
+the vector-space contract. Older manifests omit it and remain readable. The
+desktop retains separate CPU and CUDA packs; when both are installed it uses the
+pack matching the active CLAP model, or MERT if CLAP is unavailable. A pack with
+conflicting CPU/CUDA MERT and CLAP identities is rejected for this paired setup.
 
 For versions 5–7, `packId` is SHA-256 over canonical JSON for the manifest with
 an empty `packId`, sorted file entries, and sorted root aliases. Version 8

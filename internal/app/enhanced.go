@@ -2,10 +2,11 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,16 +28,36 @@ type enhancedState struct {
 	enabled     bool
 	mertEnabled bool
 	bundles     *audio.MERTBundleManager
+	alternate   *audio.MERTBundleManager
 	worker      *audio.MERTWorker
 	pool        *audio.MERTWorkerPool
 	manifest    *audio.MERTBundleManifest
+	healthCheck func(context.Context, *audio.MERTWorker) error // test seam
 	detail      string
+}
+
+func (e *enhancedState) lockOperation(ctx context.Context) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if e.opMu.TryLock() {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
 }
 
 type EnhancedAnalysisStatus struct {
 	Loading                  bool                                 `json:"loading"`
+	InstalledBackends        []string                             `json:"installedBackends"`
 	RecommendedManifestURL   string                               `json:"recommendedManifestUrl"`
 	RecommendedDownloadBytes int64                                `json:"recommendedDownloadBytes"`
+	RecommendedUpgrade       bool                                 `json:"recommendedUpgrade"`
 	UnsupportedReason        string                               `json:"unsupportedReason,omitempty"`
 	Enabled                  bool                                 `json:"enabled"`
 	MERTEnabled              bool                                 `json:"mertEnabled"`
@@ -69,6 +90,7 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 	e.enabled = true
 	e.mertEnabled = true
 	e.bundles = &audio.MERTBundleManager{Directory: filepath.Join(c.cfg.DataDir, "mert-analysis")}
+	e.alternate = &audio.MERTBundleManager{Directory: filepath.Join(c.cfg.DataDir, "mert-analysis-alternate")}
 	e.detail = "MERT finds similar tracks in Enhanced hybrid using available preview embeddings. DSP measurements are enabled automatically."
 	if c.analysis.store == nil {
 		return
@@ -84,7 +106,7 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 		}
 		return nil
 	})
-	if _, err := os.Stat(filepath.Join(e.bundles.Directory, "active.json")); err == nil {
+	if e.hasInstalledBundle() {
 		e.startup.start(c, ctx, func(ctx context.Context) {
 			e.opMu.Lock()
 			defer e.opMu.Unlock()
@@ -99,17 +121,43 @@ func (c *Container) wireEnhanced(ctx context.Context) {
 
 func (c *Container) loadMERT(ctx context.Context) error {
 	e := &c.enhanced
-	dir, manifest, err := e.bundles.ActiveContext(ctx)
-	if err != nil {
-		return err
-	}
-	worker := &audio.MERTWorker{BundleDir: dir, Model: manifest.Model}
-	healthCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
-	defer cancel()
-	if err := worker.Health(healthCtx); err != nil {
+	started := time.Now()
+	var manifest audio.MERTBundleManifest
+	var worker *audio.MERTWorker
+	var err error
+	candidates := e.installedBundles(ctx, audio.MERTCUDAHostAvailable())
+	verifiedLayout := time.Since(started)
+	for _, candidate := range candidates {
+		manifest = candidate.manifest
+		worker = &audio.MERTWorker{BundleDir: candidate.dir, Model: manifest.Model}
+		healthTimeout := 90 * time.Second
+		if manifest.Backend() == "cuda" {
+			healthTimeout = audio.MERTCUDAHealthTimeout
+		}
+		healthCtx, cancel := context.WithTimeout(ctx, healthTimeout)
+		if e.healthCheck != nil {
+			err = e.healthCheck(healthCtx, worker)
+		} else {
+			err = worker.Health(healthCtx)
+		}
+		cancel()
+		if err == nil {
+			break
+		}
 		_ = worker.Close()
+		worker = nil
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		c.log.Info("MERT startup check failed", "backend", manifest.Backend(), "health", time.Since(started))
+	}
+	if worker == nil {
+		if err == nil {
+			err = fmt.Errorf("no installed MERT bundle is available")
+		}
 		return err
 	}
+	healthDuration := time.Since(started) - verifiedLayout
 	pool := audio.NewMERTWorkerPool(worker, audio.AnalysisParallelism())
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -127,6 +175,7 @@ func (c *Container) loadMERT(ctx context.Context) error {
 	if !e.mertEnabled {
 		pool.Unload()
 	}
+	c.log.Info("MERT startup check complete", "layout", verifiedLayout, "health", healthDuration)
 	return nil
 }
 
@@ -134,15 +183,28 @@ func (c *Container) GetEnhancedAnalysisStatus(ctx context.Context) (EnhancedAnal
 	e := &c.enhanced
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	s := EnhancedAnalysisStatus{Enabled: e.enabled, MERTEnabled: e.mertEnabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
+	s := EnhancedAnalysisStatus{Enabled: e.enabled, MERTEnabled: e.mertEnabled, DSPAvailable: c.analysis.store != nil, Installed: e.manifest != nil, InstalledBackends: []string{}, MERTAvailable: e.worker != nil && audio.NativeInferenceAvailable(), Model: "MERT-v1-95M", License: "CC-BY-NC-4.0 (noncommercial)", Detail: e.detail, Limit: EnhancedAnalysisLimit}
+	for _, candidate := range e.installedBundles(ctx, true) {
+		s.InstalledBackends = append(s.InstalledBackends, candidate.manifest.Backend())
+	}
 	s.Loading = e.startup.loading()
 	if distribution, err := c.recommendedMERT(); err != nil {
 		s.UnsupportedReason = err.Error()
 	} else {
 		s.RecommendedManifestURL = distribution.URL
 		s.RecommendedDownloadBytes = distribution.DownloadBytes
+		if e.manifest != nil {
+			if filepath.IsAbs(distribution.URL) {
+				if recommended, readErr := audio.ReadStartupMERTBundleContext(ctx, distribution.URL); readErr == nil {
+					s.RecommendedUpgrade = e.manifest.Model != recommended.Model
+				}
+			} else if strings.HasSuffix(distribution.Name, "-gpu") {
+				s.RecommendedUpgrade = e.manifest.Backend() != "cuda"
+			}
+		}
 	}
 	if e.manifest != nil {
+		s.Model = e.manifest.Label
 		s.Revision = e.manifest.Model.Revision
 		for _, a := range e.manifest.Artifacts {
 			s.DownloadBytes += a.Size
@@ -249,24 +311,40 @@ func (c *Container) installMERTLocked(ctx context.Context, directory string, p p
 		return err
 	}
 	defer cleanup()
-	if _, err := e.bundles.InstallLocal(ctx, directory, p); err != nil {
+	manifest, err := audio.ReadMERTBundleContext(ctx, directory)
+	if err != nil {
+		return err
+	}
+	manager, err := e.managerFor(ctx, manifest.Backend())
+	if err != nil {
+		return err
+	}
+	if _, err := manager.InstallLocal(ctx, directory, p); err != nil {
 		return err
 	}
 	return c.loadMERT(ctx)
 }
 
 func (c *Container) recommendedMERT() (modelpack.Distribution, error) {
-	d, err := modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
-	if err != nil {
-		return d, err
-	}
+	return c.recommendedMERTFor(audio.MERTCUDAHostAvailable())
+}
+
+func (c *Container) recommendedMERTFor(cudaAvailable bool) (modelpack.Distribution, error) {
 	if !audio.NativeInferenceAvailable() {
-		return d, fmt.Errorf("MERT requires a build with native inference support")
+		return modelpack.Distribution{}, fmt.Errorf("MERT requires a build with native inference support")
 	}
 	if c.analysis.store == nil || c.enhanced.bundles == nil {
-		return d, fmt.Errorf("enhanced analysis storage unavailable")
+		return modelpack.Distribution{}, fmt.Errorf("enhanced analysis storage unavailable")
 	}
-	return d, nil
+	if cudaAvailable {
+		if dir, manifest, ok := preferredCUDAMERT(); ok {
+			return modelpack.Distribution{Name: "mert-cuda-local", URL: dir, DownloadBytes: manifest.DownloadBytes()}, nil
+		}
+		if distribution, err := modelpack.RecommendedMERTGPU(runtime.GOOS, runtime.GOARCH); err == nil {
+			return distribution, nil
+		}
+	}
+	return modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
 }
 
 // InstallRecommendedMERT downloads the pinned bundle for this native platform.
@@ -284,7 +362,38 @@ func (c *Container) InstallRecommendedMERT(ctx context.Context, p ports.Progress
 	if err != nil {
 		return err
 	}
-	dir, cleanup, err := c.prepareRecommendedModelPack(ctx, d, "mert-model", p)
+	return c.installMERTDistribution(ctx, p, d)
+}
+
+// InstallCPUMERT retains a CPU fallback even when CUDA is recommended.
+func (c *Container) InstallCPUMERT(ctx context.Context, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	c.enhanced.startup.stop()
+	c.enhanced.opMu.Lock()
+	defer c.enhanced.opMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.analysis.store == nil || c.enhanced.bundles == nil {
+		return fmt.Errorf("enhanced analysis storage unavailable")
+	}
+	d, err := modelpack.RecommendedMERT(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return err
+	}
+	return c.installMERTDistribution(ctx, p, d)
+}
+
+func (c *Container) installMERTDistribution(ctx context.Context, p ports.Progress, d modelpack.Distribution) error {
+	var dir string
+	var cleanup func()
+	var err error
+	if filepath.IsAbs(d.URL) {
+		dir, cleanup, err = c.prepareModelPack(ctx, d.URL, "mert-model", p)
+	} else {
+		dir, cleanup, err = c.prepareRecommendedModelPack(ctx, d, "mert-model", p)
+	}
 	if err != nil {
 		return err
 	}
@@ -310,7 +419,10 @@ func (c *Container) RemoveMERT() error {
 	if e.bundles == nil {
 		return nil
 	}
-	return e.bundles.Remove()
+	if e.alternate == nil {
+		return e.bundles.Remove()
+	}
+	return errors.Join(e.bundles.Remove(), e.alternate.Remove())
 }
 
 func (c *Container) ClearEnhancedAnalysis(ctx context.Context) error {
@@ -344,10 +456,7 @@ func (c *Container) ClearDSPAnalysisCache(ctx context.Context) error {
 }
 
 func (c *Container) enhancedServices() (*audio.Service, *audio.MERTService) {
-	var recordings ports.CachedRecordingReader
-	if r, ok := c.Enrich.(ports.CachedRecordingReader); ok {
-		recordings = r
-	}
+	recordings := c.previewRecordings()
 	p := &audio.Service{Resolver: deezer.New(deezer.Config{}), Recordings: recordings, Authorized: true}
 	if c.enhanced.enabled {
 		p.DSPStore = c.analysis.store.DSP()
@@ -395,7 +504,9 @@ func (c *Container) RefreshEnhancedAudio(ctx context.Context, intent core.MusicI
 
 func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicIntent, profile core.TasteProfile, refs []core.TrackRef, acquire bool, previous *core.EnhancedAudioSnapshot) (*core.EnhancedAudioSnapshot, error) {
 	e := &c.enhanced
-	e.opMu.Lock()
+	if err := e.lockOperation(ctx); err != nil {
+		return nil, err
+	}
 	defer e.opMu.Unlock()
 	if (!e.enabled && !e.mertEnabled) || c.analysis.store == nil || intent.Controls.RecommendationMode != core.EnhancedHybrid {
 		return nil, nil
@@ -422,10 +533,13 @@ func (c *Container) prepareEnhancedAudio(ctx context.Context, intent core.MusicI
 		}
 		cached := map[string]core.AudioRepresentation{}
 		for _, event := range taste.ContentFeedback(events, profile) {
-			if meta, ok := runtime.Catalog.Meta(event.TrackID); ok {
+			if meta, ok := ports.CatalogMeta(ctx, runtime.Catalog, event.TrackID); ok {
 				if a, found, err := m.Store.Find(ctx, catalog, event.TrackID, core.ProvisionalRecordingKey(meta.Ref), input.Model); err == nil && found {
 					cached[event.TrackID] = a
 				}
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
 			}
 		}
 		// External representations belong to the base catalog. The persisted
@@ -442,7 +556,9 @@ func (c *Container) AnalyzeEnhancedTracks(ctx context.Context, ids []string, lik
 	ctx, cancel := audio.EnhancedBudgetFor(ctx).Context(ctx)
 	defer cancel()
 	e := &c.enhanced
-	e.opMu.Lock()
+	if err := e.lockOperation(ctx); err != nil {
+		return EnhancedAnalysisReport{}, err
+	}
 	defer e.opMu.Unlock()
 	report := EnhancedAnalysisReport{}
 	if (!e.enabled && !e.mertEnabled) || c.analysis.store == nil {
@@ -471,8 +587,11 @@ func (c *Container) AnalyzeEnhancedTracks(ctx context.Context, ids []string, lik
 			continue
 		}
 		seen[id] = true
-		if meta, ok := runtime.Catalog.Meta(id); ok {
+		if meta, ok := ports.CatalogMeta(ctx, runtime.Catalog, id); ok {
 			refs = append(refs, meta.Ref)
+		}
+		if err := ctx.Err(); err != nil {
+			return report, err
 		}
 		if len(refs) >= EnhancedAnalysisLimit {
 			break

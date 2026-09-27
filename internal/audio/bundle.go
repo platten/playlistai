@@ -356,6 +356,16 @@ func ReadRuntimeBundle(dir string) (BundleManifest, error) {
 }
 
 func ReadRuntimeBundleContext(ctx context.Context, dir string) (BundleManifest, error) {
+	return readRuntimeBundleContext(ctx, dir, true)
+}
+
+// ReadStartupBundleContext validates a built-in worker bundle's manifest and
+// file layout. The child worker performs the full checksum pass before loading.
+func ReadStartupBundleContext(ctx context.Context, dir string) (BundleManifest, error) {
+	return readRuntimeBundleContext(ctx, dir, false)
+}
+
+func readRuntimeBundleContext(ctx context.Context, dir string, verify bool) (BundleManifest, error) {
 	var m BundleManifest
 	if err := ctx.Err(); err != nil {
 		return m, err
@@ -379,6 +389,12 @@ func ReadRuntimeBundleContext(ctx context.Context, dir string) (BundleManifest, 
 		return m, err
 	}
 	for _, a := range m.Artifacts {
+		if !verify {
+			if err := artifactLayoutValid(ctx, dir, a); err != nil {
+				return m, err
+			}
+			continue
+		}
 		if !artifactValidContext(ctx, dir, a) {
 			if err := ctx.Err(); err != nil {
 				return m, err
@@ -394,6 +410,17 @@ func (b *BundleManager) Active() (string, BundleManifest, error) {
 }
 
 func (b *BundleManager) ActiveContext(ctx context.Context) (string, BundleManifest, error) {
+	return b.activeContext(ctx, false)
+}
+
+// ActiveStartupContext skips the app-side hash only for a built-in v2 worker.
+// Legacy bundles can execute their own binary, so their files stay fully
+// verified by the app before launch.
+func (b *BundleManager) ActiveStartupContext(ctx context.Context) (string, BundleManifest, error) {
+	return b.activeContext(ctx, true)
+}
+
+func (b *BundleManager) activeContext(ctx context.Context, startup bool) (string, BundleManifest, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -408,7 +435,17 @@ func (b *BundleManager) ActiveContext(ctx context.Context) (string, BundleManife
 		return "", BundleManifest{}, fmt.Errorf("audio: invalid active bundle")
 	}
 	dir := filepath.Join(b.Directory, name)
-	m, err := ReadBundleContext(ctx, dir)
+	var m BundleManifest
+	if startup {
+		m, err = ReadStartupBundleContext(ctx, dir)
+		if err == nil && m.Version == 1 {
+			m, err = ReadBundleContext(ctx, dir)
+		} else if err == nil {
+			err = m.Validate()
+		}
+	} else {
+		m, err = ReadBundleContext(ctx, dir)
+	}
 	return dir, m, err
 }
 

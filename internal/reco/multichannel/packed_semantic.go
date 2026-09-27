@@ -60,7 +60,7 @@ func (o *Orchestrator) packedSupport(ctx context.Context, id string) bool {
 	}
 	var candidate core.Candidate
 	audio.ApplyScores(&candidate, assessment)
-	return candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch > math.Max(0, candidate.Scores.SemanticNegativeMatch)
+	return candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch >= EnhancedSemanticAdmissionMinimum && candidate.Scores.SemanticMatch > math.Max(0, candidate.Scores.SemanticNegativeMatch)
 }
 
 // Only soft comparisons can skip online acquisition. Pooled packed evidence

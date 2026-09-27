@@ -75,13 +75,15 @@ type prefetchObservingRetriever struct {
 	source     *lifecyclePrefetchStream
 	candidates []core.Candidate
 	t          *testing.T
+	calls      int
 }
 
 func (*prefetchObservingRetriever) SupportsIntentMetadata() bool { return true }
 func (r *prefetchObservingRetriever) Retrieve(context.Context, ports.RetrievalRequest) ([]core.Candidate, error) {
-	if !r.source.started || r.source.stopped {
+	if !r.source.started || r.calls == 0 && r.source.stopped {
 		r.t.Error("prefetch did not overlap local retrieval")
 	}
+	r.calls++
 	return r.candidates, nil
 }
 

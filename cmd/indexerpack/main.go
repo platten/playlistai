@@ -32,7 +32,15 @@ func main() {
 	validateOffline := flag.Bool("validate-offline", false, "validate complete CPU/CUDA MERT and CLAP inputs without packaging")
 	validatePackage := flag.String("validate-package", "", "validate an already packaged executable")
 	requireOffline := flag.Bool("require-offline", false, "require CPU/CUDA MERT and CLAP payloads with --validate-package")
+	extractCUDAMERT := flag.String("extract-cuda-mert", "", "extract and verify CUDA MERT from an existing offline executable")
 	flag.Parse()
+	if *extractCUDAMERT != "" {
+		if err := extractCUDAFromExecutable(*extractCUDAMERT, *out); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *validatePackage != "" {
 		if err := validatePackagedExecutable(*validatePackage, *requireOffline); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -53,6 +61,47 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func extractCUDAFromExecutable(source, destination string) error {
+	if destination == "" {
+		return errors.New("indexerpack: --extract-cuda-mert requires --out")
+	}
+	if _, err := os.Lstat(destination); err == nil {
+		return fmt.Errorf("indexerpack: destination already exists: %s", destination)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	bundle, err := indexerbundle.OpenExecutable(source)
+	if err != nil {
+		return fmt.Errorf("indexerpack: open CUDA source: %w", err)
+	}
+	defer bundle.Close()
+	if !bundle.Has("mert/cuda") {
+		return errors.New("indexerpack: CUDA source has no embedded MERT CUDA bundle")
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return err
+	}
+	stage, err := os.MkdirTemp(filepath.Dir(destination), ".mert-cuda-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(stage)
+	if err := bundle.Extract("mert/cuda", stage); err != nil {
+		return fmt.Errorf("indexerpack: extract CUDA MERT: %w", err)
+	}
+	manifest, err := audio.ReadMERTBundle(stage)
+	if err != nil {
+		return fmt.Errorf("indexerpack: invalid embedded CUDA MERT: %w", err)
+	}
+	if manifest.Backend() != "cuda" {
+		return errors.New("indexerpack: embedded MERT bundle is not CUDA")
+	}
+	if err := os.Rename(stage, destination); err != nil {
+		return fmt.Errorf("indexerpack: install extracted CUDA MERT: %w", err)
+	}
+	return nil
 }
 
 func validatePackagedExecutable(path string, requireOffline bool) error {

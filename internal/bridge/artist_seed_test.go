@@ -36,7 +36,7 @@ func TestMissingArtistOnlineRecoveryGeneratesAndReplays(t *testing.T) {
 						_, _ = fmt.Fprint(w, `{"data":[]}`)
 					}
 				case "/ws/2/recording":
-					_, _ = fmt.Fprint(w, `{"count":0,"recordings":[]}`)
+					_, _ = fmt.Fprint(w, `{"recording-count":0,"recordings":[]}`)
 				default:
 					t.Errorf("unexpected lookup: %s", r.URL)
 					http.NotFound(w, r)
@@ -71,7 +71,7 @@ func TestMissingArtistOnlineRecoveryGeneratesAndReplays(t *testing.T) {
 				t.Fatalf("artist-missing notice absent: %v", notices)
 			}
 			if !found {
-				if generated.Playlist.Outcome.State != core.OutcomeNeedsClarification || !strings.Contains(strings.Join(notices, " "), "Could not find a verified catalog seed") {
+				if generated.Playlist.Outcome.State != core.OutcomeNeedsClarification || !strings.Contains(strings.Join(notices, " "), "Could not inspect any recordings") {
 					t.Fatal("miss lost actionable clarification")
 				}
 				return

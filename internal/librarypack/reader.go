@@ -28,16 +28,18 @@ import (
 // Generation is one immutable, verified extracted pack. Its files remain open
 // while a Manager lease pins it.
 type Generation struct {
-	manifest     Manifest
-	packSHA256   string
-	dir          string
-	db           *sql.DB
-	vectors      *os.File
-	clapVectors  *os.File
-	closeOnce    sync.Once
-	closeErr     error
-	attachmentMu sync.Mutex
-	attachments  map[string]generationAttachment
+	artistIndexMu sync.Mutex
+	artistIndex   map[string][]string
+	manifest      Manifest
+	packSHA256    string
+	dir           string
+	db            *sql.DB
+	vectors       *os.File
+	clapVectors   *os.File
+	closeOnce     sync.Once
+	closeErr      error
+	attachmentMu  sync.Mutex
+	attachments   map[string]generationAttachment
 }
 
 type generationAttachment struct {
@@ -645,6 +647,46 @@ func decodeManifest(raw []byte, out *Manifest, limits Limits) error {
 		return errors.New("librarypack: trailing manifest data")
 	}
 	return out.Validate(limits)
+}
+
+// PeekManifest reads only the bounded first archive member to route an import.
+// It does not establish integrity; Manager.Stage verifies the complete pack.
+func PeekManifest(ctx context.Context, archivePath string, limits Limits) (Manifest, error) {
+	limits = limits.normalized()
+	info, err := os.Stat(archivePath)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > limits.MaxArchiveBytes {
+		return Manifest{}, errors.New("librarypack: archive is not a bounded regular file")
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer file.Close()
+	zr, err := zstd.NewReader(&contextReader{ctx: ctx, reader: file}, zstd.WithDecoderConcurrency(1), zstd.WithDecoderMaxMemory(256<<20), zstd.WithDecoderMaxWindow(128<<20))
+	if err != nil {
+		return Manifest{}, err
+	}
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	header, err := tr.Next()
+	if err != nil {
+		return Manifest{}, err
+	}
+	if header.Typeflag != tar.TypeReg || header.Name != ManifestName || header.Size <= 0 || header.Size > limits.MaxManifestBytes {
+		return Manifest{}, errors.New("librarypack: bounded manifest must be the first member")
+	}
+	raw, err := io.ReadAll(io.LimitReader(tr, limits.MaxManifestBytes+1))
+	if err != nil || int64(len(raw)) != header.Size {
+		return Manifest{}, errors.New("librarypack: incomplete manifest")
+	}
+	var manifest Manifest
+	if err := decodeManifest(raw, &manifest, limits); err != nil {
+		return Manifest{}, err
+	}
+	return manifest, nil
 }
 
 func openGeneration(ctx context.Context, dir, packSHA256 string, limits Limits) (*Generation, error) {

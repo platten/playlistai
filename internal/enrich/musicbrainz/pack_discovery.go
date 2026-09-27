@@ -186,10 +186,13 @@ func recordingNameKey(artist, title string) string {
 
 // Maintain separate authoritative and provisional lookup keys. Source-prefixed
 // pack IDs must not prevent provider evidence attaching to an existing track.
-func indexKnownArtistRecordings(cat ports.Catalog, tracks []core.TrackRef) map[string]string {
+func indexKnownArtistRecordings(ctx context.Context, cat ports.Catalog, tracks []core.TrackRef) map[string]string {
 	index := map[string]string{}
 	for _, ref := range tracks {
-		meta, ok := cat.Meta(ref.ID)
+		if ctx.Err() != nil {
+			return nil
+		}
+		meta, ok := ports.CatalogMeta(ctx, cat, ref.ID)
 		if !ok {
 			continue
 		}
@@ -199,7 +202,7 @@ func indexKnownArtistRecordings(cat ports.Catalog, tracks []core.TrackRef) map[s
 		} else if prior != ref.ID {
 			index[name] = ""
 		}
-		for _, key := range []string{"mbid:" + strings.ToLower(meta.MusicBrainzRecording), "isrc:" + strings.ToUpper(meta.ISRC)} {
+		for _, key := range []string{"mbid:" + strings.ToLower(meta.MusicBrainzRecording), "isrc:" + librarypack.CanonicalISRC(meta.ISRC)} {
 			if strings.HasSuffix(key, ":") {
 				continue
 			}
@@ -211,10 +214,12 @@ func indexKnownArtistRecordings(cat ports.Catalog, tracks []core.TrackRef) map[s
 	return index
 }
 
-func matchKnownRecording(cat ports.Catalog, index map[string]string, r mbRecording) string {
+func matchKnownRecording(ctx context.Context, cat ports.Catalog, index map[string]string, r mbRecording) string {
 	keys := []string{"mbid:" + strings.ToLower(r.ID)}
 	for _, isrc := range r.ISRCs {
-		keys = append(keys, "isrc:"+strings.ToUpper(isrc))
+		if canonical := librarypack.CanonicalISRC(isrc); canonical != "" {
+			keys = append(keys, "isrc:"+canonical)
+		}
 	}
 	for _, credit := range r.ArtistCredit {
 		name := credit.Name
@@ -224,11 +229,14 @@ func matchKnownRecording(cat ports.Catalog, index map[string]string, r mbRecordi
 		keys = append(keys, recordingNameKey(name, r.Title))
 	}
 	for _, key := range keys {
+		if ctx.Err() != nil {
+			return ""
+		}
 		id := index[key]
 		if id == "" {
 			continue
 		}
-		meta, ok := cat.Meta(id)
+		meta, ok := ports.CatalogMeta(ctx, cat, id)
 		if !ok {
 			continue
 		}

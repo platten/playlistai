@@ -16,7 +16,7 @@ func cachedSession(t *testing.T, intent core.MusicIntent) (*Session, *Service, c
 	t.Helper()
 	service, _, _, _ := testService(t)
 	track := core.TrackRef{ID: "one", Artist: "Fixture", Title: "Recording"}
-	record := core.AudioAnalysis{TrackID: track.ID, CatalogVersion: "fixture", TrackKey: core.ProvisionalRecordingKey(track), Model: service.Analyzer.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: track.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
+	record := core.AudioAnalysis{TrackID: track.ID, CatalogVersion: "fixture", TrackKey: core.ProvisionalRecordingKey(track), Model: service.Analyzer.Identity(), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: track.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
 	record.ID = Fingerprint(record)
 	if err := service.Store.Put(context.Background(), record); err != nil {
 		t.Fatal(err)

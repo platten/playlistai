@@ -74,7 +74,7 @@ func TestRetrievalJobsSerialFallbackAndOrderedErrors(t *testing.T) {
 		if !errors.Is(err, firstErr) {
 			t.Fatalf("error=%v", err)
 		}
-		if !concurrent && !reflect.DeepEqual(order, []int{0, 1}) {
+		if !concurrent && !reflect.DeepEqual(order, []int{0, 1, 2}) {
 			t.Fatalf("serial calls=%v", order)
 		}
 	}

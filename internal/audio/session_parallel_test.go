@@ -44,7 +44,7 @@ func (*parallelTestAnalyzer) EmbedText(context.Context, string) ([]float32, erro
 type parallelTestResolver struct{ address string }
 
 func (r parallelTestResolver) ResolveAudioPreview(_ context.Context, track core.TrackRef, _ core.EnrichedTrack) (core.ResolvedAudioPreview, error) {
-	return core.ResolvedAudioPreview{URL: r.address, Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: track.ID, Status: core.ResolutionResolved}}, nil
+	return core.ResolvedAudioPreview{URL: r.address, Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: track.ID, Status: core.ResolutionResolved}}, nil
 }
 
 func TestSessionCheckManyUsesAnalyzerParallelismAndPreservesOrder(t *testing.T) {

@@ -94,19 +94,19 @@ func (s *Service) AnalyzePreview(ctx context.Context, ref core.TrackRef, catalog
 // beforeOptional finishes request-specific CLAP comparisons while the original
 // decoded PCM remains available for the subsequent optional extractors. It runs
 // synchronously after retaining the reusable audio row; buffers never escape.
-func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog string, beforeOptional func(core.AudioAnalysis) error) (core.AudioAnalysis, int64, error) {
+func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog string, beforeOptional func(core.AudioAnalysis) (bool, error)) (core.AudioAnalysis, int64, error) {
 	if s == nil || !s.Authorized || !s.ParityValidated || s.Resolver == nil || s.Analyzer == nil || s.Store == nil || s.Analyzer.Identity().Preprocessing != PreprocessingVersion {
 		return core.AudioAnalysis{}, 0, fmt.Errorf("audio: verified model and provider authorization required")
 	}
-	var identity core.EnrichedTrack
-	if s.Recordings != nil {
-		identity, _ = s.Recordings.CachedRecording(ref)
+	identity, _ := ports.CachedRecordingContext(ctx, s.Recordings, ref)
+	if err := ctx.Err(); err != nil {
+		return core.AudioAnalysis{}, 0, err
 	}
 	preview, err := s.Resolver.ResolveAudioPreview(ctx, ref, identity)
 	if err != nil {
 		return core.AudioAnalysis{}, 0, err
 	}
-	if preview.Identity.Status != core.ResolutionResolved || preview.Identity.Provider != "deezer" || preview.URL == "" {
+	if !preview.Identity.CurrentPolicy() || preview.URL == "" {
 		return core.AudioAnalysis{Identity: preview.Identity}, 0, fmt.Errorf("audio: preview identity is unresolved, ambiguous, or unavailable")
 	}
 	encoded, err := s.fetch(ctx, preview.URL)
@@ -157,9 +157,12 @@ func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog
 		return core.AudioAnalysis{}, int64(len(encoded)), err
 	}
 	if beforeOptional != nil {
-		if err := beforeOptional(record); err != nil {
+		viable, err := beforeOptional(record)
+		if err != nil {
 			return record, int64(len(encoded)), err
 		}
+		// A rejected preview cannot use an optional DSP/MERT admission.
+		withEnhanced = withEnhanced && viable
 	}
 	// Retain completed essential evidence before optional DSP/MERT. An optional
 	// failure or deadline cannot discard this row, including when the enclosing

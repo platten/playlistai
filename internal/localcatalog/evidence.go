@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
@@ -57,7 +58,7 @@ func (c *CompositeCatalog) LibraryVector(ctx context.Context, id string) (core.L
 	if c.mode == ModeLibraryOnly {
 		return core.LibraryVector{}, false, nil
 	}
-	if meta, ok := c.baseMetadata(id); ok {
+	if meta, ok := c.baseMetadataContext(ctx, id); ok {
 		if match, found := c.matchBase(ctx, meta); found {
 			if vector, exists, err := c.local.LibraryVector(ctx, match.ID); exists || err != nil {
 				return vector, exists, err
@@ -79,7 +80,7 @@ func (c *CompositeCatalog) LibraryDSPPreference(ctx context.Context, id string, 
 	if c.mode == ModeLibraryOnly {
 		return 0, false
 	}
-	if meta, ok := c.baseMetadata(id); ok {
+	if meta, ok := c.baseMetadataContext(ctx, id); ok {
 		if match, found := c.matchBase(ctx, meta); found {
 			if score, exists := c.local.DSPPreferenceScore(ctx, match.ID, intent); exists {
 				return score, true
@@ -113,4 +114,63 @@ func (c *CompositeCatalog) matchBase(ctx context.Context, meta core.TrackMeta) (
 		}
 	}
 	return Track{}, false
+}
+
+// LibraryObservation exposes only recorded coverage. Legacy pooled MERT packs
+// do not record observed duration, so their coverage deliberately stays unknown.
+func (c *Catalog) LibraryObservation(ctx context.Context, id, family string) (core.AudioObservation, error) {
+	localID, err := c.localID(id)
+	if err != nil {
+		return core.AudioObservation{}, nil
+	}
+	generation, done, err := c.withGeneration()
+	if err != nil {
+		return core.AudioObservation{}, err
+	}
+	defer done()
+	track, found, err := generation.Lookup(ctx, localID)
+	if err != nil || !found {
+		return core.AudioObservation{}, err
+	}
+	observation := core.AudioObservation{}
+	raw, _ := json.Marshal(struct {
+		Source        core.LibraryEvidenceSource
+		Track, Family string
+		DSP           json.RawMessage
+	}{c.EvidenceSource(), id, family, track.DSP})
+	digest := sha256.Sum256(raw)
+	observation.Fingerprint = hex.EncodeToString(digest[:])
+	if family == "dsp" {
+		var record portableDSPRecord
+		if json.Unmarshal(track.DSP, &record) == nil {
+			for _, window := range record.Windows {
+				if window.ObservedSeconds > 0 && !math.IsNaN(window.ObservedSeconds) && !math.IsInf(window.ObservedSeconds, 0) {
+					observation.Coverage.CoveredSeconds += window.ObservedSeconds
+				}
+			}
+			observation.Coverage.Available = observation.Coverage.CoveredSeconds > 0
+			observation.Coverage.Source = c.manifest.PackID
+		}
+	}
+	return observation, ctx.Err()
+}
+
+func (c *CompositeCatalog) LibraryObservation(ctx context.Context, id, family string) (core.AudioObservation, error) {
+	if c.local.owns(id) {
+		return c.local.LibraryObservation(ctx, id, family)
+	}
+	if c.mode == ModeLibraryOnly {
+		return core.AudioObservation{}, nil
+	}
+	if meta, ok := c.baseMetadataContext(ctx, id); ok {
+		if match, found := c.matchBase(ctx, meta); found {
+			return c.local.LibraryObservation(ctx, match.ID, family)
+		}
+	}
+	if source, ok := c.base.(interface {
+		LibraryObservation(context.Context, string, string) (core.AudioObservation, error)
+	}); ok {
+		return source.LibraryObservation(ctx, id, family)
+	}
+	return core.AudioObservation{}, ctx.Err()
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/genrevocab"
 	"github.com/platten/playlistai/internal/intent/lexicon"
 	"github.com/platten/playlistai/internal/intent/recognition"
@@ -18,15 +19,25 @@ import (
 // PrepareIntentInput pins and applies offline recognition resources before a
 // parse-cache key is constructed. It is safe to call more than once.
 func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput) ports.IntentInput {
+	if in.RecommendationMode == "" {
+		in.RecommendationMode = c.RecommendationMode()
+	}
 	if in.SourceFacts != nil {
 		if in.RecognitionIdentity == "" {
 			status := in.SourceFacts.Recognition
-			in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s", status.MatcherVersion, musicconcepts.Version, status.GenreVocabularyHash, status.ReferenceSnapshot)
+			in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s|%s", lexicon.Version, status.MatcherVersion, musicconcepts.Version, status.GenreVocabularyHash, status.ReferenceSnapshot)
 		}
 		return lexicon.PrepareParsingContext(in)
 	}
 	source := lexicon.Extract(in.Prompt)
 	metadataDir := filepath.Join(c.cfg.DataDir, "musicbrainz-metadata")
+	var popularity mbindex.ArtistPopularityReader
+	if in.RecommendationMode == core.Automatic {
+		graph, graphErr := c.PreparedMusicGraph(ctx)
+		if graphErr == nil && graph != nil {
+			in.PreparedMusicSnapshot, popularity = graph.SnapshotIdentity(), graph
+		}
+	}
 
 	var vocabulary *genrevocab.Vocabulary
 	genreHash := "embedded"
@@ -58,10 +69,13 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 	var lookup recognition.IdentityLookup
 	if store != nil && err == nil {
 		lookup = store
+		if in.RecommendationMode == core.Automatic {
+			lookup = store.WithArtistPopularity(popularity)
+		}
 	}
 	libraryOnly := false
 	if state, stateErr := c.localLibrary(); stateErr == nil {
-		if pinned, pinErr := state.pinRequestSnapshot(); pinErr == nil {
+		if pinned, pinErr := state.pinRequestSnapshot(c.localAudioBackend()); pinErr == nil {
 			libraryOnly = pinned.mode == LocalLibraryOnly
 			if local, openErr := localcatalog.Open(pinned.lease, localcatalog.Options{SourceID: localLibrarySourceID, RootMappings: pinned.rootMappings, RequirePrebuilt: true}); openErr == nil {
 				defer local.Close()
@@ -84,6 +98,7 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 		snapshot = identity.IndexVersion + ":" + identity.Snapshot
 	}
 	source = recognition.Apply(ctx, in.Prompt, source, lookup, vocabulary)
+	source = lexicon.WithGenreCoverage(source)
 	if store == nil || err != nil {
 		if err != nil && !os.IsNotExist(err) {
 			source.Recognition.Incomplete = true
@@ -100,6 +115,9 @@ func (c *Container) PrepareIntentInput(ctx context.Context, in ports.IntentInput
 		source.Recognition.GenreVocabularyHash = genreHash
 	}
 	in.SourceFacts = &source
-	in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s", recognition.Version, musicconcepts.Version, genreHash, snapshot)
+	in.RecognitionIdentity = fmt.Sprintf("%s|%s|%s|%s|%s", lexicon.Version, recognition.Version, musicconcepts.Version, genreHash, snapshot)
+	if in.RecommendationMode == core.Automatic {
+		in.RecognitionIdentity += "|" + core.ArtistDecisionPolicy + "|musicgraph=" + in.PreparedMusicSnapshot
+	}
 	return lexicon.PrepareParsingContext(in)
 }

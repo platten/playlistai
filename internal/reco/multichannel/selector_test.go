@@ -66,7 +66,7 @@ func TestMMRRelevanceFloorReturnsStructuredPartial(t *testing.T) {
 	}
 }
 
-func TestEnhancedFloorUsesRelativeScaleForUncalibratedPositivePreviewCosines(t *testing.T) {
+func TestEnhancedFloorRejectsUncalibratedCosinesBelowFixedThreshold(t *testing.T) {
 	cat := diversityCatalog()
 	intent := testIntent(3)
 	intent.Controls.RecommendationMode = core.EnhancedHybrid
@@ -84,8 +84,8 @@ func TestEnhancedFloorUsesRelativeScaleForUncalibratedPositivePreviewCosines(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := candidateIDs(result.Candidates); got != "a1,b" {
-		t.Fatalf("relative preview evidence selected %s, want positive direct comparisons only", got)
+	if got := candidateIDs(result.Candidates); got != "" {
+		t.Fatalf("weak pool maximum created suitability: selected %s", got)
 	}
 }
 

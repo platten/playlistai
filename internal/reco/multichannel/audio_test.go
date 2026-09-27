@@ -64,7 +64,7 @@ func cachedAudioService(t *testing.T, cat *fakes.Catalog, ids ...string) (*audio
 		if id == "unknown" {
 			vector = []float32{0.70710677, 0.70710677}
 		}
-		record := core.AudioAnalysis{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: vector}}}
+		record := core.AudioAnalysis{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: vector}}}
 		record.ID = audio.Fingerprint(record)
 		if err := store.Put(context.Background(), record); err != nil {
 			t.Fatal(err)

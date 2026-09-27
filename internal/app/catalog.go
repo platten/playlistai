@@ -20,12 +20,13 @@ import (
 // ready. Callers receive a value snapshot; the service references are immutable
 // for the lifetime of this container.
 type RuntimeSnapshot struct {
-	Catalog      ports.Catalog
-	Resolver     ports.ReferenceResolver
-	Sim          ports.SimilarityEngine
-	Reco         ports.RecommendationEngine
-	BaselineReco ports.RecommendationEngine
-	Features     ports.FeatureStore
+	Catalog       ports.Catalog
+	Resolver      ports.ReferenceResolver
+	Sim           ports.SimilarityEngine
+	Reco          ports.RecommendationEngine
+	AutomaticReco ports.RecommendationEngine
+	BaselineReco  ports.RecommendationEngine
+	Features      ports.FeatureStore
 }
 
 func (c *Container) Runtime() RuntimeSnapshot {
@@ -131,12 +132,23 @@ func (c *Container) loadCatalog() error {
 		if source, ok := c.Knowledge.(ports.MusicCandidateSource); ok {
 			runtime.Reco.(*multichannel.Orchestrator).WithCandidateSource(source)
 		}
+		if verifier, ok := c.Enrich.(ports.RecordingVerifier); ok {
+			runtime.Reco.(*multichannel.Orchestrator).WithRecordingVerifier(verifier)
+		}
 		runtime.Reco.(*multichannel.Orchestrator).
 			WithEnhancedAudioProvider(c.PrepareEnhancedAudio).
 			WithEnhancedAudioRefreshProvider(c.RefreshEnhancedAudio).
 			WithEnhancedPreviewProvider(c.EnhancedPreviewService).
 			WithMERTSimilaritySearchProvider(c.SearchMERTSimilarity)
 		runtime.Reco.(*multichannel.Orchestrator).WithIntentOverlayProvider(c.pinDiscoveryRecommendationOverlay)
+		runtime.AutomaticReco = multichannel.NewAutomatic(recommendationCatalog, recommendationResolver,
+			multichannel.NewSemanticRetriever(recommendationCatalog, runtime.Sim, semanticSearch, mc), mc).
+			WithIntentOverlayProvider(c.pinAutomaticRecommendationOverlay).
+			WithIntentPreparer(c.prepareAutomaticIntent).
+			WithFeaturePreparer(c.prepareAutomaticFeatures).
+			WithAudioProvider(c.AudioService).
+			WithEnricher(c.Enrich).
+			WithFeatures(runtime.Features)
 	}
 	c.mu.Lock()
 	if c.closed {

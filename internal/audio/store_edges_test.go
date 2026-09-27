@@ -17,7 +17,7 @@ func validStoredAnalysis() core.AudioAnalysis {
 	a := core.AudioAnalysis{
 		TrackID: "track", TrackKey: "artist/title", CatalogVersion: "catalog",
 		Model:       core.AudioModelIdentity{Model: "fixture", Revision: "1", Preprocessing: PreprocessingVersion, Runtime: "fixture", Dimension: 2},
-		Identity:    core.PreviewIdentity{Provider: "deezer", ProviderID: "track", Status: core.ResolutionResolved},
+		Identity:    core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: "track", Status: core.ResolutionResolved},
 		AudioSHA256: strings.Repeat("0", 64),
 		Segments:    []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}},
 	}

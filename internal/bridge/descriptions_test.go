@@ -27,7 +27,7 @@ func TestDescriptionChoicePreservesMusicAndRemovesArtistOnReplay(t *testing.T) {
 				Translation:     &core.IntentTranslation{Version: "test", Atoms: []core.IntentAtom{{Kind: "artist", Value: "dreamy", Scope: "playlist", Polarity: string(influence), Evidence: evidence}}},
 			}
 			before, _ := json.Marshal(intent)
-			choices, err := validateResolutionSelections(spellingResolver{}, intent, []ResolutionSelection{{Kind: core.ReferenceArtist, Query: "dreamy", KeepAsDescription: true}})
+			choices, err := validateResolutionSelections(context.Background(), spellingResolver{}, intent, []ResolutionSelection{{Kind: core.ReferenceArtist, Query: "dreamy", KeepAsDescription: true}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,16 +82,16 @@ func TestDescriptionChoiceMustReferToOfferedExplicitArtist(t *testing.T) {
 		{Kind: core.ReferenceArtist, Query: "velvety", IdentityID: "id", KeepAsDescription: true},
 		{Kind: core.ReferenceArtist, Query: "velvety", RejectSpelling: true, KeepAsDescription: true},
 	} {
-		if _, err := validateResolutionSelections(spellingResolver{}, intent, []ResolutionSelection{invalid}); err == nil {
+		if _, err := validateResolutionSelections(context.Background(), spellingResolver{}, intent, []ResolutionSelection{invalid}); err == nil {
 			t.Fatalf("accepted invalid choice: %+v", invalid)
 		}
 	}
 	choice := ResolutionSelection{Kind: core.ReferenceArtist, Query: "velvety", KeepAsDescription: true}
-	if _, err := validateResolutionSelections(spellingResolver{}, core.MusicIntent{InferredAnchors: []core.InferredAnchor{{Reference: ref}}}, []ResolutionSelection{choice}); err == nil {
+	if _, err := validateResolutionSelections(context.Background(), spellingResolver{}, core.MusicIntent{InferredAnchors: []core.InferredAnchor{{Reference: ref}}}, []ResolutionSelection{choice}); err == nil {
 		t.Fatal("accepted inferred-only choice")
 	}
 	intent.References[0].Grounding = &core.IdentityGrounding{Candidates: []core.IdentityCandidate{{ID: "a"}, {ID: "b"}}}
-	choices, err := validateResolutionSelections(spellingResolver{}, intent, []ResolutionSelection{choice})
+	choices, err := validateResolutionSelections(context.Background(), spellingResolver{}, intent, []ResolutionSelection{choice})
 	if err != nil {
 		t.Fatal(err)
 	}

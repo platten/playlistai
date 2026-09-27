@@ -2,12 +2,15 @@ package localcatalog
 
 import (
 	"context"
+	"crypto/sha256"
 	"sort"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/ports"
 )
+
+const profileSelectionPolicyVersion = "discovery-profile-ties/v2"
 
 // DiscoveryProfiles uses attributed recording tags to select artists, including
 // comparable artists. Profiles are bounded samples, never recording evidence.
@@ -108,6 +111,30 @@ func (c *Catalog) DiscoveryProfiles(ctx context.Context, intent core.MusicIntent
 	for _, name := range seedNames {
 		seeds[normalizeUnicode(name)] = true
 	}
+	// Genre-only requests have no preferred artist profile: sorting those ties
+	// by name repeatedly spends the entire twelve-profile page on A/B artists.
+	// Keep request relevance and explicit seeds ahead of this reproducible tie.
+	ties := map[string]string{}
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		seed, err := intent.Seed.Canonical()
+		if err != nil {
+			return nil, err
+		}
+		salt := profileSelectionPolicyVersion + "\x00" + string(seed) + "\x00" + normalizeUnicode(intent.OriginalDescription)
+		for _, query := range queries {
+			if query.Metadata != nil {
+				salt += "\x00" + normalizeUnicode(query.Metadata.Text)
+			}
+		}
+		for _, profile := range out {
+			identity := profile.ArtistID
+			if identity == "" {
+				identity = normalizeUnicode(profile.Artist)
+			}
+			sum := sha256.Sum256([]byte(salt + "\x00" + identity))
+			ties[profile.Artist] = string(sum[:])
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		// Artist coverage precedes album detail so a seed's many albums cannot
 		// crowd all comparable artists out of the bounded discovery budget.
@@ -134,6 +161,9 @@ func (c *Catalog) DiscoveryProfiles(ctx context.Context, intent core.MusicIntent
 		}
 		if score(out[i]) != score(out[j]) {
 			return score(out[i]) > score(out[j])
+		}
+		if ties[out[i].Artist] != ties[out[j].Artist] {
+			return ties[out[i].Artist] < ties[out[j].Artist]
 		}
 		if out[i].Artist != out[j].Artist {
 			return out[i].Artist < out[j].Artist

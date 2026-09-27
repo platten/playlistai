@@ -61,7 +61,7 @@ func TestVocalScreeningRequiresEverySegmentAndReusesFeatures(t *testing.T) {
 				t.Fatal("uncalibrated model enabled strict musical-fit decisions")
 			}
 			track := core.TrackRef{ID: "checked", Artist: "Fixture", Title: "Recording"}
-			record := core.AudioAnalysis{ID: tc.name, CatalogVersion: "catalog", TrackID: track.ID, TrackKey: core.ProvisionalRecordingKey(track), Model: encoder.Identity(), AudioSHA256: strings.Repeat("0", 64), Identity: core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: track.ID}}
+			record := core.AudioAnalysis{ID: tc.name, CatalogVersion: "catalog", TrackID: track.ID, TrackKey: core.ProvisionalRecordingKey(track), Model: encoder.Identity(), AudioSHA256: strings.Repeat("0", 64), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Status: core.ResolutionResolved, Provider: "deezer", ProviderID: track.ID}}
 			for i, v := range tc.segments {
 				record.Segments = append(record.Segments, core.AudioSegment{StartSeconds: float64(i * 10), EndSeconds: float64((i + 1) * 10), Embedding: v})
 			}

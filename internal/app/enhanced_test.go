@@ -196,7 +196,7 @@ func TestEnhancedRefreshFreezesTasteWhileAddingCompletedEvidence(t *testing.T) {
 					t.Helper()
 					meta, _ := cat.Meta(id)
 					row := core.AudioRepresentation{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref),
-						Identity: core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: id}, Model: model, AudioSHA256: strings.Repeat("b", 64),
+						Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Status: core.ResolutionResolved, Provider: "deezer", ProviderID: id}, Model: model, AudioSHA256: strings.Repeat("b", 64),
 						Pooled: vector, Segments: []core.AudioRepresentationSegment{{StartSeconds: 0, EndSeconds: 5, Vector: vector}},
 						Coverage: core.PreviewCoverage{Available: true, Source: "deezer", EndSeconds: 5, CoveredSeconds: 5}, AnalyzedAt: "2026-09-12T12:00:00Z"}
 					row.ID = audio.Fingerprint(row)

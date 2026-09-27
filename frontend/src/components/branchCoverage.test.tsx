@@ -10,10 +10,10 @@ import { MusicMetadataCard } from "./MusicMetadataCard";
 import { MiniPlayerBar, PreviewPlayerProvider, usePreviewPlayer } from "./PreviewPlayer";
 
 const mocks = vi.hoisted(() => ({
-  api: Object.fromEntries(["GetPreviewURL", "GetRecommendationMode", "SetRecommendationMode", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "ClearMusicMetadataCache"].map((name) => [name, vi.fn()])),
+  api: Object.fromEntries(["GetPreviewURL", "GetRecommendationMode", "SetRecommendationMode", "GetPreparedMusicStatus", "UpdatePreparedMusicData", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "ClearMusicMetadataCache"].map((name) => [name, vi.fn()])),
   progress: null as null | { done: number; total: number; note: string },
 }));
-vi.mock("../lib/api", () => ({ API: mocks.api, RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" } }));
+vi.mock("../lib/api", () => ({ API: mocks.api, RecommendationMode: { Automatic: "automatic", AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" } }));
 vi.mock("./useProgress", () => ({ useProgress: () => mocks.progress }));
 function completed(value: unknown) { return Object.assign(Promise.resolve(value), { cancel: vi.fn() }); }
 function deferred() {
@@ -103,14 +103,28 @@ it("does not change recommendation selection before successful persistence", asy
   expect((screen.getByRole("radio", { name: /Deej-AI only/ }) as HTMLInputElement).checked).toBe(true);
 });
 
-const availableStatus = { installed: false, available: false, recommendedAvailable: true, recommendedInstalled: false, recommendedBytes: 722852693, storage: { bytes: 0, records: 0 }, detail: "Model optional" };
+it("shows Automatic as the selected default and keeps other modes selectable", async () => {
+  mocks.api.GetRecommendationMode.mockImplementation(() => completed("automatic"));
+  mocks.api.GetPreparedMusicStatus.mockImplementation(() => completed({ configured: false, data: { installed: false, artists: 0, recordings: 0 } }));
+  render(<RecommendationSettings />);
+  const automatic = screen.getByRole("radio", { name: /Automatic/ }) as HTMLInputElement;
+  await waitFor(() => expect(automatic.checked).toBe(true));
+  expect(screen.getByRole("radio", { name: /Enhanced hybrid/ })).toBeTruthy();
+  expect(screen.getByRole("radio", { name: /Deej-AI only/ })).toBeTruthy();
+  expect(await screen.findByText(/Popularity remains unknown/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("radio", { name: /Enhanced hybrid/ }));
+  await waitFor(() => expect(mocks.api.SetRecommendationMode).toHaveBeenCalledWith("enhanced_hybrid"));
+  expect((screen.getByRole("radio", { name: /Enhanced hybrid/ }) as HTMLInputElement).checked).toBe(true);
+});
+
+const availableStatus = { installed: false, available: false, recommendedAvailable: true, recommendedInstalled: false, recommendedManifest: "https://models.example/clap/manifest.json", recommendedBytes: 722852693, storage: { bytes: 0, records: 0 }, detail: "Model optional" };
 it("shows unavailable analysis guidance without offering a download or cache clear", async () => {
   mocks.api.GetAnalysisStatus.mockImplementation(() => completed({ ...availableStatus, recommendedAvailable: false, recommendedDetail: "Use a native-analysis-enabled build" }));
   render(<MusicAnalysisCard />);
   expect((screen.getByRole("button", { name: "Clear analysis" }) as HTMLButtonElement).disabled).toBe(true);
   expect((await screen.findByRole("note")).textContent).toContain("native-analysis-enabled");
   expect(mocks.api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Download and validate CLAP" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Install and validate CLAP" })).toBeNull();
 });
 
 it("renders optional artifact defaults and reports determinate download progress", async () => {
@@ -123,7 +137,7 @@ it("renders optional artifact defaults and reports determinate download progress
   await screen.findByText(/Recommended update/);
   expect(screen.getByText(/722.9 MB compressed download/)).toBeTruthy();
   expect(screen.queryByRole("checkbox")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Download and validate CLAP" }));
+  fireEvent.click(screen.getByRole("button", { name: "Install and validate CLAP" }));
   expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50");
   expect(screen.getByText("1.0 MB / 2.0 MB")).toBeTruthy();
   await act(async () => install.resolve(null));

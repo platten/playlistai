@@ -49,7 +49,10 @@ func (e *Engine) Build(ctx context.Context, intent core.MusicIntent) (core.Playl
 	intent = intent.Normalized()
 	if e.resolver != nil {
 		var issues []resolution.Issue
-		intent, issues = resolution.Apply(e.resolver, intent)
+		intent, issues = resolution.ApplyContext(ctx, e.resolver, intent)
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
 		if err := resolution.BlockingError(issues); err != nil {
 			return core.Playlist{}, err
 		}

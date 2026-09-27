@@ -29,6 +29,8 @@ type ControlOverrides struct {
 // BuildPlaylistRequest carries the complete resolved interpretation plus
 // explicit UI overrides. Legacy fields remain for old history records.
 type BuildPlaylistRequest struct {
+	ArtistSelections []ResolutionSelection    `json:"artistSelections,omitempty"`
+	Search           *core.SearchSnapshot     `json:"search,omitempty"`
 	EnhancedAudio    *core.EnhancedAudioInput `json:"enhancedAudio,omitempty"`
 	GenerationID     string                   `json:"generationId"`
 	Version          int                      `json:"version"`
@@ -64,8 +66,10 @@ type PlaylistTrack struct {
 }
 
 type PlaylistResult struct {
-	Duration      *core.PlaylistDurationAssessment `json:"duration,omitempty"`
-	EnhancedAudio *core.EnhancedAudioInput         `json:"enhancedAudio,omitempty"`
+	FitAssessments []core.AutomaticTrackFit         `json:"fitAssessments,omitempty"`
+	Search         *core.SearchSnapshot             `json:"search,omitempty"`
+	Duration       *core.PlaylistDurationAssessment `json:"duration,omitempty"`
+	EnhancedAudio  *core.EnhancedAudioInput         `json:"enhancedAudio,omitempty"`
 	// PresentationID identifies this delivery, not the deterministic generation.
 	// Exposure is recorded only after the frontend acknowledges displaying it.
 	PresentationID  string                      `json:"presentationId"`
@@ -90,6 +94,12 @@ type PlaylistNotice struct {
 }
 
 func (a *API) BuildPlaylist(ctx context.Context, req BuildPlaylistRequest) (PlaylistResult, error) {
+	mode := req.resolvedIntent().Controls.RecommendationMode
+	if mode == "" {
+		mode = a.app.RecommendationMode()
+	}
+	ctx, cancel := modeSubmissionBudget(ctx, mode, 0)
+	defer cancel()
 	ctx, release := a.app.OperationContext(ctx)
 	defer release()
 	ctx = a.diagnosticContext(ctx)
@@ -126,22 +136,63 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if intent.Controls.RecommendationMode == "" {
 		intent.Controls.RecommendationMode = a.app.RecommendationMode()
 	}
+	engine := a.runtime().Reco
+	if intent.Controls.RecommendationMode == core.Automatic {
+		engine = a.runtime().AutomaticReco
+		if engine == nil {
+			return PlaylistResult{}, errors.New("automatic recommendation engine not ready — load the catalog first")
+		}
+	}
 	if err := intent.Validate(); err != nil {
 		return PlaylistResult{}, err
 	}
 	intent = intent.Normalized()
+	if len(req.ArtistSelections) > 0 {
+		choices, err := validateResolutionSelections(ctx, a.runtime().Resolver, intent, req.ArtistSelections)
+		if err != nil {
+			return PlaylistResult{}, err
+		}
+		for _, choice := range choices {
+			if choice.Kind != core.ReferenceArtist || choice.IdentityID == "" {
+				return PlaylistResult{}, errors.New("an artist identity choice is required")
+			}
+		}
+		intent.References = applySelections(intent.References, choices)
+		intent.RequiredTracks = applySelections(intent.RequiredTracks, choices)
+		intent.Journey.Waypoints = applySelections(intent.Journey.Waypoints, choices)
+		intent.InferredAnchors = applyAnchorSelections(intent.InferredAnchors, choices)
+		for _, endpoint := range []**core.IntentReference{&intent.Start, &intent.Destination} {
+			if *endpoint != nil {
+				selected := applySelections([]core.IntentReference{**endpoint}, choices)
+				*endpoint = &selected[0]
+			}
+		}
+		intent = intent.Normalized()
+	}
 	logging.Diagnostic(ctx, "recommendation.request", intent)
 	if len(req.RecentSelections) > 0 {
 		logging.Diagnostic(ctx, "recommendation.recent_selections", req.RecentSelections)
 	}
 
-	profileStarted := time.Now()
-	profile, err := a.profileForBuild(ctx, req, intent)
+	// Historical context is part of the saved request. Refreshing its credits
+	// before replay would silently substitute today's catalog for that context.
+	recentSelections := resolveRecentSelections(nil, req.RecentSelections)
+	replay, err := a.frozenReplay(req, intent, recentSelections)
 	if err != nil {
 		return PlaylistResult{}, err
 	}
+	profileStarted := time.Now()
+	var profile core.TasteProfile
+	if replay != nil {
+		profile = replay.Search.Profile
+	} else {
+		recentSelections = resolveRecentSelections(a.runtime().Catalog, req.RecentSelections)
+		profile, err = a.profileForBuild(ctx, req, intent)
+		if err != nil {
+			return PlaylistResult{}, err
+		}
+	}
 	profileTiming := StageTiming{Stage: "profile", Milliseconds: time.Since(profileStarted).Milliseconds()}
-	recentSelections := resolveRecentSelections(a.runtime().Catalog, req.RecentSelections)
 	started := time.Now()
 	var playlist core.Playlist
 	progress := generationProgress(ctx)
@@ -149,9 +200,14 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 	if g := generationFromContext(ctx); g != nil {
 		stop = g.stop
 	}
-	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+	if req.Search != nil && replay == nil {
+		req.EnhancedAudio = nil
+	}
+	if replay != nil {
+		playlist = *replay
+	} else if intent.Controls.RecommendationMode == core.DeejAIOnly {
 		playlist, err = deejai.BuildOnly(ctx, a.runtime().BaselineReco, intent)
-	} else if contextual, ok := a.runtime().Reco.(ports.ContextualRecommendationEngine); ok {
+	} else if contextual, ok := engine.(ports.ContextualRecommendationEngine); ok {
 		var enhanced *core.EnhancedAudioSnapshot
 		if req.EnhancedAudio != nil && intent.Controls.RecommendationMode == core.EnhancedHybrid {
 			if req.EnhancedAudio.CatalogVersion != "" && a.runtime().Resolver != nil && req.EnhancedAudio.CatalogVersion != a.runtime().Resolver.CatalogVersion() {
@@ -167,10 +223,10 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 			StopChecking:  stop, OnChecked: progress.Checked, OnSuggested: progress.Suggested, Progress: progress,
 			Intent: intent, Profile: profile, RecentSelections: recentSelections,
 		})
-	} else if personalized, ok := a.runtime().Reco.(ports.PersonalizedRecommendationEngine); ok {
+	} else if personalized, ok := engine.(ports.PersonalizedRecommendationEngine); ok {
 		playlist, err = personalized.BuildWithProfile(ctx, intent, profile)
 	} else {
-		playlist, err = a.runtime().Reco.Build(ctx, intent)
+		playlist, err = engine.Build(ctx, intent)
 	}
 	if err != nil {
 		return PlaylistResult{}, err
@@ -179,8 +235,10 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		return PlaylistResult{}, err
 	}
 	out := PlaylistResult{
-		Duration:     playlist.Duration,
-		GenerationID: progress.generationID, AudioEvidence: playlist.AudioEvidence, Assessments: playlist.Assessments,
+		FitAssessments: playlist.FitAssessments,
+		Search:         playlist.Search,
+		Duration:       playlist.Duration,
+		GenerationID:   progress.generationID, AudioEvidence: playlist.AudioEvidence, Assessments: playlist.Assessments,
 		Mode: string(playlist.Mode), Seed: playlist.Seed, Intent: playlist.Intent,
 		Outcome: playlist.Outcome,
 		Tracks:  make([]PlaylistTrack, 0, len(playlist.Tracks)),
@@ -213,7 +271,9 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 		}
 		out.Tracks = append(out.Tracks, track)
 	}
-	out.Outcome = core.ReconcileOutcome(out.Outcome, out.Intent, len(out.Tracks), out.Duration)
+	if replay == nil {
+		out.Outcome = core.ReconcileOutcome(out.Outcome, out.Intent, len(out.Tracks), out.Duration)
+	}
 	a.presentPlaylistNotices(&out)
 	out.Status = GenerationStatus{
 		State: string(out.Outcome.State), Reasons: append([]core.OutcomeReason(nil), out.Outcome.Reasons...), PartialReasons: []PlaylistNotice{},
@@ -229,20 +289,29 @@ func (a *API) runBuild(ctx context.Context, req BuildPlaylistRequest) (PlaylistR
 			out.Status.PartialReasons = append(out.Status.PartialReasons, reason)
 		}
 	}
-	catalogVersion := "unknown"
-	if playlist.EvidenceCatalogVersion != "" {
-		catalogVersion = playlist.EvidenceCatalogVersion
-	} else if a.runtime().Resolver != nil {
-		catalogVersion = a.runtime().Resolver.CatalogVersion()
-	}
-	out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersionFor(intent), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
-	if err != nil {
-		return PlaylistResult{}, err
-	}
-	withEvidenceIdentity(&out.Reproducibility, out.AudioEvidence)
-	if playlist.EnhancedAudio != nil {
-		out.Reproducibility.ID = audioIdentity(out.Reproducibility.ID, playlist.EnhancedAudio.Fingerprint())
-		out.Reproducibility.EnhancedEvidenceSnapshot = playlist.EnhancedAudio.Fingerprint()
+	if replay != nil {
+		out.Reproducibility = req.Reproducibility
+	} else {
+		catalogVersion := "unknown"
+		if playlist.EvidenceCatalogVersion != "" {
+			catalogVersion = playlist.EvidenceCatalogVersion
+		} else if a.runtime().Resolver != nil {
+			catalogVersion = a.runtime().Resolver.CatalogVersion()
+		}
+		out.Reproducibility, err = generationIdentity(out.Intent, catalogVersion, a.recommendationVersionFor(intent), profile.AlgorithmVersion, profile.SnapshotID, recentSelections)
+		if err != nil {
+			return PlaylistResult{}, err
+		}
+		withEvidenceIdentity(&out.Reproducibility, out.AudioEvidence)
+		if out.Search != nil {
+			out.Reproducibility.SearchSnapshot = out.Search.ID
+			out.Reproducibility.SearchPolicy = out.Search.PolicyVersion
+			out.Reproducibility.ID = audioIdentity(out.Reproducibility.ID, out.Search.ID)
+		}
+		if playlist.EnhancedAudio != nil {
+			out.Reproducibility.ID = audioIdentity(out.Reproducibility.ID, playlist.EnhancedAudio.Fingerprint())
+			out.Reproducibility.EnhancedEvidenceSnapshot = playlist.EnhancedAudio.Fingerprint()
+		}
 	}
 	logRecommendationDiagnostics(ctx, out)
 	a.log.Info("playlist generation completed", "state", out.Status.State, "tracks", len(out.Tracks),
@@ -338,6 +407,10 @@ func (a *API) profileForBuild(ctx context.Context, req BuildPlaylistRequest, int
 		return core.TasteProfile{}, nil
 	}
 	identity := req.Reproducibility
+	if identity.AlgorithmVersion != "" && reflect.DeepEqual(req.resolvedIntent().Normalized(), intent) &&
+		(identity.AlgorithmVersion != a.recommendationVersionFor(intent) || identity.CatalogVersion != a.catalogVersion()) {
+		return core.TasteProfile{}, errors.New("saved generation uses a different catalog or recommendation version; regenerate to use the current versions")
+	}
 	fingerprint, err := generationIdentity(intent, identity.CatalogVersion, identity.AlgorithmVersion, identity.ProfileVersion, identity.ProfileSnapshot, resolveRecentSelections(a.runtime().Catalog, req.RecentSelections))
 	if err != nil {
 		return core.TasteProfile{}, err

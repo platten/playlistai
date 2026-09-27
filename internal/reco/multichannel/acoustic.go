@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -118,56 +119,62 @@ func acousticComparisons(track core.EnrichedTrack, clauses []core.AudioClause) [
 // Fixed clause denominators keep missing evidence from improving a candidate's
 // score. Journey stages are alternatives, not simultaneous playlist demands.
 func acousticIntentScore(comparisons []core.IntentComparison) (float64, bool) {
-	total, count, available := 0.0, 0, false
-	stages := map[string]float64{}
-	stageCounts := map[string]int{}
+	// Margins already express signed clause satisfaction. Reuse the semantic
+	// grouping rules with polarity cleared so it is never applied twice.
+	assessment := core.AudioAssessment{PolicyVersion: audio.QueryPolicyVersion}
+	available := false
 	for _, c := range comparisons {
-		score := 0.0
+		clause := c.Clause
+		clause.Negative = false
+		value := 0.0
 		if c.AcousticScore != nil {
-			score = *c.AcousticScore
-			available = true
+			value, available = *c.AcousticScore, true
 		}
-		if strings.HasPrefix(c.Clause.Scope, "journey_") {
-			stages[c.Clause.Scope] += score
-			stageCounts[c.Clause.Scope]++
-		} else {
-			total += score
-			count++
-		}
+		assessment.Clauses = append(assessment.Clauses, core.AudioClauseAssessment{
+			Clause: clause, Score: value, ScoreAvailable: true,
+		})
 	}
-	if len(stages) > 0 {
-		best := -1.0
-		for stage, score := range stages {
-			best = max(best, score/float64(stageCounts[stage]))
-		}
-		total += best
-		count++
-	}
-	if count == 0 {
-		return 0, false
-	}
-	return total / float64(count), available
+	var scored core.Candidate
+	audio.ApplyScores(&scored, assessment)
+	return scored.Scores.SemanticMatch, available
 }
 
 // Conservative screening, not proof of a category: strong opposition or model
 // disagreement cannot support an essential/strict clause. Unknowns still need
 // the ordinary eligibility policy; positive predictions never grant eligibility.
 func acousticCompatible(comparisons []core.IntentComparison) bool {
-	stages, opposedStages := map[string]bool{}, map[string]bool{}
-	for _, c := range comparisons {
+	type group struct {
+		scope   string
+		opposed bool
+	}
+	groups := map[string]group{}
+	for i, c := range comparisons {
 		if !c.Clause.Essential && !c.Clause.Strict {
 			continue
 		}
+		key := c.Clause.Scope + "\x00" + c.Clause.Group
+		if c.Clause.CoverageGroup != "" && !c.Clause.Negative {
+			key = c.Clause.Scope + "\x00coverage:" + c.Clause.CoverageGroup
+		} else if c.Clause.Group == "" {
+			key += fmt.Sprint("\x00", i)
+		}
+		prior, exists := groups[key]
 		opposed := c.AcousticState == "opposing" || c.AcousticState == "conflicting"
-		if strings.HasPrefix(c.Clause.Scope, "journey_") {
-			stages[c.Clause.Scope] = true
-			opposedStages[c.Clause.Scope] = opposedStages[c.Clause.Scope] || opposed
-		} else if opposed {
+		if exists {
+			opposed = opposed && prior.opposed
+		}
+		groups[key] = group{c.Clause.Scope, opposed}
+	}
+	stages := map[string]bool{}
+	for _, g := range groups {
+		if strings.HasPrefix(g.scope, "journey_") {
+			stages[g.scope] = stages[g.scope] || g.opposed
+		} else if g.opposed {
 			return false
 		}
 	}
-	for stage := range stages {
-		if !opposedStages[stage] {
+	for _, opposed := range stages {
+		if !opposed {
 			return true
 		}
 	}
@@ -187,7 +194,7 @@ func acousticCompatibleFor(intent core.MusicIntent, comparisons []core.IntentCom
 			checks[i].Clause.Essential = strings.HasPrefix(checks[i].Clause.Scope, "journey_")
 			checks[i].AcousticState = "unknown"
 		}
-		if checks[i].Clause.Group != "" {
+		if checks[i].Clause.Group != "" || checks[i].Clause.CoverageGroup != "" && !checks[i].Clause.Negative {
 			// Required OR groups are proved collectively by essential checking;
 			// opposition to one alternative does not oppose the entire group.
 			checks[i].Clause.Strict, checks[i].Clause.Essential = false, false
@@ -211,7 +218,9 @@ func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Can
 	if o.audioSession != nil {
 		for _, candidate := range candidates {
 			if a, ok := o.audioSession.Assessment(candidate.Track.ID); ok {
-				if _, packed := request.PreviewAssessments[candidate.Track.ID]; !packed || a.Eligible {
+				if packed, exists := request.PreviewAssessments[candidate.Track.ID]; exists && o.enhanced {
+					request.PreviewAssessments[candidate.Track.ID] = combineSemanticObservations(packed, a)
+				} else if !exists || a.Eligible {
 					request.PreviewAssessments[candidate.Track.ID] = a
 				}
 			}
@@ -224,7 +233,13 @@ func (o *Orchestrator) rankCandidates(ctx context.Context, candidates []core.Can
 	if o.enhanced && o.bestAvailable {
 		for i := range ranked {
 			ranked[i].FitTier, ranked[i].MatchDetail = o.enhancedTier(ctx, ranked[i], request.Intent)
+			ranked[i].Criteria = o.candidateCriteria(ctx, ranked[i].Track.ID, request.Intent)
 		}
+		// Journey reservations consume this order before the selector runs.
+		// Preserve request-fit ordering inside each evidence tier.
+		sort.SliceStable(ranked, func(i, j int) bool {
+			return ranked[i].FitTier == fitStrong && ranked[j].FitTier != fitStrong
+		})
 	}
 	return ranked, nil
 }
@@ -329,7 +344,7 @@ func mergePreviewComparisons(comparisons []core.IntentComparison, preview []core
 	}
 }
 
-func (o *Orchestrator) annotateIntentComparisons(playlist *core.Playlist) {
+func (o *Orchestrator) annotateIntentComparisonsContext(ctx context.Context, playlist *core.Playlist) {
 	clauses := audio.Clauses(playlist.Intent)
 	if len(clauses) == 0 {
 		return
@@ -342,7 +357,7 @@ func (o *Orchestrator) annotateIntentComparisons(playlist *core.Playlist) {
 		}
 	}
 	for _, track := range playlist.Tracks {
-		metadata, _ := o.knowledgeTrack(track.ID)
+		metadata, _ := o.knowledgeTrackContext(ctx, track.ID)
 		comparisons := acousticComparisons(metadata, clauses)
 		mergePreviewComparisons(comparisons, preview[track.ID].Clauses)
 		conflict := false
@@ -373,4 +388,48 @@ func (o *Orchestrator) annotateIntentComparisons(playlist *core.Playlist) {
 	if anyConflict {
 		playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "intent_analysis_disagreement", Detail: "Some selected tracks have archived predictions that oppose the request or disagree with preview analysis.", Action: "review the per-track intent comparisons, replace uncertain tracks, or refine the request"})
 	}
+}
+
+func (o *Orchestrator) annotateIntentComparisons(playlist *core.Playlist) {
+	ctx := o.requestContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	o.annotateIntentComparisonsContext(ctx, playlist)
+}
+
+// Retain the source snapshots for replay; merge only ranking observations. Each
+// clause contributes once, preferring coverage without consulting its score.
+func combineSemanticObservations(left, right core.AudioAssessment) core.AudioAssessment {
+	observation := func(a core.AudioAssessment) core.AudioObservation {
+		out := core.AudioObservation{Fingerprint: audio.Fingerprint(a)}
+		if a.Coverage != nil {
+			out.Coverage = *a.Coverage
+		}
+		if a.LibraryCoverage != nil {
+			out.Coverage = core.PreviewCoverage{Available: true, CoveredSeconds: a.LibraryCoverage.CoveredSeconds}
+		}
+		return out
+	}
+	if preferObservation(observation(right), observation(left)) {
+		left, right = right, left
+	}
+	result := left
+	result.Clauses = append([]core.AudioClauseAssessment(nil), left.Clauses...)
+	indices := map[core.AudioClause]int{}
+	for i, a := range result.Clauses {
+		indices[a.Clause] = i
+	}
+	for _, a := range right.Clauses {
+		if index, exists := indices[a.Clause]; exists {
+			if !result.Clauses[index].ScoreAvailable && a.ScoreAvailable {
+				result.Clauses[index] = a
+			}
+		} else {
+			indices[a.Clause] = len(result.Clauses)
+			result.Clauses = append(result.Clauses, a)
+		}
+	}
+	result.PolicyVersion = audio.QueryPolicyVersion
+	return result
 }

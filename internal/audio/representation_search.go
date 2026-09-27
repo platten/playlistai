@@ -18,7 +18,7 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const representationSearchVersion = "pooled-exact/v1"
+const representationSearchVersion = "pooled-exact/v2+" + core.PreviewIdentityPolicyVersion
 const representationBackfillBatch = 32
 const maxRepresentationSearchResults = 512
 const maxRepresentationSearchQueries = 64
@@ -40,11 +40,37 @@ CREATE TRIGGER IF NOT EXISTS audio_representation_vector_delete
  DELETE FROM audio_representation_vector WHERE id=OLD.id; END;
 CREATE TRIGGER IF NOT EXISTS audio_representation_vector_update
  AFTER UPDATE ON audio_representation BEGIN
- DELETE FROM audio_representation_vector WHERE id=OLD.id OR id=NEW.id; END;`)
-	return err
+ DELETE FROM audio_representation_vector WHERE id=OLD.id OR id=NEW.id; END;
+CREATE TABLE IF NOT EXISTS audio_representation_projection_policy (version TEXT PRIMARY KEY);`)
+	if err != nil {
+		return err
+	}
+	// Only the disposable projection changes. Historical source rows and saved
+	// playlist snapshots retain their original identity/fingerprints.
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`DELETE FROM audio_representation_vector WHERE NOT EXISTS
+ (SELECT 1 FROM audio_representation_projection_policy WHERE version=?)`, representationSearchVersion); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM audio_representation_projection_policy WHERE version<>?`, representationSearchVersion); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO audio_representation_projection_policy(version) VALUES(?)`, representationSearchVersion); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func putRepresentationProjection(ctx context.Context, tx *sql.Tx, a core.AudioRepresentation) error {
+	if !a.Identity.CurrentPolicy() {
+		_, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO audio_representation_vector
+ (id,valid,analyzed,pooled,digest) VALUES(?,0,'',NULL,'')`, a.ID)
+		return err
+	}
 	stamp, encoded, err := encodeRepresentationProjection(a)
 	if err != nil {
 		return err

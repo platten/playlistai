@@ -1,5 +1,7 @@
 package ports
 
+import "github.com/platten/playlistai/internal/core"
+
 // Progress receives coarse updates from long-running operations so the UI can
 // show a bar. A total <= 0 means the total is unknown: render an indeterminate
 // bar plus the note as a status line.
@@ -24,5 +26,13 @@ type ProgressFunc func(op string, done, total int64, note string)
 func (f ProgressFunc) Report(op string, done, total int64, note string) {
 	if f != nil {
 		f(op, done, total, note)
+	}
+}
+
+// ReportSearch extends existing progress implementations without changing
+// setup/download reporters that only need a coarse progress bar.
+func ReportSearch(p Progress, state core.SearchProgress) {
+	if detailed, ok := p.(interface{ Search(core.SearchProgress) }); ok {
+		detailed.Search(state)
 	}
 }

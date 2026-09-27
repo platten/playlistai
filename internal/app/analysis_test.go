@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -14,6 +13,7 @@ import (
 )
 
 func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
+	t.Setenv("PLAYLIST_INDEXER_OFFLINE_CACHE_DIR", t.TempDir())
 	ctx := context.Background()
 	c, err := New(ctx, testConfig(t), nil)
 	if err != nil {
@@ -32,7 +32,8 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 		t.Fatal("uninstalled recommended model reported as installed")
 	}
 	if recommendationErr == nil {
-		if !status.RecommendedAvailable || !strings.HasSuffix(status.RecommendedManifest, "/clap-"+runtime.GOOS+"-"+runtime.GOARCH+"/manifest.json") || status.RecommendedBytes <= 0 {
+		offer, offerErr := c.recommendedCLAP()
+		if offerErr != nil || !status.RecommendedAvailable || status.RecommendedManifest != offer.source || status.RecommendedBytes != offer.offer.DownloadBytes || status.RecommendedBytes <= 0 {
 			t.Fatalf("hosted recommendation missing from status: %+v", status)
 		}
 		legacy := recommended
@@ -42,7 +43,7 @@ func TestOptionalAnalysisAndSeparateRetentionControls(t *testing.T) {
 		if err != nil || status.RecommendedInstalled {
 			t.Fatalf("legacy model hid recommended update: %+v %v", status, err)
 		}
-		c.analysis.manifest = &recommended
+		c.analysis.manifest = &offer.expected
 		status, err = c.GetAnalysisStatus(ctx)
 		if err != nil || !status.RecommendedInstalled {
 			t.Fatalf("recommended model not recognized: %+v %v", status, err)

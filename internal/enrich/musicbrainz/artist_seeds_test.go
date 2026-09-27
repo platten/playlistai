@@ -128,13 +128,13 @@ func TestMissingArtistFallsBackToOtherRecordingsAndExplainsMisses(t *testing.T) 
 				case "/artist/7/top":
 					_, _ = fmt.Fprint(w, `{"data":[]}`)
 				case "/ws/2/recording":
-					if r.URL.Query().Get("query") != "arid:mb-artist" {
+					if r.URL.Query().Get("artist") != "mb-artist" || r.URL.Query().Get("inc") != "artist-credits" {
 						t.Errorf("recordings not scoped to identified artist: %s", r.URL)
 					}
 					if found {
-						_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"recording","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
+						_, _ = fmt.Fprint(w, `{"recording-count":1,"recordings":[{"id":"recording","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
 					} else {
-						_, _ = fmt.Fprint(w, `{"count":0,"recordings":[]}`)
+						_, _ = fmt.Fprint(w, `{"recording-count":0,"recordings":[]}`)
 					}
 				default:
 					http.NotFound(w, r)
@@ -149,7 +149,7 @@ func TestMissingArtistFallsBackToOtherRecordingsAndExplainsMisses(t *testing.T) 
 			if !strings.Contains(notices, "order does not indicate popularity") {
 				t.Fatal(notices)
 			}
-			if !found && !strings.Contains(notices, "Could not find a verified catalog seed") {
+			if !found && !strings.Contains(notices, "Could not inspect any recordings") {
 				t.Fatal(notices)
 			}
 		})
@@ -281,13 +281,13 @@ func TestConfirmedArtistNeverUsesUncorrelatedDeezerIdentity(t *testing.T) {
 				case "/artist/7/top":
 					_, _ = fmt.Fprint(w, `{"data":[{"id":3,"title":"Smells Like Teen Spirit","artist":{"id":7,"name":"Nirvana"}}]}`)
 				case "/ws/2/recording":
-					if r.URL.Query().Get("query") != "arid:uk-nirvana" {
+					if r.URL.Query().Get("artist") != "uk-nirvana" || r.URL.Query().Get("inc") != "artist-credits" {
 						t.Errorf("wrong identity query: %s", r.URL)
 					}
 					if available {
-						_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"uk-recording","title":"Pentecost Hotel","artist-credit":[{"name":"Nirvana","artist":{"id":"uk-nirvana"}}]}]}`)
+						_, _ = fmt.Fprint(w, `{"recording-count":1,"recordings":[{"id":"uk-recording","title":"Pentecost Hotel","artist-credit":[{"name":"Nirvana","artist":{"id":"uk-nirvana"}}]}]}`)
 					} else {
-						_, _ = fmt.Fprint(w, `{"count":0,"recordings":[]}`)
+						_, _ = fmt.Fprint(w, `{"recording-count":0,"recordings":[]}`)
 					}
 				default:
 					t.Errorf("unexpected lookup: %s", r.URL)
@@ -315,14 +315,42 @@ func TestConfirmedArtistNeverUsesUncorrelatedDeezerIdentity(t *testing.T) {
 	}
 }
 
+func TestConfirmedArtistBrowsesPastUnmatchedRecording(t *testing.T) {
+	c, calls := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws/2/recording" || r.URL.Query().Get("artist") != "mb-artist" || r.URL.Query().Get("inc") != "artist-credits" || r.URL.Query().Has("query") {
+			t.Errorf("expected identity-scoped recording browse: %s", r.URL)
+			http.NotFound(w, r)
+			return
+		}
+		switch r.URL.Query().Get("offset") {
+		case "0":
+			_, _ = fmt.Fprint(w, `{"recording-count":2,"recordings":[{"id":"first","title":"Absent song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
+		case "1":
+			_, _ = fmt.Fprint(w, `{"recording-count":2,"recordings":[{"id":"second","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
+		default:
+			t.Errorf("unexpected browse offset: %s", r.URL)
+			http.NotFound(w, r)
+		}
+	})
+	cat := seedTestCatalog()
+	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Canonical Artist", Influence: core.InfluencePositive,
+		Grounding: &core.IdentityGrounding{Provider: "MusicBrainz", Confirmed: true, Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "mb-artist", Name: "Canonical Artist"}}},
+	}
+	intent, _ := resolution.Apply(cat, core.MusicIntent{Version: core.CurrentIntentVersion, References: []core.IntentReference{ref}})
+	got := c.resolveMissingArtists(context.Background(), intent, cat, cat, &core.KnowledgeSnapshot{}, ports.NopProgress{})
+	if got.References[0].TrackID != "match" || calls.Load() != 2 {
+		t.Fatalf("confirmed artist lost catalog seed after browsing two recordings: %+v; calls=%d", got.References[0], calls.Load())
+	}
+}
+
 func TestConfirmedJourneyStartSharesRecoveredReference(t *testing.T) {
 	c, calls := seedTestClient(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/ws/2/recording" || r.URL.Query().Get("query") != "arid:mb-artist" {
+		if r.URL.Path != "/ws/2/recording" || r.URL.Query().Get("artist") != "mb-artist" || r.URL.Query().Get("inc") != "artist-credits" {
 			t.Errorf("unexpected lookup: %s", r.URL)
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = fmt.Fprint(w, `{"count":1,"recordings":[{"id":"recording","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
+		_, _ = fmt.Fprint(w, `{"recording-count":1,"recordings":[{"id":"recording","title":"Second song","artist-credit":[{"name":"Canonical Artist","artist":{"id":"mb-artist"}}]}]}`)
 	})
 	cat := seedTestCatalog()
 	ref := core.IntentReference{Kind: core.ReferenceArtist, Query: "Canonical Artist", Influence: core.InfluencePositive,

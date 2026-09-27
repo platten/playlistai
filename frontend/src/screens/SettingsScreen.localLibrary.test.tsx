@@ -13,6 +13,7 @@ const api = vi.hoisted(() => Object.fromEntries([
 ].map((name) => [name, vi.fn()])));
 
 vi.mock("../lib/api", () => ({ API: api }));
+vi.mock("../components/ListenBrainzConnection", () => ({ ListenBrainzConnection: () => null }));
 vi.mock("../components/RecommendationSettings", () => ({ RecommendationSettings: () => <div>Recommendation settings fixture</div> }));
 vi.mock("../components/MusicAnalysisCard", () => ({ MusicAnalysisCard: () => null }));
 vi.mock("../components/EnhancedAudioCard", () => ({ EnhancedAudioCard: () => null }));
@@ -34,6 +35,8 @@ function deferred<T>() {
 const empty = { installed: false, mode: "combined", coverage: { tracks: 0, metadata: 0, mert: 0, dsp: 0, failed: 0, unsupported: 0 }, roots: [] };
 const installed = {
   installed: true,
+  activeBackend: "cpu",
+  availableBackends: ["cpu", "cuda"],
   mode: "combined",
   packId: "1234567890abcdef1234567890abcdef",
   version: 1,
@@ -77,6 +80,7 @@ it("renders verified partial coverage and saves mode and root controls", async (
   }));
   render(<SettingsScreen />);
   await screen.findByText(/Verified library pack/);
+  expect(screen.getByText(/Installed: CPU \+ CUDA/)).toBeTruthy();
   expect(screen.getByText("120 tracks")).toBeTruthy();
   expect(screen.getByText(/3 failed and 2 unsupported/)).toBeTruthy();
   expect(screen.getByText(/768 dimensions/)).toBeTruthy();
@@ -111,7 +115,7 @@ it("imports, exposes cancellation, and preserves explicit remove confirmation", 
   expect(api.RemoveLocalLibrary).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   await waitFor(() => expect(api.RemoveLocalLibrary).toHaveBeenCalledOnce());
-  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("original music tree and source pack will not be deleted or changed"));
+  expect(window.confirm).toHaveBeenLastCalledWith(expect.stringContaining("original music tree and source packs will not be deleted or changed"));
   await screen.findByText("No local library attached");
 });
 
@@ -120,7 +124,7 @@ it("keeps a failed update visible and retryable without hiding the active pack",
   api.ChooseLocalLibraryPack.mockRejectedValueOnce(new Error("checksum mismatch"));
   render(<SettingsScreen />);
   await screen.findByText(/Verified library pack/);
-  fireEvent.click(screen.getByRole("button", { name: "Update pack" }));
+  fireEvent.click(screen.getByRole("button", { name: "Import or update pack" }));
   await screen.findByText(/checksum mismatch/);
   expect(screen.getByText(/Verified library pack/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();

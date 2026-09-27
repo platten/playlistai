@@ -149,6 +149,15 @@ func ReadMERTBundle(dir string) (MERTBundleManifest, error) {
 }
 
 func ReadMERTBundleContext(ctx context.Context, dir string) (MERTBundleManifest, error) {
+	return readMERTBundleContext(ctx, dir, true)
+}
+
+// ReadStartupMERTBundleContext leaves the full checksum pass to the built-in worker.
+func ReadStartupMERTBundleContext(ctx context.Context, dir string) (MERTBundleManifest, error) {
+	return readMERTBundleContext(ctx, dir, false)
+}
+
+func readMERTBundleContext(ctx context.Context, dir string, verify bool) (MERTBundleManifest, error) {
 	var m MERTBundleManifest
 	if err := ctx.Err(); err != nil {
 		return m, err
@@ -172,6 +181,12 @@ func ReadMERTBundleContext(ctx context.Context, dir string) (MERTBundleManifest,
 		return m, err
 	}
 	for _, a := range m.Artifacts {
+		if !verify {
+			if err := artifactLayoutValid(ctx, dir, a); err != nil {
+				return m, err
+			}
+			continue
+		}
 		if !artifactValidContext(ctx, dir, a) {
 			if err := ctx.Err(); err != nil {
 				return m, err
@@ -307,6 +322,14 @@ func (b *MERTBundleManager) Active() (string, MERTBundleManifest, error) {
 }
 
 func (b *MERTBundleManager) ActiveContext(ctx context.Context) (string, MERTBundleManifest, error) {
+	return b.activeContext(ctx, false)
+}
+
+func (b *MERTBundleManager) ActiveStartupContext(ctx context.Context) (string, MERTBundleManifest, error) {
+	return b.activeContext(ctx, true)
+}
+
+func (b *MERTBundleManager) activeContext(ctx context.Context, startup bool) (string, MERTBundleManifest, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -321,7 +344,12 @@ func (b *MERTBundleManager) ActiveContext(ctx context.Context) (string, MERTBund
 		return "", MERTBundleManifest{}, fmt.Errorf("audio: invalid active MERT bundle")
 	}
 	dir := filepath.Join(b.Directory, name)
-	m, err := ReadMERTBundleContext(ctx, dir)
+	var m MERTBundleManifest
+	if startup {
+		m, err = ReadStartupMERTBundleContext(ctx, dir)
+	} else {
+		m, err = ReadMERTBundleContext(ctx, dir)
+	}
 	return dir, m, err
 }
 func (b *MERTBundleManager) Remove() error {

@@ -1,10 +1,13 @@
 package multichannel
 
 import (
+	"context"
 	"math"
+	"reflect"
 	"strings"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 const EnhancedPolicyVersion = core.EnhancedAudioPolicyVersion
@@ -25,12 +28,55 @@ func validEnhancedModel(m core.AudioRepresentationIdentity) bool {
 }
 
 func representation(input core.EnhancedAudioInput, track core.TrackRef) ([]float32, bool) {
-	a, ok := input.Representations[track.ID]
-	if !ok || input.PolicyVersion != EnhancedPolicyVersion || input.CatalogVersion == "" || !validEnhancedModel(input.Model) || a.TrackID != track.ID || a.TrackKey != core.ProvisionalRecordingKey(track) || a.CatalogVersion != input.CatalogVersion || a.Model != input.Model {
-		return nil, false
-	}
-	_, ok = enhancedCosine(a.Pooled, a.Pooled, input.Model.Dimension)
+	a, ok := selectedRepresentation(input, track)
 	return a.Pooled, ok
+}
+
+// The vector and observation metadata must come from the same validated record.
+func selectedRepresentation(input core.EnhancedAudioInput, track core.TrackRef) (core.AudioRepresentation, bool) {
+	if a := input.Representations[track.ID]; validRepresentation(input, a, track) {
+		return a, true
+	}
+	// Cached search hits already contain the exact observed vector. Packed
+	// tracks may intentionally be omitted from later preview acquisition, so
+	// use their frozen hit evidence on the same scoring scale as other MERT
+	// observations. Do not search a changing cache or alter the snapshot.
+	search := input.MERTSearch
+	if search == nil || !search.Recorded || search.CatalogVersion != input.CatalogVersion || search.Model != input.Model {
+		return core.AudioRepresentation{}, false
+	}
+	var found core.AudioRepresentation
+	for _, hit := range search.Hits {
+		if hit.TrackID != track.ID || hit.Rank <= 0 || math.IsNaN(hit.Score) || math.IsInf(hit.Score, 0) || hit.Score < -1 || hit.Score > 1 || hit.Representation.ID == "" {
+			continue
+		}
+		linked := false
+		for _, query := range search.Queries {
+			if query.GroupID != "" && query.GroupID == hit.GroupID && query.Track.ID != "" && query.Track.ID == hit.QueryTrackID && query.RepresentationID != "" && query.Weight > 0 && !math.IsNaN(query.Weight) && !math.IsInf(query.Weight, 0) {
+				linked = true
+				break
+			}
+		}
+		if !linked {
+			continue
+		}
+		if !validRepresentation(input, hit.Representation, track) {
+			continue
+		}
+		if found.ID != "" && !reflect.DeepEqual(found, hit.Representation) {
+			return core.AudioRepresentation{}, false // conflicting observations cannot depend on hit order
+		}
+		found = hit.Representation
+	}
+	return found, found.ID != ""
+}
+
+func validRepresentation(input core.EnhancedAudioInput, a core.AudioRepresentation, track core.TrackRef) bool {
+	if input.PolicyVersion != EnhancedPolicyVersion || input.CatalogVersion == "" || !validEnhancedModel(input.Model) || a.TrackID != track.ID || a.TrackKey != core.ProvisionalRecordingKey(track) || a.CatalogVersion != input.CatalogVersion || a.Model != input.Model {
+		return false
+	}
+	_, ok := enhancedCosine(a.Pooled, a.Pooled, input.Model.Dimension)
+	return ok
 }
 
 func enhancedCosine(a, b []float32, dimension int) (float64, bool) {
@@ -126,7 +172,7 @@ func dspSignedValue(value core.DSPValue, low, high float64) (float64, bool) {
 	return 2*clamp((*value.Value-low)/(high-low), 0, 1) - 1, true
 }
 
-func (r *TransparentRanker) enhancedScores(candidates []core.Candidate, intent core.MusicIntent, snapshot *core.EnhancedAudioSnapshot) {
+func (r *TransparentRanker) enhancedScores(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, snapshot *core.EnhancedAudioSnapshot) {
 	if intent.Controls.RecommendationMode != core.EnhancedHybrid || snapshot == nil {
 		return
 	}
@@ -135,15 +181,8 @@ func (r *TransparentRanker) enhancedScores(candidates []core.Candidate, intent c
 		return
 	}
 	clauses := enhancedClauses(intent)
-	positive := r.enhancedReferences(input, intentReferenceTracks(r.cat, intent, core.InfluencePositive, false))
-	negative := r.enhancedReferences(input, intentReferenceTracks(r.cat, intent, core.InfluenceNegative, false))
-	if len(positive) == 0 {
-		positive = append(positive, []enhancedReference{{input.PositiveCentroid, 1}})
-	}
-	if len(negative) == 0 {
-		negative = append(negative, []enhancedReference{{input.NegativeCentroid, 1}})
-	}
-	var mertEnabled, dspEnabled bool
+	positive := r.enhancedReferences(ctx, input, intentReferenceTracksContext(ctx, r.cat, intent, core.InfluencePositive, false))
+	negative := r.enhancedReferences(ctx, input, intentReferenceTracksContext(ctx, r.cat, intent, core.InfluenceNegative, false))
 	for i := range candidates {
 		c := &candidates[i]
 		c.Scores.EnhancedDSP, c.Available.EnhancedDSP = 0, false
@@ -157,23 +196,6 @@ func (r *TransparentRanker) enhancedScores(candidates []core.Candidate, intent c
 			c.Scores.EnhancedMERT = clamp(p-math.Max(0, n), -1, 1)
 			c.Available.EnhancedMERT = pok || nok
 		}
-		mertEnabled = mertEnabled || c.Available.EnhancedMERT
-		dspEnabled = dspEnabled || c.Available.EnhancedDSP
-	}
-	wm, wd := 0.0, 0.0
-	if mertEnabled {
-		wm = enhancedWeight(r.cfg.EnhancedMERTWeight)
-	}
-	if dspEnabled {
-		wd = enhancedWeight(r.cfg.EnhancedDSPWeight)
-	}
-	if wm+wd == 0 {
-		return
-	}
-	for i := range candidates {
-		c := &candidates[i]
-		// One denominator for the whole ranked pool, including unknown tracks.
-		c.Scores.Total = (c.Scores.Total + wm*c.Scores.EnhancedMERT + wd*c.Scores.EnhancedDSP) / (1 + wm + wd)
 	}
 }
 
@@ -182,13 +204,13 @@ type enhancedReference struct {
 	weight float64
 }
 
-func (r *TransparentRanker) enhancedReferences(input core.EnhancedAudioInput, refs []referenceTracks) [][]enhancedReference {
+func (r *TransparentRanker) enhancedReferences(ctx context.Context, input core.EnhancedAudioInput, refs []referenceTracks) [][]enhancedReference {
 	var out [][]enhancedReference
 	for _, group := range refs {
 		var weight float64
 		var representatives []enhancedReference
 		for _, rep := range group.reps {
-			meta, ok := r.cat.Meta(rep.TrackID)
+			meta, ok := ports.CatalogMeta(ctx, r.cat, rep.TrackID)
 			if !ok {
 				continue
 			}
@@ -228,20 +250,4 @@ func enhancedReferenceSimilarity(vector []float32, refs [][]enhancedReference, d
 		return 0, false
 	}
 	return best, true
-}
-
-func (s *GreedySequencer) enhancedTransition(left, right core.TrackRef, requestInput core.EnhancedAudioInput, intent core.MusicIntent) float64 {
-	if intent.Controls.RecommendationMode != core.EnhancedHybrid {
-		return 0
-	}
-	a, aok := representation(requestInput, left)
-	b, bok := representation(requestInput, right)
-	if !aok || !bok {
-		return 0
-	}
-	similarity, ok := enhancedCosine(a, b, requestInput.Model.Dimension)
-	if !ok {
-		return 0
-	}
-	return enhancedWeight(s.cfg.EnhancedTransitionWeight) * intent.Controls.TransitionSmoothness * similarity
 }

@@ -16,7 +16,10 @@ func (c *Container) RecommendationMode() core.RecommendationMode {
 	if c.cfg.Recommendation.Strategy == config.RecommendationDeejAI {
 		return core.DeejAIOnly
 	}
-	return core.EnhancedHybrid
+	if c.cfg.Recommendation.Strategy == config.RecommendationMultichannel {
+		return core.EnhancedHybrid
+	}
+	return core.Automatic
 }
 
 // Legacy policies remain valid for explicit callers and saved requests. Startup

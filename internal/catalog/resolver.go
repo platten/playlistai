@@ -48,12 +48,15 @@ func (c *Catalog) artistRecordingQuery(ctx context.Context, query string, args .
 	}
 	defer rows.Close()
 	var tracks []core.TrackRef
-	for rows.Next() {
+	for ctx.Err() == nil && rows.Next() {
 		var track core.TrackRef
 		if err := rows.Scan(&track.ID, &track.Artist, &track.Title); err != nil {
 			return nil, err
 		}
 		tracks = append(tracks, track)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	return tracks, rows.Err()
 }
@@ -77,6 +80,15 @@ func (c *Catalog) CatalogVersion() string { return c.version }
 // normalized names and aliases win before prefix/token fallback. No query word
 // is silently removed.
 func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	return c.ResolveReferenceContext(context.Background(), ref)
+}
+
+// ResolveReferenceContext keeps all metadata work inside the caller's budget.
+// Cancellation produces no result and must not populate the shared caches.
+func (c *Catalog) ResolveReferenceContext(ctx context.Context, ref core.IntentReference) core.ReferenceResolution {
+	if ctx.Err() != nil {
+		return unresolved()
+	}
 	if ref.SpellingDecision == "original" {
 		ref.TrackID = "" // a stale corrected recording cannot override rejection
 	}
@@ -93,28 +105,31 @@ func (c *Catalog) ResolveReference(ref core.IntentReference) core.ReferenceResol
 
 	var result core.ReferenceResolution
 	if ref.TrackID != "" {
-		result = c.resolveID(ref.Kind, ref.TrackID)
+		result = c.resolveID(ctx, ref.Kind, ref.TrackID)
 	} else if ref.Kind == core.ReferenceArtist {
-		result = c.resolveArtistWithSpelling(ref.Query, ref.SpellingDecision != "original")
+		result = c.resolveArtistWithSpelling(ctx, ref.Query, ref.SpellingDecision != "original")
 	} else {
-		result = c.resolveTrack(ref.Query)
+		result = c.resolveTrack(ctx, ref.Query)
 	}
-	if result.Status == core.ResolutionUnresolved {
+	if ctx.Err() == nil && result.Status == core.ResolutionUnresolved {
 		tokens := tokenize(ref.Query)
 		lean := dropFiller(tokens)
 		if len(lean) > 0 && len(lean) < len(tokens) {
 			query := strings.Join(lean, " ")
 			if ref.Kind == core.ReferenceArtist {
-				result = c.resolveArtistWithSpelling(query, ref.SpellingDecision != "original")
+				result = c.resolveArtistWithSpelling(ctx, query, ref.SpellingDecision != "original")
 			} else {
-				result = c.resolveTrack(query)
+				result = c.resolveTrack(ctx, query)
 			}
 			markFillerFallback(&result, ref.Query)
 		}
 	}
+	if ctx.Err() != nil {
+		return unresolved()
+	}
 	result.CatalogVersion = c.version
 	c.resolutionMu.Lock()
-	if len(key) <= resolutionCacheKeyLimit {
+	if ctx.Err() == nil && len(key) <= resolutionCacheKeyLimit {
 		// Flush at capacity: deterministic bounded retention without storing
 		// an additional access queue. Resolution itself remains unchanged.
 		if len(c.resolutionCache) >= resolutionCacheLimit {
@@ -141,27 +156,27 @@ func markFillerFallback(result *core.ReferenceResolution, original string) {
 	}
 }
 
-func (c *Catalog) resolveID(kind core.ReferenceKind, id string) core.ReferenceResolution {
-	meta, ok := c.Meta(id)
+func (c *Catalog) resolveID(ctx context.Context, kind core.ReferenceKind, id string) core.ReferenceResolution {
+	meta, ok := c.metaContext(ctx, id)
 	if !ok {
 		return unresolved()
 	}
 	if kind == core.ReferenceArtist {
-		candidate := c.artistCandidate(meta.Ref.Artist, 1, "id", id)
+		candidate := c.artistCandidate(ctx, meta.Ref.Artist, 1, "id", id)
 		return resolved(candidate)
 	}
 	candidate := trackCandidate(meta.Ref, 1, "id", id)
 	return resolved(candidate)
 }
 
-func (c *Catalog) resolveArtistWithSpelling(query string, allowSpelling bool) core.ReferenceResolution {
+func (c *Catalog) resolveArtistWithSpelling(ctx context.Context, query string, allowSpelling bool) core.ReferenceResolution {
 	latin, unicodeQuery := normalizeSearch(query), normalizeUnicodeSearch(query)
 	if latin == "" && unicodeQuery == "" {
 		return unresolved()
 	}
 
-	aliases := c.aliasArtists(latin, unicodeQuery)
-	rows := c.artistSearchRows(latin, unicodeQuery)
+	aliases := c.aliasArtists(ctx, latin, unicodeQuery)
+	rows := c.artistSearchRows(ctx, latin, unicodeQuery)
 	byArtist := make(map[string]string)
 	matchKind := make(map[string]string)
 	for _, artist := range aliases {
@@ -169,6 +184,9 @@ func (c *Catalog) resolveArtistWithSpelling(query string, allowSpelling bool) co
 		byArtist[key], matchKind[key] = artist, "alias"
 	}
 	for _, row := range rows {
+		if ctx.Err() != nil {
+			return unresolved()
+		}
 		artistKey := normalizeUnicodeSearch(row.ref.Artist)
 		latinArtist := normalizeSearch(row.ref.Artist)
 		if !containsTokens(latinArtist, strings.Fields(latin)) &&
@@ -185,6 +203,9 @@ func (c *Catalog) resolveArtistWithSpelling(query string, allowSpelling bool) co
 
 	var candidates []core.ResolutionCandidate
 	for key, artist := range byArtist {
+		if ctx.Err() != nil {
+			return unresolved()
+		}
 		kind := matchKind[key]
 		confidence := map[string]float64{"exact": 1, "alias": .98, "prefix": .88, "tokens": .76}[kind]
 		candidates = append(candidates, core.ResolutionCandidate{
@@ -197,16 +218,16 @@ func (c *Catalog) resolveArtistWithSpelling(query string, allowSpelling bool) co
 		if !allowSpelling {
 			return unresolved()
 		}
-		return c.resolveArtistTypo(query)
+		return c.resolveArtistTypo(ctx, query)
 	}
 	// Rank identities before computing medoids. Broad/short artist names can
 	// match hundreds of entities; only the visible alternatives need vectors.
 	result := rankResolution(candidates)
 	if result.Selected != nil {
-		result.Selected.Representatives = c.artistRepresentatives(result.Selected.Artist)
+		result.Selected.Representatives = c.artistRepresentatives(ctx, result.Selected.Artist)
 	}
 	for i := range result.Alternatives {
-		result.Alternatives[i].Representatives = c.artistRepresentatives(result.Alternatives[i].Artist)
+		result.Alternatives[i].Representatives = c.artistRepresentatives(ctx, result.Alternatives[i].Artist)
 	}
 	return result
 }
@@ -218,15 +239,18 @@ func artistFallbackKind(latinQuery, unicodeQuery, latinArtist, unicodeArtist str
 	return "tokens"
 }
 
-func (c *Catalog) resolveTrack(query string) core.ReferenceResolution {
+func (c *Catalog) resolveTrack(ctx context.Context, query string) core.ReferenceResolution {
 	latin, unicodeQuery := normalizeSearch(query), normalizeUnicodeSearch(query)
 	if latin == "" && unicodeQuery == "" {
 		return unresolved()
 	}
-	rows := c.trackSearchRows(latin, unicodeQuery)
+	rows := c.trackSearchRows(ctx, latin, unicodeQuery)
 	seenRecording := make(map[string]struct{})
 	candidates := make([]core.ResolutionCandidate, 0, maxAlternatives*2)
 	for _, row := range rows {
+		if ctx.Err() != nil {
+			return unresolved()
+		}
 		displayLatin := normalizeSearch(row.ref.Display())
 		titleLatin := normalizeSearch(row.ref.Title)
 		displayUnicode := normalizeUnicodeSearch(row.ref.Display())
@@ -249,9 +273,9 @@ func (c *Catalog) resolveTrack(query string) core.ReferenceResolution {
 		candidates = append(candidates, trackCandidate(row.ref, confidence, kind, query))
 	}
 	result := rankResolution(candidates)
-	if result.Status == core.ResolutionUnresolved {
+	if ctx.Err() == nil && result.Status == core.ResolutionUnresolved {
 		if artist, title, ok := core.QualifiedReferenceParts(query); ok && query != artist+" - "+title {
-			return c.resolveTrack(artist + " - " + title)
+			return c.resolveTrack(ctx, artist+" - "+title)
 		}
 	}
 	return result
@@ -298,8 +322,8 @@ func trackCandidate(ref core.TrackRef, confidence float64, match, query string) 
 	}
 }
 
-func (c *Catalog) artistCandidate(artist string, confidence float64, match, query string) core.ResolutionCandidate {
-	representatives := c.artistRepresentatives(artist)
+func (c *Catalog) artistCandidate(ctx context.Context, artist string, confidence float64, match, query string) core.ResolutionCandidate {
+	representatives := c.artistRepresentatives(ctx, artist)
 	return core.ResolutionCandidate{
 		Kind: core.ReferenceArtist, EntityID: "artist:" + normalizeUnicodeSearch(artist), Artist: artist,
 		Confidence:      confidence,
@@ -308,31 +332,31 @@ func (c *Catalog) artistCandidate(artist string, confidence float64, match, quer
 	}
 }
 
-func (c *Catalog) artistSearchRows(latin, unicodeQuery string) []indexedTrack {
+func (c *Catalog) artistSearchRows(ctx context.Context, latin, unicodeQuery string) []indexedTrack {
 	if latin != "" {
-		return c.queryTracks("search", strings.Fields(latin))
+		return c.queryTracks(ctx, "search", strings.Fields(latin))
 	}
 	if c.hasUnicodeSearch {
-		return c.queryTracks("unicode_search", strings.Fields(unicodeQuery))
+		return c.queryTracks(ctx, "unicode_search", strings.Fields(unicodeQuery))
 	}
-	return c.scanTracks(func(ref core.TrackRef) bool {
+	return c.scanTracks(ctx, func(ref core.TrackRef) bool {
 		return containsTokens(normalizeUnicodeSearch(ref.Artist), strings.Fields(unicodeQuery))
 	})
 }
 
-func (c *Catalog) trackSearchRows(latin, unicodeQuery string) []indexedTrack {
+func (c *Catalog) trackSearchRows(ctx context.Context, latin, unicodeQuery string) []indexedTrack {
 	if latin != "" {
-		return c.queryTracks("search", strings.Fields(latin))
+		return c.queryTracks(ctx, "search", strings.Fields(latin))
 	}
 	if c.hasUnicodeSearch {
-		return c.queryTracks("unicode_search", strings.Fields(unicodeQuery))
+		return c.queryTracks(ctx, "unicode_search", strings.Fields(unicodeQuery))
 	}
-	return c.scanTracks(func(ref core.TrackRef) bool {
+	return c.scanTracks(ctx, func(ref core.TrackRef) bool {
 		return containsTokens(normalizeUnicodeSearch(ref.Display()), strings.Fields(unicodeQuery))
 	})
 }
 
-func (c *Catalog) queryTracks(column string, tokens []string) []indexedTrack {
+func (c *Catalog) queryTracks(ctx context.Context, column string, tokens []string) []indexedTrack {
 	if len(tokens) == 0 {
 		return nil
 	}
@@ -347,13 +371,13 @@ func (c *Catalog) queryTracks(column string, tokens []string) []indexedTrack {
 		args = append(args, "%"+token+"%")
 	}
 	query.WriteString(" ORDER BY row")
-	rows, err := c.db.Query(query.String(), args...)
+	rows, err := c.db.QueryContext(ctx, query.String(), args...)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 	var out []indexedTrack
-	for rows.Next() {
+	for ctx.Err() == nil && rows.Next() {
 		var track indexedTrack
 		if rows.Scan(&track.row, &track.ref.ID, &track.ref.Artist, &track.ref.Title) == nil {
 			out = append(out, track)
@@ -362,14 +386,14 @@ func (c *Catalog) queryTracks(column string, tokens []string) []indexedTrack {
 	return out
 }
 
-func (c *Catalog) scanTracks(keep func(core.TrackRef) bool) []indexedTrack {
-	rows, err := c.db.Query("SELECT row, id, artist, title FROM tracks ORDER BY row")
+func (c *Catalog) scanTracks(ctx context.Context, keep func(core.TrackRef) bool) []indexedTrack {
+	rows, err := c.db.QueryContext(ctx, "SELECT row, id, artist, title FROM tracks ORDER BY row")
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 	var out []indexedTrack
-	for rows.Next() {
+	for ctx.Err() == nil && rows.Next() {
 		var track indexedTrack
 		if rows.Scan(&track.row, &track.ref.ID, &track.ref.Artist, &track.ref.Title) == nil && keep(track.ref) {
 			out = append(out, track)
@@ -387,11 +411,11 @@ func containsTokens(text string, tokens []string) bool {
 	return len(tokens) > 0
 }
 
-func (c *Catalog) aliasArtists(latin, unicodeQuery string) []string {
+func (c *Catalog) aliasArtists(ctx context.Context, latin, unicodeQuery string) []string {
 	if !c.hasAliases {
 		return nil
 	}
-	rows, err := c.db.Query(
+	rows, err := c.db.QueryContext(ctx,
 		"SELECT DISTINCT artist FROM artist_aliases WHERE alias_search = ? OR alias_unicode = ? ORDER BY artist",
 		latin, unicodeQuery,
 	)
@@ -400,7 +424,7 @@ func (c *Catalog) aliasArtists(latin, unicodeQuery string) []string {
 	}
 	defer rows.Close()
 	var artists []string
-	for rows.Next() {
+	for ctx.Err() == nil && rows.Next() {
 		var artist string
 		if rows.Scan(&artist) == nil {
 			artists = append(artists, artist)
@@ -409,7 +433,10 @@ func (c *Catalog) aliasArtists(latin, unicodeQuery string) []string {
 	return artists
 }
 
-func (c *Catalog) artistRepresentatives(artist string) []core.WeightedTrack {
+func (c *Catalog) artistRepresentatives(ctx context.Context, artist string) []core.WeightedTrack {
+	if ctx.Err() != nil {
+		return nil
+	}
 	artistKey := normalizeUnicodeSearch(artist)
 	key := c.version + "\x00" + artistKey
 	c.resolutionMu.RLock()
@@ -422,14 +449,17 @@ func (c *Catalog) artistRepresentatives(artist string) []core.WeightedTrack {
 	latin := normalizeSearch(artist)
 	var rows []indexedTrack
 	if latin != "" {
-		rows = c.queryTracks("search", strings.Fields(latin))
+		rows = c.queryTracks(ctx, "search", strings.Fields(latin))
 	} else if c.hasUnicodeSearch {
-		rows = c.queryTracks("unicode_search", strings.Fields(artistKey))
+		rows = c.queryTracks(ctx, "unicode_search", strings.Fields(artistKey))
 	} else {
-		rows = c.scanTracks(func(ref core.TrackRef) bool { return normalizeUnicodeSearch(ref.Artist) == artistKey })
+		rows = c.scanTracks(ctx, func(ref core.TrackRef) bool { return normalizeUnicodeSearch(ref.Artist) == artistKey })
 	}
 	filtered := rows[:0]
 	for _, row := range rows {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if normalizeUnicodeSearch(row.ref.Artist) == artistKey {
 			filtered = append(filtered, row)
 		}
@@ -449,10 +479,13 @@ func (c *Catalog) artistRepresentatives(artist string) []core.WeightedTrack {
 			representatives = append(representatives, core.WeightedTrack{TrackID: row.ref.ID, Weight: 1 / float64(limit)})
 		}
 	} else {
-		representatives = c.medoidRepresentatives(rows, maxRepresentatives)
+		representatives = c.medoidRepresentatives(ctx, rows, maxRepresentatives)
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	c.resolutionMu.Lock()
-	if len(key) <= resolutionCacheKeyLimit {
+	if ctx.Err() == nil && len(key) <= resolutionCacheKeyLimit {
 		if len(c.representativeCache) >= resolutionCacheLimit {
 			clear(c.representativeCache)
 		}
@@ -462,7 +495,7 @@ func (c *Catalog) artistRepresentatives(artist string) []core.WeightedTrack {
 	return representatives
 }
 
-func (c *Catalog) medoidRepresentatives(tracks []indexedTrack, k int) []core.WeightedTrack {
+func (c *Catalog) medoidRepresentatives(ctx context.Context, tracks []indexedTrack, k int) []core.WeightedTrack {
 	if len(tracks) == 0 {
 		return nil
 	}
@@ -473,6 +506,9 @@ func (c *Catalog) medoidRepresentatives(tracks []indexedTrack, k int) []core.Wei
 	valid := tracks[:0]
 	validVectors := vectors[:0]
 	for _, track := range tracks {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if value, ok := c.VectorsByRow(track.row); ok {
 			valid = append(valid, track)
 			validVectors = append(validVectors, value)
@@ -488,8 +524,11 @@ func (c *Catalog) medoidRepresentatives(tracks []indexedTrack, k int) []core.Wei
 	distance := func(i, j int) float64 {
 		return 1 - .5*(cosine(vectors[i].Audio, vectors[j].Audio)+cosine(vectors[i].Track, vectors[j].Track))
 	}
-	medoids := []int{bestMedoid(len(tracks), distance)}
+	medoids := []int{bestMedoid(ctx, len(tracks), distance)}
 	for len(medoids) < k {
+		if ctx.Err() != nil {
+			return nil
+		}
 		best, bestDistance := -1, -1.0
 		for i := range tracks {
 			if containsInt(medoids, i) {
@@ -505,12 +544,15 @@ func (c *Catalog) medoidRepresentatives(tracks []indexedTrack, k int) []core.Wei
 		}
 		medoids = append(medoids, best)
 	}
-	assignments := assignClusters(len(tracks), medoids, distance)
+	assignments := assignClusters(ctx, len(tracks), medoids, distance)
 	for cluster := range medoids {
+		if ctx.Err() != nil {
+			return nil
+		}
 		members := clusterMembers(assignments, cluster)
-		medoids[cluster] = bestAmong(members, distance, tracks)
+		medoids[cluster] = bestAmong(ctx, members, distance, tracks)
 	}
-	assignments = assignClusters(len(tracks), medoids, distance)
+	assignments = assignClusters(ctx, len(tracks), medoids, distance)
 	out := make([]core.WeightedTrack, len(medoids))
 	for cluster, medoid := range medoids {
 		out[cluster] = core.WeightedTrack{TrackID: tracks[medoid].ref.ID, Weight: float64(len(clusterMembers(assignments, cluster))) / float64(len(tracks))}
@@ -518,17 +560,20 @@ func (c *Catalog) medoidRepresentatives(tracks []indexedTrack, k int) []core.Wei
 	return out
 }
 
-func bestMedoid(n int, distance func(int, int) float64) int {
+func bestMedoid(ctx context.Context, n int, distance func(int, int) float64) int {
 	indices := make([]int, n)
 	for i := range indices {
 		indices[i] = i
 	}
-	return bestAmong(indices, distance, nil)
+	return bestAmong(ctx, indices, distance, nil)
 }
 
-func bestAmong(indices []int, distance func(int, int) float64, tracks []indexedTrack) int {
+func bestAmong(ctx context.Context, indices []int, distance func(int, int) float64, tracks []indexedTrack) int {
 	best, bestCost := indices[0], math.MaxFloat64
 	for _, candidate := range indices {
+		if ctx.Err() != nil {
+			return best
+		}
 		var cost float64
 		for _, other := range indices {
 			cost += distance(candidate, other)
@@ -540,9 +585,12 @@ func bestAmong(indices []int, distance func(int, int) float64, tracks []indexedT
 	return best
 }
 
-func assignClusters(n int, medoids []int, distance func(int, int) float64) []int {
+func assignClusters(ctx context.Context, n int, medoids []int, distance func(int, int) float64) []int {
 	out := make([]int, n)
 	for i := 0; i < n; i++ {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if own := indexOfInt(medoids, i); own >= 0 {
 			out[i] = own
 			continue

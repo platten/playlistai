@@ -123,7 +123,7 @@ func TestDSPIntervalUsesOnlyObservedSourceFrames(t *testing.T) {
 	s.DSPStore = s.Store.(*Store).DSP()
 	original := DecodedPCM{Samples: make([]float32, 2*44100), SampleRate: 44100, Channels: 2}
 	ref := core.TrackRef{ID: "123", Artist: "Synthetic", Title: "Silence"}
-	identity := core.PreviewIdentity{Provider: "deezer", ProviderID: "123", Status: core.ResolutionResolved}
+	identity := core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: "123", Status: core.ResolutionResolved}
 	a, err := s.storeDSPInterval(context.Background(), ref, "catalog", identity, storedRepresentation().AudioSHA256, original, 13, 47001)
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestDSPMeasuresOriginalChannelsAndInvalidatesChangedAudio(t *testing.T) {
 		}
 	}
 	ref := core.TrackRef{ID: "123", Artist: "Synthetic", Title: "Tone"}
-	identity := core.PreviewIdentity{Provider: "deezer", ProviderID: "123", Status: core.ResolutionResolved}
+	identity := core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: "123", Status: core.ResolutionResolved}
 	a, err := s.storeDSPInterval(ctx, ref, "catalog", identity, strings.Repeat("a", 64), original, 0, 48000)
 	if err != nil || a.Features.RMSDBFS.Value == nil || *a.Features.RMSDBFS.Value < -10 {
 		t.Fatalf("DSP used canceled mono power: %+v %v", a.Features.RMSDBFS, err)

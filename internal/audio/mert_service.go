@@ -76,15 +76,15 @@ func (s *MERTService) AnalyzeEnhancedPreview(ctx context.Context, ref core.Track
 		}
 		return dsp, r, n, err
 	}
-	var enriched core.EnrichedTrack
-	if s.Preview.Recordings != nil {
-		enriched, _ = s.Preview.Recordings.CachedRecording(ref)
+	enriched, _ := ports.CachedRecordingContext(ctx, s.Preview.Recordings, ref)
+	if err := ctx.Err(); err != nil {
+		return dsp, r, 0, err
 	}
 	preview, err := s.Preview.Resolver.ResolveAudioPreview(ctx, ref, enriched)
 	if err != nil {
 		return dsp, r, 0, err
 	}
-	if preview.Identity.Status != core.ResolutionResolved || preview.Identity.Provider != "deezer" || preview.URL == "" {
+	if !preview.Identity.CurrentPolicy() || preview.URL == "" {
 		return dsp, r, 0, fmt.Errorf("audio: verified preview identity required")
 	}
 	encoded, err := s.Preview.fetch(ctx, preview.URL)
@@ -122,6 +122,9 @@ func (s *MERTService) AnalyzeDecoded(ctx context.Context, ref core.TrackRef, cat
 	}
 	if err := ctx.Err(); err != nil {
 		return r, err
+	}
+	if !identity.CurrentPolicy() {
+		return r, fmt.Errorf("audio: current preview identity required")
 	}
 	cached, hit, err := s.Store.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), s.Analyzer.Identity())
 	if err != nil {

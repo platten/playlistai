@@ -10,6 +10,7 @@ const progressHandlers = vi.hoisted(() => new Set<(event: { data: unknown }) => 
 const clipboard = vi.hoisted(() => vi.fn());
 
 const bridge = vi.hoisted(() => Object.fromEntries([
+  "GetListenBrainzStatus", "ConnectListenBrainz", "DisconnectListenBrainz",
   "GetOnboarded", "GetSetupStatus", "GetStatus", "GetCatalogInfo", "ListSavedPlaylists", "GetRecommendationMode",
   "ParseIntentWithContext", "GenerateFromPromptWithContext", "GenerateFromPromptResolvedWithContext",
   "BuildPlaylist", "LoadSavedPlaylist", "CheckForUpdate", "AcknowledgePlaylistDisplayed",
@@ -26,7 +27,7 @@ const bridge = vi.hoisted(() => Object.fromEntries([
 ].map((name) => [name, vi.fn()])));
 vi.mock("./lib/api", () => ({
   API: bridge,
-  RecommendationMode: { AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" },
+  RecommendationMode: { Automatic: "automatic", AcousticBrainzFirst: "acousticbrainz_first", CLAPFirst: "clap_first", DeejAIOnly: "deejai_only", EnhancedHybrid: "enhanced_hybrid" },
   FeedbackScope: { FeedbackScopeRequest: "request", FeedbackScopeDurable: "durable" },
   FeedbackType: { FeedbackLike: "like", FeedbackDislike: "dislike", FeedbackMoreLike: "more_like", FeedbackLessLike: "less_like", FeedbackAccepted: "accepted", FeedbackRemoved: "removed" },
 }));

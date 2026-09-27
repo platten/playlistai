@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "kind": "supplementary-diagnostics",
+  "variant": "post-freeze-supplementary-v2",
+  "selectedCases": [
+    6,
+    7,
+    8,
+    11
+  ],
+  "requestedSlots": 40,
+  "nativeComplete": true,
+  "webAuditComplete": true,
+  "complete": true,
+  "files": [
+    {
+      "file": "summary.json",
+      "sha256": "ad3f616247245f00d1c221ad205954dcdb79ede653233fc6f760d0af91eaca76"
+    },
+    {
+      "file": "methodology.json",
+      "sha256": "588eabc9006fc36cbbba03d030b67519adbf3f1a6e0437fc6f14632f333eeb26"
+    },
+    {
+      "file": "case-06.json",
+      "sha256": "ac81d50311a35dff0648a886dba423b8053e87484b86fa1ba2b0a0ba940678d5"
+    },
+    {
+      "file": "case-07.json",
+      "sha256": "54423cfbd517d2f9b6e7796f5ac43144c9de17cb8ac46d7e1e33ca7bf685b030"
+    },
+    {
+      "file": "case-08.json",
+      "sha256": "ca42b4272d6faad0dbba8f381a2e92bc2cf7ae172aed1c3dd94040378da4e73f"
+    },
+    {
+      "file": "case-11.json",
+      "sha256": "86c2be95f8c9ae4ad9cabb54eabe6e11c22aa5c67fc6c4bd88c9ff6a7e691eca"
+    }
+  ]
+}

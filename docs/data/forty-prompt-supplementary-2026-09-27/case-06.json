@@ -1,0 +1,129 @@
+{
+  "caseNumber": 6,
+  "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+  "requested": 10,
+  "status": "audited",
+  "nativeCompleted": true,
+  "webAuditCompleted": true,
+  "returnedOccurrences": 0,
+  "missingSlots": 10,
+  "pendingSlots": 0,
+  "operationFailure": true,
+  "verdictCounts": {
+    "good": 0,
+    "partial": 0,
+    "mismatch": 0,
+    "unknown": 0
+  },
+  "runIdentity": {
+    "variant": "post-freeze-supplementary-v2",
+    "inputMode": "raw",
+    "familyId": "cf5b637acb0012d36d4262e927b5008ded613ddad2f9ebc92d369912b019e94d",
+    "originalCaseNumber": 6,
+    "reportCaseNumber": 1,
+    "seed": "0",
+    "seedStatus": "uninitialized",
+    "reproducibility": {
+      "evidenceSnapshot": "",
+      "id": "",
+      "catalogVersion": "",
+      "algorithmVersion": "",
+      "intentFingerprint": "",
+      "profileVersion": "",
+      "profileSnapshot": "",
+      "contextFingerprint": "",
+      "rngSeed": "0"
+    },
+    "executable": {
+      "name": "musiccheck-supplementary-v2",
+      "size": 26578688,
+      "sha256": "8e67a8019c8dc8625b00d284515575ce7f7806fccf4d071e146843fb6d54a0b8"
+    },
+    "executableIdentityStatus": "verified",
+    "expectedBinarySHA256": "8e67a8019c8dc8625b00d284515575ce7f7806fccf4d071e146843fb6d54a0b8",
+    "rawReportSHA256": "39fcfc9d2d2570c4267e91a33745ce8cc2783068f77f62951aad05157debda6d",
+    "rawCaseSHA256": "6b313215de19e74c5659d468cd9b90cb1513c8f5920b3223191ddb68bda6fea2",
+    "releaseSHA256": "654645bf5b2ff69b167641a9171505cca5cafb509d30ec6b02541fd669d91b74",
+    "inputManifestSHA256": "a70958c24ec7127e8e3643f589cd007f91fe5c593f4b3b8081dc6aca1e803f05",
+    "sourceManifestSHA256": "f0a4c18b463483e7e60a726d3cadfa27a00ac710cf3984cc65acdc1b0ea67189"
+  },
+  "operationError": "context deadline exceeded",
+  "timedOut": true,
+  "processExitCode": 1,
+  "nonzeroProcessExit": true,
+  "generationMilliseconds": 600002,
+  "parentReportedMilliseconds": 600002,
+  "timingScope": "matching_completed_child_generation",
+  "parser": {
+    "backend": "llama",
+    "requestedBackend": "llama",
+    "fallbackUsed": false,
+    "fallbackReason": "",
+    "referenceLookup": "available",
+    "referenceSnapshot": "combined/v1:musicbrainz-offline/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+    "genreVocabulary": "embedded+paipack"
+  },
+  "parserFindings": [],
+  "interpretationFindings": [],
+  "constraintFindings": [],
+  "engineOutcome": {
+    "state": "",
+    "reasons": null
+  },
+  "verificationReceipt": {
+    "file": "case-06.json.verification.json",
+    "sha256": "122afb6d054569423103a6a7981d0295770c86cf91a325ef3042eeecd2f82a0d"
+  },
+  "childReceipt": {
+    "file": "case-001.json",
+    "sha256": "50821f70bf13539e27a826ff1f022a8d80a8aad6dbe4dc241701b9c2626c6ace",
+    "exactCompletedMatch": true
+  },
+  "listeningSidecarSHA256": "2ce720aa92fb660ffc1772a89717ee99c4f46dd7b2fbfd76418446f01a8d9fc0",
+  "assessmentType": "AI web assessment; no human listening labels; zero output has no song grades",
+  "auditedAt": "2026-09-27T02:16:42.189207+00:00",
+  "rubric": {
+    "caseNumber": 6,
+    "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+    "requested": 10,
+    "criteria": [
+      "meaningful relation to Daft Punk via French/electronic house, disco/funk production or documented stylistic similarity"
+    ],
+    "interpretationNotes": [
+      "Not every track needs to be house; direct Daft Punk recordings are eligible but cannot alone supply discovery variety."
+    ],
+    "sharedChecks": [
+      "exact recording/version identity",
+      "recording deduplication",
+      "artist variety and adjacent repetition",
+      "ten requested slots reported independently from fit"
+    ],
+    "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+  },
+  "overallJudgment": "No playlist was returned: the generation call ended with context deadline exceeded. All ten requested slots remain missing. There are no returned songs to grade.",
+  "playlistFindings": [
+    "The saved intent resolves the Daft Punk reference with four representative recordings.",
+    "No completed candidate/rank or audio-evidence snapshot was retained; no cause of the timeout is inferred from that absence.",
+    "The saved seed is uninitialized (0); no replayable generated playlist identity is available."
+  ],
+  "coverage": {
+    "requestedSlots": 10,
+    "returnedOccurrences": 0,
+    "missingSlots": 10,
+    "verdictCounts": {
+      "good": 0,
+      "partial": 0,
+      "mismatch": 0,
+      "unknown": 0
+    },
+    "distinctArtists": 0,
+    "artistConcentration": null,
+    "adjacentArtistRepeats": null,
+    "referenceCoverage": "No returned songs; stylistic connection and variety cannot be assessed."
+  },
+  "tracks": [],
+  "auditReceipt": {
+    "file": "post-freeze-supplementary-v2-06.json",
+    "sha256": "a65df7c57d400c7fcb0bf57868ae39c01be1318254caae99ca9add8ac035ab75"
+  }
+}

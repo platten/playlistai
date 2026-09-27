@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/platten/playlistai/internal/app"
@@ -47,6 +48,8 @@ type GenerationStatus struct {
 }
 
 type Reproducibility struct {
+	SearchSnapshot           string       `json:"searchSnapshot,omitempty"`
+	SearchPolicy             string       `json:"searchPolicy,omitempty"`
 	EnhancedEvidenceSnapshot string       `json:"enhancedEvidenceSnapshot,omitempty"`
 	EvidenceSnapshot         string       `json:"evidenceSnapshot"`
 	ID                       string       `json:"id"`
@@ -65,8 +68,11 @@ func audioIdentity(generation, evidence string) string {
 }
 
 type parsedIntentEntry struct {
-	intent  core.MusicIntent
-	outcome app.ParseOutcome
+	intent   core.MusicIntent
+	outcome  app.ParseOutcome
+	cacheKey string // Original epoch-scoped key; empty for incomplete recognition.
+	// Retained only on errors for a source-only deadline result; never cached.
+	preparedInput *ports.IntentInput
 }
 
 type intentCache struct {
@@ -151,6 +157,20 @@ func (c *intentCache) get(key string) (parsedIntentEntry, bool) {
 func (c *intentCache) put(key string, entry parsedIntentEntry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.putLocked(key, entry)
+}
+
+func (c *intentCache) putIfCurrent(ctx context.Context, key string, entry parsedIntentEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// The operation or evidence epoch may change while waiting for the lock.
+	if ctx.Err() != nil || !strings.HasPrefix(key, fmt.Sprintf("%d:", c.epoch)) {
+		return
+	}
+	c.putLocked(key, entry)
+}
+
+func (c *intentCache) putLocked(key string, entry parsedIntentEntry) {
 	if c.entries == nil || len(c.entries) >= maxParsedIntentCacheEntries {
 		c.entries = make(map[string]parsedIntentEntry)
 	}
@@ -182,14 +202,18 @@ func (a *API) parseIntentCached(ctx context.Context, input ports.IntentInput, pr
 	}
 	outcome, err := a.app.ParseIntentDetailed(ctx, input, progress)
 	if err != nil {
-		return parsedIntentEntry{}, false, err
+		if outcome.RequestedBackend == "" {
+			outcome.RequestedBackend = a.app.IntentParser().Info().Backend
+		}
+		return parsedIntentEntry{outcome: outcome, preparedInput: &input}, false, err
 	}
 	if err := ctx.Err(); err != nil {
-		return parsedIntentEntry{}, false, err
+		return parsedIntentEntry{intent: outcome.Intent.Normalized(), outcome: outcome, preparedInput: &input}, false, err
 	}
 	entry := parsedIntentEntry{intent: outcome.Intent.Normalized(), outcome: outcome}
 	if input.SourceFacts == nil || !input.SourceFacts.Recognition.Incomplete {
-		a.intentCache.put(key, entry)
+		entry.cacheKey = key
+		a.intentCache.putIfCurrent(ctx, key, entry)
 	}
 	return entry, false, nil
 }
@@ -200,16 +224,18 @@ func (a *API) intentCacheKey(input ports.IntentInput) (string, error) {
 
 func hashIntentCacheKey(input ports.IntentInput, parserIdentity string, schemaVersion int) (string, error) {
 	payload := struct {
-		SkipMetadata        bool            `json:"skipMetadata"`
-		Prompt              string          `json:"prompt"`
-		SessionID           string          `json:"sessionId"`
-		ParserIdentity      string          `json:"parserIdentity"`
-		SchemaVersion       int             `json:"schemaVersion"`
-		NowPlaying          *core.TrackRef  `json:"nowPlaying"`
-		RecentTracks        []core.TrackRef `json:"recentTracks"`
-		Locale              string          `json:"locale"`
-		RecognitionIdentity string          `json:"recognitionIdentity"`
-	}{input.SkipMetadata, input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale, input.RecognitionIdentity}
+		SkipMetadata          bool            `json:"skipMetadata"`
+		Prompt                string          `json:"prompt"`
+		SessionID             string          `json:"sessionId"`
+		ParserIdentity        string          `json:"parserIdentity"`
+		SchemaVersion         int             `json:"schemaVersion"`
+		NowPlaying            *core.TrackRef  `json:"nowPlaying"`
+		RecentTracks          []core.TrackRef `json:"recentTracks"`
+		Locale                string          `json:"locale"`
+		RecognitionIdentity   string          `json:"recognitionIdentity"`
+		Automatic             bool            `json:"automatic,omitempty"`
+		PreparedMusicSnapshot string          `json:"preparedMusicSnapshot,omitempty"`
+	}{input.SkipMetadata, input.Prompt, input.SessionID, parserIdentity, schemaVersion, input.NowPlaying, input.RecentTracks, input.Locale, input.RecognitionIdentity, input.RecommendationMode == core.Automatic, input.PreparedMusicSnapshot}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		return "", err

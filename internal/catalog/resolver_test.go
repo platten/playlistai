@@ -122,7 +122,7 @@ func TestArtistRepresentativesDeterministicAndDiverse(t *testing.T) {
 	if len(seen) != maxRepresentatives || total < .999 || total > 1.001 {
 		t.Fatalf("invalid weighted representatives: %+v", first.Selected.Representatives)
 	}
-	rows := c.artistSearchRows("kavinsky", "kavinsky")
+	rows := c.artistSearchRows(context.Background(), "kavinsky", "kavinsky")
 	var firstIDs []string
 	for _, row := range rows {
 		if normalizeSearch(row.ref.Artist) == "kavinsky" {

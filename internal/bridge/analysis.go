@@ -14,8 +14,8 @@ func (a *API) InspectAnalysisBundle(path string) (audio.BundleManifest, error) {
 	return a.app.InspectAnalysisBundle(path)
 }
 
-func (a *API) GetRecommendedAnalysisBundle() (audio.BundleManifest, error) {
-	return audio.RecommendedBundle()
+func (a *API) GetRecommendedAnalysisBundle() (app.AnalysisBundleOffer, error) {
+	return a.app.GetRecommendedAnalysisBundle()
 }
 
 func (a *API) InstallRecommendedAnalysisBundle(ctx context.Context) error {
@@ -23,6 +23,12 @@ func (a *API) InstallRecommendedAnalysisBundle(ctx context.Context) error {
 	defer finish()
 	a.cancelRecommendationWork()
 	return a.app.InstallRecommendedAnalysisBundle(ctx, NewWailsProgress())
+}
+func (a *API) InstallCPUAnalysisBundle(ctx context.Context) error {
+	ctx, _, finish := a.operations.begin(ctx, "analysis-download")
+	defer finish()
+	a.cancelRecommendationWork()
+	return a.app.InstallCPUAnalysisBundle(ctx, NewWailsProgress())
 }
 func (a *API) InstallAnalysisBundle(ctx context.Context, path string) error {
 	ctx, _, finish := a.operations.begin(ctx, "analysis-download")

@@ -1,0 +1,267 @@
+{
+  "version": "descriptive-calibration-development-experiment/v1",
+  "date": "2026-09-27",
+  "state": "development_only_not_production_validation",
+  "source": "Previously collected unanimous three-listener MTG music-classification annotations; original corpus development membership only.",
+  "model": {
+    "model": "LAION original HTSAT-base music checkpoint",
+    "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+    "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+    "runtime": "onnxruntime/1.26.0/cpu",
+    "dimension": 512,
+    "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+  },
+  "modelFingerprint": "2f89df6b0880eca66db79401263859c9587262a6950add78e66eb8c6cf302247",
+  "featuresSHA256": "60e1dd4803f37ef1a59a4d479e23f517630c414e95d252a76da9b0d52ce1a19e",
+  "policySHA256": "a177f3eadae8462be08e763cc3b063a39d385ce34f9ea70c156b785ebe2cb0fe",
+  "toolSHA256": "b1716334e7f3747a078a8c8128f64651586d45121547e63667fdc1b45ca7e9f9",
+  "sampling": "two-distributed-10s-thirds-or-edges/v2",
+  "recordings": 300,
+  "coveredSeconds": 6000,
+  "fitRecordings": 200,
+  "validationRecordings": 100,
+  "splitRule": "Sort SHA256(seed + NUL + artistId); first 200 development-fit, remaining 100 development-validation; no stratification or label access when splitting.",
+  "thresholdRule": "Maximize development-fit recall among observed-score thresholds reaching >=0.90 precision; tie-break precision then lower threshold. Freeze before development-validation.",
+  "identityChecks": {
+    "id": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    },
+    "artistId": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    },
+    "albumId": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    },
+    "audioPath": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    },
+    "audioSHA256": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    },
+    "lowAudioSHA256": {
+      "fitDistinct": 200,
+      "validationDistinct": 100,
+      "crossSplitOverlap": 0
+    }
+  },
+  "results": [
+    {
+      "facet": "mood_acoustic",
+      "kind": "texture",
+      "criterion": "acoustic",
+      "inputSHA256": "375d317b48b880ca37528df7b563f40aa0d66dc748de2d9be63d6a49a8153fe7",
+      "splits": {
+        "development": {
+          "positive": 42,
+          "negative": 85,
+          "unknown": 73,
+          "truePositive": 27,
+          "falsePositive": 2,
+          "falseNegative": 15,
+          "trueNegative": 83,
+          "precision": 0.9310344827586207,
+          "recall": 0.6428571428571429,
+          "unknownAboveThreshold": 8
+        },
+        "validation": {
+          "positive": 23,
+          "negative": 36,
+          "unknown": 41,
+          "truePositive": 11,
+          "falsePositive": 0,
+          "falseNegative": 12,
+          "trueNegative": 36,
+          "precision": 1.0,
+          "recall": 0.4782608695652174,
+          "unknownAboveThreshold": 6
+        }
+      },
+      "state": "pass_development_validation",
+      "calibration": {
+        "modelFingerprint": "2f89df6b0880eca66db79401263859c9587262a6950add78e66eb8c6cf302247",
+        "kind": "texture",
+        "criterion": "acoustic",
+        "developmentSet": "sha256:b29763217a9873a83486169545dbd77cdb6e6932cd9a2fe2d2b901203bafa49d",
+        "validationSet": "sha256:0440f56f8cec6021ae42fe0c9c1e83b4e64214eda538943548950ec1e9904b81",
+        "version": "descriptive-calibration-development-2026-09-27/v1",
+        "minimumScore": 0.1268445031306767,
+        "validationPrecision": 1.0,
+        "validationRecall": 0.4782608695652174,
+        "positiveExamples": 23,
+        "negativeExamples": 36
+      },
+      "frozenMinimumScore": 0.1268445031306767
+    },
+    {
+      "facet": "mood_electronic",
+      "kind": "texture",
+      "criterion": "electronic",
+      "inputSHA256": "c95b622cdfc78eacbd6cdc1d85bc0ad71343371e073a5127a8a5ec5432d74931",
+      "splits": {
+        "development": {
+          "positive": 70,
+          "negative": 59,
+          "unknown": 71,
+          "truePositive": 15,
+          "falsePositive": 1,
+          "falseNegative": 55,
+          "trueNegative": 58,
+          "precision": 0.9375,
+          "recall": 0.21428571428571427,
+          "unknownAboveThreshold": 1
+        },
+        "validation": {
+          "positive": 34,
+          "negative": 35,
+          "unknown": 31,
+          "truePositive": 10,
+          "falsePositive": 0,
+          "falseNegative": 24,
+          "trueNegative": 35,
+          "precision": 1.0,
+          "recall": 0.29411764705882354,
+          "unknownAboveThreshold": 2
+        }
+      },
+      "state": "pass_development_validation",
+      "calibration": {
+        "modelFingerprint": "2f89df6b0880eca66db79401263859c9587262a6950add78e66eb8c6cf302247",
+        "kind": "texture",
+        "criterion": "electronic",
+        "developmentSet": "sha256:b29763217a9873a83486169545dbd77cdb6e6932cd9a2fe2d2b901203bafa49d",
+        "validationSet": "sha256:0440f56f8cec6021ae42fe0c9c1e83b4e64214eda538943548950ec1e9904b81",
+        "version": "descriptive-calibration-development-2026-09-27/v1",
+        "minimumScore": 0.2566684096469437,
+        "validationPrecision": 1.0,
+        "validationRecall": 0.29411764705882354,
+        "positiveExamples": 34,
+        "negativeExamples": 35
+      },
+      "frozenMinimumScore": 0.2566684096469437
+    },
+    {
+      "facet": "mood_relaxed",
+      "kind": "mood",
+      "criterion": "relaxed",
+      "inputSHA256": "9763a31655f56c459c6d7893df27c6458ddb3fdcfccd6b4b72d9250004320a4d",
+      "splits": {
+        "development": {
+          "positive": 46,
+          "negative": 74,
+          "unknown": 80,
+          "truePositive": 21,
+          "falsePositive": 2,
+          "falseNegative": 25,
+          "trueNegative": 72,
+          "precision": 0.9130434782608695,
+          "recall": 0.45652173913043476,
+          "unknownAboveThreshold": 17
+        },
+        "validation": {
+          "positive": 21,
+          "negative": 38,
+          "unknown": 41,
+          "truePositive": 9,
+          "falsePositive": 1,
+          "falseNegative": 12,
+          "trueNegative": 37,
+          "precision": 0.9,
+          "recall": 0.42857142857142855,
+          "unknownAboveThreshold": 8
+        }
+      },
+      "state": "pass_development_validation",
+      "calibration": {
+        "modelFingerprint": "2f89df6b0880eca66db79401263859c9587262a6950add78e66eb8c6cf302247",
+        "kind": "mood",
+        "criterion": "relaxed",
+        "developmentSet": "sha256:b29763217a9873a83486169545dbd77cdb6e6932cd9a2fe2d2b901203bafa49d",
+        "validationSet": "sha256:0440f56f8cec6021ae42fe0c9c1e83b4e64214eda538943548950ec1e9904b81",
+        "version": "descriptive-calibration-development-2026-09-27/v1",
+        "minimumScore": 0.20803542203631684,
+        "validationPrecision": 0.9,
+        "validationRecall": 0.42857142857142855,
+        "positiveExamples": 21,
+        "negativeExamples": 38
+      },
+      "frozenMinimumScore": 0.20803542203631684
+    },
+    {
+      "facet": "danceability",
+      "kind": "texture",
+      "criterion": "danceable",
+      "inputSHA256": "688580632903e93fe85a74ebbd7940eaea9bfdc02f245d74df24bd4d0454f9e0",
+      "splits": {
+        "development": {
+          "positive": 35,
+          "negative": 42,
+          "unknown": 123
+        },
+        "validation": {
+          "positive": 19,
+          "negative": 28,
+          "unknown": 53
+        }
+      },
+      "state": "fail",
+      "reason": "No development threshold meets 90% precision; criterion remains unknown"
+    }
+  ],
+  "passed": 3,
+  "failed": 1,
+  "productionCalibrationsEnabled": 0,
+  "downloads": 0,
+  "newInferenceRuns": 0,
+  "heldoutIncident": {
+    "headerInspectionExposedRecords": 1,
+    "recordingId": "track_0003112",
+    "description": "Initial 45-line corpus header inspection inadvertently exposed partial labels of one interleaved heldout record. No heldout label was used for splitting, threshold selection, validation, or output results. Subsequent processing filtered by development feature IDs before parsing records. Therefore this receipt does not claim heldout was entirely unopened."
+  },
+  "limits": [
+    "Development-validation is a new subdivision of previously examined development data, not the original untouched heldout split.",
+    "No claim of statistical certainty or production acceptance; per-criterion labeled counts may be small.",
+    "Unknown labels excluded from thresholds and confusion matrices, never converted to negatives.",
+    "Checks establish distinct IDs/artists/albums/paths and encoded audio hashes within this development split, not perceptual deduplication or absence from model pretraining.",
+    "Acoustic/electronic/relaxed/danceable taxonomies do not label soft piano, pounding drums, spacious reverberation, distorted guitars, warm intimate vocals or reference similarity. Those requirements remain uncalibrated.",
+    "Genre and strict-vocal policies were not calibrated or changed.",
+    "Only sampled 20-second coverage per recording; no new listening, audio acquisition or inference.",
+    "Benchmark annotations are noncommercial research metadata and were not copied into production or repository artifacts.",
+    "Precision and recall are conditional on independently labeled records. Unlabeled above-threshold recordings remain unknown and cannot establish 90% precision among all admissions."
+  ],
+  "annotationSourceSHA256": "466cbb888fe906f3db22b9e6f63b1694e6a38a8613fb67d9d52149e1cc6decd3",
+  "corpusFileSHA256": "ad77efa60e709e227b2296c1737b2d0b53e5cc8cc91f56d180287112a2a1df30",
+  "runnerSHA256": "92a402e7bfdfe32110d6e0f7bd7f43c772a16e67e34690a5176b84449fb18cd5",
+  "scoreRule": "Production prepared-score formula: round stored query/audio JSON components to float32, accumulate each segment dot product in float64, average by segment duration, clamp [-1,1]. Query vectors retain existing caption-ensemble magnitude; no renormalization.",
+  "cliChecks": [
+    {
+      "facet": "mood_acoustic",
+      "exitCode": 0,
+      "error": null
+    },
+    {
+      "facet": "mood_electronic",
+      "exitCode": 0,
+      "error": null
+    },
+    {
+      "facet": "mood_relaxed",
+      "exitCode": 0,
+      "error": null
+    },
+    {
+      "facet": "danceability",
+      "exitCode": 1,
+      "error": "Calibration rejected: No development threshold meets 90% precision; criterion remains unknown"
+    }
+  ]
+}

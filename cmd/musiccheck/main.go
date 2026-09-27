@@ -31,27 +31,30 @@ import (
 )
 
 type promptCase struct {
-	Meaning         *meaningExpectation `json:"meaning,omitempty"`
-	Prompt          string              `json:"prompt"`
-	Genre           string              `json:"genre"`
-	Artist          string              `json:"artist"`
-	ExcludedArtists []string            `json:"excludedArtists"`
-	StartYear       int                 `json:"startYear"`
-	EndYear         int                 `json:"endYear"`
-	Basis           string              `json:"basis"`
-	Destination     string              `json:"destination"`
-	Vocal           string              `json:"vocal"`
-	Mood            string              `json:"mood"`
-	NegativeMood    string              `json:"negativeMood"`
-	NegativeMoods   []string            `json:"negativeMoods"`
-	Texture         string              `json:"texture"`
-	Artists         []string            `json:"artists"`
-	Album           string              `json:"album"`
-	Track           string              `json:"track"`
-	JourneyGenres   []string            `json:"journeyGenres"`
-	Count           int                 `json:"count"`
-	MinimumArtists  int                 `json:"minimumArtists"`
-	OnlyArtist      string              `json:"onlyArtist"`
+	FamilyID            string              `json:"familyId,omitempty"`
+	Split               string              `json:"split,omitempty"`
+	RequiredLibraryMode string              `json:"requiredLibraryMode,omitempty"`
+	Meaning             *meaningExpectation `json:"meaning,omitempty"`
+	Prompt              string              `json:"prompt"`
+	Genre               string              `json:"genre"`
+	Artist              string              `json:"artist"`
+	ExcludedArtists     []string            `json:"excludedArtists"`
+	StartYear           int                 `json:"startYear"`
+	EndYear             int                 `json:"endYear"`
+	Basis               string              `json:"basis"`
+	Destination         string              `json:"destination"`
+	Vocal               string              `json:"vocal"`
+	Mood                string              `json:"mood"`
+	NegativeMood        string              `json:"negativeMood"`
+	NegativeMoods       []string            `json:"negativeMoods"`
+	Texture             string              `json:"texture"`
+	Artists             []string            `json:"artists"`
+	Album               string              `json:"album"`
+	Track               string              `json:"track"`
+	JourneyGenres       []string            `json:"journeyGenres"`
+	Count               int                 `json:"count"`
+	MinimumArtists      int                 `json:"minimumArtists"`
+	OnlyArtist          string              `json:"onlyArtist"`
 }
 type result struct {
 	Completed                   bool                    `json:"completed"`
@@ -123,8 +126,8 @@ func run() error {
 	runtime := flag.String("runtime", "", "llama-server path")
 	serverURL := flag.String("server-url", "", "reuse an already-running local llama server without managing its process")
 	contextSize := flag.Int("context-size", 4096, "configured native context size; must match a reused server")
-	diagnosticsPath := flag.String("diagnostics", "", "opt in to save bounded raw model/provider diagnostics to this local JSON file")
-	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: acousticbrainz_first, clap_first, deejai_only, or enhanced_hybrid")
+	diagnosticsPath := flag.String("diagnostics", "", "opt in to save bounded raw model/provider and progress diagnostics locally; desktop requires one case and a new file outside app-data-dir")
+	modeFlag := flag.String("mode", string(core.AcousticBrainzFirst), "recommendation mode: automatic, acousticbrainz_first, clap_first, deejai_only, or enhanced_hybrid")
 	enhancedEvidence := flag.String("enhanced-evidence", "", "optional frozen EnhancedAudioInput JSON; Enhanced Hybrid only, no online metadata or new previews")
 	parseOnly := flag.Bool("parse-only", false, "evaluate interpretation only; not a playlist acceptance run")
 	rulesParser := flag.Bool("rules-parser", false, "explicitly use the deterministic rules parser; default remains the local language model")
@@ -149,6 +152,11 @@ func run() error {
 	cleanupTimeout := flag.Duration("cleanup-timeout", 10*time.Second, "grace period for timed-out case cleanup")
 	supervisedChild := flag.Bool("supervised-child", false, "internal: execute one supervisor-owned case")
 	cancelFile := flag.String("cancel-file", "", "internal: supervisor cancellation marker")
+	appDataDir := flag.String("app-data-dir", "", "isolated prepared app store; use the complete desktop Enhanced pipeline")
+	appConfig := flag.String("app-config", "", "optional desktop TOML configuration for app evaluation")
+	evalSplit := flag.String("eval-split", "development", "app evaluation split: development or heldout")
+	variant := flag.String("variant", "current", "blind evaluation variant identity (hidden in listener packets)")
+	cacheCondition := flag.String("cache-condition", "unknown", "measured cache condition: cold, warm, or unknown")
 	if err := flag.Parse(os.Args[1:]); err != nil {
 		return err
 	}
@@ -194,6 +202,34 @@ func run() error {
 		defer cancel()
 		stopWatching := watchCancellationFile(ctx, *cancelFile, cancel)
 		defer stopWatching()
+	}
+	if *appDataDir != "" {
+		if err := validateDesktopFlags(flag); err != nil {
+			return err
+		}
+		budget := ports.EnhancedGenerationLimit
+		desktopMode := core.EnhancedHybrid
+		if argumentPresent(os.Args[1:], "mode") || argumentPresent(os.Args[1:], "-mode") {
+			desktopMode = mode
+		}
+		if desktopMode == core.Automatic {
+			budget = ports.AutomaticGenerationLimit
+		}
+		maxBudget := budget
+		if argumentPresent(os.Args[1:], "case-timeout") || argumentPresent(os.Args[1:], "-case-timeout") {
+			budget = *caseTimeout
+		}
+		if budget > maxBudget {
+			return fmt.Errorf("case-timeout exceeds this engine's production limit of %s", maxBudget)
+		}
+		options := desktopEvaluationOptions{Mode: desktopMode, DataDir: *appDataDir, Config: *appConfig, Catalog: *catalogDir, Model: *model, Runtime: *runtime, Output: *output, Diagnostics: *diagnosticsPath, Replay: *replay, Split: *evalSplit, Variant: *variant, CacheCondition: *cacheCondition, CaseTimeout: budget, CleanupTimeout: *cleanupTimeout}
+		if !*supervisedChild {
+			return superviseDesktopCases(ctx, options, selected)
+		}
+		return runDesktopEvaluation(ctx, options, selected)
+	}
+	if mode == core.Automatic {
+		return fmt.Errorf("automatic mode requires -app-data-dir to evaluate the complete desktop pipeline")
 	}
 	identities, err := collectRunIdentities(ctx, identityOptions{Model: *model, DiscoveryState: *discoveryState, CLAPBundle: *bundle, MERTBundle: *mertBundle})
 	if err != nil {

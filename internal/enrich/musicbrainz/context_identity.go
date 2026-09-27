@@ -49,7 +49,7 @@ func (c *Client) contextArtistIdentity(ctx context.Context, selected core.Resolu
 	var titles []string
 	keys := map[string]bool{}
 	for _, representative := range selected.Representatives {
-		meta, ok := cat.Meta(representative.TrackID)
+		meta, ok := ports.CatalogMeta(ctx, cat, representative.TrackID)
 		if !ok || !seedNameMatches(selected.Artist, []string{meta.Ref.Artist}) {
 			continue
 		}

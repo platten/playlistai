@@ -152,7 +152,10 @@ func (c *Client) sampleGenreArtists(ctx context.Context, intent *core.MusicInten
 				if used[artist.ID] || excludedArtist(artist.Name, excluded) {
 					continue
 				}
-				resolution := resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+				resolution := ports.ResolveReferenceContext(ctx, resolver, core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+				if ctx.Err() != nil {
+					return nil
+				}
 				if resolution.Status != core.ResolutionResolved || resolution.Selected == nil || core.NormalizeIdentityPart(resolution.Selected.Artist) != core.NormalizeIdentityPart(artist.Name) {
 					continue
 				}
@@ -179,40 +182,47 @@ func excludedArtist(name string, excluded []string) bool {
 }
 
 func (c *Client) sampleArtistRecordings(ctx context.Context, artist core.GenreArtist, excluded []string, rng *mathrand.Rand, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, pool *core.GenreArtistPool) {
-	path := "/ws/2/recording?" + url.Values{"query": {"arid:" + artist.ID}, "fmt": {"json"}, "limit": {"100"}}.Encode()
-	raw, err := c.knowledgeGet(ctx, path, false)
-	if err != nil {
-		return
-	}
-	var page struct {
-		Recordings []mbRecording `json:"recordings"`
-	}
-	if json.Unmarshal(raw, &page) != nil {
-		return
-	}
-	snapshot.Sources = append(snapshot.Sources, c.base+path)
 	added := 0
-	for _, index := range rng.Perm(len(page.Recordings)) {
-		if ctx.Err() != nil {
-			break
+	for offset, pages := 0, 0; pages < artistRecordingPages; pages++ {
+		path := recordingPagePath(artist.ID, offset)
+		raw, err := c.knowledgeGet(ctx, path, false)
+		if err != nil {
+			return
 		}
-		recording := page.Recordings[index]
-		credited, blocked := false, false
-		for _, credit := range recording.ArtistCredit {
-			credited = credited || credit.Artist.ID == artist.ID
-			blocked = blocked || excludedArtist(credit.Name, excluded)
+		var page struct {
+			Count      int           `json:"recording-count"`
+			Recordings []mbRecording `json:"recordings"`
 		}
-		if !credited || blocked || strings.TrimSpace(recording.ID) == "" {
-			continue
+		if json.Unmarshal(raw, &page) != nil {
+			return
 		}
-		before := len(snapshot.Candidates)
-		c.addKnowledgeRecording(recording, cat, resolver, snapshot)
-		if len(snapshot.Candidates) > before {
-			pool.SampledTracks = append(pool.SampledTracks, snapshot.Candidates[len(snapshot.Candidates)-1].ID)
-			added++
-			if added >= recordingsPerArtist {
+		snapshot.Sources = append(snapshot.Sources, c.base+path)
+		for _, index := range rng.Perm(len(page.Recordings)) {
+			if ctx.Err() != nil {
 				break
 			}
+			recording := page.Recordings[index]
+			credited, blocked := false, false
+			for _, credit := range recording.ArtistCredit {
+				credited = credited || credit.Artist.ID == artist.ID
+				blocked = blocked || excludedArtist(credit.Name, excluded)
+			}
+			if !credited || blocked || strings.TrimSpace(recording.ID) == "" {
+				continue
+			}
+			before := len(snapshot.Candidates)
+			c.addKnowledgeRecording(ctx, recording, cat, resolver, snapshot)
+			if len(snapshot.Candidates) > before {
+				pool.SampledTracks = append(pool.SampledTracks, snapshot.Candidates[len(snapshot.Candidates)-1].ID)
+				added++
+				if added >= recordingsPerArtist {
+					return
+				}
+			}
+		}
+		offset += len(page.Recordings)
+		if len(page.Recordings) == 0 || offset >= page.Count || ctx.Err() != nil {
+			return
 		}
 	}
 }

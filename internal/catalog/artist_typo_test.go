@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
@@ -33,7 +34,7 @@ func TestTypoWithEquivalentCatalogSpellingsIsDeterministic(t *testing.T) {
 	insertResolverTrack(t, c.db, 1, "accent", "Christian Löffler", "Second")
 	c.artistRows = map[string][]int{"Christian Loffler": {0}, "Christian Löffler": {1}}
 	for range 50 {
-		r := c.resolveArtistTypo("Christan Loffler")
+		r := c.resolveArtistTypo(context.Background(), "Christan Loffler")
 		if r.Selected != nil || len(r.Alternatives) != 1 || r.Alternatives[0].Artist != "Christian Loffler" || r.Alternatives[0].EntityID != "artist:christian loffler" {
 			t.Fatalf("unstable correction: %+v", r)
 		}

@@ -10,6 +10,9 @@ import (
 // led by named references. Explicit artist/album-only restrictions opt out.
 // Stored slider values and musical eligibility remain unchanged.
 func genreArtistDiversity(intent core.MusicIntent) bool {
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		return false
+	}
 	for _, c := range intent.HardConstraints {
 		if c.Kind == "require_artist" || c.Kind == "require_album" {
 			return false

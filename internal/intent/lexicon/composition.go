@@ -30,7 +30,7 @@ var (
 	onlyArtistDated        = regexp.MustCompile(`(?i)\b(?:songs|tracks|music)\s+by\s+([^,.;!?]+),\s*(?:released|recorded)\s+(?:between|from)\s+[12][0-9]{3}\s+(?:and|to|through)\s+[12][0-9]{3}\s+only(?:\s*[,.;!?]|$)`)
 	onlyArtistBarePrefix   = regexp.MustCompile(`(?i)^\s*(?:only|exclusively)\s+([^,.;!?]+?)\s*$`)
 	onlyArtistBareSuffix   = regexp.MustCompile(`(?i)^\s*([^,.;!?]+?)\s+(?:only|exclusively)\s*$`)
-	preferredClause        = regexp.MustCompile(`(?i)\b(?:prefer|preferably|ideally|mostly|mainly|some|a bit of|a touch of)\s+(?:a\s+|an\s+)?`)
+	preferredClause        = regexp.MustCompile(`(?i)\b(?:optionally|optional|if possible|occasional|occasionally|prefer|preferably|ideally|mostly|mainly|some|a bit of|a touch of)\s+(?:a\s+|an\s+)?`)
 	contrastOperator       = regexp.MustCompile(`(?i)\b(?:over|rather than|instead of)\s+(?:an?\s+)?$`)
 	negativeClause         = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid)\s+(?:(?:their|his|her|the|later|early|late)\s+)*`)
 )
@@ -129,6 +129,16 @@ func quantityReference(value string) bool {
 		}
 	}
 	return false
+}
+
+var hardNegativePrefix = regexp.MustCompile(`(?i)^\s*(?:no|not|without|nothing|neither|nor|do not|don't|don’t|never)\b`)
+
+func softMusicalNegative(prefix string) bool {
+	return softPrefix.MatchString(strings.TrimRight(prefix, ", \t\r\n") + " ")
+}
+
+func hardMusicalNegative(prefix string) bool {
+	return hardNegativePrefix.MatchString(prefix) && !reducedPrefix.MatchString(prefix) && !additivePrefix.MatchString(prefix)
 }
 
 func negativeContextStart(prefix string) int {

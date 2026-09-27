@@ -88,7 +88,7 @@ func (c *CompositeCatalog) LibraryCLAPVector(ctx context.Context, id string) (co
 	if c.mode == ModeLibraryOnly {
 		return core.LibraryVector{}, false, nil
 	}
-	if meta, ok := c.baseMetadata(id); ok {
+	if meta, ok := c.baseMetadataContext(ctx, id); ok {
 		if match, found := c.matchBase(ctx, meta); found {
 			if vector, exists, err := c.local.LibraryCLAPVector(ctx, match.ID); exists || err != nil {
 				return vector, exists, err
@@ -108,7 +108,7 @@ func (c *CompositeCatalog) LibraryAssessment(ctx context.Context, id string) (co
 	localID := id
 	owned := c.local.owns(id)
 	if !owned && c.mode != ModeLibraryOnly {
-		if meta, ok := c.baseMetadata(id); ok {
+		if meta, ok := c.baseMetadataContext(ctx, id); ok {
 			if match, found := c.matchBase(ctx, meta); found {
 				localID, owned = match.ID, true
 			}
@@ -134,7 +134,7 @@ func (c *CompositeCatalog) LibraryAssessment(ctx context.Context, id string) (co
 				}
 				return core.AudioAssessment{}, false, nil
 			}
-			out := core.AudioAssessment{TrackID: id, AnalysisID: c.local.manifest.PackID + ":clap:" + localID,
+			out := core.AudioAssessment{ModelFingerprint: audio.Fingerprint(c.semanticModel), TrackID: id, AnalysisID: c.local.manifest.PackID + ":clap:" + localID,
 				PolicyVersion: "packed-clap/segments-v2+" + audio.QueryPolicyVersion,
 				IntentFingerprint: audio.Fingerprint(struct {
 					Model   core.AudioModelIdentity

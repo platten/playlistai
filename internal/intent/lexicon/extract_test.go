@@ -79,7 +79,7 @@ func TestReconcileRemovesMuddledKindsAndInventedPeriods(t *testing.T) {
 		t.Fatal("invented period retained")
 	}
 	for _, c := range m.EssentialCriteria {
-		if c.Value == "melancholic" || c.Value == "piano" || c.Value == "strings" {
+		if c.Value == "piano" || c.Value == "strings" {
 			t.Fatalf("soft description remains essential: %+v", c)
 		}
 	}

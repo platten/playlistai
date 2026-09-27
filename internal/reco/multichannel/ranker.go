@@ -28,10 +28,16 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 			metadata[track.Ref.ID] = track
 		}
 	}
-	positiveRefs := positiveReferenceVectors(r.cat, intent)
-	negativeRefs := negativeReferenceVectors(r.cat, intent)
+	positiveRefs := positiveReferenceVectorsContext(ctx, r.cat, intent)
+	negativeRefs := negativeReferenceVectorsContext(ctx, r.cat, intent)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	audioWeight, trackWeight := intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight
-	recentExposures := r.exposuresByRecording(request.Profile.RecentExposures)
+	recentExposures := r.exposuresByRecording(ctx, request.Profile.RecentExposures)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	result := append([]core.Candidate(nil), candidates...)
 	for index := range result {
 		if index&255 == 0 {
@@ -39,6 +45,7 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 				return nil, err
 			}
 		}
+		result[index].Scores.RequestFit, result[index].Available.RequestFit = 0, false
 		vectors, ok := r.cat.Vectors(result[index].Track.ID)
 		comparisons := acousticComparisons(metadata[result[index].Track.ID], clauses)
 		if preview, ok := request.PreviewAssessments[result[index].Track.ID]; ok {
@@ -85,6 +92,7 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 		}
 
 		explicitNegative, explicitNegativeAvailable := negativeSeedAffinity(vectors, negativeRefs, audioWeight, trackWeight)
+		candidate.Scores.RequestNegativeMatch, candidate.Available.RequestNegativeMatch = explicitNegative, explicitNegativeAvailable
 		requestNegative, requestNegativeAvailable := affinitySimilarity(request.Profile.RequestNegative, vectors, audioWeight, trackWeight)
 		historyNegative, historyNegativeAvailable := affinitySimilarity(request.Profile.Negative, vectors, audioWeight, trackWeight)
 		candidate.Scores.NegativeMatch, candidate.Available.NegativeMatch = priorityNegative(
@@ -101,14 +109,28 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 	for index := range result {
 		result[index].Scores.Total = r.total(result[index], intent, availability)
 	}
-	r.enhancedScores(result, intent, request.EnhancedAudio)
+	r.enhancedScores(ctx, result, intent, request.EnhancedAudio)
 	if err := r.libraryScores(ctx, result, request); err != nil {
 		return nil, err
 	}
 	if err := r.libraryMetadataScores(ctx, result, request); err != nil {
 		return nil, err
 	}
+	if err := r.combineEnhancedScores(ctx, result, request); err != nil {
+		return nil, err
+	}
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		for i := range result {
+			result[i].Scores.RequestFit, result[i].Available.RequestFit = r.requestFit(ctx, result[i], intent)
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	sort.SliceStable(result, func(i, j int) bool {
+		if intent.Controls.RecommendationMode == core.EnhancedHybrid && result[i].Scores.RequestFit != result[j].Scores.RequestFit {
+			return result[i].Scores.RequestFit > result[j].Scores.RequestFit
+		}
 		if result[i].Scores.Total != result[j].Scores.Total {
 			return result[i].Scores.Total > result[j].Scores.Total
 		}
@@ -120,10 +142,10 @@ func (r *TransparentRanker) Rank(ctx context.Context, candidates []core.Candidat
 	return result, nil
 }
 
-func (r *TransparentRanker) exposuresByRecording(exposures map[string]float64) map[string]float64 {
+func (r *TransparentRanker) exposuresByRecording(ctx context.Context, exposures map[string]float64) map[string]float64 {
 	result := make(map[string]float64, len(exposures))
 	for trackID, exposure := range exposures {
-		meta, ok := r.cat.Meta(trackID)
+		meta, ok := ports.CatalogMeta(ctx, r.cat, trackID)
 		if !ok {
 			continue
 		}

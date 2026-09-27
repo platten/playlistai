@@ -3,6 +3,12 @@ import { Events } from "@wailsio/runtime";
 
 /** Payload of the Go-side `playlistai:progress` event (internal/bridge/progress.go). */
 export interface Progress {
+  stage?: string;
+  elapsedMilliseconds?: number;
+  candidatesConsidered?: number;
+  candidatesEligible?: number;
+  candidatesSupported?: number;
+  stoppingReason?: string;
   generationId?: string;
   suggestedTrack?: { id: string; artist: string; title: string };
   checkedTrack?: { id: string; artist: string; title: string };

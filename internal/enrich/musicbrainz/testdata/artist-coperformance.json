@@ -1,0 +1,68 @@
+{
+  "id": "6514cffa-fbe0-4965-ad88-e998ead8a82a",
+  "name": "Fela Kuti",
+  "relations": [
+    {
+      "type": "instrument",
+      "type-id": "59054b12-01ac-43ee-a618-285fd397e461",
+      "direction": "forward",
+      "target-type": "recording",
+      "attributes": [
+        "piano"
+      ],
+      "recording": {
+        "title": "Afro Disco Beat",
+        "length": 716906,
+        "video": false,
+        "id": "9147deec-c7b3-4d5f-9619-0542c41f3d7e",
+        "artist-credit": [
+          {
+            "joinphrase": "",
+            "name": "Tony Allen",
+            "artist": {
+              "disambiguation": "Nigerian-born drummer and composer",
+              "id": "ea524cc6-191a-4c05-ab88-3bb5c0880ca5",
+              "name": "Tony Allen",
+              "sort-name": "Allen, Tony",
+              "type-id": null,
+              "country": "NG",
+              "type": null
+            }
+          }
+        ],
+        "disambiguation": ""
+      }
+    },
+    {
+      "type": "instrument",
+      "type-id": "59054b12-01ac-43ee-a618-285fd397e461",
+      "direction": "forward",
+      "target-type": "recording",
+      "attributes": [
+        "piano"
+      ],
+      "recording": {
+        "video": false,
+        "disambiguation": "",
+        "id": "4d7044f3-d1fe-42ec-8b61-d1408a5003bb",
+        "artist-credit": [
+          {
+            "name": "Tony Allen",
+            "joinphrase": "",
+            "artist": {
+              "type": null,
+              "sort-name": "Allen, Tony",
+              "type-id": null,
+              "country": "NG",
+              "name": "Tony Allen",
+              "id": "ea524cc6-191a-4c05-ab88-3bb5c0880ca5",
+              "disambiguation": "Nigerian-born drummer and composer"
+            }
+          }
+        ],
+        "length": 585173,
+        "title": "Progress"
+      }
+    }
+  ]
+}

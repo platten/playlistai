@@ -8,6 +8,7 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/librarypack"
 	"github.com/platten/playlistai/internal/musicconcepts"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -30,6 +31,10 @@ func (c *CompositeCatalog) LibraryRecordingMetadata(ctx context.Context, id stri
 	if m, meta, found := c.mergedMusicalMetadata(ctx, id); found {
 		out := core.EnrichedTrack{Ref: meta.Ref,
 			IdentityStatus: core.ResolutionResolved, Matched: true, RecordingID: meta.MusicBrainzRecording, ISRC: meta.ISRC, Album: meta.Album}
+		if meta.FullRecordingDuration.Valid() {
+			duration := *meta.FullRecordingDuration
+			out.FullRecordingDuration = &duration
+		}
 		if m.OriginalYear != nil {
 			out.OriginalReleaseDate = strconv.Itoa(*m.OriginalYear)
 		}
@@ -40,19 +45,58 @@ func (c *CompositeCatalog) LibraryRecordingMetadata(ctx context.Context, id stri
 			out.CompositionStartYear, out.CompositionEndYear = *m.CompositionYear, *m.CompositionYear
 		}
 		workIDs := map[string]bool{}
+		artistIDs := map[string]bool{}
+		releaseIDs, releaseTrackIDs := map[string]bool{}, map[string]bool{}
 		for _, a := range m.Annotations {
 			switch a.Kind {
 			case "artist_credit":
 				out.AllArtists = append(out.AllArtists, a.Value)
+			case "artist_mbid":
+				// This field contains UUIDs, including semicolon-delimited
+				// UUID lists in discovery packs. Never split artist names or
+				// borrow album-artist identities to establish recording credits.
+				ids := strings.Split(a.Value, ";")
+				valid := true
+				for i := range ids {
+					ids[i] = librarypack.CanonicalMBID(ids[i])
+					valid = valid && ids[i] != ""
+				}
+				if valid {
+					for _, id := range ids {
+						artistIDs[id] = true
+					}
+				}
 			case "genre", "style":
 				out.GenreTags = append(out.GenreTags, core.AttributedGenreTag{Name: a.Value, Votes: 1, Source: a.Origin, EntityID: meta.Ref.RecordingIdentity, Facet: a.Kind})
 			case "work_mbid":
 				workIDs[strings.ToLower(strings.TrimSpace(a.Value))] = true
+			case "release_mbid", "release_track_mbid":
+				if id := librarypack.CanonicalMBID(a.Value); id != "" {
+					if a.Kind == "release_mbid" {
+						releaseIDs[id] = true
+					} else {
+						releaseTrackIDs[id] = true
+					}
+				}
 			}
 		}
+		for id := range artistIDs {
+			out.ArtistIDs = append(out.ArtistIDs, id)
+		}
+		sort.Strings(out.ArtistIDs)
 		if len(workIDs) == 1 {
 			for id := range workIDs {
 				out.WorkID = id
+			}
+		}
+		if len(releaseIDs) == 1 {
+			for id := range releaseIDs {
+				out.ReleaseID = id
+			}
+		}
+		if len(releaseTrackIDs) == 1 {
+			for id := range releaseTrackIDs {
+				out.ReleaseTrackID = id
 			}
 		}
 		return out, true, ctx.Err()
@@ -138,7 +182,7 @@ func (c *CompositeCatalog) mergedMusicalMetadata(ctx context.Context, id string)
 	if ctx.Err() != nil {
 		return MusicalMetadata{}, core.TrackMeta{}, false
 	}
-	meta, ok := c.Meta(id)
+	meta, ok := c.MetaContext(ctx, id)
 	if !ok {
 		return MusicalMetadata{}, core.TrackMeta{}, false
 	}
@@ -166,7 +210,7 @@ func (c *CompositeCatalog) recordingAnnotations(ctx context.Context, meta core.T
 		}); ok {
 			more, matched := base.recordingAnnotations(ctx, meta)
 			claims, found = append(claims, more...), found || matched
-		} else if base, ok := c.base.Meta(meta.Ref.ID); ok {
+		} else if base, ok := ports.CatalogMeta(ctx, c.base, meta.Ref.ID); ok {
 			claims = append(claims, base.Annotations...)
 			found = found || len(base.Annotations) > 0
 		}

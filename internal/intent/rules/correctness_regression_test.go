@@ -35,7 +35,7 @@ func TestOpenMusicalDescriptionSurvivesAlongsideNamedReference(t *testing.T) {
 		}
 	}
 	intent, _ := New().Parse(context.Background(), ports.IntentInput{Prompt: "classical music like Arvo Part with piano and some jazz influence"})
-	if len(intent.EssentialCriteria) != 1 || intent.EssentialCriteria[0].Value != "classical" {
+	if len(intent.EssentialCriteria) != 2 || intent.EssentialCriteria[0].Value != "classical" || intent.EssentialCriteria[1].Value != "piano" {
 		t.Fatalf("later modifiers displaced the leading description: %+v", intent.EssentialCriteria)
 	}
 }

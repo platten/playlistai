@@ -1,0 +1,94 @@
+{
+  "variant": "post-freeze-supplementary-v2",
+  "selectedCases": [
+    6,
+    7,
+    8,
+    11
+  ],
+  "requestedSlots": 40,
+  "rubricSourceSHA256": "153375a2f90ed78482b18c988cbcacd1c4ca612880b2bf2da783feb97c6e96ee",
+  "fixtureSHA256": "35370384e41ea812c4a2a63878c0dddd7477cebdd50d56561f8869f2d834572e",
+  "rubrics": [
+    {
+      "caseNumber": 6,
+      "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+      "requested": 10,
+      "criteria": [
+        "meaningful relation to Daft Punk via French/electronic house, disco/funk production or documented stylistic similarity"
+      ],
+      "interpretationNotes": [
+        "Not every track needs to be house; direct Daft Punk recordings are eligible but cannot alone supply discovery variety."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 7,
+      "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+      "requested": 10,
+      "criteria": [
+        "meaningful relation to Radiohead alternative/art rock or experimental electronic sound",
+        "other artists represented"
+      ],
+      "interpretationNotes": [
+        "Radiohead recordings are eligible; name collisions, generic rock and arbitrary electronic similarity are insufficient."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 8,
+      "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+      "requested": 10,
+      "criteria": [
+        "meaningful connection to Nina Simone jazz/blues/soul or Bill Withers soul/funk songwriting"
+      ],
+      "interpretationNotes": [
+        "Evaluate representation of both references across the playlist; do not require every track to combine all styles."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 11,
+      "prompt": "Give me 10 songs like 'Teardrop' by Massive Attack.",
+      "requested": 10,
+      "criteria": [
+        "plausible recording-level affinity to Teardrop: trip-hop/downtempo production and compatible atmospheric vocal/instrumental texture"
+      ],
+      "interpretationNotes": [
+        "Genre alone gives partial support; harpsichord and specific mood similarity remain unknown without recording-specific evidence."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    }
+  ],
+  "limitations": [
+    "Raw prompts reparse with fresh random seeds and fresh per-case caches; these are diagnostics, not matched causal comparisons.",
+    "Existing V3 outcomes and all control inputs/denominators remain unchanged.",
+    "A process-watchdog fallback has unknown generation timing until a matching completed child proves its scope.",
+    "No quality improvement or human listening grades are inferred; source rubric unchanged; any returned recordings require separate web assessment.",
+    "These four cases were selected after observed failures or quality defects; the combined later build cannot isolate individual fixes or establish general quality improvement."
+  ]
+}

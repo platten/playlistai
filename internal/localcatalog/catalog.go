@@ -333,12 +333,24 @@ func (c *Catalog) artistRecordings(ctx context.Context, artist string, limit int
 		if !ok {
 			return nil, errors.New("localcatalog: artist index refers to a missing track")
 		}
-		result = append(result, core.TrackRef{ID: c.NamespacedID(track.ID), Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity})
+		performer, engineer := false, false
+		for _, tag := range annotations(track.RawTags) {
+			if normalizeUnicode(tag.Value) == key {
+				performer = performer || tag.Kind == "performer"
+				engineer = engineer || tag.Kind == "recording_engineer"
+			}
+		}
+		if engineer && !performer {
+			continue
+		}
+		converted := c.convertTrack(track)
+		result = append(result, core.TrackRef{ID: converted.ID, Artist: converted.Artist, Title: converted.Title, RecordingIdentity: converted.RecordingIdentity})
 	}
 	return result, rows.Err()
 }
 
 func (c *Catalog) convertTrack(track librarypack.Track) Track {
+	artist := displayArtist(track.Artist, annotations(track.RawTags))
 	capabilities := append([]string(nil), track.Capabilities...)
 	missingness := append([]byte(nil), track.Missingness...)
 	var fingerprint *librarypack.AudioFingerprint
@@ -347,8 +359,8 @@ func (c *Catalog) convertTrack(track librarypack.Track) Track {
 		fingerprint = &copy
 	}
 	return Track{
-		ID: c.NamespacedID(track.ID), LocalID: track.ID, Artist: track.Artist, Title: track.Title,
-		NormalizedArtist: track.NormalizedArtist, NormalizedTitle: track.NormalizedTitle,
+		ID: c.NamespacedID(track.ID), LocalID: track.ID, Artist: artist, Title: track.Title,
+		NormalizedArtist: normalizeUnicode(artist), NormalizedTitle: track.NormalizedTitle,
 		SourceIdentity: track.SourceIdentity, RecordingIdentity: track.RecordingIdentity,
 		ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
 		AudioFingerprint:     fingerprint,

@@ -5,7 +5,7 @@ import { MusicMetadataCard } from "./MusicMetadataCard";
 import { MusicAnalysisCard } from "./MusicAnalysisCard";
 const api = vi.hoisted(() => Object.fromEntries([
   "GetMetadataStatus", "GetMetadataBundleInfo", "InstallMusicBrainzBundle", "ClearMusicMetadataCache", "GetAnalysisStatus", "GetRecommendedAnalysisBundle",
-  "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "SetAnalysisEnabled", "RemoveAnalysisModel", "ClearAnalysis",
+  "InspectAnalysisBundle", "InstallAnalysisBundle", "InstallRecommendedAnalysisBundle", "InstallCPUAnalysisBundle", "SetAnalysisEnabled", "RemoveAnalysisModel", "ClearAnalysis",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
@@ -102,22 +102,53 @@ it("changes analysis settings, confirms cache removal and removes installed mode
 });
 
 it("downloads the recommended R2 model pack, keeps errors retryable and cancels on unmount", async () => {
-  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installed: false, available: false, recommendedAvailable: true, recommendedBytes: 722852693 }));
+  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installed: false, available: false, recommendedAvailable: true, recommendedManifest: "https://models.example/clap/manifest.json", recommendedBytes: 722852693 }));
   const pending = deferred();
   api.InstallRecommendedAnalysisBundle.mockReturnValueOnce(pending.promise);
   const { unmount } = render(<MusicAnalysisCard />);
   expect(await screen.findByText(/722.9 MB compressed download/)).toBeTruthy();
   expect(screen.getByText(/segmented model pack from Cloudflare R2/)).toBeTruthy();
-  fireEvent.click(await screen.findByRole("button", { name: "Download and validate CLAP" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Install and validate CLAP" }));
   expect(screen.getByRole("progressbar")).toBeTruthy();
   await act(async () => pending.reject(new Error("download failed")));
-  const retry = await screen.findByRole("button", { name: "Retry recommended CLAP download" });
+  const retry = await screen.findByRole("button", { name: "Retry recommended CLAP installation" });
   const second = deferred();
   api.InstallRecommendedAnalysisBundle.mockReturnValueOnce(second.promise);
   fireEvent.click(retry);
   unmount();
   expect(second.promise.cancel).toHaveBeenCalled();
   await act(async () => second.reject(new Error("cancelled")));
+});
+
+it.each([true, false])("offers the pinned hosted CUDA CLAP pack in %s setup mode", async (setup) => {
+  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installed: !setup, available: !setup, recommendedInstalled: false, recommendedAvailable: true, recommendedManifest: "https://models.example/clap-linux-amd64-gpu/manifest.json", recommendedBytes: 2302443250, installedBackends: setup ? [] : ["cpu"] }));
+  api.GetRecommendedAnalysisBundle.mockImplementation(() => completed({ label: "LAION original · CUDA", backend: "cuda", memoryBytes: 2500000000, downloadBytes: 2302443250, license: "CUDA license" }));
+  render(<MusicAnalysisCard setup={setup} />);
+  const install = await screen.findByRole("button", { name: "Download and validate CUDA CLAP" });
+  expect(screen.getByText(/2302.4 MB compressed download/)).toBeTruthy();
+  if (setup) expect(screen.getByRole("button", { name: "Install CPU CLAP fallback" })).toBeTruthy();
+  fireEvent.click(install);
+  await waitFor(() => expect(api.InstallRecommendedAnalysisBundle).toHaveBeenCalledOnce());
+});
+
+it("installs and cancels the CPU CLAP fallback beside a CUDA model", async () => {
+  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installedBackends: ["cuda"], recommendedManifest: "/cache/clap-cuda" }));
+  const pending = deferred();
+  api.InstallCPUAnalysisBundle.mockReturnValueOnce(pending.promise);
+  const view = render(<MusicAnalysisCard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Install CPU CLAP fallback" }));
+  expect(api.InstallCPUAnalysisBundle).toHaveBeenCalledOnce();
+  expect(screen.getByRole("progressbar")).toBeTruthy();
+  view.unmount();
+  expect(pending.promise.cancel).toHaveBeenCalled();
+  await act(async () => pending.reject(new Error("cancelled")));
+});
+
+it("does not offer a duplicate CPU CLAP installation", async () => {
+  api.GetAnalysisStatus.mockImplementation(() => completed({ ...installedStatus, installedBackends: ["cuda", "cpu"] }));
+  render(<MusicAnalysisCard />);
+  await screen.findByText(/CPU and CUDA models installed/);
+  expect(screen.queryByRole("button", { name: "Install CPU CLAP fallback" })).toBeNull();
 });
 
 it("inspects a custom bundle before installation and cancels a requested download", async () => {

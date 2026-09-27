@@ -22,6 +22,7 @@ type blockedDiscoverySource struct {
 	opens    atomic.Int32
 	pulls    atomic.Int32
 	snapshot *core.KnowledgeSnapshot
+	before   func()
 }
 
 func (s *blockedDiscoverySource) OpenCandidates(intent core.MusicIntent, _ ports.Catalog, _ ports.ReferenceResolver) ports.MusicCandidateStream {
@@ -36,6 +37,9 @@ func (s *blockedDiscoverySource) OpenCandidates(intent core.MusicIntent, _ ports
 }
 func (s *blockedDiscoverySource) Next(ctx context.Context) (core.TrackRef, error) {
 	s.pulls.Add(1)
+	if s.before != nil {
+		s.before()
+	}
 	<-ctx.Done()
 	return core.TrackRef{}, ctx.Err()
 }
@@ -99,21 +103,48 @@ func TestEnhancedManagedDiscoveryChecksLocalCandidatesBeforeColdProvider(t *test
 		t.Fatal("real managed/shared overlay does not advertise metadata retrieval")
 	}
 	overlay.Release()
-	source := &blockedDiscoverySource{}
-	engine := multichannel.New(base, similarity, base, engineConfig).WithIntentOverlayProvider(c.pinDiscoveryRecommendationOverlay).WithCandidateSource(source)
+	stop := make(chan struct{})
 	progress := &fakes.RecordingProgress{}
+	source := &blockedDiscoverySource{before: func() {
+		checked := 0
+		for _, row := range progress.Snapshot() {
+			if strings.Contains(row.Note, "Checking candidates") {
+				checked++
+			}
+		}
+		if checked < wanted {
+			t.Errorf("provider ran before useful local checks: %d", checked)
+		}
+		close(stop)
+	}}
+	engine := multichannel.New(base, similarity, base, engineConfig).WithIntentOverlayProvider(c.pinDiscoveryRecommendationOverlay).WithCandidateSource(source)
 	audioChecked := 0
 	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	playlist, err := engine.BuildRecommendation(bounded, ports.RecommendationRequest{Intent: intent, Progress: progress, OnChecked: func(core.TrackRef) { audioChecked++ }})
+	playlist, err := engine.BuildRecommendation(bounded, ports.RecommendationRequest{Intent: intent, StopChecking: stop, Progress: progress, OnChecked: func(core.TrackRef) { audioChecked++ }})
 	if err != nil {
 		t.Fatalf("local candidates waited on cold provider: %v (provider pulls=%d)", err, source.pulls.Load())
 	}
-	if source.opens.Load() != 1 || source.pulls.Load() != 0 {
-		t.Fatalf("expected a nonnil unopened-for-I/O stream: opens=%d pulls=%d", source.opens.Load(), source.pulls.Load())
+	if source.opens.Load() != 1 || source.pulls.Load() != 1 {
+		t.Fatalf("expected a provider opportunity after completed local comparison: opens=%d pulls=%d", source.opens.Load(), source.pulls.Load())
 	}
-	if len(playlist.Tracks) != wanted || playlist.Outcome.State != core.OutcomeFulfilled {
-		t.Fatalf("bounded eligible playlist not fulfilled: tracks=%+v outcome=%+v", playlist.Tracks, playlist.Outcome)
+	// Imported genre tags establish useful local candidates, but this fixture
+	// supplies no independent corroboration. Omit unconfirmed tracks while
+	// preserving the local-first checks and subsequent provider opportunity.
+	if len(playlist.Tracks) != 0 || playlist.Outcome.State != core.OutcomePartial {
+		t.Fatalf("bounded tag-only playlist was padded: tracks=%+v outcome=%+v", playlist.Tracks, playlist.Outcome)
+	}
+	if len(playlist.Assessments) != 0 || playlist.Search == nil || playlist.Search.Eligible != 0 || len(playlist.Search.EligibleCandidates) != 0 {
+		t.Fatalf("unconfirmed tracks survived output admission: %+v", playlist)
+	}
+	genreReason := false
+	for _, reason := range playlist.Outcome.Reasons {
+		if reason.Code == "requested_genre_unconfirmed" {
+			genreReason = true
+		}
+	}
+	if !genreReason {
+		t.Fatalf("empty result lost its genre explanation: %+v", playlist.Outcome)
 	}
 	allowed := map[string]string{}
 	for _, track := range tracks {
@@ -121,16 +152,27 @@ func TestEnhancedManagedDiscoveryChecksLocalCandidatesBeforeColdProvider(t *test
 			allowed["pack:discovery-"+manifest.PackID+":"+track.ID] = track.MusicBrainzRecording
 		}
 	}
-	seen := map[string]bool{}
-	for _, track := range playlist.Tracks {
-		identity := allowed[track.ID]
-		if identity == "" || track.Artist == "Excluded Artist" {
-			t.Fatalf("identity/criterion/exclusion bypass: %+v", track)
+	checkedRecordings := map[string]bool{}
+	for _, candidate := range playlist.Search.Candidates {
+		if candidate.Decision == "eligible" {
+			t.Fatalf("unconfirmed or excluded candidate admitted: %+v", candidate)
 		}
-		if seen[identity] {
-			t.Fatalf("missing or duplicate recording identity: %+v", track)
+		identity := allowed[candidate.Track.ID]
+		if identity == "" {
+			continue
 		}
-		seen[identity] = true
+		if candidate.Decision != "rejected" || len(candidate.Criteria) == 0 {
+			t.Fatalf("tag-only candidate lost its rejection evidence: %+v", candidate)
+		}
+		for _, criterion := range candidate.Criteria {
+			if criterion.State != core.EvidenceUnknown {
+				t.Fatalf("imported tag independently verified a criterion: %+v", criterion)
+			}
+		}
+		checkedRecordings[identity] = true
+	}
+	if len(checkedRecordings) < wanted {
+		t.Fatalf("too few distinct local recordings checked: %+v", playlist.Search.Candidates)
 	}
 	checked := 0
 	for _, row := range progress.Snapshot() {

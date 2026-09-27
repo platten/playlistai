@@ -56,6 +56,10 @@ export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false, on
     } catch (e) { if (mounted.current) setError(String(e)); }
     finally { pending.current = null; if (mounted.current) { setBusy(false); setInstalling(false); } }
   };
+  const recommendedGPU = Boolean(status?.recommendedManifestUrl && (status.recommendedManifestUrl.includes("-gpu/manifest.json") || !status.recommendedManifestUrl.startsWith("https://")));
+  const recommendedLabel = status?.recommendedManifestUrl?.startsWith("https://")
+    ? `Download ${recommendedGPU ? "CUDA" : "CPU"} MERT from Cloudflare R2`
+    : status?.installed ? "Upgrade MERT to CUDA" : "Install CUDA MERT from local cache";
   if (dspOnly) return <section className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4" aria-label="DSP preview measurements" aria-busy={controlsDisabled || (!status && !error)}>
     <h2 className="text-[15px] font-semibold">DSP preview measurements</h2>
     <p className="text-[12px] text-muted">Measured audio preferences are used automatically by Enhanced hybrid. No model download is needed.</p>
@@ -76,11 +80,15 @@ export function EnhancedAudioCard({ trackIds, setup = false, dspOnly = false, on
     <h2 className="text-[15px] font-semibold">MERT audio similarity</h2>
     <p className="text-[12px] text-muted">Find tracks with audio similar to your references in Enhanced hybrid. Searches use compatible cached previews, with bounded analysis of missing references and candidates.</p>
     <p className="text-[12px] text-muted">MERT similarity is enabled automatically when the model is installed.</p>
+    {status?.installed && <p className="text-[12px] text-faint">{status.model}</p>}
+    {(status?.installedBackends?.length ?? 0) > 1 && <p className="text-[12px] text-muted">CPU and CUDA MERT models installed; Playlist AI uses the available GPU model first.</p>}
     <p className="text-[12px] text-muted">{status ? `${status.searchableTracks ?? 0} tracks with compatible cached embeddings.` : error ? "MERT status unavailable." : "Checking MERT…"}</p>
     {status && !(status.searchableTracks > 0) && <p className="text-[12px] text-muted">The similarity cache is empty for this catalog and model. Generation starts with catalog candidates and adds available preview comparisons. Missing previews keep their existing recommendation scores.</p>}
     {status?.unsupportedReason && !status.mertAvailable && <p className="text-[12px] text-muted">{status.unsupportedReason}</p>}
-    {!status?.loading && !status?.installed && status?.recommendedManifestUrl && !status.unsupportedReason &&
-      <Button size="sm" disabled={controlsDisabled} onClick={() => void run(() => API.InstallRecommendedMERT(), false, true)}>Download MERT from Cloudflare R2</Button>}
+    {!status?.loading && (!status?.installed || status.recommendedUpgrade) && status?.recommendedManifestUrl && !status.unsupportedReason &&
+      <Button size="sm" disabled={controlsDisabled} onClick={() => void run(() => API.InstallRecommendedMERT(), false, true)}>{recommendedLabel}</Button>}
+    {!status?.loading && (recommendedGPU || status?.installedBackends?.includes("cuda")) && !status?.installedBackends?.includes("cpu") && !status?.unsupportedReason &&
+      <Button size="sm" variant="ghost" disabled={controlsDisabled} onClick={() => void run(() => API.InstallCPUMERT(), false, true)}>Install CPU MERT fallback</Button>}
     {installing && <ProgressBar label="Installing MERT" done={modelProgress?.done ?? 0} total={modelProgress?.total ?? 0} note={modelProgress?.note} />}
     {!setup && <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={controlsDisabled || !status?.mertEnabled || !status.mertAvailable} onClick={() => void run(() => API.AnalyzeEnhancedTracks([], true), true)}>Analyze liked tracks</Button>

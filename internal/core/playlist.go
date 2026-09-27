@@ -31,16 +31,24 @@ type ComponentEvidence struct {
 // score has an availability bit so missing profile features are not confused
 // with a measured zero.
 type Candidate struct {
-	FitTier     string              `json:"fitTier,omitempty"`
-	MatchDetail string              `json:"matchDetail,omitempty"`
-	MusicalFit  EvidenceState       `json:"musicalFit,omitempty"`
-	Track       TrackRef            `json:"track"`
-	Sources     []RetrievalEvidence `json:"sources"`
-	Scores      CandidateScores     `json:"scores"`
-	Available   CandidateFeatures   `json:"available"`
+	FitAssessment   *AutomaticFitAssessment `json:"fitAssessment,omitempty"`
+	Criteria        []CriterionAssessment   `json:"criteria,omitempty"`
+	Decision        string                  `json:"decision,omitempty"`
+	DecisionReasons []string                `json:"decisionReasons,omitempty"`
+	FitTier         string                  `json:"fitTier,omitempty"`
+	MatchDetail     string                  `json:"matchDetail,omitempty"`
+	MusicalFit      EvidenceState           `json:"musicalFit,omitempty"`
+	Track           TrackRef                `json:"track"`
+	Sources         []RetrievalEvidence     `json:"sources"`
+	Scores          CandidateScores         `json:"scores"`
+	Available       CandidateFeatures       `json:"available"`
 }
 
 type CandidateScores struct {
+	CombinedMERT          float64 `json:"combinedMert"`
+	CombinedDSP           float64 `json:"combinedDsp"`
+	RequestFit            float64 `json:"requestFit"`
+	RequestNegativeMatch  float64 `json:"requestNegativeMatch"`
 	LibraryMetadata       float64 `json:"libraryMetadata"`
 	LibraryMERT           float64 `json:"libraryMert"`
 	LibraryDSP            float64 `json:"libraryDsp"`
@@ -65,6 +73,10 @@ type CandidateScores struct {
 }
 
 type CandidateFeatures struct {
+	CombinedMERT          bool `json:"combinedMert"`
+	CombinedDSP           bool `json:"combinedDsp"`
+	RequestFit            bool `json:"requestFit"`
+	RequestNegativeMatch  bool `json:"requestNegativeMatch"`
 	LibraryMetadata       bool `json:"libraryMetadata"`
 	LibraryMERT           bool `json:"libraryMert"`
 	LibraryDSP            bool `json:"libraryDsp"`
@@ -124,6 +136,8 @@ type GenerationOutcome struct {
 // requires the catalog, algorithm, profile snapshot, and generation context
 // recorded by the bridge alongside this value.
 type Playlist struct {
+	FitAssessments []AutomaticTrackFit `json:"fitAssessments,omitempty"`
+	Search         *SearchSnapshot     `json:"search,omitempty"`
 	// EvidenceCatalogVersion pins the immutable catalog/pack generation used by
 	// this request. It is separate from track IDs so replacement cannot silently
 	// rewrite saved evidence.

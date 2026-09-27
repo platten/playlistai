@@ -12,6 +12,8 @@ import (
 const categoryBeamWidth = 32
 
 type categoryPath struct {
+	openingFit   float64
+	openingTier  int
 	tail         int // index in the request-local predecessor arena; -1 is empty
 	length       int
 	stage        int
@@ -49,8 +51,9 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 	}
 	sort.SliceStable(pool, func(i, j int) bool { return pool[i].track.ID < pool[j].track.ID })
 	stages := len(request.CategoryStages)
-	recordings, artists := map[string]int{}, map[string]int{"": 0}
-	recordingIDs, artistIDs := make([]int, len(pool)), make([]int, len(pool))
+	recordings := map[string]int{}
+	recordingIDs := make([]int, len(pool))
+	artistKeys := make([][]string, len(pool))
 	requiredIndices, waypointIndices := make([]int, len(pool)), make([]int, len(pool))
 	membership := make([]bool, stages*len(pool))
 	var lastRecordingStage []int
@@ -63,11 +66,7 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 			lastRecordingStage = append(lastRecordingStage, -1)
 		}
 		recordingIDs[index] = recording
-		artist := core.NormalizeIdentityPart(item.track.Artist)
-		if _, exists := artists[artist]; !exists {
-			artists[artist] = len(artists)
-		}
-		artistIDs[index] = artists[artist]
+		artistKeys[index] = s.performers.trackKeys(item.track)
 		requiredIndices[index] = requiredOrder[item.track.ID]
 		waypointIndices[index] = -1
 		if waypoint, exists := waypointOrder[item.track.ID]; exists {
@@ -81,10 +80,10 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 		}
 	}
 	start := s.startAnchor(request, nil)
-	startArtist := artists[core.NormalizeIdentityPart(start.Artist)]
+	startArtist := s.performers.trackKeys(start)
 	nodes := make([]categoryNode, 0, min(request.Intent.Count, len(pool))*categoryBeamWidth*stages)
 	used := make([]bool, len(recordings))
-	tailArtists := make([]bool, len(artists))
+	tailArtists := map[string]bool{}
 	capacity := make([]int, stages)
 	frontier := []categoryPath{{tail: -1, stage: -1, lastWaypoint: -1}}
 	var complete, partial *categoryPath
@@ -106,10 +105,10 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 			previous, previousArtist := start, startArtist
 			if path.tail >= 0 {
 				item := nodes[path.tail].item
-				previous, previousArtist = pool[item].track, artistIDs[item]
+				previous, previousArtist = pool[item].track, artistKeys[item]
 			}
 			if path.length == 0 && len(request.RecentSelections) == 0 {
-				previousArtist = 0 // reference anchors are not previously played output
+				previousArtist = nil // reference anchors are not previously played output
 			}
 			clear(used)
 			clear(tailArtists)
@@ -117,7 +116,9 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 				item := nodes[node].item
 				used[recordingIDs[item]] = true
 				if distance < gap {
-					tailArtists[artistIDs[item]] = true
+					for _, artist := range artistKeys[item] {
+						tailArtists[artist] = true
+					}
 				}
 			}
 			for stage := max(0, path.stage); stage <= min(path.stage+1, stages-1); stage++ {
@@ -133,7 +134,7 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 				if request.Intent.Start != nil && path.length == 0 && (!item.required || requiredIndices[index] != 0) {
 					continue
 				}
-				if used[recordingIDs[index]] || request.Intent.Constraints.NoRepeatArtistBackToBack && previous.ID != "" && previousArtist != 0 && previousArtist == artistIDs[index] {
+				if used[recordingIDs[index]] || request.Intent.Constraints.NoRepeatArtistBackToBack && previous.ID != "" && performersOverlap(previousArtist, artistKeys[index]) {
 					continue
 				}
 				if item.required && requiredIndices[index] != path.nextRequired {
@@ -149,14 +150,26 @@ func (s *GreedySequencer) categoryJourney(ctx context.Context, request ports.Seq
 					candidate = *item.candidate
 				}
 				score := path.score + s.orderingScore(candidate, previous, request, depth)
-				if gap > 0 && artistIDs[index] != 0 && tailArtists[artistIDs[index]] {
-					score-- // soft preference only; any relaxation remains visible
+				if gap > 0 {
+					for _, artist := range artistKeys[index] {
+						if tailArtists[artist] {
+							score-- // soft preference only; any relaxation remains visible
+							break
+						}
+					}
 				}
 				for stage := max(0, path.stage); stage <= min(path.stage+1, stages-1); stage++ {
 					if !membership[stage*len(pool)+index] {
 						continue
 					}
 					extended := categoryPath{length: path.length + 1, stage: stage, nextRequired: path.nextRequired, lastWaypoint: path.lastWaypoint, score: score, capacity: capacity[stage]}
+					extended.openingFit, extended.openingTier = path.openingFit, path.openingTier
+					if path.length == 0 && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && request.Intent.Start == nil {
+						extended.openingFit, _ = candidateRequestFit(candidate, request.Intent)
+						if candidate.FitTier == fitStrong {
+							extended.openingTier = 1
+						}
+					}
 					if item.required {
 						extended.nextRequired++
 						if request.Intent.Destination != nil && extended.nextRequired == len(request.Required) {
@@ -251,6 +264,12 @@ func betterCategoryBeam(left, right categoryPath) bool {
 	if left.capacity != right.capacity {
 		return left.capacity > right.capacity
 	}
+	if left.openingTier != right.openingTier {
+		return left.openingTier > right.openingTier
+	}
+	if left.openingFit != right.openingFit {
+		return left.openingFit > right.openingFit
+	}
 	return left.score > right.score
 }
 
@@ -260,6 +279,12 @@ func betterCategoryResult(path categoryPath, best *categoryPath) bool {
 	}
 	if path.length != best.length {
 		return path.length > best.length
+	}
+	if path.openingTier != best.openingTier {
+		return path.openingTier > best.openingTier
+	}
+	if path.openingFit != best.openingFit {
+		return path.openingFit > best.openingFit
 	}
 	return path.score > best.score
 }

@@ -59,7 +59,7 @@ func TestCandidateStreamRandomArtistRotationAndOfflineReplay(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"count":2,"artists":[{"id":"a","name":"A"},{"id":"b","name":"B"}]}`)
 			return
 		}
-		id := strings.TrimPrefix(r.URL.Query().Get("query"), "arid:")
+		id := r.URL.Query().Get("artist")
 		_, _ = fmt.Fprintf(w, `{"recordings":[{"id":"%s1","title":"One","artist-credit":[{"name":"%s","artist":{"id":"%s"}}]},{"id":"%s2","title":"Two","artist-credit":[{"name":"%s","artist":{"id":"%s"}}]}]}`, id, strings.ToUpper(id), id, id, strings.ToUpper(id), id)
 	}))
 	defer server.Close()

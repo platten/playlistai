@@ -37,13 +37,7 @@ type contextEntity struct {
 	Aliases      []struct {
 		Name string `json:"name"`
 	} `json:"aliases"`
-	Relations []struct {
-		Type  string `json:"type"`
-		Ended bool   `json:"ended"`
-		URL   struct {
-			Resource string `json:"resource"`
-		} `json:"url"`
-	} `json:"relations"`
+	Relations []recordingRelation `json:"relations"`
 }
 
 // prepareContext never rewrites a reference, preference, or recording feature.
@@ -109,8 +103,11 @@ func (c *Client) referenceContext(ctx context.Context, intent core.MusicIntent, 
 	}
 	resolution := ref.Resolution
 	if resolution == nil || resolution.CatalogVersion != resolver.CatalogVersion() || resolution.Status != core.ResolutionResolved {
-		local := resolver.ResolveReference(ref)
+		local := ports.ResolveReferenceContext(ctx, resolver, ref)
 		resolution = &local
+	}
+	if ctx.Err() != nil {
+		return core.ContextSeedPlan{}, false
 	}
 	// An album at Start may not have passed through the legacy album resolver.
 	// Resolve a private copy so requested identity and required-output semantics
@@ -177,7 +174,7 @@ func (c *Client) referenceContext(ctx context.Context, intent core.MusicIntent, 
 		if period != nil || early {
 			c.contextArtistAlbums(ctx, entityID, selected.Artist, period, early, cat, resolver, &plan)
 		} else {
-			plan.Seeds = contextCatalogSeeds(selected.Representatives, cat)
+			plan.Seeds = contextCatalogSeeds(ctx, selected.Representatives, cat)
 			plan.Profile.ScopeNote = "Existing artist representatives; source context does not verify their musical suitability."
 		}
 	}
@@ -253,12 +250,15 @@ func contextGenres(tags []mbTag) []string {
 	return genres[:min(len(genres), 6)]
 }
 
-func contextCatalogSeeds(candidates []core.WeightedTrack, cat ports.Catalog) []core.WeightedTrack {
+func contextCatalogSeeds(ctx context.Context, candidates []core.WeightedTrack, cat ports.Catalog) []core.WeightedTrack {
 	var seeds []core.WeightedTrack
 	seen := map[string]bool{}
 	var total float64
 	for _, candidate := range candidates {
-		if _, ok := cat.Meta(candidate.TrackID); !ok || seen[candidate.TrackID] {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if _, ok := ports.CatalogMeta(ctx, cat, candidate.TrackID); !ok || seen[candidate.TrackID] {
 			continue
 		}
 		seen[candidate.TrackID] = true
@@ -270,6 +270,9 @@ func contextCatalogSeeds(candidates []core.WeightedTrack, cat ports.Catalog) []c
 		if len(seeds) == contextSeeds {
 			break
 		}
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	for i := range seeds {
 		seeds[i].Weight /= total

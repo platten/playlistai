@@ -1,0 +1,209 @@
+{
+  "frozenAt": "2026-09-26T14:51:46.953724+00:00",
+  "assessmentType": "AI web review; no listening grades",
+  "selection": [
+    2,
+    10,
+    14,
+    17,
+    21,
+    23,
+    25,
+    40
+  ],
+  "arms": [
+    "B5",
+    "T5",
+    "T10"
+  ],
+  "requestedSlotsPerArm": 80,
+  "rules": [
+    "Evaluate the original literal prompt using the identical baseline rubric. Frozen-input parser errors remain part of the control limitation, not an excuse to change the rubric.",
+    "Review every returned occurrence with exact recording/version identity, independent source applicability, and explicit unsupported facets. Imported tags and engine fit labels are not independent truth.",
+    "Reuse prior web findings only after checking exact identity and rubric applicability. Preserve sources, retrieval attempts and version uncertainty.",
+    "Hide engine fit labels until the musical verdict where practical. These controls are not a fully blinded human study; reviewers may recognize previously reviewed recordings.",
+    "Retain all eight selected cases and 80 requested slots per arm. Ineligible input, runtime failure, zero output, unaudited output and unknown musical fit are distinct.",
+    "Compare B5 versus T5 for common-input/common-cap generation; T5 versus T10 for added budget. Live sources, host caches and fixed exploratory selection limit attribution.",
+    "Report playlist coverage, hard violations, version uncertainty, concentration and transitions separately from returned-track verdicts; do not invent listening judgments."
+  ],
+  "sourceReceipts": [
+    {
+      "file": "rubrics-baseline-01-14.json",
+      "sha256": "153375a2f90ed78482b18c988cbcacd1c4ca612880b2bf2da783feb97c6e96ee"
+    },
+    {
+      "file": "rubrics-baseline-15-26.json",
+      "sha256": "8354a7913fe27bb9d55536bf6d53250c70e8538cb7c0f6fdc027b6a462b3b003"
+    },
+    {
+      "file": "rubrics-baseline-27-40.json",
+      "sha256": "ba4c1e081b81aa7bf0326245c3b10ca87f5c855973157cc14d9ef3011473fbd8"
+    }
+  ],
+  "rubrics": [
+    {
+      "caseNumber": 2,
+      "prompt": "Electronic music. Make a 10-song playlist.",
+      "requested": 10,
+      "criteria": [
+        "electronic composition or production is a defining musical feature"
+      ],
+      "interpretationNotes": [
+        "Electronic subgenres all eligible; incidental synthesizers in otherwise acoustic/pop recordings are not enough."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 10,
+      "prompt": "Make a 10-song playlist inspired by Fela Kuti and Tony Allen, with a variety of artists.",
+      "requested": 10,
+      "criteria": [
+        "Afrobeat or a strong documented stylistic relationship to Fela Kuti and Tony Allen",
+        "variety of artists"
+      ],
+      "interpretationNotes": [
+        "Afrobeat is not interchangeable with generic Afrobeats; assess rhythm/ensemble relation cautiously without listening."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 14,
+      "prompt": "Make a 10-song playlist combining bossa nova, samba, and Brazilian jazz.",
+      "requested": 10,
+      "criteria": [
+        "recording belongs to bossa nova, samba or Brazilian jazz"
+      ],
+      "interpretationNotes": [
+        "Brazilian identity or Portuguese lyrics alone is insufficient; separately assess coverage of all three requested forms."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 17,
+      "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+      "requested": 10,
+      "criteria": [
+        "electronic foundation",
+        "spacious detailed textures",
+        "deep groove with enough rhythmic motion to avoid sleepiness",
+        "occasional bright or sparkling sonic details",
+        "relaxing overall feel"
+      ],
+      "interpretationNotes": [
+        "Descriptions are perceptual; web evidence can corroborate instrumentation/production, but unverified adjectives remain unknown without listening.",
+        "Not sleepy is an explicit negative preference; ambient genre alone neither proves nor disproves it."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 21,
+      "prompt": "Make a 10-song journey from ambient electronic through downtempo to melodic house, gradually increasing the energy.",
+      "requested": 10,
+      "criteria": [
+        "opening ambient-electronic stage",
+        "middle downtempo stage",
+        "closing melodic-house stage",
+        "credible gradual increase in energy and continuity"
+      ],
+      "interpretationNotes": [
+        "The ordered stages and direction of energy change are playlist properties, assessed independently of individual fit.",
+        "BPM alone is not perceptual energy; genre association and title cannot establish the requested curve."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 23,
+      "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+      "requested": 10,
+      "criteria": [
+        "opening evokes Brian Eno's ambient recordings",
+        "middle evokes Boards of Canada",
+        "closing evokes Jon Hopkins",
+        "other related artists appear along the journey",
+        "credible ordered progression between these sound worlds"
+      ],
+      "interpretationNotes": [
+        "Named artists describe sound anchors; exact songs by all three are not mandatory unless the parsed request independently requires them.",
+        "Artist catalogs differ: the opening must relate to Eno ambient music, not arbitrary Eno rock; Hopkins ambient pieces alone do not demonstrate the intended transition."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 25,
+      "prompt": "Make a 10-track instrumental playlist for focused work, blending modern classical, ambient, and gentle electronic music. Start sparse, build a subtle pulse in the middle, and finish calmly. No vocals.",
+      "requested": 10,
+      "criteria": [
+        "no vocals anywhere in each selected recording",
+        "modern-classical, ambient and gentle-electronic blend",
+        "sparse opening",
+        "subtle rhythmic pulse in the middle",
+        "calm ending",
+        "suitable concentration-oriented dynamics"
+      ],
+      "interpretationNotes": [
+        "No vocals is an essential exclusion; lyrics, vocal credits, spoken voice or sung samples contradict it, even if most of the track is instrumental.",
+        "An instrumental tag or a voice-free preview cannot establish absence across the full recording.",
+        "The sparse-to-pulse-to-calm arc and all three musical families are playlist properties."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist variety and adjacent repetition",
+        "ten requested slots reported independently from fit"
+      ],
+      "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+    },
+    {
+      "caseNumber": 40,
+      "prompt": "Make a playlist only by Radiohead, 10 songs.",
+      "requested": 10,
+      "criteria": [
+        "Every recording is by the resolved Radiohead identity.",
+        "Artist-only scope overrides a general preference for artist variety; recording/version deduplication remains required."
+      ],
+      "sharedChecks": [
+        "exact recording/version identity",
+        "recording deduplication",
+        "artist concentration and adjacent repetition where compatible with request",
+        "ten requested slots retained independently from fit"
+      ],
+      "grading": "good=credible scoped evidence supports fit; partial=related but important facets or version unverified; mismatch=credible contradictory evidence; unknown=insufficient evidence. AI web assessment only, no human listening labels."
+    }
+  ]
+}

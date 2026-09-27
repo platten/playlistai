@@ -2,6 +2,7 @@
 package resolution
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,22 +29,29 @@ type Issue struct {
 // Issues remain structured so UI and service callers can decide how to handle
 // ambiguity; Apply itself never guesses.
 func Apply(resolver ports.ReferenceResolver, intent core.MusicIntent) (core.MusicIntent, []Issue) {
+	return ApplyContext(context.Background(), resolver, intent)
+}
+
+// ApplyContext preserves generation cancellation through reference lookups.
+// Callers check ctx.Err before acting on the resulting resolution issues.
+func ApplyContext(ctx context.Context, resolver ports.ReferenceResolver, intent core.MusicIntent) (core.MusicIntent, []Issue) {
 	intent = intent.Normalized()
+	automatic := intent.Controls.RecommendationMode == core.Automatic
 	var issues []Issue
-	intent.References, issues = applyList(resolver, intent.References, false, issues)
-	intent.Journey.Waypoints, issues = applyList(resolver, intent.Journey.Waypoints, false, issues)
-	intent.RequiredTracks, issues = applyList(resolver, intent.RequiredTracks, true, issues)
+	intent.References, issues = applyList(ctx, resolver, intent.References, false, issues, automatic)
+	intent.Journey.Waypoints, issues = applyList(ctx, resolver, intent.Journey.Waypoints, false, issues, automatic)
+	intent.RequiredTracks, issues = applyList(ctx, resolver, intent.RequiredTracks, true, issues, automatic)
 	for _, endpoint := range []**core.IntentReference{&intent.Start, &intent.Destination} {
 		if *endpoint == nil {
 			continue
 		}
-		resolved, next := applyList(resolver, []core.IntentReference{**endpoint}, true, issues)
+		resolved, next := applyList(ctx, resolver, []core.IntentReference{**endpoint}, true, issues, automatic)
 		issues = next
 		*endpoint = &resolved[0]
 	}
 	for index := range intent.InferredAnchors {
 		before := len(issues)
-		resolved, next := applyList(resolver, []core.IntentReference{intent.InferredAnchors[index].Reference}, false, issues)
+		resolved, next := applyList(ctx, resolver, []core.IntentReference{intent.InferredAnchors[index].Reference}, false, issues, automatic)
 		issues = next
 		intent.InferredAnchors[index].Reference = resolved[0]
 		if len(issues) > before {
@@ -54,10 +62,20 @@ func Apply(resolver ports.ReferenceResolver, intent core.MusicIntent) (core.Musi
 	return intent.Normalized(), issues
 }
 
-func applyList(resolver ports.ReferenceResolver, references []core.IntentReference, required bool, issues []Issue) ([]core.IntentReference, []Issue) {
+func applyList(ctx context.Context, resolver ports.ReferenceResolver, references []core.IntentReference, required bool, issues []Issue, automatic ...bool) ([]core.IntentReference, []Issue) {
 	out := make([]core.IntentReference, len(references))
 	for i, reference := range references {
+		if ctx.Err() != nil {
+			copy(out[i:], references[i:])
+			break
+		}
 		explicitSelection := strings.TrimSpace(reference.TrackID) != ""
+		useAutomatic := len(automatic) > 0 && automatic[0]
+		if useAutomatic && !explicitSelection && reference.Grounding != nil {
+			grounding := *reference.Grounding
+			grounding.Decision = core.DecideArtist(&grounding)
+			reference.Grounding = &grounding
+		}
 		var result core.ReferenceResolution
 		groundingResolved := false
 		if reference.SpellingDecision != "accepted" && reference.Resolution != nil && reference.Resolution.Selected != nil && IsSpellingCandidate(*reference.Resolution.Selected) {
@@ -72,7 +90,7 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 			if !strings.HasPrefix(grounded.TrackID, "local:") && !strings.HasPrefix(grounded.TrackID, "pack:") && !strings.HasPrefix(grounded.TrackID, "musicbrainz:") {
 				grounded.TrackID = "musicbrainz:" + grounded.TrackID
 			}
-			result = resolver.ResolveReference(grounded)
+			result = ports.ResolveReferenceContext(ctx, resolver, grounded)
 			groundingResolved = result.Status == core.ResolutionResolved && result.Selected != nil
 		}
 		if groundingResolved {
@@ -81,12 +99,25 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 			(reference.Kind == core.ReferenceAlbum || reference.Resolution.Status == core.ResolutionResolved && reference.Resolution.Selected != nil) {
 			result = *reference.Resolution
 		} else {
-			result = resolver.ResolveReference(reference)
+			result = ports.ResolveReferenceContext(ctx, resolver, reference)
 		}
+		if ctx.Err() != nil {
+			copy(out[i:], references[i:])
+			break
+		}
+		_, corroboratedArtist := reference.Grounding.CorroboratedArtist()
+		decidedArtist, decided := reference.Grounding.DecidedArtist()
 		groundingAmbiguous := reference.Grounding != nil && (reference.Grounding.Truncated || len(reference.Grounding.Candidates) > 1)
-		if reference.Grounding != nil && reference.Grounding.Confirmed && reference.Grounding.Provider == "MusicBrainz" && reference.Kind == core.ReferenceArtist && !explicitSelection {
+		if useAutomatic && decided && reference.Kind == core.ReferenceArtist && !explicitSelection {
+			// A selected provider identity still needs an authenticated catalog
+			// seed. A name-only hit for a homonym cannot substitute for that ID.
+			if result.Selected == nil || !decidedArtistMatchesSelected(decidedArtist, *result.Selected) {
+				result = core.ReferenceResolution{CatalogVersion: resolver.CatalogVersion(), Status: core.ResolutionUnresolved}
+			}
+		} else if reference.Grounding != nil && (reference.Grounding.Confirmed && reference.Grounding.Provider == "MusicBrainz" || corroboratedArtist) && reference.Kind == core.ReferenceArtist && !explicitSelection {
 			// A name-only catalog hit cannot distinguish homonyms. Let provider
-			// recovery retrieve recordings for the identity the user confirmed.
+			// recovery retrieve recordings for the confirmed or independently
+			// corroborated identity before using it as a catalog seed.
 			result = core.ReferenceResolution{CatalogVersion: resolver.CatalogVersion(), Status: core.ResolutionUnresolved}
 		} else if groundingAmbiguous && !explicitSelection {
 			// Catalog candidates do not carry MusicBrainz MBIDs, so they cannot
@@ -122,6 +153,32 @@ func applyList(resolver ports.ReferenceResolver, references []core.IntentReferen
 		out[i] = reference
 	}
 	return out, issues
+}
+
+func decidedArtistMatchesSelected(identity core.IdentityCandidate, selected core.ResolutionCandidate) bool {
+	if identity.Kind != core.ReferenceArtist || selected.Kind != core.ReferenceArtist {
+		return false
+	}
+	if selected.EntityID == identity.ID {
+		return true
+	}
+	// Recognition and the composite resolver name the same pack-local artist
+	// using different namespaces. This mapping never authenticates an MBID.
+	name, local := strings.CutPrefix(identity.ID, "paipack-artist:")
+	if !local || name == "" || selected.EntityID != "local-artist:"+name || !groundingMatchesSelected(identity, selected) || len(selected.Representatives) == 0 {
+		return false
+	}
+	for _, representative := range selected.Representatives {
+		if !strings.HasPrefix(representative.TrackID, "local:") && !strings.HasPrefix(representative.TrackID, "pack:") {
+			return false
+		}
+	}
+	for _, evidence := range selected.Evidence {
+		if evidence.Match == "local_metadata" {
+			return true
+		}
+	}
+	return false
 }
 
 func groundingMatchesSelected(identity core.IdentityCandidate, selected core.ResolutionCandidate) bool {

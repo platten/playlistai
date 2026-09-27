@@ -180,7 +180,9 @@ func (a *API) saveGenerated(ctx context.Context, name, prompt string, m core.Mus
 
 	m = m.Normalized()
 	req = req.normalized()
+	req.RecentSelections = resolveRecentSelections(a.runtime().Catalog, req.RecentSelections)
 	req.EnhancedAudio = pl.EnhancedAudio
+	req.Search = pl.Search
 	encoded := make([][]byte, 0, 4)
 	for _, value := range []any{m, req, pl.Tracks, pl} {
 		blob, err := json.Marshal(value)

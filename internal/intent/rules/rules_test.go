@@ -274,7 +274,7 @@ func TestPreservesUnsupportedTexturePrompt(t *testing.T) {
 	if !hasPreference(m.Preferences.Moods, "relaxing", core.InfluencePositive) || !hasPreference(m.Preferences.Moods, "sleepy", core.InfluenceNegative) {
 		t.Fatalf("contrast lost during texture/mood separation: %+v", m.Preferences)
 	}
-	if len(m.Unsupported) != 1 || m.Unsupported[0].Text != "no abstract drone" {
+	if len(m.Unsupported) != 2 || m.Unsupported[0].Text != "no abstract drone" || m.Unsupported[1].Text != "not sleepy" {
 		t.Fatalf("unsupported strict requirement = %+v", m.Unsupported)
 	}
 	for _, constraint := range m.HardConstraints {

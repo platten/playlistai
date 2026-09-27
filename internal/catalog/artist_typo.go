@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"sort"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 // resolveArtistTypo is deliberately conservative: at least two complete name
 // tokens, one edit at most across the entire name, and a unique catalog entity.
 // It never drops words or returns a track whose title happens to match an artist.
-func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
+func (c *Catalog) resolveArtistTypo(ctx context.Context, query string) core.ReferenceResolution {
 	q := strings.Fields(normalizeUnicodeSearch(query))
 	if len(q) < 2 || len(q) > 5 || len(query) > 160 {
 		return unresolved()
@@ -23,22 +24,25 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 	var names []string
 	if c.artistRows != nil {
 		for artist := range c.artistRows {
+			if ctx.Err() != nil {
+				return unresolved()
+			}
 			names = append(names, artist)
 		}
 	} else {
-		rows, err := c.db.Query("SELECT DISTINCT artist FROM tracks ORDER BY artist LIMIT 20001")
+		rows, err := c.db.QueryContext(ctx, "SELECT DISTINCT artist FROM tracks ORDER BY artist LIMIT 20001")
 		if err != nil {
 			return unresolved()
 		}
 		defer rows.Close()
-		for rows.Next() {
+		for ctx.Err() == nil && rows.Next() {
 			var name string
 			if rows.Scan(&name) != nil {
 				return unresolved()
 			}
 			names = append(names, name)
 		}
-		if rows.Err() != nil || len(names) > 20000 {
+		if ctx.Err() != nil || rows.Err() != nil || len(names) > 20000 {
 			return unresolved()
 		}
 	}
@@ -48,6 +52,9 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 	var candidates []core.ResolutionCandidate
 	seen := map[string]bool{}
 	for _, artist := range names {
+		if ctx.Err() != nil {
+			return unresolved()
+		}
 		key := normalizeUnicodeSearch(artist)
 		if seen[key] {
 			continue
@@ -84,7 +91,10 @@ func (c *Catalog) resolveArtistTypo(query string) core.ReferenceResolution {
 		candidates = candidates[:maxAlternatives]
 	}
 	for i := range candidates {
-		candidates[i].Representatives = c.artistRepresentatives(candidates[i].Artist)
+		if ctx.Err() != nil {
+			return unresolved()
+		}
+		candidates[i].Representatives = c.artistRepresentatives(ctx, candidates[i].Artist)
 	}
 	if len(candidates) > 1 || candidates[0].Evidence[0].Match == "spelling" {
 		return core.ReferenceResolution{Status: core.ResolutionAmbiguous, Alternatives: candidates}

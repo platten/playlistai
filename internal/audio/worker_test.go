@@ -29,11 +29,43 @@ func TestMain(m *testing.M) {
 			time.Sleep(time.Minute)
 		case "test:healthy":
 			_ = WriteFrame(os.Stdout, WorkerResponse{Protocol: WorkerProtocol, Vector: []float32{1, 0}})
+		case "test:environment":
+			response := WorkerResponse{Protocol: WorkerProtocol, Model: core.AudioModelIdentity{Runtime: "onnxruntime/1.26.0/cuda"}}
+			if os.Getenv("PLAYLISTAI_CLAP_DEVICE") != "cuda:0" || os.Getenv("PLAYLISTAI_TEST_PARENT_ENV") != "present" {
+				response.Error = "CUDA device or inherited environment missing"
+			}
+			_ = WriteFrame(os.Stdout, response)
 		}
 		clear(request.Audio)
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func TestWorkerDefaultsToBundleBackend(t *testing.T) {
+	for _, tc := range []struct{ runtime, override, want string }{
+		{"onnxruntime/1.26.0/cpu", "", "cpu"},
+		{"onnxruntime/1.26.0/cuda", "", "cuda:0"},
+		{"onnxruntime/1.26.0/cuda", "cuda:1", "cuda:1"},
+	} {
+		worker := &Worker{Model: core.AudioModelIdentity{Runtime: tc.runtime}, Device: tc.override}
+		if got := worker.EffectiveDevice(); got != tc.want {
+			t.Fatalf("runtime=%q override=%q: device=%q, want %q", tc.runtime, tc.override, got, tc.want)
+		}
+	}
+}
+
+func TestWorkerPassesCUDADeviceAndParentEnvironment(t *testing.T) {
+	t.Setenv("PLAYLISTAI_TEST_PARENT_ENV", "present")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	worker := &Worker{Executable: executable, BundleDir: "test:environment", Model: core.AudioModelIdentity{Runtime: "onnxruntime/1.26.0/cuda"}}
+	defer worker.Close()
+	if err := worker.Health(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestWorkerCancellationAndCrashPermitRestart(t *testing.T) {

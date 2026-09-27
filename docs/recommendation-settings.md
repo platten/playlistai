@@ -6,10 +6,14 @@ on a playlist to apply the current setting to a fresh generation.
 
 | Mode | Ranking behavior | When to use it |
 | --- | --- | --- |
-| Enhanced Hybrid (default) | Combines the existing evidence pipeline with available local DSP preferences and optional MERT similarity. | Richer matching with supported audio evidence; MERT installation is optional. |
+| Automatic (default) | Uses prepared discovery data and compatible audio evidence within a two-minute generation budget; returns fewer tracks when support is insufficient. | Broad discovery from a description or artist reference. |
+| Enhanced Hybrid | Combines the existing evidence pipeline with available local DSP preferences and optional MERT similarity. | Richer matching with supported audio evidence; MERT installation is optional. |
 | AcousticBrainz first | Decisive archived classifier predictions lead overlapping characteristics; CLAP fills gaps. | Prefer available recording-level archived analysis. |
 | CLAP first | Scored preview comparisons lead overlapping characteristics; AcousticBrainz fills gaps. | Prefer matching previews against your description. |
 | Deej-AI only | The original audio/co-occurrence embedding walk, without provider enrichment, semantic retrieval, personalization, CLAP, AcousticBrainz or MMR selection. | Fast catalog-reference exploration without musical-fit analysis. |
+
+Settings offers Automatic, Enhanced Hybrid, and Deej-AI only. AcousticBrainz
+first and CLAP first remain available for saved requests and direct evaluation.
 
 ## What priority means
 
@@ -102,13 +106,14 @@ mode pinned in an existing request or interrupt a running generation.
 
 The LLM does not choose this setting. The desktop applies it after parsing, and
 generation fingerprints include it. Engine-only parsing has a separate cache
-key and skips even provider genre-name confirmation. New requests use
-`multichannel/v20` or `deejai/v4+engine-only/v1`. The retained `deejai/v4`
-evaluation baseline remains unchanged. Engine-only generation has no profile
-snapshot; exposure logging remains separate from ranking and positive feedback.
+key and skips even provider genre-name confirmation. New requests record their
+selected algorithm and evidence-policy versions. Engine-only generation has no
+profile snapshot; exposure logging remains separate from ranking and positive
+feedback.
 
-The legacy TOML `recommendation.strategy = "deejai"` supplies the engine-only
-default when there is no valid saved setting. Both engines are wired once so
+An explicit TOML `recommendation.strategy = "deejai"` or `"multichannel"`
+still selects Deej-AI only or Enhanced Hybrid when there is no valid saved
+setting. An unset strategy selects Automatic. The engines are wired once so
 changing Settings does not swap mutable services during generation.
 
 ## Validation
@@ -131,7 +136,8 @@ latency and actual evidence coverage. Its failures remain visible; enabling a
 source-priority setting is not a guarantee that every prompt can be fulfilled.
 # Enhanced hybrid
 
-Enhanced Hybrid is the default for new installations and unset preferences. Saved
-mode choices and an explicit Deej-AI configuration remain respected. It adds local DSP preferences and MERT audio similarity to
+Automatic is the default for new installations and unset preferences. Saved mode
+choices and explicit Deej-AI or multichannel configuration remain respected.
+Enhanced Hybrid adds local DSP preferences and MERT audio similarity to
 the existing evidence pipeline. It does not require MERT installation. See
 [enhanced settings, limits, replay and evidence policy](enhanced-audio.md).

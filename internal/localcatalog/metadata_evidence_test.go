@@ -136,7 +136,8 @@ func TestPackedRecordingMetadataAndUnknownPreference(t *testing.T) {
 
 func TestCompoundGenreSupportRequiresTwoSourcedTagsOnSameRecording(t *testing.T) {
 	local, manager := openTestCatalog(t, []librarypack.Track{
-		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
+		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"GENRE":"Ambient; Electronic"}`)},
+		{ID: "classifier", Artist: "E", Title: "Predictions", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
 		{ID: "ambient", Artist: "B", Title: "Two", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient"}`)},
 		{ID: "electronic", Artist: "C", Title: "Three", RawTags: json.RawMessage(`{"AB:GENRE":"Electronic"}`)},
 		{ID: "title", Artist: "D", Title: "Ambient electronic", RawTags: json.RawMessage(`{"comment":"ambient electronic"}`)},
@@ -147,7 +148,7 @@ func TestCompoundGenreSupportRequiresTwoSourcedTagsOnSameRecording(t *testing.T)
 	criterion := core.MusicalCriterion{Kind: "genre", Value: "ambient electronica"}
 	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{criterion}}
 	ctx := context.Background()
-	for _, id := range []string{"ambient", "electronic", "title"} {
+	for _, id := range []string{"ambient", "electronic", "title", "classifier"} {
 		if catalog.CompoundGenreSupport(ctx, local.NamespacedID(id), criterion) {
 			t.Fatalf("unsupported %q admitted", id)
 		}
@@ -161,5 +162,25 @@ func TestCompoundGenreSupportRequiresTwoSourcedTagsOnSameRecording(t *testing.T)
 	}
 	if score, ok := catalog.LibraryPreferenceScore(ctx, id, intent, "playlist"); !ok || score != .75 {
 		t.Fatalf("partial score=%g available=%v", score, ok)
+	}
+}
+
+func TestRecordingMetadataPreservesExactReleaseTrackLink(t *testing.T) {
+	const release = "86563ff6-7ebe-4841-a72d-a1a72e5f055e"
+	const releaseTrack = "21ddf4c1-4106-49b4-b7f9-688f907c2c58"
+	local, manager := openTestCatalog(t, []librarypack.Track{
+		{ID: "linked", Artist: "Performer", Title: "Edition title", RawTags: json.RawMessage(`{"MUSICBRAINZ_ALBUMID":"` + release + `","MUSICBRAINZ_RELEASETRACKID":"` + releaseTrack + `"}`)},
+		{ID: "ambiguous", Artist: "Performer", Title: "Uncertain", RawTags: json.RawMessage(`{"MUSICBRAINZ_ALBUMID":"` + release + `","MUSICBRAINZ_RELEASETRACKID":["` + releaseTrack + `","9b523fda-78bd-4232-b6db-0c25194d010d"]}`)},
+	}, nil)
+	defer manager.Close()
+	defer local.Close()
+	c := &CompositeCatalog{base: testBase{}, local: local, mode: ModeCombined}
+	track, ok, err := c.LibraryRecordingMetadata(context.Background(), local.NamespacedID("linked"))
+	if err != nil || !ok || track.ReleaseID != release || track.ReleaseTrackID != releaseTrack {
+		t.Fatalf("exact recording link lost: %+v %v", track, err)
+	}
+	track, ok, err = c.LibraryRecordingMetadata(context.Background(), local.NamespacedID("ambiguous"))
+	if err != nil || !ok || track.ReleaseTrackID != "" {
+		t.Fatalf("ambiguous release-track link selected: %+v %v", track, err)
 	}
 }

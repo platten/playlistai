@@ -42,7 +42,7 @@ func (c *Client) discoverInstrumental(ctx context.Context, intent *core.MusicInt
 			if ctx.Err() != nil {
 				break
 			}
-			c.addKnowledgeRecording(recording, cat, resolver, snapshot)
+			c.addKnowledgeRecording(ctx, recording, cat, resolver, snapshot)
 		}
 		if len(response.Recordings) < 100 || offset+100 >= response.Count {
 			break
@@ -164,13 +164,16 @@ func (c *Client) discoverInstrumentalWikipedia(ctx context.Context, intent *core
 		if link.NS != 0 || name == "" || excludedArtist(name, intent.Constraints.ArtistsExclude) {
 			continue
 		}
-		resolved := resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: name, Influence: core.InfluencePositive})
+		resolved := ports.ResolveReferenceContext(ctx, resolver, core.IntentReference{Kind: core.ReferenceArtist, Query: name, Influence: core.InfluencePositive})
+		if ctx.Err() != nil {
+			break
+		}
 		if resolved.Status != core.ResolutionResolved || resolved.Selected == nil || len(resolved.Selected.Representatives) == 0 {
 			continue
 		}
 		representatives := resolved.Selected.Representatives
 		representative := representatives[rng.Intn(len(representatives))]
-		meta, ok := cat.Meta(representative.TrackID)
+		meta, ok := ports.CatalogMeta(ctx, cat, representative.TrackID)
 		if !ok || excludedArtist(meta.Ref.Artist, intent.Constraints.ArtistsExclude) {
 			continue
 		}

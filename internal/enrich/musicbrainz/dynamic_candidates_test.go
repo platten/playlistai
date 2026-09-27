@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -114,6 +115,15 @@ CREATE TABLE recording_tags(recording_mbid TEXT NOT NULL,tag_key TEXT NOT NULL,t
 			t.Fatal(err)
 		}
 	}
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("f0000000-0000-0000-0000-%012d", i+1)
+		if _, err := db.Exec(`INSERT INTO recordings VALUES(?,?,?,'Outside Artist',241000,'2024-02-03','')`, id, fmt.Sprintf("Outside Song %d", i), fmt.Sprintf("outside song %d", i)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO recording_artists VALUES(?,0,?,'Outside Artist','outside artist','')`, id, contextArtistID); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +154,7 @@ CREATE TABLE recording_tags(recording_mbid TEXT NOT NULL,tag_key TEXT NOT NULL,t
 		t.Fatalf("dynamic metadata = %+v ok=%v", meta, ok)
 	}
 	snapshot := stream.Snapshot()
-	if len(snapshot.Tracks) != 1 || snapshot.Tracks[0].RecordingID != acousticTestID || len(snapshot.Tracks[0].GenreTags) != 1 {
+	if len(snapshot.Tracks) != 5 || snapshot.Tracks[0].RecordingID != acousticTestID || len(snapshot.Tracks[0].GenreTags) != 1 || len(snapshot.Notices) != 0 {
 		t.Fatalf("knowledge snapshot = %+v", snapshot)
 	}
 }

@@ -56,7 +56,7 @@ func newPipelineFixture(tb testing.TB) *pipelineFixture {
 			http.Error(w, "unexpected fixture request", http.StatusBadRequest)
 			return
 		}
-		id := strings.TrimPrefix(r.URL.Query().Get("query"), "arid:")
+		id := r.URL.Query().Get("artist")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"count":1,"recordings":[{"id":"r%s","title":"Song","artist-credit":[{"name":"Artist %s","artist":{"id":"%s"}}]}]}`, id, id, id)
 	}))
@@ -93,7 +93,7 @@ func (pipelineAnalysisStore) Find(ctx context.Context, catalog, id, key string, 
 	case <-ctx.Done():
 		return core.AudioAnalysis{}, false, ctx.Err()
 	}
-	record := core.AudioAnalysis{TrackID: id, CatalogVersion: catalog, TrackKey: key, Model: model, Identity: core.PreviewIdentity{Provider: "fixture", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
+	record := core.AudioAnalysis{TrackID: id, CatalogVersion: catalog, TrackKey: key, Model: model, Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
 	record.ID = audio.Fingerprint(record)
 	return record, true, nil
 }

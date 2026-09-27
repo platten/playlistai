@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/reco/deejai"
 )
 
@@ -18,6 +19,12 @@ func (a *API) SetRecommendationMode(mode core.RecommendationMode) error {
 func (a *API) recommendationVersionFor(intent core.MusicIntent) string {
 	if intent.Controls.RecommendationMode == core.DeejAIOnly {
 		return deejai.OnlyAlgorithmVersion
+	}
+	if intent.Controls.RecommendationMode == core.Automatic {
+		if engine, ok := a.runtime().AutomaticReco.(ports.VersionedRecommendationEngine); ok {
+			return engine.AlgorithmVersion()
+		}
+		return "automatic-unavailable"
 	}
 	return a.recommendationVersion()
 }

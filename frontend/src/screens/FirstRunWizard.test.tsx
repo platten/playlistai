@@ -63,12 +63,13 @@ it("omits every ready asset screen without changing saved choices or downloading
 
 it("requires MERT installation before continuing", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["mert"])));
-  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, mertAvailable: false, mertEnabled: true, recommendedManifestUrl: "https://models.example/mert/manifest.json", recommendedDownloadBytes: 390000000 }));
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: false, mertAvailable: false, mertEnabled: true, recommendedManifestUrl: "https://models.example/mert-linux-amd64-gpu/manifest.json", recommendedDownloadBytes: 1828938273 }));
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   await start();
   expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.click(await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" }));
+  expect(await screen.findByRole("button", { name: "Install CPU MERT fallback" })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Download CUDA MERT from Cloudflare R2" }));
   expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
   expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
   api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ installed: true, mertAvailable: true, mertEnabled: true, searchableTracks: 0, dspAvailable: true }));
@@ -147,7 +148,7 @@ it("enables an installed analysis model before continuing to MERT", async () => 
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   expect(api.SetAnalysisEnabled).toHaveBeenCalledWith(true);
   expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Download and validate CLAP" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Install and validate CLAP" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByRole("heading", { name: "MERT audio similarity" });
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
@@ -336,7 +337,7 @@ it("accepts an installed uncalibrated analysis model without offering another do
   await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
   expect(api.SetAnalysisEnabled).not.toHaveBeenCalled();
   expect(api.GetRecommendedAnalysisBundle).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: "Download and validate CLAP" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Install and validate CLAP" })).toBeNull();
 });
 
 it("keeps preview selection available after its initial read fails", async () => {

@@ -177,19 +177,31 @@ of both MERT and CLAP. Analysis runs MERT/DSP and CLAP as separate phases so a
 model stays resident across tracks instead of being reloaded per recording. Inner manifests
 and hashes are checked again before private, versioned, locked atomic promotion.
 
-Build both variants with:
+Build both variants, including the CUDA runtime in `playlist-indexer-offline`, with:
+
+```sh
+./scripts/build-playlist-indexer.sh
+```
+
+The script downloads the pinned CPU bundles and builds the pinned codec payload
+when they are absent. It derives CUDA CLAP from the CPU CLAP graphs and a CUDA
+MERT runtime. When the CUDA MERT bundle is absent from the build cache, it
+extracts and verifies one from an existing `bin/playlist-indexer-offline`.
+Set `PLAYLIST_INDEXER_CUDA_SOURCE` to use another existing offline executable.
+For a first build with no previous executable, provide a verified CUDA MERT
+bundle or a reviewed manifest and its SHA-256:
 
 ```sh
 PLAYLIST_INDEXER_MERT_BUNDLE=/absolute/mert-linux-amd64 \
 PLAYLIST_INDEXER_MERT_CUDA_BUNDLE=/absolute/mert-linux-amd64-cuda \
 PLAYLIST_INDEXER_CLAP_BUNDLE=/absolute/clap-linux-amd64 \
-PLAYLIST_INDEXER_CLAP_CUDA_BUNDLE=/absolute/clap-linux-amd64-cuda \
 ./scripts/build-playlist-indexer.sh
 ```
 
-Setting any model-bundle variable requests the offline build; alternatively set
-`PLAYLIST_INDEXER_BUILD_OFFLINE=1`. Before compiling, the script requires a
-working Linux amd64 NVIDIA driver, validates complete matching CPU/CUDA bundles
+The CUDA CLAP bundle is derived automatically if it is not supplied.
+`PLAYLIST_INDEXER_BUILD_OFFLINE=0` requests only the smaller standard build;
+setting any model-bundle variable requests the offline build. Before compiling,
+the script checks for a Linux amd64 target, validates complete matching CPU/CUDA bundles
 for both MERT and CLAP, and checks every manifest-declared file and checksum.
 Missing CPU bundles are downloaded from the repository's pinned model registry.
 The codec runtime is reused from the offline cache when present. If it is absent
@@ -197,12 +209,11 @@ and `PLAYLIST_INDEXER_CODEC_PAYLOAD` is not set, the script uses Docker Buildx t
 build it from the checksum-pinned FFmpeg and Chromaprint sources. Both completed
 executables are inspected before publication; the offline check requires codec,
 CPU/CUDA MERT, and CPU/CUDA CLAP payload trees.
-If CUDA CLAP is missing, it is derived from the verified CPU CLAP graphs and
-CUDA MERT runtime. Because no public CUDA MERT distribution is pinned in the
-repository, provide an existing `PLAYLIST_INDEXER_MERT_CUDA_BUNDLE`, or set a
-reviewed `PLAYLIST_INDEXER_MERT_CUDA_MANIFEST` together with its required
-`PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256`; the segmented bundle is then
-downloaded and verified. Downloads are retained beneath
+Because no public CUDA MERT distribution is pinned in the repository, a fresh
+build requires an existing verified CUDA bundle or a reviewed
+`PLAYLIST_INDEXER_MERT_CUDA_MANIFEST` and
+`PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256`. A GPU driver is needed to run CUDA
+analysis, but is not required on the build host. Downloads are retained beneath
 `PLAYLIST_INDEXER_OFFLINE_CACHE_DIR` (the user cache by default). Packaging uses
 a staging directory under the output directory and moves the completed standard
 and offline executables into `bin/` atomically only after successful validation.
@@ -211,6 +222,10 @@ Use `--analysis all` for metadata, MERT/DSP, and CLAP; `--analysis clap` perform
 a resumable CLAP-only backfill. `--clap-device auto` tries the embedded CUDA
 bundle and falls back to CPU if native validation fails. Explicit `cuda:INDEX`
 requests fail instead of silently changing backends.
+CLAP's native CUDA health check compares a pinned tone and text embedding with
+both a 0.0005 maximum coordinate difference and 0.99999 minimum cosine; the
+CPU coordinate limit remains 0.0001. This checks numerical execution parity,
+not musical-match calibration.
 
 MERT remains CC-BY-NC-4.0 and always requires `--accept-model-license`, including
 when bytes are embedded. `--yes` is deliberately absent. Network is used only by

@@ -186,7 +186,7 @@ func fixtureVocalService(t *testing.T, cat *fakes.Catalog) *audio.Service {
 	encoder := fixtureVocalEncoder{}
 	for row := 0; row < cat.Len(); row++ {
 		meta, _ := cat.Meta(cat.ID(row))
-		record := core.AudioAnalysis{CatalogVersion: cat.CatalogVersion(), TrackID: meta.Ref.ID, TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: meta.Ref.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{EndSeconds: 10, Embedding: []float32{1, 0}}}}
+		record := core.AudioAnalysis{CatalogVersion: cat.CatalogVersion(), TrackID: meta.Ref.ID, TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: meta.Ref.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{EndSeconds: 10, Embedding: []float32{1, 0}}}}
 		record.ID = audio.Fingerprint(record)
 		if err := store.Put(context.Background(), record); err != nil {
 			t.Fatal(err)

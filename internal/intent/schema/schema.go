@@ -30,25 +30,27 @@ type WireReference struct {
 }
 
 type WirePreference struct {
-	Value     string `json:"value"`
-	Influence string `json:"influence"`
-	Explicit  bool   `json:"explicit"`
-	Span      string `json:"span"`
-	Scope     string `json:"scope,omitempty"`
-	Strength  string `json:"strength,omitempty"`
-	Degree    string `json:"degree,omitempty"`
-	Group     string `json:"group,omitempty"`
-	ConceptID string `json:"conceptId,omitempty"`
+	CoverageGroup string `json:"coverageGroup,omitempty"`
+	Value         string `json:"value"`
+	Influence     string `json:"influence"`
+	Explicit      bool   `json:"explicit"`
+	Span          string `json:"span"`
+	Scope         string `json:"scope,omitempty"`
+	Strength      string `json:"strength,omitempty"`
+	Degree        string `json:"degree,omitempty"`
+	Group         string `json:"group,omitempty"`
+	ConceptID     string `json:"conceptId,omitempty"`
 }
 
 type WireCriterion struct {
-	Strength  string `json:"strength,omitempty"`
-	Group     string `json:"group,omitempty"`
-	ConceptID string `json:"conceptId,omitempty"`
-	Kind      string `json:"kind"`
-	Value     string `json:"value"`
-	Scope     string `json:"scope"`
-	Span      string `json:"span"`
+	CoverageGroup string `json:"coverageGroup,omitempty"`
+	Strength      string `json:"strength,omitempty"`
+	Group         string `json:"group,omitempty"`
+	ConceptID     string `json:"conceptId,omitempty"`
+	Kind          string `json:"kind"`
+	Value         string `json:"value"`
+	Scope         string `json:"scope"`
+	Span          string `json:"span"`
 }
 
 type WireAnchor struct {
@@ -169,6 +171,17 @@ func parse(raw []byte, prompt string, supplied *core.IntentTranslation) (core.Mu
 	dec := json.NewDecoder(bytes.NewReader(obj))
 	if err := dec.Decode(&wire); err != nil {
 		return core.MusicIntent{}, fmt.Errorf("schema: %w", err)
+	}
+	// Only the source interpreter can relax per-track genres into playlist
+	// coverage. Model-supplied labels cannot manufacture this instruction.
+	for _, list := range [][]WirePreference{wire.Genres, wire.Styles, wire.Moods, wire.Instrumentation, wire.Textures} {
+		for i := range list {
+			list[i].CoverageGroup = ""
+		}
+	}
+	wire.VocalPreference.CoverageGroup = ""
+	for i := range wire.EssentialCriteria {
+		wire.EssentialCriteria[i].CoverageGroup = ""
 	}
 	var extracted core.IntentTranslation
 	if supplied == nil {
@@ -509,7 +522,7 @@ func anchorsToCore(in []WireAnchor) []core.InferredAnchor {
 func criteriaToCore(in []WireCriterion) []core.MusicalCriterion {
 	out := make([]core.MusicalCriterion, 0, len(in))
 	for _, criterion := range in {
-		out = append(out, core.MusicalCriterion{Kind: criterion.Kind, Value: criterion.Value, Scope: criterion.Scope, Evidence: evidence(criterion.Span, true), Strength: criterion.Strength, Group: criterion.Group, ConceptID: criterion.ConceptID})
+		out = append(out, core.MusicalCriterion{Kind: criterion.Kind, Value: criterion.Value, Scope: criterion.Scope, Evidence: evidence(criterion.Span, true), Strength: criterion.Strength, Group: criterion.Group, CoverageGroup: criterion.CoverageGroup, ConceptID: criterion.ConceptID})
 	}
 	return out
 }
@@ -610,7 +623,7 @@ func preferenceToCore(p WirePreference) core.IntentPreference {
 	return core.IntentPreference{
 		Value: p.Value, Influence: core.Influence(p.Influence),
 		Explicit: p.Explicit, Evidence: evidence(p.Span, p.Explicit),
-		Scope: p.Scope, Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group,
+		Scope: p.Scope, Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group, CoverageGroup: p.CoverageGroup,
 	}
 }
 

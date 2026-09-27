@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/platten/playlistai/internal/core"
 )
@@ -30,7 +31,8 @@ func PrepareEnhancedEvidence(
 		ctx = WithLazyEnhancedBudget(ctx, EnhancedTrackLimit, EnhancedTimeLimit)
 	}
 	input := core.EnhancedAudioInput{
-		CatalogVersion: catalog, DSPVersion: DSPAnalysisVersion, Model: model,
+		PreviewIdentityPolicy: core.PreviewIdentityPolicyVersion,
+		CatalogVersion:        catalog, DSPVersion: DSPAnalysisVersion, Model: model,
 		DSP: map[string]core.DSPAnalysis{}, Representations: map[string]core.AudioRepresentation{},
 	}
 	if !acquire && previous != nil {
@@ -38,8 +40,20 @@ func PrepareEnhancedEvidence(
 		if prior.CatalogVersion != input.CatalogVersion || prior.Model != input.Model || prior.PolicyVersion != core.EnhancedAudioPolicyVersion {
 			return nil, fmt.Errorf("enhanced audio refresh requires the same catalog, model and policy as the initial snapshot")
 		}
-		input.PositiveCentroid, input.NegativeCentroid = prior.PositiveCentroid, prior.NegativeCentroid
-		input.MERTSearch = prior.MERTSearch
+		if prior.PreviewIdentityPolicy == core.PreviewIdentityPolicyVersion {
+			input.PositiveCentroid, input.NegativeCentroid = prior.PositiveCentroid, prior.NegativeCentroid
+			input.MERTSearch = prior.MERTSearch
+		}
+		if input.MERTSearch != nil {
+			for _, hit := range input.MERTSearch.Hits {
+				if !hit.Representation.Identity.CurrentPolicy() {
+					// This is a fresh cache refresh, not immutable saved-result
+					// replay. Recompute a search that contains old identity proof.
+					input.MERTSearch = nil
+					break
+				}
+			}
+		}
 	}
 	seen := map[string]bool{}
 	unique := make([]core.TrackRef, 0, len(refs))
@@ -102,30 +116,33 @@ func PrepareEnhancedEvidence(
 				}
 			}()
 		}
+	dispatch:
 		for _, ref := range missing {
 			select {
 			case jobs <- ref:
 			case <-ctx.Done():
-				close(jobs)
-				workers.Wait()
-				completed, freezeErr := core.NewEnhancedAudioSnapshot(input)
-				if freezeErr != nil {
-					return nil, freezeErr
-				}
-				return completed, ctx.Err()
+				break dispatch
 			}
 		}
 		close(jobs)
 		workers.Wait()
 	}
+	readCtx := ctx
+	if ctx.Err() != nil {
+		// Workers have joined and PCM is gone. Retain completed local rows
+		// during cleanup; this context never reaches providers or inference.
+		var cancel context.CancelFunc
+		readCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		defer cancel()
+	}
 	for _, ref := range unique {
 		if preview.DSPStore != nil {
-			if a, ok, err := preview.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), DSPAnalysisVersion); err == nil && ok {
+			if a, ok, err := preview.DSPStore.Find(readCtx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), DSPAnalysisVersion); err == nil && ok {
 				input.DSP[ref.ID] = a
 			}
 		}
 		if mert != nil {
-			if a, ok, err := mert.Store.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), input.Model); err == nil && ok {
+			if a, ok, err := mert.Store.Find(readCtx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), input.Model); err == nil && ok {
 				input.Representations[ref.ID] = a
 			}
 		}

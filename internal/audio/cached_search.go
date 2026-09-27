@@ -2,53 +2,93 @@ package audio
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"sort"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
 
-const CachedSearchLimit = 20000
+const cachedSearchPageSize = 256
 
+// A negative limit scans all pages. A read transaction freezes the cache while
+// keyset pagination bounds memory and lets cancellation interrupt every page.
 func (s *Store) VisitAnalyses(ctx context.Context, catalog string, model core.AudioModelIdentity, limit int, visit func(core.AudioAnalysis) bool) error {
-	if limit <= 0 {
+	if limit == 0 {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM analysis WHERE catalog=? AND model=? ORDER BY track, rowid DESC LIMIT ?`, catalog, Fingerprint(model), min(limit, CachedSearchLimit))
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	seen := map[string]bool{}
-	for rows.Next() {
+	defer func() { _ = tx.Rollback() }() // read-only snapshot
+	cursorTrack, cursorRow := "", int64(0)
+	seenTrack := ""
+	seenKeys := map[string]bool{}
+	read := 0
+	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		pageSize := cachedSearchPageSize
+		if limit > 0 {
+			pageSize = min(pageSize, limit-read)
+			if pageSize == 0 {
+				return nil
+			}
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT track, rowid, data FROM analysis WHERE catalog=? AND model=? AND (track>? OR (track=? AND rowid<?)) ORDER BY track, rowid DESC LIMIT ?`, catalog, Fingerprint(model), cursorTrack, cursorTrack, cursorRow, pageSize)
+		if err != nil {
 			return err
 		}
-		var record core.AudioAnalysis
-		if json.Unmarshal([]byte(raw), &record) != nil || validateAnalysis(record) != nil || record.CatalogVersion != catalog || record.Model != model {
-			continue
+		count := 0
+		for rows.Next() {
+			if err := ctx.Err(); err != nil {
+				rows.Close()
+				return err
+			}
+			var raw string
+			if err := rows.Scan(&cursorTrack, &cursorRow, &raw); err != nil {
+				rows.Close()
+				return err
+			}
+			count++
+			read++
+			if seenTrack != cursorTrack {
+				seenTrack = cursorTrack
+				clear(seenKeys)
+			}
+			var record core.AudioAnalysis
+			if json.Unmarshal([]byte(raw), &record) != nil || validateAnalysis(record) != nil || !record.Identity.CurrentPolicy() || record.CatalogVersion != catalog || record.Model != model {
+				continue
+			}
+			id := record.ID
+			record.ID = ""
+			if id != Fingerprint(record) {
+				continue
+			}
+			record.ID = id
+			if seenKeys[record.TrackKey] {
+				continue
+			}
+			seenKeys[record.TrackKey] = true
+			if !visit(record) {
+				rows.Close()
+				return nil
+			}
 		}
-		id := record.ID
-		record.ID = ""
-		if id != Fingerprint(record) {
-			continue
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
 		}
-		record.ID = id
-		key := record.TrackID + "\x00" + record.TrackKey
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		if !visit(record) {
-			break
+		if count < pageSize {
+			return nil
 		}
 	}
-	return rows.Err()
 }
 
 // CachedCandidates expands recall without preview downloads, admission or
@@ -90,11 +130,17 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		return nil, ctx.Err()
 	}
 	var candidates []core.Candidate
-	err := scanner.VisitAnalyses(s.ctx, s.catalog, s.snapshot.Model, CachedSearchLimit, func(record core.AudioAnalysis) bool {
+	incomplete := false
+	err := scanner.VisitAnalyses(ctx, s.catalog, s.snapshot.Model, -1, func(record core.AudioAnalysis) bool {
 		if ctx.Err() != nil || s.stopped() {
+			incomplete = true
 			return false
 		}
-		meta, exists := cat.Meta(record.TrackID)
+		meta, exists := ports.CatalogMeta(ctx, cat, record.TrackID)
+		if ctx.Err() != nil {
+			incomplete = true
+			return false
+		}
 		if !exists || exclude[record.TrackID] || core.ProvisionalRecordingKey(meta.Ref) != record.TrackKey {
 			return true
 		}
@@ -131,7 +177,12 @@ func (s *Session) CachedCandidates(ctx context.Context, cat ports.Catalog, limit
 		return true
 	})
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		err = ctx.Err()
+	}
+	if err != nil {
+		err = fmt.Errorf("cached audio search incomplete: %w", err)
+	} else if incomplete {
+		err = errors.New("cached audio search incomplete: stopped before cache exhaustion")
 	}
 	for i := range candidates {
 		candidates[i].Sources[0].Rank = i + 1

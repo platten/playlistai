@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 const OriginalPCMVersion = "go-mp3/0.3.4-s16-stereo-original-rate/v1"
@@ -29,15 +30,15 @@ func (s *Service) AnalyzeDSPPreview(ctx context.Context, ref core.TrackRef, cata
 	if cached, ok, err := s.DSPStore.Find(ctx, catalog, ref.ID, core.ProvisionalRecordingKey(ref), DSPAnalysisVersion); err != nil || ok {
 		return cached, 0, err
 	}
-	var enriched core.EnrichedTrack
-	if s.Recordings != nil {
-		enriched, _ = s.Recordings.CachedRecording(ref)
+	enriched, _ := ports.CachedRecordingContext(ctx, s.Recordings, ref)
+	if err := ctx.Err(); err != nil {
+		return core.DSPAnalysis{}, 0, err
 	}
 	preview, err := s.Resolver.ResolveAudioPreview(ctx, ref, enriched)
 	if err != nil {
 		return core.DSPAnalysis{}, 0, err
 	}
-	if preview.Identity.Status != core.ResolutionResolved || preview.Identity.Provider != "deezer" || preview.URL == "" {
+	if !preview.Identity.CurrentPolicy() || preview.URL == "" {
 		return core.DSPAnalysis{}, 0, fmt.Errorf("audio: preview identity is unresolved, ambiguous, or unavailable")
 	}
 	encoded, err := s.fetch(ctx, preview.URL)

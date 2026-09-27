@@ -7,15 +7,16 @@ import { useProgress } from "./useProgress";
 
 type AnalysisStatus = Awaited<ReturnType<typeof API.GetAnalysisStatus>>;
 type Bundle = Awaited<ReturnType<typeof API.InspectAnalysisBundle>>;
+type Offer = Awaited<ReturnType<typeof API.GetRecommendedAnalysisBundle>>;
 const size = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
 
 export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyChange?: (ready: boolean) => void; setup?: boolean } = {}) {
   const [status, setStatus] = useState<AnalysisStatus | null>(null);
   const [path, setPath] = useState("");
   const [bundle, setBundle] = useState<Bundle | null>(null);
-  const [recommended, setRecommended] = useState<Bundle | null>(null);
+  const [recommended, setRecommended] = useState<Offer | null>(null);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
-  const [installKind, setInstallKind] = useState<"recommended" | "custom" | null>(null);
+  const [installKind, setInstallKind] = useState<"recommended" | "custom" | "cpu" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -63,12 +64,15 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
     setBusy(true); setError(null);
     try { await fn(); await refresh(); } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
-  const install = (custom: boolean) => run(async () => {
-    setInstallKind(custom ? "custom" : "recommended");
-    const call = custom ? API.InstallAnalysisBundle(path.trim()) : API.InstallRecommendedAnalysisBundle();
+  const install = (kind: "recommended" | "custom" | "cpu") => run(async () => {
+    setInstallKind(kind);
+    const call = kind === "custom" ? API.InstallAnalysisBundle(path.trim()) : kind === "cpu" ? API.InstallCPUAnalysisBundle() : API.InstallRecommendedAnalysisBundle();
     download.current = call;
     try { await call; } finally { download.current = null; setInstallKind(null); }
   });
+  const recommendedAction = recommended?.backend === "cuda"
+    ? status?.recommendedManifest?.startsWith("https://") ? "Download and validate CUDA CLAP" : "Install and validate CUDA CLAP"
+    : "Install and validate CLAP";
 
   return (
     <section aria-labelledby="music-analysis-heading" className="flex w-full flex-col gap-3 rounded-card border border-line bg-surface p-4">
@@ -82,6 +86,7 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
       {!status?.loading && (status?.installed || status?.available) && (
         <>
           <p className="text-[12px] text-faint">{status.model} · {size(status.downloadBytes)} installed artifacts · {size(status.memoryBytes)} memory budget</p>
+          {(status.installedBackends?.length ?? 0) > 1 && <p className="text-[12px] text-muted">CPU and CUDA models installed; Playlist AI uses the available GPU model first.</p>}
           {setup && <p className="text-[13px] text-muted">Music analysis is enabled automatically for description ranking and no-vocals checks.</p>}
           {!setup && status.generalFitAvailable && <label className="flex items-center gap-2 text-[13px]">
             <input type="checkbox" className="accent-accent" checked={status.enabled} disabled={busy} onChange={(e) => void run(() => API.SetAnalysisEnabled(e.target.checked))} />
@@ -93,13 +98,16 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
       {recommended && (!status?.installed || (!setup && !status.recommendedInstalled)) && (
         <div className="flex flex-col gap-2 rounded-control border border-accent/30 p-3">
           <h3 className="text-[13px] font-medium">{recommended.label} <span className="text-accent">· {status?.installed ? "Recommended update" : "Recommended"}</span></h3>
-          <p className="text-[12px] text-muted">Full-precision audio and text encoders · {size(status?.recommendedBytes || (recommended.artifacts ?? []).reduce((n, a) => n + a.size, 0))} compressed download · {size(recommended.memoryBytes)} memory budget</p>
-          <p className="text-[12px] text-muted">Downloads the segmented model pack from Cloudflare R2, verifies every part, reassembles and decompresses it locally, then checks embedding compatibility and native inference before activating the model.</p>
+          <p className="text-[12px] text-muted">Full-precision audio and text encoders · {size(status?.recommendedBytes || recommended.downloadBytes)} {status?.recommendedManifest?.startsWith("https://") ? "compressed download" : "local bundle"} · {size(recommended.memoryBytes)} memory budget</p>
+          <p className="text-[12px] text-muted">{recommended.license}</p>
+          <p className="text-[12px] text-muted">{status?.recommendedManifest?.startsWith("https://") ? "Downloads the segmented model pack from Cloudflare R2 and verifies every part." : "Imports the verified CUDA bundle prepared by the offline indexer."} Native inference is checked before activation.</p>
           {status?.installed && <p className="text-[12px] text-muted">Your current model stays active unless this download and its local health check both succeed. Existing analysis remains stored under its original model identity.</p>}
           <p className="text-[12px] text-muted">No-vocals requests automatically use the installed CLAP model to screen every candidate preview. Vocal or uncertain previews are excluded. Unheard parts of a song may still contain vocals. Preview similarities help rank other descriptions; categorical musical-fit judgments require a reviewed calibration policy.</p>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => void install(false)}>{installKind === "recommended" ? "Downloading and validating…" : error ? "Retry recommended CLAP download" : "Download and validate CLAP"}</Button>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void install("recommended")}>{installKind === "recommended" ? "Installing and validating…" : error ? "Retry recommended CLAP installation" : recommendedAction}</Button>
         </div>
       )}
+      {!status?.loading && (status?.installedBackends?.includes("cuda") || recommended?.backend === "cuda") && !status?.installedBackends?.includes("cpu") &&
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void install("cpu")}>{installKind === "cpu" ? "Installing CPU fallback…" : "Install CPU CLAP fallback"}</Button>}
       {recommendationError && <ErrorState variant="inline" message={recommendationError} onDismiss={() => setRecommendationError(null)} />}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12px] text-muted">
         <span>{status ? `${size(status.storage.bytes)} · ${status.storage.records} cached recordings` : "Local analysis storage"}</span>
@@ -114,7 +122,7 @@ export function MusicAnalysisCard({ onReadyChange, setup = false }: { onReadyCha
         </label>
         <div className="mt-2 flex flex-wrap gap-2">
           <Button size="sm" variant="ghost" disabled={busy || !path.trim()} onClick={() => void run(async () => setBundle(await API.InspectAnalysisBundle(path)))}>Check bundle</Button>
-          {bundle && <Button size="sm" variant="primary" disabled={busy} onClick={() => void install(true)}>{error ? "Retry custom download" : "Download and validate custom bundle"}</Button>}
+          {bundle && <Button size="sm" variant="primary" disabled={busy} onClick={() => void install("custom")}>{error ? "Retry custom download" : "Download and validate custom bundle"}</Button>}
         </div>
         {bundle && <p className="mt-2">{bundle.label} · {size((bundle.artifacts ?? []).reduce((n, a) => n + a.size, 0))} download · {size(bundle.memoryBytes)} memory · {bundle.license}</p>}
       </details>}

@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { API, RecommendationMode } from "../lib/api";
 import { recommendationModeLabel } from "../lib/recommendationMode";
+import { PreparedMusicData } from "./PreparedMusicData";
 
 const options = [
+  {
+    mode: RecommendationMode.Automatic,
+    detail: "Combine prepared music data and compatible audio evidence within a two-minute budget. Missing support may produce a shorter playlist.",
+  },
   {
     mode: RecommendationMode.EnhancedHybrid,
     detail: "Find similar tracks through the catalog and MERT preview embeddings, then combine CLAP, archive evidence and DSP measurements. Missing previews keep existing recommendation scores.",
@@ -55,9 +60,12 @@ export function RecommendationSettings() {
         ))}
       </fieldset>
       <p className="text-[12px] text-faint" role="status">{saving ? "Saving…" : "Applies to new playlists and Regenerate. Saved playlists keep their original mode; active generations are unchanged."}</p>
-      <p className="text-[12px] text-muted">{mode === RecommendationMode.DeejAIOnly
-        ? "Descriptions are still parsed locally, but a catalog reference is needed. Genre and mood fit are unverified. Unsupported strict requirements return an explanation, not an unchecked playlist. The artist-diversity slider does not affect the original walk."
-        : "Enhanced hybrid combines every available compatible source while preserving hard requirements. Evidence availability varies by recording."}</p>
+      {mode === RecommendationMode.Automatic
+        ? <p className="text-[12px] text-muted">Your description and taste profile stay on this device. The music data and available previews determine which requested characteristics can be supported.</p>
+        : <p className="text-[12px] text-muted">{mode === RecommendationMode.DeejAIOnly
+          ? "Descriptions are still parsed locally, but a catalog reference is needed. Genre and mood fit are unverified. Unsupported strict requirements return an explanation, not an unchecked playlist. The artist-diversity slider does not affect the original walk."
+          : "Enhanced hybrid combines every available compatible source while preserving hard requirements. Evidence availability varies by recording."}</p>}
+      {mode === RecommendationMode.Automatic && <PreparedMusicData />}
       {error && <p role="alert" className="text-[12px] text-warn">{error}</p>}
     </section>
   );

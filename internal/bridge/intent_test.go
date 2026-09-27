@@ -16,6 +16,9 @@ import (
 func newLoadedContainer(t *testing.T) *app.Container {
 	t.Helper()
 	cfg := config.Default()
+	// These shared fixtures exercise the established multichannel behavior.
+	// Automatic tests select their mode explicitly.
+	cfg.Recommendation.Strategy = config.RecommendationMultichannel
 	cfg.Discovery.ManifestURL = "" // independent intent fixtures remain offline
 	cfg.DataDir = t.TempDir()
 	cfg.Catalog.Dir = filepath.Join("..", "catalog", "testdata")

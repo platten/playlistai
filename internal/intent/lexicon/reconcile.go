@@ -15,6 +15,7 @@ import (
 // fields. Unknown model interpretations outside those occurrences survive.
 // It never resolves an entity or asserts that a musical property was measured.
 func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.MusicIntent {
+	qualifiedMusic := qualifiedMusicalOccurrences(extracted)
 	// A conjunction inside a literal, fully grounded artist name is ambiguous.
 	// Do not let speculative list splitting overwrite a model's intact name.
 	// This applies only to playlist similarity artists; explicit endpoints and
@@ -89,8 +90,22 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	intent.Preferences.Genres = prefs(intent.Preferences.Genres)
 	intent.Preferences.Styles = prefs(intent.Preferences.Styles)
 	intent.Preferences.Moods = prefs(intent.Preferences.Moods)
-	intent.Preferences.Instrumentation = prefs(intent.Preferences.Instrumentation)
-	intent.Preferences.TextureDescriptions = prefs(intent.Preferences.TextureDescriptions)
+	detailedPrefs := func(in []core.IntentPreference, kind string) []core.IntentPreference {
+		var out []core.IntentPreference
+		for _, p := range in {
+			if qualified, ok := qualifiedMusicalPreference(p, kind, extracted, qualifiedMusic); ok {
+				out = append(out, qualified)
+				continue
+			}
+			p, detail := literalMusicalDetail(p, extracted)
+			if detail || !Owned(p.Value, p.Evidence, extracted.Atoms) {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	intent.Preferences.Instrumentation = detailedPrefs(intent.Preferences.Instrumentation, "instrumentation")
+	intent.Preferences.TextureDescriptions = detailedPrefs(intent.Preferences.TextureDescriptions, "texture")
 	vocals := intent.Preferences.VocalPreferences
 	if len(vocals) == 0 && intent.Preferences.VocalPreference != nil {
 		vocals = []core.IntentPreference{*intent.Preferences.VocalPreference}
@@ -137,7 +152,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	intent.TrackCountExplicit = false
 	hasCount, hasDuration := false, false
 	for _, a := range extracted.Atoms {
-		if protectedAtom(a) {
+		if protectedAtom(a) || qualifiedMusicOwns(a, qualifiedMusic) {
 			continue
 		}
 		switch a.Kind {
@@ -256,7 +271,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			if !musicalKind(a.Kind) || a.Kind == "activity" {
 				continue
 			}
-			p := core.IntentPreference{Value: a.Value, Influence: core.Influence(a.Polarity), Explicit: true, Evidence: a.Evidence, ConceptID: a.ConceptID, Scope: a.Scope, Strength: a.Strength, Degree: a.Degree, Group: a.Group}
+			p := core.IntentPreference{Value: a.Value, Influence: core.Influence(a.Polarity), Explicit: true, Evidence: a.Evidence, ConceptID: a.ConceptID, Scope: a.Scope, Strength: a.Strength, Degree: a.Degree, Group: a.Group, CoverageGroup: a.CoverageGroup}
 			switch a.Kind {
 			case "genre":
 				intent.Preferences.Genres = append(intent.Preferences.Genres, p)
@@ -272,7 +287,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 				intent.Preferences.VocalPreferences = append(intent.Preferences.VocalPreferences, p)
 			}
 			if a.Polarity == "positive" && (a.Strength == "essential" || a.Strength == "required") {
-				intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: a.Kind, Value: a.Value, Scope: a.Scope, Evidence: a.Evidence, ConceptID: a.ConceptID, Strength: a.Strength, Group: a.Group})
+				intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: a.Kind, Value: a.Value, Scope: a.Scope, Evidence: a.Evidence, ConceptID: a.ConceptID, Strength: a.Strength, Group: a.Group, CoverageGroup: a.CoverageGroup})
 			}
 			if a.Polarity == "negative" && a.Strength == "required" && (a.Scope == "" || a.Scope == "playlist") {
 				kind := "exclude_" + a.Kind
@@ -307,10 +322,89 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 	if intent.Mode == core.ModeJourney && intent.Start == nil && intent.Destination == nil && len(intent.Journey.Waypoints) == 0 && len(intent.Journey.EnergyTrajectory) == 0 && len(core.JourneyCriteria(intent.EssentialCriteria)) == 0 {
 		intent.Mode = core.ModeSimilar
 	}
+	// Model-supplied literal phrases outside the dictionary retain their defining
+	// force too; a generic inner instrument cannot fulfill this criterion.
+	for _, family := range []struct {
+		kind        string
+		preferences []core.IntentPreference
+	}{{"instrumentation", intent.Preferences.Instrumentation}, {"texture", intent.Preferences.TextureDescriptions}} {
+		for _, p := range family.preferences {
+			if p.Strength != "essential" || p.Influence != core.InfluencePositive {
+				continue
+			}
+			found := false
+			for _, c := range intent.EssentialCriteria {
+				found = found || c.Kind == family.kind && c.Value == p.Value && c.Scope == p.Scope
+			}
+			if !found {
+				intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: family.kind, Value: p.Value, Scope: p.Scope, Strength: p.Strength, Evidence: p.Evidence, Group: p.Group, CoverageGroup: p.CoverageGroup})
+			}
+		}
+	}
+	applyQualifiedMusic(&intent, &extracted, qualifiedMusic)
 	copy := extracted
 	copy.Repairs = append([]string{"Explicit source facts take precedence over conflicting model fields."}, extracted.Repairs...)
 	intent.Translation = &copy
 	return intent
+}
+
+// Literal instrumentation and textures can add detail beyond a known preferred
+// adjective or instrument. Preserve defining detail as essential; source roles own
+// negation, requirements, logical composition and reference identities.
+func literalMusicalDetail(p core.IntentPreference, source core.IntentTranslation) (core.IntentPreference, bool) {
+	if !p.Explicit || len(p.Evidence) != 1 || !p.Evidence[0].Explicit || !strings.EqualFold(p.Value, p.Evidence[0].Text) {
+		return p, false
+	}
+	e := p.Evidence[0]
+	if e.Start < 0 && e.End < 0 && e.Text != "" && strings.Count(source.OriginalText, e.Text) == 1 {
+		e.Start = strings.Index(source.OriginalText, e.Text)
+		e.End = e.Start + len(e.Text)
+	}
+	if !knownOccurrence(e) || e.End > len(source.OriginalText) || source.OriginalText[e.Start:e.End] != e.Text {
+		return p, false
+	}
+	p.Evidence = []core.SourceEvidence{e}
+	// An unknown modifier can separate a source qualifier from the known
+	// instrument. Check the full phrase's prefix before trusting its inner atom.
+	prefix := source.OriginalText[:e.Start]
+	if !additivePrefix.MatchString(prefix) && (negativeContextStart(prefix) >= 0 || strictPrefix.MatchString(prefix) || reducedPrefix.MatchString(prefix)) {
+		return p, false
+	}
+	for _, region := range source.Quoted {
+		if e.Start < region.End && e.End > region.Start {
+			return p, false
+		}
+	}
+	for _, control := range []string{"and", "or", "no", "not", "neither", "nor", "without", "except", "rather", "less", "more", "only", "mostly", "must", "from", "through", "via", "to", "like", "by"} {
+		if wordsContain(p.Value, control) {
+			return p, false
+		}
+	}
+	scope, found := "", false
+	for _, atom := range source.Atoms {
+		for _, span := range atom.Evidence {
+			if e.Start >= span.End || e.End <= span.Start {
+				continue
+			}
+			if (atom.Kind != "texture" && atom.Kind != "instrumentation") || atom.Polarity != "positive" || (atom.Strength != "preferred" && atom.Strength != "essential") || atom.Degree != "plain" || atom.Group != "" || atom.CoverageGroup != "" || span.Start < e.Start || span.End > e.End || span.Start == e.Start && span.End == e.End {
+				return p, false
+			}
+			if found && scope != atom.Scope {
+				return p, false
+			}
+			scope, found = atom.Scope, true
+		}
+	}
+	if !found {
+		return p, false
+	}
+	strength := "essential"
+	if softPrefix.MatchString(prefix) || additivePrefix.MatchString(prefix) {
+		strength = "preferred"
+	}
+	p.Scope, p.Strength, p.Degree, p.Influence = scope, strength, "plain", core.InfluencePositive
+	p.ConceptID, p.Group, p.CoverageGroup = "", "", ""
+	return p, true
 }
 
 // Owned reports whether an existing field conflicts with an occurrence that
@@ -390,6 +484,9 @@ func FactsMessage(x core.IntentTranslation) string {
 	for _, a := range x.Atoms {
 		for _, e := range a.Evidence {
 			fmt.Fprintf(&b, "%s=%q; source=%q; polarity=%s; scope=%s; strength=%s; degree=%q; alternative-group=%q", a.Kind, a.Value, e.Text, a.Polarity, a.Scope, a.Strength, a.Degree, a.Group)
+			if a.CoverageGroup != "" {
+				fmt.Fprintf(&b, "; playlist-coverage-group=%q (cover its members across the playlist, not all on each track)", a.CoverageGroup)
+			}
 			if g := a.Grounding; g != nil {
 				state := "no candidates"
 				if len(g.Candidates) == 1 {
@@ -444,11 +541,18 @@ func BaselineFactsMessage(x core.IntentTranslation) string {
 	b.WriteString("\n\nProtected source facts. Copy span only from the quoted source text, never from a label or normalized value. A similarity reference does not require that artist in the output.\n")
 	for _, a := range x.Atoms {
 		if a.Grounding != nil {
-			ids := make([]string, 0, len(a.Grounding.Candidates))
-			for _, candidate := range a.Grounding.Candidates {
+			// Retained identity alternatives and their model presentation have
+			// separate bounds; additional UI choices must not expand context.
+			candidates := a.Grounding.Candidates[:min(8, len(a.Grounding.Candidates))]
+			ids := make([]string, 0, len(candidates))
+			for _, candidate := range candidates {
 				ids = append(ids, candidate.ID)
 			}
-			fmt.Fprintf(&b, "Grounded %s identity=%q; source=%q; provider=%s; match=%s; candidates=%q; snapshot=%q. Preserve this complete occurrence and its role; do not split or replace it.\n", a.Kind, a.Value, a.Evidence[0].Text, a.Grounding.Provider, a.Grounding.MatchType, ids, a.Grounding.SnapshotVersion)
+			omitted := ""
+			if len(candidates) < len(a.Grounding.Candidates) || a.Grounding.Truncated {
+				omitted = "; additional identities omitted; identity unresolved"
+			}
+			fmt.Fprintf(&b, "Grounded %s identity=%q; source=%q; provider=%s; match=%s; candidates=%q%s; snapshot=%q. Preserve this complete occurrence and its role; do not split or replace it.\n", a.Kind, a.Value, a.Evidence[0].Text, a.Grounding.Provider, a.Grounding.MatchType, ids, omitted, a.Grounding.SnapshotVersion)
 			continue
 		}
 		if a.Kind == "entity_mention" {
@@ -473,6 +577,9 @@ func BaselineFactsMessage(x core.IntentTranslation) string {
 		}
 		if a.Group != "" {
 			b.WriteString("; alternative")
+		}
+		if a.CoverageGroup != "" {
+			fmt.Fprintf(&b, "; playlist-coverage-group=%q (cover these genres across the playlist; each track may fit one)", a.CoverageGroup)
 		}
 		b.WriteByte('\n')
 	}

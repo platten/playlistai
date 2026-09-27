@@ -43,6 +43,9 @@ type DiscoveryConfig struct {
 
 type MetadataConfig struct {
 	MusicBrainzManifestURL string `toml:"musicbrainz_manifest_url"`
+	// A release may publish a monthly prepared graph through the verified
+	// updater. Empty keeps popularity explicitly unavailable.
+	MusicGraphManifestURL string `toml:"music_graph_manifest_url"`
 }
 
 // SemanticConfig points to an optional offline-built sidecar. The sidecar
@@ -153,6 +156,7 @@ type RecommendationConfig struct {
 const (
 	RecommendationMultichannel = "multichannel"
 	RecommendationDeejAI       = "deejai"
+	RecommendationAutomatic    = "automatic"
 )
 
 // Preview provider identifiers.
@@ -192,7 +196,7 @@ func Default() Config {
 		},
 		Preview: PreviewConfig{Provider: PreviewDeezer},
 		Recommendation: RecommendationConfig{
-			Strategy:        RecommendationMultichannel,
+			Strategy:        RecommendationAutomatic,
 			SeedAudioBudget: 32, SeedCooccurrenceBudget: 32,
 			TasteClusterBudget: 24, MaxTasteClusters: 4,
 			ExplorationPool: 160, ExplorationBudget: 24, ExplorationMinScore: .10,
@@ -244,6 +248,12 @@ func Load(path string) (Config, error) {
 
 // Validate checks invariants that must hold before the app starts.
 func (c Config) Validate() error {
+	if c.Metadata.MusicGraphManifestURL != "" {
+		u, err := url.Parse(c.Metadata.MusicGraphManifestURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return errors.New("config: metadata.music_graph_manifest_url must be an HTTPS URL without credentials or fragment")
+		}
+	}
 	if c.Discovery.ManifestURL != "" {
 		u, err := url.Parse(c.Discovery.ManifestURL)
 		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
@@ -279,7 +289,7 @@ func (c RecommendationConfig) Validate() error {
 			return fmt.Errorf("config: recommendation.%s must be between 0 and 0.15", name)
 		}
 	}
-	if c.Strategy != RecommendationMultichannel && c.Strategy != RecommendationDeejAI {
+	if c.Strategy != RecommendationMultichannel && c.Strategy != RecommendationDeejAI && c.Strategy != RecommendationAutomatic {
 		return fmt.Errorf("config: unknown recommendation.strategy %q", c.Strategy)
 	}
 	budgets := map[string]int{

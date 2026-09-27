@@ -987,7 +987,7 @@ func vectorSpaceFromFields(metadata MetadataRecord, mertData []byte, dimension i
 	var record MERTRecord
 	_ = json.Unmarshal(mertData, &record)
 	return librarypack.VectorSpace{Name: "library_mert", Dimension: dimension, DType: "float32", ByteOrder: "little", Normalized: true,
-		Model: record.Model.Model, ModelRevision: record.Model.Revision, GraphSHA256: record.Model.WeightsSHA256,
+		Model: record.Model.Model, ModelRevision: record.Model.Revision, GraphSHA256: record.Model.WeightsSHA256, Runtime: record.Model.Runtime,
 		Decoder: metadata.Probe.ProbeRuntimeID, Preprocessing: record.LocalPreprocessing, Sampling: record.Sampling,
 		Pooling: record.Model.Pooling, Scope: "sampled_windows", Missingness: "absent rows have no vector; no zero placeholders"}
 }

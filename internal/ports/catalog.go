@@ -1,6 +1,10 @@
 package ports
 
-import "github.com/platten/playlistai/internal/core"
+import (
+	"context"
+
+	"github.com/platten/playlistai/internal/core"
+)
 
 // Vectors holds one track's two embedding sub-vectors, each L2-normalized.
 //
@@ -56,4 +60,36 @@ type Catalog interface {
 // become dense catalog rows and therefore never enter Deej-AI vector search.
 type DynamicTrackCatalog interface {
 	RegisterDynamicTrack(core.TrackMeta) error
+}
+
+// ContextMetadataCatalog allows database-backed catalogs to cancel an in-flight
+// metadata read while preserving the legacy Catalog interface.
+type ContextMetadataCatalog interface {
+	MetaContext(context.Context, string) (core.TrackMeta, bool)
+}
+
+// CatalogMeta uses the operation context where supported. Legacy implementations
+// remain compatible, but an already-running legacy Meta call cannot be preempted.
+func CatalogMeta(ctx context.Context, catalog Catalog, id string) (core.TrackMeta, bool) {
+	if ctx.Err() != nil {
+		return core.TrackMeta{}, false
+	}
+	var meta core.TrackMeta
+	var ok bool
+	if contextual, supports := catalog.(ContextMetadataCatalog); supports {
+		meta, ok = contextual.MetaContext(ctx, id)
+	} else {
+		meta, ok = catalog.Meta(id)
+	}
+	if ctx.Err() != nil {
+		return core.TrackMeta{}, false
+	}
+	return meta, ok
+}
+
+// ArtistIdentityCatalog retrieves recording credits by an exact artist MBID,
+// independently of compound display names. Implementations cap results at 512.
+// An artist credit establishes identity only, never musical suitability.
+type ArtistIdentityCatalog interface {
+	ArtistRecordingsByMBID(context.Context, string, int) ([]core.TrackRef, error)
 }

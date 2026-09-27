@@ -81,7 +81,8 @@ func TestTypedSearchUsesReviewedParentMembership(t *testing.T) {
 
 func TestConjunctiveTypedSearchRequiresSameRecording(t *testing.T) {
 	c, manager := openTestCatalog(t, []librarypack.Track{
-		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
+		{ID: "both", Artist: "A", Title: "One", RawTags: json.RawMessage(`{"GENRE":"Ambient; Electronic"}`)},
+		{ID: "classifier", Artist: "E", Title: "Predictions", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient; Electronic"}`)},
 		{ID: "ambient", Artist: "B", Title: "Two", RawTags: json.RawMessage(`{"AB:GENRE":"Ambient"}`)},
 		{ID: "electronic", Artist: "C", Title: "Three", RawTags: json.RawMessage(`{"AB:GENRE":"Electronic"}`)},
 	}, nil)
@@ -134,7 +135,7 @@ func TestArtistProfileSearchUsesExactArtistIndex(t *testing.T) {
 	}
 }
 
-func TestCriterionEvidenceUsesReviewedAcousticBrainzClass(t *testing.T) {
+func TestClassifierTagsRemainSoftHints(t *testing.T) {
 	c, manager := openTestCatalog(t, []librarypack.Track{
 		{ID: "acoustic", Artist: "Artist", Title: "Track", RawTags: json.RawMessage(`{"AB:MOOD":"Acoustic;Not electronic"}`)},
 		{ID: "electronic", Artist: "Other", Title: "Track", RawTags: json.RawMessage(`{"AB:MOOD":"Not acoustic;Electronic"}`)},
@@ -142,12 +143,17 @@ func TestCriterionEvidenceUsesReviewedAcousticBrainzClass(t *testing.T) {
 	defer manager.Close()
 	defer c.Close()
 	criterion := core.MusicalCriterion{Kind: "texture", Value: "acoustic"}
-	if got := c.CriterionEvidence(context.Background(), c.NamespacedID("acoustic"), criterion); got != core.EvidenceMatch {
-		t.Fatalf("reviewed AcousticBrainz mapping unavailable: %s", got)
+	if got := c.CriterionEvidence(context.Background(), c.NamespacedID("acoustic"), criterion); got != core.EvidenceUnknown {
+		t.Fatalf("flattened classifier established a requirement: %s", got)
 	}
 	hits, err := c.Search(context.Background(), MetadataQuery{Text: "acoustic", Criterion: &criterion, Limit: 5})
-	if err != nil || len(hits) != 1 || hits[0].Track.ID != c.NamespacedID("acoustic") {
-		t.Fatalf("provider-mapped typed search included a negative class: hits=%+v err=%v", hits, err)
+	if err != nil || len(hits) != 0 {
+		t.Fatalf("classifier-only result passed typed retrieval: hits=%+v err=%v", hits, err)
+	}
+	composite := &CompositeCatalog{base: testBase{}, local: c, mode: ModeCombined}
+	intent := core.MusicIntent{EssentialCriteria: []core.MusicalCriterion{criterion}}
+	if score, available := composite.LibraryPreferenceScore(context.Background(), c.NamespacedID("acoustic"), intent, "playlist"); !available || score <= 0 {
+		t.Fatalf("classifier lost soft preference support: %g %v", score, available)
 	}
 	criterion.Value = "warm"
 	if got := c.CriterionEvidence(context.Background(), c.NamespacedID("acoustic"), criterion); got != core.EvidenceUnknown {

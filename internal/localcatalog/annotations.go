@@ -24,8 +24,10 @@ var annotationKinds = map[string]string{
 	"originalyear": "original_release_date", "original_year": "original_release_date",
 	"compositiondate": "composition_date", "composition_date": "composition_date", "compositionyear": "composition_date", "composition_year": "composition_date",
 	"artist": "artist_credit", "artists": "artist_credit", "album_artist": "album_artist", "albumartist": "album_artist",
+	"performer_name": "performer", "recording_engineer": "recording_engineer",
 	"musicbrainz_artistid":        "artist_mbid",
 	"musicbrainz_originalalbumid": "original_album_mbid", "musicbrainz_trackid": "recording_mbid", "musicbrainz_albumartistid": "album_artist_mbid",
+	"musicbrainz_albumid": "release_mbid", "musicbrainz_releasetrackid": "release_track_mbid",
 	"acoustid_id": "acoustid", "isrc": "isrc", "title": "title",
 	"albumartistsort": "album_artist_sort", "album_artists": "album_artist", "album_artists_sort": "album_artist_sort", "album_composer": "album_composer", "album_year": "edition_date",
 	"artistsort": "artist_sort", "artists_sort": "artist_sort", "composer": "composer", "releasecountry": "release_country", "performer_name_sort": "performer_sort", "script": "script",
@@ -37,6 +39,38 @@ var annotationKinds = map[string]string{
 	"releasetype": "release_type", "release_type": "release_type", "musicbrainz_album_type": "release_type",
 	"replaygain_track_gain": "replaygain_track_gain", "replaygain_album_gain": "replaygain_album_gain",
 	"replaygain_track_peak": "replaygain_track_peak", "replaygain_album_peak": "replaygain_album_peak",
+}
+
+// displayArtist removes a production-only credit only when every component of
+// the flattened credit has explicit roles. Raw identities, tags and
+// unknown credits stay intact; punctuation alone never establishes a person.
+func displayArtist(artist string, tags []core.MetadataAnnotation) string {
+	performers, engineers := map[string]bool{}, map[string]bool{}
+	for _, tag := range tags {
+		switch tag.Kind {
+		case "performer":
+			performers[core.NormalizeIdentityPart(tag.Value)] = true
+		case "recording_engineer":
+			engineers[core.NormalizeIdentityPart(tag.Value)] = true
+		}
+	}
+	if len(performers) == 0 || len(engineers) == 0 {
+		return artist
+	}
+	var kept []string
+	parts := strings.Split(artist, ";")
+	for _, part := range parts {
+		key := core.NormalizeIdentityPart(part)
+		if performers[key] {
+			kept = append(kept, strings.TrimSpace(part))
+		} else if !engineers[key] {
+			return artist
+		}
+	}
+	if len(kept) == 0 || len(kept) == len(parts) {
+		return artist
+	}
+	return strings.Join(kept, "; ")
 }
 
 func annotations(raw json.RawMessage) []core.MetadataAnnotation {
@@ -86,6 +120,9 @@ func annotations(raw json.RawMessage) []core.MetadataAnnotation {
 			origin := "embedded_tag"
 			if strings.HasPrefix(kind, "acousticbrainz:") || strings.HasPrefix(kind, "curated_flag:") || normalized == "ab:mood" {
 				origin = "trusted_curated_tag"
+			}
+			if normalized == "ab:genre" || normalized == "ab:mood" {
+				origin = "classifier_output"
 			}
 			result = append(result, core.MetadataAnnotation{Kind: kind, Value: value, SourceKey: key, Origin: origin, Scale: scale})
 		}

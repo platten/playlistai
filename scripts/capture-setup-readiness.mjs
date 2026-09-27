@@ -21,7 +21,7 @@ InstallDiscoveryAsset:()=>{window.__installed=true;window.__source='hosted';retu
 ChooseDiscoveryPack:()=>{window.__installed=true;window.__source='local';return {canceled:false,status:{configured:true,hostedConfigured:true,source:'local',installed:true,version:'local-fixture',tracks:8,downloadBytes:0,packIds:[]}}},
 ChooseDiscoveryArchiveFolder:()=>({canceled:false,archive:{files:4,directory:'/chosen-folder/discovery-archive'}}),CancelDiscoveryArchive:()=>{},
 CancelDiscoveryAssetInstall:()=>{},
-GetEnhancedAnalysisStatus:()=>({installed:window.__installed,dspAvailable:true,enabled:true,mertEnabled:true,mertAvailable:window.__installed,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert/manifest.json',recommendedDownloadBytes:213882011}),
+GetEnhancedAnalysisStatus:()=>({installed:window.__installed,dspAvailable:true,enabled:true,mertEnabled:true,mertAvailable:window.__installed,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert-linux-amd64-gpu/manifest.json',recommendedDownloadBytes:1828938273}),
 InstallRecommendedMERT:()=>{window.__installed=true},
 GetMetadataBundleInfo:()=>({musicBrainzConfigured:true,musicBrainzInstalled:window.__installed}),
 InstallMusicBrainzBundle:()=>{window.__installed=true},
@@ -59,10 +59,20 @@ try {
     } else if (scenario === "mert") {
       await page.getByRole("button", { name: "Get started" }).click();
       await page.getByRole("heading", { name: "MERT audio similarity" }).waitFor();
-      await page.getByRole("button", { name: "Download MERT from Cloudflare R2" }).waitFor();
+      await page.getByRole("button", { name: "Download CUDA MERT from Cloudflare R2" }).waitFor();
+      await page.getByRole("button", { name: "Install CPU MERT fallback" }).waitFor();
       assert.equal(await page.getByRole("checkbox").count(), 0);
       assert.equal(await page.getByRole("button", { name: "Continue" }).isDisabled(), true);
-      await page.getByRole("button", { name: "Download MERT from Cloudflare R2" }).click();
+      for (const theme of ["dark", "light"]) {
+        await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+        for (const width of [1000, 390]) {
+          await page.setViewportSize({ width, height: 760 });
+          await page.evaluate(() => window.scrollTo(0, 0));
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "MERT choice horizontal overflow");
+          await page.screenshot({ path: path.join(output, `setup-mert-choice-${theme}-${width}.png`), fullPage: true });
+        }
+      }
+      await page.getByRole("button", { name: "Download CUDA MERT from Cloudflare R2" }).click();
       await page.getByText("0 tracks with compatible cached embeddings.").waitFor();
       assert.equal(await page.getByRole("button", { name: "Continue" }).isEnabled(), true);
     } else if (scenario === "partial") {

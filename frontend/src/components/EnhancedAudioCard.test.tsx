@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { EnhancedAudioCard } from "./EnhancedAudioCard";
-const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "SetMERTSimilarityEnabled", "InstallRecommendedMERT", "ClearMERTSimilarityCache", "ClearDSPAnalysisCache", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
+const api = vi.hoisted(() => Object.fromEntries(["GetEnhancedAnalysisStatus", "SetEnhancedAnalysisEnabled", "SetMERTSimilarityEnabled", "InstallRecommendedMERT", "InstallCPUMERT", "ClearMERTSimilarityCache", "ClearDSPAnalysisCache", "AnalyzeEnhancedTracks"].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
 vi.mock("@wailsio/runtime", () => ({ Events: { On: () => () => {} } }));
 const status = { enabled: true, mertEnabled: true, mertAvailable: true, dspAvailable: true, installed: true, searchableTracks: 2, limit: 24, dspStorage: { records: 0 }, mertStorage: { bytes: 0 } };
@@ -23,11 +23,11 @@ it("waits for installed MERT validation before offering downloads or reporting r
   render(<EnhancedAudioCard setup onReadyChange={onReadyChange} />);
   await screen.findByText("Validating the installed MERT model…");
   expect(onReadyChange).toHaveBeenLastCalledWith(false);
-  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download (CPU|CUDA) MERT/ })).toBeNull();
   await waitFor(() => expect(onReadyChange).toHaveBeenLastCalledWith(true));
   expect(api.GetEnhancedAnalysisStatus).toHaveBeenCalledTimes(2);
   expect(api.InstallRecommendedMERT).not.toHaveBeenCalled();
-  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download (CPU|CUDA) MERT/ })).toBeNull();
 });
 it("can retry a failed status poll without remaining disabled as loading", async () => {
   api.GetEnhancedAnalysisStatus
@@ -44,7 +44,7 @@ it("downloads the recommended device pack without exposing feature toggles", asy
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
   const view = render(<EnhancedAudioCard setup />);
-  const button = await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" });
+  const button = await screen.findByRole("button", { name: "Download CPU MERT from Cloudflare R2" });
   expect(api.InstallRecommendedMERT).not.toHaveBeenCalled();
   expect(screen.queryByRole("checkbox")).toBeNull();
   fireEvent.click(button);
@@ -56,6 +56,44 @@ it("downloads the recommended device pack without exposing feature toggles", asy
   await act(async () => pending.resolve(null));
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
   expect(api.SetMERTSimilarityEnabled).not.toHaveBeenCalled();
+});
+it("offers the cached CUDA model as an upgrade to an installed CPU model", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, model: "MERT v1 95M · CPU", recommendedUpgrade: true, recommendedManifestUrl: "/cache/playlist-ai/indexer-offline/mert-cuda" }));
+  render(<EnhancedAudioCard />);
+  expect(await screen.findByText("MERT v1 95M · CPU")).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: "Upgrade MERT to CUDA" }));
+  expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
+});
+it("offers hosted CUDA download and CPU fallback in Settings", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, installed: true, installedBackends: ["cpu"], model: "MERT v1 95M · CPU", recommendedUpgrade: true, recommendedManifestUrl: "https://models.example/mert-linux-amd64-gpu/manifest.json" }));
+  render(<EnhancedAudioCard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Download CUDA MERT from Cloudflare R2" }));
+  expect(api.InstallRecommendedMERT).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("button", { name: "Install CPU MERT fallback" })).toBeNull();
+});
+it("offers CPU fallback before a hosted CUDA download", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, installed: false, mertAvailable: false, installedBackends: [], recommendedManifestUrl: "https://models.example/mert-linux-amd64-gpu/manifest.json" }));
+  render(<EnhancedAudioCard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Install CPU MERT fallback" }));
+  expect(api.InstallCPUMERT).toHaveBeenCalledOnce();
+});
+it("installs and cancels the CPU MERT fallback beside a CUDA model", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, installedBackends: ["cuda"], recommendedManifestUrl: "/cache/mert-cuda" }));
+  const pending = deferred();
+  api.InstallCPUMERT.mockReturnValueOnce(pending.promise);
+  const view = render(<EnhancedAudioCard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Install CPU MERT fallback" }));
+  expect(api.InstallCPUMERT).toHaveBeenCalledOnce();
+  expect(screen.getByRole("progressbar", { name: "Installing MERT" })).toBeTruthy();
+  view.unmount();
+  expect(pending.promise.cancel).toHaveBeenCalledWith("settings closed");
+  await act(async () => pending.resolve(null));
+});
+it("does not offer a duplicate CPU MERT installation", async () => {
+  api.GetEnhancedAnalysisStatus.mockImplementation(() => completed({ ...status, installedBackends: ["cuda", "cpu"] }));
+  render(<EnhancedAudioCard />);
+  await screen.findByText(/CPU and CUDA MERT models installed/);
+  expect(screen.queryByRole("button", { name: "Install CPU MERT fallback" })).toBeNull();
 });
 it("reports installed MERT as ready without exposing setup analysis controls", async () => {
   const onReadyChange = vi.fn();
@@ -71,7 +109,7 @@ it("reports installed MERT as ready without exposing setup analysis controls", a
 it("shows only the hosted download for missing supported models", async () => {
   api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, mertAvailable: false, installed: false, recommendedManifestUrl: "https://models.example/mert/manifest.json" }));
   const missing = render(<EnhancedAudioCard />);
-  expect(await screen.findByRole("button", { name: "Download MERT from Cloudflare R2" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Download CPU MERT from Cloudflare R2" })).toBeTruthy();
   expect(screen.queryByText("MERT-v1-95M · optional")).toBeNull();
   expect(screen.queryByLabelText("MERT pack directory or manifest")).toBeNull();
   expect(screen.queryByRole("button", { name: "Remove MERT" })).toBeNull();
@@ -79,13 +117,13 @@ it("shows only the hosted download for missing supported models", async () => {
   api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, mertAvailable: false, recommendedManifestUrl: "https://models.example/mert/manifest.json", unsupportedReason: "No native pack for this device." }));
   const view = render(<EnhancedAudioCard />);
   await screen.findByText("No native pack for this device.");
-  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download (CPU|CUDA) MERT/ })).toBeNull();
   view.unmount();
   api.GetEnhancedAnalysisStatus.mockImplementationOnce(() => completed({ ...status, installed: true, revision: "12af15", recommendedManifestUrl: "https://models.example/mert/manifest.json" }));
   render(<EnhancedAudioCard />);
   await screen.findByText("2 tracks with compatible cached embeddings.");
   expect(screen.queryByText("12af15")).toBeNull();
-  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download (CPU|CUDA) MERT/ })).toBeNull();
 });
 it("keeps MERT always on without exposing manual model management", async () => {
   await act(async () => { render(<EnhancedAudioCard />); });
@@ -124,7 +162,7 @@ it("requires cache-clear confirmation", async () => {
 
 it("keeps always-on DSP cache clearing separate from MERT", async () => {
   await act(async () => { render(<EnhancedAudioCard dspOnly />); });
-  expect(screen.queryByRole("button", { name: /Download MERT/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download (CPU|CUDA) MERT/ })).toBeNull();
   expect(screen.queryByRole("checkbox")).toBeNull();
   expect(screen.getByText(/used automatically/)).toBeTruthy();
   expect(api.SetEnhancedAnalysisEnabled).not.toHaveBeenCalled();
@@ -152,18 +190,18 @@ it("reports a failed hosted install and cancels a retry on close", async () => {
   api.InstallRecommendedMERT.mockImplementationOnce(() => Object.assign(Promise.reject(new Error("hash mismatch")), { cancel: vi.fn() }));
   render(<EnhancedAudioCard />);
   await act(async () => {});
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Download MERT from Cloudflare R2" })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Download CPU MERT from Cloudflare R2" })); });
   expect(screen.getByRole("alert").textContent).toContain("hash mismatch");
-  expect((screen.getByRole("button", { name: "Download MERT from Cloudflare R2" }) as HTMLButtonElement).disabled).toBe(false);
+  expect((screen.getByRole("button", { name: "Download CPU MERT from Cloudflare R2" }) as HTMLButtonElement).disabled).toBe(false);
 
   const pending = deferred();
   api.InstallRecommendedMERT.mockReturnValueOnce(pending.promise);
-  fireEvent.click(screen.getByRole("button", { name: "Download MERT from Cloudflare R2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Download CPU MERT from Cloudflare R2" }));
   expect(api.InstallRecommendedMERT).toHaveBeenCalledTimes(2);
   fireEvent.click(screen.getByRole("button", { name: "Cancel model installation" }));
   expect(pending.promise.cancel).toHaveBeenCalledWith("model installation cancelled");
   expect(screen.queryByRole("button", { name: "Cancel analysis" })).toBeNull();
-  expect((screen.getByRole("button", { name: "Download MERT from Cloudflare R2" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "Download CPU MERT from Cloudflare R2" }) as HTMLButtonElement).disabled).toBe(true);
   cleanup();
   expect(pending.promise.cancel).toHaveBeenCalledWith("settings closed");
   await act(async () => pending.resolve(null));

@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,15 +20,15 @@ func enhancedIntent(count int) core.MusicIntent {
 	return intent
 }
 
-func TestEnhancedDiversityPolicyBroadensAndSpacesUnlessExplicitlyRestricted(t *testing.T) {
+func TestEnhancedDiversityZeroPreservesRelevantArtistConcentration(t *testing.T) {
 	cat := diversityCatalog()
 	intent := enhancedIntent(2)
 	intent.Preferences.Genres = []core.IntentPreference{{Value: "rock", Influence: core.InfluencePositive}}
 	intent.Controls.ArtistDiversity = 0
 	input := []core.Candidate{selectionCandidate(cat, "a1", 1), selectionCandidate(cat, "a2", .99), selectionCandidate(cat, "b", .8)}
 	selected, err := NewSelector(cat, DefaultConfig()).Select(context.Background(), input, ports.SelectionRequest{Intent: intent, Count: 2})
-	if err != nil || candidateIDs(selected.Candidates) != "a1,b" {
-		t.Fatalf("category diversity was not applied: %s %v", candidateIDs(selected.Candidates), err)
+	if err != nil || candidateIDs(selected.Candidates) != "a1,a2" {
+		t.Fatalf("zero diversity changed relevant selection: %s %v", candidateIDs(selected.Candidates), err)
 	}
 	sequencer := NewSequencer(cat, DefaultConfig())
 	result, err := sequencer.Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates})
@@ -55,8 +56,13 @@ func TestEnhancedStrongTierPrecedesCloseWithoutMovingJourneyEndpoints(t *testing
 		t.Fatalf("strong tier displaced: %+v %v", selected, err)
 	}
 	result, err := NewSequencer(cat, DefaultConfig()).Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates, ReferenceAnchors: refs(cat, "a1")})
+	if err != nil || len(result.Tracks) != 3 || result.Tracks[0].ID != "b" {
+		t.Fatalf("strong opening or complete result lost: %+v %v", result, err)
+	}
+	intent.Constraints.NoRepeatArtistBackToBack = true
+	result, err = NewSequencer(cat, DefaultConfig()).Sequence(context.Background(), ports.SequenceRequest{Intent: intent, Candidates: selected.Candidates, ReferenceAnchors: refs(cat, "a1")})
 	if err != nil || trackIDs(result.Tracks) != "a1,b,a2" {
-		t.Fatalf("hard artist spacing was not preserved: %+v %v", result, err)
+		t.Fatalf("explicit hard artist spacing was not preserved: %+v %v", result, err)
 	}
 }
 
@@ -120,17 +126,30 @@ func TestEnhancedExplicitEndpointsAreActualOutputAndCountedOnce(t *testing.T) {
 	}
 }
 
-func TestEnhancedArtistEndpointWithoutPreviewRemainsExplicitCloseOutput(t *testing.T) {
-	cat := testCatalog()
-	service, _ := cachedAudioService(t, cat, "cooc")
-	engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
-	intent := enhancedIntent(1)
-	intent.Mode = core.ModeJourney
-	intent.Start = &core.IntentReference{Kind: core.ReferenceArtist, Query: "Seed Artist", Influence: core.InfluencePositive}
-	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}}
-	playlist, err := engine.Build(context.Background(), intent)
-	if err != nil || len(playlist.Tracks) != 1 || playlist.Tracks[0].ID != "seed" || playlist.Outcome.State == core.OutcomeNeedsClarification {
-		t.Fatalf("missing preview erased explicit artist endpoint: %+v %v", playlist, err)
+func TestEnhancedArtistEndpointWithoutPreviewRespectsRequestedGenre(t *testing.T) {
+	for _, genre := range []bool{false, true} {
+		t.Run(fmt.Sprint("genre=", genre), func(t *testing.T) {
+			cat := testCatalog()
+			service, _ := cachedAudioService(t, cat, "cooc")
+			engine := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
+			intent := enhancedIntent(1)
+			intent.Mode = core.ModeJourney
+			intent.Start = &core.IntentReference{Kind: core.ReferenceArtist, Query: "Seed Artist", Influence: core.InfluencePositive}
+			if genre {
+				intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}}
+			}
+			playlist, err := engine.Build(context.Background(), intent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if genre {
+				if len(playlist.Tracks) != 0 || playlist.Outcome.State != core.OutcomeNeedsClarification || len(playlist.Outcome.Reasons) == 0 || playlist.Outcome.Reasons[0].Code != "required_track_genre_unconfirmed" {
+					t.Fatalf("unknown endpoint genre bypassed request: %+v", playlist.Outcome)
+				}
+			} else if len(playlist.Tracks) != 1 || playlist.Tracks[0].ID != "seed" || playlist.Outcome.State == core.OutcomeNeedsClarification {
+				t.Fatalf("pure artist endpoint lost: %+v", playlist.Outcome)
+			}
+		})
 	}
 }
 
@@ -170,6 +189,7 @@ func TestEnhancedCloseCategoryNeedsRequestedEvidenceAndRequiredStaysStrict(t *te
 	}
 	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{"audio": completeStyleFeature("audio", "electronic"), "cooc": completeStyleFeature("cooc", "rock")}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable, o.audioSession = true, true, session
 	got, _, err := o.filterEssential(context.Background(), candidatesForTracks(refs(cat, "audio", "unknown", "cooc", "far")), intent.EssentialCriteria)
 	if err != nil || candidateIDs(got) != "audio,unknown" || got[0].FitTier != fitStrong || got[1].FitTier != fitClose {
@@ -186,6 +206,7 @@ func TestEnhancedCriterionORGroupsPreserveAlternativesAndIndependentDemands(t *t
 	cat := testCatalog()
 	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{"audio": completeStyleFeature("audio", "classical"), "cooc": completeStyleFeature("cooc", "ambient"), "other": completeStyleFeature("other", "rock")}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	criteria := []core.MusicalCriterion{{Kind: "genre", Value: "classical", Scope: "playlist", Group: "choice", Strength: "required"}, {Kind: "genre", Value: "ambient", Scope: "playlist", Group: "choice", Strength: "required"}}
 	got, _, err := o.filterEssential(context.Background(), candidatesForTracks(refs(cat, "audio", "cooc", "other")), criteria)
@@ -199,7 +220,7 @@ func TestEnhancedCriterionORGroupsPreserveAlternativesAndIndependentDemands(t *t
 	}
 }
 
-func TestEnhancedInstrumentalRecordingTagIsVocalEvidenceButPreviewMismatchWins(t *testing.T) {
+func TestEnhancedInstrumentalCommunityTagCannotVerifyRequiredVocalEvidence(t *testing.T) {
 	cat := testCatalog()
 	criterion := core.MusicalCriterion{Kind: "vocal", Value: "instrumental", Scope: "playlist", Strength: "required"}
 	track := core.EnrichedTrack{
@@ -209,11 +230,11 @@ func TestEnhancedInstrumentalRecordingTagIsVocalEvidenceButPreviewMismatchWins(t
 	o := New(cat, fakes.NewSimilarityEngine(cat), cat, DefaultConfig())
 	o.enhanced, o.bestAvailable = true, true
 	o.knowledge = &core.KnowledgeSnapshot{Tracks: []core.EnrichedTrack{track}}
-	if got := o.bestCriterion(context.Background(), "audio", criterion); got != core.EvidenceMatch {
-		t.Fatalf("instrumental recording tag = %q, want match", got)
+	if got := o.bestCriterion(context.Background(), "audio", criterion); got != core.EvidenceUnknown {
+		t.Fatalf("instrumental community tag = %q, want unknown", got)
 	}
-	if got := o.bestCriterion(context.Background(), "audio", core.MusicalCriterion{Kind: "vocal", Value: "vocals", Scope: "playlist", Strength: "required"}); got != core.EvidenceMismatch {
-		t.Fatalf("instrumental recording tag did not oppose vocals: %q", got)
+	if got := o.bestCriterion(context.Background(), "audio", core.MusicalCriterion{Kind: "vocal", Value: "vocals", Scope: "playlist", Strength: "required"}); got != core.EvidenceUnknown {
+		t.Fatalf("instrumental community tag proved vocal absence: %q", got)
 	}
 	clause := core.AudioClause{Kind: "vocal", Text: "instrumental", Scope: "playlist", Strict: true, Essential: true}
 	preview := core.AudioAssessment{TrackID: "audio", Clauses: []core.AudioClauseAssessment{{Clause: clause, State: core.EvidenceMismatch}}}
@@ -227,11 +248,8 @@ func TestEnhancedInstrumentalRecordingTagIsVocalEvidenceButPreviewMismatchWins(t
 	}
 	criteria := []core.MusicalCriterion{criterion, {Kind: "genre", Value: "ambient", Scope: "playlist", Strength: "essential"}}
 	got, _, err := o.filterEssential(context.Background(), candidatesForTracks(refs(cat, "audio")), criteria)
-	if err != nil || len(got) != 1 || !got[0].Available.LibraryMetadata || got[0].Scores.LibraryMetadata != .5 || got[0].FitTier != fitClose {
-		t.Fatalf("partial recording-tag evidence was not carried to selection: %+v %v", got, err)
-	}
-	if score, available := enhancedRequestRelevance(got[0], intent); !available || score != .5 {
-		t.Fatalf("recording-tag relevance = %v,%v", score, available)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("community tag bypassed required vocal evidence: %+v %v", got, err)
 	}
 }
 
@@ -349,6 +367,9 @@ func TestEnhancedScopedVocalExclusionCannotLeakIntoWrongJourneyStage(t *testing.
 	f.VocalEvidence.Value = "vocal"
 	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles", "vocal_evidence"}}, features: map[string]core.TrackFeatures{"audio": f}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	// Independent fixture genre facts keep this regression focused on scoped
+	// vocal exclusions; copied style tags alone no longer admit the track.
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	intent := enhancedIntent(2)
 	intent.Mode = core.ModeJourney
@@ -380,6 +401,7 @@ func TestEnhancedGroupedTierUsesAnyAllowedAlternativeAndCategoryAliasesStayDirec
 	cat := testCatalog()
 	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{"audio": completeStyleFeature("audio", "classical")}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	intent := enhancedIntent(1)
 	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "classical", Scope: "playlist", Group: "choice"}, {Kind: "genre", Value: "ambient", Scope: "playlist", Group: "choice"}}
@@ -404,6 +426,7 @@ func TestEnhancedJourneyReservationUsesDirectRequestEvidenceAtUnchangedFloor(t *
 		"cooc":  completeStyleFeature("cooc", "classical"),
 	}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	intent := enhancedIntent(2)
 	intent.Mode = core.ModeJourney
@@ -421,7 +444,7 @@ func TestEnhancedJourneyReservationUsesDirectRequestEvidenceAtUnchangedFloor(t *
 	}
 }
 
-func TestEnhancedJourneyReservationAllowsOverlappingPositiveStageComparisons(t *testing.T) {
+func TestEnhancedJourneyReservationDoesNotConfirmUnknownGenreComparisons(t *testing.T) {
 	cat := testCatalog()
 	service, _ := cachedAudioService(t, cat, "audio", "cooc", "last")
 	service.Policy = audio.Policy{}
@@ -452,8 +475,8 @@ func TestEnhancedJourneyReservationAllowsOverlappingPositiveStageComparisons(t *
 		candidates[i].Available.SemanticMatch = true
 	}
 	reserved, _, reasons, err := o.reserveJourneyStages(context.Background(), candidates, nil, intent)
-	if err != nil || len(reserved) != 3 || len(reasons) != 0 {
-		t.Fatalf("overlapping direct comparisons did not cover journey: reserved=%+v reasons=%+v error=%v", reserved, reasons, err)
+	if err != nil || len(reserved) != 0 || len(reasons) != 3 {
+		t.Fatalf("uncorroborated genre comparisons entered journey: reserved=%+v reasons=%+v error=%v", reserved, reasons, err)
 	}
 }
 
@@ -461,6 +484,7 @@ func TestEnhancedPreviewNeededOnlyForIncompleteCatalogEvidence(t *testing.T) {
 	cat := testCatalog()
 	features := &semanticFixture{info: core.FeatureStoreInfo{SupportedFacets: []string{"styles"}}, features: map[string]core.TrackFeatures{"audio": completeStyleFeature("audio", "classical")}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	candidate := candidatesForTracks(refs(cat, "audio"))[0]
 	intent := enhancedIntent(1)

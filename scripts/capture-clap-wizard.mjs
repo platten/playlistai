@@ -26,7 +26,7 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: `
     let installed=false; let attempts=0;
     ${bridgeEnums}
-    const bundle={label:'CLAP Music · full precision',artifacts:[{size:788130000}],memoryBytes:2147483648,license:'Apache-2.0'};
+    const bundle={label:'CLAP Music · full precision',backend:'cuda',downloadBytes:788130000,artifacts:[{size:788130000}],memoryBytes:2147483648,license:'Apache-2.0'};
     const emit=note=>window.dispatchEvent(new CustomEvent('playlistai:progress',{detail:{op:'analysis-model',done:123450000,total:788130000,note}}));
     const download=()=>{
       attempts++; emit('Downloading music analysis');
@@ -39,7 +39,7 @@ try {
       GetCatalogInfo:()=>({loaded:true}),GetModelStatus:()=>({backend:'llama',modelId:'qwen9'}),GetLlamaRuntime:()=>({available:true,builds:['cpu']}),GetInstalledModels:()=>[],
       GetModelRecommendations:()=>({models:[{id:'qwen3',label:'Qwen2.5 3B',params:'3B',sizeApprox:1929903264,ramGb:4,recommended:true,installed:true}],hardware:{gpuAvailable:false}}),
       GetRecommendedAnalysisBundle:()=>{window.__recommendationCalls=(window.__recommendationCalls||0)+1;return bundle;},
-      GetAnalysisStatus:()=>({recommendedAvailable:!window.__unsupported,recommendedInstalled:installed,recommendedDetail:window.__unsupported?'This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker.':'',installed,available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:window.__unsupported?'Optional music analysis is unavailable in this build. Catalog recommendations remain available.':installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:788130000,memoryBytes:2147483648}),
+      GetAnalysisStatus:()=>({recommendedAvailable:!window.__unsupported,recommendedInstalled:installed,recommendedManifest:'https://models.example/clap-linux-amd64-gpu/manifest.json',recommendedDetail:window.__unsupported?'This build cannot run the recommended music analysis model. Install a native-analysis-enabled build, or continue without analysis. Models alone cannot add the missing application worker.':'',installed,installedBackends:installed?['cuda']:[],available:installed,generalFitAvailable:false,enabled:false,model:bundle.label,detail:window.__unsupported?'Optional music analysis is unavailable in this build. Catalog recommendations remain available.':installed?'CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.':'Download a CLAP model.',storage:{bytes:0,records:0},downloadBytes:788130000,memoryBytes:2147483648}),
       InspectAnalysisBundle:()=>({...bundle,label:'Custom CLAP fixture'}),
       RemoveAnalysisModel:()=>{installed=false;},
       InstallRecommendedAnalysisBundle:download,InstallAnalysisBundle:download,
@@ -56,7 +56,7 @@ try {
     await page.evaluate(t=>document.documentElement.dataset.theme=t,theme);
     await page.screenshot({path:output+"/recommended-"+theme+".png",fullPage:true});
   }
-  await page.getByRole("button",{name:"Download and validate CLAP",exact:true}).click();
+  await page.getByRole("button",{name:"Download and validate CUDA CLAP",exact:true}).click();
   await page.getByText("Downloading music analysis",{exact:true}).waitFor();
   await page.getByText("123.5 MB / 788.1 MB",{exact:true}).waitFor();
   if(await page.getByRole('progressbar',{name:'Downloading music analysis'}).getAttribute('aria-valuetext') !== '123.5 MB / 788.1 MB') throw Error('CLAP download bytes are not accessible in MB');
@@ -65,7 +65,7 @@ try {
   await page.screenshot({path:output+'/download-mb-narrow.png',fullPage:true});
   if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth)) throw Error('CLAP progress overflows a narrow window');
   await page.evaluate(()=>window.__fail());
-  await page.getByRole("button",{name:"Retry recommended CLAP download"}).click();
+  await page.getByRole("button",{name:"Retry recommended CLAP installation"}).click();
   await page.evaluate(()=>window.__validate());
   await page.getByText("Checking music analysis",{exact:true}).waitFor();
   await page.screenshot({path:output+"/validation.png",fullPage:true});
@@ -91,7 +91,7 @@ try {
   await page.getByRole("heading", {name:"Language understanding"}).waitFor();
   await page.getByRole("button", {name:"Continue",exact:true}).click();
   await page.getByRole("heading", {name:"Track previews",exact:true}).waitFor();
-  if(await page.getByRole("button",{name:"Download and validate CLAP",exact:true}).count()) throw Error("Unsupported build offered a download");
+  if(await page.getByRole("button",{name:"Download and validate CUDA CLAP",exact:true}).count()) throw Error("Unsupported build offered a download");
   if(await page.evaluate(()=>window.__recommendationCalls||0)) throw Error("Unsupported build attempted bundle discovery");
   await page.screenshot({path:output+"/unsupported-build.png",fullPage:true});
   if(await page.getByRole("heading",{name:"Music analysis",exact:true}).count()) throw Error("Unsupported model created an impossible wizard step");

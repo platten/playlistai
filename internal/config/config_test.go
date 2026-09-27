@@ -106,7 +106,7 @@ semantic_budget = 23
 	if cfg.DataDir != "/tmp/pai" || cfg.Preview.Provider != PreviewOff || cfg.AI.NCtx != 8192 || cfg.Enrich.MinScore != 70 {
 		t.Fatalf("overlay not applied: %+v", cfg)
 	}
-	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.MMRMinimumLambda != .7 || cfg.Recommendation.SemanticBudget != 23 || cfg.Recommendation.Strategy != RecommendationMultichannel {
+	if cfg.Recommendation.SeedAudioBudget != 17 || cfg.Recommendation.MMRMinimumLambda != .7 || cfg.Recommendation.SemanticBudget != 23 || cfg.Recommendation.Strategy != RecommendationAutomatic {
 		t.Fatalf("recommendation overlay not applied: %+v", cfg.Recommendation)
 	}
 	// Untouched keys keep defaults.

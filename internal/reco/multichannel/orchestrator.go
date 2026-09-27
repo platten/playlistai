@@ -23,10 +23,17 @@ const mertSearchBudget = 25 * time.Second
 // Orchestrator owns the versioned retrieve -> eligibility -> rank -> select ->
 // sequence pipeline while preserving the complete resolved intent.
 type Orchestrator struct {
-	groundedSeedPool  []core.Candidate
-	requestContext    context.Context
-	packedAssessments map[string]core.AudioAssessment
-	packedModel       core.AudioModelIdentity
+	recordingVerifier        ports.RecordingVerifier
+	verificationAttempted    map[string]bool
+	optionalIdentityAttempts int
+	verifiedRecordings       map[string]core.EnrichedTrack
+	replayingEvidence        bool
+	verificationStop         <-chan struct{}
+	search                   *core.SearchSnapshot
+	groundedSeedPool         []core.Candidate
+	requestContext           context.Context
+	packedAssessments        map[string]core.AudioAssessment
+	packedModel              core.AudioModelIdentity
 	// sourceCatalogVersion identifies reusable external analysis independently
 	// of the request's composite catalog/pack fingerprint.
 	sourceCatalogVersion    string
@@ -47,6 +54,7 @@ type Orchestrator struct {
 	audioProvider           func() *audio.Service
 	audioSession            *audio.Session     // set only on the request-local orchestrator copy
 	assemblyCache           *completedAssembly // request-local; never shared across generations
+	bestAssembly            *candidateAssembly
 	cat                     ports.Catalog
 	resolver                ports.ReferenceResolver
 	retriever               ports.CandidateRetriever
@@ -63,6 +71,8 @@ type Orchestrator struct {
 // recommendation. Catalog, resolver, and retriever must describe the same
 // generation. Release is called only after every ranking/sequence reader ends.
 type RequestOverlay struct {
+	PreparedRetriever     ports.CandidateRetriever
+	FamiliarityReader     func(context.Context, core.TrackRef) (float64, bool)
 	Catalog               ports.Catalog
 	Resolver              ports.ReferenceResolver
 	Retriever             ports.CandidateRetriever
@@ -162,7 +172,7 @@ func explicitResolutionReasons(issues []resolution.Issue) []core.OutcomeReason {
 		case core.ResolutionAmbiguous:
 			reasons = append(reasons, core.OutcomeReason{Code: "ambiguous_reference", Detail: fmt.Sprintf("%q matches more than one catalog entity", issue.Query), Criterion: issue.Query, Action: "choose the intended artist or track from the alternatives"})
 		case core.ResolutionUnresolved:
-			reasons = append(reasons, core.OutcomeReason{Code: "unresolved_reference", Detail: fmt.Sprintf("%q was not found in the catalog", issue.Query), Criterion: issue.Query, Action: "check the spelling or choose a catalog result"})
+			reasons = append(reasons, core.OutcomeReason{Code: "unresolved_reference", Detail: fmt.Sprintf("No usable recording was found for %q during this lookup", issue.Query), Criterion: issue.Query, Action: "choose a specific track or try again"})
 		}
 	}
 	return reasons
@@ -306,6 +316,9 @@ func (o *Orchestrator) assessInferredAnchors(ctx context.Context, intent core.Mu
 	o = &local
 	var notices []core.PlaylistNotice
 	for index := range intent.InferredAnchors {
+		if err := ctx.Err(); err != nil {
+			return intent, nil, err
+		}
 		anchor := &intent.InferredAnchors[index]
 		resolution := anchor.Reference.Resolution
 		if resolution == nil || resolution.Status != core.ResolutionResolved || resolution.Selected == nil {
@@ -319,9 +332,12 @@ func (o *Orchestrator) assessInferredAnchors(ctx context.Context, intent core.Mu
 		}
 		tracks := make([]core.TrackRef, 0, len(resolution.Selected.Representatives))
 		for _, representative := range resolution.Selected.Representatives {
-			if meta, ok := o.cat.Meta(representative.TrackID); ok {
+			if meta, ok := ports.CatalogMeta(ctx, o.cat, representative.TrackID); ok {
 				tracks = append(tracks, meta.Ref)
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return intent, nil, err
 		}
 		if o.audioSession != nil {
 			// One actual recording per proposal keeps the six-proposal bound
@@ -473,7 +489,7 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 		}
 		candidates = verified
 	}
-	if o.enhanced && o.bestAvailable {
+	if o.enhanced && (o.bestAvailable || len(playlistCoverageUnits(criteria)) > 0) {
 		return o.filterEnhancedEssential(ctx, candidates, criteria)
 	}
 	genre, singleGenre := core.SinglePlaylistGenre(core.MusicIntent{EssentialCriteria: criteria})
@@ -486,7 +502,7 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 		if err := ctx.Err(); err != nil {
 			return nil, essentialEvidenceReport{}, err
 		}
-		track, _ := o.knowledgeTrack(candidate.Track.ID)
+		track, _ := o.knowledgeTrackContext(ctx, candidate.Track.ID)
 		// Best-available may suggest unknown mood/texture, but never fill a
 		// single-genre playlist with recordings lacking category evidence.
 		if singleGenre {
@@ -503,6 +519,9 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 		}
 	}
 	candidates = compatible
+	if err := ctx.Err(); err != nil {
+		return nil, essentialEvidenceReport{}, err
+	}
 	if o.bestAvailable {
 		return o.bestEssential(ctx, candidates, criteria)
 	}
@@ -576,7 +595,7 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 		}
 	}
 	if len(report.Unsupported) > 0 {
-		return nil, report, nil
+		return nil, report, ctx.Err()
 	}
 	result := make([]core.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -601,7 +620,7 @@ func (o *Orchestrator) filterEssential(ctx context.Context, candidates []core.Ca
 			report.Eligible[candidate.Track.ID] = true
 		}
 	}
-	return result, report, nil
+	return result, report, ctx.Err()
 }
 
 func appendUniqueProvenance(out []core.FeatureProvenance, values ...core.FeatureProvenance) []core.FeatureProvenance {
@@ -656,10 +675,48 @@ func (o *Orchestrator) BuildWithProfile(ctx context.Context, intent core.MusicIn
 func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.RecommendationRequest) (result core.Playlist, buildErr error) {
 	local := *o
 	o = &local
+	if request.Intent.Normalized().Controls.RecommendationMode == core.EnhancedHybrid {
+		var finish context.CancelFunc
+		ctx, finish = ports.WithGenerationBudget(ctx)
+		defer finish()
+		ctx = audio.WithLazyEnhancedBudget(ctx, audio.EnhancedTrackLimit, audio.EnhancedTimeLimit)
+		o.search = &core.SearchSnapshot{PolicyVersion: core.EnhancedSearchPolicyVersion, QueryPolicyVersion: audio.QueryPolicyVersion + "+" + audio.ScopedClausePolicyVersion,
+			EvidencePolicyVersion: core.EnhancedAudioPolicyVersion + "+" + RequestFitPolicyVersion + "+" + EvidenceCombinationPolicyVersion + "+" + core.RecordingEvidencePolicyVersion, Profile: request.Profile}
+		if deadline, ok := ctx.Deadline(); ok {
+			o.search.GenerationLimitMilliseconds = deadline.Sub(ports.GenerationStarted(ctx)).Milliseconds()
+		}
+		defer func() {
+			if buildErr != nil {
+				return
+			}
+			o.freezeRecordingEvidence(&result)
+			result.Search, buildErr = core.FreezeSearch(*o.search, result)
+		}()
+	}
 	o.requestContext = ctx
+	assemblyCtx := ctx
+	if o.search != nil {
+		var finishWork context.CancelFunc
+		ctx, finishWork = ports.GenerationWorkContext(ctx)
+		defer finishWork()
+		defer func() {
+			if errors.Is(buildErr, context.DeadlineExceeded) && assemblyCtx.Err() == nil {
+				buildErr = nil
+				result = outcomePlaylist(request.Intent.Normalized(), request.Intent.Seed, core.OutcomePartial,
+					[]core.OutcomeReason{{Code: "discovery_budget", Detail: "The search time limit was reached before more eligible tracks could be assembled."}})
+				o.search.StopReason = "deadline"
+			}
+		}()
+	}
 	o.packedAssessments = make(map[string]core.AudioAssessment)
+	o.verificationAttempted = nil
+	o.optionalIdentityAttempts = 0
+	o.verifiedRecordings = nil
+	o.replayingEvidence = request.Intent.Knowledge != nil && request.Intent.Knowledge.DiscoveryRecorded || request.EnhancedAudio != nil
+	o.verificationStop = request.StopChecking
 	o.groundedSeedPool = nil
 	o.assemblyCache = &completedAssembly{}
+	o.bestAssembly = nil
 	o.enhancedPrepared = false
 	o.enhancedSnapshot = nil
 	o.mertSearch = nil
@@ -707,6 +764,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		o.selector = NewSelector(o.cat, o.cfg)
 		o.sequencer = NewSequencer(o.cat, o.cfg)
 	}
+	// Preview identity must use this request's pinned composite catalog,
+	// including discovery/local metadata, through acquisition and assembly.
+	ctx = ports.WithAudioMetadataCatalog(ctx, o.cat)
+	assemblyCtx = ports.WithAudioMetadataCatalog(assemblyCtx, o.cat)
+	o.requestContext = assemblyCtx
 	if o.resolver != nil {
 		defer func() { result.EvidenceCatalogVersion = o.resolver.CatalogVersion() }()
 	}
@@ -732,7 +794,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	defer func() { o.appendPackedEvidence(&result) }()
 	var resolutionIssues []resolution.Issue
 	if o.resolver != nil {
-		intent, resolutionIssues = resolution.Apply(o.resolver, intent)
+		intent, resolutionIssues = resolution.ApplyContext(ctx, o.resolver, intent)
+	}
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
 	}
 	if err := intent.Validate(); err != nil {
 		return core.Playlist{}, err
@@ -748,8 +813,18 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	intent.Seed = seed
 	if intent.Knowledge != nil {
-		if binder, ok := o.cat.(interface{ BindRecordingKnowledge([]core.EnrichedTrack) }); ok {
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
+		if binder, ok := o.cat.(interface {
+			BindRecordingKnowledgeContext(context.Context, []core.EnrichedTrack)
+		}); ok {
+			binder.BindRecordingKnowledgeContext(ctx, intent.Knowledge.Tracks)
+		} else if binder, ok := o.cat.(interface{ BindRecordingKnowledge([]core.EnrichedTrack) }); ok {
 			binder.BindRecordingKnowledge(intent.Knowledge.Tracks)
+		}
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
 		}
 	}
 	if o.enhanced && (intent.Knowledge == nil || !intent.Knowledge.DiscoveryRecorded) {
@@ -772,7 +847,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	var discovery ports.MusicCandidateStream
 	// User-named references take retrieval priority over broad genre sampling.
 	// Descriptive clauses still screen every recommendation below.
-	if o.candidateSource != nil && (!o.bestAvailable || !hasExplicitRetrievalReference(o.cat, intent) || o.enhanced && intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0) {
+	if o.candidateSource != nil && (!o.bestAvailable || !hasExplicitRetrievalReferenceContext(ctx, o.cat, intent) || o.enhanced && intent.Knowledge != nil && len(intent.Knowledge.PackProfiles) > 0) {
 		discovery = o.candidateSource.OpenCandidates(intent, o.cat, o.resolver)
 		if discovery != nil {
 			if checked, ok := discovery.(ports.DiscoveryCompatibility); ok {
@@ -786,6 +861,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	if reasons := explicitResolutionReasons(resolutionIssues); len(reasons) > 0 {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
 	}
@@ -866,7 +944,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			return core.Playlist{}, err
 		}
 	}
-	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 && !hasExplicitRetrievalReference(o.cat, intent) {
+	if (o.audioSession != nil || o.bestAvailable) && o.anchorProposer != nil && len(intent.AnchorAttempts) == 0 && !hasExplicitRetrievalReferenceContext(ctx, o.cat, intent) {
 		var kept []core.InferredAnchor
 		var rejected []string
 		for _, anchor := range intent.InferredAnchors {
@@ -887,7 +965,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 				replacement := intent
 				replacement.InferredAnchors = proposals
 				if o.resolver != nil {
-					replacement, _ = resolution.Apply(o.resolver, replacement)
+					replacement, _ = resolution.ApplyContext(ctx, o.resolver, replacement)
+				}
+				if err := ctx.Err(); err != nil {
+					return core.Playlist{}, err
 				}
 				replacement, _, err = o.assessInferredAnchors(ctx, replacement)
 				if err != nil {
@@ -917,16 +998,28 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return playlist, nil
 	}
 
-	references := resolvedReferenceTracks(o.cat, intent)
-	required := resolvedRequiredTracks(o.cat, intent.RequiredTracks)
-	waypoints := journeyAnchors(o.cat, intent)
+	references := resolvedReferenceTracksContext(ctx, o.cat, intent)
+	required := resolvedRequiredTracksContext(ctx, o.cat, intent.RequiredTracks)
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
+	waypoints := journeyAnchors(ctx, o.cat, intent)
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	if intent.Start != nil {
 		start := *intent.Start
 		if start.Resolution == nil && o.resolver != nil {
-			r := o.resolver.ResolveReference(start)
+			r := ports.ResolveReferenceContext(ctx, o.resolver, start)
+			if err := ctx.Err(); err != nil {
+				return core.Playlist{}, err
+			}
 			start.Resolution = &r
 		}
-		starts := resolvedRequiredTracks(o.cat, []core.IntentReference{start})
+		starts := resolvedRequiredTracksContext(ctx, o.cat, []core.IntentReference{start})
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
 		if len(starts) == 0 {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "start_unresolved", Detail: "The requested first artist, album or track could not be resolved.", Action: "choose a catalog starting recording"}}), nil
 		}
@@ -937,10 +1030,16 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if intent.Destination != nil {
 		d := *intent.Destination
 		if d.Resolution == nil && o.resolver != nil {
-			r := o.resolver.ResolveReference(d)
+			r := ports.ResolveReferenceContext(ctx, o.resolver, d)
+			if err := ctx.Err(); err != nil {
+				return core.Playlist{}, err
+			}
 			d.Resolution = &r
 		}
-		destinations := resolvedRequiredTracks(o.cat, []core.IntentReference{d})
+		destinations := resolvedRequiredTracksContext(ctx, o.cat, []core.IntentReference{d})
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
 		if len(destinations) == 0 {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "destination_unresolved", Detail: "The final artist, album or track could not be resolved.", Action: "choose a catalog destination"}}), nil
 		}
@@ -957,14 +1056,20 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if intent.Mode == core.ModeJourney {
 		required = orderRequiredByWaypoints(required, waypoints)
 	}
-	recentSelections := resolvedContextTracks(o.cat, request.RecentSelections)
+	recentSelections := resolvedContextTracksContext(ctx, o.cat, request.RecentSelections)
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	request.RecentSelections = recentSelections
 	var mertAudio []core.Candidate
 	if request.EnhancedAudio != nil {
 		input := request.EnhancedAudio.Input()
 		o.mertSearch = input.MERTSearch
 	} else if intent.Controls.RecommendationMode == core.EnhancedHybrid && o.mertSearchProvider != nil {
-		allQueries := mertSimilarityQueries(o.cat, intent)
+		allQueries := mertSimilarityQueriesContext(ctx, o.cat, intent)
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
 		queries := make([]core.MERTSimilarityQuery, 0, len(allQueries))
 		for _, query := range allQueries {
 			_, packed, lookupErr := lookupLibraryVector(ctx, o.cat, query.Track.ID)
@@ -1008,7 +1113,10 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
-	mertAudio = o.mertCandidates(o.mertSearch)
+	mertAudio = o.mertCandidatesContext(ctx, o.mertSearch)
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	var cachedAudio []core.Candidate
 	if o.audioSession != nil {
 		excluded := map[string]bool{}
@@ -1075,7 +1183,16 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return core.Playlist{}, err
 	}
 	for _, track := range required {
-		if !o.metadataEligible(track, intent) {
+		if o.enhanced {
+			o.admitCandidateAssessment(core.Candidate{Track: track})
+			if err := o.verifyRequiredRecording(ctx, track, intent); err != nil {
+				return core.Playlist{}, err
+			}
+		}
+		if !o.metadataEligibleContext(ctx, track, intent) {
+			if err := ctx.Err(); err != nil {
+				return core.Playlist{}, err
+			}
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_metadata_conflict", Detail: "A required recording conflicts with metadata constraints or archived analysis opposes an essential requirement.", Criterion: track.Display(), Action: "remove the required track or refine the conflicting requirement"}}), nil
 		}
 	}
@@ -1094,6 +1211,12 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 			}
 		}
 	}
+	if reasons := o.requiredOutputReasons(ctx, required, intent); len(reasons) > 0 {
+		if err := ctx.Err(); err != nil {
+			return core.Playlist{}, err
+		}
+		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, reasons), nil
+	}
 	candidates := append(append([]core.Candidate(nil), cachedAudio...), mertAudio...)
 	candidates = append(candidates, instrumentalKnowledgeCandidates(intent)...)
 	if o.groundedSeedPool != nil {
@@ -1102,8 +1225,11 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		candidates, err = o.retriever.Retrieve(ctx, ports.RetrievalRequest{
 			Intent: intent, Profile: request.Profile, RecentSelections: recentSelections, Seed: seedValue,
 		})
-		if err != nil {
+		if err != nil && (!o.enhanced || len(candidates) == 0) {
 			return core.Playlist{}, err
+		}
+		if err != nil {
+			anchorNotices = append(anchorNotices, core.PlaylistNotice{Code: "retrieval_interrupted", Detail: "Candidate retrieval was interrupted; completed candidates were retained."})
 		}
 	} else if o.enhanced && localMetadata {
 		// A provider stream must not hide the installed pack on a cold audio
@@ -1134,7 +1260,7 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	metadataCandidates := candidates[:0]
 	for _, candidate := range candidates {
-		if o.metadataEligible(candidate.Track, intent) {
+		if o.metadataEligibleContext(ctx, candidate.Track, intent) {
 			metadataCandidates = append(metadataCandidates, candidate)
 		}
 	}
@@ -1161,13 +1287,14 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	}
 	if o.candidateSource != nil || o.audioSession != nil || intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		var notices []core.PlaylistNotice
-		candidates, notices, err = o.collectIteratively(ctx, candidates, discovery, intent, request, eligible, references, required, waypoints, seedValue)
+		candidates, notices, err = o.collectIteratively(assemblyCtx, candidates, discovery, intent, request, eligible, references, required, waypoints, seedValue)
 		if err != nil {
 			return core.Playlist{}, err
 		}
 		semanticNotices = append(semanticNotices, notices...)
 		semanticMatched = hasSemanticCandidates(candidates)
 	}
+	ctx = assemblyCtx
 	if len(intent.EssentialCriteria) > 0 {
 		var report essentialEvidenceReport
 		candidates, report, err = o.filterEssential(ctx, candidates, intent.EssentialCriteria)
@@ -1211,6 +1338,9 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if request.Progress != nil {
 		request.Progress.Report("generation", 0, 0, "Ordering your playlist")
 	}
+	if o.search != nil {
+		ports.ReportSearch(request.Progress, core.SearchProgress{Stage: "assembling", CandidatesConsidered: o.search.Considered, CandidatesEligible: o.search.Eligible, CandidatesSupported: supportedCandidateCount(candidates), StoppingReason: o.search.StopReason})
+	}
 	if stages := journeyStageCriteria(intent); intent.Mode == core.ModeJourney && len(stages) > 0 && (len(stages) > core.MaxCount || (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) && intent.Count < len(stages)) {
 		return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{
 			Code: "journey_count_too_short", Detail: fmt.Sprintf("%d tracks cannot represent %d requested journey stages", intent.Count, len(stages)),
@@ -1239,12 +1369,20 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		return core.Playlist{}, err
 	}
 	selection, sequence := assembly.selection, assembly.sequence
-	if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre {
+	if _, singleGenre := core.SinglePlaylistGenre(intent); singleGenre || o.enhanced {
 		// Defense at the output boundary: required tracks and every sequencing
 		// path must satisfy the same check as retrieved/exploration candidates.
 		checked, report, checkErr := o.filterEssential(ctx, candidatesForTracks(sequence.Tracks), intent.EssentialCriteria)
 		if checkErr != nil {
 			return core.Playlist{}, checkErr
+		}
+		checked, checkErr = o.filterConfirmedOutput(ctx, checked, intent)
+		if checkErr != nil {
+			return core.Playlist{}, checkErr
+		}
+		report.Eligible = make(map[string]bool, len(checked))
+		for _, candidate := range checked {
+			report.Eligible[candidate.Track.ID] = true
 		}
 		if !requiredTracksEligible(required, report.Eligible) {
 			return outcomePlaylist(intent, seed, core.OutcomeNeedsClarification, []core.OutcomeReason{{Code: "required_track_essential_conflict", Detail: "A required track did not pass the final genre check.", Action: "Remove the conflicting required track or provide reliable genre evidence."}}), nil
@@ -1293,6 +1431,17 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "semantic_fallback", Detail: "semantic intent was preserved but no compatible grounded semantic matches were available; seeded embedding retrieval remained active", Requested: intent.Count, Actual: len(playlist.Tracks)})
 	}
 	if len(playlist.Tracks) < intent.Count && (intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount()) {
+		if o.enhanced && len(genreAdmissionGroups(intent)) > 0 {
+			playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "requested_genre_unconfirmed", Detail: "Only tracks with corroborated support for the requested genres were retained. Unknown and conflicting genre suggestions were omitted.", Action: "Continue with fewer tracks or add a confirmed fitting reference."})
+		}
+		if o.enhanced {
+			for _, clause := range audio.Clauses(intent) {
+				if clause.Strict {
+					playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "strict_criterion_unconfirmed", Detail: "Only tracks with sufficient evidence for strict musical requirements were retained.", Action: "Continue with fewer tracks or provide a confirmed fitting recording."})
+					break
+				}
+			}
+		}
 		interrupted := false
 		for _, notice := range playlist.Notices {
 			switch notice.Code {
@@ -1325,6 +1474,12 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 		_, finalReport, finalErr := o.filterEssential(ctx, candidatesForTracks(playlist.Tracks), intent.EssentialCriteria)
 		if finalErr != nil {
 			return core.Playlist{}, finalErr
+		}
+		if o.enhanced {
+			if missing := playlistCoverageReasons(intent.EssentialCriteria, finalReport.Matched); len(missing) > 0 {
+				playlist.Outcome.State = core.OutcomePartial
+				playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, missing...)
+			}
 		}
 		for _, criterion := range intent.EssentialCriteria {
 			matched := finalReport.Matched[criterionKey(criterion)] > 0
@@ -1363,11 +1518,14 @@ func (o *Orchestrator) BuildRecommendation(ctx context.Context, request ports.Re
 	if !o.enhanced {
 		o.annotateFit(ctx, &playlist)
 	}
-	o.annotateIntentComparisons(&playlist)
+	o.annotateIntentComparisonsContext(ctx, &playlist)
 	if o.enhanced {
 		o.annotateEnhancedFit(ctx, &playlist)
 	}
-	o.annotateDuration(&playlist)
+	o.annotateDurationContext(ctx, &playlist)
+	if err := ctx.Err(); err != nil {
+		return core.Playlist{}, err
+	}
 	return playlist, nil
 }
 
@@ -1448,13 +1606,6 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 	floor := maxFloat(o.cfg.SelectionMinimumRelevance, best-o.cfg.SelectionRelevanceWindow)
 	requestRelevance := enhancedRequestRelevances(ranked, intent)
 	requestFloor := o.cfg.SelectionMinimumRelevance
-	if o.enhanced {
-		for _, candidate := range ranked {
-			if relevance, ok := enhancedRequestRelevance(candidate, intent); ok {
-				requestFloor = max(requestFloor, relevance-o.cfg.SelectionRelevanceWindow)
-			}
-		}
-	}
 	var reserved []core.Candidate
 	var reasons []core.OutcomeReason
 	assignedFixed := map[string]bool{}
@@ -1479,13 +1630,9 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		// CLAP comparisons are uncalibrated cosines. Compare a stage candidate
-		// with the best still-available positive comparison for that same stage,
-		// rather than with another stage's numerically larger text embedding.
-		// This preserves the configured relevance floor while allowing overlapping
-		// adjacent journey descriptions to receive distinct recordings.
+		// CLAP cosines use the fixed admission threshold for this policy. The
+		// strongest member of a weak pool does not become a suitable stage match.
 		stageScores := make(map[int]float64)
-		stageBest := 0.0
 		if o.enhanced && o.audioSession != nil {
 			for index, candidate := range ranked {
 				if used[candidate.Track.ID] || !report.Eligible[candidate.Track.ID] {
@@ -1493,17 +1640,20 @@ func (o *Orchestrator) reserveJourneyStages(ctx context.Context, ranked []core.C
 				}
 				if score, available := o.stageSimilarity(candidate.Track.ID, criterion); available && score > 0 {
 					stageScores[index] = score
-					stageBest = max(stageBest, score)
 				}
 			}
 		}
 		chosen := -1
 		for index, candidate := range ranked {
 			relevant := candidate.Scores.Total >= floor
-			if direct := requestRelevance[index]; o.enhanced && direct.ok && direct.value >= requestFloor {
-				relevant = true
+			if o.enhanced {
+				direct := requestRelevance[index]
+				relevant = direct.ok && direct.value >= requestFloor
+				// Affirmative stage metadata is independent admission evidence;
+				// a low text cosine must not erase a known requested category.
+				relevant = relevant || o.bestCriterion(ctx, candidate.Track.ID, criterion) == core.EvidenceMatch
 			}
-			if score := stageScores[index]; stageBest > 0 && score/stageBest >= requestFloor {
+			if score := stageScores[index]; score >= o.cfg.SemanticMinimumScore && score > 0 {
 				relevant = true
 			}
 			if !used[candidate.Track.ID] && report.Eligible[candidate.Track.ID] && relevant {
@@ -1559,12 +1709,16 @@ func (o *Orchestrator) categoryMembership(ctx context.Context, candidates []core
 }
 
 func resolvedReferenceTracks(cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {
-	refs := intentReferenceTracks(cat, intent, core.InfluencePositive, false)
+	return resolvedReferenceTracksContext(context.Background(), cat, intent)
+}
+
+func resolvedReferenceTracksContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {
+	refs := intentReferenceTracksContext(ctx, cat, intent, core.InfluencePositive, false)
 	seen := map[string]struct{}{}
 	result := make([]core.TrackRef, 0)
 	for _, reference := range refs {
 		for _, representative := range reference.reps {
-			meta, ok := cat.Meta(representative.TrackID)
+			meta, ok := ports.CatalogMeta(ctx, cat, representative.TrackID)
 			if !ok {
 				continue
 			}
@@ -1579,6 +1733,10 @@ func resolvedReferenceTracks(cat ports.Catalog, intent core.MusicIntent) []core.
 }
 
 func resolvedRequiredTracks(cat ports.Catalog, references []core.IntentReference) []core.TrackRef {
+	return resolvedRequiredTracksContext(context.Background(), cat, references)
+}
+
+func resolvedRequiredTracksContext(ctx context.Context, cat ports.Catalog, references []core.IntentReference) []core.TrackRef {
 	seen := map[string]struct{}{}
 	result := make([]core.TrackRef, 0, len(references))
 	for _, reference := range references {
@@ -1586,7 +1744,7 @@ func resolvedRequiredTracks(cat ports.Catalog, references []core.IntentReference
 		if reference.Resolution != nil && reference.Resolution.Selected != nil && len(reference.Resolution.Selected.Representatives) > 0 {
 			id = reference.Resolution.Selected.Representatives[0].TrackID
 		}
-		meta, ok := cat.Meta(id)
+		meta, ok := ports.CatalogMeta(ctx, cat, id)
 		if !ok {
 			continue
 		}
@@ -1600,11 +1758,11 @@ func resolvedRequiredTracks(cat ports.Catalog, references []core.IntentReference
 	return result
 }
 
-func resolvedContextTracks(cat ports.Catalog, tracks []core.TrackRef) []core.TrackRef {
+func resolvedContextTracksContext(ctx context.Context, cat ports.Catalog, tracks []core.TrackRef) []core.TrackRef {
 	result := make([]core.TrackRef, 0, len(tracks))
 	seen := map[string]struct{}{}
 	for _, track := range tracks {
-		meta, ok := cat.Meta(track.ID)
+		meta, ok := ports.CatalogMeta(ctx, cat, track.ID)
 		if !ok {
 			continue
 		}
@@ -1641,7 +1799,7 @@ func orderRequiredByWaypoints(required, waypoints []core.TrackRef) []core.TrackR
 	return result
 }
 
-func journeyAnchors(cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {
+func journeyAnchors(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []core.TrackRef {
 	references := intent.Journey.Waypoints
 	if len(references) < 2 {
 		references = intent.References
@@ -1656,7 +1814,7 @@ func journeyAnchors(cat ports.Catalog, intent core.MusicIntent) []core.TrackRef 
 		if reference.Resolution != nil && reference.Resolution.Selected != nil && len(reference.Resolution.Selected.Representatives) > 0 {
 			id = reference.Resolution.Selected.Representatives[0].TrackID
 		}
-		meta, ok := cat.Meta(id)
+		meta, ok := ports.CatalogMeta(ctx, cat, id)
 		if !ok {
 			continue
 		}

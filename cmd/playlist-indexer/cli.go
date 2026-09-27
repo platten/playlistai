@@ -24,6 +24,9 @@ import (
 const usage = `usage: playlist-indexer <command> [options]
 
 commands:
+  subset    copy a bounded deterministic read-only-source audio sample
+  compare   compare prompt phrases with CLAP/DSP using a local LLM
+  annotate  acquire identity-linked web facts into an evidence sidecar
   run       scan, analyze, drain durable commits, then optionally export
   scan      update the durable file inventory
   analyze   process pending metadata/audio jobs
@@ -218,6 +221,12 @@ func execute(ctx context.Context, args []string, stdout, stderr io.Writer) (int,
 		return 1, errors.New("command is required")
 	}
 	switch args[0] {
+	case "subset":
+		return runSubset(ctx, args[1:], stdout, stderr)
+	case "compare":
+		return runCompare(ctx, args[1:], stdout, stderr)
+	case "annotate":
+		return runAnnotate(ctx, args[1:], stdout, stderr)
 	case "run", "scan", "analyze":
 		return runPipelineCommand(ctx, args[0], args[1:], stdout, stderr)
 	case "status":

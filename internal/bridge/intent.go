@@ -35,19 +35,21 @@ type IntentPreview struct {
 }
 
 type IntentSessionContext struct {
-	TrackCount   int             `json:"trackCount,omitempty"`
-	GenerationID string          `json:"generationId"`
-	SessionID    string          `json:"sessionId"`
-	NowPlaying   *core.TrackRef  `json:"nowPlaying"`
-	RecentTracks []core.TrackRef `json:"recentTracks"`
-	Locale       string          `json:"locale"`
+	SubmittedAtMilliseconds int64           `json:"submittedAtMilliseconds,omitempty"`
+	TrackCount              int             `json:"trackCount,omitempty"`
+	GenerationID            string          `json:"generationId"`
+	SessionID               string          `json:"sessionId"`
+	NowPlaying              *core.TrackRef  `json:"nowPlaying"`
+	RecentTracks            []core.TrackRef `json:"recentTracks"`
+	Locale                  string          `json:"locale"`
 }
 
 func (session IntentSessionContext) input(prompt string) ports.IntentInput {
 	return ports.IntentInput{
-		TrackCount:   session.TrackCount,
-		GenerationID: session.GenerationID,
-		Prompt:       prompt, SessionID: session.SessionID, NowPlaying: session.NowPlaying,
+		SubmittedAtMilliseconds: session.SubmittedAtMilliseconds,
+		TrackCount:              session.TrackCount,
+		GenerationID:            session.GenerationID,
+		Prompt:                  prompt, SessionID: session.SessionID, NowPlaying: session.NowPlaying,
 		RecentTracks: session.RecentTracks, Locale: session.Locale,
 	}
 }
@@ -64,6 +66,13 @@ func (a *API) ParseIntentWithContext(ctx context.Context, prompt string, session
 }
 
 func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput) (IntentPreview, error) {
+	if input.GenerationID != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = modeSubmissionBudget(ctx, a.app.RecommendationMode(), input.SubmittedAtMilliseconds)
+		defer cancel()
+		ctx, cancel = ports.GenerationWorkContext(ctx)
+		defer cancel()
+	}
 	if err := validateTrackCount(input.TrackCount); err != nil {
 		return IntentPreview{}, err
 	}
@@ -85,6 +94,9 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 	started := time.Now()
 	entry, reused, err := a.parseIntentCached(ctx, input, nil)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) && input.GenerationID != "" && a.app.RecommendationMode() == core.EnhancedHybrid {
+			return IntentPreview{}, fmt.Errorf("the generation time budget ended during interpretation; no eligible tracks were completed: %w", err)
+		}
 		logging.Diagnostic(ctx, "intent.error", err.Error())
 		return IntentPreview{}, err
 	}
@@ -94,7 +106,25 @@ func (a *API) parseIntentOperation(ctx context.Context, input ports.IntentInput)
 	logging.Diagnostic(ctx, "intent.parser_status", parserStatus(entry.outcome))
 	var issues []intentresolution.Issue
 	if a.runtime().Resolver != nil {
-		m, issues = intentresolution.Apply(a.runtime().Resolver, m)
+		m, issues = intentresolution.ApplyContext(ctx, a.runtime().Resolver, m)
+		if corroborator, ok := a.app.Knowledge.(ports.ArtistIdentityCorroborator); ok && input.GenerationID != "" && a.app.RecommendationMode() == core.EnhancedHybrid {
+			// Submitted previews reach this before the UI's ambiguity gate. Keep
+			// the same evidence for the following generation; typing stays local.
+			m, err = corroborator.CorroborateArtistReferences(ctx, m)
+			if err != nil {
+				return IntentPreview{}, err
+			}
+			m, issues = intentresolution.ApplyContext(ctx, a.runtime().Resolver, m)
+			if entry.cacheKey != "" && ctx.Err() == nil && current() {
+				for _, ref := range m.References {
+					if _, corroborated := ref.Grounding.CorroboratedArtist(); corroborated {
+						entry.intent = m.Normalized()
+						a.intentCache.putIfCurrent(ctx, entry.cacheKey, entry)
+						break
+					}
+				}
+			}
+		}
 	}
 	preview := IntentPreview{
 		Intent:             m,
@@ -168,6 +198,8 @@ func (a *API) GenerateFromPromptResolvedWithContext(ctx context.Context, prompt 
 }
 
 func (a *API) generateFromPromptOperation(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
+	ctx, cancel := modeSubmissionBudget(ctx, a.app.RecommendationMode(), input.SubmittedAtMilliseconds)
+	defer cancel()
 	if err := validateTrackCount(input.TrackCount); err != nil {
 		return GenerateResult{}, err
 	}
@@ -186,29 +218,34 @@ func (a *API) generateFromPromptOperation(ctx context.Context, input ports.Inten
 	}
 	if err == nil {
 		if contextErr := ctx.Err(); contextErr != nil {
-			return GenerateResult{}, contextErr
+			return result, contextErr
 		}
 		if !current() {
-			return GenerateResult{}, context.Canceled
+			return result, context.Canceled
 		}
 		a.preparePresentation(result.Request, &result.Playlist)
 	}
 	return result, err
 }
 
-func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (GenerateResult, error) {
+func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, selections []ResolutionSelection) (result GenerateResult, err error) {
 	if a.app.IntentParser() == nil || a.runtime().Reco == nil || a.runtime().Catalog == nil || a.runtime().Resolver == nil {
 		return GenerateResult{}, errors.New("not ready — download the catalog first")
 	}
 
 	// Stream intent-parse progress to the Generate screen ("intent" op).
 	prog := generationProgress(ctx)
+	workCtx, finishWork := ports.GenerationWorkContext(ctx)
+	defer finishWork()
 	recommendationMode := a.app.RecommendationMode()
 	input.SkipMetadata = recommendationMode == core.DeejAIOnly
 	prog.Report("intent", 0, -1, "understanding your request")
 	parseStarted := time.Now()
-	entry, parsedIntentReused, err := a.parseIntentCached(ctx, input, prog)
+	entry, parsedIntentReused, err := a.parseIntentCached(workCtx, input, prog)
 	if err != nil {
+		if workCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+			return interpretationTimedOut(ctx, input, entry, recommendationMode, time.Since(parseStarted))
+		}
 		return GenerateResult{}, err
 	}
 	m := withTrackCount(entry.intent, input.TrackCount)
@@ -217,8 +254,24 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	m.Controls.RecommendationMode = recommendationMode
 	m.VerificationPolicy = core.BestAvailable
 	timings := []StageTiming{{Stage: "parse", Milliseconds: time.Since(parseStarted).Milliseconds()}}
-	selections, err = validateResolutionSelections(a.runtime().Resolver, m, selections)
+	// An error after interpretation still has an actual parser outcome. Keep it
+	// for diagnostics/evaluation instead of substituting the active backend.
+	defer func() {
+		result.Status.Parser = parserStatus(entry.outcome)
+		result.Status.ParsedIntentReused = parsedIntentReused
+		if len(result.Status.Timings) == 0 {
+			result.Status.Timings = timings
+		}
+		result.Playlist.Status.Parser = result.Status.Parser
+		if result.Request.Intent.Version == 0 {
+			result.Request = BuildPlaylistRequest{Version: core.CurrentIntentVersion, Intent: m}
+		}
+	}()
+	selections, err = validateResolutionSelections(workCtx, a.runtime().Resolver, m, selections)
 	if err != nil {
+		if workCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+			return generationTimedOut(ctx, input, m, "reference selection"), nil
+		}
 		return GenerateResult{}, err
 	}
 	m = applyDescriptionSelections(m, selections)
@@ -235,23 +288,38 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 		m.Destination = &refs[0]
 	}
 	var spellingIssues []intentresolution.Issue
-	m, spellingIssues = intentresolution.Apply(a.runtime().Resolver, m)
+	m, spellingIssues = intentresolution.ApplyContext(workCtx, a.runtime().Resolver, m)
+	if err := workCtx.Err(); err != nil {
+		if err == context.DeadlineExceeded && ctx.Err() == nil {
+			return generationTimedOut(ctx, input, m, "reference resolution"), nil
+		}
+		return GenerateResult{}, err
+	}
 	if err := intentresolution.SpellingConfirmationError(spellingIssues); err != nil {
 		return GenerateResult{}, err
 	}
 	resolveStarted := time.Now()
-	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly {
+	if a.app.Knowledge != nil && m.Version >= 8 && m.Controls.RecommendationMode != core.DeejAIOnly && m.Controls.RecommendationMode != core.Automatic {
 		if knowledge, ok := a.app.Knowledge.(ports.IterativeMusicKnowledge); ok {
-			m, err = knowledge.PrepareMusic(ctx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
+			m, err = knowledge.PrepareMusic(workCtx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
 		} else {
-			m, err = a.app.Knowledge.ResolveMusic(ctx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
+			m, err = a.app.Knowledge.ResolveMusic(workCtx, m, a.runtime().Catalog, a.runtime().Resolver, prog)
 		}
 		if err != nil {
+			if workCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+				return generationTimedOut(ctx, input, m, "reference resolution"), nil
+			}
 			return GenerateResult{}, err
 		}
 		logKnowledgeDiagnostics(ctx, m.Knowledge)
 	}
-	m, _ = intentresolution.Apply(a.runtime().Resolver, m)
+	m, _ = intentresolution.ApplyContext(workCtx, a.runtime().Resolver, m)
+	if err := workCtx.Err(); err != nil {
+		if err == context.DeadlineExceeded && ctx.Err() == nil {
+			return generationTimedOut(ctx, input, m, "reference resolution"), nil
+		}
+		return GenerateResult{}, err
+	}
 	timings = append(timings, StageTiming{Stage: "resolve", Milliseconds: time.Since(resolveStarted).Milliseconds()})
 	if err := ctx.Err(); err != nil {
 		return GenerateResult{}, err
@@ -274,10 +342,15 @@ func (a *API) generateFromPrompt(ctx context.Context, input ports.IntentInput, s
 	req.Seed = pl.Seed // legacy readers still find the replay seed
 	req.Reproducibility = pl.Reproducibility
 	req.EnhancedAudio = pl.EnhancedAudio
+	req.Search = pl.Search
 	req.RequestID = pl.Reproducibility.ID
 
 	titleStarted := time.Now()
-	name := a.playlistName(ctx, input.Prompt, m)
+	name := deriveTitle(m, input.Prompt)
+	// Optional naming never consumes the assembly/cleanup reserve.
+	if workCtx.Err() == nil && recommendationMode != core.Automatic {
+		name = a.playlistName(workCtx, input.Prompt, m)
+	}
 	if err := ctx.Err(); err != nil {
 		return GenerateResult{}, err
 	}
@@ -319,7 +392,7 @@ func applyAnchorSelections(anchors []core.InferredAnchor, selections []Resolutio
 }
 
 func validatePromptStart(backend, requestedBackend string, intent core.MusicIntent) error {
-	if intent.Controls.RecommendationMode == core.DeejAIOnly {
+	if intent.Controls.RecommendationMode == core.DeejAIOnly || intent.Controls.RecommendationMode == core.Automatic {
 		return nil // BuildOnly returns an actionable, structured missing-seed outcome.
 	}
 	// A rules fallback while an LLM was requested must preserve the semantic
@@ -358,15 +431,8 @@ func applySelections(references []core.IntentReference, selections []ResolutionS
 				out[i].TrackID = selection.TrackID
 				out[i].Resolution = nil
 				if selection.IdentityID != "" && out[i].Grounding != nil {
-					grounding := *out[i].Grounding
-					for _, candidate := range grounding.Candidates {
-						if candidate.ID == selection.IdentityID && candidate.Kind == selection.Kind {
-							grounding.Candidates = []core.IdentityCandidate{candidate}
-							grounding.Truncated = false
-							grounding.Confirmed = true
-							out[i].Grounding = &grounding
-							break
-						}
+					if grounding, ok := out[i].Grounding.WithConfirmedIdentity(selection.Kind, selection.IdentityID); ok {
+						out[i].Grounding = grounding
 					}
 				}
 				if selection.RejectSpelling {

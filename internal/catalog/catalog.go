@@ -4,6 +4,7 @@
 package catalog
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -206,12 +207,20 @@ func (c *Catalog) RowOf(id string) (int, bool) {
 }
 
 func (c *Catalog) Meta(id string) (core.TrackMeta, bool) {
+	return c.MetaContext(context.Background(), id)
+}
+
+func (c *Catalog) MetaContext(ctx context.Context, id string) (core.TrackMeta, bool) {
+	return c.metaContext(ctx, id)
+}
+
+func (c *Catalog) metaContext(ctx context.Context, id string) (core.TrackMeta, bool) {
 	var artist, title, preview string
-	err := c.metaStmt.QueryRow(id).Scan(&artist, &title, &preview)
+	err := c.metaStmt.QueryRowContext(ctx, id).Scan(&artist, &title, &preview)
 	if errors.Is(err, sql.ErrNoRows) {
 		return core.TrackMeta{}, false
 	}
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		return core.TrackMeta{}, false
 	}
 	return core.TrackMeta{

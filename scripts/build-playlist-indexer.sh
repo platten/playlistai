@@ -5,7 +5,7 @@ repo_dir=$(cd "$(dirname "$0")/.." && pwd)
 output_dir=${PLAYLIST_INDEXER_OUTPUT_DIR:-"$repo_dir/bin"}
 offline_cache_root=${PLAYLIST_INDEXER_OFFLINE_CACHE_DIR:-"${XDG_CACHE_HOME:-${HOME}/.cache}/playlist-ai/indexer-offline"}
 codec_payload=${PLAYLIST_INDEXER_CODEC_PAYLOAD:-"$offline_cache_root/codec"}
-build_offline=${PLAYLIST_INDEXER_BUILD_OFFLINE:-0}
+build_offline=${PLAYLIST_INDEXER_BUILD_OFFLINE:-1}
 
 case "$build_offline" in
   0|1) ;;
@@ -75,39 +75,39 @@ download_pinned_cuda_mert() {
   local destination=$1
   local manifest=${PLAYLIST_INDEXER_MERT_CUDA_MANIFEST:-}
   local checksum=${PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256:-}
-  if [[ -z $manifest || -z $checksum ]]; then
-    echo "CUDA MERT bundle is missing; set PLAYLIST_INDEXER_MERT_CUDA_BUNDLE, or set both PLAYLIST_INDEXER_MERT_CUDA_MANIFEST and PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256 to a reviewed distribution" >&2
-    return 1
-  fi
   if [[ -e $destination ]]; then
     echo "invalid CUDA MERT bundle already exists at $destination; refusing to overwrite it" >&2
     return 1
   fi
-  mkdir -p "$(dirname "$destination")" "$offline_cache_root/downloads/mert-cuda"
-  echo "downloading and verifying pinned CUDA MERT bundle into $destination" >&2
-  go run "$repo_dir/cmd/modelpack" \
-    --manifest "$manifest" \
-    --manifest-sha256 "$checksum" \
-    --cache "$offline_cache_root/downloads/mert-cuda" \
-    --out "$destination"
-}
+  if [[ -n $manifest || -n $checksum ]]; then
+    if [[ -z $manifest || -z $checksum ]]; then
+      echo "set both PLAYLIST_INDEXER_MERT_CUDA_MANIFEST and PLAYLIST_INDEXER_MERT_CUDA_MANIFEST_SHA256" >&2
+      return 1
+    fi
+    mkdir -p "$(dirname "$destination")" "$offline_cache_root/downloads/mert-cuda"
+    echo "downloading and verifying pinned CUDA MERT bundle into $destination" >&2
+    go run "$repo_dir/cmd/modelpack" \
+      --manifest "$manifest" \
+      --manifest-sha256 "$checksum" \
+      --cache "$offline_cache_root/downloads/mert-cuda" \
+      --out "$destination"
+    return
+  fi
 
-prepare_codec_payload "$codec_payload"
+  local source=${PLAYLIST_INDEXER_CUDA_SOURCE:-"$output_dir/playlist-indexer-offline"}
+  if [[ ! -f $source ]]; then
+    echo "CUDA MERT bundle is missing; provide PLAYLIST_INDEXER_MERT_CUDA_BUNDLE, a previous playlist-indexer-offline via PLAYLIST_INDEXER_CUDA_SOURCE, or a reviewed CUDA manifest and SHA-256" >&2
+    return 1
+  fi
+  echo "extracting verified CUDA MERT bundle from $source" >&2
+  go run "$repo_dir/cmd/indexerpack" --extract-cuda-mert "$source" --out "$destination"
+}
 
 if [[ $build_offline == 1 ]]; then
   if [[ $(go env GOOS)/$(go env GOARCH) != linux/amd64 ]]; then
     echo "playlist-indexer-offline with CUDA currently requires a linux/amd64 build host" >&2
     exit 1
   fi
-  if ! command -v nvidia-smi >/dev/null 2>&1; then
-    echo "playlist-indexer-offline requires an installed NVIDIA driver (nvidia-smi was not found)" >&2
-    exit 1
-  fi
-  if ! cuda_driver=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader 2>/dev/null) || [[ -z $cuda_driver ]]; then
-    echo "playlist-indexer-offline requires a working NVIDIA CUDA driver; nvidia-smi could not query a GPU" >&2
-    exit 1
-  fi
-  echo "CUDA driver available: ${cuda_driver%%$'\n'*}" >&2
 
   mert_bundle=${PLAYLIST_INDEXER_MERT_BUNDLE:-"$offline_cache_root/mert-cpu"}
   mert_cuda_bundle=${PLAYLIST_INDEXER_MERT_CUDA_BUNDLE:-"$offline_cache_root/mert-cuda"}
@@ -137,6 +137,8 @@ if [[ $build_offline == 1 ]]; then
     --clap-model "$clap_bundle" \
     --clap-cuda-model "$clap_cuda_bundle"
 fi
+
+prepare_codec_payload "$codec_payload"
 
 mkdir -p "$output_dir"
 staging_dir=$(mktemp -d "$output_dir/.playlist-indexer-build.XXXXXX")

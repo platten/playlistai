@@ -44,7 +44,7 @@ func TestAnnotationMatchingReconnectsReviewedAcousticBrainzClass(t *testing.T) {
 	values := annotations(json.RawMessage(`{"AB:MOOD":"Acoustic;Not relaxed"}`))
 	matchedAcoustic, matchedWarm := false, false
 	for _, value := range values {
-		if value.SourceKey == "AB:MOOD" && value.Origin != "trusted_curated_tag" {
+		if value.SourceKey == "AB:MOOD" && value.Origin != "classifier_output" {
 			t.Fatalf("archived classifier lost provenance: %+v", value)
 		}
 		matchedAcoustic = matchedAcoustic || annotationMatches(value, core.MusicalCriterion{Kind: "texture", Value: "acoustic"})

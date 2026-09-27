@@ -23,7 +23,9 @@ func criterionGroups(criteria []core.MusicalCriterion) [][]core.MusicalCriterion
 	positions := map[string]int{}
 	for i, c := range criteria {
 		key := c.Scope + "\x00" + c.Group
-		if c.Group == "" {
+		if c.CoverageGroup != "" {
+			key = c.Scope + "\x00coverage:" + c.CoverageGroup
+		} else if c.Group == "" {
 			key += fmt.Sprint("\x00", i)
 		}
 		if index, ok := positions[key]; ok {
@@ -63,7 +65,7 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 		}
 		eligible, allMatched := true, len(groups) > 0
 		metadataScore := 0.0
-		metadata, metadataAvailable := o.knowledgeTrack(candidate.Track.ID)
+		metadata, metadataAvailable := o.knowledgeTrackContext(ctx, candidate.Track.ID)
 		stages, failedStages, matchedStages := map[string]bool{}, map[string]bool{}, map[string]bool{}
 		for _, group := range groups {
 			state := o.criterionGroupState(ctx, candidate.Track.ID, group)
@@ -113,6 +115,9 @@ func (o *Orchestrator) filterEnhancedEssential(ctx context.Context, candidates [
 		if eligible && len(groups) > 0 && !allMatched && !o.enhancedSupport(ctx, candidate, criteria) {
 			eligible = false
 		}
+		if !o.bestAvailable && !allMatched && len(groups) > 0 {
+			eligible = false
+		}
 		if !eligible {
 			continue
 		}
@@ -143,18 +148,21 @@ func (o *Orchestrator) enhancedSupport(ctx context.Context, candidate core.Candi
 		if o.compoundGenreSupport(ctx, candidate.Track.ID, c) {
 			return true
 		}
+		if o.weakRecordingSupport(ctx, candidate.Track.ID, core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Strict: c.Strength == "required"}) {
+			return true
+		}
 	}
 	if o.audioSession != nil {
 		if a, ok := o.audioSession.Assessment(candidate.Track.ID); ok && a.AnalysisID != "" {
 			var compared core.Candidate
 			audio.ApplyScores(&compared, a)
-			return compared.Available.SemanticMatch && compared.Scores.SemanticMatch > max(0, compared.Scores.SemanticNegativeMatch)
+			return compared.Available.SemanticMatch && compared.Scores.SemanticMatch >= EnhancedSemanticAdmissionMinimum && compared.Scores.SemanticMatch > max(0, compared.Scores.SemanticNegativeMatch)
 		}
 	}
 	// A grounded semantic index supplies an explicit request comparison. The
 	// existing relevance floor still controls final selection; this is not a
 	// calibrated musical-fit threshold and cannot grant a strong tier.
-	return candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch > max(0, candidate.Scores.SemanticNegativeMatch)
+	return candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch >= EnhancedSemanticAdmissionMinimum && candidate.Scores.SemanticMatch > max(0, candidate.Scores.SemanticNegativeMatch)
 }
 
 func (o *Orchestrator) compoundGenreSupport(ctx context.Context, id string, criterion core.MusicalCriterion) bool {
@@ -166,9 +174,9 @@ func (o *Orchestrator) compoundGenreSupport(ctx context.Context, id string, crit
 	return false
 }
 
-// Direct request comparisons, without taste, exposure, retrieval frequency or
-// optional DSP/MERT bonuses. The existing selection-floor parameters are an
-// engineering ranking guard, never a calibrated musical-fit claim.
+// Direct request comparisons exclude taste, exposure and retrieval frequency.
+// Pure-reference MERT is a comparison; DSP alone cannot admit musical fit.
+// The fixed floor is an engineering guard, never a calibrated probability.
 func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent) (float64, bool) {
 	best, available := 0.0, false
 	if candidate.Available.LibraryMetadata {
@@ -189,6 +197,25 @@ func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent)
 	}
 	if !hasPositive {
 		references = intent.RequiredTracks
+	}
+	// Merged MERT observations contain request references only; taste centroids
+	// are deliberately kept outside this family. Fresh preview evidence can
+	// therefore support a dynamic candidate without a retrieval-hit provenance.
+	if candidate.Available.CombinedMERT {
+		for _, ref := range references {
+			if ref.Influence == core.InfluenceNegative {
+				continue
+			}
+			resolved := ref.TrackID != ""
+			if ref.Resolution != nil && ref.Resolution.Selected != nil {
+				for _, rep := range ref.Resolution.Selected.Representatives {
+					resolved = resolved || rep.TrackID != "" && rep.Weight > 0
+				}
+			}
+			if resolved && (!available || candidate.Scores.CombinedMERT > best) {
+				best, available = clamp(candidate.Scores.CombinedMERT, -1, 1), true
+			}
+		}
 	}
 	// A local MERT retrieval comparison is direct reference evidence, not
 	// a taste/ownership bonus or categorical musical proof. Keep its native
@@ -217,7 +244,7 @@ func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent)
 			}
 		}
 	}
-	if candidate.Available.SemanticMatch {
+	if candidate.Available.SemanticMatch && candidate.Scores.SemanticMatch >= EnhancedSemanticAdmissionMinimum {
 		score := candidate.Scores.SemanticMatch - max(0, candidate.Scores.SemanticNegativeMatch)
 		if !available || score > best {
 			best = score
@@ -248,44 +275,22 @@ func enhancedRequestRelevance(candidate core.Candidate, intent core.MusicIntent)
 	return best, available
 }
 
-// CLAP bundles expose cosine comparisons, not probabilities or a globally
-// calibrated relevance scale. Preserve their direct-evidence ordering by
-// expressing positive comparisons relative to the best observed comparison in
-// the request pool. Non-positive and unsupported candidates stay below the
-// unchanged floor; stronger metadata and reference scores keep native values.
+// Suitability uses fixed native feature scales, independent of the other
+// candidates present. Raw cosine scores remain comparisons, not probabilities.
 func enhancedRequestRelevances(candidates []core.Candidate, intent core.MusicIntent) map[int]struct {
 	value float64
 	ok    bool
 } {
-	type relevance struct {
-		value float64
-		ok    bool
-	}
-	values := make([]relevance, len(candidates))
-	bestSemantic := 0.0
-	for i, candidate := range candidates {
-		values[i].value, values[i].ok = enhancedRequestRelevance(candidate, intent)
-		if candidate.Available.SemanticMatch {
-			direct := candidate.Scores.SemanticMatch - max(0, candidate.Scores.SemanticNegativeMatch)
-			bestSemantic = max(bestSemantic, direct)
-		}
-	}
 	out := make(map[int]struct {
 		value float64
 		ok    bool
-	}, len(values))
-	for i, item := range values {
-		if bestSemantic > 0 && candidates[i].Available.SemanticMatch {
-			direct := candidates[i].Scores.SemanticMatch - max(0, candidates[i].Scores.SemanticNegativeMatch)
-			if direct > 0 {
-				item.value = max(item.value, direct/bestSemantic)
-				item.ok = true
-			}
-		}
+	}, len(candidates))
+	for i, candidate := range candidates {
+		value, ok := enhancedRequestRelevance(candidate, intent)
 		out[i] = struct {
 			value float64
 			ok    bool
-		}{item.value, item.ok}
+		}{value, ok}
 	}
 	return out
 }
@@ -332,6 +337,7 @@ func (o *Orchestrator) enhancedMetadataFallback(ctx context.Context, candidate c
 	type requirement struct {
 		scope   string
 		matched bool
+		strict  bool
 	}
 	requirements := map[string]requirement{}
 	stages := map[string]bool{}
@@ -339,24 +345,27 @@ func (o *Orchestrator) enhancedMetadataFallback(ctx context.Context, candidate c
 	for i, clause := range audio.Clauses(intent) {
 		state := o.clauseFitState(ctx, candidate.Track.ID, clause, preview)
 		anyMatch = anyMatch || !clause.Negative && state == core.EvidenceMatch
+		anyMatch = anyMatch || o.weakRecordingSupport(ctx, candidate.Track.ID, clause)
 		if !clause.Negative && !clause.Strict && o.compoundGenreSupport(ctx, candidate.Track.ID, core.MusicalCriterion{Kind: clause.Kind, Value: clause.Text}) {
 			anyMatch = true
 		}
 		if strings.HasPrefix(clause.Scope, "journey_") {
 			stages[clause.Scope] = true
 		}
-		if !clause.Strict {
-			continue
-		}
 		key := clause.Scope + "\x00" + clause.Group
-		if clause.Group == "" {
+		if clause.CoverageGroup != "" && !clause.Negative {
+			key = clause.Scope + "\x00coverage:" + clause.CoverageGroup
+		} else if clause.Group == "" {
 			key += fmt.Sprint("\x00", i)
 		}
 		r := requirements[key]
-		r.scope, r.matched = clause.Scope, r.matched || state == core.EvidenceMatch
+		r.scope, r.matched, r.strict = clause.Scope, r.matched || state == core.EvidenceMatch, r.strict || clause.Strict
 		requirements[key] = r
 	}
 	for _, r := range requirements {
+		if !r.strict {
+			continue
+		}
 		if strings.HasPrefix(r.scope, "journey_") {
 			stages[r.scope] = stages[r.scope] && r.matched
 		} else if !r.matched {
@@ -375,6 +384,9 @@ func (o *Orchestrator) enhancedMetadataFallback(ctx context.Context, candidate c
 	return anyMatch || o.packedSupport(ctx, candidate.Track.ID)
 }
 func (o *Orchestrator) clauseFitState(ctx context.Context, id string, clause core.AudioClause, preview core.AudioAssessment) core.EvidenceState {
+	if o.enhanced {
+		return o.assessClause(ctx, id, clause, preview).State
+	}
 	for _, p := range preview.Clauses {
 		if p.Clause == clause && p.State != core.EvidenceUnknown && p.State != "" {
 			return p.State // preview assessments already incorporate polarity
@@ -400,23 +412,27 @@ func (o *Orchestrator) enhancedStageConstraints(ctx context.Context, id, scope s
 	if !o.enhanced {
 		return true
 	}
+	if !o.confirmedGenres(ctx, id, intent, scope) {
+		return false
+	}
 	var preview core.AudioAssessment
 	if o.audioSession != nil {
 		preview, _ = o.audioSession.Assessment(id)
 	}
-	groups := map[string]bool{}
-	for i, clause := range audio.Clauses(intent) {
-		if !clause.Strict || clause.Scope != scope {
+	for _, group := range admissionClauseGroups(audio.Clauses(intent)) {
+		groupScope := group[0].Scope
+		if groupScope == "" {
+			groupScope = "playlist"
+		}
+		if groupScope != scope {
 			continue
 		}
-		key := clause.Group
-		if key == "" {
-			key = fmt.Sprint("clause-", i)
+		strict, matched := false, false
+		for _, clause := range group {
+			strict = strict || clause.Strict
+			matched = matched || o.clauseFitState(ctx, id, clause, preview) == core.EvidenceMatch
 		}
-		groups[key] = groups[key] || o.clauseFitState(ctx, id, clause, preview) == core.EvidenceMatch
-	}
-	for _, matched := range groups {
-		if !matched {
+		if strict && !matched {
 			return false
 		}
 	}
@@ -430,7 +446,7 @@ func (o *Orchestrator) enhancedTier(ctx context.Context, candidate core.Candidat
 	if o.audioSession != nil {
 		preview, _ = o.audioSession.Assessment(candidate.Track.ID)
 	}
-	metadata, _ := o.knowledgeTrack(candidate.Track.ID)
+	metadata, _ := o.knowledgeTrackContext(ctx, candidate.Track.ID)
 	type unit struct {
 		scope   string
 		texts   []string
@@ -441,7 +457,9 @@ func (o *Orchestrator) enhancedTier(ctx context.Context, candidate core.Candidat
 	for i, comparison := range acousticComparisons(metadata, clauses) {
 		clause := comparison.Clause
 		key := clause.Scope + "\x00" + clause.Group
-		if clause.Group == "" {
+		if clause.CoverageGroup != "" && !clause.Negative {
+			key = clause.Scope + "\x00coverage:" + clause.CoverageGroup
+		} else if clause.Group == "" {
 			key += fmt.Sprint("\x00", i)
 		}
 		index, exists := positions[key]
@@ -451,7 +469,7 @@ func (o *Orchestrator) enhancedTier(ctx context.Context, candidate core.Candidat
 			units = append(units, unit{scope: clause.Scope})
 		}
 		units[index].texts = appendUniqueString(units[index].texts, clause.Text)
-		matched := o.clauseFitState(ctx, candidate.Track.ID, clause, preview) == core.EvidenceMatch
+		matched := o.strongClause(ctx, candidate.Track.ID, clause, preview)
 		matched = matched && comparison.AcousticState != "opposing" && comparison.AcousticState != "conflicting"
 		units[index].matched = units[index].matched || matched
 	}
@@ -489,7 +507,9 @@ func (o *Orchestrator) enhancedTier(ctx context.Context, candidate core.Candidat
 		}
 	}
 	for _, unsupported := range intent.Unsupported {
-		gaps = appendUniqueString(gaps, unsupported.Text)
+		if !o.runtimeRequirementProved(ctx, candidate.Track.ID, intent, unsupported) {
+			gaps = appendUniqueString(gaps, unsupported.Text)
+		}
 	}
 	if len(clauses) == 0 || len(gaps) > 0 {
 		if len(gaps) == 0 {
@@ -555,12 +575,25 @@ func (o *Orchestrator) annotateEnhancedFit(ctx context.Context, playlist *core.P
 			index = len(playlist.Assessments) - 1
 		}
 		playlist.Assessments[index].FitTier, playlist.Assessments[index].MatchDetail = tier, detail
+		playlist.Assessments[index].Criteria = o.candidateCriteria(ctx, track.ID, playlist.Intent)
+		if o.search != nil {
+			for i := range o.search.Candidates {
+				if o.search.Candidates[i].Track.ID == track.ID {
+					o.search.Candidates[i].Decision = "selected"
+					o.search.Candidates[i].Criteria = playlist.Assessments[index].Criteria
+				}
+			}
+		}
 		if tier == fitClose {
 			playlist.Assessments[index].State = core.EvidenceUnknown
 			playlist.Assessments[index].Reasons = appendUniqueString(playlist.Assessments[index].Reasons, detail)
 		} else {
 			playlist.Assessments[index].State = core.EvidenceMatch
 		}
+	}
+	if !o.strongJourneyOrder(ctx, playlist.Tracks, playlist.Intent) {
+		playlist.Outcome.State = core.OutcomePartial
+		playlist.Outcome.Reasons = append(playlist.Outcome.Reasons, core.OutcomeReason{Code: "journey_evidence_incomplete", Detail: "The selected order has incomplete evidence for one or more journey stages.", Action: "Review the stage comparisons or add a fitting reference for each stage."})
 	}
 	if closeCount > 0 {
 		playlist.Notices = append(playlist.Notices, core.PlaylistNotice{Code: "enhanced_close_matches", Detail: "Strong matches were preferred during selection; close suggestions are labeled with the characteristic whose evidence is incomplete or conflicting.", Requested: playlist.Intent.Count, Actual: closeCount})

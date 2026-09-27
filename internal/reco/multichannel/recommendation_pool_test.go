@@ -80,7 +80,7 @@ func TestJourneyCandidateSupplyRoundRobinsSparseStagesBeforeAnalysis(t *testing.
 	}
 }
 
-func TestEnhancedRecommendationPoolLooksPastConcentratedArtistPage(t *testing.T) {
+func TestEnhancedRecommendationPoolKeepsRelevantSameArtistAlternatives(t *testing.T) {
 	cat, _, retriever := recommendationPoolFixture(t, 12, 0,
 		"Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A", "Artist A",
 		"Artist B", "Artist C", "Artist D", "Artist E")
@@ -90,15 +90,15 @@ func TestEnhancedRecommendationPoolLooksPastConcentratedArtistPage(t *testing.T)
 	intent.VerificationPolicy = core.BestAvailable
 	intent.Controls.RecommendationMode = core.EnhancedHybrid
 	got, err := engine.prepareRecommendationPool(context.Background(), nil, ports.RetrievalRequest{Intent: intent, AttemptedIDs: map[string]struct{}{}}, newEligibility(intent, nil, nil), nil, 8)
-	if err != nil || len(got) != 6 || len(retriever.calls) < 2 {
+	if err != nil || len(got) != 12 || len(retriever.calls) != 1 {
 		t.Fatalf("pool=%v calls=%d err=%v", candidateIDs(got), len(retriever.calls), err)
 	}
 	uses := map[string]int{}
 	for _, candidate := range got {
 		uses[candidate.Track.Artist]++
 	}
-	if uses["Artist A"] > 2 || len(uses) < 5 {
-		t.Fatalf("concentrated page hid alternatives: %+v", uses)
+	if uses["Artist A"] != 8 || len(uses) != 5 {
+		t.Fatalf("implicit artist quota removed relevant alternatives: %+v", uses)
 	}
 }
 
@@ -143,7 +143,7 @@ func recommendationPoolFixture(t *testing.T, size, mismatches int, artists ...st
 		if i < mismatches {
 			vector = []float32{0, 1}
 		}
-		record := core.AudioAnalysis{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: service.Analyzer.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: vector}}}
+		record := core.AudioAnalysis{TrackID: id, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: service.Analyzer.Identity(), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: id, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: vector}}}
 		record.ID = audio.Fingerprint(record)
 		if err := service.Store.Put(context.Background(), record); err != nil {
 			t.Fatal(err)
@@ -386,6 +386,7 @@ func TestGroundedJourneySupplyPrecedesBroaderDiscoveryAndBalancesStages(t *testi
 		"last":  completeStyleFeature("last", "alternative rock"),
 	}}
 	o := NewWithSemantic(cat, fakes.NewSimilarityEngine(cat), cat, features, nil, DefaultConfig())
+	addCitedStyleFixture(o, features)
 	o.enhanced, o.bestAvailable = true, true
 	intent := enhancedIntent(3)
 	intent.Mode = core.ModeJourney
@@ -406,6 +407,7 @@ func TestGroundedRequestSupplyPrecedesLexicalLeads(t *testing.T) {
 	intent.EssentialCriteria = nil
 	input := candidatesForTracks(refs(cat, "unknown", "pack:fixture:local:one"))
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
+	o.requestContext = context.Background()
 	o.enhanced = true
 	got := o.prioritizeGroundedRequestSupply(context.Background(), input, intent)
 	if len(got) != 2 || got[0].Track.ID != "pack:fixture:local:one" || got[1].Track.ID != "unknown" {

@@ -1,6 +1,7 @@
 package resolution
 
 import (
+	"context"
 	"testing"
 
 	"github.com/platten/playlistai/internal/core"
@@ -16,7 +17,7 @@ func (r *packGroundingResolver) ResolveReference(ref core.IntentReference) core.
 func TestPackGroundingRetainsCatalogNamespace(t *testing.T) {
 	for _, id := range []string{"local:test:recording", "pack:test:recording", "musicbrainz:recording"} {
 		r := &packGroundingResolver{}
-		refs, issues := applyList(r, []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Artist Track", Grounding: &core.IdentityGrounding{Candidates: []core.IdentityCandidate{{ID: id, Kind: core.ReferenceTrack, Name: "Artist", Title: "Track"}}}}}, false, nil)
+		refs, issues := applyList(context.Background(), r, []core.IntentReference{{Kind: core.ReferenceTrack, Query: "Artist Track", Grounding: &core.IdentityGrounding{Candidates: []core.IdentityCandidate{{ID: id, Kind: core.ReferenceTrack, Name: "Artist", Title: "Track"}}}}}, false, nil)
 		if r.received != id || len(issues) != 0 || refs[0].TrackID != id {
 			t.Fatalf("namespaced recording was rewritten: %s %+v", r.received, issues)
 		}

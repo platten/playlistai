@@ -52,25 +52,30 @@ type SourceEvidence struct {
 // resolution: an MBID does not imply that Playlist AI can use the entity as a
 // recommendation seed in the active catalog.
 type IdentityCandidate struct {
-	Kind           ReferenceKind `json:"kind"`
-	ID             string        `json:"id"`
-	ArtistID       string        `json:"artistId,omitempty"`
-	Name           string        `json:"name"`
-	Title          string        `json:"title,omitempty"`
-	Disambiguation string        `json:"disambiguation,omitempty"`
+	Kind           ReferenceKind     `json:"kind"`
+	ID             string            `json:"id"`
+	ArtistID       string            `json:"artistId,omitempty"`
+	Name           string            `json:"name"`
+	Title          string            `json:"title,omitempty"`
+	Disambiguation string            `json:"disambiguation,omitempty"`
+	MatchType      string            `json:"matchType,omitempty"`
+	Popularity     *ArtistPopularity `json:"popularity,omitempty"`
 }
 
 // IdentityGrounding records the exact spelling and immutable provider snapshot
 // that supported a recognized source occurrence. Multiple candidates are kept
 // when MusicBrainz contains homonymous artists or recording versions.
 type IdentityGrounding struct {
-	Provider        string              `json:"provider"`
-	MatchedSpelling string              `json:"matchedSpelling"`
-	MatchType       string              `json:"matchType"`
-	SnapshotVersion string              `json:"snapshotVersion"`
-	Candidates      []IdentityCandidate `json:"candidates"`
-	Truncated       bool                `json:"truncated,omitempty"`
-	Confirmed       bool                `json:"confirmed,omitempty"`
+	Decision        *ArtistDecision        `json:"decision,omitempty"`
+	Corroboration   *IdentityCorroboration `json:"corroboration,omitempty"`
+	Provider        string                 `json:"provider"`
+	MatchedSpelling string                 `json:"matchedSpelling"`
+	MatchType       string                 `json:"matchType"`
+	SnapshotVersion string                 `json:"snapshotVersion"`
+	Candidates      []IdentityCandidate    `json:"candidates"`
+	Alternatives    []IdentityCandidate    `json:"alternatives,omitempty"`
+	Truncated       bool                   `json:"truncated,omitempty"`
+	Confirmed       bool                   `json:"confirmed,omitempty"`
 }
 
 type ResolutionStatus string
@@ -133,13 +138,16 @@ type IntentReference struct {
 // hard constraint: a simple genre request is essential, while descriptive
 // adjectives remain preferences unless the user makes them strict.
 type MusicalCriterion struct {
-	ConceptID string           `json:"conceptId,omitempty"`
-	Strength  string           `json:"strength,omitempty"`
-	Group     string           `json:"group,omitempty"`
-	Kind      string           `json:"kind"` // style | mood | instrumentation | vocal
-	Value     string           `json:"value"`
-	Scope     string           `json:"scope"` // playlist | journey_start | journey_end | journey_via
-	Evidence  []SourceEvidence `json:"evidence"`
+	// CoverageGroup marks a positive genre set covered across the playlist.
+	// Each track fits a member; every member (or Group alternative) is covered.
+	CoverageGroup string           `json:"coverageGroup,omitempty"`
+	ConceptID     string           `json:"conceptId,omitempty"`
+	Strength      string           `json:"strength,omitempty"`
+	Group         string           `json:"group,omitempty"`
+	Kind          string           `json:"kind"` // style | mood | instrumentation | vocal
+	Value         string           `json:"value"`
+	Scope         string           `json:"scope"` // playlist | journey_start | journey_end | journey_via
+	Evidence      []SourceEvidence `json:"evidence"`
 }
 
 type EvidenceState string
@@ -172,15 +180,16 @@ type InferredAnchor struct {
 }
 
 type IntentPreference struct {
-	ConceptID string           `json:"conceptId,omitempty"`
-	Scope     string           `json:"scope,omitempty"`
-	Strength  string           `json:"strength,omitempty"`
-	Degree    string           `json:"degree,omitempty"`
-	Group     string           `json:"group,omitempty"`
-	Value     string           `json:"value"`
-	Influence Influence        `json:"influence"`
-	Explicit  bool             `json:"explicit"`
-	Evidence  []SourceEvidence `json:"evidence"`
+	CoverageGroup string           `json:"coverageGroup,omitempty"`
+	ConceptID     string           `json:"conceptId,omitempty"`
+	Scope         string           `json:"scope,omitempty"`
+	Strength      string           `json:"strength,omitempty"`
+	Degree        string           `json:"degree,omitempty"`
+	Group         string           `json:"group,omitempty"`
+	Value         string           `json:"value"`
+	Influence     Influence        `json:"influence"`
+	Explicit      bool             `json:"explicit"`
+	Evidence      []SourceEvidence `json:"evidence"`
 }
 
 type SemanticPreferences struct {
@@ -252,6 +261,7 @@ type IntentConstraints struct {
 
 type MusicIntent struct {
 	Translation              *IntentTranslation       `json:"translation,omitempty"`
+	PreparedMusicSnapshot    string                   `json:"preparedMusicSnapshot,omitempty"`
 	Start                    *IntentReference         `json:"start,omitempty"`
 	DurationSeconds          int                      `json:"durationSeconds,omitempty"`
 	DurationToleranceSeconds int                      `json:"durationToleranceSeconds,omitempty"`

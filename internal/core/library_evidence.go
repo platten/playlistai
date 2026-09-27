@@ -59,3 +59,10 @@ type LibraryTaste struct {
 	Clusters         [][]float32           `json:"clusters"`
 	EvidenceTrackIDs []string              `json:"evidenceTrackIds"`
 }
+
+// AudioObservation ranks duplicate observations without using request scores.
+// Unknown duration is unavailable; fingerprints break equal-coverage ties.
+type AudioObservation struct {
+	Coverage    PreviewCoverage `json:"coverage"`
+	Fingerprint string          `json:"fingerprint"`
+}

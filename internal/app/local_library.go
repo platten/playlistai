@@ -52,6 +52,8 @@ type LocalLibraryRoot struct {
 // root mappings are local preferences and never came from the portable pack.
 type LocalLibraryStatus struct {
 	Installed            bool                    `json:"installed"`
+	ActiveBackend        string                  `json:"activeBackend,omitempty"`
+	AvailableBackends    []string                `json:"availableBackends"`
 	Mode                 LocalLibraryMode        `json:"mode"`
 	Format               string                  `json:"format,omitempty"`
 	Version              int                     `json:"version,omitempty"`
@@ -75,13 +77,14 @@ type localLibrarySettings struct {
 }
 
 type localLibraryState struct {
-	root     string
-	manager  *librarypack.Manager
-	mutation sync.Mutex // serializes import/removal without blocking readers
-	opMu     sync.Mutex
-	settings sync.RWMutex
-	current  localLibrarySettings
-	onStaged func() // test seam; production leaves nil
+	root      string
+	manager   *librarypack.Manager
+	alternate *librarypack.Manager
+	mutation  sync.Mutex // serializes import/removal without blocking readers
+	opMu      sync.Mutex
+	settings  sync.RWMutex
+	current   localLibrarySettings
+	onStaged  func() // test seam; production leaves nil
 }
 
 // localLibraryRequestSnapshot is the only mutable library state a playlist
@@ -119,18 +122,25 @@ func (c *Container) localLibrary() (*localLibraryState, error) {
 			holder.err = err
 			return
 		}
-		settings, err := loadLocalLibrarySettings(root)
+		alternate, err := librarypack.OpenManager(context.Background(), filepath.Join(root, "alternate"), librarypack.Limits{})
 		if err != nil {
 			_ = manager.Close()
 			holder.err = err
 			return
 		}
-		holder.state = &localLibraryState{root: root, manager: manager, current: settings}
+		settings, err := loadLocalLibrarySettings(root)
+		if err != nil {
+			_ = manager.Close()
+			_ = alternate.Close()
+			holder.err = err
+			return
+		}
+		holder.state = &localLibraryState{root: root, manager: manager, alternate: alternate, current: settings}
 		c.RegisterCloser(func() error {
 			localLibraryRegistry.Lock()
 			delete(localLibraryRegistry.entries, c)
 			localLibraryRegistry.Unlock()
-			return manager.Close()
+			return errors.Join(manager.Close(), alternate.Close())
 		})
 	})
 	if holder.err != nil {
@@ -162,9 +172,18 @@ func loadLocalLibrarySettings(root string) (localLibrarySettings, error) {
 	defer file.Close()
 	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&settings); err != nil {
+	// Older settings recorded pack metadata here. The active pack now owns its
+	// identity and audio evidence, so accept these fields without carrying them
+	// into the next settings write.
+	stored := struct {
+		localLibrarySettings
+		PackID                string `json:"packId"`
+		ImportedAudioEvidence bool   `json:"importedAudioEvidence"`
+	}{localLibrarySettings: settings}
+	if err := decoder.Decode(&stored); err != nil {
 		return settings, fmt.Errorf("decode local library settings: %w", err)
 	}
+	settings = stored.localLibrarySettings
 	if decoder.Decode(&struct{}{}) != io.EOF || settings.Version != 1 || !settings.Mode.valid() || len(settings.RootMappings) > 1024 {
 		return settings, errors.New("invalid local library settings")
 	}
@@ -229,6 +248,123 @@ func cloneRootMappings(input map[string]string) map[string]string {
 	return output
 }
 
+func localPackBackend(manifest librarypack.Manifest) (string, error) {
+	backend := ""
+	clapRuntime := manifest.CLAP.Runtime
+	if manifest.CLAPModel != nil {
+		clapRuntime = manifest.CLAPModel.Runtime
+	}
+	for _, runtime := range []string{manifest.MERT.Runtime, clapRuntime} {
+		if runtime == "" {
+			continue
+		}
+		candidate := ""
+		switch {
+		case strings.HasSuffix(runtime, "/cpu"):
+			candidate = "cpu"
+		case strings.HasSuffix(runtime, "/cuda"):
+			candidate = "cuda"
+		default:
+			return "", fmt.Errorf("local library has an unsupported audio runtime")
+		}
+		if backend != "" && backend != candidate {
+			return "", fmt.Errorf("local library mixes CPU and CUDA vectors; build one pack for each backend")
+		}
+		backend = candidate
+	}
+	if backend == "" {
+		return "cpu", nil // legacy packs have no runtime field
+	}
+	return backend, nil
+}
+
+func (s *localLibraryState) managers() []*librarypack.Manager {
+	return []*librarypack.Manager{s.manager, s.alternate}
+}
+
+func (s *localLibraryState) pin(backend string) (*librarypack.Lease, error) {
+	var fallback *librarypack.Lease
+	for _, manager := range s.managers() {
+		lease, err := manager.Pin()
+		if errors.Is(err, librarypack.ErrNoActiveGeneration) {
+			continue
+		}
+		if err != nil {
+			if fallback != nil {
+				fallback.Release()
+			}
+			return nil, err
+		}
+		found, err := localPackBackend(lease.Generation().Manifest())
+		if err != nil {
+			lease.Release()
+			if fallback != nil {
+				fallback.Release()
+			}
+			return nil, err
+		}
+		if found == backend {
+			if fallback != nil {
+				fallback.Release()
+			}
+			return lease, nil
+		}
+		if fallback == nil {
+			fallback = lease
+		} else {
+			lease.Release()
+		}
+	}
+	if fallback != nil {
+		return fallback, nil
+	}
+	return nil, librarypack.ErrNoActiveGeneration
+}
+
+func (s *localLibraryState) managerForImport(backend string) (*librarypack.Manager, error) {
+	var empty *librarypack.Manager
+	for _, manager := range s.managers() {
+		lease, err := manager.Pin()
+		if errors.Is(err, librarypack.ErrNoActiveGeneration) {
+			if empty == nil {
+				empty = manager
+			}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		found, err := localPackBackend(lease.Generation().Manifest())
+		lease.Release()
+		if err != nil {
+			return nil, err
+		}
+		if found == backend {
+			return manager, nil
+		}
+	}
+	if empty != nil {
+		return empty, nil
+	}
+	return nil, fmt.Errorf("local library has no free %s slot", backend)
+}
+
+func (c *Container) localAudioBackend() string {
+	c.analysis.mu.Lock()
+	clap := c.analysis.manifest
+	c.analysis.mu.Unlock()
+	if clap != nil {
+		return clap.Backend()
+	}
+	c.enhanced.mu.Lock()
+	mert := c.enhanced.manifest
+	c.enhanced.mu.Unlock()
+	if mert != nil {
+		return mert.Backend()
+	}
+	return "cpu"
+}
+
 // ImportLocalLibrary verifies and copies source into app-managed storage, then
 // atomically publishes it. The source pack and original music are read-only.
 func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (LocalLibraryStatus, error) {
@@ -241,7 +377,19 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 	if err := ctx.Err(); err != nil {
 		return LocalLibraryStatus{}, err
 	}
-	staged, err := state.manager.Stage(ctx, source)
+	preview, err := librarypack.PeekManifest(ctx, source, librarypack.Limits{})
+	if err != nil {
+		return LocalLibraryStatus{}, fmt.Errorf("inspect local library pack: %w", err)
+	}
+	backend, err := localPackBackend(preview)
+	if err != nil {
+		return LocalLibraryStatus{}, err
+	}
+	manager, err := state.managerForImport(backend)
+	if err != nil {
+		return LocalLibraryStatus{}, err
+	}
+	staged, err := manager.Stage(ctx, source)
 	if err != nil {
 		return LocalLibraryStatus{}, fmt.Errorf("verify local library pack: %w", err)
 	}
@@ -251,9 +399,13 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 	activated := false
 	defer func() {
 		if !activated {
-			_ = state.manager.Discard(staged)
+			_ = manager.Discard(staged)
 		}
 	}()
+	stagedBackend, err := localPackBackend(staged.Manifest())
+	if err != nil || staged.Manifest().PackID != preview.PackID || stagedBackend != backend {
+		return LocalLibraryStatus{}, errors.New("local library changed while importing")
+	}
 	// Copying, decompression, and verification occur without opMu. Indexes must
 	// have been built by playlist-indexer and embedded in the archive.
 	if generation := staged.Generation(); generation != nil {
@@ -262,20 +414,30 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 		}
 	}
 	state.opMu.Lock()
-	if err := state.manager.Activate(ctx, staged); err != nil {
+	if err := manager.Activate(ctx, staged); err != nil {
 		activated = true // Activate owns cleanup after it accepts staged.
 		state.opMu.Unlock()
 		return LocalLibraryStatus{}, fmt.Errorf("activate local library pack: %w", err)
 	}
 	activated = true
 	settings := state.settingsSnapshot()
-	settings.RootMappings = mappingsForAliases(settings.RootMappings, staged.Manifest().RootAliases)
+	aliases := append([]string(nil), staged.Manifest().RootAliases...)
+	for _, other := range state.managers() {
+		if other == manager {
+			continue
+		}
+		if lease, pinErr := other.Pin(); pinErr == nil {
+			aliases = append(aliases, lease.Generation().Manifest().RootAliases...)
+			lease.Release()
+		}
+	}
+	settings.RootMappings = mappingsForAliases(settings.RootMappings, aliases)
 	if err := state.saveSettings(settings); err != nil {
 		state.opMu.Unlock()
 		return LocalLibraryStatus{}, fmt.Errorf("local library activated but settings could not be saved: %w", err)
 	}
 	state.opMu.Unlock()
-	return state.status()
+	return state.status(c.localAudioBackend())
 }
 
 func mappingsForAliases(mappings map[string]string, aliases []string) map[string]string {
@@ -297,13 +459,28 @@ func (c *Container) LocalLibraryStatus() (LocalLibraryStatus, error) {
 	if err != nil {
 		return LocalLibraryStatus{}, err
 	}
-	return state.status()
+	return state.status(c.localAudioBackend())
 }
 
-func (s *localLibraryState) status() (LocalLibraryStatus, error) {
+func (s *localLibraryState) status(backend string) (LocalLibraryStatus, error) {
 	settings := s.settingsSnapshot()
-	status := LocalLibraryStatus{Mode: settings.Mode, Roots: []LocalLibraryRoot{}}
-	lease, err := s.manager.Pin()
+	status := LocalLibraryStatus{Mode: settings.Mode, Roots: []LocalLibraryRoot{}, AvailableBackends: []string{}}
+	for _, manager := range s.managers() {
+		current, err := manager.Pin()
+		if errors.Is(err, librarypack.ErrNoActiveGeneration) {
+			continue
+		}
+		if err != nil {
+			return status, err
+		}
+		found, backendErr := localPackBackend(current.Generation().Manifest())
+		current.Release()
+		if backendErr != nil {
+			return status, backendErr
+		}
+		status.AvailableBackends = append(status.AvailableBackends, found)
+	}
+	lease, err := s.pin(backend)
 	if errors.Is(err, librarypack.ErrNoActiveGeneration) {
 		return status, nil
 	}
@@ -313,6 +490,7 @@ func (s *localLibraryState) status() (LocalLibraryStatus, error) {
 	defer lease.Release()
 	manifest := lease.Generation().Manifest()
 	status.Installed = true
+	status.ActiveBackend, _ = localPackBackend(manifest)
 	status.Format, status.Version, status.PackID, status.PackSHA256 = manifest.Format, manifest.Version, manifest.PackID, lease.Generation().PackSHA256()
 	status.CreatedAt, status.CorpusGeneration, status.MetadataGeneration = manifest.CreatedAt, manifest.CorpusGeneration, manifest.MetadataGeneration
 	status.MERTGeneration, status.ClusterGeneration, status.StatisticsGeneration = manifest.MERTGeneration, manifest.ClusterGeneration, manifest.StatisticsGeneration
@@ -346,7 +524,7 @@ func (c *Container) SetLocalLibraryMode(mode LocalLibraryMode) (LocalLibraryStat
 	state.opMu.Lock()
 	defer state.opMu.Unlock()
 	if mode == LocalLibraryOnly {
-		lease, err := state.manager.Pin()
+		lease, err := state.pin(c.localAudioBackend())
 		if errors.Is(err, librarypack.ErrNoActiveGeneration) {
 			return LocalLibraryStatus{}, errors.New("library-only mode requires an imported library")
 		} else if err != nil {
@@ -360,7 +538,7 @@ func (c *Container) SetLocalLibraryMode(mode LocalLibraryMode) (LocalLibraryStat
 	if err := state.saveSettings(settings); err != nil {
 		return LocalLibraryStatus{}, err
 	}
-	return state.status()
+	return state.status(c.localAudioBackend())
 }
 
 func (c *Container) SetLocalLibraryRoot(alias, root string) (LocalLibraryStatus, error) {
@@ -370,7 +548,7 @@ func (c *Container) SetLocalLibraryRoot(alias, root string) (LocalLibraryStatus,
 	}
 	state.opMu.Lock()
 	defer state.opMu.Unlock()
-	lease, err := state.manager.Pin()
+	lease, err := state.pin(c.localAudioBackend())
 	if err != nil {
 		return LocalLibraryStatus{}, err
 	}
@@ -398,7 +576,7 @@ func (c *Container) SetLocalLibraryRoot(alias, root string) (LocalLibraryStatus,
 	if err := state.saveSettings(settings); err != nil {
 		return LocalLibraryStatus{}, err
 	}
-	return state.status()
+	return state.status(c.localAudioBackend())
 }
 
 func (c *Container) RemoveLocalLibrary(ctx context.Context) (LocalLibraryStatus, error) {
@@ -410,7 +588,7 @@ func (c *Container) RemoveLocalLibrary(ctx context.Context) (LocalLibraryStatus,
 	defer state.mutation.Unlock()
 	state.opMu.Lock()
 	defer state.opMu.Unlock()
-	if err := state.manager.Remove(ctx); err != nil {
+	if err := errors.Join(state.manager.Remove(ctx), state.alternate.Remove(ctx)); err != nil {
 		return LocalLibraryStatus{}, err
 	}
 	settings := state.settingsSnapshot()
@@ -418,7 +596,7 @@ func (c *Container) RemoveLocalLibrary(ctx context.Context) (LocalLibraryStatus,
 	if err := state.saveSettings(settings); err != nil {
 		return LocalLibraryStatus{}, fmt.Errorf("library removed but settings could not be saved: %w", err)
 	}
-	return state.status()
+	return state.status(c.localAudioBackend())
 }
 
 // PinLocalCatalog gives one future playlist request a complete immutable pack
@@ -428,7 +606,7 @@ func (c *Container) PinLocalCatalog() (*localcatalog.Catalog, error) {
 	if err != nil {
 		return nil, err
 	}
-	snapshot, err := state.pinRequestSnapshot()
+	snapshot, err := state.pinRequestSnapshot(c.localAudioBackend())
 	if err != nil {
 		return nil, err
 	}
@@ -466,10 +644,10 @@ func (c *Container) PinFeedbackCatalogFor(ctx context.Context, runtime RuntimeSn
 	return localcatalog.NewEvidenceCatalog(runtime.Catalog, local, version), func() { _ = local.Close() }, nil
 }
 
-func (s *localLibraryState) pinRequestSnapshot() (localLibraryRequestSnapshot, error) {
+func (s *localLibraryState) pinRequestSnapshot(backend string) (localLibraryRequestSnapshot, error) {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
-	lease, err := s.manager.Pin()
+	lease, err := s.pin(backend)
 	if err != nil {
 		return localLibraryRequestSnapshot{}, err
 	}
@@ -483,7 +661,7 @@ func (c *Container) pinLocalRecommendationOverlay(ctx context.Context, base port
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
-	snapshot, err := state.pinRequestSnapshot()
+	snapshot, err := state.pinRequestSnapshot(c.localAudioBackend())
 	if errors.Is(err, librarypack.ErrNoActiveGeneration) {
 		return multichannel.RequestOverlay{Catalog: base, Resolver: resolver, Retriever: retriever}, nil
 	}
@@ -511,7 +689,7 @@ func (c *Container) LocalLibraryCatalogVersion(base string) string {
 	if err != nil {
 		return base
 	}
-	snapshot, err := state.pinRequestSnapshot()
+	snapshot, err := state.pinRequestSnapshot(c.localAudioBackend())
 	if err != nil {
 		return base
 	}

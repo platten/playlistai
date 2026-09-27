@@ -15,7 +15,7 @@ import (
 	"github.com/platten/playlistai/internal/musicconcepts"
 )
 
-const Version = "source-atoms/v10"
+const Version = "source-atoms/v21"
 
 var (
 	durationPattern    = regexp.MustCompile(`(?i)\b(` + tensNumber + `|` + smallNumber + `|an?|[0-9]{1,3})[\s\p{Pd}]*(minutes?|mins?|hours?|hrs?)\b`)
@@ -26,8 +26,8 @@ var (
 	negativeEnd        = regexp.MustCompile(`(?i)[;.!?\n]|\b(?:but|instead|rather than|like|similar to|include|including|ending|transitioning)\b`)
 	entitySplit        = regexp.MustCompile(`(?i)\s*(?:,|\band\b|\bor\b|\bnor\b|&)\s*`)
 	startMarker        = regexp.MustCompile(`(?i)\b(?:starts?|starting|begins?|beginning)\s+(?:with\s+)?`)
-	endMarker          = regexp.MustCompile(`(?i)\b(?:ends?|ending|finishes?|finishing)\s+(?:with\s+|at\s+)?`)
-	softPrefix         = regexp.MustCompile(`(?i)\b(?:mostly|mainly|preferably|ideally|some|a bit of|a touch of|touch of)\s*$`)
+	endMarker          = regexp.MustCompile(`(?i)\b(?:ends?|ending|finish(?:es)?|finishing)\s+(?:with\s+|at\s+)?`)
+	softPrefix         = regexp.MustCompile(`(?i)\b(?:optionally|optional|if possible|occasional|occasionally|mostly|mainly|prefer|preferably|ideally|some|a bit of|a touch of|touch of)\s*$`)
 	negativePrefix     = regexp.MustCompile(`(?i)\b(?:not|no|without|avoid|skip|rather than|nothing)(?:\s+(?:too|very|much))?\s*$`)
 	reducedPrefix      = regexp.MustCompile(`(?i)\b(?:less|not too|nothing too)\s*$`)
 	strictPrefix       = regexp.MustCompile(`(?i)\b(?:must be|must have|only|strictly|always|absolutely)\s*$`)
@@ -335,8 +335,9 @@ func Extract(prompt string) core.IntentTranslation {
 			continue
 		}
 		polarity, strength, degree, spanStart := "positive", "preferred", "plain", m.start
+		optionalNegative := false
 		prefix := prompt[:m.start]
-		if m.kind == "genre" {
+		if m.kind == "genre" || m.kind == "mood" || m.kind == "texture" || m.kind == "instrumentation" {
 			strength = "essential"
 		}
 		if m.kind == "instrumentation" {
@@ -346,14 +347,17 @@ func Extract(prompt string) core.IntentTranslation {
 		}
 		if loc := negativeContextStart(prefix); loc >= 0 {
 			polarity = "negative"
+			strength = "preferred"
 			spanStart = loc
-			if m.kind == "genre" || m.kind == "vocal" {
+			optionalNegative = softMusicalNegative(prefix[:loc])
+			if !optionalNegative && (m.kind == "genre" || m.kind == "vocal" || hardMusicalNegative(prefix[loc:])) {
 				strength = "required"
 			}
 		}
 		if loc := composedNegativeStart(prompt, m.start, known); loc >= 0 {
-			polarity, spanStart = "negative", loc
-			if m.kind == "genre" || m.kind == "vocal" {
+			polarity, strength, spanStart = "negative", "preferred", loc
+			optionalNegative = softMusicalNegative(prefix[:loc])
+			if !optionalNegative && (m.kind == "genre" || m.kind == "vocal" || hardMusicalNegative(prefix[loc:])) {
 				strength = "required"
 			}
 		}
@@ -363,7 +367,7 @@ func Extract(prompt string) core.IntentTranslation {
 			strength = "preferred"
 			degree = "reduced"
 		}
-		softened := false
+		softened := optionalNegative
 		if loc := softPrefix.FindStringIndex(prefix); loc != nil {
 			softened = true
 			strength = "preferred"
@@ -385,12 +389,20 @@ func Extract(prompt string) core.IntentTranslation {
 		if strictPrefix.MatchString(prefix) && !additivePrefix.MatchString(prefix) {
 			strength = "required"
 		}
+		if optionalDescriptionSuffix.MatchString(prompt[m.end:]) {
+			softened, strength = true, "preferred"
+		}
 		if strings.HasPrefix(strings.ToLower(prompt[m.end:]), " influence") {
 			strength = "preferred"
 		}
 		// "no singing/no vocals" expresses instrumental presence; other vocal
 		// qualities retain their own negative polarity rather than banning vocals.
 		value := m.value
+		if polarity == "negative" && m.kind == "instrumentation" && degree == "plain" && !optionalDescriptionSuffix.MatchString(prompt[m.end:]) {
+			if end := qualifiedMusicEnd(prompt, m.end); end > m.end && qualifiedMusicWords(prompt[m.start:end]) {
+				value, m.end, m.concept = prompt[m.start:end], end, ""
+			}
+		}
 		if m.kind == "vocal" && polarity == "negative" && (value == "vocal" || value == "vocals" || value == "singing") {
 			value = "instrumental"
 			polarity = "positive"
@@ -403,8 +415,11 @@ func Extract(prompt string) core.IntentTranslation {
 		}
 		add(m.kind, value, scopeAt(prompt, m.start), polarity, strength, degree, m.concept, spanStart, m.end)
 	}
-	spacing := regexp.MustCompile(`(?i)\b(?:no (?:repeat artists|back-to-back artists|back to back artists)|no repeat artists back to back|no repeated artists back to back|no adjacent artist repeats)\b`)
+	spacing := regexp.MustCompile(`(?i)\b(?:no (?:repeat artists|back-to-back artists|back to back artists)|no repeat artists back to back|no repeated artists back to back|no adjacent artist repeats|avoid(?: placing)? (?:the )?same artist back[ -]to[ -]back)\b`)
 	for _, p := range spacing.FindAllStringIndex(prompt, -1) {
+		if insideQuoted(prompt, p[0], p[1]) {
+			continue
+		}
 		add("spacing", "true", "playlist", "positive", "required", "plain", "", p[0], p[1])
 	}
 	energyPhrases := []struct{ pattern, scope, value string }{{`(?i)\b(?:starts? easy|starts? calm|begins? calmly)\b`, "journey_start", "0.2"}, {`(?i)\b(?:picks? up the pace|builds? energy)\b`, "journey_via", "0.8"}, {`(?i)\b(?:cools? down|winds? down)\b`, "journey_end", "0.2"}}
@@ -421,6 +436,7 @@ func Extract(prompt string) core.IntentTranslation {
 		filtered = append(filtered, a)
 	}
 	x.Atoms = filtered
+	preserveCoordinatedQualifiedNegatives(&x)
 	// Coordination propagates polarity/softness without turning every named
 	// category into a conjunction. Keep occurrence IDs even for repeated words.
 	sort.SliceStable(x.Atoms, func(i, j int) bool { return x.Atoms[i].Evidence[0].Start < x.Atoms[j].Evidence[0].Start })
@@ -433,8 +449,15 @@ func Extract(prompt string) core.IntentTranslation {
 		if left > right {
 			continue
 		}
+		if a.Polarity == "negative" {
+			preserveNegativeContinuation(prompt, a, b)
+			right = b.Evidence[0].Start
+		}
 		gap := strings.TrimSpace(strings.ToLower(prompt[left:right]))
-		if gap == "or" && a.Kind == "genre" && b.Kind == "genre" && a.Polarity == "positive" && b.Polarity == "positive" {
+		if strings.HasPrefix(gap, ",") && len(gap) > 1 {
+			gap = strings.TrimSpace(gap[1:])
+		}
+		if gap == "or" && a.Polarity == "positive" && b.Polarity == "positive" {
 			group := a.Group
 			if group == "" {
 				group = fmt.Sprintf("or:%d", a.Evidence[0].Start)
@@ -456,15 +479,49 @@ func Extract(prompt string) core.IntentTranslation {
 			}
 		}
 	}
-	return x
+	return WithGenreCoverage(x)
 }
 
 func conceptMentions(prompt string) []mention {
 	var candidates []mention
+	for _, p := range regexp.MustCompile(`(?i)\b(?:starts?|begins?)\s+(sparse)\b|\b(?:finish(?:es)?|ends?)\s+(calmly)\b`).FindAllStringSubmatchIndex(prompt, -1) {
+		start, end := p[2], p[3]
+		kind := "texture"
+		if start < 0 {
+			start, end = p[4], p[5]
+			kind = "mood"
+		}
+		candidates = append(candidates, mention{start: start, end: end, kind: kind, value: strings.ToLower(prompt[start:end])})
+	}
+	for _, definition := range []struct {
+		kind    string
+		pattern *regexp.Regexp
+	}{{"instrumentation", definingInstrument}, {"texture", definingTexture}} {
+		for _, p := range definition.pattern.FindAllStringIndex(prompt, -1) {
+			if reducedPrefix.MatchString(prompt[:p[0]]) || negativeContextStart(prompt[:p[0]]) >= 0 && !coordinatedDefiningNegative(prompt, p[0], p[1]) {
+				continue // Standalone open qualifiers retain their source-owned suffix.
+			}
+			kind := definition.kind
+			value := strings.ToLower(prompt[p[0]:p[1]])
+			if strings.HasSuffix(value, "vocals") || strings.HasSuffix(value, "atmosphere") || strings.HasSuffix(value, "arrangements") {
+				kind = "texture"
+			}
+			candidates = append(candidates, mention{start: p[0], end: p[1], kind: kind, value: value})
+		}
+	}
+	// Keep literal texture phrases whose nouns have no generic concept. In
+	// dance groove, dance describes the groove rather than naming a genre;
+	// the longer literal span also protects it from provider genres;
+	// reference, negation and strength handling still apply normally below.
+	for _, p := range regexp.MustCompile(`(?i)(?:dance\s+grooves?|deep\s+grooves?|detailed\s+textures?)`).FindAllStringIndex(prompt, -1) {
+		if boundary(prompt, p[0], true) && boundary(prompt, p[1], false) {
+			candidates = append(candidates, mention{start: p[0], end: p[1], kind: "texture", value: prompt[p[0]:p[1]]})
+		}
+	}
 	// Preserve complete explicitly named compounds even before the concept
 	// dictionary supports them. Empty concept IDs are deliberate: recognition
 	// of user intent is not musical evidence or a parent-genre equivalence.
-	for _, value := range []string{"heavy metal", "Japanese city pop", "city pop", "Brazilian jazz", "folk rock", "melodic house", "acoustic folk", "ambient electronic"} {
+	for _, value := range []string{"heavy metal", "Japanese city pop", "city pop", "Brazilian jazz", "folk rock", "melodic house", "acoustic folk", "ambient electronic", "modern classical", "traditional soul"} {
 		for _, p := range regexp.MustCompile(`(?i)`+regexp.QuoteMeta(value)).FindAllStringIndex(prompt, -1) {
 			if boundary(prompt, p[0], true) && boundary(prompt, p[1], false) {
 				candidates = append(candidates, mention{start: p[0], end: p[1], kind: "genre", value: strings.ToLower(value)})
@@ -484,6 +541,43 @@ func conceptMentions(prompt string) []mention {
 				candidates = append(candidates, mention{p[0], p[1], c.Kind, c.Value, c.ID})
 			}
 		}
+	}
+	// Existing exact-span concepts precede the generic noun fallback. Longer
+	// literal phrases still win over nested generic concepts.
+	candidates = append(candidates, literalDescriptionMentions(prompt)...)
+	// Join adjacent recognized sonic adjectives to their instrument/vocal noun.
+	// This preserves the description rather than admitting its generic parent.
+	// Operators and punctuation are never crossed, so AND/OR and scopes remain
+	// available to the normal source-role compiler.
+	original := append([]mention(nil), candidates...)
+	for _, noun := range original {
+		if noun.kind != "instrumentation" && noun.kind != "vocal" {
+			continue
+		}
+		start := noun.start
+		for {
+			next := start
+			for _, adjective := range original {
+				if (adjective.kind != "texture" && adjective.kind != "mood") || adjective.end >= start || strings.TrimSpace(prompt[adjective.end:start]) != "" {
+					continue
+				}
+				if adjective.start < next && len(strings.Fields(prompt[adjective.start:noun.end])) <= 6 {
+					next = adjective.start
+				}
+			}
+			if next == start {
+				break
+			}
+			start = next
+		}
+		if start == noun.start || negativeContextStart(prompt[:start]) >= 0 || reducedPrefix.MatchString(prompt[:start]) {
+			continue
+		}
+		kind := noun.kind
+		if kind == "vocal" {
+			kind = "texture"
+		}
+		candidates = append(candidates, mention{start: start, end: noun.end, kind: kind, value: strings.ToLower(prompt[start:noun.end])})
 	}
 	// A newly recognized adjective must not erase the remainder of an open
 	// sonic description ("shimmering spectral detail"). Preserve a longer
@@ -531,7 +625,7 @@ func conceptMentions(prompt string) []mention {
 		for _, m := range out {
 			// A guitar riff is both an arrangement/texture description and
 			// explicit instrument evidence. Parent genres remain suppressed.
-			nestedInstrument := c.kind == "instrumentation" && m.kind == "texture" && c.start >= m.start && c.end <= m.end
+			nestedInstrument := c.kind == "instrumentation" && m.kind == "texture" && c.start >= m.start && c.end <= m.end && negativeContextStart(prompt[:m.start]) < 0
 			overlap = overlap || c.start < m.end && c.end > m.start && !nestedInstrument
 		}
 		if !overlap {
@@ -680,6 +774,16 @@ func scopeAt(s string, pos int) string {
 	// ("I like electronic music") therefore do not acquire the final-stage scope.
 	begin := strings.LastIndexAny(s[:pos], ".!?;") + 1
 	prefix := strings.ToLower(s[begin:pos])
+	tail := s[pos:]
+	if end := strings.IndexAny(tail, ",;.!?"); end >= 0 {
+		tail = tail[:end]
+	}
+	if next := regexp.MustCompile(`(?i)\b(?:and|or|but|then)\b`).FindStringIndex(tail); next != nil {
+		tail = tail[:next[0]]
+	}
+	if regexp.MustCompile(`(?i)\bin (?:the )?middle\b`).MatchString(tail) {
+		return "journey_via"
+	}
 	if regexp.MustCompile(`(?i)\b(?:opening|first|initial)\s+(?:section|part|stage)\s*$`).MatchString(prefix) {
 		return "journey_start"
 	}

@@ -65,9 +65,11 @@ func (r *TransparentRanker) libraryScores(ctx context.Context, candidates []core
 		}
 		return best, true, nil
 	}
-	positive := intentReferenceTracks(r.cat, request.Intent, core.InfluencePositive, false)
-	negative := intentReferenceTracks(r.cat, request.Intent, core.InfluenceNegative, false)
-	var mertEnabled, dspEnabled bool
+	positive := intentReferenceTracksContext(ctx, r.cat, request.Intent, core.InfluencePositive, false)
+	negative := intentReferenceTracksContext(ctx, r.cat, request.Intent, core.InfluenceNegative, false)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for i := range candidates {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -88,46 +90,8 @@ func (r *TransparentRanker) libraryScores(ctx context.Context, candidates []core
 			if err != nil {
 				return err
 			}
-			for _, taste := range request.Profile.Library {
-				if taste.Source.SpaceID != vector.Source.SpaceID {
-					continue
-				}
-				sim := func(values []float32) (float64, bool) {
-					return enhancedCosine(vector.Values, values, len(vector.Values))
-				}
-				if !pok {
-					p, pok = sim(taste.RequestPositive)
-					if !pok {
-						p, pok = sim(taste.Positive)
-						for _, cluster := range taste.Clusters {
-							if score, ok := sim(cluster); ok && (!pok || score > p) {
-								p, pok = score, true
-							}
-						}
-					}
-				}
-				if !nok {
-					n, nok = sim(taste.RequestNegative)
-					if !nok {
-						n, nok = sim(taste.Negative)
-					}
-				}
-			}
 			c.Scores.LibraryMERT, c.Available.LibraryMERT = clamp(p-math.Max(0, n), -1, 1), pok || nok
 		}
-		mertEnabled = mertEnabled || c.Available.LibraryMERT
-		dspEnabled = dspEnabled || c.Available.LibraryDSP
-	}
-	wm, wd := 0.0, 0.0
-	if mertEnabled {
-		wm = enhancedWeight(r.cfg.EnhancedMERTWeight)
-	}
-	if dspEnabled {
-		wd = enhancedWeight(r.cfg.EnhancedDSPWeight)
-	}
-	for i := range candidates {
-		c := &candidates[i]
-		c.Scores.Total = (c.Scores.Total + wm*c.Scores.LibraryMERT + wd*c.Scores.LibraryDSP) / (1 + wm + wd)
 	}
 	return nil
 }

@@ -144,7 +144,7 @@ func (c *Container) pinDiscoveryRecommendationOverlay(ctx context.Context, inten
 	if err != nil {
 		return multichannel.RequestOverlay{}, err
 	}
-	if intent.Controls.RecommendationMode != core.EnhancedHybrid {
+	if intent.Controls.RecommendationMode != core.EnhancedHybrid && intent.Controls.RecommendationMode != core.Automatic {
 		return personal, nil
 	}
 	status, err := c.GetDiscoveryAssetStatus()
@@ -152,7 +152,7 @@ func (c *Container) pinDiscoveryRecommendationOverlay(ctx context.Context, inten
 		return personal, nil
 	}
 	if err == nil && !status.Installed {
-		err = errors.New("music discovery data is required for Enhanced hybrid; complete setup to download it")
+		err = errors.New("music discovery data is required; complete setup to download it")
 	}
 	if err != nil {
 		if personal.Release != nil {

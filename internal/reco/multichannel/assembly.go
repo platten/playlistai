@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"time"
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
@@ -31,6 +32,10 @@ type completedAssembly struct {
 // change its result is fingerprinted by value, including mutable knowledge and
 // request-local preview assessments. Serialization failure disables reuse.
 func (o *Orchestrator) assemblyKey(candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) string {
+	return o.assemblyKeyContext(context.Background(), candidates, intent, request, references, required, waypoints, seed)
+}
+
+func (o *Orchestrator) assemblyKeyContext(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) string {
 	var assessments map[string]core.AudioAssessment
 	if o.audioSession != nil {
 		assessments = make(map[string]core.AudioAssessment, len(candidates)+len(required))
@@ -51,7 +56,7 @@ func (o *Orchestrator) assemblyKey(candidates []core.Candidate, intent core.Musi
 		Knowledge                               *core.KnowledgeSnapshot
 		Assessments                             map[string]core.AudioAssessment
 		EnhancedFingerprint                     string
-	}{candidates, intent, request.Profile, resolvedContextTracks(o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments, request.EnhancedAudio.Fingerprint() + o.enhancedSnapshot.Fingerprint() + EnhancedPolicyVersion + EnhancedDSPMappingVersion})
+	}{candidates, intent, request.Profile, resolvedContextTracksContext(ctx, o.cat, request.RecentSelections), references, required, waypoints, seed, o.cfg, o.bestAvailable, o.knowledge, assessments, request.EnhancedAudio.Fingerprint() + o.enhancedSnapshot.Fingerprint() + EnhancedPolicyVersion + EnhancedDSPMappingVersion})
 }
 
 func (a candidateAssembly) complete(count int) bool {
@@ -66,18 +71,47 @@ func (a candidateAssembly) complete(count int) bool {
 	return true
 }
 
-func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) (candidateAssembly, error) {
-	var out candidateAssembly
+func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, request ports.RecommendationRequest, references, required, waypoints []core.TrackRef, seed int64) (out candidateAssembly, outErr error) {
+	parent := ctx
+	if o.enhanced && o.requestContext != nil {
+		if deadline, ok := o.requestContext.Deadline(); ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithDeadline(ctx, deadline.Add(-time.Second))
+			defer cancel()
+		}
+		defer func() {
+			if outErr != nil && ctx.Err() != nil && parent.Err() == nil && o.bestAssembly != nil {
+				out, outErr = *o.bestAssembly, nil
+			}
+			if outErr == nil && !out.countConflict && len(out.reserveReasons) == 0 && (o.bestAssembly == nil || len(out.sequence.Tracks) >= len(o.bestAssembly.sequence.Tracks)) {
+				copy := out
+				o.bestAssembly = &copy
+			}
+		}()
+	}
 	if err := ctx.Err(); err != nil {
+		return out, err
+	}
+	if reasons := o.requiredOutputReasons(ctx, required, intent); len(reasons) > 0 {
+		out.reserveReasons = reasons
+		return out, ctx.Err()
+	}
+	var err error
+	candidates, err = o.filterConfirmedOutput(ctx, candidates, intent)
+	if err != nil {
 		return out, err
 	}
 	if err := o.prepareEnhanced(ctx, candidates, intent, request, references, required, waypoints); err != nil {
 		return out, err
 	}
 	request.EnhancedAudio = o.enhancedSnapshot
+	intent.Knowledge = o.recordingKnowledge(intent.Knowledge)
 	key := ""
 	if o.assemblyCache != nil {
-		key = o.assemblyKey(candidates, intent, request, references, required, waypoints, seed)
+		key = o.assemblyKeyContext(ctx, candidates, intent, request, references, required, waypoints, seed)
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 		if key != "" && o.assemblyCache.key == key {
 			return o.assemblyCache.result, nil
 		}
@@ -85,6 +119,12 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	ranked, err := o.rankCandidates(ctx, append([]core.Candidate(nil), candidates...), ports.RankRequest{Intent: intent, Profile: request.Profile, EnhancedAudio: request.EnhancedAudio})
 	if err != nil {
 		return out, err
+	}
+	if o.search != nil {
+		o.search.EligibleCandidates = append([]core.Candidate(nil), ranked...)
+		for _, candidate := range ranked {
+			o.rememberCandidateAssessment(candidate)
+		}
 	}
 	reserved, remaining, reasons, err := o.reserveJourneyStages(ctx, ranked, required, intent)
 	out.reserveReasons = reasons
@@ -100,11 +140,19 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	for _, candidate := range reserved {
 		fixed = append(fixed, candidate.Track)
 	}
+	coverage, remaining, err := o.reservePlaylistCoverage(ctx, remaining, fixed, intent)
+	if err != nil {
+		return out, err
+	}
+	reserved = append(reserved, coverage...)
+	for _, candidate := range coverage {
+		fixed = append(fixed, candidate.Track)
+	}
 	selectionCount := intent.Count
 	if variableDuration {
 		selectionCount = max(selectionCount, len(fixed))
 	}
-	recent := resolvedContextTracks(o.cat, request.RecentSelections)
+	recent := resolvedContextTracksContext(ctx, o.cat, request.RecentSelections)
 	out.selection, err = o.selector.Select(ctx, remaining, ports.SelectionRequest{
 		Intent: intent, Required: fixed, Waypoints: waypoints,
 		RecentSelections: recent, Count: selectionCount - len(fixed),
@@ -136,7 +184,10 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 	})
 	if err == nil && intent.DurationSeconds > 0 {
 		out.durationRequested, out.durationVariableCount = true, variableDuration
-		assessment := o.assessDuration(out.sequence.Tracks, intent)
+		assessment := o.assessDurationContext(ctx, out.sequence.Tracks, intent)
+		if err := ctx.Err(); err != nil {
+			return out, err
+		}
 		if assessment.State != core.EvidenceMatch {
 			// The normal selector establishes the same relevance floor and fit
 			// policy for every alternative before duration can consider it.
@@ -160,7 +211,7 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 			sequence, sequenceErr := o.sequencer.Sequence(ctx, ports.SequenceRequest{Intent: sequenceIntent, Candidates: proposed, Required: required, Waypoints: waypoints, EnhancedAudio: request.EnhancedAudio,
 				ReferenceAnchors: references, RecentSelections: recent, Trajectory: trajectory, Seed: seed, CategoryStages: stages})
 			if sequenceErr == nil && len(sequence.Tracks) == len(proposed)+len(required) {
-				next := o.assessDuration(sequence.Tracks, intent)
+				next := o.assessDurationContext(ctx, sequence.Tracks, intent)
 				before := durationObjective{len(assessment.UnknownTrackIDs), durationDistance(assessment.KnownMilliseconds, intent)}
 				after := durationObjective{len(next.UnknownTrackIDs), durationDistance(next.KnownMilliseconds, intent)}
 				if after.better(before) {
@@ -174,8 +225,11 @@ func (o *Orchestrator) assembleCandidates(ctx context.Context, candidates []core
 		}
 		out.durationMatched = assessment.State == core.EvidenceMatch
 	}
-	if err == nil && !includesOtherArtists(o.cat, intent, out.sequence.Tracks) {
+	if err == nil && !includesOtherArtistsContext(ctx, o.cat, intent, out.sequence.Tracks) {
 		out.reserveReasons = append(out.reserveReasons, core.OutcomeReason{Code: "other_artists_missing", Detail: "The retained playlist does not include an eligible artist outside the named references.", Action: "Add another fitting reference, broaden the search, or remove the request to include other artists."})
+	}
+	if ctx.Err() != nil {
+		return out, ctx.Err()
 	}
 	if err == nil && key != "" && out.complete(intent.Count) {
 		*o.assemblyCache = completedAssembly{key: key, result: out}

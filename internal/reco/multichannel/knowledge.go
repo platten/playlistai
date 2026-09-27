@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -10,7 +11,13 @@ import (
 	"github.com/platten/playlistai/internal/ports"
 )
 
-func (o *Orchestrator) knowledgeTrack(id string) (core.EnrichedTrack, bool) {
+func (o *Orchestrator) knowledgeTrackContext(ctx context.Context, id string) (core.EnrichedTrack, bool) {
+	if ctx.Err() != nil {
+		return core.EnrichedTrack{}, false
+	}
+	if verified, ok := o.verifiedRecordings[id]; ok {
+		return verified, true
+	}
 	var result core.EnrichedTrack
 	found := false
 	if o.knowledge != nil {
@@ -22,12 +29,12 @@ func (o *Orchestrator) knowledgeTrack(id string) (core.EnrichedTrack, bool) {
 		}
 	}
 	if provider, ok := o.cat.(ports.LibraryMetadataCatalog); ok && o.requestContext != nil {
-		if local, available, err := provider.LibraryRecordingMetadata(o.requestContext, id); err == nil && available {
+		if local, available, err := provider.LibraryRecordingMetadata(ctx, id); err == nil && available && ctx.Err() == nil {
 			if !found {
 				return local, true
 			}
 			result = mergeRecordingMetadata(result, local)
-			if features, available := provider.LibraryTrackFeatures(o.requestContext, id); available {
+			if features, available := provider.LibraryTrackFeatures(ctx, id); available && ctx.Err() == nil {
 				if features.Conflicts["original_release_date"] {
 					result.OriginalReleaseDate = ""
 				}
@@ -40,12 +47,40 @@ func (o *Orchestrator) knowledgeTrack(id string) (core.EnrichedTrack, bool) {
 			}
 		}
 	}
+	if o.enhanced && result.RecordingID != "" {
+		if meta, ok := ports.CatalogMeta(ctx, o.cat, id); ok && (meta.MusicBrainzRecording != "" && !strings.EqualFold(meta.MusicBrainzRecording, result.RecordingID) || recordingISRCConflict(result, meta.ISRC)) {
+			result.IdentityStatus = core.ResolutionAmbiguous
+		}
+	}
+	if ctx.Err() != nil {
+		return core.EnrichedTrack{}, false
+	}
 	return result, found
 }
 
 // Contradictory dates remain unknown; edition dates never stand in for original
 // recording or composition dates. Identity was established by the catalog join.
 func mergeRecordingMetadata(base, local core.EnrichedTrack) core.EnrichedTrack {
+	// Keep the reliable local measurement when enriching an existing knowledge row.
+	// Neither a different local file nor a conflicting recording can lend its duration.
+	if base.Ref.ID != "" && base.Ref.ID == local.Ref.ID && local.IdentityStatus == core.ResolutionResolved &&
+		(base.RecordingID == "" || strings.EqualFold(base.RecordingID, local.RecordingID)) && !recordingISRCConflict(base, local.ISRC) &&
+		local.FullRecordingDuration.Valid() && !strings.Contains(strings.ToLower(local.FullRecordingDuration.Source), "preview") {
+		durationID := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(local.FullRecordingDuration.RecordingID)), "musicbrainz:")
+		for _, id := range []string{local.Ref.ID, local.Ref.RecordingIdentity, local.RecordingID} {
+			if id != "" && durationID == strings.TrimPrefix(strings.ToLower(strings.TrimSpace(id)), "musicbrainz:") {
+				duration := *local.FullRecordingDuration
+				base.FullRecordingDuration = &duration
+				break
+			}
+		}
+	}
+
+	if base.ReleaseID == "" && base.ReleaseTrackID == "" {
+		base.ReleaseID, base.ReleaseTrackID = local.ReleaseID, local.ReleaseTrackID
+	} else if strings.EqualFold(base.ReleaseID, local.ReleaseID) && base.ReleaseTrackID == "" {
+		base.ReleaseTrackID = local.ReleaseTrackID
+	}
 	mergeDate := func(a, b string) string {
 		if a == "" {
 			return b
@@ -66,11 +101,29 @@ func mergeRecordingMetadata(base, local core.EnrichedTrack) core.EnrichedTrack {
 		base.CompositionStartYear, base.CompositionEndYear = 0, 0
 	}
 	base.GenreTags = append(append([]core.AttributedGenreTag(nil), base.GenreTags...), local.GenreTags...)
+	base.Claims = append(append([]core.RecordingClaim(nil), base.Claims...), local.Claims...)
 	base.AllArtists = append(append([]string(nil), base.AllArtists...), local.AllArtists...)
+	// Preserve recording-credit membership without implying any positional
+	// alignment with AllArtists, and never borrow IDs from a different recording.
+	if local.IdentityStatus == core.ResolutionResolved && local.RecordingID != "" &&
+		(base.RecordingID == "" || strings.EqualFold(base.RecordingID, local.RecordingID)) && !recordingISRCConflict(base, local.ISRC) {
+		ids := append(append([]string(nil), base.ArtistIDs...), local.ArtistIDs...)
+		base.ArtistIDs = nil
+		for _, id := range ids {
+			if validArtistMBID(id) {
+				base.ArtistIDs = append(base.ArtistIDs, core.NormalizeIdentityPart(id))
+			}
+		}
+		slices.Sort(base.ArtistIDs)
+		base.ArtistIDs = slices.Compact(base.ArtistIDs)
+	}
 	return base
 }
 
 func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.MusicalCriterion) core.EvidenceState {
+	if o.enhanced {
+		return o.assessClause(ctx, id, core.AudioClause{Kind: c.Kind, Text: c.Value, Scope: c.Scope, Strength: c.Strength, Group: c.Group, CoverageGroup: c.CoverageGroup, Strict: c.Strength == "required"}, core.AudioAssessment{}).State
+	}
 	if c.Kind == "composer" {
 		// Composer is an identity credit. CLAP, semantic similarity, performer
 		// names, and titles cannot prove it, even for a close partial result.
@@ -132,7 +185,7 @@ func (o *Orchestrator) bestCriterion(ctx context.Context, id string, c core.Musi
 			}
 		}
 	}
-	if track, ok := o.knowledgeTrack(id); ok && track.IdentityStatus == core.ResolutionResolved {
+	if track, ok := o.knowledgeTrackContext(ctx, id); ok && track.IdentityStatus == core.ResolutionResolved {
 		if state := o.recordingTagCriterion(track, c); state != core.EvidenceUnknown {
 			return state
 		}
@@ -230,14 +283,17 @@ func (o *Orchestrator) bestEssential(ctx context.Context, candidates []core.Cand
 			out = append(out, candidate)
 		}
 	}
-	return out, report, nil
+	return out, report, ctx.Err()
 }
 
-func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIntent) bool {
+func (o *Orchestrator) metadataEligibleContext(ctx context.Context, track core.TrackRef, intent core.MusicIntent) bool {
 	if !artistOnlyEligible(intent, track) {
 		return false
 	}
-	metadata, known := o.knowledgeTrack(track.ID)
+	metadata, known := o.knowledgeTrackContext(ctx, track.ID)
+	if ctx.Err() != nil {
+		return false
+	}
 	if !acousticCompatibleFor(intent, acousticComparisons(metadata, audio.Clauses(intent))) {
 		return false
 	}
@@ -354,8 +410,11 @@ func (o *Orchestrator) annotateFit(ctx context.Context, playlist *core.Playlist)
 
 // Stage dates constrain placement, not the entire candidate pool. Unknown dates
 // retain the existing best-available behavior; known contradictions never qualify.
-func (o *Orchestrator) stageDateEligible(id, scope string, intent core.MusicIntent) bool {
-	metadata, _ := o.knowledgeTrack(id)
+func (o *Orchestrator) stageDateEligibleContext(ctx context.Context, id, scope string, intent core.MusicIntent) bool {
+	metadata, _ := o.knowledgeTrackContext(ctx, id)
+	if ctx.Err() != nil {
+		return false
+	}
 	for _, period := range intent.Temporal {
 		if period.Scope != scope {
 			continue
@@ -480,7 +539,7 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 			if fits && stageCompared {
 				if stageScore <= 0 {
 					for _, other := range journeyStageCriteria(intent) {
-						if other.Scope == criterion.Scope || !o.stageDateEligible(candidate.Track.ID, other.Scope, intent) || o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMismatch {
+						if other.Scope == criterion.Scope || !o.stageDateEligibleContext(ctx, candidate.Track.ID, other.Scope, intent) || o.bestCriterion(ctx, candidate.Track.ID, other) == core.EvidenceMismatch {
 							continue
 						}
 						if otherScore, available := o.stageSimilarity(candidate.Track.ID, other); available && otherScore > stageScore+1e-6 {
@@ -491,13 +550,13 @@ func (o *Orchestrator) filterJourneyStage(ctx context.Context, candidates []core
 				}
 			}
 		}
-		if fits && o.stageDateEligible(candidate.Track.ID, criterion.Scope, intent) && o.enhancedStageConstraints(ctx, candidate.Track.ID, criterion.Scope, intent) {
+		if fits && o.stageDateEligibleContext(ctx, candidate.Track.ID, criterion.Scope, intent) && o.enhancedStageConstraints(ctx, candidate.Track.ID, criterion.Scope, intent) {
 			result = append(result, candidate)
 		} else {
 			delete(report.Eligible, candidate.Track.ID)
 		}
 	}
-	return result, report, nil
+	return result, report, ctx.Err()
 }
 
 func (o *Orchestrator) stageSimilarity(id string, criterion core.MusicalCriterion) (float64, bool) {
@@ -520,4 +579,18 @@ func (o *Orchestrator) stageSimilarity(id string, criterion core.MusicalCriterio
 	var candidate core.Candidate
 	audio.ApplyScores(&candidate, stage)
 	return candidate.Scores.SemanticMatch - candidate.Scores.SemanticNegativeMatch, candidate.Available.SemanticMatch || candidate.Available.SemanticNegativeMatch
+}
+
+func (o *Orchestrator) knowledgeTrack(id string) (core.EnrichedTrack, bool) {
+	ctx := o.requestContext
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return o.knowledgeTrackContext(ctx, id)
+}
+func (o *Orchestrator) metadataEligible(track core.TrackRef, intent core.MusicIntent) bool {
+	return o.metadataEligibleContext(context.Background(), track, intent)
+}
+func (o *Orchestrator) stageDateEligible(id, scope string, intent core.MusicIntent) bool {
+	return o.stageDateEligibleContext(context.Background(), id, scope, intent)
 }

@@ -32,10 +32,14 @@ func (o *Orchestrator) WithMERTSimilaritySearchProvider(provider MERTSimilarityS
 }
 
 func mertSimilarityQueries(cat ports.Catalog, intent core.MusicIntent) []core.MERTSimilarityQuery {
-	groups := intentReferenceTracks(cat, intent, core.InfluencePositive, false)
+	return mertSimilarityQueriesContext(context.Background(), cat, intent)
+}
+
+func mertSimilarityQueriesContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []core.MERTSimilarityQuery {
+	groups := intentReferenceTracksContext(ctx, cat, intent, core.InfluencePositive, false)
 	if len(groups) == 0 {
 		for i, ref := range intent.RequiredTracks {
-			if reps := referenceTrackIdentities(cat, ref, false); len(reps) > 0 {
+			if reps := referenceTrackIdentitiesContext(ctx, cat, ref, false); len(reps) > 0 {
 				groups = append(groups, referenceTracks{id: "required:" + itoa(i), reps: reps})
 			}
 		}
@@ -55,7 +59,7 @@ func mertSimilarityQueries(cat ports.Catalog, intent core.MusicIntent) []core.ME
 			if len(out) == maxMERTSimilarityQueries {
 				return out
 			}
-			meta, ok := cat.Meta(rep.TrackID)
+			meta, ok := ports.CatalogMeta(ctx, cat, rep.TrackID)
 			if !ok || rep.Weight <= 0 {
 				continue
 			}
@@ -88,6 +92,10 @@ func primaryMERTQueries(queries []core.MERTSimilarityQuery) []core.MERTSimilarit
 }
 
 func (o *Orchestrator) mertCandidates(search *core.MERTSimilaritySearch) []core.Candidate {
+	return o.mertCandidatesContext(context.Background(), search)
+}
+
+func (o *Orchestrator) mertCandidatesContext(ctx context.Context, search *core.MERTSimilaritySearch) []core.Candidate {
 	if search == nil || !search.Recorded || search.CatalogVersion == "" || !validEnhancedModel(search.Model) {
 		return nil
 	}
@@ -107,7 +115,7 @@ func (o *Orchestrator) mertCandidates(search *core.MERTSimilaritySearch) []core.
 		if !ok || hit.TrackID == "" || hit.Rank <= 0 || math.IsNaN(hit.Score) || math.IsInf(hit.Score, 0) || hit.Score < -1 || hit.Score > 1 {
 			continue
 		}
-		meta, ok := o.cat.Meta(hit.TrackID)
+		meta, ok := ports.CatalogMeta(ctx, o.cat, hit.TrackID)
 		if !ok || hit.Representation.TrackID != hit.TrackID || hit.Representation.CatalogVersion != search.CatalogVersion ||
 			hit.Representation.ID == "" || hit.Representation.TrackKey != core.ProvisionalRecordingKey(meta.Ref) || hit.Representation.Model != search.Model {
 			continue
@@ -165,9 +173,6 @@ func (r *mertAudioRetriever) SupportsIntentMetadata() bool {
 
 func (r *mertAudioRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	raw, err := r.base.Retrieve(ctx, request)
-	if err != nil {
-		return nil, err
-	}
 	excluded := make(map[string]bool, len(request.AttemptedIDs)+len(request.RecentSelections))
 	for id := range request.AttemptedIDs {
 		excluded[id] = true
@@ -210,7 +215,7 @@ func (r *mertAudioRetriever) Retrieve(ctx context.Context, request ports.Retriev
 		}
 		return result[i].Track.ID < result[j].Track.ID
 	})
-	return result, nil
+	return result, err
 }
 
 var _ ports.CandidateRetriever = (*mertAudioRetriever)(nil)

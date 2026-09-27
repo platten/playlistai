@@ -31,7 +31,7 @@ func compileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) cor
 	prefs := func(in []core.IntentPreference) []WirePreference {
 		out := make([]WirePreference, 0, len(in))
 		for _, p := range in {
-			out = append(out, WirePreference{Value: p.Value, Influence: string(p.Influence), Explicit: p.Explicit, Span: span(p.Evidence), Scope: p.Scope, Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group})
+			out = append(out, WirePreference{Value: p.Value, Influence: string(p.Influence), Explicit: p.Explicit, Span: span(p.Evidence), Scope: p.Scope, Strength: p.Strength, ConceptID: p.ConceptID, Degree: p.Degree, Group: p.Group, CoverageGroup: p.CoverageGroup})
 		}
 		return out
 	}
@@ -58,7 +58,7 @@ func compileSource(w *Wire, snapshot *core.IntentTranslation, prompt string) cor
 	}
 	w.EssentialCriteria = nil
 	for _, c := range m.EssentialCriteria {
-		w.EssentialCriteria = append(w.EssentialCriteria, WireCriterion{Kind: c.Kind, Value: c.Value, Scope: c.Scope, Span: span(c.Evidence), Strength: c.Strength, Group: c.Group, ConceptID: c.ConceptID})
+		w.EssentialCriteria = append(w.EssentialCriteria, WireCriterion{Kind: c.Kind, Value: c.Value, Scope: c.Scope, Span: span(c.Evidence), Strength: c.Strength, Group: c.Group, CoverageGroup: c.CoverageGroup, ConceptID: c.ConceptID})
 	}
 	w.HardConstraints = nil
 	for _, c := range m.HardConstraints {

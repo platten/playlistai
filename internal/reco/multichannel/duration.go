@@ -5,29 +5,33 @@ import (
 	"fmt"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
-func (o *Orchestrator) recordingDuration(id string) (*core.RecordingDuration, bool) {
+func (o *Orchestrator) recordingDurationContext(ctx context.Context, id string) (*core.RecordingDuration, bool) {
 	// Snapshot evidence is recording-specific, unlike preview analysis length.
-	if track, ok := o.knowledgeTrack(id); ok && track.Matched && track.IdentityStatus == core.ResolutionResolved &&
+	if track, ok := o.knowledgeTrackContext(ctx, id); ok && track.Matched && track.IdentityStatus == core.ResolutionResolved &&
 		track.FullRecordingDuration.Valid() && track.RecordingID == track.FullRecordingDuration.RecordingID {
 		duration := *track.FullRecordingDuration
 		return &duration, true
 	}
-	if meta, ok := o.cat.Meta(id); ok && meta.FullRecordingDuration.Valid() {
+	if meta, ok := ports.CatalogMeta(ctx, o.cat, id); ok && meta.FullRecordingDuration.Valid() {
 		duration := *meta.FullRecordingDuration
 		return &duration, true
 	}
 	return nil, false
 }
 
-func (o *Orchestrator) assessDuration(tracks []core.TrackRef, intent core.MusicIntent) *core.PlaylistDurationAssessment {
+func (o *Orchestrator) assessDurationContext(ctx context.Context, tracks []core.TrackRef, intent core.MusicIntent) *core.PlaylistDurationAssessment {
 	if intent.DurationSeconds <= 0 {
 		return nil
 	}
 	out := &core.PlaylistDurationAssessment{TargetSeconds: intent.DurationSeconds, ToleranceSeconds: intent.DurationTolerance(), State: core.EvidenceUnknown}
 	for _, track := range tracks {
-		if duration, ok := o.recordingDuration(track.ID); ok {
+		if ctx.Err() != nil {
+			return out
+		}
+		if duration, ok := o.recordingDurationContext(ctx, track.ID); ok {
 			out.KnownMilliseconds += duration.Milliseconds
 			out.Evidence = append(out.Evidence, core.TrackDurationEvidence{TrackID: track.ID, RecordingDuration: *duration})
 		} else {
@@ -51,20 +55,20 @@ func durationDistance(milliseconds int64, intent core.MusicIntent) int64 {
 	return max(int64(0), delta-int64(intent.DurationTolerance())*1000)
 }
 
-func (o *Orchestrator) durationReadyToCheck(candidates []core.Candidate, required []core.TrackRef, intent core.MusicIntent) bool {
+func (o *Orchestrator) durationReadyToCheckContext(ctx context.Context, candidates []core.Candidate, required []core.TrackRef, intent core.MusicIntent) bool {
 	if intent.DurationSeconds <= 0 || intent.HasExplicitTrackCount() {
 		return false
 	}
 	var total int64
 	for _, track := range required {
-		if d, ok := o.recordingDuration(track.ID); ok {
+		if d, ok := o.recordingDurationContext(ctx, track.ID); ok {
 			total += d.Milliseconds
 		} else {
 			return false
 		}
 	}
 	for _, candidate := range candidates {
-		if d, ok := o.recordingDuration(candidate.Track.ID); ok {
+		if d, ok := o.recordingDurationContext(ctx, candidate.Track.ID); ok {
 			total += d.Milliseconds
 		}
 	}
@@ -89,13 +93,19 @@ func (o *Orchestrator) fitDuration(ctx context.Context, intent core.MusicIntent,
 	out := append([]core.Candidate(nil), selected...)
 	known := map[string]int64{}
 	for _, candidate := range append(append([]core.Candidate(nil), pool...), selected...) {
-		if d, ok := o.recordingDuration(candidate.Track.ID); ok {
+		if d, ok := o.recordingDurationContext(ctx, candidate.Track.ID); ok {
 			known[candidate.Track.ID] = d.Milliseconds
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 	}
 	var fixedMilliseconds int64
 	for _, track := range required {
-		d, ok := o.recordingDuration(track.ID)
+		d, ok := o.recordingDurationContext(ctx, track.ID)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !ok {
 			return out, nil // no subset can verify an unknown mandatory recording
 		}
@@ -196,8 +206,8 @@ func (o *Orchestrator) fitDuration(ctx context.Context, intent core.MusicIntent,
 		for _, candidate := range out {
 			tracks = append(tracks, candidate.Track)
 		}
-		if o.assessDuration(tracks, intent).State != core.EvidenceMatch {
-			return append([]core.Candidate(nil), selected...), nil
+		if o.assessDurationContext(ctx, tracks, intent).State != core.EvidenceMatch {
+			return append([]core.Candidate(nil), selected...), ctx.Err()
 		}
 	}
 	return out, nil
@@ -208,8 +218,8 @@ func durationFitDowngrade(old, replacement core.Candidate) bool {
 		old.MusicalFit == core.EvidenceMatch && replacement.MusicalFit != core.EvidenceMatch
 }
 
-func (o *Orchestrator) annotateDuration(playlist *core.Playlist) {
-	assessment := o.assessDuration(playlist.Tracks, playlist.Intent)
+func (o *Orchestrator) annotateDurationContext(ctx context.Context, playlist *core.Playlist) {
+	assessment := o.assessDurationContext(ctx, playlist.Tracks, playlist.Intent)
 	if assessment == nil {
 		return
 	}
@@ -229,4 +239,8 @@ func (o *Orchestrator) annotateDuration(playlist *core.Playlist) {
 	if playlist.Outcome.State == core.OutcomeFulfilled || playlist.Outcome.State == "" {
 		playlist.Outcome.State = core.OutcomePartial
 	}
+}
+
+func (o *Orchestrator) assessDuration(tracks []core.TrackRef, intent core.MusicIntent) *core.PlaylistDurationAssessment {
+	return o.assessDurationContext(context.Background(), tracks, intent)
 }

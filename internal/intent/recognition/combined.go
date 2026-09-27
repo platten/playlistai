@@ -10,6 +10,20 @@ import (
 
 type combinedLookup []IdentityLookup
 
+func automaticArtists(store IdentityLookup) bool {
+	lookup, ok := store.(interface{ AutomaticArtistResolution() bool })
+	return ok && lookup.AutomaticArtistResolution()
+}
+
+func (c combinedLookup) AutomaticArtistResolution() bool {
+	for _, source := range c {
+		if automaticArtists(source) {
+			return true
+		}
+	}
+	return false
+}
+
 type genreLookup interface {
 	RecognitionGenres(context.Context) ([]string, error)
 }

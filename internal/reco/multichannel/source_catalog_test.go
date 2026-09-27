@@ -38,12 +38,16 @@ func TestCompositeOverlayPreservesExternalMERTAndReplay(t *testing.T) {
 	engine := New(cat, nil, cat, DefaultConfig())
 	engine.retriever = &mertRefillRetriever{cat: cat, pages: [][]string{{"a"}, {"b"}}}
 	packVersion := "pack-one"
+	pinnedCatalog := &sourceCatalogHiddenTrack{Catalog: cat}
 	engine.WithRequestOverlayProvider(func(_ context.Context, catalog ports.Catalog, resolver ports.ReferenceResolver, retriever ports.CandidateRetriever) (RequestOverlay, error) {
-		return RequestOverlay{Catalog: catalog, Resolver: sourceCatalogResolver{resolver, resolver.CatalogVersion() + "+local-library:" + packVersion}, Retriever: retriever}, nil
+		return RequestOverlay{Catalog: pinnedCatalog, Resolver: sourceCatalogResolver{resolver, resolver.CatalogVersion() + "+local-library:" + packVersion}, Retriever: retriever}, nil
 	})
 	searchCalls := 0
-	engine.WithMERTSimilaritySearchProvider(func(_ context.Context, _ core.MusicIntent, _ core.TasteProfile, queries []core.MERTSimilarityQuery, _ map[string]struct{}, _ int) (*core.MERTSimilaritySearch, error) {
+	engine.WithMERTSimilaritySearchProvider(func(ctx context.Context, _ core.MusicIntent, _ core.TasteProfile, queries []core.MERTSimilarityQuery, _ map[string]struct{}, _ int) (*core.MERTSimilaritySearch, error) {
 		searchCalls++
+		if catalog, ok := ports.AudioMetadataCatalog(ctx); !ok || catalog != pinnedCatalog {
+			t.Fatal("reference preview lookup lost the pinned composite catalog")
+		}
 		if len(queries) != 1 || queries[0].Track.ID != "seed" {
 			t.Fatalf("unexpected queries: %+v", queries)
 		}
@@ -52,7 +56,10 @@ func TestCompositeOverlayPreservesExternalMERTAndReplay(t *testing.T) {
 			ViewFingerprint: "external-view", SearchableTracks: 3, Queries: queries,
 			Hits: []core.MERTSimilarityHit{{GroupID: queries[0].GroupID, QueryTrackID: "seed", TrackID: "c", Rank: 1, Score: .99, QueryWeight: 1, Representation: hit}}}, nil
 	})
-	engine.WithEnhancedAudioProvider(func(context.Context, core.MusicIntent, core.TasteProfile, []core.TrackRef) (*core.EnhancedAudioSnapshot, error) {
+	engine.WithEnhancedAudioProvider(func(ctx context.Context, _ core.MusicIntent, _ core.TasteProfile, _ []core.TrackRef) (*core.EnhancedAudioSnapshot, error) {
+		if catalog, ok := ports.AudioMetadataCatalog(ctx); !ok || catalog != pinnedCatalog {
+			t.Fatal("candidate preview lookup lost the pinned composite catalog")
+		}
 		return core.NewEnhancedAudioSnapshot(input)
 	})
 	intent := testIntent(3)

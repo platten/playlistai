@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -11,7 +12,7 @@ import (
 
 // Validate against fresh catalog alternatives, never an arbitrary recording ID
 // supplied by a client. Source queries and evidence remain unchanged throughout.
-func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.MusicIntent, selections []ResolutionSelection) ([]ResolutionSelection, error) {
+func validateResolutionSelections(ctx context.Context, resolver ports.ReferenceResolver, intent core.MusicIntent, selections []ResolutionSelection) ([]ResolutionSelection, error) {
 	refs := append([]core.IntentReference(nil), intent.References...)
 	refs = append(refs, intent.RequiredTracks...)
 	refs = append(refs, intent.Journey.Waypoints...)
@@ -27,6 +28,9 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 	out := append([]ResolutionSelection(nil), selections...)
 	seen := map[string]bool{}
 	for i := range out {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		selection := &out[i]
 		key := string(selection.Kind) + "\x00" + strings.ToLower(strings.TrimSpace(selection.Query))
 		if seen[key] || (selection.RejectSpelling && (selection.TrackID != "" || selection.IdentityID != "")) || (selection.IdentityID != "" && selection.TrackID != "") ||
@@ -42,13 +46,13 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 			if selection.KeepAsDescription {
 				if index < explicitRefCount {
 					ref.TrackID, ref.Resolution, ref.SpellingDecision = "", nil, ""
-					valid = valid || ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) || resolver.ResolveReference(ref).Status == core.ResolutionAmbiguous
+					valid = valid || ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) || ports.ResolveReferenceContext(ctx, resolver, ref).Status == core.ResolutionAmbiguous
 				}
 				continue
 			}
-			if ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.Candidates) > 1) {
+			if ref.Grounding != nil && (ref.Grounding.Truncated || len(ref.Grounding.IdentityChoices()) > 1 || selection.IdentityID != "") {
 				if selection.IdentityID != "" {
-					for _, candidate := range ref.Grounding.Candidates {
+					for _, candidate := range ref.Grounding.IdentityChoices() {
 						if candidate.ID == selection.IdentityID && candidate.Kind == selection.Kind {
 							valid = true
 						}
@@ -58,7 +62,7 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 				return nil, fmt.Errorf("reference choice for %q cannot select among unresolved provider identities", selection.Query)
 			}
 			ref.TrackID, ref.Resolution, ref.SpellingDecision = "", nil, ""
-			result := resolver.ResolveReference(ref)
+			result := ports.ResolveReferenceContext(ctx, resolver, ref)
 			if ref.Grounding != nil && !ref.Grounding.Truncated && len(ref.Grounding.Candidates) == 1 && result.Status == core.ResolutionResolved && result.Selected != nil {
 				for _, track := range result.Selected.Representatives {
 					if selection.TrackID != "" && track.TrackID == selection.TrackID {
@@ -81,6 +85,9 @@ func validateResolutionSelections(resolver ports.ReferenceResolver, intent core.
 					}
 				}
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
 		if !valid {
 			return nil, fmt.Errorf("reference choice for %q is no longer an offered catalog alternative", selection.Query)
