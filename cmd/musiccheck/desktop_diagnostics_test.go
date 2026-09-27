@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -148,7 +149,12 @@ func TestDesktopDiagnosticsExportsPrivateFileOnEarlyError(t *testing.T) {
 		t.Fatalf("invalid empty diagnostic export: %q %v", raw, err)
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm()&0077 != 0 {
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows reports ACL-backed files as 0666; Unix mode bits do not
+	// describe who can read them there.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Fatalf("sensitive output is not private: info=%v error=%v", info, err)
 	}
 	options.Diagnostics = ""
