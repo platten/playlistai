@@ -93,6 +93,45 @@ func TestPreparationUnavailableSourcesAndIsolation(t *testing.T) {
 			t.Fatal("accepted linked store")
 		}
 	})
+	t.Run("linked final directory", func(t *testing.T) {
+		link := filepath.Join(t.TempDir(), "linked")
+		if err := os.Symlink(t.TempDir(), link); err != nil {
+			t.Skip(err)
+		}
+		if _, err := isolatedIntentDataDirectory(link); err == nil {
+			t.Fatal("accepted linked evaluation directory")
+		}
+	})
+	t.Run("linked untrusted parent", func(t *testing.T) {
+		link := filepath.Join(t.TempDir(), "untrusted-alias")
+		if err := os.Symlink(t.TempDir(), link); err != nil {
+			t.Skip(err)
+		}
+		if _, err := isolatedIntentDataDirectory(filepath.Join(link, "isolated")); err == nil {
+			t.Fatal("accepted linked parent below temporary directory")
+		}
+	})
+	t.Run("linked system temp parent", func(t *testing.T) {
+		parent := t.TempDir()
+		link := filepath.Join(t.TempDir(), "temp-alias")
+		if err := os.Symlink(parent, link); err != nil {
+			t.Skip(err)
+		}
+		t.Setenv("TMPDIR", link)
+		t.Setenv("TMP", link)
+		t.Setenv("TEMP", link)
+		if os.TempDir() != link {
+			t.Skip("temporary directory cannot be redirected on this host")
+		}
+		root := filepath.Join(link, "isolated")
+		resolved, err := isolatedIntentDataDirectory(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resolved != filepath.Join(parent, "isolated") {
+			t.Fatalf("expected canonical root, got %q", resolved)
+		}
+	})
 	t.Run("configured parser", func(t *testing.T) {
 		root, err := isolatedIntentDataDirectory(t.TempDir())
 		if err != nil {

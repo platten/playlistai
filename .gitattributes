@@ -3,3 +3,6 @@
 
 # Shell entry points must stay executable in Git Bash, WSL, macOS, and Linux.
 *.sh text eol=lf
+
+# Frozen evaluation fixtures are checked by their exact byte hashes.
+internal/evaluation/testdata/*.json text eol=lf
