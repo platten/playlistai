@@ -42,6 +42,62 @@ type activeRecord struct {
 	Manifest  Manifest `json:"manifest"`
 }
 
+// InstalledLayout is a bounded readiness check for the startup UI. Opening a
+// release verifies every installed file and index; a large release can take
+// minutes, so that work is deferred until the release is actually used.
+func InstalledLayout(root string) bool {
+	path := filepath.Join(root, "active.json")
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 1<<20 {
+		return false
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	var record activeRecord
+	if json.Unmarshal(raw, &record) != nil || !safeName.MatchString(record.Directory) || !strings.HasPrefix(record.Directory, "release-") || record.Manifest.Validate() != nil {
+		return false
+	}
+	dir := filepath.Join(root, record.Directory)
+	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
+		return false
+	}
+	for _, pack := range record.Manifest.Packs {
+		packDir := filepath.Join(dir, pack.PackID)
+		if info, err := os.Lstat(packDir); err != nil || !info.IsDir() {
+			return false
+		}
+		path := filepath.Join(packDir, "active.json")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 1<<20 {
+			return false
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		var active struct {
+			Version       int    `json:"version"`
+			PackID        string `json:"packId"`
+			PackSHA256    string `json:"packSha256"`
+			GenerationDir string `json:"generationDir"`
+		}
+		if json.Unmarshal(raw, &active) != nil || active.Version != 1 || active.PackID != pack.PackID || active.PackSHA256 != pack.SHA256 || !safeName.MatchString(active.GenerationDir) || !strings.HasPrefix(active.GenerationDir, pack.PackID+"-") {
+			return false
+		}
+		generation := filepath.Join(packDir, "generations", active.GenerationDir)
+		if info, err := os.Lstat(generation); err != nil || !info.IsDir() {
+			return false
+		}
+		manifest := filepath.Join(generation, "manifest.json")
+		if info, err := os.Lstat(manifest); err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > 4<<20 {
+			return false
+		}
+	}
+	return true
+}
+
 func Open(ctx context.Context, root string) (*Manager, error) {
 	abs, e := filepath.Abs(root)
 	if e != nil {

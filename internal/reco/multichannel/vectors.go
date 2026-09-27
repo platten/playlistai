@@ -1,6 +1,7 @@
 package multichannel
 
 import (
+	"context"
 	"math"
 
 	"github.com/platten/playlistai/internal/core"
@@ -26,11 +27,15 @@ type referenceTracks struct {
 }
 
 func hasExplicitRetrievalReference(cat ports.Catalog, intent core.MusicIntent) bool {
-	return hasExplicitReference(cat, intent, intent.Controls.RecommendationMode != core.EnhancedHybrid)
+	return hasExplicitRetrievalReferenceContext(context.Background(), cat, intent)
 }
 
-func hasExplicitReference(cat ports.Catalog, intent core.MusicIntent, dense bool) bool {
-	if intent.Start != nil && len(referenceTrackIdentities(cat, *intent.Start, dense)) > 0 {
+func hasExplicitRetrievalReferenceContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) bool {
+	return hasExplicitReferenceContext(ctx, cat, intent, intent.Controls.RecommendationMode != core.EnhancedHybrid)
+}
+
+func hasExplicitReferenceContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent, dense bool) bool {
+	if intent.Start != nil && len(referenceTrackIdentitiesContext(ctx, cat, *intent.Start, dense)) > 0 {
 		return true
 	}
 	for _, group := range [][]core.IntentReference{intent.References, intent.Journey.Waypoints} {
@@ -40,7 +45,7 @@ func hasExplicitReference(cat ports.Catalog, intent core.MusicIntent, dense bool
 			if intent.Destination != nil && referenceKey(ref) == referenceKey(*intent.Destination) {
 				continue
 			}
-			if ref.Influence != core.InfluenceNegative && len(referenceTrackIdentities(cat, ref, dense)) > 0 {
+			if ref.Influence != core.InfluenceNegative && len(referenceTrackIdentitiesContext(ctx, cat, ref, dense)) > 0 {
 				return true
 			}
 		}
@@ -49,15 +54,23 @@ func hasExplicitReference(cat ports.Catalog, intent core.MusicIntent, dense bool
 }
 
 func positiveReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
-	return intentReferenceVectors(cat, intent, core.InfluencePositive)
+	return positiveReferenceVectorsContext(context.Background(), cat, intent)
+}
+
+func positiveReferenceVectorsContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
+	return intentReferenceVectorsContext(ctx, cat, intent, core.InfluencePositive)
 }
 
 func negativeReferenceVectors(cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
-	return intentReferenceVectors(cat, intent, core.InfluenceNegative)
+	return negativeReferenceVectorsContext(context.Background(), cat, intent)
 }
 
-func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influence core.Influence) []referenceVectors {
-	groups := intentReferenceTracks(cat, intent, influence, true)
+func negativeReferenceVectorsContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
+	return intentReferenceVectorsContext(ctx, cat, intent, core.InfluenceNegative)
+}
+
+func intentReferenceVectorsContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent, influence core.Influence) []referenceVectors {
+	groups := intentReferenceTracksContext(ctx, cat, intent, influence, true)
 	out := make([]referenceVectors, 0, len(groups))
 	for _, group := range groups {
 		out = append(out, referenceVectors{id: group.id, reps: trackVectors(cat, group.reps)})
@@ -65,12 +78,12 @@ func intentReferenceVectors(cat ports.Catalog, intent core.MusicIntent, influenc
 	return out
 }
 
-func intentReferenceTracks(cat ports.Catalog, intent core.MusicIntent, influence core.Influence, dense bool) []referenceTracks {
+func intentReferenceTracksContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent, influence core.Influence, dense bool) []referenceTracks {
 	references := append(append([]core.IntentReference(nil), intent.References...), intent.Journey.Waypoints...)
 	if intent.Start != nil {
 		references = append(references, *intent.Start)
 	}
-	if influence == core.InfluencePositive && (intent.VerificationPolicy != core.BestAvailable || !hasExplicitReference(cat, intent, dense)) {
+	if influence == core.InfluencePositive && (intent.VerificationPolicy != core.BestAvailable || !hasExplicitReferenceContext(ctx, cat, intent, dense)) {
 		for _, anchor := range intent.InferredAnchors {
 			if anchor.Suitability.State == core.EvidenceMatch || intent.VerificationPolicy == core.BestAvailable && anchor.Suitability.State != core.EvidenceMismatch {
 				references = append(references, anchor.Reference)
@@ -80,6 +93,9 @@ func intentReferenceTracks(cat ports.Catalog, intent core.MusicIntent, influence
 	seen := map[string]struct{}{}
 	result := make([]referenceTracks, 0, len(references))
 	for index, reference := range references {
+		if ctx.Err() != nil {
+			return nil
+		}
 		if reference.Influence != influence {
 			continue
 		}
@@ -91,9 +107,9 @@ func intentReferenceTracks(cat ports.Catalog, intent core.MusicIntent, influence
 			continue
 		}
 		seen[key] = struct{}{}
-		reps := referenceTrackIdentities(cat, reference, dense)
+		reps := referenceTrackIdentitiesContext(ctx, cat, reference, dense)
 		if influence == core.InfluencePositive {
-			if contextual := contextualReferenceTracks(cat, intent, reference, dense); len(contextual) > 0 {
+			if contextual := contextualReferenceTracksContext(ctx, cat, intent, reference, dense); len(contextual) > 0 {
 				reps = contextual
 			}
 		}
@@ -120,11 +136,11 @@ func outputOnlyArtistExclusion(intent core.MusicIntent, reference core.IntentRef
 	return false
 }
 
-func referenceRepresentatives(cat ports.Catalog, reference core.IntentReference) []weightedVectors {
-	return trackVectors(cat, referenceTrackIdentities(cat, reference, true))
+func referenceRepresentativesContext(ctx context.Context, cat ports.Catalog, reference core.IntentReference) []weightedVectors {
+	return trackVectors(cat, referenceTrackIdentitiesContext(ctx, cat, reference, true))
 }
 
-func referenceTrackIdentities(cat ports.Catalog, reference core.IntentReference, dense bool) []core.WeightedTrack {
+func referenceTrackIdentitiesContext(ctx context.Context, cat ports.Catalog, reference core.IntentReference, dense bool) []core.WeightedTrack {
 	var tracks []core.WeightedTrack
 	if reference.Resolution != nil && reference.Resolution.Selected != nil {
 		tracks = reference.Resolution.Selected.Representatives
@@ -134,7 +150,7 @@ func referenceTrackIdentities(cat ports.Catalog, reference core.IntentReference,
 	}
 	out := make([]core.WeightedTrack, 0, len(tracks))
 	for _, track := range tracks {
-		if _, ok := cat.Meta(track.TrackID); !ok {
+		if _, ok := ports.CatalogMeta(ctx, cat, track.TrackID); !ok {
 			continue
 		}
 		if dense {

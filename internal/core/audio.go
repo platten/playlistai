@@ -12,15 +12,17 @@ type AudioModelIdentity struct {
 }
 
 type PreviewIdentity struct {
-	Status       ResolutionStatus `json:"status"`
-	Provider     string           `json:"provider"`
-	ProviderID   string           `json:"providerId"`
-	RecordingID  string           `json:"recordingId"`
-	ISRC         string           `json:"isrc"`
-	Artist       string           `json:"artist"`
-	Title        string           `json:"title"`
-	Method       string           `json:"method"`
-	Alternatives []string         `json:"alternatives"`
+	PolicyVersion             string           `json:"policyVersion,omitempty"`
+	FullRecordingMilliseconds int64            `json:"fullRecordingMilliseconds,omitempty"`
+	Status                    ResolutionStatus `json:"status"`
+	Provider                  string           `json:"provider"`
+	ProviderID                string           `json:"providerId"`
+	RecordingID               string           `json:"recordingId"`
+	ISRC                      string           `json:"isrc"`
+	Artist                    string           `json:"artist"`
+	Title                     string           `json:"title"`
+	Method                    string           `json:"method"`
+	Alternatives              []string         `json:"alternatives"`
 }
 
 // URL is transient: signed CDN links and audio payloads are not analysis data.
@@ -61,16 +63,17 @@ type AudioAnalysis struct {
 }
 
 type AudioClause struct {
-	ConceptID string `json:"conceptId,omitempty"`
-	Strength  string `json:"strength,omitempty"`
-	Degree    string `json:"degree,omitempty"`
-	Group     string `json:"group,omitempty"`
-	Kind      string `json:"kind"`
-	Text      string `json:"text"`
-	Scope     string `json:"scope"`
-	Negative  bool   `json:"negative"`
-	Essential bool   `json:"essential"`
-	Strict    bool   `json:"strict"`
+	CoverageGroup string `json:"coverageGroup,omitempty"`
+	ConceptID     string `json:"conceptId,omitempty"`
+	Strength      string `json:"strength,omitempty"`
+	Degree        string `json:"degree,omitempty"`
+	Group         string `json:"group,omitempty"`
+	Kind          string `json:"kind"`
+	Text          string `json:"text"`
+	Scope         string `json:"scope"`
+	Negative      bool   `json:"negative"`
+	Essential     bool   `json:"essential"`
+	Strict        bool   `json:"strict"`
 }
 
 type AudioClauseAssessment struct {
@@ -82,6 +85,8 @@ type AudioClauseAssessment struct {
 }
 
 type AudioAssessment struct {
+	ModelFingerprint  string                  `json:"modelFingerprint,omitempty"`
+	Coverage          *PreviewCoverage        `json:"coverage,omitempty"`
 	LibraryCoverage   *LibraryCLAPCoverage    `json:"libraryCoverage,omitempty"`
 	TrackID           string                  `json:"trackId"`
 	AnalysisID        string                  `json:"analysisId"`

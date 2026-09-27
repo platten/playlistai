@@ -2,6 +2,7 @@ package multichannel
 
 import (
 	"context"
+	"errors"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -25,15 +26,16 @@ func runRetrievalJobs(ctx context.Context, jobs []retrievalJob, byID map[string]
 		}
 	}
 	if !parallelSupported || len(jobs) < 2 {
+		var errs []error
 		for _, job := range jobs {
-			if err := ctx.Err(); err != nil {
-				return err
+			if ctx.Err() != nil {
+				break
 			}
 			if err := job.run(byID, exploration); err != nil {
-				return err
+				errs = append(errs, err)
 			}
 		}
-		return ctx.Err()
+		return errors.Join(append(errs, ctx.Err())...)
 	}
 	type result struct {
 		candidates  map[string]*core.Candidate
@@ -66,12 +68,10 @@ func runRetrievalJobs(ctx context.Context, jobs []retrievalJob, byID map[string]
 		})
 	}
 	searchwork.Run(ctx, len(parallel), func(index int) { parallel[index]() })
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+	var errs []error
 	for _, slot := range results {
 		if slot.err != nil {
-			return slot.err
+			errs = append(errs, slot.err)
 		}
 		for id, candidate := range slot.candidates {
 			if existing := byID[id]; existing != nil {
@@ -82,5 +82,5 @@ func runRetrievalJobs(ctx context.Context, jobs []retrievalJob, byID map[string]
 		}
 		*exploration = append(*exploration, slot.exploration...)
 	}
-	return nil
+	return errors.Join(append(errs, ctx.Err())...)
 }

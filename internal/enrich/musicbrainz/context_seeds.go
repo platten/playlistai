@@ -62,7 +62,7 @@ func (c *Client) contextArtistAlbums(ctx context.Context, artistID, artist strin
 		// Keep room for each album, so the first album cannot consume every seed.
 		plan.Seeds = append(plan.Seeds, seeds[:min(len(seeds), 2)]...)
 	}
-	plan.Seeds = contextCatalogSeeds(plan.Seeds, cat)
+	plan.Seeds = contextCatalogSeeds(ctx, plan.Seeds, cat)
 	if early {
 		plan.Profile.ScopeNote = "Early sound is proposed from the first two dated studio albums in the complete returned discography; this is a retrieval interpretation, not an output date requirement."
 	} else {
@@ -101,7 +101,7 @@ func (c *Client) contextRecordingSeeds(ctx context.Context, query, artistID, art
 				recording.ArtistCredit[i].Name = recording.ArtistCredit[i].Artist.Name
 			}
 		}
-		c.addKnowledgeRecording(recording, cat, resolver, &recordings)
+		c.addKnowledgeRecording(ctx, recording, cat, resolver, &recordings)
 	}
 	sort.Slice(recordings.Tracks, func(i, j int) bool { return recordings.Tracks[i].Ref.ID < recordings.Tracks[j].Ref.ID })
 	var seeds []core.WeightedTrack
@@ -139,7 +139,7 @@ func contextDiverseSeeds(ctx context.Context, seeds []core.WeightedTrack, cat po
 		vectors = append(vectors, v.Audio)
 	}
 	if len(valid) == 0 {
-		return contextCatalogSeeds(seeds, cat)
+		return contextCatalogSeeds(ctx, seeds, cat)
 	}
 	distance := func(i, j int) float64 {
 		var dot, a, b float64
@@ -187,7 +187,7 @@ func contextDiverseSeeds(ctx context.Context, seeds []core.WeightedTrack, cat po
 	for _, index := range chosen {
 		selected = append(selected, core.WeightedTrack{TrackID: valid[index].TrackID, Weight: 1})
 	}
-	return contextCatalogSeeds(selected, cat)
+	return contextCatalogSeeds(ctx, selected, cat)
 }
 
 func (c *Client) genreContext(ctx context.Context, intent core.MusicIntent, snapshot *core.KnowledgeSnapshot) {

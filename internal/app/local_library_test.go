@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/librarypack"
 )
@@ -24,14 +26,22 @@ func appLibrarySpace() librarypack.VectorSpace {
 }
 
 func writeAppLibraryPack(t *testing.T, path, generation, trackID string, relativePath string) librarypack.Manifest {
+	return writeAppLibraryPackVariant(t, path, generation, trackID, relativePath, "")
+}
+
+func writeAppLibraryPackVariant(t *testing.T, path, generation, trackID, relativePath, backend string) librarypack.Manifest {
 	t.Helper()
 	track := librarypack.Track{ID: trackID, Artist: "Local Artist", Title: "Local Track", MERT: []float32{1, 0, 0}}
 	if relativePath != "" {
 		track.RootAlias, track.RelativePath = "music-main", relativePath
 	}
+	space := appLibrarySpace()
+	if backend != "" {
+		space.Runtime = "onnxruntime/1.26.0/" + backend
+	}
 	_, err := librarypack.Write(context.Background(), path, librarypack.Pack{
 		CorpusGeneration: generation, MetadataGeneration: "metadata-" + generation,
-		MERTGeneration: "mert-" + generation, MERT: appLibrarySpace(), Tracks: []librarypack.Track{track},
+		MERTGeneration: "mert-" + generation, MERT: space, Tracks: []librarypack.Track{track},
 	}, librarypack.Limits{})
 	if err != nil {
 		t.Fatalf("write pack: %v", err)
@@ -41,6 +51,113 @@ func writeAppLibraryPack(t *testing.T, path, generation, trackID string, relativ
 		t.Fatalf("index pack: %v", err)
 	}
 	return manifest
+}
+
+func TestLocalLibraryKeepsCPUAndCUDAPacksAndSelectsRunningBackend(t *testing.T) {
+	ctx := context.Background()
+	cfg := testConfig(t)
+	c := &Container{cfg: cfg}
+	defer c.Close()
+	cpuPath, gpuPath := filepath.Join(t.TempDir(), "cpu.paipack"), filepath.Join(t.TempDir(), "gpu.paipack")
+	cpu := writeAppLibraryPackVariant(t, cpuPath, "cpu", "cpu-track", "", "cpu")
+	gpu := writeAppLibraryPackVariant(t, gpuPath, "cuda", "gpu-track", "", "cuda")
+	if _, err := c.ImportLocalLibrary(ctx, cpuPath); err != nil {
+		t.Fatal(err)
+	}
+	old, err := c.PinLocalCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer old.Close()
+	if _, err := c.ImportLocalLibrary(ctx, gpuPath); err != nil {
+		t.Fatal(err)
+	}
+	status, err := c.LocalLibraryStatus()
+	if err != nil || status.PackID != cpu.PackID || status.ActiveBackend != "cpu" || len(status.AvailableBackends) != 2 {
+		t.Fatalf("CPU fallback status: %+v, %v", status, err)
+	}
+	c.analysis.manifest = &audio.BundleManifest{Model: core.AudioModelIdentity{Runtime: "onnxruntime/1.26.0/cuda"}}
+	status, err = c.LocalLibraryStatus()
+	if err != nil || status.PackID != gpu.PackID || status.ActiveBackend != "cuda" {
+		t.Fatalf("CUDA status: %+v, %v", status, err)
+	}
+	selected, err := c.PinLocalCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer selected.Close()
+	if _, ok, err := selected.Lookup(ctx, selected.NamespacedID("gpu-track")); err != nil || !ok {
+		t.Fatalf("GPU pack not selected: %v", err)
+	}
+	if _, ok, err := old.Lookup(ctx, old.NamespacedID("cpu-track")); err != nil || !ok {
+		t.Fatalf("in-flight CPU pack lost: %v", err)
+	}
+	c.analysis.manifest = nil
+	selectedCPU, err := c.PinLocalCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer selectedCPU.Close()
+	if _, ok, err := selectedCPU.Lookup(ctx, selectedCPU.NamespacedID("cpu-track")); err != nil || !ok {
+		t.Fatalf("CPU pack not restored: %v", err)
+	}
+	if _, err := c.RemoveLocalLibrary(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status, err = c.LocalLibraryStatus()
+	if err != nil || status.Installed || len(status.AvailableBackends) != 0 {
+		t.Fatalf("remove left a backend active: %+v, %v", status, err)
+	}
+}
+
+func TestLocalPackBackendKeepsLegacyIdentityAndRejectsMixedVectors(t *testing.T) {
+	legacy := librarypack.Manifest{CLAPModel: &core.AudioModelIdentity{Runtime: "onnxruntime/1.26.0/cuda"}}
+	if backend, err := localPackBackend(legacy); err != nil || backend != "cuda" {
+		t.Fatalf("legacy CLAP runtime: %q, %v", backend, err)
+	}
+	legacy.CLAPModel = nil
+	if backend, err := localPackBackend(legacy); err != nil || backend != "cpu" {
+		t.Fatalf("legacy unknown runtime: %q, %v", backend, err)
+	}
+	legacy.MERT.Runtime = "onnxruntime/1.26.0/cpu"
+	legacy.CLAP.Runtime = "onnxruntime/1.26.0/cuda"
+	if _, err := localPackBackend(legacy); err == nil {
+		t.Fatal("pack with mixed CPU and CUDA vectors was accepted")
+	}
+}
+
+func TestLocalLibrarySettingsAcceptsLegacyPackMetadata(t *testing.T) {
+	cfg := testConfig(t)
+	root := filepath.Join(cfg.DataDir, "local-library")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(root, localLibrarySettingsFile)
+	legacy := `{"packId":"old-pack","importedAudioEvidence":true,"version":1,"mode":"combined","rootMappings":{}}`
+	if err := os.WriteFile(settingsPath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &Container{cfg: cfg}
+	t.Cleanup(func() { _ = c.Close() })
+	if status, err := c.LocalLibraryStatus(); err != nil || status.Installed || status.Mode != LocalLibraryCombined {
+		t.Fatalf("legacy settings blocked local library status: %+v %v", status, err)
+	}
+	if _, err := c.SetLocalLibraryMode(LocalLibraryCombined); err != nil {
+		t.Fatalf("legacy settings blocked update: %v", err)
+	}
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "packId") || strings.Contains(string(raw), "importedAudioEvidence") {
+		t.Fatalf("legacy pack metadata survived canonical settings write: %s", raw)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"version":1,"mode":"combined","rootMappings":{},"unexpected":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadLocalLibrarySettings(root); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("unexpected settings field was accepted: %v", err)
+	}
 }
 
 func TestLocalLibraryRejectsUnindexedPackWithoutBuildingIndexes(t *testing.T) {

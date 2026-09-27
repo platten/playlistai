@@ -39,7 +39,7 @@ type SourceRegion struct {
 }
 
 type SyntacticMarker struct {
-	Kind  string `json:"kind"` // exclusion | inclusion | alternative | journey_start | journey_via | journey_end
+	Kind  string `json:"kind"` // exclusion | inclusion | alternative | genre_coverage | journey_start | journey_via | journey_end
 	Text  string `json:"text"`
 	Start int    `json:"start"`
 	End   int    `json:"end"`
@@ -62,17 +62,18 @@ type RecognitionStatus struct {
 // byte offsets into OriginalDescription. Strength is essential, preferred or
 // required; Group identifies alternatives, never an implicit conjunction.
 type IntentAtom struct {
-	ID        string             `json:"id"`
-	ConceptID string             `json:"conceptId,omitempty"`
-	Kind      string             `json:"kind"`
-	Value     string             `json:"value"`
-	Scope     string             `json:"scope"`
-	Polarity  string             `json:"polarity"`
-	Strength  string             `json:"strength"`
-	Degree    string             `json:"degree,omitempty"`
-	Group     string             `json:"group,omitempty"`
-	Evidence  []SourceEvidence   `json:"evidence"`
-	Grounding *IdentityGrounding `json:"grounding,omitempty"`
+	CoverageGroup string             `json:"coverageGroup,omitempty"`
+	ID            string             `json:"id"`
+	ConceptID     string             `json:"conceptId,omitempty"`
+	Kind          string             `json:"kind"`
+	Value         string             `json:"value"`
+	Scope         string             `json:"scope"`
+	Polarity      string             `json:"polarity"`
+	Strength      string             `json:"strength"`
+	Degree        string             `json:"degree,omitempty"`
+	Group         string             `json:"group,omitempty"`
+	Evidence      []SourceEvidence   `json:"evidence"`
+	Grounding     *IdentityGrounding `json:"grounding,omitempty"`
 }
 
 func cloneTranslation(in *IntentTranslation) *IntentTranslation {
@@ -104,5 +105,17 @@ func cloneIdentityGrounding(in *IdentityGrounding) *IdentityGrounding {
 	}
 	out := *in
 	out.Candidates = append([]IdentityCandidate(nil), in.Candidates...)
+	for i := range out.Candidates {
+		out.Candidates[i].Popularity = out.Candidates[i].Popularity.Clone()
+	}
+	out.Alternatives = append([]IdentityCandidate(nil), in.Alternatives...)
+	for i := range out.Alternatives {
+		out.Alternatives[i].Popularity = out.Alternatives[i].Popularity.Clone()
+	}
+	if in.Decision != nil {
+		decision := *in.Decision
+		out.Decision = &decision
+	}
+	out.Corroboration = cloneIdentityCorroboration(in.Corroboration)
 	return &out
 }

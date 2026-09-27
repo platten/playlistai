@@ -69,7 +69,7 @@ func (s *MMRSelector) contextEntry(ctx context.Context, track core.TrackRef, use
 		}
 	}
 	entry.vectors, entry.hasVectors = s.cat.Vectors(track.ID)
-	entry.album, entry.hasAlbum = reliableAlbum(s.cat, track.ID)
+	entry.album, entry.hasAlbum = reliableAlbumContext(ctx, s.cat, track.ID)
 	return entry, ctx.Err()
 }
 
@@ -151,44 +151,51 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		best = math.Max(best, candidate.Scores.Total)
 	}
 	floor := math.Max(s.cfg.SelectionMinimumRelevance, best-s.cfg.SelectionRelevanceWindow)
+	enhanced := request.Intent.Controls.RecommendationMode == core.EnhancedHybrid
 	requestFloor := s.cfg.SelectionMinimumRelevance
 	requestRelevance := enhancedRequestRelevances(candidates, request.Intent)
-	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
-		for _, candidate := range candidates {
-			if relevance, ok := enhancedRequestRelevance(candidate, request.Intent); ok {
-				requestFloor = max(requestFloor, relevance-s.cfg.SelectionRelevanceWindow)
-			}
-		}
-	}
 	pool := make([]poolEntry, 0, len(candidates))
 	contextTracks := append([]core.TrackRef(nil), request.Required...)
 	contextTracks = append(contextTracks, request.Waypoints...)
 	contextTracks = append(contextTracks, tailTracks(request.RecentSelections, maxContinuationAnchors)...)
-	named := namedReferenceArtists(s.cat, request.Intent)
+	named := namedReferenceArtistsContext(ctx, s.cat, request.Intent)
 	allTracks := append(append([]core.TrackRef(nil), contextTracks...), named...)
 	for _, candidate := range candidates {
 		allTracks = append(allTracks, candidate.Track)
 	}
-	performers := newPerformerKeys(request.Intent, allTracks)
+	performers := newPerformerKeysContext(ctx, request.Intent, allTracks, s.cat)
+	if err := ctx.Err(); err != nil {
+		return ports.SelectionResult{}, err
+	}
 	for index, candidate := range candidates {
 		if err := ctx.Err(); err != nil {
 			return ports.SelectionResult{}, err
 		}
 		passesEnhancedRequestFloor := false
 		if enforceFloor && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && candidate.FitTier == fitClose && candidate.MusicalFit != core.EvidenceMatch {
-			if relevance, ok := requestRelevance[index]; !ok || !relevance.ok || relevance.value < requestFloor {
+			relevance, ok := requestRelevance[index]
+			if candidate.FitAssessment != nil && candidate.FitAssessment.PolicyVersion == core.AutomaticFitPolicyVersion {
+				// The Automatic pipeline has already reconciled and frozen its
+				// musical assessment. Legacy source fields are not its fit ledger.
+				relevance.value, relevance.ok = candidateRequestFit(candidate, request.Intent)
+				ok = true
+			}
+			if !ok || !relevance.ok || relevance.value < requestFloor {
 				continue
 			}
 			passesEnhancedRequestFloor = true
 		}
-		if enforceFloor && !passesEnhancedRequestFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
+		if enforceFloor && !enhanced && !passesEnhancedRequestFloor && candidate.Scores.Total < floor && (request.Intent.VerificationPolicy != core.BestAvailable || candidate.MusicalFit != core.EvidenceMatch) {
 			continue
 		}
 		entry := poolEntry{
 			candidate:  candidate,
 			artistKey:  core.NormalizeIdentityPart(candidate.Track.Artist),
-			performers: performers.keys(candidate.Track.Artist),
+			performers: performers.trackKeys(candidate.Track),
 			relevance:  normalizedRelevance(candidate.Scores.Total, floor, best),
+		}
+		if enhanced {
+			entry.relevance, _ = candidateRequestFit(candidate, request.Intent)
 		}
 		if core.RequiresOtherArtists(request.Intent) {
 			entry.outsideNamed = outsideNamedArtists(performers, candidate.Track, named)
@@ -201,7 +208,10 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 				return ports.SelectionResult{}, err
 			}
 		}
-		entry.album, entry.hasAlbum = reliableAlbum(s.cat, candidate.Track.ID)
+		entry.album, entry.hasAlbum = reliableAlbumContext(ctx, s.cat, candidate.Track.ID)
+		if err := ctx.Err(); err != nil {
+			return ports.SelectionResult{}, err
+		}
 		pool = append(pool, entry)
 	}
 	result := ports.SelectionResult{Candidates: make([]core.Candidate, 0, request.Count), Notices: []core.PlaylistNotice{}}
@@ -215,7 +225,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		if err != nil {
 			return ports.SelectionResult{}, err
 		}
-		entry.performers = performers.keys(track.Artist)
+		entry.performers = performers.trackKeys(track)
 		for index := range pool {
 			pool[index].fold(entry, request.Intent)
 		}
@@ -225,7 +235,7 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 	artistDiversity := genreArtistDiversity(request.Intent)
 	artistUses := map[string]int{}
 	seenRequired := map[string]bool{}
-	needsOther := core.RequiresOtherArtists(request.Intent) && !includesOtherArtists(s.cat, request.Intent, request.Required)
+	needsOther := core.RequiresOtherArtists(request.Intent) && !includesOtherArtistsContext(ctx, s.cat, request.Intent, request.Required)
 	for _, track := range request.Required {
 		if !seenRequired[track.ID] {
 			artistUses[core.NormalizeIdentityPart(track.Artist)]++
@@ -236,8 +246,30 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 		if err := ctx.Err(); err != nil {
 			return ports.SelectionResult{}, err
 		}
+		// Anchor the tolerance at the best fit in the best permitted tier. A
+		// pairwise tolerance comparator would drift through chains of near ties.
+		bestFit := math.Inf(-1)
+		preferOther, preferStrong := false, false
+		if enhanced {
+			for _, entry := range pool {
+				preferOther = preferOther || needsOther && entry.outsideNamed
+			}
+			for _, entry := range pool {
+				if !preferOther || entry.outsideNamed {
+					preferStrong = preferStrong || entry.candidate.FitTier == fitStrong
+				}
+			}
+			for _, entry := range pool {
+				if (!preferOther || entry.outsideNamed) && (!preferStrong || entry.candidate.FitTier == fitStrong) {
+					bestFit = max(bestFit, entry.relevance)
+				}
+			}
+		}
 		chosen := -1
 		for index := range pool {
+			if enhanced && (preferOther && !pool[index].outsideNamed || preferStrong && pool[index].candidate.FitTier != fitStrong || pool[index].relevance < bestFit-s.cfg.EnhancedRelevanceTolerance) {
+				continue
+			}
 			pool[index].score(s.cfg, lambda)
 			better := chosen < 0
 			if chosen >= 0 {
@@ -252,6 +284,8 @@ func (s *MMRSelector) selectCandidates(ctx context.Context, candidates []core.Ca
 					better = left.FitTier == fitStrong
 				} else if request.Intent.Controls.RecommendationMode != core.EnhancedHybrid && request.Intent.VerificationPolicy == core.BestAvailable && (left.MusicalFit == core.EvidenceMatch) != (right.MusicalFit == core.EvidenceMatch) {
 					better = left.MusicalFit == core.EvidenceMatch
+				} else if enhanced && s.cfg.EnhancedRelevanceTolerance == 0 && pool[index].relevance != pool[chosen].relevance {
+					better = pool[index].relevance > pool[chosen].relevance
 				} else if artistDiversity && pool[index].artistKey != "" && pool[chosen].artistKey != "" && artistUses[pool[index].artistKey] != artistUses[pool[chosen].artistKey] {
 					better = artistUses[pool[index].artistKey] < artistUses[pool[chosen].artistKey]
 				} else {
@@ -293,8 +327,8 @@ func normalizedRelevance(score, floor, best float64) float64 {
 	return clamp((score-floor)/(best-floor), 0, 1)
 }
 
-func reliableAlbum(cat ports.Catalog, trackID string) (string, bool) {
-	meta, ok := cat.Meta(trackID)
+func reliableAlbumContext(ctx context.Context, cat ports.Catalog, trackID string) (string, bool) {
+	meta, ok := ports.CatalogMeta(ctx, cat, trackID)
 	if !ok || !meta.AlbumReliable {
 		return "", false
 	}
@@ -321,3 +355,7 @@ func selectionFloorNotice(requested, actual int, floor float64) core.PlaylistNot
 }
 
 var _ ports.CandidateSelector = (*MMRSelector)(nil)
+
+func reliableAlbum(cat ports.Catalog, trackID string) (string, bool) {
+	return reliableAlbumContext(context.Background(), cat, trackID)
+}

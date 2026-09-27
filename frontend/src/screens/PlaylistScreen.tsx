@@ -5,6 +5,7 @@ import {
   FeedbackType,
   type BuildPlaylistRequest,
   type PlaylistResult,
+  type ResolutionSelection,
 } from "../lib/api";
 import {
   Button,
@@ -22,6 +23,9 @@ import { hasFixedTrackCount, playlistOutcomeMessage } from "../lib/playlistOutco
 import { PlaylistDuration } from "../components/PlaylistDuration";
 import { sameControls, type PlaylistDraft } from "../lib/playlistDraft";
 import { EnhancedAudioEvidence } from "../components/EnhancedAudioEvidence";
+import { RecordingEvidence } from "../components/RecordingEvidence";
+import { ArtistDecisions } from "../components/ArtistDecisions";
+import { AutomaticFitEvidence } from "../components/AutomaticFitEvidence";
 import { createPlaylistFeedback, feedbackPendingKey } from "../lib/playlistFeedback";
 import { recommendationModeLabel } from "../lib/recommendationMode";
 
@@ -95,6 +99,7 @@ export function PlaylistScreen({
   );
   const accepted = useRef<PlaylistDraft["accepted"]>(restored?.accepted ?? (initialResultMatches && initialResult ? { controls, result: initialResult } : undefined));
   const [busy, setBusy] = useState(!initialResultMatches);
+  const [artistSelections, setArtistSelections] = useState<ResolutionSelection[]>(restored?.artistSelections ?? request.artistSelections ?? []);
   const recommendationMode = result?.intent?.controls?.recommendationMode || initial?.recommendationMode || "enhanced_hybrid";
   const engineOnly = recommendationMode === "deejai_only";
   const [dismissedOutcome, setDismissedOutcome] = useState<PlaylistResult | null>(null);
@@ -110,6 +115,7 @@ export function PlaylistScreen({
   const fitByTrack = useMemo(() => new Map(
     (result?.assessments ?? []).map((assessment) => [assessment.trackId, assessment]),
   ), [result?.assessments]);
+  const automaticFits = useMemo(() => new Map((result?.fitAssessments ?? []).map(fit => [fit.trackId, fit.assessment])), [result?.fitAssessments]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [feedbackSession] = useState(() => restored?.feedback ?? createPlaylistFeedback());
   const feedback = useSyncExternalStore(feedbackSession.subscribe, feedbackSession.getSnapshot);
@@ -133,7 +139,7 @@ export function PlaylistScreen({
       `request-${sessionId}-${randomSeed()}`,
     [initialResult?.reproducibility?.id, request.requestId, requestKey, sessionId],
   );
-  useEffect(() => { onDraft?.({ controls, accepted: accepted.current, feedback: feedbackSession }); }, [controls, result, onDraft, feedbackSession]);
+  useEffect(() => { onDraft?.({ controls, artistSelections, accepted: accepted.current, feedback: feedbackSession }); }, [controls, artistSelections, result, onDraft, feedbackSession]);
   useEffect(() => {
     let current = true;
     if (result?.presentationId) void onDisplayed?.(result.presentationId).catch((error: unknown) => {
@@ -143,6 +149,10 @@ export function PlaylistScreen({
   }, [result, onDisplayed]);
 
   const initialInputsUnchanged =
+    artistSelections.length === (request.artistSelections ?? []).length && artistSelections.every((choice, index) => {
+      const original = request.artistSelections?.[index];
+      return choice.kind === original?.kind && choice.query === original.query && choice.identityId === original.identityId;
+    }) &&
     initialResultMatches &&
     audioWeight === (initial?.audioWeight ?? request.creativity ?? 0.5) &&
     cooccurrenceWeight === (initial?.cooccurrenceWeight ?? 0.5) &&
@@ -176,6 +186,7 @@ export function PlaylistScreen({
     setError(null);
     const call = API.BuildPlaylist({
       ...request,
+      artistSelections,
       enhancedAudio: accepted.current?.result.enhancedAudio ?? request.enhancedAudio,
       requestId: feedbackRequestId,
       sessionId,
@@ -206,6 +217,7 @@ export function PlaylistScreen({
       });
   }, [
     request,
+    artistSelections,
     feedbackRequestId,
     sessionId,
     audioWeight,
@@ -274,7 +286,7 @@ export function PlaylistScreen({
         <div className="min-w-0 flex-1 basis-[240px]">
           <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.02em] break-words">{heading}</h1>
           <p className="mt-1.5 text-[12px] text-muted">
-            {isJourney ? "journey" : "similarity walk"} · {tracks.length} tracks
+            {isJourney ? "journey" : recommendationMode === "automatic" ? "playlist" : "similarity walk"} · {tracks.length} tracks
             {` · ${recommendationModeLabel(recommendationMode)}`}
             {result ? ` · seed ${result.seed}` : ""}
           </p>
@@ -314,6 +326,11 @@ export function PlaylistScreen({
           Review &amp; export
         </Button>
       </div>
+
+      {recommendationMode === "automatic" && <ArtistDecisions intent={result?.intent ?? request.intent} choices={artistSelections} disabled={busy} onChoose={choice => {
+        accepted.current = undefined;
+        setArtistSelections(previous => [...previous.filter(item => item.kind !== choice.kind || item.query !== choice.query), choice]);
+      }} />}
 
       {result && result !== dismissedOutcome && outcomeMessage && (
         <div className="relative mb-3 rounded-card border border-accent/30 bg-accent-quiet py-3 pl-4 pr-12">
@@ -463,6 +480,8 @@ export function PlaylistScreen({
                   }
                 />
                 {expanded.has(i) && result && <EnhancedAudioEvidence result={result} track={t} />}
+                {expanded.has(i) && <RecordingEvidence assessment={fit} />}
+                {expanded.has(i) && <AutomaticFitEvidence fit={automaticFits.get(t.id)} />}
                 {expanded.has(i) && comparisons.length > 0 && (
                   <div className="mx-2 mb-3 rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
                     <p className="font-medium text-text">How this matches your request</p>
@@ -479,7 +498,7 @@ export function PlaylistScreen({
                         </li>
                       ))}
                     </ul>
-                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "enhanced_hybrid" ? "Audio and metadata evidence are compared for each requested characteristic." : result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Both sources still check strict requirements. Predictions do not guarantee the full recording’s characteristics.</p>
+                    <p className="mt-2 text-faint">{result?.intent.controls.recommendationMode === "automatic" ? "Automatic compares available compatible audio and metadata evidence." : result?.intent.controls.recommendationMode === "enhanced_hybrid" ? "Audio and metadata evidence are compared for each requested characteristic." : result?.intent.controls.recommendationMode === "clap_first" ? "Preview comparisons lead ranking; AcousticBrainz fills scoring gaps." : "Decisive AcousticBrainz predictions lead ranking; preview comparisons fill scoring gaps."} Strict requirements still need supporting evidence. Predictions do not guarantee the full recording’s characteristics.</p>
                   </div>
                 )}
                 {expanded.has(i) && acoustic && (acoustic.low || Object.keys(acoustic.predictions ?? {}).length > 0) && (

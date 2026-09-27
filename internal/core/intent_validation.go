@@ -8,6 +8,9 @@ import (
 
 // Validate checks semantic invariants that JSON decoding and GBNF cannot.
 func (m MusicIntent) Validate() error {
+	if err := m.validateCoverageGroups(); err != nil {
+		return err
+	}
 	if m.DurationSeconds < 0 || m.DurationSeconds > 24*60*60 {
 		return fmt.Errorf("intent: duration must be between zero and 24 hours")
 	}

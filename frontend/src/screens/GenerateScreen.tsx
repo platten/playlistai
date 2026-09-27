@@ -4,6 +4,7 @@ import generateSamples from "../lib/generateSamples.json";
 import { useSavedPlaylist } from "../lib/useSavedPlaylist";
 import { IntentTraits } from "../components/IntentTraits";
 import { ArtistSpellingDialog } from "../components/ArtistSpellingDialog";
+import { ArtistDecisions } from "../components/ArtistDecisions";
 import { PROGRESS_EVENT, type Progress } from "../components/useProgress";
 import {
   API,
@@ -323,6 +324,7 @@ export function GenerateScreen({
   // Ask for a named reference only when no usable musical intent was parsed.
   const activeBackend = preview?.parser?.requestedBackend || preview?.backend || parserBackend;
   const deejAIOnly = recommendationMode === "deejai_only";
+  const automatic = recommendationMode === "automatic";
   const catalogOnly = deejAIOnly || activeBackend !== "llama";
   const visibleSamples = deejAIOnly
     ? DEEJAI_SAMPLES.map((example) => ({ prompt: example }))
@@ -390,6 +392,7 @@ export function GenerateScreen({
             ? `You kept “${issue.query}”. No artist match has been confirmed for that name. Correct the spelling or choose another artist if the request cannot be fulfilled.`
             : issue.influence === "negative"
             ? `The excluded ${issue.kind} “${issue.query}” has no local catalog match. Its exclusion is preserved; it will not be used for a seed lookup.`
+            : automatic ? `The selected ${issue.kind} “${issue.query}” needs an identified recording in the installed music data. Generation will use the available prepared recordings.`
             : issue.kind === "artist"
             ? `Artist “${issue.query}” was not found under that name in the local catalog. Generate playlist will search MusicBrainz and Deezer for the artist, then try popular tracks in order until a catalog seed is found. If those do not match, it will check additional recordings within the lookup limit.`
             : `No catalog match was found for the ${issue.kind} “${issue.query}”. Check the spelling, include the artist with an album or track title, or use another reference.`),
@@ -440,7 +443,7 @@ export function GenerateScreen({
       const sequence = ++generationSequence.current;
       void activeParse.current?.cancel("generation started");
       void activeGeneration.current?.cancel("superseded playlist generation");
-      const context = intentContext();
+      const context = { ...intentContext(), submittedAtMilliseconds: Date.now() };
       setParsing(true);
       const parse = API.ParseIntentWithContext(q, context);
       activeParse.current = parse;
@@ -640,7 +643,7 @@ export function GenerateScreen({
             </div>
             <button type="button" aria-label="Dismiss request message" className="grid size-8 shrink-0 place-items-center rounded-control text-muted hover:bg-accent-quiet hover:text-text" onClick={() => { setDismissedNotice(noticeKey); document.getElementById("music-description")?.focus(); }}><Icon.X size={16} /></button>
           </div>
-          {ambiguousIssues.map((issue) => (
+          {!outcome && ambiguousIssues.map((issue) => (
             <div key={resolutionIssueKey(issue.kind, issue.query)} className="mt-3 flex flex-col gap-2 text-[13px]">
               {((issue.groundingCandidates?.length ?? 0) > 1 || issue.groundingTruncated) && (
                 <label className="flex flex-col gap-1">
@@ -671,7 +674,7 @@ export function GenerateScreen({
               )}
             </div>
           ))}
-          {ambiguousIssues.length > 0 && <Button className="mt-3" disabled={setupPending || ambiguityNeedsChoice || generating} onClick={generate}>Confirm and generate</Button>}
+          {!outcome && ambiguousIssues.length > 0 && <Button className="mt-3" disabled={setupPending || ambiguityNeedsChoice || generating} onClick={generate}>Confirm and generate</Button>}
         </div>
       )}
 
@@ -764,12 +767,12 @@ export function GenerateScreen({
             <div role="status" aria-live="polite" aria-atomic="true">
               <ProgressBar
                 label={generating
-                  ? checkingProgress?.note || intentProgress?.note || (catalogOnly ? "Building your playlist…" : "The local model is processing your request…")
+                  ? checkingProgress?.stage === "comparing" ? "Comparing matches" : checkingProgress?.note || intentProgress?.note || (catalogOnly ? "Building your playlist…" : "The local model is processing your request…")
                   : catalogOnly ? "Reading your description…" : "The local model is reading your description…"}
               />
             </div>
             <div className="mt-2 flex flex-wrap justify-between gap-2 text-[12px] text-muted">
-              <span>{generating ? "Detailed analysis can take several minutes on some devices. You can cancel below." : "You can keep editing while your request summary updates."}</span>
+              <span>{generating ? automatic ? "Understanding, selecting, then ordering. You can cancel below." : "Detailed analysis can take several minutes on some devices. You can cancel below." : "You can keep editing while your request summary updates."}</span>
               <span aria-hidden="true" className="tabular-nums">{processingSeconds}s elapsed</span>
             </div>
           </div>
@@ -837,8 +840,12 @@ export function GenerateScreen({
 
       {generating && (
         <section className="flex w-full flex-col gap-3" aria-label="Generation progress">
+          {recommendationMode === "enhanced_hybrid" && <p className="text-[12px] text-muted">Searching for well-supported matches for up to ten minutes. You can keep checked tracks at any time.</p>}
+          {automatic && <p className="text-[12px] text-muted">Preparing your playlist within a two-minute budget. Fewer tracks may be returned when suitable matches are unavailable.</p>}
+          {checkingProgress?.candidatesConsidered !== undefined && <p role="status" className="text-[12px] text-muted">{checkingProgress.candidatesConsidered} candidates compared · {checkingProgress.candidatesEligible ?? 0} eligible</p>}
+          {checkingProgress?.candidatesSupported !== undefined && <p className="text-[12px] text-muted">{checkingProgress.candidatesSupported} candidates have support for their defining characteristics. Similarity and unverified details remain approximate.</p>}
           <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" disabled={!checkedTracks.some((track) => !track.suggested)} onClick={() => API.StopAndKeepCheckedTracks(generationId)}>Stop and keep checked tracks</Button>
+            <Button variant="ghost" size="sm" disabled={(checkingProgress?.candidatesEligible ?? 0) === 0 && !checkedTracks.some((track) => !track.suggested)} onClick={() => API.StopAndKeepCheckedTracks(generationId)}>Stop and keep checked tracks</Button>
             <Button variant="ghost" size="sm" onClick={cancelGeneration}>Cancel</Button>
           </div>
           {checkedTracks.length > 0 && <>
@@ -853,6 +860,10 @@ export function GenerateScreen({
       {preview && (
         <div className="w-full">
           <h2 className="mb-2 text-[14px] font-semibold">Your request</h2>
+          {automatic && <ArtistDecisions intent={preview.intent} disabled={generating} choices={spellingDecisions.current.selections} onChoose={choice => {
+            spellingDecisions.current = { prompt, source, selections: [...spellingDecisions.current.selections.filter(previous => resolutionIssueKey(previous.kind, previous.query) !== resolutionIssueKey(choice.kind, choice.query)), choice] };
+            runGenerate(prompt, [choice]);
+          }} />}
           <div className="rounded-card border border-line bg-surface p-3 text-[13px] leading-relaxed">
             <p>{preview.count} tracks{preview.mode === "journey" ? " · a musical journey" : ""}</p>
             {(preview.intent.references ?? []).map((ref, index) => <p key={index}>{ref.kind.charAt(0).toUpperCase() + ref.kind.slice(1)}: {ref.query}{ref.influence === "negative" ? " (excluded)" : ""}</p>)}
@@ -867,7 +878,7 @@ export function GenerateScreen({
             {(preview.requiredTracks ?? []).length > 0 && <p>Must include: {(preview.requiredTracks ?? []).join(", ")}</p>}
           </div>
           <details className="mt-3"><summary className="cursor-pointer text-[12px] text-muted">Interpretation details and diagnostics</summary>
-          <p className="mt-2 text-[12px] text-muted">Generation may look up extracted music names and genres in MusicBrainz, and missing artists' popular tracks in Deezer. When an instrumental-only search has no starting point, it may also check artist links on Wikipedia. Your full description and taste profile stay local. Cached metadata can be reused offline; musical fit may remain approximate.</p>
+          <p className="mt-2 text-[12px] text-muted">{automatic ? "Your description is interpreted locally. Generation may fetch public recording metadata and analyze available previews alongside prepared music data. Your full description and taste profile stay local. Missing and conflicting evidence remain visible; musical fit is an estimate." : "Generation may look up music names, genres, and recording credits in MusicBrainz and Wikidata, check linked official release pages, and discover tracks through Deezer or Wikipedia. The local model can extract cited statements from those pages. Your full description and taste profile stay local. Cached evidence can be reused offline; missing or conflicting evidence remains unverified."}</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {needsSeed && (
               <Chip>

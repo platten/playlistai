@@ -39,6 +39,9 @@ func TestLibraryRankingSignedDSPAndMissingEvidence(t *testing.T) {
 	if err := ranker.libraryScores(context.Background(), candidates, ports.RankRequest{Intent: intent}); err != nil {
 		t.Fatal(err)
 	}
+	if err := ranker.combineEnhancedScores(context.Background(), candidates, ports.RankRequest{Intent: intent}); err != nil {
+		t.Fatal(err)
+	}
 	if !(candidates[0].Scores.Total > candidates[1].Scores.Total && candidates[1].Scores.Total > candidates[2].Scores.Total) {
 		t.Fatalf("signed ordering lost: %+v", candidates)
 	}

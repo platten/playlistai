@@ -1,0 +1,750 @@
+{
+  "assessmentType": "AI web assessment, not human listening; no generalization to held-out prompts",
+  "complete": true,
+  "comparison": "End-to-end original implementation at 5 minutes vs reviewed treatment at 10 minutes, with independently generated seeds and live source conditions; combines preparation, implementation, seed and budget effects. Matched intent/seed controls are reported separately",
+  "latencyScope": "Generation time from matching completed child reports, including failures and clarification outcomes, excludes desktop startup. Unverified parent fallback timings are separate because they may include startup. Shared host and live providers; not isolated performance measurements.",
+  "arms": [
+    {
+      "name": "baseline",
+      "complete": true,
+      "provenance": {
+        "sha256": "ea4965fa9002323334cdab27a883418d3f33707bf467030b88b92fabd5ae54b9",
+        "file": "baseline-web-summary.json"
+      },
+      "attempted": 40,
+      "audited": 40,
+      "returned": 219,
+      "requested": 400,
+      "unauditedReturned": 0,
+      "missingAttempted": 181,
+      "unrun": 0,
+      "verdicts": {
+        "good": 97,
+        "partial": 62,
+        "mismatch": 47,
+        "unknown": 13
+      },
+      "operationFailures": 7,
+      "outcomeCounts": {
+        "partial": 22,
+        "unavailable": 7,
+        "needs_clarification": 11
+      },
+      "nonemptyPlaylists": 22,
+      "zeroTrackAttempts": 18,
+      "parserFallbacks": 3,
+      "parserUnknownCases": 7,
+      "timeoutCases": [
+        {
+          "caseNumber": 6,
+          "reportedMilliseconds": 319186
+        },
+        {
+          "caseNumber": 8,
+          "reportedMilliseconds": 493267
+        },
+        {
+          "caseNumber": 9,
+          "reportedMilliseconds": 300008
+        },
+        {
+          "caseNumber": 11,
+          "reportedMilliseconds": 313307
+        },
+        {
+          "caseNumber": 12,
+          "reportedMilliseconds": 301727
+        },
+        {
+          "caseNumber": 30,
+          "reportedMilliseconds": 316196
+        },
+        {
+          "caseNumber": 32,
+          "reportedMilliseconds": 410198
+        }
+      ],
+      "verifiedGenerationTimings": [
+        {
+          "caseNumber": 1,
+          "milliseconds": 286172,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "b0e2aca7a23062c1515dd2047d7ae31a4aba3ecd6aeea735be3029f54a713bb1"
+        },
+        {
+          "caseNumber": 2,
+          "milliseconds": 285827,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "380be7d3b8c6e87861b937eff66e65d5e6a4f422365c84a4eb825b22e3d53506"
+        },
+        {
+          "caseNumber": 3,
+          "milliseconds": 285511,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "438017e1e0e2f0ec0492ba82f929a48f6ca3ffe580ae8e776736c0b4fbda29a2"
+        },
+        {
+          "caseNumber": 4,
+          "milliseconds": 285763,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "35de4801311ac9b1fc175014b8d4177f371b094fec4499af7ec625e7d7791d02"
+        },
+        {
+          "caseNumber": 5,
+          "milliseconds": 285325,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "e5787d5d92ae3f1fac39efabe9f6f12ad0c5fb2538681568ed41839a79140cd3"
+        },
+        {
+          "caseNumber": 6,
+          "milliseconds": 319186,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "8385ebd98d6e70e516581955d9f6b4727b097bdcb399ef77683b21c5592f1c8a"
+        },
+        {
+          "caseNumber": 7,
+          "milliseconds": 31410,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "c8104c07813b11fd046f494ec751edcf7259b2609e2e85aac82e938853d61a37"
+        },
+        {
+          "caseNumber": 8,
+          "milliseconds": 493267,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "8f07c834de35455d3d6399fc9b3cbdf8819a1e4853152baf74aa2068f8e8639a"
+        },
+        {
+          "caseNumber": 9,
+          "milliseconds": 300008,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "bf30b1487f87efd56376f774b0bd3c47be53bd1be28b172b0ad595de0910b943"
+        },
+        {
+          "caseNumber": 10,
+          "milliseconds": 20048,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "1faddd27f1b38bb505149a2ec9234fba74102c37de8a015c554d27337c4217d6"
+        },
+        {
+          "caseNumber": 11,
+          "milliseconds": 313307,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "f30cf332e64991a1ca6ff05051f96b95cfd451c99f4990f578c38d4b2c687385"
+        },
+        {
+          "caseNumber": 12,
+          "milliseconds": 301727,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "3a8dfbb6f61989f834422e22fe64e8f4d19b7db841dfa09955d55440f6877323"
+        },
+        {
+          "caseNumber": 13,
+          "milliseconds": 286823,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "892db6348ec3fd32dd1f09eb1fff335feff9f098aa1fd72dd33909471f039935"
+        },
+        {
+          "caseNumber": 14,
+          "milliseconds": 287012,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "fd47043b19459d78a8a6bc50e2fbfc6afe63b885dd42b75e04f908c23a4f372a"
+        },
+        {
+          "caseNumber": 15,
+          "milliseconds": 287458,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "3632fa85cff5a94b4a57f1d24c06bb18e3d2fd9cc0e5b411e3f780d2dc133aa6"
+        },
+        {
+          "caseNumber": 16,
+          "milliseconds": 286919,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "141652bd3409be7762b3e12c5defd92a5119cc8feab2243da40dca8a246bcbb6"
+        },
+        {
+          "caseNumber": 17,
+          "milliseconds": 285748,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "4bf6cbfb72e246f33b126865f79bbfd832ad37aad5cee261edb72e2f6cadfcbe"
+        },
+        {
+          "caseNumber": 18,
+          "milliseconds": 285575,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "4c4e84da55cfcc5a0ea1559a5fe51eb8efca6684ca39b41f85173925db756c5d"
+        },
+        {
+          "caseNumber": 19,
+          "milliseconds": 285294,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "7698103cfc8c8bd62ccedf029319f95eae191dce21208edc082d211a33087b98"
+        },
+        {
+          "caseNumber": 20,
+          "milliseconds": 285199,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "58333320a370c9a3ba644c3742cf02d1ba53814d167b98d28b4be8130124b3a3"
+        },
+        {
+          "caseNumber": 21,
+          "milliseconds": 83817,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "977732fc63536d49fc4c5165fda947da8bf8030dab116e8b0abea68699f5fea4"
+        },
+        {
+          "caseNumber": 22,
+          "milliseconds": 143121,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "7bf49632b1789c7fdf68fe7566c032db59d7cd6b0842b66d985c3f86d27f9ba9"
+        },
+        {
+          "caseNumber": 23,
+          "milliseconds": 51191,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "d78dd8391e2b7622d4942b09d9b06686700b6e1e3634325a33bfa5958b60f601"
+        },
+        {
+          "caseNumber": 24,
+          "milliseconds": 39587,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "920ebd0a0bbfc32c12ded45811447c9320075fa2c6346e19bbc1cdbe088810d6"
+        },
+        {
+          "caseNumber": 25,
+          "milliseconds": 285148,
+          "timedOut": false,
+          "returned": 9,
+          "childSHA256": "4f5728b91195b8074567a1b5c5f3fbc2c569e6603b073db293f722ffe225b1bc"
+        },
+        {
+          "caseNumber": 26,
+          "milliseconds": 285629,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "d2eb4d766fe67e1f43db230bf17b5a4c43812456bc2bf9c110cdeb975fcd1648"
+        },
+        {
+          "caseNumber": 27,
+          "milliseconds": 285408,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "64df441e2becb47c0fc19ac300e4b05f41ebdd14a549e654ae7312601ba56b30"
+        },
+        {
+          "caseNumber": 28,
+          "milliseconds": 285560,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "6b1d88b481de139ed096adf67068d25af817abb2e6dd96d8e10e012a8e75dafa"
+        },
+        {
+          "caseNumber": 29,
+          "milliseconds": 285152,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "9748d2cb8aff4c040d3359bc719b686ac24301e0977ea31a252ff082e238703c"
+        },
+        {
+          "caseNumber": 30,
+          "milliseconds": 316196,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "b33b23e2d97e7513d193947918a2722f1267bb44aca21201def9d54a9d08770c"
+        },
+        {
+          "caseNumber": 31,
+          "milliseconds": 35664,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "691d83d623fc3e927b8b2a32e981baa447c30e55cba2b4241a6f229cd508b555"
+        },
+        {
+          "caseNumber": 32,
+          "milliseconds": 410198,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "f2dea8a2284637d8e9f14311430f267492bc02f5522089a443d21f4d96bde9b1"
+        },
+        {
+          "caseNumber": 33,
+          "milliseconds": 22681,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "bf3e05a858a08978efb351a9d9cd63c0821250ee3760fce67e3ef830d7d2561f"
+        },
+        {
+          "caseNumber": 34,
+          "milliseconds": 29052,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "788bc34dc661b0efa25dc05fd1070d54f493403c531e8138d52a29744af21eaa"
+        },
+        {
+          "caseNumber": 35,
+          "milliseconds": 285676,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "ada2ce5d6ba88ac598b9aab227ff301712221d3a5c223f792c3c3859867db2c2"
+        },
+        {
+          "caseNumber": 36,
+          "milliseconds": 285311,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "edc896decbb46604c5c4c37e63a651081296cdd9ad69529e4496f4397756376d"
+        },
+        {
+          "caseNumber": 37,
+          "milliseconds": 285376,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "bb362da0a19811f21b943c4a2e2c3f4528b4cb5e55cfcdd96f6f17ff7aadb49e"
+        },
+        {
+          "caseNumber": 38,
+          "milliseconds": 285578,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "6107e789c4cc17ec025423db455f8751851c81f9484e76d44bf1e7ce8b901483"
+        },
+        {
+          "caseNumber": 39,
+          "milliseconds": 50054,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "7fd39fd3f5583045b846246b13c6e621fd22689f267df487f889864c7a8a29fa"
+        },
+        {
+          "caseNumber": 40,
+          "milliseconds": 20053,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "507a1af494a35f5eec8941f3b9309247925697b0169d1a3404d1cc996a8acea8"
+        }
+      ],
+      "unverifiedParentTimings": [],
+      "generationTimingByOutcome": {
+        "partial_with_tracks": {
+          "cases": 22,
+          "medianMilliseconds": 285576.5,
+          "maximumMilliseconds": 287458
+        },
+        "operation_failure_empty": {
+          "cases": 7,
+          "medianMilliseconds": 316196,
+          "maximumMilliseconds": 493267
+        },
+        "needs_clarification_empty": {
+          "cases": 11,
+          "medianMilliseconds": 35664,
+          "maximumMilliseconds": 143121
+        }
+      },
+      "generationTimingCaseCount": 40,
+      "goodPerRequested": 0.2425,
+      "goodPerReturned": 0.4429223744292237,
+      "medianGenerationMilliseconds": 285535.5,
+      "maximumGenerationMilliseconds": 493267
+    },
+    {
+      "name": "treatment",
+      "complete": true,
+      "provenance": {
+        "sha256": "ddbcacc7498eb600322d1e7bcfdace55523a9730a047cf7574c3a644972896b4",
+        "file": "treatment-web-summary.json"
+      },
+      "attempted": 40,
+      "audited": 40,
+      "returned": 61,
+      "requested": 400,
+      "unauditedReturned": 0,
+      "missingAttempted": 339,
+      "unrun": 0,
+      "verdicts": {
+        "good": 16,
+        "partial": 29,
+        "mismatch": 14,
+        "unknown": 2
+      },
+      "operationFailures": 7,
+      "outcomeCounts": {
+        "partial": 29,
+        "unavailable": 7,
+        "needs_clarification": 4
+      },
+      "nonemptyPlaylists": 7,
+      "zeroTrackAttempts": 33,
+      "parserFallbacks": 1,
+      "parserUnknownCases": 2,
+      "timeoutCases": [
+        {
+          "caseNumber": 6,
+          "reportedMilliseconds": 641739
+        },
+        {
+          "caseNumber": 7,
+          "reportedMilliseconds": 613601
+        },
+        {
+          "caseNumber": 8,
+          "reportedMilliseconds": 910075
+        },
+        {
+          "caseNumber": 9,
+          "reportedMilliseconds": 639328
+        },
+        {
+          "caseNumber": 30,
+          "reportedMilliseconds": 649627
+        },
+        {
+          "caseNumber": 32,
+          "reportedMilliseconds": 910077
+        },
+        {
+          "caseNumber": 40,
+          "reportedMilliseconds": 627955
+        }
+      ],
+      "verifiedGenerationTimings": [
+        {
+          "caseNumber": 1,
+          "milliseconds": 585026,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "c6fdd1655e9560da3fbeb1e046d5084bd0bcbfcd774776042eeac1e09f87efde"
+        },
+        {
+          "caseNumber": 2,
+          "milliseconds": 585040,
+          "timedOut": false,
+          "returned": 1,
+          "childSHA256": "7fd706fe3cd580d0f53b74aaef801de9b4e660df2b0a0164907067d8f3d4a029"
+        },
+        {
+          "caseNumber": 3,
+          "milliseconds": 585037,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "52bd7ed3c270cd072b3b78387a9a76f18356bdc98de34b89c326fa805d996393"
+        },
+        {
+          "caseNumber": 4,
+          "milliseconds": 585045,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "4f486bd5061f75596cc28fc223403bfc6233ecbe4e28acbc0977ed6d166d33a9"
+        },
+        {
+          "caseNumber": 5,
+          "milliseconds": 585044,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "8b5c8eff7d0aeb52d5e1b8c2b9f8cf0f388759b2ece7f68ae0b531258975a2c4"
+        },
+        {
+          "caseNumber": 6,
+          "milliseconds": 641739,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "b3dcbd0ea187c6834b85e455d32a1dfa261d2e849b3745f3a66f8c4926e82e2a"
+        },
+        {
+          "caseNumber": 7,
+          "milliseconds": 613601,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "7cfe2f3dacb09a4838fca2d94e2c523f7545eceec7a525c4fe16c9a7f7bf51a7"
+        },
+        {
+          "caseNumber": 9,
+          "milliseconds": 639328,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "b26d08088226dcc58b2acacf8e6e423e533e5497df4e371a0928086b5aea9fe9"
+        },
+        {
+          "caseNumber": 10,
+          "milliseconds": 41969,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "202280900380ff73208ebd356bfe940c173381a8c6812c30b75fbcdef9153f4a"
+        },
+        {
+          "caseNumber": 11,
+          "milliseconds": 599584,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "a77f9d0b4faca4691d5e08a11820399bf67c1b3af9c54649a12f42fc5d09e0a9"
+        },
+        {
+          "caseNumber": 12,
+          "milliseconds": 599276,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "a38596c2f440cf61fd4ce82b439e5594bdcb613ac19c299212c5240e4f11a146"
+        },
+        {
+          "caseNumber": 13,
+          "milliseconds": 585080,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "f3b743db71138142768b736a3dddf5711eb2d789543933c79a1c4789fe4c1ad0"
+        },
+        {
+          "caseNumber": 14,
+          "milliseconds": 585068,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "caaf1490afd5a9a58597dd3cea500932d9a3951d94aeabce5eea0e0e6adfa1d1"
+        },
+        {
+          "caseNumber": 15,
+          "milliseconds": 585071,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "125f5f805c30b21c1aaf8e5cc861507e633a621c9fd68405a87b4da09bbb81fc"
+        },
+        {
+          "caseNumber": 16,
+          "milliseconds": 585059,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "88ac925360d4450a58d6fc2cc973f65a629631cb337aec26b1a140bfb0490ff1"
+        },
+        {
+          "caseNumber": 17,
+          "milliseconds": 585073,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "a044328352deeceed142a94d89ce0573c3c0294d5b179cf4a46c91b800a557af"
+        },
+        {
+          "caseNumber": 18,
+          "milliseconds": 586268,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "23b79c01d011c3ce7173872731ef6d683c99d34e2df7519b0944ac1372d02812"
+        },
+        {
+          "caseNumber": 19,
+          "milliseconds": 585151,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "13dc95fa6d69d86eb6005651323319d41dad41b8705def63c7c37455c37f3fbd"
+        },
+        {
+          "caseNumber": 20,
+          "milliseconds": 586691,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "11c5edff38f7b5e38f2f33360ca4dc9987c7fad44ef8ac5a34000bb39b4a829c"
+        },
+        {
+          "caseNumber": 21,
+          "milliseconds": 585034,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "21090f924acfd5c742736664fdc6705a0604e2bdb11f2b22fcc9983ee08dd312"
+        },
+        {
+          "caseNumber": 22,
+          "milliseconds": 585161,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "f8d3bbf7bc65c9ae7b5e77ef424dd2354c643459064de2b505a84141337c97ab"
+        },
+        {
+          "caseNumber": 23,
+          "milliseconds": 48963,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "1e05927c398d632b5833b91acf6f2d28c173bee5a72d34eda8db0c77f5da4256"
+        },
+        {
+          "caseNumber": 24,
+          "milliseconds": 585079,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "1e67700cf2acb2567fac29ab7b2e664f30d15fa82e569d0e56e0aff23fa2a3ba"
+        },
+        {
+          "caseNumber": 25,
+          "milliseconds": 585064,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "78eddd552a5f3d8cbf8c0f6db55493062cbf0fd6fb8a47c4acbca662cb323a60"
+        },
+        {
+          "caseNumber": 26,
+          "milliseconds": 585038,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "2e691f3a8882b0452f31b09af08d0313da54c1d60aeb0cea055be54494e1cab7"
+        },
+        {
+          "caseNumber": 27,
+          "milliseconds": 585049,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "ccb4f1af33aaff1cd2d789748aa69315b2ce22564e801e5fe89c36f013e22030"
+        },
+        {
+          "caseNumber": 28,
+          "milliseconds": 585039,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "3bd82a2aad0596702ae688e73f510661e627ceb1226909ebe9fb4ad844130e67"
+        },
+        {
+          "caseNumber": 29,
+          "milliseconds": 585085,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "f0f28d20c294eb5c215073114a89e325b7b0550268d4b71b487502cfd98452a3"
+        },
+        {
+          "caseNumber": 30,
+          "milliseconds": 649627,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "3d103e6c9de3999642e6f8e3fbf38085596205114bd2db5d449da2d40b5e0616"
+        },
+        {
+          "caseNumber": 31,
+          "milliseconds": 540415,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "306d5a3d0f7dd1acdea6a1bf1035477d39598b2ae5a6341532e7605f4cba55d5"
+        },
+        {
+          "caseNumber": 33,
+          "milliseconds": 31313,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "1c357132bf8017f8930021d05bd184eff4ccb2e1b4425d273d412f3eb1ac7820"
+        },
+        {
+          "caseNumber": 34,
+          "milliseconds": 45211,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "d14c72d329222d3de0ec44b42939b4f42cbe3827a56035832aa99e1a9698cc24"
+        },
+        {
+          "caseNumber": 35,
+          "milliseconds": 585085,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "cb7ca82620a860110baca719ac5d3948719273bd295023155cc0524ae5576b7f"
+        },
+        {
+          "caseNumber": 36,
+          "milliseconds": 587416,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "08fa04180d0b64e5a80cf42c0d5ac13f4298a792cdbb24a07fdb95d458a11fc0"
+        },
+        {
+          "caseNumber": 37,
+          "milliseconds": 599658,
+          "timedOut": false,
+          "returned": 10,
+          "childSHA256": "88999b7671df4f8a155b6855ce14b6e315838f3dab1e3dfa760ff61873b644b4"
+        },
+        {
+          "caseNumber": 38,
+          "milliseconds": 585052,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "5ab9ec0de151604813028445c3792992ab79c8a2e99a62a770f08be628233a22"
+        },
+        {
+          "caseNumber": 39,
+          "milliseconds": 585233,
+          "timedOut": false,
+          "returned": 0,
+          "childSHA256": "fd2f708e4c0960eb20935437b61c3e509cc38340578c1be55b3445c12cd55cb6"
+        },
+        {
+          "caseNumber": 40,
+          "milliseconds": 627955,
+          "timedOut": true,
+          "returned": 0,
+          "childSHA256": "bf93e55076c3403df0dff4ffe549ea0a38ee2cebd3a3b7469a96a2e4a921ec09"
+        }
+      ],
+      "unverifiedParentTimings": [
+        {
+          "caseNumber": 8,
+          "milliseconds": 910075,
+          "timedOut": true,
+          "returned": 0
+        },
+        {
+          "caseNumber": 32,
+          "milliseconds": 910077,
+          "timedOut": true,
+          "returned": 0
+        }
+      ],
+      "generationTimingByOutcome": {
+        "partial_empty": {
+          "cases": 22,
+          "medianMilliseconds": 585066.0,
+          "maximumMilliseconds": 599276
+        },
+        "partial_with_tracks": {
+          "cases": 7,
+          "medianMilliseconds": 586691,
+          "maximumMilliseconds": 599658
+        },
+        "operation_failure_empty": {
+          "cases": 5,
+          "medianMilliseconds": 639328,
+          "maximumMilliseconds": 649627
+        },
+        "needs_clarification_empty": {
+          "cases": 4,
+          "medianMilliseconds": 43590.0,
+          "maximumMilliseconds": 48963
+        }
+      },
+      "generationTimingCaseCount": 38,
+      "goodPerRequested": 0.04,
+      "goodPerReturned": 0.26229508196721313,
+      "medianGenerationMilliseconds": 585072.0,
+      "maximumGenerationMilliseconds": 649627
+    }
+  ],
+  "measuredDifference": {
+    "goodReturned": -81,
+    "mismatchedReturned": -33,
+    "returned": -158,
+    "goodPer400Requested": -0.20249999999999999
+  }
+}

@@ -30,7 +30,7 @@ func prefetchFixture(t testing.TB, delay time.Duration) (*Client, *candidateStre
 	// limiter spacing and priority have separate transport tests.
 	c.hc = &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
 		calls.Add(1)
-		id := strings.TrimPrefix(r.URL.Query().Get("query"), "arid:")
+		id := r.URL.Query().Get("artist")
 		wait := delay
 		if id == "a0" {
 			wait += delay
@@ -40,7 +40,7 @@ func prefetchFixture(t testing.TB, delay time.Duration) (*Client, *candidateStre
 		case <-r.Context().Done():
 			return nil, r.Context().Err()
 		}
-		raw := fmt.Sprintf(`{"count":1,"recordings":[{"id":"r%s","title":"Song","artist-credit":[{"name":"Artist %s","artist":{"id":"%s"}}]}]}`, id, id, id)
+		raw := fmt.Sprintf(`{"recording-count":1,"recordings":[{"id":"r%s","title":"Song","artist-credit":[{"name":"Artist %s","artist":{"id":"%s"}}]}]}`, id, id, id)
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(raw)), Request: r}, nil
 	})}
 	var tracks []fakes.CatalogTrack
@@ -292,18 +292,18 @@ func TestPrefetchContinuationWaitsForConsumedPageOffset(t *testing.T) {
 	var mu sync.Mutex
 	seen := map[string]bool{}
 	c.hc.Transport = transportFunc(func(r *http.Request) (*http.Response, error) {
-		id := strings.TrimPrefix(r.URL.Query().Get("query"), "arid:")
+		id := r.URL.Query().Get("artist")
 		offset := r.URL.Query().Get("offset")
 		mu.Lock()
-		if offset != "" && !seen[id] {
+		if offset != "0" && !seen[id] {
 			t.Error("continuation requested before preceding page")
 		}
-		if offset != "" && offset != "1" {
+		if offset != "0" && offset != "1" {
 			t.Errorf("offset=%s", offset)
 		}
 		seen[id] = true
 		mu.Unlock()
-		raw := fmt.Sprintf(`{"count":2,"recordings":[{"id":"r%s","title":"Song","artist-credit":[{"name":"Artist %s","artist":{"id":"%s"}}]}]}`, id, id, id)
+		raw := fmt.Sprintf(`{"recording-count":2,"recordings":[{"id":"r%s","title":"Song","artist-credit":[{"name":"Artist %s","artist":{"id":"%s"}}]}]}`, id, id, id)
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(raw)), Request: r}, nil
 	})
 	s.StartPrefetch(context.Background())
@@ -336,7 +336,7 @@ func TestRequiredLookupDuringSpeculativeSpacingGetsBudgetFirst(t *testing.T) {
 		c.limiter = &requestLimiter{gate: make(chan struct{}, 1), last: time.Now()}
 		var order []string
 		c.hc.Transport = &limitedTransport{client: c, base: transportFunc(func(r *http.Request) (*http.Response, error) {
-			order = append(order, r.URL.Query().Get("query"))
+			order = append(order, r.URL.Query().Get("artist"))
 			return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"recordings":[]}`)), Request: r}, nil
 		})}
 		budget := &knowledgeBudget{requests: KnowledgeRequests - 1}
@@ -355,7 +355,7 @@ func TestRequiredLookupDuringSpeculativeSpacingGetsBudgetFirst(t *testing.T) {
 		if err := <-speculativeDone; err == nil || !strings.Contains(err.Error(), "budget exhausted") {
 			t.Fatalf("speculative err=%v", err)
 		}
-		if !reflect.DeepEqual(order, []string{"arid:required"}) {
+		if !reflect.DeepEqual(order, []string{"required"}) {
 			t.Fatalf("dispatch order=%v", order)
 		}
 	})

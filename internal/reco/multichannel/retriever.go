@@ -65,10 +65,27 @@ type explorationOption struct {
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	intent := request.Intent.Normalized()
-	references := positiveReferenceVectors(r.cat, intent)
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid || intent.Controls.RecommendationMode == core.Automatic {
+		// Each enabled query contributes one bounded page to this round.
+		local := *r
+		local.cfg.SeedAudioBudget = min(r.cfg.SeedAudioBudget, enhancedChannelBatch)
+		local.cfg.SeedCooccurrenceBudget = min(r.cfg.SeedCooccurrenceBudget, enhancedChannelBatch)
+		local.cfg.TasteClusterBudget = min(r.cfg.TasteClusterBudget, enhancedChannelBatch)
+		local.cfg.SemanticBudget = min(r.cfg.SemanticBudget, enhancedChannelBatch)
+		local.cfg.ContinuationBudget = min(r.cfg.ContinuationBudget, enhancedChannelBatch)
+		local.cfg.ExplorationPool = 0
+		r = &local
+	}
+	references := positiveReferenceVectorsContext(ctx, r.cat, intent)
 	if len(references) == 0 {
-		references = requiredFallbackVectors(r.cat, intent)
+		references = requiredFallbackVectors(ctx, r.cat, intent)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	exclude := make(map[string]struct{})
 	for id := range request.AttemptedIDs {
@@ -93,7 +110,7 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	totalQueries += clusterLimit
 	totalQueries += 2 * len(recent)
 	extraPerQuery := 0
-	if totalQueries > 0 {
+	if totalQueries > 0 && intent.Controls.RecommendationMode != core.EnhancedHybrid && intent.Controls.RecommendationMode != core.Automatic {
 		extraPerQuery = maxInt(1, r.cfg.ExplorationPool/totalQueries)
 	}
 
@@ -103,14 +120,14 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 		return nil, err
 	}
 	for i, track := range artistTracks {
-		r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "required_artist", QueryID: track.Artist, Rank: i + 1, Score: 1, QueryWeight: 1})
+		r.addSource(ctx, byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "required_artist", QueryID: track.Artist, Rank: i + 1, Score: 1, QueryWeight: 1})
 	}
 	for id := range requiredAlbumMembers(intent) {
-		r.addSource(byID, ports.Match{ID: id, Score: 1}, core.RetrievalEvidence{Channel: "required_album", QueryID: id, Rank: 1, Score: 1, QueryWeight: 1})
+		r.addSource(ctx, byID, ports.Match{ID: id, Score: 1}, core.RetrievalEvidence{Channel: "required_album", QueryID: id, Rank: 1, Score: 1, QueryWeight: 1})
 	}
 	if intent.Knowledge != nil {
 		for i, track := range intent.Knowledge.Candidates {
-			r.addSource(byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
+			r.addSource(ctx, byID, ports.Match{ID: track.ID, Score: 1}, core.RetrievalEvidence{Channel: "metadata", QueryID: intent.Knowledge.ID, Rank: i + 1, Score: 1, QueryWeight: 1})
 		}
 	}
 	var jobs []retrievalJob
@@ -149,7 +166,7 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 						return nil
 					}
 					for index, hit := range hits {
-						r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
+						r.addSource(ctx, byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "genre-expansion:" + hint.Genre, Rank: index + 1, Score: hit.Score, QueryWeight: 0.5})
 					}
 					return nil
 				})
@@ -160,18 +177,15 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 	if positiveSemantic != "" && r.semantic != nil {
 		addJob(r.semantic, func(byID map[string]*core.Candidate, _ *[]explorationOption) error {
 			hits, err := r.semantic.Search(ctx, positiveSemantic, r.cfg.SemanticBudget, exclude)
+			for index, hit := range hits {
+				if hit.Score < r.cfg.SemanticMinimumScore {
+					continue
+				}
+				match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
+				r.addSource(ctx, byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
+			}
 			if err != nil {
-				if len(references) == 0 {
-					return fmt.Errorf("semantic seed retrieval: %w", err)
-				}
-			} else {
-				for index, hit := range hits {
-					if hit.Score < r.cfg.SemanticMinimumScore {
-						continue
-					}
-					match := ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}
-					r.addSource(byID, match, core.RetrievalEvidence{Channel: ChannelSemantic, QueryID: "positive", Rank: index + 1, Score: hit.Score, QueryWeight: 1})
-				}
+				return fmt.Errorf("semantic seed retrieval: %w", err)
 			}
 			return nil
 		})
@@ -207,12 +221,10 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 		}
 	}
 	var exploration []explorationOption
-	if err := runRetrievalJobs(ctx, jobs, byID, &exploration); err != nil {
-		return nil, err
-	}
+	retrievalErr := runRetrievalJobs(ctx, jobs, byID, &exploration)
 	// Exploration is part of the bounded candidate union. Semantic scoring is a
 	// later orchestrator stage and therefore applies to these candidates too.
-	r.addExploration(byID, exploration, intent.Controls.Discovery, request.Seed)
+	r.addExploration(ctx, byID, exploration, intent.Controls.Discovery, request.Seed)
 
 	candidates := make([]core.Candidate, 0, len(byID))
 	var maxFusion float64
@@ -248,9 +260,15 @@ func (r *Retriever) Retrieve(ctx context.Context, request ports.RetrievalRequest
 		return candidates[i].Track.ID < candidates[j].Track.ID
 	})
 	if len(candidates) > r.cfg.MaxCandidates {
+		if intent.Controls.RecommendationMode == core.EnhancedHybrid || intent.Controls.RecommendationMode == core.Automatic {
+			candidates = roundRobinCandidateSources(candidates)
+		}
 		candidates = candidates[:r.cfg.MaxCandidates]
 	}
-	return candidates, nil
+	if err := ctx.Err(); err != nil {
+		return candidates, err
+	}
+	return candidates, retrievalErr
 }
 
 func (r *Retriever) searchChannel(
@@ -270,12 +288,12 @@ func (r *Retriever) searchChannel(
 	matches, err := r.sim.Search(ctx, ports.SimilarityQuery{
 		AudioSum: audio, TrackSum: track, Weights: weights, K: minInt(r.sim.Len(), budget+extra), Exclude: exclude,
 	})
-	if err != nil {
-		return err
-	}
 	for index, match := range matches {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		if index < budget {
-			r.addSource(byID, match, core.RetrievalEvidence{
+			r.addSource(ctx, byID, match, core.RetrievalEvidence{
 				Channel: channel, QueryID: queryID, Rank: index + 1, Score: float64(match.Score), QueryWeight: positiveWeight(queryWeight),
 			})
 		} else if float64(match.Score) >= r.cfg.ExplorationMinScore {
@@ -284,13 +302,16 @@ func (r *Retriever) searchChannel(
 			})
 		}
 	}
-	return nil
+	return err
 }
 
-func (r *Retriever) addSource(byID map[string]*core.Candidate, match ports.Match, source core.RetrievalEvidence) {
+func (r *Retriever) addSource(ctx context.Context, byID map[string]*core.Candidate, match ports.Match, source core.RetrievalEvidence) {
+	if ctx.Err() != nil {
+		return
+	}
 	candidate := byID[match.ID]
 	if candidate == nil {
-		meta, ok := r.cat.Meta(match.ID)
+		meta, ok := ports.CatalogMeta(ctx, r.cat, match.ID)
 		if !ok {
 			return
 		}
@@ -300,7 +321,7 @@ func (r *Retriever) addSource(byID map[string]*core.Candidate, match ports.Match
 	candidate.Sources = append(candidate.Sources, source)
 }
 
-func (r *Retriever) addExploration(byID map[string]*core.Candidate, options []explorationOption, discovery float64, seed int64) {
+func (r *Retriever) addExploration(ctx context.Context, byID map[string]*core.Candidate, options []explorationOption, discovery float64, seed int64) {
 	budget := int(float64(r.cfg.ExplorationBudget)*clamp(discovery, 0, 1)*r.cfg.ExplorationChance + .5)
 	if budget <= 0 || len(options) == 0 {
 		return
@@ -330,17 +351,17 @@ func (r *Retriever) addExploration(byID map[string]*core.Candidate, options []ex
 	rng.Shuffle(len(options), func(i, j int) { options[i], options[j] = options[j], options[i] })
 	for index := 0; index < minInt(budget, len(options)); index++ {
 		option := options[index]
-		r.addSource(byID, option.match, core.RetrievalEvidence{
+		r.addSource(ctx, byID, option.match, core.RetrievalEvidence{
 			Channel: ChannelExploration, QueryID: option.queryID,
 			Rank: option.rank, Score: float64(option.match.Score), QueryWeight: option.weight,
 		})
 	}
 }
 
-func requiredFallbackVectors(cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
+func requiredFallbackVectors(ctx context.Context, cat ports.Catalog, intent core.MusicIntent) []referenceVectors {
 	result := make([]referenceVectors, 0, len(intent.RequiredTracks))
 	for index, reference := range intent.RequiredTracks {
-		if reps := referenceRepresentatives(cat, reference); len(reps) > 0 {
+		if reps := referenceRepresentativesContext(ctx, cat, reference); len(reps) > 0 {
 			result = append(result, referenceVectors{id: "required:" + itoa(index), reps: reps})
 		}
 	}

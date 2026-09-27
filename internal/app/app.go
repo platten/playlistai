@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/platten/playlistai/internal/config"
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/credentials"
 	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/enrich/musicbrainz"
 	"github.com/platten/playlistai/internal/export/soundiizcsv"
@@ -23,6 +25,7 @@ import (
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/intent/rules"
 	"github.com/platten/playlistai/internal/mbindex"
+	"github.com/platten/playlistai/internal/musicgraph"
 	"github.com/platten/playlistai/internal/ports"
 	"github.com/platten/playlistai/internal/preview/deezer"
 	"github.com/platten/playlistai/internal/preview/spotifycdn"
@@ -33,14 +36,22 @@ import (
 // be nil after a recoverable startup failure; catalog-dependent services are
 // published together by Runtime. The bridge reports those capabilities to UI.
 type Container struct {
-	catalogLoadMu     sync.Mutex
-	metadataInstallMu sync.Mutex
-	discoveryMu       sync.Mutex
-	discovery         *discoveryasset.Manager
-	analysis          analysisState
-	enhanced          enhancedState
-	cfg               config.Config
-	log               *slog.Logger
+	listenBrainzChangeMu sync.Mutex
+	listenBrainzMu       sync.Mutex
+	listenBrainz         *credentials.Store
+	listenBrainzClient   *musicgraph.Client
+	catalogLoadMu        sync.Mutex
+	metadataInstallMu    sync.Mutex
+	discoveryMu          sync.Mutex
+	discovery            *discoveryasset.Manager
+	graphMu              sync.Mutex
+	graphReader          *musicgraph.Reader
+	graphHash            string
+	graphInstalling      atomic.Bool
+	analysis             analysisState
+	enhanced             enhancedState
+	cfg                  config.Config
+	log                  *slog.Logger
 
 	Enrich    ports.Enricher
 	Knowledge ports.MusicKnowledge
@@ -119,7 +130,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 		cfg.Preview.Provider = prefs.PreviewProvider
 	}
 
-	c := &Container{cfg: cfg, log: log, modelDevice: prefs.ModelDevice}
+	c := &Container{cfg: cfg, log: log, modelDevice: prefs.ModelDevice, listenBrainz: credentials.New(cfg.DataDir)}
 	if c.modelDevice == "" && cfg.AI.GPULayers < 0 {
 		c.modelDevice = "cpu"
 	}
@@ -173,6 +184,7 @@ func (c *Container) wireEnrichExport() {
 	if err != nil {
 		c.log.Warn("enricher unavailable; continuing without MusicBrainz", "err", err)
 	} else {
+		mb.WithRecordingSourceExtractor(c)
 		c.Enrich = mb
 		c.Knowledge = mb
 		c.RegisterCloser(mb.Close)
@@ -348,12 +360,18 @@ type ParseOutcome struct {
 
 // ParseIntentDetailed preserves fallback and cancellation information for the
 // generation lifecycle. Caller cancellation never triggers a fallback parse.
-func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInput, prog ports.Progress) (ParseOutcome, error) {
+func (c *Container) ParseIntentDetailed(ctx context.Context, in ports.IntentInput, prog ports.Progress) (outcome ParseOutcome, parseErr error) {
 	c.mu.Lock()
 	active, rp := c.parser, c.rulesParser
 	c.mu.Unlock()
 	requested := active.Info().Backend
 	in = c.PrepareIntentInput(ctx, in)
+	defer func() {
+		outcome.Intent.PreparedMusicSnapshot = in.PreparedMusicSnapshot
+		if in.RecommendationMode == core.Automatic {
+			outcome.Intent.Controls.RecommendationMode = core.Automatic
+		}
+	}()
 	source := in.SourceFacts
 	if err := ctx.Err(); err != nil {
 		return ParseOutcome{}, err

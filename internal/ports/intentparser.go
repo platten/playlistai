@@ -10,14 +10,18 @@ import (
 // context. No catalog data is ever passed in — the parser must not see track
 // lists or embeddings.
 type IntentInput struct {
-	TrackCount   int  // explicit UI control; zero preserves legacy prompt-only behavior
-	SkipMetadata bool // desktop engine-only policy; not a model-generated field
-	GenerationID string
-	Prompt       string
-	SessionID    string
-	NowPlaying   *core.TrackRef  // resolves "like this"
-	RecentTracks []core.TrackRef // resolves "keep it going"
-	Locale       string
+	// Runtime-owned snapshot; these fields are never model-generated choices.
+	RecommendationMode      core.RecommendationMode
+	PreparedMusicSnapshot   string
+	SubmittedAtMilliseconds int64
+	TrackCount              int  // explicit UI control; zero preserves legacy prompt-only behavior
+	SkipMetadata            bool // desktop engine-only policy; not a model-generated field
+	GenerationID            string
+	Prompt                  string
+	SessionID               string
+	NowPlaying              *core.TrackRef  // resolves "like this"
+	RecentTracks            []core.TrackRef // resolves "keep it going"
+	Locale                  string
 	// RecognitionIdentity pins every offline resource that affected source
 	// recognition. It is computed before parse-cache lookup and is never sent as
 	// user-visible language to a model.

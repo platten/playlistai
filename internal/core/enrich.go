@@ -4,6 +4,7 @@ package core
 // an Enricher. Recording-match fields remain zero when no confident online match
 // was found.
 type EnrichedTrack struct {
+	Claims                []RecordingClaim         `json:"claims,omitempty"`
 	FullRecordingDuration *RecordingDuration       `json:"fullRecordingDuration,omitempty"`
 	Acoustic              *AcousticCharacteristics `json:"acoustic,omitempty"`
 	CompositionStartYear  int                      `json:"compositionStartYear"`
@@ -19,9 +20,10 @@ type EnrichedTrack struct {
 	Album                 string                   `json:"album"`
 	Year                  int                      `json:"year"` // matched release-edition year; never verified as an original recording year
 	AllArtists            []string                 `json:"allArtists"`
-	ArtistIDs             []string                 `json:"artistIds"`
+	ArtistIDs             []string                 `json:"artistIds"` // recording-credit membership; not aligned with AllArtists
 	RecordingID           string                   `json:"recordingId"`
 	ReleaseID             string                   `json:"releaseId"`
+	ReleaseTrackID        string                   `json:"releaseTrackId,omitempty"`
 	ReleaseEditionDate    string                   `json:"releaseEditionDate"`
 	OriginalReleaseDate   string                   `json:"originalReleaseDate"`
 	MatchScore            int                      `json:"matchScore"` // provider search score, 0..100; low = review

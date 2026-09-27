@@ -93,8 +93,22 @@ func run(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("enhancedeval", flag.ContinueOnError)
 	input := flags.String("input", "", "derived-only cohort JSON")
 	top := flags.Int("top", 5, "neighbors per method (1..20)")
+	pool := flags.String("pool", "", "comma-separated desktop musiccheck reports to pool for blind listening")
+	blindOutput := flags.String("blind-output", "", "listener packet output; requires -pool")
+	keyPath := flags.String("key", "", "private variant identity key output (-pool) or input (-judgments)")
+	judgments := flags.String("judgments", "", "completed blind listener packet to evaluate")
+	seed := flags.String("seed", "42", "deterministic blind-presentation shuffle seed")
+	baseline := flags.String("baseline", "baseline", "baseline variant for paired held-out report")
+	treatment := flags.String("treatment", "current", "treatment variant for paired held-out report")
+	policyFrozen := flags.Bool("policy-frozen", false, "attest policy was frozen before held-out evaluation; does not tune thresholds")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *pool != "" || *judgments != "" {
+		if *input != "" || flags.NArg() != 0 || (*pool != "" && *judgments != "") || *keyPath == "" {
+			return errors.New("choose exactly one of -input, -pool, or -judgments; blind modes require -key")
+		}
+		return runListening(*pool, *blindOutput, *keyPath, *judgments, *seed, *baseline, *treatment, *policyFrozen, out)
 	}
 	if *input == "" || flags.NArg() != 0 {
 		return errors.New("usage: enhancedeval -input cohort.json [-top 5]")

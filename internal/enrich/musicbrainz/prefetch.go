@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/platten/playlistai/internal/core"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 const discoveryPrefetchPages = 4
@@ -34,10 +35,14 @@ type discoveryPrefetch struct {
 }
 
 func recordingPagePath(artist string, offset int) string {
-	values := url.Values{"query": {"arid:" + artist}, "fmt": {"json"}, "limit": {"100"}}
-	if offset > 0 {
-		values.Set("offset", fmt.Sprint(offset))
-	}
+	return artistRecordingPagePath(artist, offset, 100)
+}
+
+// Browse follows recordings linked to the confirmed artist identity; search's
+// separate text index is neither required nor authoritative for this lookup.
+func artistRecordingPagePath(artist string, offset, limit int) string {
+	values := url.Values{"artist": {artist}, "inc": {"artist-credits"}, "fmt": {"json"}, "limit": {fmt.Sprint(min(100, limit))}}
+	values.Set("offset", fmt.Sprint(offset))
 	return "/ws/2/recording?" + values.Encode()
 }
 
@@ -74,9 +79,11 @@ func (s *candidateStream) StopPrefetch() {
 	if p == nil {
 		return
 	}
+	// The coordinator can be resolving a catalog reference while holding mu.
+	// Cancel first so that lookup can release the lock before shutdown joins it.
+	p.cancel()
 	p.mu.Lock()
 	p.stopped = true
-	p.cancel()
 	p.mu.Unlock()
 	p.wg.Wait()
 }
@@ -122,7 +129,10 @@ func (s *candidateStream) schedulePrefetch() {
 			break
 		}
 		if !s.dynamicDiscoveryEnabled() {
-			resolution := s.resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+			resolution := ports.ResolveReferenceContext(p.ctx, s.resolver, core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+			if p.ctx.Err() != nil {
+				return
+			}
 			if resolution.Status == core.ResolutionUnresolved {
 				continue
 			}

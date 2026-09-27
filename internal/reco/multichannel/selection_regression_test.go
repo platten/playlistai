@@ -31,11 +31,11 @@ func TestEnhancedLocalPoolDiversifiesBeforeFirstN(t *testing.T) {
 	run := func(intent core.MusicIntent) core.Playlist {
 		t.Helper()
 		r := &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, ids...))}}
-		s := &metadataPriorityStream{block: true}
+		s := &metadataPriorityStream{}
 		o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig()).WithCandidateSource(s)
 		o.retriever = r
 		pl, err := o.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent})
-		if err != nil || len(pl.Tracks) != 4 || pl.Outcome.State != core.OutcomeFulfilled || s.pulls != 0 {
+		if err != nil || len(pl.Tracks) != 4 || pl.Outcome.State != core.OutcomeFulfilled || s.pulls != 1 {
 			t.Fatalf("result=%+v pulls=%d err=%v", pl, s.pulls, err)
 		}
 		artists := map[string]bool{}
@@ -93,7 +93,7 @@ func TestEnhancedAllFailingInitialPoolHandsOffAfterBoundedChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer session.Close()
-	wantChecks := recommendationPoolSize(intent.Count, 0)
+	wantChecks := enhancedChannelBatch
 	stream := &metadataPriorityStream{before: func() {
 		if got := len(session.Snapshot().Assessments); got != wantChecks {
 			t.Errorf("initial raw union consumed %d audio checks before provider handoff; want bounded %d", got, wantChecks)
@@ -137,9 +137,7 @@ func TestIncludeOtherArtistsReservesEligibleOutputAndReportsMissing(t *testing.T
 			o.retriever = &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, ids...))}}
 			pl, err := o.BuildRecommendation(context.Background(), ports.RecommendationRequest{Intent: intent})
 			wantTracks := 2
-			if !other {
-				wantTracks = 1 // hard default spacing never pads with adjacent repeats
-			}
+
 			if err != nil || len(pl.Tracks) != wantTracks {
 				t.Fatalf("tracks=%v outcome=%+v err=%v", pl.Tracks, pl.Outcome, err)
 			}
@@ -174,9 +172,13 @@ func TestPerformerDiversityUsesKnownCreditsAndGroundedAliases(t *testing.T) {
 		fakes.CatalogTrack{ID: "other", Display: "Other - Four"},
 	)
 	candidates := []core.Candidate{selectionCandidate(cat, "solo", 1), selectionCandidate(cat, "joint", .99), selectionCandidate(cat, "alias", .99), selectionCandidate(cat, "other", .95)}
+	for i := range candidates {
+		candidates[i].Scores.RequestFit = candidates[i].Scores.Total
+		candidates[i].Available.RequestFit = true
+	}
 	selected, err := NewSelector(cat, DefaultConfig()).Select(context.Background(), candidates, ports.SelectionRequest{Intent: intent, Count: 2})
-	if err != nil || candidateIDs(selected.Candidates) != "solo,other" {
-		t.Fatalf("shared performers escaped concentration: %v err=%v", selected, err)
+	if err != nil || len(selected.Candidates) != 2 || selected.Candidates[0].Track.ID != "solo" || selected.Candidates[1].Track.ID == "other" {
+		t.Fatalf("performer diversity displaced stronger request fit: %v err=%v", selected, err)
 	}
 	keys := newPerformerKeys(intent, []core.TrackRef{{Artist: "Earth, Wind & Fire"}})
 	if got := keys.keys("Earth, Wind & Fire"); len(got) != 1 {

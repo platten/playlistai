@@ -115,7 +115,7 @@ func Run(dir string) error {
 		}
 		switch {
 		case request.Health:
-			err = i.health(manifest.File(dir, "health"))
+			err = i.health(manifest.File(dir, "health"), manifest.Backend())
 		case len(request.Audio) > 0:
 			response.Vector, err = i.audioEmbedding(request.Audio)
 		default:
@@ -202,7 +202,7 @@ func infer(session *ort.DynamicAdvancedSession, inputs []ort.Value) ([]float32, 
 
 // Health compares actual inference to pinned reference outputs. Synthetic PCM
 // is generated in memory; the bundle carries no music audio.
-func (i *inference) health(path string) error {
+func (i *inference) health(path, backend string) error {
 	var fixture struct {
 		Text           string    `json:"text"`
 		TextEmbedding  []float32 `json:"textEmbedding"`
@@ -233,7 +233,7 @@ func (i *inference) health(path string) error {
 	if err != nil {
 		return err
 	}
-	if !parity(text, fixture.TextEmbedding) {
+	if !parity(text, fixture.TextEmbedding, backend) {
 		return fmt.Errorf("text health mismatch")
 	}
 	if fixture.ToneHz <= 0 || fixture.ToneHz >= audio.SampleRate/2 {
@@ -248,19 +248,33 @@ func (i *inference) health(path string) error {
 	if err != nil {
 		return err
 	}
-	if !parity(vector, fixture.AudioEmbedding) {
+	if !parity(vector, fixture.AudioEmbedding, backend) {
 		return fmt.Errorf("audio health mismatch")
 	}
 	return nil
 }
-func parity(a, b []float32) bool {
+func parity(a, b []float32, backend string) bool {
 	if len(a) != 512 || len(b) != 512 {
 		return false
 	}
+	maximumError := 0.0001
+	if backend == "cuda" {
+		// CUDA can differ at individual coordinates while preserving the
+		// embedding direction. Keep both a component and whole-vector gate.
+		maximumError = 0.0005
+	}
+	dot, normA, normB := 0.0, 0.0, 0.0
 	for j := range a {
-		if math.IsNaN(float64(a[j])) || math.IsNaN(float64(b[j])) || math.IsInf(float64(b[j]), 0) || math.Abs(float64(a[j]-b[j])) > 0.0001 {
+		valueA, valueB := float64(a[j]), float64(b[j])
+		if math.IsNaN(valueA) || math.IsInf(valueA, 0) || math.IsNaN(valueB) || math.IsInf(valueB, 0) || math.Abs(valueA-valueB) > maximumError {
 			return false
 		}
+		dot += valueA * valueB
+		normA += valueA * valueA
+		normB += valueB * valueB
+	}
+	if backend == "cuda" && (normA == 0 || normB == 0 || dot/math.Sqrt(normA*normB) < 0.99999) {
+		return false
 	}
 	return true
 }

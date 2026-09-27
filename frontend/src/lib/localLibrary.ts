@@ -22,6 +22,8 @@ export interface LocalLibraryRoot {
 
 export interface LocalLibraryStatus {
   installed: boolean;
+  activeBackend?: string;
+  availableBackends?: string[];
   mode: LocalLibraryMode;
   format?: string;
   version?: number;
@@ -34,7 +36,7 @@ export interface LocalLibraryStatus {
   clusterGeneration?: string;
   statisticsGeneration?: string;
   coverage: LocalLibraryCoverage;
-  mert?: { name?: string; dimension?: number; model?: string; sampling?: string; scope?: string };
+  mert?: { name?: string; dimension?: number; model?: string; runtime?: string; sampling?: string; scope?: string };
   roots: LocalLibraryRoot[];
 }
 

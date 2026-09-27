@@ -38,6 +38,7 @@ type candidateStream struct {
 	deferredArtists      []core.GenreArtist
 	recordingOffsets     map[string]int
 	recordingPages       map[string]int
+	recordingBatches     map[string]candidateRecordingBatch
 	exactByArtist        map[string]map[string]string
 	offlineRead          map[string]bool
 	recordingReads       int
@@ -47,6 +48,13 @@ type candidateStream struct {
 	acousticSpent        time.Duration
 	prefetch             *discoveryPrefetch
 	replayError          error
+}
+
+type candidateRecordingBatch struct {
+	rows      []mbRecording
+	source    string
+	channel   string
+	morePages bool
 }
 
 // Keep small requests cheap; larger genre playlists can draw from up to twenty
@@ -228,13 +236,17 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 			s.artists = s.artists[1:]
 			// Enhanced discovery can register provider-identified recordings even
 			// when preview audio is unavailable; fit is assessed independently.
-			resolution := s.resolver.ResolveReference(core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+			resolution := ports.ResolveReferenceContext(ctx, s.resolver, core.IntentReference{Kind: core.ReferenceArtist, Query: artist.Name})
+			if err := ctx.Err(); err != nil {
+				return core.TrackRef{}, err
+			}
 			if resolution.Status == core.ResolutionUnresolved && !s.dynamicDiscoveryEnabled() {
 				continue
 			}
 			if s.recordingOffsets == nil {
 				s.recordingOffsets = make(map[string]int)
 				s.recordingPages = make(map[string]int)
+				s.recordingBatches = make(map[string]candidateRecordingBatch)
 				s.exactByArtist = make(map[string]map[string]string)
 			}
 			exact, cached := s.exactByArtist[artist.ID]
@@ -243,104 +255,80 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				if err != nil {
 					return core.TrackRef{}, err
 				}
-				exact = indexKnownArtistRecordings(s.cat, entries)
-			}
-			s.exactByArtist[artist.ID] = exact
-			if offline := s.client.localMusicBrainz(); offline != nil && !s.offlineRead[artist.ID] {
-				if s.offlineRead == nil {
-					s.offlineRead = make(map[string]bool)
-				}
-				s.offlineRead[artist.ID] = true
-				rows, offlineErr := offline.ArtistRecordings(ctx, artist.ID, artistRecordingPages*100, 0)
-				if offlineErr != nil {
-					return core.TrackRef{}, offlineErr
-				}
-				if len(rows) > 0 {
-					s.snapshot.Sources = append(s.snapshot.Sources, "musicbrainz-dump:"+offline.Info().Snapshot)
-					for _, row := range rows {
-						r := offlineRecording(row)
-						credited, blocked := false, false
-						for _, credit := range r.ArtistCredit {
-							credited = credited || credit.Artist.ID == artist.ID
-							blocked = blocked || excludedArtist(credit.Name, s.intent.Constraints.ArtistsExclude)
-						}
-						if !credited || blocked {
-							continue
-						}
-						var matched core.KnowledgeSnapshot
-						if exact != nil {
-							id := matchKnownRecording(s.cat, exact, r)
-							if id != "" {
-								s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
-							}
-						} else {
-							s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched)
-						}
-						if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() {
-							if s.dynamicRegistrations < s.dynamicRegistrationLimit() {
-								s.dynamicRegistrations++
-								if err := s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched); err != nil {
-									return core.TrackRef{}, err
-								}
-							} else if !s.dynamicBudgetNotice {
-								s.dynamicBudgetNotice = true
-								s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("Metadata registration reached its %d-recording limit; additional MusicBrainz candidates were not registered.", s.dynamicRegistrationLimit()))
-							}
-						}
-						for _, track := range matched.Candidates {
-							s.client.addKnowledgeRecording(r, s.cat, s.resolver, &s.snapshot, track.ID)
-							key := core.ProvisionalRecordingKey(track)
-							if !s.seen[key] {
-								tracks = append(tracks, track)
-								s.recordEvidence(track.ID, "musicbrainz_dump", "musicbrainz-dump:"+offline.Info().Snapshot)
-								s.seen[key] = true
-							}
-						}
-					}
-					s.enrichAcoustic(ctx)
-					if len(tracks) == 0 {
-						continue
-					}
-					if len(tracks) > 1 {
-						s.pending = append(s.pending, tracks[1:])
-					}
-					s.snapshot.Discovery = append(s.snapshot.Discovery, tracks[0])
-					return tracks[0], nil
-				}
-			}
-			path := recordingPagePath(artist.ID, s.recordingOffsets[artist.ID])
-			s.recordingReads++
-			s.windowReads++
-			raw, err := s.recordingPage(ctx, path)
-			if err != nil {
-				s.failures++
-				s.lastError = err
-				if ctx.Err() != nil || s.failures >= 3 {
+				exact = indexKnownArtistRecordings(ctx, s.cat, entries)
+				if err := ctx.Err(); err != nil {
 					return core.TrackRef{}, err
 				}
-				s.snapshot.Notices = append(s.snapshot.Notices, "An artist's recording page was unavailable; trying another artist.")
-				continue
 			}
-			s.failures = 0
-			var page struct {
-				Count      int           `json:"count"`
-				Recordings []mbRecording `json:"recordings"`
-			}
-			if err := json.Unmarshal(raw, &page); err != nil {
-				return core.TrackRef{}, err
-			}
-			s.snapshot.Sources = append(s.snapshot.Sources, s.client.base+path)
-			s.recordingPages[artist.ID]++
-			s.recordingOffsets[artist.ID] += len(page.Recordings)
-			if len(page.Recordings) > 0 && s.recordingOffsets[artist.ID] < page.Count {
-				if s.recordingPages[artist.ID] < artistRecordingPages {
-					s.deferredArtists = append(s.deferredArtists, artist)
-				} else {
-					s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("MusicBrainz recording lookup for %q reached its five-page limit; additional recordings were not fetched.", artist.Name))
+			s.exactByArtist[artist.ID] = exact
+			batch, buffered := s.recordingBatches[artist.ID]
+			fetchedOnline := false
+			if !buffered {
+				if offline := s.client.localMusicBrainz(); offline != nil && !s.offlineRead[artist.ID] {
+					if s.offlineRead == nil {
+						s.offlineRead = make(map[string]bool)
+					}
+					s.offlineRead[artist.ID] = true
+					rows, offlineErr := offline.ArtistRecordings(ctx, artist.ID, artistRecordingPages*100, 0)
+					if offlineErr != nil {
+						return core.TrackRef{}, offlineErr
+					}
+					if len(rows) > 0 {
+						batch = candidateRecordingBatch{source: "musicbrainz-dump:" + offline.Info().Snapshot, channel: "musicbrainz_dump"}
+						for _, row := range rows {
+							batch.rows = append(batch.rows, offlineRecording(row))
+						}
+						s.snapshot.Sources = append(s.snapshot.Sources, batch.source)
+					}
 				}
 			}
-			for _, index := range s.rng.Perm(len(page.Recordings)) {
-				r := page.Recordings[index]
+			if len(batch.rows) == 0 {
+				fetchedOnline = true
+				path := recordingPagePath(artist.ID, s.recordingOffsets[artist.ID])
+				s.recordingReads++
+				s.windowReads++
+				raw, err := s.recordingPage(ctx, path)
+				if err != nil {
+					s.failures++
+					s.lastError = err
+					if ctx.Err() != nil || s.failures >= 3 {
+						return core.TrackRef{}, err
+					}
+					s.snapshot.Notices = append(s.snapshot.Notices, "An artist's recording page was unavailable; trying another artist.")
+					continue
+				}
+				s.failures = 0
+				var page struct {
+					Count      int           `json:"recording-count"`
+					Recordings []mbRecording `json:"recordings"`
+				}
+				if err := json.Unmarshal(raw, &page); err != nil {
+					return core.TrackRef{}, err
+				}
+				s.snapshot.Sources = append(s.snapshot.Sources, s.client.base+path)
+				s.recordingPages[artist.ID]++
+				s.recordingOffsets[artist.ID] += len(page.Recordings)
+				if len(page.Recordings) > 0 && s.recordingOffsets[artist.ID] < page.Count {
+					if s.recordingPages[artist.ID] >= artistRecordingPages {
+						s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("MusicBrainz recording lookup for %q reached its five-page limit; additional recordings were not fetched.", artist.Name))
+					}
+				}
+				batch = candidateRecordingBatch{source: s.client.base + path, channel: "musicbrainz_artist_sample",
+					morePages: len(page.Recordings) > 0 && s.recordingOffsets[artist.ID] < page.Count && s.recordingPages[artist.ID] < artistRecordingPages}
+				for _, index := range s.rng.Perm(len(page.Recordings)) {
+					batch.rows = append(batch.rows, page.Recordings[index])
+				}
+			}
+			limit := max(1, s.dynamicRegistrationLimit()/s.discoveryWindowSize())
+			rows := batch.rows[:min(limit, len(batch.rows))]
+			batch.rows = batch.rows[len(rows):]
+			if len(batch.rows) > 0 || batch.morePages {
+				s.recordingBatches[artist.ID] = batch
+				s.deferredArtists = append(s.deferredArtists, artist)
+			} else {
+				delete(s.recordingBatches, artist.ID)
+			}
+			for _, r := range rows {
 				credited, blocked := false, false
 				for _, credit := range r.ArtistCredit {
 					credited = credited || credit.Artist.ID == artist.ID
@@ -353,32 +341,40 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 				// can still be a new discovery-stream candidate.
 				var matched core.KnowledgeSnapshot
 				if exact != nil {
-					id := matchKnownRecording(s.cat, exact, r)
+					id := matchKnownRecording(ctx, s.cat, exact, r)
 					if id != "" {
-						s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched, id)
+						s.client.addKnowledgeRecording(ctx, r, s.cat, s.resolver, &matched, id)
 					}
 				} else {
-					s.client.addKnowledgeRecording(r, s.cat, s.resolver, &matched)
+					s.client.addKnowledgeRecording(ctx, r, s.cat, s.resolver, &matched)
 				}
-				if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() && s.dynamicRegistrations < s.dynamicRegistrationLimit() {
-					s.dynamicRegistrations++
-					if err := s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched); err != nil {
-						return core.TrackRef{}, err
+				if len(matched.Candidates) == 0 && s.dynamicDiscoveryEnabled() {
+					if s.dynamicRegistrations < s.dynamicRegistrationLimit() {
+						if err := s.client.addDynamicKnowledgeRecording(ctx, r, s.cat, &matched); err != nil {
+							return core.TrackRef{}, err
+						}
+						if len(matched.Candidates) > 0 {
+							s.dynamicRegistrations++
+						}
+					} else {
+						s.dynamicBudgetNotice = true
 					}
 				}
 				for _, track := range matched.Candidates {
 					// Merge recording-ID conflicts using the same provenance rules
 					// as ordinary enrichment; never trust the first returned edition.
-					s.client.addKnowledgeRecording(r, s.cat, s.resolver, &s.snapshot, track.ID)
+					s.client.addKnowledgeRecording(ctx, r, s.cat, s.resolver, &s.snapshot, track.ID)
 					key := core.ProvisionalRecordingKey(track)
 					if !s.seen[key] {
 						tracks = append(tracks, track)
-						s.recordEvidence(track.ID, "musicbrainz_artist_sample", s.client.base+path)
+						s.recordEvidence(track.ID, batch.channel, batch.source)
 						s.seen[key] = true
 					}
 				}
 			}
-			s.schedulePrefetch()
+			if fetchedOnline {
+				s.schedulePrefetch()
+			}
 			s.enrichAcoustic(ctx)
 		} else {
 			tracks = s.pending[0]
@@ -395,6 +391,10 @@ func (s *candidateStream) nextMusicBrainz(ctx context.Context) (core.TrackRef, e
 	}
 	if s.lastError != nil {
 		return core.TrackRef{}, s.lastError
+	}
+	if s.dynamicBudgetNotice {
+		s.dynamicBudgetNotice = false
+		s.snapshot.Notices = append(s.snapshot.Notices, fmt.Sprintf("Metadata registration reached its %d-recording limit; additional MusicBrainz candidates were not registered.", s.dynamicRegistrationLimit()))
 	}
 	return core.TrackRef{}, io.EOF
 }

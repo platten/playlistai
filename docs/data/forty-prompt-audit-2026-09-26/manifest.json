@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "createdAt": "2026-09-27T01:47:09.654867+00:00",
+  "status": "complete",
+  "rawComparison": {
+    "required": true,
+    "present": true,
+    "complete": true,
+    "status": "complete",
+    "requestedCasesPerArm": 40,
+    "requestedSlotsPerArm": 400
+  },
+  "controls": {
+    "required": true,
+    "present": true,
+    "complete": true,
+    "status": "complete_for_eligible_cases",
+    "selectedCasesPerArm": 8,
+    "requestedSlotsPerArm": 80,
+    "arms": [
+      "B5",
+      "T5",
+      "T10"
+    ],
+    "nativeComplete": true,
+    "webAuditComplete": true,
+    "eligibleCasesPerArm": {
+      "B5": 8,
+      "T5": 8,
+      "T10": 8
+    },
+    "unavailableSlotsPerArm": {
+      "B5": 0,
+      "T5": 0,
+      "T10": 0
+    },
+    "summaryReceipt": {
+      "file": "control-web-summary.json",
+      "sha256": "b105840ef3b759bc70e8b5df21290c5cc09893f359b4b35d6d06ff448aff9955"
+    },
+    "matrixSHA256": "08ee03dd4751a04049b16af6192750b849d38e1adc01feded139a444c9790d3b",
+    "ledgerSHA256": "8da4b99e7cc16844b485c1022c421be460c82b94257c25ac2a7588f1c3b6ff59",
+    "methodologySHA256": "8f4127e004e0e1713a847d1402e027a51cfb6000b2157303b5661c1ec32464c0"
+  },
+  "assessmentType": "AI web review; no human listening grades",
+  "privacyScope": "Original public test fixture and public recording/source information only; no downloaded assets, provider bodies, credentials, personal history or taste profile.",
+  "files": [
+    {
+      "file": "baseline.json",
+      "sha256": "f6c4d848e15bb1ef393bc4822523af56afa6522cdcbd4f6a1bf82843d276e8b3",
+      "bytes": 1143583
+    },
+    {
+      "file": "treatment.json",
+      "sha256": "5b3e675de8fbb37f7841402e6d9b724a1b98c54f3a33914e84af44e67391122d",
+      "bytes": 691355
+    },
+    {
+      "file": "comparison.json",
+      "sha256": "6a9b45ecf2d44655a867ae67a80aa4dd749db3145d20f988f2f62f802fdf2940",
+      "bytes": 23597
+    },
+    {
+      "file": "controls.json",
+      "sha256": "9f71b01de91cb70c8c2676bf3edd26f071161d18da5f9d252b2636dbff33a43b",
+      "bytes": 360387
+    },
+    {
+      "file": "controls-methodology.json",
+      "sha256": "8f4127e004e0e1713a847d1402e027a51cfb6000b2157303b5661c1ec32464c0",
+      "bytes": 11157
+    }
+  ]
+}

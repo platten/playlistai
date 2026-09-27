@@ -41,7 +41,7 @@ func TestArtistSpellingDecisionPreservesPromptAndExclusionEvidence(t *testing.T)
 		if !reject {
 			selection.TrackID = "haul"
 		}
-		choices, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{selection})
+		choices, err := validateResolutionSelections(context.Background(), spellingResolver{}, m, []ResolutionSelection{selection})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -70,7 +70,7 @@ func TestArtistSpellingDecisionPreservesPromptAndExclusionEvidence(t *testing.T)
 func TestSpellingChoiceMustBeAnOfferedCatalogAlternative(t *testing.T) {
 	m := core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "christrian loeffler"}}}
 	for _, choice := range []ResolutionSelection{{Kind: core.ReferenceArtist, Query: "christrian loeffler", TrackID: "invented"}, {Kind: core.ReferenceArtist, Query: "another name", TrackID: "haul"}, {Kind: core.ReferenceArtist, Query: "christrian loeffler", TrackID: "haul", RejectSpelling: true}} {
-		if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
+		if _, err := validateResolutionSelections(context.Background(), spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
 			t.Fatal("invalid choice accepted", choice)
 		}
 	}
@@ -82,7 +82,7 @@ func TestCatalogChoiceCannotBypassAmbiguousProviderGrounding(t *testing.T) {
 		Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "artist-a", Name: "Christian Löffler"}, {Kind: core.ReferenceArtist, ID: "artist-b", Name: "Christian Löffler"}},
 	}}}}
 	choice := ResolutionSelection{Kind: core.ReferenceArtist, Query: "christrian loeffler", TrackID: "haul"}
-	if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil || !strings.Contains(err.Error(), "provider identities") {
+	if _, err := validateResolutionSelections(context.Background(), spellingResolver{}, m, []ResolutionSelection{choice}); err == nil || !strings.Contains(err.Error(), "provider identities") {
 		t.Fatalf("forged provider-ambiguous selection accepted: %v", err)
 	}
 }
@@ -116,9 +116,10 @@ func TestGenerateRequiresArtistSpellingConfirmation(t *testing.T) {
 func TestProviderIdentityChoicePreservesSourceAndRejectsForgedIDs(t *testing.T) {
 	m := core.MusicIntent{References: []core.IntentReference{{Kind: core.ReferenceArtist, Query: "Nirvana", Grounding: &core.IdentityGrounding{
 		Provider: "MusicBrainz", Truncated: true, Candidates: []core.IdentityCandidate{{Kind: core.ReferenceArtist, ID: "us", Name: "Nirvana"}, {Kind: core.ReferenceArtist, ID: "uk", Name: "Nirvana"}},
+		Corroboration: &core.IdentityCorroboration{SelectedID: "us", Method: core.ArtistCoperformanceMethod},
 	}}}}
 	choice := ResolutionSelection{Kind: core.ReferenceArtist, Query: "Nirvana", IdentityID: "uk"}
-	selections, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice})
+	selections, err := validateResolutionSelections(context.Background(), spellingResolver{}, m, []ResolutionSelection{choice})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +131,17 @@ func TestProviderIdentityChoicePreservesSourceAndRejectsForgedIDs(t *testing.T) 
 	if got.Query != "Nirvana" || got.TrackID != "" || got.Grounding.Truncated || len(got.Grounding.Candidates) != 1 || got.Grounding.Candidates[0].ID != "uk" {
 		t.Fatalf("choice lost: %+v", got)
 	}
+	if !got.Grounding.Confirmed || got.Grounding.Corroboration != nil {
+		t.Fatal("user choice retained an earlier automatic identity decision")
+	}
 	if len(m.References[0].Grounding.Candidates) != 2 || !m.References[0].Grounding.Truncated {
 		t.Fatal("cached preview mutated")
 	}
+	if m.References[0].Grounding.Corroboration == nil || m.References[0].Grounding.Corroboration.SelectedID != "us" {
+		t.Fatal("user choice mutated the earlier identity evidence")
+	}
 	choice.IdentityID = "forged"
-	if _, err := validateResolutionSelections(spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
+	if _, err := validateResolutionSelections(context.Background(), spellingResolver{}, m, []ResolutionSelection{choice}); err == nil {
 		t.Fatal("forged identity accepted")
 	}
 }

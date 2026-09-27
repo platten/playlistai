@@ -74,14 +74,14 @@ func artistOnlyCandidates(ctx context.Context, cat ports.Catalog, intent core.Mu
 		}
 		var tracks []core.TrackRef
 		for row := 0; row < cat.Len(); row++ {
-			if row%256 == 0 && ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if meta, ok := cat.Meta(cat.ID(row)); ok && core.NormalizeIdentityPart(meta.Ref.Artist) == core.NormalizeIdentityPart(artist) {
+			if meta, ok := ports.CatalogMeta(ctx, cat, cat.ID(row)); ok && core.NormalizeIdentityPart(meta.Ref.Artist) == core.NormalizeIdentityPart(artist) {
 				tracks = append(tracks, meta.Ref)
 			}
 		}
-		return tracks, nil
+		return tracks, ctx.Err()
 	}
 	return nil, nil
 }

@@ -188,13 +188,25 @@ func (c *CompositeCatalog) RowOf(id string) (int, bool) {
 	return c.base.RowOf(id)
 }
 func (c *CompositeCatalog) Meta(id string) (core.TrackMeta, bool) {
+	return c.MetaContext(context.Background(), id)
+}
+
+func (c *CompositeCatalog) MetaContext(ctx context.Context, id string) (meta core.TrackMeta, ok bool) {
+	if ctx.Err() != nil {
+		return core.TrackMeta{}, false
+	}
+	defer func() {
+		if ctx.Err() != nil {
+			meta, ok = core.TrackMeta{}, false
+		}
+	}()
 	if c.local.owns(id) {
-		track, ok, err := c.local.Lookup(context.Background(), id)
+		track, ok, err := c.local.Lookup(ctx, id)
 		if err != nil || !ok {
 			return core.TrackMeta{}, false
 		}
 		meta := core.TrackMeta{
-			Annotations: c.local.Annotations(context.Background(), id),
+			Annotations: c.local.Annotations(ctx, id),
 			Ref:         core.TrackRef{ID: track.ID, Artist: track.Artist, Title: track.Title, RecordingIdentity: track.RecordingIdentity},
 			Album:       track.Album, AlbumReliable: track.Album != "", SourceIdentity: track.SourceIdentity,
 			ISRC: track.ISRC, MusicBrainzRecording: track.MusicBrainzRecording, AcoustID: track.AcoustID,
@@ -219,10 +231,10 @@ func (c *CompositeCatalog) Meta(id string) (core.TrackMeta, bool) {
 	if c.mode == ModeLibraryOnly {
 		return core.TrackMeta{}, false
 	}
-	meta, ok := c.baseMetadata(id)
+	meta, ok = c.baseMetadataContext(ctx, id)
 	if ok {
-		if match, found := c.matchBase(context.Background(), meta); found {
-			meta.Annotations = append(append([]core.MetadataAnnotation(nil), meta.Annotations...), c.local.Annotations(context.Background(), match.ID)...)
+		if match, found := c.matchBase(ctx, meta); found {
+			meta.Annotations = append(append([]core.MetadataAnnotation(nil), meta.Annotations...), c.local.Annotations(ctx, match.ID)...)
 		}
 	}
 	return meta, ok
@@ -303,7 +315,7 @@ func (c *CompositeCatalog) CriterionEvidence(ctx context.Context, id string, cri
 	if c.mode == ModeLibraryOnly {
 		return core.EvidenceUnknown
 	}
-	if meta, ok := c.baseMetadata(id); ok {
+	if meta, ok := c.baseMetadataContext(ctx, id); ok {
 		if match, found := c.matchBase(ctx, meta); found {
 			if state := c.local.CriterionEvidence(ctx, match.ID, criterion); state != core.EvidenceUnknown {
 				return state
@@ -332,24 +344,43 @@ func (r *CompositeResolver) CatalogVersion() string {
 }
 
 func (r *CompositeResolver) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	return r.ResolveReferenceContext(context.Background(), ref)
+}
+
+func (r *CompositeResolver) ResolveReferenceContext(ctx context.Context, ref core.IntentReference) (result core.ReferenceResolution) {
+	result = core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: r.CatalogVersion()}
+	if ctx.Err() != nil {
+		return result
+	}
+	defer func() {
+		if ctx.Err() != nil {
+			result = core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: r.CatalogVersion()}
+		}
+	}()
 	if r.local.owns(ref.TrackID) {
-		if track, ok, _ := r.local.Lookup(context.Background(), ref.TrackID); ok {
+		if track, ok, _ := r.local.Lookup(ctx, ref.TrackID); ok {
 			candidate := localResolutionCandidate(ref.Kind, []Track{track})
 			return core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: r.CatalogVersion(), Selected: &candidate}
 		}
 	}
 	if r.mode != ModeLibraryOnly {
-		resolved := r.base.ResolveReference(ref)
+		resolved := ports.ResolveReferenceContext(ctx, r.base, ref)
+		if ctx.Err() != nil {
+			return result
+		}
 		if resolved.Status == core.ResolutionResolved {
 			return resolved
 		}
 	}
 	if ref.Kind == core.ReferenceArtist {
-		tracks, err := r.local.ArtistRecordings(context.Background(), ref.Query)
+		tracks, err := r.local.ArtistRecordings(ctx, ref.Query)
 		if err == nil && len(tracks) > 0 {
 			localTracks := make([]Track, 0, len(tracks))
 			for _, track := range tracks {
-				if local, ok, _ := r.local.Lookup(context.Background(), track.ID); ok {
+				if ctx.Err() != nil {
+					return result
+				}
+				if local, ok, _ := r.local.Lookup(ctx, track.ID); ok {
 					localTracks = append(localTracks, local)
 				}
 			}
@@ -359,9 +390,14 @@ func (r *CompositeResolver) ResolveReference(ref core.IntentReference) core.Refe
 			}
 		}
 	}
-	hits, _ := r.local.Search(context.Background(), MetadataQuery{Text: ref.Query, Limit: 20})
+	if ctx.Err() != nil {
+		return result
+	}
+	hits, _ := r.local.Search(ctx, MetadataQuery{Text: ref.Query, Limit: 20})
+	if ctx.Err() != nil {
+		return result
+	}
 	groups := localResolutionGroups(ref.Kind, hits)
-	result := core.ReferenceResolution{Status: core.ResolutionUnresolved, CatalogVersion: r.CatalogVersion()}
 	if len(groups) == 1 {
 		candidate := localResolutionCandidate(ref.Kind, groups[0])
 		result.Status, result.Selected = core.ResolutionResolved, &candidate
@@ -436,6 +472,7 @@ func NewCombinedRetriever(base ports.CandidateRetriever, local *Catalog, mode Re
 }
 
 func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
+	automatic := request.Intent.Controls.RecommendationMode == core.Automatic
 	ctx, cancel := context.WithCancel(ctx)
 	var baseWork sync.WaitGroup
 	defer func() { cancel(); baseWork.Wait() }()
@@ -453,9 +490,13 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		return nil, err
 	}
 	queries := recommendationQueries(request)
+	// Forwarded vectors have no SeedID by contract. Keep their origin only for
+	// this request's fair query budget, without changing vector/source identity.
+	forwardedSeeds := map[*NeighborQuery]string{}
 	if r.catalog != nil {
 		if source, ok := r.catalog.(ports.LibraryAudioCatalog); ok {
 			seen := map[string]bool{}
+		forwardReferences:
 			for _, ref := range core.RetrievalReferences(request.Intent) {
 				if ref.Influence == core.InfluenceNegative {
 					continue
@@ -467,17 +508,28 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 					}
 				}
 				for _, id := range ids {
+					if err := ctx.Err(); err != nil {
+						if !automatic {
+							return nil, err
+						}
+						break forwardReferences
+					}
 					if id == "" || seen[id] || r.local.owns(id) {
 						continue
 					}
 					seen[id] = true
 					vector, found, e := source.LibraryVector(ctx, id)
 					if e != nil && ctx.Err() != nil {
-						return nil, ctx.Err()
+						if !automatic {
+							return nil, ctx.Err()
+						}
+						break forwardReferences
 					}
 					if found && vector.Source.SpaceID == r.local.EvidenceSource().SpaceID {
 						space := r.local.VectorSpace()
-						queries = append(queries, Query{MERT: &NeighborQuery{Vector: vector.Values, Space: &space, Limit: 100, ExcludeIDs: request.AttemptedIDs}})
+						query := &NeighborQuery{Vector: vector.Values, Space: &space, Limit: 100, ExcludeIDs: request.AttemptedIDs}
+						forwardedSeeds[query] = id
+						queries = append(queries, Query{MERT: query})
 					}
 				}
 			}
@@ -486,7 +538,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	if provider, ok := r.catalog.(interface {
 		libraryQueries(string) []core.AudioClauseVector
 	}); ok &&
-		(request.Intent.Controls.RecommendationMode == core.EnhancedHybrid || request.Intent.Controls.RecommendationMode == core.CLAPFirst) {
+		(request.Intent.Controls.RecommendationMode == core.EnhancedHybrid || request.Intent.Controls.RecommendationMode == core.CLAPFirst || request.Intent.Controls.RecommendationMode == core.Automatic) {
 		space := r.local.CLAPVectorSpace()
 		seen := map[string]bool{}
 		for _, query := range provider.libraryQueries(r.local.manifest.PackID) {
@@ -501,7 +553,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 			}
 		}
 	}
-	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid || request.Intent.Controls.RecommendationMode == core.Automatic {
 		space := r.local.VectorSpace()
 		for _, taste := range request.Profile.Library {
 			if taste.Source.SpaceID != r.local.EvidenceSource().SpaceID {
@@ -539,6 +591,9 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		}
 		queries = append(queries, Query{Metadata: &MetadataQuery{Artist: profile.Artist, Limit: 30, ExcludeIDs: request.AttemptedIDs}})
 	}
+	if automatic {
+		queries = automaticQueries(queries, request.Intent, forwardedSeeds)
+	}
 	type queryResult struct {
 		result QueryResult
 		err    error
@@ -547,14 +602,14 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	searchwork.Run(ctx, len(queries), func(index int) {
 		results[index].result, results[index].err = executor.Query(ctx, queries[index])
 	})
-	if err := ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil && !automatic {
 		return nil, err
 	}
 	localByID := map[string]*Candidate{}
 	for _, completed := range results {
 		result, queryErr := completed.result, completed.err
 		if queryErr != nil {
-			if ctx.Err() != nil {
+			if ctx.Err() != nil && !automatic {
 				return nil, ctx.Err()
 			}
 			continue
@@ -572,7 +627,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		}
 	}
 	for _, required := range request.Intent.RequiredTracks {
-		if r.local.owns(required.TrackID) {
+		if ctx.Err() == nil && r.local.owns(required.TrackID) {
 			if track, ok, _ := r.local.Lookup(ctx, required.TrackID); ok {
 				localByID[track.ID] = &Candidate{Track: track, Evidence: []Evidence{{Channel: "required_local", QueryID: track.ID, Rank: 1, Score: 1, Provenance: track.Provenance}}}
 			}
@@ -586,7 +641,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	sort.Slice(localCandidates, func(i, j int) bool { return candidateLess(localCandidates[i], localCandidates[j]) })
 	localCandidates = deduplicateCandidates(localCandidates)
 	baseWork.Wait()
-	if err := ctx.Err(); err != nil {
+	if err := ctx.Err(); err != nil && !automatic {
 		return nil, err
 	}
 	all := append([]core.Candidate(nil), baseCandidates...)
@@ -677,7 +732,73 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		}
 	}
 	sort.SliceStable(all, func(i, j int) bool { return all[i].Track.ID < all[j].Track.ID })
+	if automatic {
+		return all, errors.Join(baseErr, ctx.Err())
+	}
 	return all, baseErr
+}
+
+// Automatic makes a single page of prepared queries, not legacy inferred-artist
+// expansion. Bound scan count as well as returned hits, and give each reference
+// and channel an opportunity before additional representatives from one artist.
+func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds map[*NeighborQuery]string) []Query {
+	const maxQueries, page = 8, 64
+	owners := map[string]string{}
+	for i, ref := range core.RetrievalReferences(intent) {
+		owner := fmt.Sprint(i)
+		owners[ref.TrackID] = owner
+		if ref.Resolution != nil && ref.Resolution.Selected != nil {
+			for _, rep := range ref.Resolution.Selected.Representatives {
+				owners[rep.TrackID] = owner
+			}
+		}
+	}
+	var keys []string
+	buckets := map[string][]Query{}
+	for _, query := range queries {
+		key := "metadata"
+		if query.Metadata != nil {
+			copy := *query.Metadata
+			copy.Limit = min(page, copy.Limit)
+			query.Metadata = &copy
+			if copy.Criterion != nil {
+				key += ":" + copy.Criterion.Scope
+			}
+		}
+		for _, channel := range []struct {
+			name  string
+			query **NeighborQuery
+		}{{"mert", &query.MERT}, {"clap", &query.CLAP}} {
+			if *channel.query != nil {
+				seed := (*channel.query).SeedID
+				if seed == "" {
+					seed = forwardedSeeds[*channel.query]
+				}
+				copy := **channel.query
+				copy.Limit = min(page, copy.Limit)
+				*channel.query = &copy
+				key = channel.name + ":" + owners[seed]
+			}
+		}
+		if _, exists := buckets[key]; !exists {
+			keys = append(keys, key)
+		}
+		buckets[key] = append(buckets[key], query)
+	}
+	var out []Query
+	for round := 0; len(out) < maxQueries; round++ {
+		added := false
+		for _, key := range keys {
+			if round < len(buckets[key]) && len(out) < maxQueries {
+				out = append(out, buckets[key][round])
+				added = true
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return out
 }
 
 func uniqueRetrievalEvidence(input []core.RetrievalEvidence) []core.RetrievalEvidence {
@@ -778,7 +899,7 @@ func recommendationQueries(request ports.RetrievalRequest) []Query {
 			if (strings.HasPrefix(id, "local:") || strings.HasPrefix(id, "pack:")) && !seenID[id] {
 				seenID[id] = true
 				queries = append(queries, Query{MERT: &NeighborQuery{SeedID: id, Limit: 100, ExcludeIDs: exclude}})
-				if request.Intent.Controls.RecommendationMode == core.CLAPFirst || request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
+				if request.Intent.Controls.RecommendationMode == core.CLAPFirst || request.Intent.Controls.RecommendationMode == core.EnhancedHybrid || request.Intent.Controls.RecommendationMode == core.Automatic {
 					queries = append(queries, Query{CLAP: &NeighborQuery{SeedID: id, Limit: 100, ExcludeIDs: exclude}})
 				}
 			}

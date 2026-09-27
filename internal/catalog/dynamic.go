@@ -29,6 +29,7 @@ type DynamicCatalog struct {
 	resolver ports.ReferenceResolver
 	db       *sql.DB
 	mu       sync.RWMutex
+	writeMu  sync.Mutex
 	tracks   map[string]core.TrackMeta
 	search   []dynamicSearchTrack // immutable snapshot, invalidated after a successful write
 }
@@ -123,10 +124,10 @@ func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	if meta.FullRecordingDuration != nil {
 		duration, source, recording = meta.FullRecordingDuration.Milliseconds, meta.FullRecordingDuration.Source, meta.FullRecordingDuration.RecordingID
 	}
-	// Serialize persistence and publication so concurrent updates to one ID
-	// cannot leave the in-memory view older than the database.
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	// Serialize writes without blocking readers on SQLite. Publish only after
+	// commit so the in-memory view remains consistent with persisted metadata.
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
 	tx, err := d.db.Begin()
 	if err != nil {
 		return err
@@ -146,8 +147,10 @@ func (d *DynamicCatalog) RegisterDynamicTrack(meta core.TrackMeta) error {
 	if err = tx.Commit(); err != nil {
 		return err
 	}
+	d.mu.Lock()
 	d.tracks[id] = meta
 	d.search = nil
+	d.mu.Unlock()
 	return nil
 }
 
@@ -160,12 +163,22 @@ func (d *DynamicCatalog) Vectors(id string) (ports.Vectors, bool)    { return d.
 func (d *DynamicCatalog) RawRow(row int) ([]int8, []int8, bool)      { return d.base.RawRow(row) }
 
 func (d *DynamicCatalog) Meta(id string) (core.TrackMeta, bool) {
-	if meta, ok := d.base.Meta(id); ok {
+	return d.MetaContext(context.Background(), id)
+}
+
+func (d *DynamicCatalog) MetaContext(ctx context.Context, id string) (core.TrackMeta, bool) {
+	if meta, ok := ports.CatalogMeta(ctx, d.base, id); ok {
 		return meta, true
+	}
+	if ctx.Err() != nil {
+		return core.TrackMeta{}, false
 	}
 	d.mu.RLock()
 	meta, ok := d.tracks[id]
 	d.mu.RUnlock()
+	if ctx.Err() != nil {
+		return core.TrackMeta{}, false
+	}
 	return meta, ok
 }
 
@@ -208,15 +221,28 @@ func (d *DynamicCatalog) searchSnapshot() []dynamicSearchTrack {
 func (d *DynamicCatalog) CatalogVersion() string { return d.resolver.CatalogVersion() }
 
 func (d *DynamicCatalog) ResolveReference(ref core.IntentReference) core.ReferenceResolution {
+	return d.ResolveReferenceContext(context.Background(), ref)
+}
+
+func (d *DynamicCatalog) ResolveReferenceContext(ctx context.Context, ref core.IntentReference) core.ReferenceResolution {
+	if ctx.Err() != nil {
+		return unresolved()
+	}
 	if strings.HasPrefix(ref.TrackID, "deezer:") || strings.HasPrefix(ref.TrackID, "musicbrainz:") {
-		if meta, ok := d.Meta(ref.TrackID); ok {
+		d.mu.RLock()
+		meta, ok := d.tracks[ref.TrackID]
+		d.mu.RUnlock()
+		if ctx.Err() != nil {
+			return unresolved()
+		}
+		if ok {
 			candidate := core.ResolutionCandidate{Kind: ref.Kind, EntityID: ref.TrackID, Artist: meta.Ref.Artist, Title: meta.Ref.Title, Confidence: 1,
 				Evidence:        []core.ResolutionEvidence{{Match: "id", NormalizedQuery: core.NormalizeIdentityPart(ref.Query), MatchedText: meta.Ref.Display()}},
 				Representatives: []core.WeightedTrack{{TrackID: ref.TrackID, Weight: 1}}}
 			return core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: d.CatalogVersion(), Selected: &candidate}
 		}
 	}
-	return d.resolver.ResolveReference(ref)
+	return ports.ResolveReferenceContext(ctx, d.resolver, ref)
 }
 
 func (d *DynamicCatalog) ArtistRecordings(ctx context.Context, artist string) ([]core.TrackRef, error) {

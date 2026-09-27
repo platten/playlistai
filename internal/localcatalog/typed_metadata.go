@@ -192,6 +192,12 @@ func annotationCriterionEvidence(a []core.MetadataAnnotation, criterion core.Mus
 		return core.EvidenceUnknown
 	}
 	for _, item := range a {
+		// Flattened classifier labels omit confidence, model identity and
+		// observation coverage. They remain retrieval/ranking hints and cannot
+		// satisfy a musical requirement merely by matching its vocabulary.
+		if item.Origin == "classifier_output" || strings.EqualFold(item.SourceKey, "AB:GENRE") || strings.EqualFold(item.SourceKey, "AB:MOOD") {
+			continue
+		}
 		if annotationMatches(item, criterion) {
 			return core.EvidenceMatch
 		}

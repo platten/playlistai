@@ -23,7 +23,13 @@ func TestModelCategoryJourneyRepairsEntityDestinationAndStageScopes(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			stages := core.JourneyCriteria(intent.EssentialCriteria)
+			var genres []core.MusicalCriterion
+			for _, criterion := range intent.EssentialCriteria {
+				if criterion.Kind == "genre" || criterion.Kind == "style" {
+					genres = append(genres, criterion)
+				}
+			}
+			stages := core.JourneyCriteria(genres)
 			if intent.Mode != core.ModeJourney || intent.Destination != nil || len(intent.References) != 0 || len(stages) != 2 || stages[0].Scope != "journey_start" || stages[1].Scope != "journey_end" || stages[1].Value != tc.end || len(intent.Journey.EnergyTrajectory) != 2 {
 				t.Fatalf("lost category journey: %+v", intent)
 			}

@@ -10,7 +10,7 @@ const browser = await chromium.launch({ executablePath: process.argv[3], headles
 const fixture = `
 let enabled=true,mertEnabled=true,installed=false;
 window.__installs=[];window.__analyses=[];
-const status=()=>({enabled,mertEnabled,installed,searchableTracks:installed?2:0,recommendedManifestUrl:"https://models.example/mert/manifest.json",recommendedDownloadBytes:213882011,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
+const status=()=>({enabled,mertEnabled,installed,searchableTracks:installed?2:0,recommendedManifestUrl:"https://models.example/mert-linux-amd64-gpu/manifest.json",recommendedDownloadBytes:1828938273,dspAvailable:true,mertAvailable:installed,limit:24,revision:installed?'12af15fef9d0ac838c3f475bfbbf26d2060dd4f5':'',downloadBytes:installed?395000000:0,dspStorage:{records:4,bytes:1024},mertStorage:{records:2,bytes:4096},detail:'Preview measurements describe the analyzed interval.'});
 const methods={GetEnhancedAnalysisStatus:status,SetEnhancedAnalysisEnabled:v=>{enabled=v},SetMERTSimilarityEnabled:v=>{mertEnabled=v},InstallRecommendedMERT:()=>{window.__installs.push('recommended');return new Promise((resolve,reject)=>{window.__finish=()=>{installed=true;resolve()};window.__cancel=()=>reject(new Error('Model pack cancelled'));})},ClearMERTSimilarityCache:()=>{},ClearDSPAnalysisCache:()=>{},AnalyzeEnhancedTracks:(ids,liked)=>{window.__analyses.push({ids,liked});return new Promise((resolve,reject)=>{window.__finish=()=>resolve({analyzed:1,unavailable:1});window.__cancel=()=>reject(new Error('Analysis cancelled'));})}};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{const p=Promise.resolve(o[k](...args));p.cancel=()=>window.__cancel?.();return p;}});
 `;
@@ -40,7 +40,7 @@ try {
     await page.setViewportSize({width:1000,height:1000});
   }
 
-  await page.getByRole('button',{name:'Download MERT from Cloudflare R2'}).click();
+  await page.getByRole('button',{name:'Download CUDA MERT from Cloudflare R2'}).click();
   await page.getByRole('button',{name:'Cancel model installation'}).waitFor();
   await page.evaluate(()=>window.__progressCallbacks.forEach(callback=>callback({data:{op:'mert-model',done:1,total:2,note:'Downloading segment 1 of 2'}})));
   await page.getByRole('progressbar',{name:'Installing MERT'}).waitFor();
@@ -49,7 +49,7 @@ try {
   await page.getByRole('button',{name:'Cancel model installation'}).click();
   await page.getByRole('alert').filter({hasText:'Model pack cancelled'}).waitFor();
   await page.screenshot({path:path.join(output,'mert-pack-cancelled.png'),fullPage:true});
-  await page.getByRole('button',{name:'Download MERT from Cloudflare R2'}).click();
+  await page.getByRole('button',{name:'Download CUDA MERT from Cloudflare R2'}).click();
   await page.waitForFunction(()=>window.__installs.length===2);
   await page.evaluate(()=>window.__finish());
   await page.getByText('2 tracks with compatible cached embeddings.').waitFor();

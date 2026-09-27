@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
 )
@@ -66,7 +67,7 @@ func TestLibraryAssessmentRetainsCoverageAndStrongestNegativeExcerpt(t *testing.
 	catalog.BindLibraryQueries(model, queries)
 	queries[0].Values[0] = 0 // Binding must own request values.
 	assessment, ok, err := catalog.LibraryAssessment(context.Background(), catalog.local.NamespacedID("rich"))
-	if err != nil || !ok || len(assessment.Clauses) != 3 || assessment.Eligible {
+	if err != nil || !ok || len(assessment.Clauses) != 3 || assessment.Eligible || assessment.ModelFingerprint != audio.Fingerprint(model) {
 		t.Fatalf("assessment=%+v available=%v err=%v", assessment, ok, err)
 	}
 	if math.Abs(assessment.Clauses[0].Score-3.0/7) > 1e-6 || assessment.Clauses[1].Score != 1 || math.Abs(assessment.Clauses[2].Score-1.5/7) > 1e-6 {
@@ -167,6 +168,18 @@ func TestCLAPRuntimeIdentitySeparatesSourcesAndExternalQueries(t *testing.T) {
 	query.CLAPModel = gpu.local.manifest.CLAPModel
 	if hits, err := gpu.local.CLAPNeighbors(context.Background(), query); err != nil || len(hits) != 2 {
 		t.Fatalf("explicit compatible query unavailable: hits=%d err=%v", len(hits), err)
+	}
+	// A different active text model cannot score the pack, but the same pack's
+	// GPU-created audio vectors remain usable for seed-neighbor retrieval.
+	gpu.BindLibraryQueries(cpuModel, []core.AudioClauseVector{{Clause: core.AudioClause{Kind: "mood", Text: "calm"}, Values: []float32{1, 0}}})
+	if got := gpu.libraryQueries(gpu.local.manifest.PackID); len(got) != 0 {
+		t.Fatalf("incompatible text query bound to GPU pack: %+v", got)
+	}
+	if _, found, err := gpu.LibraryAssessment(context.Background(), gpu.local.NamespacedID("rich")); err != nil || found {
+		t.Fatalf("incompatible text assessment found=%v err=%v", found, err)
+	}
+	if hits, err := gpu.local.CLAPNeighbors(context.Background(), NeighborQuery{SeedID: gpu.local.NamespacedID("rich"), Limit: 2}); err != nil || len(hits) != 2 {
+		t.Fatalf("GPU pack seed neighbors unavailable with different active text model: hits=%d err=%v", len(hits), err)
 	}
 }
 

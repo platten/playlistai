@@ -1,0 +1,138 @@
+{
+  "version": "reliable-subset-receipt/v1",
+  "date": "2026-09-27",
+  "purpose": "Bounded operational validation; not held-out musical-quality or listening calibration",
+  "selection": {
+    "policy": "explicit relative file list, deterministic sorting",
+    "tracks": 16,
+    "sourceBytes": 901221473,
+    "maxBytes": 1073741824,
+    "embeddedRecordingMBIDs": 16,
+    "embeddedISRCs": 15,
+    "embeddedIdentityIsIndependentlyVerified": false,
+    "sourceFilesModified": false,
+    "audioUploaded": false,
+    "privateFileListPublished": false
+  },
+  "host": {
+    "os": "linux",
+    "architecture": "amd64",
+    "cpu": "Intel(R) Core(TM) Ultra 9 285H",
+    "logicalCPUs": 16
+  },
+  "processing": {
+    "metadataTracks": 16,
+    "clapTracks": 16,
+    "mertTracks": 0,
+    "dspTracks": 0,
+    "failedTracks": 0,
+    "clapDevice": "cpu",
+    "inferenceSessions": 1,
+    "inferenceThreads": 1,
+    "coveredSeconds": 320,
+    "segments": 32,
+    "sampling": "two-distributed-10s-thirds-or-edges/v2",
+    "coverageScope": "recording-relative-excerpts",
+    "elapsedSeconds": null,
+    "elapsedNotMeasured": true,
+    "model": {
+      "model": "LAION original HTSAT-base music checkpoint",
+      "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+      "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+      "runtime": "onnxruntime/1.26.0/cpu",
+      "dimension": 512,
+      "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+    },
+    "compatibility": {
+      "predicate": "librarypack.Manifest.CLAPCompatible(audio.RecommendedBundle().Model)",
+      "compatible": true,
+      "modelFingerprint": "2f89df6b0880eca66db79401263859c9587262a6950add78e66eb8c6cf302247",
+      "differentPairedWeightsRejected": true,
+      "differentRuntimeRejected": true,
+      "nativeQueryInferenceExercised": false
+    }
+  },
+  "pack": {
+    "formatVersion": 8,
+    "id": "caab3b559a2e8c7c626ec7092328ecb9709393e655cb9e5c10054b039c698348",
+    "sha256": "0c5368a6bd04636a279c26f4f2f626d17d38e3c77b4b0dce7708ee2e71db78ba",
+    "bytes": 244282
+  },
+  "binary": {
+    "name": "playlist-indexer",
+    "sha256": "0738505393a52d28f2a29737414a47a6edc57fa3b54ad51415cc26c7c14d5e1c",
+    "bytes": 22494816
+  },
+  "webEvidence": {
+    "schema": "library-web-annotations/v1",
+    "evidenceClass": "web_source",
+    "rows": 16,
+    "resolvedMatchedRows": 13,
+    "unresolvedRows": 3,
+    "claims": 321,
+    "claimsByProvider": {
+      "musicbrainz": 317,
+      "apple": 4
+    },
+    "claimsByMethod": {
+      "recording_metadata": 13,
+      "community_tag": 150,
+      "recording_credit": 150,
+      "publisher_song_link": 4,
+      "publisher_field": 4
+    },
+    "assessments": {
+      "instrumentation:piano": {
+        "unknown": 13,
+        "match": 3
+      },
+      "instrumentation:guitar": {
+        "match": 3,
+        "unknown": 13
+      },
+      "instrumentation:drums": {
+        "unknown": 16
+      },
+      "genre:afrobeat": {
+        "unknown": 14,
+        "match": 2
+      },
+      "instrumentation:soft piano": {
+        "unknown": 16
+      },
+      "texture:spacious reverberation": {
+        "unknown": 16
+      },
+      "texture:distortion": {
+        "unknown": 16
+      },
+      "mood:tense": {
+        "unknown": 16
+      },
+      "vocal:instrumental": {
+        "unknown": 16
+      }
+    },
+    "sha256": "31ba96e74504f3bed28227ed2dd7b05be6cff69408faf8d75d7d1f44dbab6ab8",
+    "localModelUsed": false,
+    "deadlineSeconds": 300,
+    "desktopImported": false,
+    "independentHumanListeningLabels": 0
+  },
+  "qualityGates": {
+    "measured": false,
+    "automaticPromotionAllowed": false,
+    "reason": "No independent listening labels, precision measurement, or calibrated subjective thresholds; operational success does not establish musical suitability."
+  },
+  "deliveryBuild": {
+    "date": "2026-09-27",
+    "path": "bin/playlist-indexer",
+    "sha256": "5ed10df41fd2b02cc79b0aef2eef3a2f9657e607137c5d7b4c64d751a7c8a270",
+    "platform": "linux/amd64",
+    "nativeExecutable": "ELF64 dynamically linked",
+    "command": "go build -o bin/playlist-indexer ./cmd/playlist-indexer",
+    "smoke": "playlist-indexer help passed",
+    "validation": "Frozen automatic/v7 source passed scripts/test.sh: race-enabled Go tests, 259 frontend tests, bindings, typecheck, production build, vet, pure-Go core compile, and zero lint issues.",
+    "scope": "Delivery build includes release-aware identity guards. Historical subset encoding/annotation artifacts above retain the exact earlier binary that produced them; they were not regenerated with this delivery build."
+  }
+}

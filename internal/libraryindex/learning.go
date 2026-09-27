@@ -449,6 +449,6 @@ func clapVectorSpace(ctx context.Context, snapshotPath, generationID string) (li
 		return librarypack.VectorSpace{}, nil, "", nil
 	}
 	record := *first
-	space := librarypack.VectorSpace{Name: "library_clap", Dimension: record.Model.Dimension, DType: "float32", ByteOrder: "little", Normalized: true, Model: record.Model.Model, ModelRevision: record.Model.Revision, GraphSHA256: record.Model.Weights, Decoder: "pinned-ffmpeg", Preprocessing: record.Model.Preprocessing, Sampling: record.Sampling, Pooling: "duration-weighted-mean-l2/v1", Scope: "two-distributed-excerpts", Missingness: "absent-row"}
+	space := librarypack.VectorSpace{Name: "library_clap", Dimension: record.Model.Dimension, DType: "float32", ByteOrder: "little", Normalized: true, Model: record.Model.Model, ModelRevision: record.Model.Revision, GraphSHA256: record.Model.Weights, Runtime: record.Model.Runtime, Decoder: "pinned-ffmpeg", Preprocessing: record.Model.Preprocessing, Sampling: record.Sampling, Pooling: "duration-weighted-mean-l2/v1", Scope: "two-distributed-excerpts", Missingness: "absent-row"}
 	return space, &record.Model, generationID + "-clap", nil
 }

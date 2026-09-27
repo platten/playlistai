@@ -1,0 +1,54 @@
+{
+  "version": "reliable-seeds-identity-control/v1",
+  "date": "2026-09-27",
+  "scope": "Matched development case8 regeneration; final Automatic v7/source-atoms v21. Independent targeted regression, not a final40 quality claim.",
+  "executable": {
+    "name": "musiccheck-guarded",
+    "size": 27628856,
+    "sha256": "c74f9eb05695e22d099ef0c5ab7cc709e87e84a5e6ab6c68ff40005589b8dcfc"
+  },
+  "reportSHA256": "8ca1f18f2263547c8dbdcd2833c12b3e7a024e73bb20c41c68300e781450e52f",
+  "sourceManifestSHA256": "bfe99899adf2b51608cdeefa6306ebebd6344630423f1a8363fca2cb779aa1e0",
+  "inputMode": "frozen",
+  "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+  "seed": "15961069312770504922",
+  "generationLimitMilliseconds": 120000,
+  "milliseconds": 115022,
+  "startup": {
+    "measurement": "process launch to initial zero-case report file (startup/model/catalog identity receipt), before per-case timing",
+    "milliseconds": 96936,
+    "reportSHA256": "d9624b54bfd3bcade1cf0b0947256f48d3dbcab8314c3a54150e6ad50f5ec735"
+  },
+  "completed": true,
+  "commandExitCode": 1,
+  "operationError": null,
+  "timedOut": false,
+  "considered": 435,
+  "eligible": 70,
+  "returned": 10,
+  "knownConflict": {
+    "recordingMBID": "01d98a8b-321f-446e-a689-42a32cc46922",
+    "retrieved": true,
+    "eligible": false,
+    "returned": false
+  },
+  "editionCounterexample": {
+    "recordingMBID": "203c22de-d3d4-48da-831d-b5d64598b1f8",
+    "title": "Don't It Make It Better",
+    "returned": true
+  },
+  "returnedArtists": {
+    "Nina Simone": 6,
+    "Bill Withers": 4
+  },
+  "constraintFindings": [
+    "adjacent artist repeat",
+    "adjacent artist repeat",
+    "adjacent artist repeat",
+    "adjacent artist repeat",
+    "artist variety lost: got 2, minimum 3"
+  ],
+  "cacheDisclosure": "Authorized direct typed verifier probe had populated the previously absent Nina exact recording/release responses in the isolated runtime cache. This control demonstrates applying known cached contradictions; it does not prove cold online coverage.",
+  "qualityLimitation": "No independent listening labels. Generic adjacent-artist/minimum-three-artists harness findings remain recorded; this prompt explicitly names two artists.",
+  "relatedIndependentAudit": "reliable-seeds-independent-audit-2026-09-27.json"
+}

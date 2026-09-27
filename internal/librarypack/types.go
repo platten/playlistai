@@ -123,6 +123,7 @@ type IndexedFile struct {
 // different identities must never be combined as though they share a space.
 type VectorSpace struct {
 	Name          string `json:"name"`
+	Runtime       string `json:"runtime,omitempty"`
 	Dimension     int    `json:"dimension"`
 	DType         string `json:"dtype"`
 	ByteOrder     string `json:"byteOrder"`

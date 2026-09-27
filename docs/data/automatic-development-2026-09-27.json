@@ -1,0 +1,1742 @@
+{
+  "version": "automatic-development-results/v1",
+  "date": "2026-09-27",
+  "scope": "Prepared-engine development experiment, not whole-application latency or production retrieval recall. Heldout unused.",
+  "state": "insufficient",
+  "policyFrozen": false,
+  "sourceSHA256": "1ab5827f2e128a165ac660a1d4c0ba020fb0b6df244ba70ed7b24aae8ee80d3e",
+  "policySHA256": "7611678c617e8d1ec627297923e761b3f8b4672cab5bbed487ba6769214b3e91",
+  "hardware": {
+    "model": "Intel(R) Core(TM) Ultra 9 285H",
+    "logicalCPUs": 16,
+    "memoryTotalKiB": 16160408
+  },
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "goVersion": "go version go1.27.1 linux/amd64",
+  "model": {
+    "model": "LAION original HTSAT-base music checkpoint",
+    "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+    "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+    "runtime": "onnxruntime/1.26.0/cpu",
+    "dimension": 512,
+    "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+  },
+  "sampling": "two-distributed-10s-thirds-or-edges/v2",
+  "recordings": 300,
+  "acquisitionErrors": 0,
+  "coveredSeconds": 6000,
+  "perRecordingMeanMilliseconds": 841,
+  "seed": "42",
+  "runs": 45,
+  "results": [
+    {
+      "split": "development",
+      "variant": "metadata",
+      "runs": 15,
+      "runsWithErrors": 0,
+      "state": "fail",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "fail",
+          "value": 0,
+          "target": 0.8,
+          "numerator": 0,
+          "denominator": 200,
+          "unknown": 0
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "pass",
+          "value": 0,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 2,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 2
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 70,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 9,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 9
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 90,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "variant": "audio",
+      "runs": 15,
+      "runsWithErrors": 0,
+      "state": "fail",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "fail",
+          "value": 0,
+          "target": 0.8,
+          "numerator": 0,
+          "denominator": 200,
+          "unknown": 0
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "pass",
+          "value": 0,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 2,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 2
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 70,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 9,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 9
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 90,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "development",
+      "variant": "combined",
+      "runs": 15,
+      "runsWithErrors": 0,
+      "state": "fail",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": 0.024691358024691357,
+          "target": 0.9,
+          "numerator": 6,
+          "denominator": 243,
+          "unknown": 237
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "insufficient",
+          "value": 0.02,
+          "target": 0.8,
+          "numerator": 4,
+          "denominator": 200,
+          "unknown": 76
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "pass",
+          "value": 0,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 15,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 15
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 2,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 2
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 70,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 9,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": 0.024691358024691357,
+              "target": 0.9,
+              "numerator": 6,
+              "denominator": 243,
+              "unknown": 237
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 9
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": 0.044444444444444446,
+              "target": 0.8,
+              "numerator": 4,
+              "denominator": 90,
+              "unknown": 76
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 1,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 1
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "fail",
+              "value": 0,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 10,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "variant": "metadata",
+      "runs": 0,
+      "runsWithErrors": 0,
+      "state": "insufficient",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.8,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "insufficient",
+          "value": null,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "variant": "audio",
+      "runs": 0,
+      "runsWithErrors": 0,
+      "state": "insufficient",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.8,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "insufficient",
+          "value": null,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "split": "heldout",
+      "variant": "combined",
+      "runs": 0,
+      "runsWithErrors": 0,
+      "state": "insufficient",
+      "gates": [
+        {
+          "name": "complete_paired_ablation_runs",
+          "state": "insufficient",
+          "value": null,
+          "target": 1,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "strong_admission_precision",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "recall_at_200",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.9,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "good_per_requested_slot",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.8,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "vocal_leakage_upper_95",
+          "state": "insufficient",
+          "value": null,
+          "target": 0.05,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "known_factual_identity_duplicate_violations",
+          "state": "insufficient",
+          "value": null,
+          "target": 0,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_cold_provider",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        },
+        {
+          "name": "p95_milliseconds_warm_installed",
+          "state": "insufficient",
+          "value": null,
+          "target": 30000,
+          "numerator": 0,
+          "denominator": 0,
+          "unknown": 0
+        }
+      ],
+      "facets": [
+        {
+          "facet": "voice_instrumental",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "genre_dortmund",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_acoustic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_electronic",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "mood_relaxed",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        },
+        {
+          "facet": "danceability",
+          "runs": 0,
+          "gates": [
+            {
+              "name": "strong_admission_precision",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "recall_at_200",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.9,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            },
+            {
+              "name": "good_per_requested_slot",
+              "state": "insufficient",
+              "value": null,
+              "target": 0.8,
+              "numerator": 0,
+              "denominator": 0,
+              "unknown": 0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "artifacts": {
+    "automatic-corpus-v1.json": "ad77efa60e709e227b2296c1737b2d0b53e5cc8cc91f56d180287112a2a1df30",
+    "automatic-requests-v3.json": "0670bfe0a912ca6cdf45b85b76087f40d61418b6c3b06e518e64f68c4aab9c1a",
+    "development-features-v1.json": "60e1dd4803f37ef1a59a4d479e23f517630c414e95d252a76da9b0d52ce1a19e",
+    "development-measurements-v3.json": "7696d1107ef6e2c79c1bb4062d87217c431fc71c08f2552146a65eea0b2dba55",
+    "development-report-v3.json": "c5b00c473f70119316b7afea41ff1a36077d8c6e9e38dd935f8b724387cb38ba",
+    "development-source-manifest-v3.json": "29cb80a5ac0ba5d349d02a0e5bf12ca13c3d0d365de5a0fb7d00bcbe50bbe659"
+  },
+  "limits": [
+    "Only 23 of 600 recordings have unanimous genre labels. Unknown outputs do not establish success.",
+    "Raw vocal cosine cannot establish vocal-presence contrast.",
+    "All evidence covers sampled intervals, not complete recordings.",
+    "Candidate order is a supplied fixed pool, not an observed retrieval index.",
+    "No cold-provider or whole-application latency observation.",
+    "The heldout pool was not measured."
+  ],
+  "algorithmVersion": "automatic/v3+automatic-fit/v3",
+  "checks": {
+    "engineExitCode": 0,
+    "evaluationExitCode": 1,
+    "evaluationState": "insufficient",
+    "developmentOnly": true
+  }
+}

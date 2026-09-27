@@ -48,15 +48,16 @@ type MERTSimilaritySearch struct {
 // ranking. It contains no PCM or model intermediates. Centroids are audio-only;
 // callers must keep explicit negative feedback separate from exposure.
 type EnhancedAudioInput struct {
-	PolicyVersion    string                         `json:"policyVersion"`
-	CatalogVersion   string                         `json:"catalogVersion"`
-	DSPVersion       string                         `json:"dspVersion"`
-	Model            AudioRepresentationIdentity    `json:"model"`
-	DSP              map[string]DSPAnalysis         `json:"dsp"`
-	Representations  map[string]AudioRepresentation `json:"representations"`
-	PositiveCentroid []float32                      `json:"positiveCentroid,omitempty"`
-	NegativeCentroid []float32                      `json:"negativeCentroid,omitempty"`
-	MERTSearch       *MERTSimilaritySearch          `json:"mertSearch,omitempty"`
+	PreviewIdentityPolicy string                         `json:"previewIdentityPolicy,omitempty"`
+	PolicyVersion         string                         `json:"policyVersion"`
+	CatalogVersion        string                         `json:"catalogVersion"`
+	DSPVersion            string                         `json:"dspVersion"`
+	Model                 AudioRepresentationIdentity    `json:"model"`
+	DSP                   map[string]DSPAnalysis         `json:"dsp"`
+	Representations       map[string]AudioRepresentation `json:"representations"`
+	PositiveCentroid      []float32                      `json:"positiveCentroid,omitempty"`
+	NegativeCentroid      []float32                      `json:"negativeCentroid,omitempty"`
+	MERTSearch            *MERTSimilaritySearch          `json:"mertSearch,omitempty"`
 }
 
 // EnhancedAudioSnapshot owns a deep copy of its input. Accessors return copies

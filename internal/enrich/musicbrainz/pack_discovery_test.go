@@ -91,9 +91,9 @@ func TestPackRecordingIndexLinksIdentityAndRejectsConflicts(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cat := packIdentityCatalog{Catalog: fakes.NewCatalog(2), tracks: map[string]core.TrackMeta{ref.ID: {Ref: ref, MusicBrainzRecording: tc.packMBID, ISRC: tc.packISRC}}}
-			index := indexKnownArtistRecordings(cat, []core.TrackRef{ref})
+			index := indexKnownArtistRecordings(context.Background(), cat, []core.TrackRef{ref})
 			r := mbRecording{ID: tc.providerMBID, Title: ref.Title, ISRCs: tc.providerISRCs, ArtistCredit: []mbArtistCredit{{Name: ref.Artist}}}
-			if got := matchKnownRecording(cat, index, r); got != tc.want {
+			if got := matchKnownRecording(context.Background(), cat, index, r); got != tc.want {
 				t.Fatalf("matched %q want %q", got, tc.want)
 			}
 		})
@@ -102,8 +102,8 @@ func TestPackRecordingIndexLinksIdentityAndRejectsConflicts(t *testing.T) {
 	other.ID = "pack:source:other"
 	other.RecordingIdentity = ""
 	cat := packIdentityCatalog{Catalog: fakes.NewCatalog(2), tracks: map[string]core.TrackMeta{ref.ID: {Ref: ref}, other.ID: {Ref: other}}}
-	index := indexKnownArtistRecordings(cat, []core.TrackRef{ref, other})
-	if got := matchKnownRecording(cat, index, mbRecording{Title: ref.Title, ArtistCredit: []mbArtistCredit{{Name: ref.Artist}}}); got != "" {
+	index := indexKnownArtistRecordings(context.Background(), cat, []core.TrackRef{ref, other})
+	if got := matchKnownRecording(context.Background(), cat, index, mbRecording{Title: ref.Title, ArtistCredit: []mbArtistCredit{{Name: ref.Artist}}}); got != "" {
 		t.Fatalf("ambiguous name matched %q", got)
 	}
 }
@@ -213,5 +213,23 @@ func TestWikidataArtistNeighborsRequireReciprocalIdentity(t *testing.T) {
 				t.Fatalf("unbounded requests: %d", calls.Load())
 			}
 		})
+	}
+}
+
+func TestPackRecordingIndexIgnoresMalformedISRCIdentity(t *testing.T) {
+	ref := core.TrackRef{ID: "pack:source:one", Artist: "Artist", Title: "First movement"}
+	cat := packIdentityCatalog{Catalog: fakes.NewCatalog(2), tracks: map[string]core.TrackMeta{ref.ID: {Ref: ref, ISRC: "090266306622"}}}
+	index := indexKnownArtistRecordings(context.Background(), cat, []core.TrackRef{ref})
+	if _, found := index["isrc:090266306622"]; found {
+		t.Fatal("release barcode indexed as recording ISRC")
+	}
+	recording := mbRecording{ID: acousticTestID, Title: "Another movement", ISRCs: []string{"090266306622"}, ArtistCredit: []mbArtistCredit{{Name: ref.Artist}}}
+	if got := matchKnownRecording(context.Background(), cat, index, recording); got != "" {
+		t.Fatalf("malformed ISRC linked different recording: %s", got)
+	}
+	// Older caller indexes are untrusted too.
+	index["isrc:090266306622"] = ref.ID
+	if got := matchKnownRecording(context.Background(), cat, index, recording); got != "" {
+		t.Fatalf("provider malformed ISRC became lookup proof: %s", got)
 	}
 }

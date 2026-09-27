@@ -96,20 +96,31 @@ func contextBase(override, canonical string) (string, error) {
 }
 
 type wikidataEntity struct {
-	ID           string `json:"id"`
-	LastRevision int64  `json:"lastrevid"`
-	Claims       map[string][]struct {
-		Rank     string `json:"rank"`
-		MainSnak struct {
-			SnakType  string `json:"snaktype"`
-			DataValue struct {
-				Value json.RawMessage `json:"value"`
-			} `json:"datavalue"`
-		} `json:"mainsnak"`
-	} `json:"claims"`
+	ID           string                         `json:"id"`
+	LastRevision int64                          `json:"lastrevid"`
+	Claims       map[string][]wikidataStatement `json:"claims"`
+	Labels       map[string]struct {
+		Value string `json:"value"`
+	} `json:"labels"`
 	Sitelinks map[string]struct {
 		Title string `json:"title"`
 	} `json:"sitelinks"`
+}
+
+type wikidataSnak struct {
+	SnakType  string `json:"snaktype"`
+	DataValue struct {
+		Value json.RawMessage `json:"value"`
+	} `json:"datavalue"`
+}
+
+type wikidataStatement struct {
+	Rank       string                    `json:"rank"`
+	MainSnak   wikidataSnak              `json:"mainsnak"`
+	Qualifiers map[string][]wikidataSnak `json:"qualifiers"`
+	References []struct {
+		Snaks map[string][]wikidataSnak `json:"snaks"`
+	} `json:"references"`
 }
 
 func linkedWikidata(entity contextEntity) string {

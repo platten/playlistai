@@ -72,7 +72,13 @@ func checkSampleIntent(t *testing.T, sample generateSample, intent core.MusicInt
 			t.Fatalf("%s mood %q lost", influence, mood)
 		}
 	}
-	if len(sample.JourneyGenres) > 0 && len(core.JourneyCriteria(intent.EssentialCriteria)) != len(sample.JourneyGenres) {
+	var genreStages []core.MusicalCriterion
+	for _, criterion := range intent.EssentialCriteria {
+		if criterion.Kind == "genre" || criterion.Kind == "style" {
+			genreStages = append(genreStages, criterion)
+		}
+	}
+	if len(sample.JourneyGenres) > 0 && len(core.JourneyCriteria(genreStages)) != len(sample.JourneyGenres) {
 		t.Fatal("journey stages lost")
 	}
 }
@@ -112,7 +118,7 @@ func TestEveryGenerateSampleBuildsPlaylist(t *testing.T) {
 				}
 				intent.Knowledge.Candidates = append(intent.Knowledge.Candidates, meta.Ref)
 				intent.Knowledge.Tracks = append(intent.Knowledge.Tracks, core.EnrichedTrack{Ref: meta.Ref, Matched: true, IdentityStatus: core.ResolutionResolved, GenreTags: []core.AttributedGenreTag{{Name: genre, Votes: 3, Source: "fixture"}}})
-				record := core.AudioAnalysis{TrackID: entry.ID, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: entry.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
+				record := core.AudioAnalysis{TrackID: entry.ID, CatalogVersion: cat.CatalogVersion(), TrackKey: core.ProvisionalRecordingKey(meta.Ref), Model: encoder.Identity(), Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: entry.ID, Status: core.ResolutionResolved}, AudioSHA256: strings.Repeat("0", 64), Segments: []core.AudioSegment{{StartSeconds: 0, EndSeconds: 10, Embedding: []float32{1, 0}}}}
 				record.ID = audio.Fingerprint(record)
 				if err := store.Put(ctx, record); err != nil {
 					t.Fatal(err)
@@ -121,8 +127,15 @@ func TestEveryGenerateSampleBuildsPlaylist(t *testing.T) {
 			service := &audio.Service{Resolver: &noPreviewFetch{}, Analyzer: encoder, Store: store, Authorized: true, ParityValidated: true}
 			engine := New(cat, brute.New(cat), cat, DefaultConfig()).WithCandidateSource(&fixtureDiscovery{}).WithAudioProvider(func() *audio.Service { return service })
 			playlist, err := engine.Build(ctx, intent)
-			if err != nil || len(playlist.Tracks) != core.DefaultCount {
-				t.Fatalf("sample returned %d/%d tracks: %+v, notices=%+v, %v", len(playlist.Tracks), core.DefaultCount, playlist.Outcome, playlist.Notices, err)
+			wantCount := core.DefaultCount
+			if strings.Contains(sample.Prompt, "not sleepy") {
+				wantCount = 0 // This fixture has no evidence establishing the requested absence.
+				if playlist.Outcome.State != "unsupported" {
+					t.Fatalf("unsupported hard mood exclusion was hidden: %+v", playlist.Outcome)
+				}
+			}
+			if err != nil || len(playlist.Tracks) != wantCount {
+				t.Fatalf("sample returned %d/%d tracks: %+v, notices=%+v, %v", len(playlist.Tracks), wantCount, playlist.Outcome, playlist.Notices, err)
 			}
 			again, err := engine.Build(ctx, playlist.Intent)
 			if err != nil || trackIDs(again.Tracks) != trackIDs(playlist.Tracks) {

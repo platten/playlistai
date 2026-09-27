@@ -51,7 +51,8 @@ type CLAPEvidence struct {
 func validCLAPModel(model core.AudioModelIdentity, space VectorSpace) bool {
 	return model.Model == space.Model && model.Revision == space.ModelRevision &&
 		model.Preprocessing == space.Preprocessing && model.Dimension == space.Dimension &&
-		model.Weights == space.GraphSHA256 && validHash(model.Weights) && strings.TrimSpace(model.Runtime) != ""
+		model.Weights == space.GraphSHA256 && validHash(model.Weights) && strings.TrimSpace(model.Runtime) != "" &&
+		(space.Runtime == "" || space.Runtime == model.Runtime)
 }
 
 // CLAPCompatible requires the paired audio/text/tokenizer fingerprint, not just

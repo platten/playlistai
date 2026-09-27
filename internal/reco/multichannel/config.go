@@ -2,9 +2,11 @@
 // personalized ranking, and deterministic playlist sequencing.
 package multichannel
 
-const AlgorithmVersion = "multichannel/v48"
+const AlgorithmVersion = "multichannel/v58"
 
 type Config struct {
+	// Secondary preferences may only trade fit inside this fixed tolerance.
+	EnhancedRelevanceTolerance float64
 	// Experimental until the private held-out listening gate is satisfied.
 	LibraryEvidenceEnabled   bool
 	EnhancedMERTWeight       float64
@@ -66,6 +68,7 @@ func DefaultConfig() Config {
 
 func (c Config) normalized() Config {
 	d := DefaultConfig()
+	c.EnhancedRelevanceTolerance = clamp(c.EnhancedRelevanceTolerance, 0, 1)
 	if c.EnhancedMERTWeight < 0 {
 		c.EnhancedMERTWeight = d.EnhancedMERTWeight
 	}

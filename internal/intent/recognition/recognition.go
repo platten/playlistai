@@ -19,27 +19,29 @@ import (
 )
 
 const (
-	Version         = "artist-first/v6"
+	Version         = "artist-first/v12"
 	MaxPromptBytes  = 8 << 10
 	MaxLexicalWords = 256
-	// MaxGroundingCandidates keeps the immutable identity evidence inside the
-	// default 4096-token parser budget. Provider lookup can inspect more rows.
-	MaxGroundingCandidates = 8
+	// Preserve the provider's bounded identity set for resolution and user
+	// choices. Parser messages bound their own presentation of these records.
+	MaxGroundingCandidates = mbindex.MaxLookupCandidates
 )
 
 var (
-	wordPattern     = regexp.MustCompile(`[\pL\pN][\pL\pN\pM'’&+._-]*`)
-	referencePrefix = regexp.MustCompile(`(?i)(?:\b(?:like|similar to|inspired by|music by|songs by|tracks by|by|from|via|through|include|including|add|avoid|exclude|without|start with|starts with|begin with|end with|ends with|finish with|to|the artist|the track|the song)\s+|[-—–]\s*)$`)
-	referenceClause = regexp.MustCompile(`(?i)\b(?:like|similar to|inspired by|music by|songs by|tracks by|include|including|avoid|exclude|start with|starts with|begin with|end with|ends with|finish with)\b`)
-	listPrefix      = regexp.MustCompile(`(?i)(?:,|\band\b|\bor\b|&)\s*$`)
-	negativePrefix  = regexp.MustCompile(`(?i)\b(?:avoid|exclude|excluding|without|no|not|nothing by|nothing from|skip)\s+$`)
-	requiredPrefix  = regexp.MustCompile(`(?i)\b(?:include|including|add|must include|must have|start with|starts with|begin with|end with|ends with|finish with)\s+$`)
-	startPrefix     = regexp.MustCompile(`(?i)\b(?:start with|starts with|begin with|from)\s+$`)
-	endPrefix       = regexp.MustCompile(`(?i)\b(?:end with|ends with|finish with|to)\s+$`)
-	trackSeparator  = regexp.MustCompile(`^\s*[-—–:]\s*`)
-	bySuffix        = regexp.MustCompile(`(?i)\s+by\s+$`)
-	possessiveTitle = regexp.MustCompile(`(?i)^['’]s\s+(?:(?:track|song|recording)\s+)?`)
-	titleLead       = regexp.MustCompile(`(?i)^(?:include|including|add|play|queue|start with|begin with|end with|finish with)\s+`)
+	wordPattern          = regexp.MustCompile(`[\pL\pN][\pL\pN\pM'’&+._-]*`)
+	referencePrefix      = regexp.MustCompile(`(?i)(?:\b(?:like|similar to|inspired by|music by|songs by|tracks by|by|from|via|through|include|including|add|avoid|exclude|without|start with|starts with|begin with|end with|ends with|finish with|to|the artist|the track|the song)\s+|[-—–]\s*)$`)
+	referenceClause      = regexp.MustCompile(`(?i)\b(?:like|similar to|inspired by|music by|songs by|tracks by|include|including|avoid|exclude|start with|starts with|begin with|end with|ends with|finish with)\b`)
+	explicitArtistPrefix = regexp.MustCompile(`(?i)\b(?:by|like|similar to|inspired by|artist|band|singer|producer)\s+$`)
+	explicitGenrePrefix  = regexp.MustCompile(`(?i)\bgenres?\s+$`)
+	listPrefix           = regexp.MustCompile(`(?i)(?:,|\band\b|\bor\b|&)\s*$`)
+	negativePrefix       = regexp.MustCompile(`(?i)\b(?:avoid|exclude|excluding|without|no|not|nothing by|nothing from|skip)\s+$`)
+	requiredPrefix       = regexp.MustCompile(`(?i)\b(?:include|including|add|must include|must have|start with|starts with|begin with|end with|ends with|finish with)\s+$`)
+	startPrefix          = regexp.MustCompile(`(?i)\b(?:start with|starts with|begin with|from)\s+$`)
+	endPrefix            = regexp.MustCompile(`(?i)\b(?:end with|ends with|finish with|to)\s+$`)
+	trackSeparator       = regexp.MustCompile(`^\s*[-—–:]\s*`)
+	bySuffix             = regexp.MustCompile(`(?i)\s+by\s+$`)
+	possessiveTitle      = regexp.MustCompile(`(?i)^['’]s\s+(?:(?:track|song|recording)\s+)?`)
+	titleLead            = regexp.MustCompile(`(?i)^(?:include|including|add|play|queue|start with|begin with|end with|finish with)\s+`)
 )
 
 type token struct{ start, end int }
@@ -127,14 +129,13 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 			continue
 		}
 		for _, bounds := range ranges {
-			artists := match.Candidates
-			truncated := match.Truncated
-			if len(artists) > MaxGroundingCandidates {
-				artists = artists[:MaxGroundingCandidates]
-				truncated = true
+			candidate := span{start: bounds[0], end: bounds[1], text: prompt[bounds[0]:bounds[1]], artists: match.Candidates, truncated: match.Truncated}
+			candidate = sentencePeriodMatch(candidate, matches)
+			if len(candidate.artists) > MaxGroundingCandidates {
+				candidate.artists = candidate.artists[:MaxGroundingCandidates]
+				candidate.truncated = true
 			}
-			candidate := span{start: bounds[0], end: bounds[1], text: prompt[bounds[0]:bounds[1]], artists: artists, truncated: truncated}
-			if artistContext(prompt, candidate) && !descriptiveModifierOfMusicalAtom(prompt, source.Atoms, candidate) && !composerOccurrence(source.Atoms, candidate) {
+			if artistContext(prompt, candidate) && !nonArtistSourceOccurrence(prompt, source.Atoms, candidate) && !composerOccurrence(source.Atoms, candidate) {
 				eligible = append(eligible, candidate)
 			}
 		}
@@ -143,6 +144,9 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 		il, jl := len(core.NormalizeIdentityPart(eligible[i].text)), len(core.NormalizeIdentityPart(eligible[j].text))
 		if il != jl {
 			return il > jl
+		}
+		if eligible[i].start == eligible[j].start {
+			return eligible[i].end > eligible[j].end
 		}
 		return eligible[i].start < eligible[j].start
 	})
@@ -178,6 +182,31 @@ func Apply(ctx context.Context, prompt string, source core.IntentTranslation, st
 		return source.Atoms[i].Evidence[0].Start < source.Atoms[j].Evidence[0].Start
 	})
 	return addProviderGenres(prompt, source, vocabulary, protected)
+}
+
+// Pack name indexes ignore punctuation. A pack-only "Daft Punk." hit must not
+// hide the exact MusicBrainz "Daft Punk" lookup solely because its source span
+// is longer. Keep the complete evidence span, but use the actual matched name.
+// A real punctuated name (from either source) keeps its own identity set.
+func sentencePeriodMatch(candidate span, matches map[string]mbindex.ArtistNameLookup) span {
+	trimmed := strings.TrimRight(candidate.text, ".")
+	if trimmed == candidate.text || candidate.truncated {
+		return candidate
+	}
+	key := core.NormalizeIdentityPart(trimmed)
+	for _, artist := range candidate.artists {
+		if !strings.HasPrefix(artist.MBID, "paipack-artist:") || core.NormalizeIdentityPart(artist.Name) != key {
+			return candidate
+		}
+	}
+	match := matches[key]
+	for _, artist := range match.Candidates {
+		if !strings.HasPrefix(artist.MBID, "paipack-artist:") {
+			candidate.text, candidate.artists, candidate.truncated = trimmed, match.Candidates, match.Truncated
+			break
+		}
+	}
+	return candidate
 }
 
 func composerOccurrence(atoms []core.IntentAtom, candidate span) bool {
@@ -241,7 +270,32 @@ func suppressArtistsNestedInTracks(prompt string, atoms []core.IntentAtom) []cor
 // Provider identity indexes can contain bracketed credit placeholders such as
 // "[traditional]". A lowercase word directly modifying an already recognized
 // musical concept is descriptive language, not an artist reference.
-func descriptiveModifierOfMusicalAtom(prompt string, atoms []core.IntentAtom, candidate span) bool {
+func nonArtistSourceOccurrence(prompt string, atoms []core.IntentAtom, candidate span) bool {
+	if quoted(prompt, candidate.start, candidate.end) || explicitArtistPrefix.MatchString(prompt[:candidate.start]) {
+		return false
+	}
+	// Journey prepositions also introduce genre stages. A namesake lookup may
+	// not split a known stage such as "ambient electronic" into artist Ambient.
+	// Likewise, "not sleepy" excludes a mood, not an artist named Sleepy.
+	for _, atom := range atoms {
+		protected := atom.Kind == "spacing"
+		switch atom.Kind {
+		case "genre", "style":
+			protected = strings.HasPrefix(atom.Scope, "journey_") || atom.Polarity == "negative"
+		case "vocal":
+			protected = atom.Polarity == "negative" || atom.Value == "instrumental"
+		case "mood", "texture", "instrumentation", "activity", "energy":
+			protected = atom.Polarity == "negative"
+		}
+		if !protected {
+			continue
+		}
+		for _, evidence := range atom.Evidence {
+			if evidence.Start <= candidate.start && candidate.end <= evidence.End {
+				return true
+			}
+		}
+	}
 	words := lexicalTokens(candidate.text)
 	if len(words) != 1 || candidate.text != strings.ToLower(candidate.text) {
 		return false
@@ -280,23 +334,41 @@ func lexicalTokens(prompt string) []token {
 func candidateKeys(prompt string, tokens []token) ([]string, map[string][][2]int) {
 	occurrences := make(map[string][][2]int)
 	var keys []string
+	add := func(start, end int) {
+		text := strings.TrimSpace(prompt[start:end])
+		key := core.NormalizeIdentityPart(text)
+		if key == "" {
+			return
+		}
+		if _, exists := occurrences[key]; !exists {
+			keys = append(keys, text)
+		}
+		occurrences[key] = append(occurrences[key], [2]int{start, end})
+	}
 	for i := range tokens {
 		for j := i; j < len(tokens); j++ {
-			text := strings.TrimSpace(prompt[tokens[i].start:tokens[j].end])
-			key := core.NormalizeIdentityPart(text)
-			if key == "" {
-				continue
+			start, end := tokens[i].start, tokens[j].end
+			add(start, end)
+			// Preserve punctuated names such as M.I.A. while also trying a
+			// sentence-final period outside a name, as in "like Coldplay.".
+			trimmed := start + len(strings.TrimRight(prompt[start:end], "."))
+			if trimmed < end {
+				add(start, trimmed)
 			}
-			if _, exists := occurrences[key]; !exists {
-				keys = append(keys, text)
+			for _, suffix := range []string{"'s", "’s"} {
+				if strings.HasSuffix(strings.ToLower(prompt[start:trimmed]), suffix) {
+					add(start, trimmed-len(suffix))
+				}
 			}
-			occurrences[key] = append(occurrences[key], [2]int{tokens[i].start, tokens[j].end})
 		}
 	}
 	return keys, occurrences
 }
 
 func artistContext(prompt string, candidate span) bool {
+	if !quoted(prompt, candidate.start, candidate.end) && nonMusicalOther(prompt, candidate.text, candidate.end) {
+		return false
+	}
 	if strings.TrimSpace(prompt[:candidate.start]) == "" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(prompt[candidate.end:])), "going to ") {
 		return true
 	}
@@ -341,6 +413,9 @@ func referenceTailBoundary(suffix string) bool {
 
 func quoted(prompt string, start, end int) bool {
 	for _, pair := range [][2]string{{"\"", "\""}, {"“", "”"}, {"‘", "’"}} {
+		if pair[0] == pair[1] && strings.Count(prompt[:start], pair[0])%2 == 0 {
+			continue // Text between two quoted names is outside both names.
+		}
 		left := strings.LastIndex(prompt[:start], pair[0])
 		right := strings.Index(prompt[end:], pair[1])
 		if left >= 0 && right >= 0 && !strings.Contains(prompt[left+len(pair[0]):start], pair[1]) {
@@ -443,13 +518,32 @@ func provider(store IdentityLookup) string {
 }
 
 func artistAtom(prompt string, source core.IntentTranslation, artist span, store IdentityLookup) core.IntentAtom {
+	// A complete lookup with one exact canonical spelling identifies the
+	// requested artist more specifically than another entity's alias or credit.
+	// Recording-title lookup has already considered every identity above.
+	if !artist.truncated && !automaticArtists(store) {
+		canonical := -1
+		for i, identity := range artist.artists {
+			if identity.MatchType != mbindex.ArtistMatchCanonical || core.NormalizeIdentityPart(identity.Name) != core.NormalizeIdentityPart(artist.text) {
+				continue
+			}
+			if canonical >= 0 {
+				canonical = -1
+				break
+			}
+			canonical = i
+		}
+		if canonical >= 0 {
+			artist.artists = artist.artists[canonical : canonical+1]
+		}
+	}
 	candidates := make([]core.IdentityCandidate, 0, len(artist.artists))
 	matchType := "exact"
 	for _, identity := range artist.artists {
 		if len(candidates) == 0 {
 			matchType = string(identity.MatchType)
 		}
-		candidates = append(candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: identity.MBID, Name: identity.Name, Disambiguation: identity.Disambiguation})
+		candidates = append(candidates, core.IdentityCandidate{Kind: core.ReferenceArtist, ID: identity.MBID, Name: identity.Name, Disambiguation: identity.Disambiguation, MatchType: string(identity.MatchType), Popularity: identity.Popularity})
 	}
 	value := strings.TrimSpace(strings.TrimRight(artist.text, ".,;:!?"))
 	if len(candidates) > 0 {
@@ -464,6 +558,19 @@ func artistAtom(prompt string, source core.IntentTranslation, artist span, store
 	}
 	atom := referenceAtom(prompt, source, artist.start, artist.end, core.ReferenceArtist, value)
 	atom.Grounding = &core.IdentityGrounding{Provider: provider(store), MatchedSpelling: artist.text, MatchType: matchType, SnapshotVersion: source.Recognition.ReferenceSnapshot, Candidates: candidates, Truncated: artist.truncated}
+	if automaticArtists(store) {
+		// Only an explicit adjacent parenthesis is a disambiguator here; general
+		// mood/genre language must not masquerade as artist identity proof.
+		suffix := strings.TrimSpace(prompt[artist.end:])
+		if strings.HasPrefix(suffix, "(") {
+			if end := strings.IndexByte(suffix, ')'); end > 1 {
+				atom.Grounding.Decision = core.ArtistContextDecision(atom.Grounding, suffix[1:end])
+			}
+		}
+		if atom.Grounding.Decision == nil {
+			atom.Grounding.Decision = core.DecideArtist(atom.Grounding)
+		}
+	}
 	return atom
 }
 
@@ -702,19 +809,76 @@ func addProviderGenres(prompt string, source core.IntentTranslation, vocabulary 
 		return terms[i].concept < terms[j].concept
 	})
 	occupied := append([][2]int(nil), protected...)
+	genreQuoteEnd := -1
+	for _, quoted := range source.Quoted {
+		genreQuote := explicitGenrePrefix.MatchString(prompt[:quoted.Start])
+		if genreQuoteEnd >= 0 {
+			switch strings.ToLower(strings.TrimSpace(prompt[genreQuoteEnd:quoted.Start])) {
+			case ",", "and", "or", "nor", ", and", ", or", ", nor":
+				genreQuote = true
+			}
+		}
+		if genreQuote {
+			// Explicit genre lists may be quoted. Other quoted content remains
+			// protected, as do independently grounded reference spans above.
+			genreQuoteEnd = quoted.End
+			continue
+		}
+		genreQuoteEnd = -1
+		occupied = append(occupied, [2]int{quoted.Start, quoted.End})
+	}
 	for _, atom := range source.Atoms {
 		switch atom.Kind {
-		case "genre", "style", "mood", "texture", "instrumentation", "vocal", "activity", "energy":
+		case "style", "mood", "texture", "instrumentation", "vocal", "activity", "energy":
 			if len(atom.Evidence) > 0 {
 				occupied = append(occupied, [2]int{atom.Evidence[0].Start, atom.Evidence[0].End})
 			}
 		}
 	}
 	for _, item := range terms {
-		pattern := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(item.value))
+		parts := strings.FieldsFunc(item.value, func(r rune) bool { return unicode.IsSpace(r) || unicode.Is(unicode.Pd, r) })
+		for i := range parts {
+			parts[i] = regexp.QuoteMeta(parts[i])
+		}
+		if len(parts) == 0 {
+			continue
+		}
+		pattern := regexp.MustCompile(`(?i)` + strings.Join(parts, `[\s\p{Pd}]+`))
 		for _, loc := range pattern.FindAllStringIndex(prompt, -1) {
-			if overlapsRanges(loc[0], loc[1], occupied) || !wordBoundary(prompt, loc[0], loc[1]) || nonMusicalOther(prompt, item.value, loc[1]) {
+			if overlapsRanges(loc[0], loc[1], occupied) || !genreWordBoundary(prompt, loc[0], loc[1]) || nonMusicalOther(prompt, item.value, loc[1]) {
 				continue
+			}
+			// A known complete phrase can supersede its shorter embedded genre,
+			// but never a different role or an already complete source category.
+			replaced := map[int]bool{}
+			blocked := false
+			for i, atom := range source.Atoms {
+				if atom.Kind != "genre" {
+					continue
+				}
+				for _, e := range atom.Evidence {
+					if e.Start >= loc[1] || e.End <= loc[0] {
+						continue
+					}
+					start := e.End - len(atom.Value)
+					if start < loc[0] || e.End > loc[1] || start == loc[0] && e.End == loc[1] || !strings.EqualFold(prompt[start:e.End], atom.Value) {
+						blocked = true
+					} else {
+						replaced[i] = true
+					}
+				}
+			}
+			if blocked {
+				continue
+			}
+			if len(replaced) > 0 {
+				kept := make([]core.IntentAtom, 0, len(source.Atoms)-len(replaced))
+				for i, atom := range source.Atoms {
+					if !replaced[i] {
+						kept = append(kept, atom)
+					}
+				}
+				source.Atoms = kept
 			}
 			role := semanticRole(prompt, loc[0])
 			source.Atoms = append(source.Atoms, core.IntentAtom{ID: fmt.Sprintf("genre:%d:%d", loc[0], loc[1]), ConceptID: item.concept, Kind: "genre", Value: item.value, Scope: role.scope, Polarity: role.polarity, Strength: role.strength, Degree: role.degree, Evidence: []core.SourceEvidence{{Text: prompt[loc[0]:loc[1]], Start: loc[0], End: loc[1], Explicit: true}}})
@@ -724,6 +888,25 @@ func addProviderGenres(prompt string, source core.IntentTranslation, vocabulary 
 	sort.SliceStable(source.Atoms, func(i, j int) bool { return source.Atoms[i].Evidence[0].Start < source.Atoms[j].Evidence[0].Start })
 	coordinateGenres(prompt, source.Atoms)
 	return source
+}
+
+func genreWordBoundary(s string, start, end int) bool {
+	if !wordBoundary(s, start, end) {
+		return false
+	}
+	if start > 0 {
+		r, _ := utf8.DecodeLastRuneInString(s[:start])
+		if unicode.Is(unicode.Pd, r) {
+			return false
+		}
+	}
+	if end < len(s) {
+		r, _ := utf8.DecodeRuneInString(s[end:])
+		if unicode.Is(unicode.Pd, r) {
+			return false
+		}
+	}
+	return true
 }
 
 func nonMusicalOther(prompt, value string, end int) bool {
@@ -749,7 +932,9 @@ func coordinateGenres(prompt string, atoms []core.IntentAtom) {
 		if start > end {
 			continue
 		}
-		gap := strings.TrimSpace(strings.ToLower(prompt[start:end]))
+		gap := strings.TrimFunc(strings.ToLower(prompt[start:end]), func(r rune) bool {
+			return unicode.IsSpace(r) || strings.ContainsRune(`"“”'‘’`, r)
+		})
 		if gap == "or" && left.Polarity == "positive" && right.Polarity == "positive" {
 			group := left.Group
 			if group == "" {

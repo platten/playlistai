@@ -145,6 +145,9 @@ func (o *Orchestrator) prioritizeGroundedRequestSupply(ctx context.Context, cand
 }
 
 func recommendationArtistCap(intent core.MusicIntent) int {
+	if intent.Controls.RecommendationMode == core.EnhancedHybrid {
+		return 0
+	}
 	if !genreArtistDiversity(intent) {
 		return 0
 	}
@@ -272,7 +275,18 @@ func prioritizeInstrumentalKnowledgePrefix(candidates []core.Candidate, intent c
 // from preparation queries, not continuation: unselected alternatives remain
 // available for a later refill. The request context and query bound cap work.
 func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []core.Candidate, request ports.RetrievalRequest, eligible *eligibility, acceptedRecordings map[string]bool, size int) ([]core.Candidate, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	size = min(size, o.cfg.MaxCandidates)
+	if o.enhanced {
+		// Assess all channels from one retrieval round. Hard eligibility runs
+		// in the collector and therefore counts against its cumulative ceiling.
+		if len(initial) > 0 {
+			return initial, nil
+		}
+		return o.retriever.Retrieve(ctx, request)
+	}
 	attempted := request.AttemptedIDs
 	request.AttemptedIDs = make(map[string]struct{}, len(attempted)+size)
 	for id := range attempted {
@@ -316,12 +330,18 @@ func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []
 		raw = o.prioritizeGroundedJourneySupply(ctx, raw, request.Intent)
 		raw = prioritizeInstrumentalKnowledge(raw, request.Intent)
 		for _, candidate := range raw {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			id := candidate.Track.ID
 			if _, seen := request.AttemptedIDs[id]; seen {
 				continue
 			}
 			request.AttemptedIDs[id] = struct{}{}
-			meta, exists := o.cat.Meta(id)
+			meta, exists := ports.CatalogMeta(ctx, o.cat, id)
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if !exists {
 				attempted[id] = struct{}{}
 				continue
@@ -352,4 +372,54 @@ func (o *Orchestrator) prepareRecommendationPool(ctx context.Context, initial []
 		}
 	}
 	return pool, nil
+}
+
+// Give every enabled source/query (including journey stages) an opportunity in
+// each round. This controls assessment order only; final selection has no quota.
+func roundRobinCandidateSources(candidates []core.Candidate) []core.Candidate {
+	buckets := map[string][]core.Candidate{}
+	for _, candidate := range candidates {
+		keys := map[string]bool{}
+		for _, source := range candidate.Sources {
+			keys[source.Channel+"\x00"+source.QueryID] = true
+		}
+		if len(keys) == 0 {
+			keys[""] = true
+		}
+		for key := range keys {
+			buckets[key] = append(buckets[key], candidate)
+		}
+	}
+	keys := make([]string, 0, len(buckets))
+	for key := range buckets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	seen := map[string]bool{}
+	out := make([]core.Candidate, 0, len(candidates))
+	for round := 0; ; round++ {
+		advanced := false
+		for _, key := range keys {
+			if round >= len(buckets[key]) {
+				continue
+			}
+			advanced = true
+			candidate := buckets[key][round]
+			if !seen[candidate.Track.ID] {
+				out = append(out, candidate)
+				seen[candidate.Track.ID] = true
+			}
+		}
+		if !advanced {
+			return out
+		}
+	}
+}
+
+// Interleaved sources share a 32-candidate local page before a provider turn.
+// This also bounds each source/query to at most 32 per round, even when many
+// explicit references or journey stages create a large retrieval union.
+func nextCandidateRound(candidates []core.Candidate) (batch, remaining []core.Candidate) {
+	limit := min(len(candidates), enhancedChannelBatch)
+	return candidates[:limit], candidates[limit:]
 }

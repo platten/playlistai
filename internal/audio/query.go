@@ -138,6 +138,9 @@ func applyTypedScores(candidate *core.Candidate, assessment core.AudioAssessment
 		}
 		group := c.Group
 		negative := c.Negative
+		if c.CoverageGroup != "" && !negative {
+			group = "\x00coverage:" + c.CoverageGroup
+		}
 		if group == "" {
 			// Each ungrouped trait is an independent preference.
 			group = "\x00" + strconv.Itoa(i)

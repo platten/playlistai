@@ -21,9 +21,6 @@ func (r *cachedAudioRetriever) SupportsIntentMetadata() bool {
 
 func (r *cachedAudioRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
 	raw, err := r.base.Retrieve(ctx, request)
-	if err != nil {
-		return nil, err
-	}
 	raw = append([]core.Candidate(nil), raw...)
 	excluded := map[string]bool{}
 	for id := range request.AttemptedIDs {
@@ -49,5 +46,5 @@ func (r *cachedAudioRetriever) Retrieve(ctx context.Context, request ports.Retri
 			raw = append(raw, c)
 		}
 	}
-	return raw, nil
+	return raw, err
 }

@@ -38,6 +38,9 @@ catalog=? AND track=? AND track_key=? AND version=? ORDER BY rowid DESC LIMIT 1`
 	if a.CatalogVersion != catalog || a.TrackID != track || a.TrackKey != key || a.Version != version {
 		return core.DSPAnalysis{}, false, fmt.Errorf("audio: cached DSP identity mismatch")
 	}
+	if !a.Identity.CurrentPolicy() {
+		return core.DSPAnalysis{}, false, nil
+	}
 	return a, true, nil
 }
 

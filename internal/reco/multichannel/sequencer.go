@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
 )
@@ -15,6 +16,7 @@ import (
 // transition similarity, relevance, and optional waypoint-trajectory fit, then
 // performs bounded pair swaps that improve the same transition objective.
 type GreedySequencer struct {
+	performers         performerKeys
 	enhancedInput      core.EnhancedAudioInput
 	libraryVectors     map[string]core.LibraryVector
 	libraryCLAPVectors map[string]core.LibraryVector
@@ -39,6 +41,17 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		s.enhancedInput = request.EnhancedAudio.Input()
 	}
+	if err := ctx.Err(); err != nil {
+		return ports.SequenceResult{}, err
+	}
+	creditTracks := append([]core.TrackRef(nil), request.Required...)
+	creditTracks = append(creditTracks, request.Waypoints...)
+	creditTracks = append(creditTracks, request.ReferenceAnchors...)
+	creditTracks = append(creditTracks, request.RecentSelections...)
+	for _, candidate := range request.Candidates {
+		creditTracks = append(creditTracks, candidate.Track)
+	}
+	s.performers = newPerformerKeysContext(ctx, request.Intent, creditTracks, s.cat)
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
 	}
@@ -125,6 +138,9 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	if err := ctx.Err(); err != nil {
 		return ports.SequenceResult{}, err
 	}
+	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && len(items) > 0 {
+		items[0].fixed = true // preserve the chosen opening during transition swaps
+	}
 	if len(request.CategoryStages) == 0 {
 		items = s.improve(items, request)
 	}
@@ -146,7 +162,7 @@ func (s *GreedySequencer) Sequence(ctx context.Context, request ports.SequenceRe
 	gap := s.softArtistGap(request.Intent)
 	for index, item := range items {
 		result.Tracks = append(result.Tracks, item.track)
-		relaxed := gap > 0 && artistSeenWithin(items, index, gap)
+		relaxed := gap > 0 && s.performers.artistInTail(items[:index], item.track, gap)
 		if item.required {
 			reason := requiredReason(item.track)
 			if relaxed {
@@ -221,7 +237,7 @@ func (s *GreedySequencer) journeyWithRequiredAnchors(ctx context.Context, reques
 		minimum := make([]int, len(perSegment))
 		needed := 0
 		for segment := range minimum {
-			if sameArtist(request.Required[segment], request.Required[segment+1]) {
+			if s.performers.sameArtist(request.Required[segment], request.Required[segment+1]) {
 				minimum[segment] = 1
 				needed++
 			}
@@ -231,7 +247,7 @@ func (s *GreedySequencer) journeyWithRequiredAnchors(ctx context.Context, reques
 			for segment := range perSegment {
 				perSegment[segment] += minimum[segment]
 			}
-			reserved = reserveJourneySeparators(request.Required, remaining)
+			reserved = s.reserveJourneySeparators(request.Required, remaining)
 		}
 	}
 	previous := s.startAnchor(request, nil)
@@ -278,12 +294,12 @@ func (s *GreedySequencer) journeyWithRequiredAnchors(ctx context.Context, reques
 // Match scarce candidates to the required gaps before greedy sequencing can
 // spend them elsewhere. An augmenting path avoids assigning a versatile
 // separator to the only gap that a more restricted candidate can satisfy.
-func reserveJourneySeparators(required []core.TrackRef, candidates []core.Candidate) map[string]int {
+func (s *GreedySequencer) reserveJourneySeparators(required []core.TrackRef, candidates []core.Candidate) map[string]int {
 	owners := make(map[int]int)
 	var assign func(int, map[int]bool) bool
 	assign = func(segment int, seen map[int]bool) bool {
 		for i, candidate := range candidates {
-			if seen[i] || sameArtist(required[segment], candidate.Track) {
+			if seen[i] || s.performers.sameArtist(required[segment], candidate.Track) {
 				continue
 			}
 			seen[i] = true
@@ -296,7 +312,7 @@ func reserveJourneySeparators(required []core.TrackRef, candidates []core.Candid
 		return false
 	}
 	for segment := 0; segment < len(required)-1; segment++ {
-		if sameArtist(required[segment], required[segment+1]) && !assign(segment, map[int]bool{}) {
+		if s.performers.sameArtist(required[segment], required[segment+1]) && !assign(segment, map[int]bool{}) {
 			return nil // bounded fallback distinguishes search limits from a conflict
 		}
 	}
@@ -319,14 +335,14 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 		spacingPrevious = core.TrackRef{} // a reference anchor is not an output track
 	}
 	for index, candidate := range candidates {
-		if request.Intent.Constraints.NoRepeatArtistBackToBack && spacingPrevious.ID != "" && sameArtist(spacingPrevious, candidate.Track) {
+		if request.Intent.Constraints.NoRepeatArtistBackToBack && spacingPrevious.ID != "" && s.performers.sameArtist(spacingPrevious, candidate.Track) {
 			continue
 		}
-		if request.Intent.Constraints.NoRepeatArtistBackToBack && avoidNext.ID != "" && sameArtist(avoidNext, candidate.Track) {
+		if request.Intent.Constraints.NoRepeatArtistBackToBack && avoidNext.ID != "" && s.performers.sameArtist(avoidNext, candidate.Track) {
 			continue
 		}
 		allowed = append(allowed, index)
-		if gap == 0 || !artistInTail(items, candidate.Track.Artist, gap) {
+		if gap == 0 || !s.performers.artistInTail(items, candidate.Track, gap) {
 			spaced = append(spaced, index)
 		}
 	}
@@ -335,19 +351,19 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 	if request.Intent.Constraints.NoRepeatArtistBackToBack && len(request.CategoryStages) == 0 && len(request.Required) < 2 && request.Intent.Destination == nil {
 		counts := map[string]int{}
 		for _, c := range candidates {
-			if key := core.NormalizeIdentityPart(c.Track.Artist); key != "" {
+			for _, key := range s.performers.trackKeys(c.Track) {
 				counts[key]++
 			}
 		}
 		excesses := map[int]int{}
 		bestExcess := len(candidates) + 1
 		for _, index := range allowed {
-			key := core.NormalizeIdentityPart(candidates[index].Track.Artist)
+			keys := s.performers.trackKeys(candidates[index].Track)
 			remaining := len(candidates) - 1
 			excess := 0
 			for artist, count := range counts {
 				boundaryBonus := 1
-				if artist == key {
+				if performersOverlap([]string{artist}, keys) {
 					count--
 					boundaryBonus = 0
 				}
@@ -398,29 +414,27 @@ func (s *GreedySequencer) pick(ctx context.Context, candidates []core.Candidate,
 	if len(pool) == 0 {
 		return core.Candidate{}, candidates, false
 	}
+	automaticOpening := position == 0 && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && request.Intent.Start == nil
+	if automaticOpening {
+		// Artist spacing is soft; explicit adjacency and completion feasibility
+		// have already constrained allowed. Musical fit chooses the opening.
+		pool = allowed
+	}
 	chosen, best := pool[0], math.Inf(-1)
 	for _, index := range pool {
 		score := s.orderingScore(candidates[index], previous, request, position)
-		if position == 0 && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid && len(request.Required) == 0 && len(request.RecentSelections) == 0 {
-			// Opening fitness includes a useful outgoing edge among the already
-			// eligible set; this does not make an internal anchor a required track.
-			bestNext, known := -1.0, false
-			for _, next := range pool {
-				if next == index {
-					continue
-				}
-				if request.Intent.Constraints.NoRepeatArtistBackToBack && sameArtist(candidates[index].Track, candidates[next].Track) {
-					continue
-				}
-				if similarity, ok := s.trackSimilarity(candidates[index].Track, candidates[next].Track, request.Intent); ok && (!known || similarity > bestNext) {
-					bestNext, known = similarity, true
-				}
-			}
-			if known {
-				score += s.cfg.EnhancedTransitionWeight * request.Intent.Controls.TransitionSmoothness * bestNext
+		better := score > best || score == best && candidates[index].Track.ID < candidates[chosen].Track.ID
+		if automaticOpening {
+			left, right := candidates[index], candidates[chosen]
+			leftFit, _ := candidateRequestFit(left, request.Intent)
+			rightFit, _ := candidateRequestFit(right, request.Intent)
+			if (left.FitTier == fitStrong) != (right.FitTier == fitStrong) {
+				better = left.FitTier == fitStrong
+			} else if leftFit != rightFit {
+				better = leftFit > rightFit
 			}
 		}
-		if score > best || (score == best && candidates[index].Track.ID < candidates[chosen].Track.ID) {
+		if better {
 			chosen, best = index, score
 		}
 	}
@@ -438,7 +452,6 @@ func (s *GreedySequencer) orderingScore(candidate core.Candidate, previous core.
 			score += s.cfg.JourneyPositionWeight * similarity
 		}
 	}
-	score += s.enhancedTransition(previous, candidate.Track, s.enhancedInput, request.Intent)
 	if similarity, ok := s.trackSimilarity(previous, candidate.Track, request.Intent); ok {
 		score += request.Intent.Controls.TransitionSmoothness * similarity
 	}
@@ -511,7 +524,6 @@ func (s *GreedySequencer) sequenceObjective(items []sequenceItem, request ports.
 				score += s.cfg.JourneyPositionWeight * similarity
 			}
 		}
-		score += s.enhancedTransition(previous, item.track, s.enhancedInput, request.Intent)
 		if similarity, ok := s.trackSimilarity(previous, item.track, request.Intent); ok {
 			score += request.Intent.Controls.TransitionSmoothness * similarity
 		}
@@ -546,27 +558,43 @@ func (s *GreedySequencer) trackSimilarity(left, right core.TrackRef, intent core
 	if aOK && bOK {
 		score, known = weightedVectorSimilarity(a, b, intent.Controls.AudioWeight, intent.Controls.CooccurrenceWeight)
 	}
-	if !s.cfg.LibraryEvidenceEnabled || intent.Controls.RecommendationMode != core.EnhancedHybrid {
+	if intent.Controls.RecommendationMode != core.EnhancedHybrid {
 		return score, known
 	}
-	// Fixed request-level weights retain missingness as neutral, rather than
-	// inflating a sparse pair by dividing by only its observed components.
 	denominator := 1.0
-	for _, family := range []struct {
-		vectors map[string]core.LibraryVector
-		weight  float64
-	}{{s.libraryVectors, s.cfg.EnhancedMERTWeight}, {s.libraryCLAPVectors, s.cfg.EnhancedTransitionWeight}} {
-		if len(family.vectors) < 2 || family.weight <= 0 {
-			continue
+	// Preview and pack representations are independent spaces. Compare within
+	// each space, then select one observation rather than adding the family twice.
+	previewLeft, leftOK := selectedRepresentation(s.enhancedInput, left)
+	previewRight, rightOK := selectedRepresentation(s.enhancedInput, right)
+	if leftOK && rightOK || len(s.enhancedInput.Representations) >= 2 || s.cfg.LibraryEvidenceEnabled && len(s.libraryVectors) >= 2 {
+		weight := enhancedWeight(s.cfg.EnhancedMERTWeight)
+		denominator += weight
+		previewScore, previewOK := enhancedCosine(previewLeft.Pooled, previewRight.Pooled, s.enhancedInput.Model.Dimension)
+		previewOK = previewOK && leftOK && rightOK
+		packedLeft, packedRight := s.libraryVectors[left.ID], s.libraryVectors[right.ID]
+		packedScore, packedOK := libraryCosine(packedLeft, packedRight)
+		packedOK = packedOK && s.cfg.LibraryEvidenceEnabled
+		usePreview := previewOK
+		if previewOK && packedOK {
+			leftCoverage, rightCoverage := previewLeft.Coverage, previewRight.Coverage
+			preview := core.AudioObservation{Coverage: core.PreviewCoverage{Available: leftCoverage.Available && rightCoverage.Available, CoveredSeconds: min(leftCoverage.CoveredSeconds, rightCoverage.CoveredSeconds)}, Fingerprint: audio.Fingerprint([]core.AudioRepresentation{previewLeft, previewRight})}
+			// Pooled library MERT currently has no recorded interval duration.
+			packed := core.AudioObservation{Fingerprint: audio.Fingerprint([]core.LibraryVector{packedLeft, packedRight})}
+			usePreview = preferObservation(preview, packed)
 		}
-		denominator += family.weight
-		leftVector, leftOK := family.vectors[left.ID]
-		rightVector, rightOK := family.vectors[right.ID]
-		if !leftOK || !rightOK {
-			continue
+		if usePreview {
+			score += weight * previewScore
+			known = true
+		} else if packedOK {
+			score += weight * packedScore
+			known = true
 		}
-		if similarity, ok := libraryCosine(leftVector, rightVector); ok {
-			score += family.weight * similarity
+	}
+	if s.cfg.LibraryEvidenceEnabled && len(s.libraryCLAPVectors) >= 2 {
+		weight := enhancedWeight(s.cfg.EnhancedTransitionWeight)
+		denominator += weight
+		if similarity, ok := libraryCosine(s.libraryCLAPVectors[left.ID], s.libraryCLAPVectors[right.ID]); ok {
+			score += weight * similarity
 			known = true
 		}
 	}
@@ -574,6 +602,11 @@ func (s *GreedySequencer) trackSimilarity(left, right core.TrackRef, intent core
 }
 
 func (s *GreedySequencer) softArtistGap(intent core.MusicIntent) int {
+	for _, constraint := range intent.HardConstraints {
+		if constraint.Kind == "require_artist" {
+			return 0 // artist-only instructions take precedence over soft variety
+		}
+	}
 	if intent.Controls.ArtistDiversity <= 0 || s.cfg.SoftArtistSpacingMax == 0 {
 		return 0
 	}
@@ -589,7 +622,7 @@ func (s *GreedySequencer) hardSpacingValid(items []sequenceItem, request ports.S
 		previous = request.RecentSelections[len(request.RecentSelections)-1]
 	}
 	for _, item := range items {
-		if previous.ID != "" && sameArtist(previous, item.track) {
+		if previous.ID != "" && s.performers.sameArtist(previous, item.track) {
 			return false
 		}
 		previous = item.track
@@ -601,13 +634,14 @@ func (s *GreedySequencer) candidateReason(candidate core.Candidate, request port
 	evidence := rankingEvidence(candidate, request.Intent, s.cfg)
 	if s.cfg.LibraryEvidenceEnabled && request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
 		evidence = append(evidence,
-			core.ComponentEvidence{Component: "library_mert_affinity", Score: candidate.Scores.LibraryMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.LibraryMERT, Detail: "Compatible library audio reference/taste similarity; sampled audio only"},
-			core.ComponentEvidence{Component: "library_dsp_preference", Score: candidate.Scores.LibraryDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.LibraryDSP, Detail: "Signed library-relative measured preference; sampled audio only"})
+			core.ComponentEvidence{Component: "library_mert_affinity", Score: candidate.Scores.LibraryMERT, Weight: 0, Available: candidate.Available.LibraryMERT, Detail: "Library audio observation; combined once with preview evidence"},
+			core.ComponentEvidence{Component: "library_dsp_preference", Score: candidate.Scores.LibraryDSP, Weight: 0, Available: candidate.Available.LibraryDSP, Detail: "Library measurement observation; combined once with preview evidence"})
 	}
 	if request.Intent.Controls.RecommendationMode == core.EnhancedHybrid {
-		evidence = append(evidence, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: s.cfg.EnhancedMERTWeight, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference/taste similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: s.cfg.EnhancedDSPWeight, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; " + EnhancedDSPMappingVersion + "; preview measurements, never hard musical evidence"})
+		evidence = append(evidence, core.ComponentEvidence{Component: "combined_mert", Score: candidate.Scores.CombinedMERT, Available: candidate.Available.CombinedMERT, Weight: s.cfg.EnhancedMERTWeight, Detail: EvidenceCombinationPolicyVersion}, core.ComponentEvidence{Component: "combined_dsp", Score: candidate.Scores.CombinedDSP, Available: candidate.Available.CombinedDSP, Weight: s.cfg.EnhancedDSPWeight, Detail: EvidenceCombinationPolicyVersion}, core.ComponentEvidence{Component: "mert_audio_affinity", Score: candidate.Scores.EnhancedMERT, Weight: 0, Available: candidate.Available.EnhancedMERT, Detail: EnhancedPolicyVersion + "; audio-only reference similarity, observed preview only"}, core.ComponentEvidence{Component: "dsp_soft_preference", Score: candidate.Scores.EnhancedDSP, Weight: 0, Available: candidate.Available.EnhancedDSP, Detail: EnhancedPolicyVersion + "; " + EnhancedDSPMappingVersion + "; preview measurements, never hard musical evidence"})
 	}
 	evidence = append(evidence,
+		core.ComponentEvidence{Component: "request_fit", Score: candidate.Scores.RequestFit, Weight: 1, Available: candidate.Available.RequestFit, Detail: RequestFitPolicyVersion + "; native fixed scales; secondary preferences only within configured tolerance"},
 		core.ComponentEvidence{Component: "selection_relevance", Score: candidate.Scores.SelectionRelevance, Weight: 1, Available: candidate.Available.SelectionRelevance},
 		core.ComponentEvidence{Component: "embedding_redundancy", Score: candidate.Scores.EmbeddingRedundancy, Weight: -s.cfg.EmbeddingRedundancyWeight, Available: candidate.Available.EmbeddingRedundancy},
 		core.ComponentEvidence{Component: "artist_concentration", Score: candidate.Scores.ArtistConcentration, Weight: -s.cfg.ArtistConcentrationWeight, Available: candidate.Available.ArtistConcentration},

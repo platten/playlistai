@@ -65,14 +65,20 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 	tracks := append([]core.TrackRef(nil), references...)
 	tracks = append(tracks, required...)
 	tracks = append(tracks, waypoints...)
-	for _, reference := range intentReferenceTracks(o.cat, intent, core.InfluenceNegative, false) {
+	for _, reference := range intentReferenceTracksContext(ctx, o.cat, intent, core.InfluenceNegative, false) {
 		for _, rep := range reference.reps {
-			if meta, ok := o.cat.Meta(rep.TrackID); ok {
+			if meta, ok := ports.CatalogMeta(ctx, o.cat, rep.TrackID); ok {
 				tracks = append(tracks, meta.Ref)
 			}
 		}
 	}
-	for _, c := range candidates {
+	// Only eligible contenders reach assembly. Rank their completed request
+	// evidence before optional acquisition; explicit references stay first.
+	ranked, rankErr := o.rankCandidates(ctx, candidates, ports.RankRequest{Intent: intent, Profile: request.Profile, EnhancedAudio: o.enhancedSnapshot})
+	if rankErr != nil {
+		return rankErr
+	}
+	for _, c := range ranked {
 		tracks = append(tracks, c.Track)
 	}
 	seen := map[string]bool{}
@@ -83,8 +89,11 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 			unique = append(unique, track)
 		}
 	}
-	analysisCtx, cancel := context.WithCancel(ctx)
+	analysisCtx, cancel := ports.GenerationWorkContext(ctx)
 	defer cancel()
+	if analysisCtx.Err() != nil {
+		return nil
+	}
 	go func() {
 		select {
 		case <-request.StopChecking:
@@ -99,7 +108,7 @@ func (o *Orchestrator) prepareEnhanced(ctx context.Context, candidates []core.Ca
 	} else {
 		snapshot, err = o.enhancedProvider(analysisCtx, intent, request.Profile, unique)
 	}
-	if errors.Is(err, context.Canceled) && ctx.Err() == nil && analysisCtx.Err() != nil {
+	if (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) && analysisCtx.Err() != nil {
 		err = nil
 	}
 	if err != nil {

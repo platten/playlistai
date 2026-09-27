@@ -21,7 +21,13 @@ func TestCategoryJourneySeparatesGenresModifiersAndEntities(t *testing.T) {
 	} {
 		t.Run(tc.prompt, func(t *testing.T) {
 			intent, err := New().Parse(context.Background(), ports.IntentInput{Prompt: tc.prompt})
-			stages := core.JourneyCriteria(intent.EssentialCriteria)
+			var genres []core.MusicalCriterion
+			for _, criterion := range intent.EssentialCriteria {
+				if criterion.Kind == "genre" || criterion.Kind == "style" {
+					genres = append(genres, criterion)
+				}
+			}
+			stages := core.JourneyCriteria(genres)
 			if err != nil || intent.Mode != core.ModeJourney || len(intent.References) != 0 || len(stages) != tc.stages || stages[0].Value != tc.start || stages[len(stages)-1].Value != tc.end {
 				t.Fatalf("%+v %v", intent, err)
 			}

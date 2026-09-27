@@ -18,6 +18,13 @@ type MusicKnowledge interface {
 	ResolveMusic(context.Context, core.MusicIntent, Catalog, ReferenceResolver, Progress) (core.MusicIntent, error)
 }
 
+// ArtistIdentityCorroborator checks ambiguous explicit artist references after
+// submission, before the UI asks for a choice. It supplies identity evidence,
+// not catalog seeds or recording suitability, and must not set Knowledge.
+type ArtistIdentityCorroborator interface {
+	CorroborateArtistReferences(context.Context, core.MusicIntent) (core.MusicIntent, error)
+}
+
 // IterativeMusicKnowledge prepares identity/artist pools without eagerly
 // consuming the generation budget on a fixed recording batch.
 type IterativeMusicKnowledge interface {

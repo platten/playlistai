@@ -39,7 +39,13 @@ for installation, updates, publishing, and validation limits.
 The Linux amd64 `playlist-indexer` command scans a read-only FLAC, MP3, raw AAC,
 or M4A/AAC library, performs local DSP and MERT analysis, fits unsupervised
 metadata/audio resources, and writes a portable `.paipack` without Python or a
-system FFmpeg installation:
+system FFmpeg installation.
+
+For bounded exercises, `playlist-indexer subset` copies a small selection without
+changing the originals. `playlist-indexer annotate` acquires identity-linked web
+evidence with source provenance and explicit unknowns. See the
+[standalone processing and annotation guide](docs/library-annotations.md).
+Web evidence is separate from independent listening labels.
 
 ```sh
 ./playlist-indexer run \
@@ -55,6 +61,14 @@ indexes; it does not build them during import. Older unindexed packs need a new
 export from the indexer's durable state (`playlist-indexer export --state DIR
 --out NEW.paipack`) before they can be newly imported. Already installed packs
 with valid on-disk indexes remain available.
+
+To keep CPU and CUDA evidence on the same machine, create separate indexed
+packs with separate indexer state directories: use `--device cpu --clap-device
+cpu` for one run and `--device cuda --clap-device cuda` for the other. Import
+both in Settings. Playlist AI keeps one pack per backend and selects the pack
+matching the running CLAP model (or MERT when CLAP is unavailable). An installed
+CPU model and pack remain available if CUDA is absent or fails its startup
+health check. In-flight requests retain their pinned pack.
 
 `auto` is the default bounded resource plan. On Linux it intersects affinity
 and cgroup quota with sysfs physical-core topology, then reserves one physical
@@ -166,6 +180,17 @@ runtime. On a detected NVIDIA host, first setup validates CUDA on the requested
 GPU and uses it when every health fixture passes; otherwise auto visibly falls
 back to the embedded CPU bundle. `--device cuda` (or `cuda:INDEX`) is fail-closed
 and never silently uses CPU.
+Playlist AI's Settings and first-run setup also prefer the offline indexer's
+verified CUDA CLAP and MERT bundles on supported NVIDIA hosts. When a local
+CUDA CLAP or MERT bundle is absent, the wizard and Settings offer the pinned
+hosted Linux or Windows amd64 CUDA pack for that model. The hosted CPU packs
+remain available as fallbacks; other platforms use their hosted CPU packs. Build the offline
+indexer with `scripts/build-playlist-indexer.sh` to populate the default cache
+for both audio models. Existing embeddings retain
+their model and runtime identity; GPU installation does not convert older packs.
+Settings can also install the pinned CPU CLAP and MERT bundles beside the CUDA
+bundles. Startup checks CUDA first, then uses the installed CPU bundle if the
+GPU is unavailable or its native health check fails.
 For a library whose embedded identity tags are trusted, `--integrity deferred`
 skips the otherwise separate full FLAC/MP3 validation decode and records that
 integrity remains deferred; sampled decode failures are still reported. The
@@ -299,6 +324,41 @@ DSP needs no model. MERT does not understand the text prompt directly. Preview
 measurements describe the analyzed preview, not necessarily the complete recording.
 Missing analysis stays neutral and never proves a hard musical requirement. The
 three existing modes retain their policies.
+
+Enhanced compares request fit within the strongest eligible evidence tier before
+using taste or diversity to break ties. Zero diversity permits multiple relevant
+recordings by the same artist. It compares a minimum pool before stopping at a
+fully supported playlist, up to 512 candidates, source exhaustion, or the
+ten-minute submission limit. Search reserves the final 15 seconds for ordering
+and cleanup. **Stop and
+keep checked tracks** retains completed eligible matches; **Cancel** discards the
+operation. Saved Enhanced results retain the candidate/evidence snapshot for
+replay across engine updates. Older results without a valid frozen snapshot
+require explicit regeneration when their algorithm or catalog changes.
+
+Enhanced can check a bounded recording shortlist against MusicBrainz credits,
+referenced Wikidata statements, and linked official pages. Sources and unresolved
+criteria appear in track details. Community tags, flattened classifier labels,
+and local-model interpretations of quotations remain hints; they cannot alone
+verify a requirement. A preview without vocals does not establish that an entire
+recording is instrumental. Defining requested genres require corroboration before
+a song can enter an Enhanced playlist; missing support produces fewer tracks.
+Requests to mix genres allow each song to fit one member while requiring coverage
+of all requested genres across the playlist. See the
+[recording evidence policy](docs/recording-evidence.md).
+
+These policy corrections have deterministic regression coverage. Musical
+improvement is not established without blind listening judgments; numerical
+weights have not been tuned. See the [relevance evaluation workflow](docs/enhanced-relevance-evaluation.md).
+
+The [Automatic architecture](docs/automatic-playlists.md) adds reversible
+popular-artist resolution, prepared public discovery data, a shared two-minute
+budget and one frozen recommendation pass. It is now the default; the independent
+musical-quality gates remain unmet. Defining descriptions retain
+their full phrases and calibrated audio support stays unknown until independent
+validation passes. Settings offers an optional ListenBrainz connection using
+the OS credential store (session-only when unavailable) for discovery metadata;
+it does not import listening history or submit listens.
 
 MERT uses native Go/ONNX inference with no end-user Python requirement. Its
 separately licensed CC-BY-NC-4.0 weights are optional; the application remains
@@ -478,6 +538,7 @@ Prompts, intent, history, feedback, profiles, and recommendation computation
 stay local. Network actions are explicit: asset/model download, Deezer preview,
 MusicBrainz metadata, linked Wikidata/Wikipedia context in Enhanced hybrid, a
 bounded Wikipedia artist-lead fallback for seedless instrumental searches,
+bounded [recording-linked publisher and official-source lookups](docs/recording-evidence.md),
 and Soundiiz handoff. Context requests contain public
 entity names, identifiers and catalog recording titles; they do not send the full
 prompt or listening history. MusicBrainz
@@ -496,6 +557,9 @@ is never treated as a like or dislike.
 DEBUG, INFO, WARN, or ERROR. DEBUG opts into potentially sensitive, memory-only
 diagnostics; choosing a higher level stops and clears debug collection. See
 [application logs](docs/application-logs.md) for filtering, privacy, and retention.
+The [desktop evaluation CLI](docs/enhanced-relevance-evaluation.md) also supports
+an explicit, bounded `-diagnostics` export for a single isolated case, including
+progress retained after ordinary generation errors.
 
 ## Develop
 

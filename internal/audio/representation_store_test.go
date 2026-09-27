@@ -17,7 +17,7 @@ import (
 func storedRepresentation() core.AudioRepresentation {
 	a := core.AudioRepresentation{
 		TrackID: "track", CatalogVersion: "catalog", TrackKey: "artist/title",
-		Identity:    core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: "123"},
+		Identity:    core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Status: core.ResolutionResolved, Provider: "deezer", ProviderID: "123"},
 		AudioSHA256: strings.Repeat("a", 64),
 		Model: core.AudioRepresentationIdentity{Model: "audio-only-fixture", Revision: "revision", Preprocessing: "prep/v1",
 			Runtime: "fixture/v1", Dimension: 2, WeightsSHA256: strings.Repeat("b", 64), Pooling: "mean-l2/v1"},

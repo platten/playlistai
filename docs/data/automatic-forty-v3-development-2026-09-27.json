@@ -1,0 +1,1048 @@
+{
+  "version": "automatic-forty-development/v1",
+  "date": "2026-09-27",
+  "algorithmVersion": "automatic/v3+automatic-fit/v3",
+  "protocol": "All40 original development prompts. Final reference admission and interpretation-timeout repairs. One warmed application, reused isolated store; shared30s deadline after setup. Same verified development graph v2,2 recorded invalid radio omissions. Raw prompts parsed anew and per-request random seeds retained. Not a paired-seed causal comparison, cold-provider observation or acceptance gate. No real user data or concurrent native workload; incompatible installed encoder and catalog vectors remain separate.",
+  "cases": 40,
+  "requested": 400,
+  "returned": 120,
+  "outcomes": {
+    "partial": 32,
+    "fulfilled": 7,
+    "needs_clarification": 1
+  },
+  "milliseconds": {
+    "median": 13554.5,
+    "p95NearestRank": 25000,
+    "maximum": 25024
+  },
+  "commandExitCode": 1,
+  "qualityAcceptance": "not established;90good19partial8mismatch3unknown returned occurrences,280missing;all90good are direct named-reference artists",
+  "sourceReportSHA256": "e23592817adedb4ccd5030eae0aca0d763f9614a8d65c2416d0bbef7d61c2143",
+  "runManifestSHA256": "8bf946a88a3d1b02c71a5eb2828279c9ecc80dc941a869ae01cd725f4e8a3c85",
+  "graphSHA256": "f286b261b247cb05617e2f6c4878206351382b4a5c631a7e4eea5fc3a09ae2ac",
+  "graphArtists": 356,
+  "graphRecordings": 4560,
+  "omittedDiscoveryBatches": 2,
+  "findingsScope": "Harness spacing/minimum-artist checks include soft quality expectations; case7 has explicit other-artists requirement and is correctly partial. All40completed but CLIexit1 is not a release pass. Seeds/cacheconditions differ from earlier v2; no causal improvement claim. No human listening grades.",
+  "runs": [
+    {
+      "case": 1,
+      "prompt": "Classical, 10 tracks.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 10449,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 2,
+      "prompt": "Electronic music. Make a 10-song playlist.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 12481,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 3,
+      "prompt": "Give me 10 jazz songs.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 4696,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 4,
+      "prompt": "Make a 10-song reggae playlist.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 8536,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 5,
+      "prompt": "Give me 10 heavy metal songs.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 13155,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 6,
+      "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 7048,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 1, minimum 3"
+      ]
+    },
+    {
+      "case": 7,
+      "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 6309,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "other_artists_missing",
+          "detail": "No suitable recording by another artist was retained.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 1, minimum 3"
+      ]
+    },
+    {
+      "case": 8,
+      "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 8819,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 2, minimum 3"
+      ]
+    },
+    {
+      "case": 9,
+      "prompt": "Give me 10 tracks inspired by Kraftwerk, Tangerine Dream, and Brian Eno.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 9533,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat"
+      ]
+    },
+    {
+      "case": 10,
+      "prompt": "Make a 10-song playlist inspired by Fela Kuti and Tony Allen, with a variety of artists.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 7946,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "unresolved_reference",
+          "detail": "No usable recording was found for \"Fela Kuti\" during this lookup",
+          "criterion": "Fela Kuti",
+          "action": "choose a specific track or try again"
+        },
+        {
+          "code": "unresolved_reference",
+          "detail": "No usable recording was found for \"Tony Allen\" during this lookup",
+          "criterion": "Tony Allen",
+          "action": "choose a specific track or try again"
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 11,
+      "prompt": "Give me 10 songs like 'Teardrop' by Massive Attack.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 21508,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "reference_similarity_unconfirmed",
+          "detail": "Fewer recordings had the requested identity or matching prepared artist-relationship and audio-neighbor evidence.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 12,
+      "prompt": "Make a 10-song playlist inspired by 'So What' by Miles Davis and 'Take Five' by the Dave Brubeck Quartet.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 25004,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "reference_similarity_unconfirmed",
+          "detail": "Fewer recordings had the requested identity or matching prepared artist-relationship and audio-neighbor evidence.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 13,
+      "prompt": "Give me 10 tracks mixing house, techno, and UK garage.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 14366,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "house",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "techno",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "uk garage",
+          "action": "Add a fitting reference or continue with the covered genres."
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 14,
+      "prompt": "Make a 10-song playlist combining bossa nova, samba, and Brazilian jazz.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 19289,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "bossa nova",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "samba",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "brazilian jazz",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 15,
+      "prompt": "Give me 10 songs spanning bluegrass, country, and Americana.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 13186,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "bluegrass",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "country",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "americana",
+          "action": "Add a fitting reference or continue with the covered genres."
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 16,
+      "prompt": "Make a 10-song playlist mixing Japanese city pop, funk, and disco.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 13889,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "japanese city pop",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "funk",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "disco",
+          "action": "Add a fitting reference or continue with the covered genres."
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 17,
+      "prompt": "Give me 10 tracks of spacious electronic music with detailed textures, a deep groove, and occasional sparkle—relaxing but not sleepy.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 16142,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 18,
+      "prompt": "Make a 10-song playlist with warm acoustic instruments, gentle rhythms, and an intimate late-night feel.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 17912,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 19,
+      "prompt": "Give me 10 songs with jangly guitars, melodic bass lines, and bright indie-pop energy.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 18863,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 20,
+      "prompt": "Make a 10-track playlist of orchestral music with sweeping strings, dramatic contrasts, and a cinematic atmosphere.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 15166,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "descriptive_fit_estimated",
+          "detail": "Some descriptive qualities have only plausible or missing evidence; these are musical estimates.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 21,
+      "prompt": "Make a 10-song journey from ambient electronic through downtempo to melodic house, gradually increasing the energy.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 25000,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "discovery_budget",
+          "detail": "The search time limit was reached during interpretation; no eligible playlist was completed.",
+          "criterion": "",
+          "action": "Try a simpler prompt or generate again."
+        }
+      ],
+      "parserFindings": [
+        "requested parser was not used",
+        "parser fallback: timeout"
+      ],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 22,
+      "prompt": "Give me a 10-song playlist that starts with acoustic folk, moves through folk rock, and ends with energetic alternative rock.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 19006,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "journey_incomplete",
+          "detail": "The output does not completely represent the requested ordered musical stages.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 23,
+      "prompt": "Make a 10-track journey from Brian Eno's ambient sound through Boards of Canada to Jon Hopkins, including other artists along the way.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 3553,
+      "state": "needs_clarification",
+      "reasons": [
+        {
+          "code": "required_track_conflict",
+          "detail": "A required recording lacks the requested factual constraints or sufficiently supported musical fit.",
+          "criterion": "Brian Eno - Weightless",
+          "action": ""
+        }
+      ],
+      "parserFindings": [
+        "requested parser was not used",
+        "parser fallback: parser_error"
+      ],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 24,
+      "prompt": "Give me 10 songs moving from traditional soul through funk into disco. Keep the transitions smooth and avoid placing the same artist back to back.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 14479,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "journey_incomplete",
+          "detail": "The output does not completely represent the requested ordered musical stages.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 25,
+      "prompt": "Make a 10-track instrumental playlist for focused work, blending modern classical, ambient, and gentle electronic music. Start sparse, build a subtle pulse in the middle, and finish calmly. No vocals.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 20844,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "modern classical",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "ambient",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "electronic",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "unsupported_request",
+          "detail": "Additional requested wording is retained but unsupported by prepared evidence.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 26,
+      "prompt": "Punk rock, 10 songs.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 13220,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 27,
+      "prompt": "Give me 10 blues songs.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 5007,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 28,
+      "prompt": "Make a 10-song salsa playlist.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 7443,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 29,
+      "prompt": "Give me 10 drum and bass tracks.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 13180,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 30,
+      "prompt": "Make a 10-song playlist inspired by Björk.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 7359,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 1, minimum 3"
+      ]
+    },
+    {
+      "case": 31,
+      "prompt": "Give me 10 songs like 宇多田ヒカル, including other artists.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 9088,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "unresolved_reference",
+          "detail": "No usable recording was found for \"宇多田ヒカル\" during this lookup",
+          "criterion": "宇多田ヒカル",
+          "action": "choose a specific track or try again"
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 32,
+      "prompt": "Make a 10-song journey from David Bowie to Talking Heads, with related artists bridging the transition.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 18600,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 2, minimum 3"
+      ]
+    },
+    {
+      "case": 33,
+      "prompt": "Give me 10 songs that move from Bonobo to Massive Attack, including related discoveries.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 17345,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 2, minimum 3"
+      ]
+    },
+    {
+      "case": 34,
+      "prompt": "Make a 10-song playlist inspired by Joni Mitchell, Nick Drake, and Leonard Cohen.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 9709,
+      "state": "fulfilled",
+      "reasons": [],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "adjacent artist repeat",
+        "artist variety lost: got 2, minimum 3"
+      ]
+    },
+    {
+      "case": 35,
+      "prompt": "Give me 10 songs blending hip-hop, neo-soul, and jazz.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 19007,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "hip hop",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "neo-soul",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "playlist_genre_missing",
+          "detail": "No selected recording has strong estimated fit for this requested genre coverage.",
+          "criterion": "jazz",
+          "action": "Add a fitting reference or continue with the covered genres."
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 36,
+      "prompt": "Make a 10-track playlist with distorted guitars, pounding drums, and a tense, restless mood.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 18319,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "descriptive_fit_estimated",
+          "detail": "Some descriptive qualities have only plausible or missing evidence; these are musical estimates.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat",
+        "adjacent artist repeat"
+      ]
+    },
+    {
+      "case": 37,
+      "prompt": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 16179,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "descriptive_fit_estimated",
+          "detail": "Some descriptive qualities have only plausible or missing evidence; these are musical estimates.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [
+        "adjacent artist repeat"
+      ]
+    },
+    {
+      "case": 38,
+      "prompt": "Make a 10-song playlist with syncopated bass, lively percussion, and a celebratory dance groove.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 15582,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 39,
+      "prompt": "Give me a 10-song journey from blues through soul to funk.",
+      "requested": 10,
+      "returned": 0,
+      "milliseconds": 12771,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "insufficient_supported_candidates",
+          "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+          "criterion": "",
+          "action": ""
+        },
+        {
+          "code": "journey_incomplete",
+          "detail": "The output does not completely represent the requested ordered musical stages.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    },
+    {
+      "case": 40,
+      "prompt": "Make a playlist only by Radiohead, 10 songs.",
+      "requested": 10,
+      "returned": 10,
+      "milliseconds": 25024,
+      "state": "partial",
+      "reasons": [
+        {
+          "code": "preparation_incomplete",
+          "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+          "criterion": "",
+          "action": ""
+        }
+      ],
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": []
+    }
+  ],
+  "songAudit": {
+    "path": "automatic-v3-song-audit-2026-09-27.json",
+    "sha256": "2b930fea1b9b0fcbe208f0698ae2d5793ba302660141a2403493959307514081",
+    "verdictCounts": {
+      "good": 90,
+      "partial": 19,
+      "mismatch": 8,
+      "unknown": 3
+    },
+    "humanListeningGradesAssigned": 0,
+    "goodAmongReturned": 0.75,
+    "goodPerRequestedSlot": 0.225
+  }
+}

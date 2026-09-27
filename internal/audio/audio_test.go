@@ -21,7 +21,7 @@ type testResolver struct {
 
 func (r *testResolver) ResolveAudioPreview(_ context.Context, t core.TrackRef, _ core.EnrichedTrack) (core.ResolvedAudioPreview, error) {
 	r.calls++
-	return core.ResolvedAudioPreview{URL: r.url, Identity: core.PreviewIdentity{Provider: "deezer", ProviderID: t.ID, Artist: t.Artist, Title: t.Title, Status: core.ResolutionResolved, Method: "fixture"}}, nil
+	return core.ResolvedAudioPreview{URL: r.url, Identity: core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: t.ID, Artist: t.Artist, Title: t.Title, Status: core.ResolutionResolved, Method: "fixture"}}, nil
 }
 
 type testAnalyzer struct {

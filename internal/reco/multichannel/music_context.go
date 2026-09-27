@@ -43,7 +43,7 @@ func matchesContextReference(plan core.ContextSeedPlan, reference core.IntentRef
 // It must never replace an explicit recording, alter required endpoints, or
 // cross over into the other recommendation policies. Missing/old context keeps
 // the ordinary catalog representatives, including for old saved histories.
-func contextualReferenceTracks(cat ports.Catalog, intent core.MusicIntent, reference core.IntentReference, dense bool) []core.WeightedTrack {
+func contextualReferenceTracksContext(ctx context.Context, cat ports.Catalog, intent core.MusicIntent, reference core.IntentReference, dense bool) []core.WeightedTrack {
 	if intent.Controls.RecommendationMode != core.EnhancedHybrid || intent.Knowledge == nil ||
 		(reference.Kind != core.ReferenceArtist && reference.Kind != core.ReferenceAlbum) {
 		return nil
@@ -57,7 +57,7 @@ func contextualReferenceTracks(cat ports.Catalog, intent core.MusicIntent, refer
 		seen := map[string]bool{}
 		var total float64
 		for _, seed := range plan.Seeds {
-			meta, ok := cat.Meta(seed.TrackID)
+			meta, ok := ports.CatalogMeta(ctx, cat, seed.TrackID)
 			if !ok || math.IsNaN(seed.Weight) || math.IsInf(seed.Weight, 0) || seed.Weight <= 0 {
 				continue
 			}
@@ -221,12 +221,12 @@ func (r *Retriever) musicContextJobs(ctx context.Context, intent core.MusicInten
 				}
 				if err == nil {
 					for index, hit := range hits {
-						r.addSource(byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{
+						r.addSource(ctx, byID, ports.Match{ID: hit.TrackID, Score: float32(hit.Score)}, core.RetrievalEvidence{
 							Channel: ChannelMusicContext, QueryID: plan.Profile.ID + ":" + query, Rank: index + 1, Score: hit.Score, QueryWeight: .5,
 						})
 					}
 				}
-				return nil
+				return ctx.Err()
 			}})
 			if len(seen) == 4 {
 				return jobs

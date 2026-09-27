@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -30,7 +31,7 @@ func (s *GreedySequencer) repairRequiredJourney(ctx context.Context, request por
 	var counts []int
 	groupIDs := make([]int, len(request.Candidates))
 	for i, candidate := range request.Candidates {
-		artist := core.NormalizeIdentityPart(candidate.Track.Artist)
+		artist := strings.Join(s.performers.trackKeys(candidate.Track), "\x00")
 		group, exists := groups[artist]
 		if !exists {
 			group = len(counts)
@@ -66,7 +67,7 @@ func (s *GreedySequencer) repairRequiredJourney(ctx context.Context, request por
 			key = strconv.AppendInt(key, int64(count), 10)
 		}
 		key = append(key, ':')
-		key = append(key, core.NormalizeIdentityPart(previous.Artist)...)
+		key = append(key, strings.Join(s.performers.trackKeys(previous), "\x00")...)
 		if seen[string(key)] {
 			return false
 		}
@@ -84,7 +85,7 @@ func (s *GreedySequencer) repairRequiredJourney(ctx context.Context, request por
 		}
 		scores := make([]float64, len(request.Candidates))
 		for i, candidate := range request.Candidates {
-			if used[i] || sameArtist(previous, candidate.Track) {
+			if used[i] || s.performers.sameArtist(previous, candidate.Track) {
 				continue
 			}
 			scores[i] = s.orderingScore(candidate, previous, request, len(path))
@@ -124,7 +125,7 @@ func (s *GreedySequencer) repairRequiredJourney(ctx context.Context, request por
 			}
 		}
 		track := request.Required[nextRequired]
-		if !sameArtist(previous, track) {
+		if !s.performers.sameArtist(previous, track) {
 			path = append(path, sequenceItem{track: track, required: true, fixed: true})
 			complete := search(nextRequired + 1)
 			path = path[:len(path)-1]

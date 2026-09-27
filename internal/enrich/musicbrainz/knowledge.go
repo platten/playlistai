@@ -44,7 +44,7 @@ func (c *Client) knowledgeGet(ctx context.Context, path string, negative bool) (
 func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, client *http.Client, _ bool) ([]byte, error) {
 	key := metadataKey(base, path, namespace)
 	ttl := musicBrainzTTL
-	if namespace == "deezer-seeds-v1:" {
+	if namespace == "deezer-seeds-v1:" || namespace == publisherNamespace {
 		ttl = 24 * time.Hour
 	}
 	var cached cachedResponse
@@ -168,6 +168,13 @@ func (c *Client) metadataGet(ctx context.Context, base, path, namespace string, 
 }
 
 func validMetadata(path, namespace string, raw []byte) bool {
+	if namespace == publisherNamespace {
+		return validPublisherResponse(path, raw)
+	}
+	if namespace == "official-recording-v1:" {
+		body := strings.ToLower(string(raw))
+		return strings.Contains(body, "<html") || strings.Contains(body, "<body") || strings.Contains(body, "<article")
+	}
 	if namespace == "knowledge-v1:" && (path == "/genres" || strings.HasPrefix(path, "/genre/")) {
 		body := strings.ToLower(string(raw))
 		if path == "/genres" {
@@ -301,6 +308,9 @@ func (c *Client) PrepareMusic(ctx context.Context, intent core.MusicIntent, cat 
 }
 
 func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat ports.Catalog, resolver ports.ReferenceResolver, p ports.Progress) (core.MusicIntent, error) {
+	if err := ctx.Err(); err != nil {
+		return intent, err
+	}
 	if cat == nil || resolver == nil {
 		return intent, nil
 	}
@@ -335,6 +345,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		}
 	}
 	// Explicit missing artists take priority over broad genre discovery.
+	intent = c.corroborateArtistReferences(ctx, intent, &snapshot)
 	intent = c.resolveMissingArtists(ctx, intent, cat, resolver, &snapshot, p)
 	if core.WantsInstrumental(intent) && len(intent.Seeds.TrackIDs) == 0 && len(intent.Required.TrackIDs) == 0 {
 		c.discoverInstrumental(ctx, &intent, cat, resolver, &snapshot, p)
@@ -354,7 +365,7 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		if d.Kind == core.ReferenceAlbum {
 			d = c.resolveAlbum(ctx, d, cat, resolver, &snapshot)
 		} else if d.Resolution == nil || d.Resolution.Status != core.ResolutionResolved || d.Resolution.CatalogVersion != resolver.CatalogVersion() {
-			r := resolver.ResolveReference(d)
+			r := ports.ResolveReferenceContext(ctx, resolver, d)
 			d.Resolution = &r
 			if r.Selected != nil && len(r.Selected.Representatives) > 0 {
 				d.TrackID = r.Selected.Representatives[0].TrackID
@@ -461,11 +472,14 @@ func (c *Client) ResolveMusic(ctx context.Context, intent core.MusicIntent, cat 
 		if ctx.Err() != nil {
 			break
 		}
-		r := resolver.ResolveReference(a.Reference)
+		r := ports.ResolveReferenceContext(ctx, resolver, a.Reference)
+		if ctx.Err() != nil {
+			break
+		}
 		if r.Selected == nil || len(r.Selected.Representatives) == 0 {
 			continue
 		}
-		meta, ok := cat.Meta(r.Selected.Representatives[0].TrackID)
+		meta, ok := ports.CatalogMeta(ctx, cat, r.Selected.Representatives[0].TrackID)
 		if !ok {
 			continue
 		}
@@ -526,7 +540,7 @@ func (c *Client) searchKnowledgeRecordings(ctx context.Context, query string, ca
 			if ctx.Err() != nil {
 				break
 			}
-			c.addKnowledgeRecording(r, cat, resolver, snapshot)
+			c.addKnowledgeRecording(ctx, r, cat, resolver, snapshot)
 		}
 		// Expand identity lookup, never relax musical eligibility. All pages
 		// share the existing provider request and time budgets.
@@ -536,7 +550,7 @@ func (c *Client) searchKnowledgeRecordings(ctx context.Context, query string, ca
 	}
 }
 
-func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, knownIDs ...string) {
+func (c *Client) addKnowledgeRecording(ctx context.Context, r mbRecording, cat ports.Catalog, resolver ports.ReferenceResolver, snapshot *core.KnowledgeSnapshot, knownIDs ...string) {
 	if len(r.ArtistCredit) == 0 {
 		return
 	}
@@ -545,11 +559,11 @@ func (c *Client) addKnowledgeRecording(r mbRecording, cat ports.Catalog, resolve
 	if len(knownIDs) > 0 {
 		reference.TrackID = knownIDs[0]
 	}
-	resolved := resolver.ResolveReference(reference)
-	if resolved.Status != core.ResolutionResolved || resolved.Selected == nil || len(resolved.Selected.Representatives) == 0 {
+	resolved := ports.ResolveReferenceContext(ctx, resolver, reference)
+	if ctx.Err() != nil || resolved.Status != core.ResolutionResolved || resolved.Selected == nil || len(resolved.Selected.Representatives) == 0 {
 		return
 	}
-	meta, ok := cat.Meta(resolved.Selected.Representatives[0].TrackID)
+	meta, ok := ports.CatalogMeta(ctx, cat, resolved.Selected.Representatives[0].TrackID)
 	if !ok || core.NormalizeIdentityPart(meta.Ref.Title) != core.NormalizeIdentityPart(r.Title) || core.NormalizeIdentityPart(meta.Ref.Artist) != core.NormalizeIdentityPart(r.ArtistCredit[0].Name) {
 		return
 	}
@@ -637,17 +651,12 @@ func knowledgeTrack(r mbRecording, ref core.TrackRef) core.EnrichedTrack {
 		track.AllArtists = append(track.AllArtists, credit.Name)
 		track.ArtistIDs = append(track.ArtistIDs, credit.Artist.ID)
 	}
-	for _, tag := range append(append([]mbTag(nil), r.Genres...), r.Tags...) {
-		track.GenreTags = append(track.GenreTags, core.AttributedGenreTag{Name: tag.Name, Votes: tag.Count, Source: "musicbrainz", EntityID: r.ID, Facet: "genre"})
-	}
+	track.GenreTags = recordingTags(r)
 	if len(r.Releases) > 0 {
 		track.Album = r.Releases[0].Title
 		track.ReleaseID = r.Releases[0].ID
 		track.ReleaseEditionDate = r.Releases[0].Date
 		track.Year = yearOf(r.Releases[0].Date)
-		if r.Releases[0].ReleaseGroup.FirstReleaseDate != "" {
-			track.OriginalReleaseDate = r.Releases[0].ReleaseGroup.FirstReleaseDate
-		}
 	}
 	return track
 }

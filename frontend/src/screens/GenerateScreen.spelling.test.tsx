@@ -211,6 +211,22 @@ it("generates exact artist references without opening the dialog", async () => {
   expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
 });
 
+it("continues catalog recovery after the submitted preview corroborates an identity", async () => {
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([{
+    kind: "artist", query: "Shared Name", status: "unresolved", inferred: false,
+    groundingCandidates: [
+      { kind: "artist", id: "artist-a", name: "Shared Name" },
+      { kind: "artist", id: "artist-b", name: "Shared Name" },
+    ],
+  }])));
+  renderScreen();
+  await submit("Music like the anchor and Shared Name");
+  await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
+  expect(screen.queryByRole("combobox", { name: /Choose the intended artist/ })).toBeNull();
+  expect(bridge.GenerateFromPromptWithContext).toHaveBeenCalledOnce();
+  expect(bridge.GenerateFromPromptResolvedWithContext).not.toHaveBeenCalled();
+});
+
 it("updates an uncertain artist in the description while generating with its catalog identity", async () => {
   const uncertain = "Ambient music by Shared name, 10 tracks";
   const alternatives = [
@@ -280,6 +296,31 @@ it("confirms a provider identity and starts generation for a homonymous artist",
   fireEvent.click(confirm);
   await waitFor(() => expect(onGenerated).toHaveBeenCalledOnce());
   expect(bridge.GenerateFromPromptResolvedWithContext.mock.calls[0][1]).toEqual([{ kind: "artist", query: "Shared Name", trackId: "", identityId: "artist-b" }]);
+});
+
+it("shows the generation outcome instead of asking for the same artist again", async () => {
+  bridge.ParseIntentWithContext.mockImplementation(() => completed(preview([{
+    kind: "artist", query: "Shared Name", status: "ambiguous", inferred: false,
+    groundingCandidates: [
+      { kind: "artist", id: "artist-a", name: "Shared Name" },
+      { kind: "artist", id: "artist-b", name: "Shared Name" },
+    ],
+  }])));
+  bridge.GenerateFromPromptResolvedWithContext.mockImplementation((_text, _selections, context) => completed({
+    request: {}, name: "Playlist", playlist: {
+      generationId: context.generationId, tracks: [], notices: [],
+      outcome: { state: "needs_clarification", reasons: [{ detail: "No recording from this artist identity is available in the catalog." }] },
+    },
+  }));
+  renderScreen();
+  await submit("Music by Shared Name");
+  fireEvent.change(await screen.findByRole("combobox", { name: /Choose the intended artist/ }), { target: { value: "artist-b" } });
+  fireEvent.click(screen.getByRole("button", { name: "Confirm and generate" }));
+
+  expect(await screen.findByText(/No recording from this artist identity is available/)).toBeTruthy();
+  expect(screen.queryByRole("combobox", { name: /Choose the intended artist/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Confirm and generate" })).toBeNull();
+  expect(bridge.GenerateFromPromptResolvedWithContext).toHaveBeenCalledOnce();
 });
 
 it.each(["catalog", "provider"])("preserves the offered %s identity when retrying a failed generation", async (provider) => {

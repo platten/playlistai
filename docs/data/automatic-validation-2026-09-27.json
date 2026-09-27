@@ -1,0 +1,72 @@
+{
+  "date": "2026-09-27",
+  "platform": "Linux/WSL2",
+  "repositoryGate": {
+    "command": "./scripts/test.sh",
+    "exitCode": 0,
+    "goRace": true,
+    "goVet": true,
+    "pureGoCoreCompile": true,
+    "golangciLintIssues": 0,
+    "wailsBindingsRegenerated": true,
+    "frontendTypecheck": true,
+    "frontendTestFiles": 26,
+    "frontendTests": 255,
+    "frontendProductionBuild": true,
+    "optionalScriptLint": "passed"
+  },
+  "renderedUI": {
+    "kind": "mocked bridge browser interactions",
+    "generateAndSettings": [
+      "submission deadline",
+      "count controls",
+      "cancel and stale responses",
+      "stop and keep",
+      "navigation",
+      "verified data update",
+      "dark/light at1000px and390px"
+    ],
+    "playlist": [
+      "reversible artist choice",
+      "lossless seed",
+      "draft restoration",
+      "partial result",
+      "fit evidence",
+      "dark/light at1100px and390px"
+    ],
+    "nativeHostCoverage": false
+  },
+  "independentCodeReview": "no remaining actionable implementation findings after fixes",
+  "limits": [
+    "No Windows or macOS native execution.",
+    "Rendered UI checks use mock bridge; musical quality is separately measured.",
+    "Automatic remains staged; source audits and independent quality gates do not pass."
+  ],
+  "receiptHashes": {
+    "full-gate-final.log": "e70c5044ae792df7b9f61205d41016f16f375b6e5df6fc4940404c748247f9a5",
+    "ui-automatic.log": "a4901a4618ee4f7361dca21393263aa54efa5f00db1fb05f47396f49848f6b9a",
+    "ui-generate.log": "63957e3acad8a07efebea24036d56465cb7791fdbfe85b44db2346ca78d45064",
+    "automatic-reference-independent-review.json": "56d2698b78dfc0279354f20169b2dbc648b77c2715bcb732ac15db5b01fe6927",
+    "automatic-track-graph-independent-review.json": "fd0389f970e2d63327be9064c56a7ab742480803bfea7990e33e316f5e2cdb4e",
+    "case21-timeout-independent-review.json": "849ec0f3d239ed749fdf950553123f03a44fe58305db617681f3f09994bf6cad"
+  },
+  "nativeDevelopment": {
+    "promptCases": 40,
+    "completed": true,
+    "cliExitCode": 1,
+    "algorithmVersion": "automatic/v3+automatic-fit/v3",
+    "reportSHA256": "e23592817adedb4ccd5030eae0aca0d763f9614a8d65c2416d0bbef7d61c2143",
+    "interpretationFindings": 0,
+    "timeoutPreservesRequestedCountAndGenreStages": true,
+    "qualityAcceptance": false
+  },
+  "preparedEngineDevelopment": {
+    "runs": 45,
+    "sameFeaturesCandidatesAndSeedsAcrossThreeVariants": true,
+    "engineExitCode": 0,
+    "evaluationExitCode": 1,
+    "evaluationState": "insufficient",
+    "reportSHA256": "c5b00c473f70119316b7afea41ff1a36077d8c6e9e38dd935f8b724387cb38ba",
+    "heldoutUsed": false
+  }
+}

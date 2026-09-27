@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"reflect"
@@ -56,7 +57,7 @@ func TestRepresentativeCacheBoundAndOversizedQuery(t *testing.T) {
 	for i := 0; i < resolutionCacheLimit; i++ {
 		c.representativeCache[fmt.Sprint(i)] = nil
 	}
-	if got := c.artistRepresentatives("Justice"); len(got) == 0 {
+	if got := c.artistRepresentatives(context.Background(), "Justice"); len(got) == 0 {
 		t.Fatal("artist representatives lost")
 	}
 	if len(c.representativeCache) > resolutionCacheLimit {

@@ -87,6 +87,79 @@ func fixtureLegacyRelease(t *testing.T, version string) (string, Manifest) {
 	return dir, manifest
 }
 
+func TestInstalledLayoutReadsOnlyActivationFiles(t *testing.T) {
+	_, manifest := fixtureRelease(t, "layout-test")
+	root := t.TempDir()
+	release := filepath.Join(root, "release-layout")
+	for _, pack := range manifest.Packs {
+		packDir := filepath.Join(release, pack.PackID)
+		generation := pack.PackID + "-fixture"
+		generationDir := filepath.Join(packDir, "generations", generation)
+		if err := os.MkdirAll(generationDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		active, err := json.Marshal(struct {
+			Version       int    `json:"version"`
+			PackID        string `json:"packId"`
+			PackSHA256    string `json:"packSha256"`
+			GenerationDir string `json:"generationDir"`
+		}{1, pack.PackID, pack.SHA256, generation})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(packDir, "active.json"), active, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(generationDir, "manifest.json"), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeActive := func(record activeRecord) {
+		t.Helper()
+		raw, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "active.json"), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeActive(activeRecord{Directory: "release-layout", Manifest: manifest})
+	if !InstalledLayout(root) {
+		t.Fatal("valid activation layout was not ready")
+	}
+	first := filepath.Join(release, manifest.Packs[0].PackID, "active.json")
+	if err := os.Remove(first); err != nil {
+		t.Fatal(err)
+	}
+	if InstalledLayout(root) {
+		t.Fatal("missing active pack was ready")
+	}
+	if err := os.WriteFile(first, []byte("invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if InstalledLayout(root) {
+		t.Fatal("invalid active pack was ready")
+	}
+	pack := manifest.Packs[0]
+	active, err := json.Marshal(struct {
+		Version       int    `json:"version"`
+		PackID        string `json:"packId"`
+		PackSHA256    string `json:"packSha256"`
+		GenerationDir string `json:"generationDir"`
+	}{1, pack.PackID, pack.SHA256, pack.PackID + "-fixture"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(first, active, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeActive(activeRecord{Directory: "../outside", Manifest: manifest})
+	if InstalledLayout(root) {
+		t.Fatal("unsafe release path was ready")
+	}
+}
+
 func TestRealReleaseOptIn(t *testing.T) {
 	dir := os.Getenv("PLAYLISTAI_DISCOVERY_RELEASE")
 	if dir == "" {

@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "status": "complete",
+  "purpose": "Separate opt-in progress diagnostic; excluded from original baseline/treatment, matched controls and four supplementary cases.",
+  "originalCaseNumber": 6,
+  "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+  "diagnosticOnly": true,
+  "conditions": {
+    "freshStore": true,
+    "inputMode": "raw",
+    "generationLimitSeconds": 600,
+    "diagnosticsEnabled": true,
+    "recommendationPolicyVersion": "v58",
+    "instrumentationChangedAfterSupplementaryBuild": true,
+    "causalComparison": false
+  },
+  "outcome": {
+    "requestedSlots": 10,
+    "returnedSongs": 0,
+    "missingSlots": 10,
+    "operationError": "context deadline exceeded",
+    "timedOut": true,
+    "nativeExitCode": 1,
+    "generationMilliseconds": 600001,
+    "timingScope": "matching_completed_child_generation",
+    "seed": "0",
+    "seedStatus": "uninitialized",
+    "verdictCounts": {
+      "good": 0,
+      "partial": 0,
+      "mismatch": 0,
+      "unknown": 0
+    },
+    "returnedSongPrecision": null,
+    "humanListeningGradesAssigned": 0
+  },
+  "diagnosticSummary": {
+    "entries": 885,
+    "consecutiveEntryIDs": [
+      1,
+      885
+    ],
+    "progressEvents": 828,
+    "completeJSON": true,
+    "entryEvictionObserved": false,
+    "lastProgress": {
+      "id": 884,
+      "stage": "assembling",
+      "elapsedMilliseconds": 585000,
+      "candidatesConsidered": 128,
+      "candidatesEligible": 128,
+      "candidatesSupported": 0,
+      "stoppingReason": "deadline"
+    },
+    "verifiedBoundary": "The frozen call path and final suggestion/ordering events establish that iterative collection returned and execution reached the final assembleCandidates call.",
+    "counterMeaning": "Eligible is an intermediate pipeline count; it does not establish confirmed musical matches or a completed playlist.",
+    "blockingCallIdentified": false,
+    "limitations": [
+      "No function-level assembly or deferred-cleanup spans were recorded; the exact operation consuming the remaining time is unresolved.",
+      "Wall-clock timestamps do not agree exactly with elapsed progress counters. Completed-child generationMilliseconds is the duration authority; do not derive phase durations by mixing clocks.",
+      "Two large metadata/request diagnostic entries were truncated at the existing 65536-byte per-entry limit; progress records remain intact.",
+      "The prompt diagnostic has a serialization error; this does not establish parser failure or the generation timeout cause.",
+      "No returned recordings exist to grade. The missing slots are not song mismatch or unknown verdicts.",
+      "This selected fresh-store case is not a causal performance comparison and demonstrates no improvement in musical quality or useful coverage.",
+      "Opt-in diagnostic overhead was not measured with a paired run; no latency difference is attributed to instrumentation."
+    ],
+    "nextDiagnostic": "Use the existing opt-in bounded store for start/end spans around assembly preparation, ranking, selection, sequencing, output validation and deferred cleanup, with one elapsed-time origin; reproduce a specific failure before changing recommendation behavior."
+  },
+  "privacy": "Only safe phase/count/outcome fields and artifact hashes are published. Raw model/provider diagnostic payloads remain local and private.",
+  "sourceReceipts": {
+    "traced-case06/report.json": {
+      "sha256": "4c38e7020a009c924c25223c96871b0fbb3b1fa71d5601ce11d3309314660fcb"
+    },
+    "traced-case06/report.json.cases/case-001.json": {
+      "sha256": "8ad9b945b43b546e96ff9a9b3ae5d80fb036078382835e3266f7a53d2c70110e"
+    },
+    "traced-case06/report.json.listening.json": {
+      "sha256": "e11b493b0dd90e94dfe3185004604fdf3841f456827277c45125880813f1d172"
+    },
+    "traced-case06/verification.json": {
+      "sha256": "87513b092b94d1720bb99de0d02bd06930b6762a1f93241a97f7ac85eb43cc14"
+    },
+    "traced-case06/web-audit.json": {
+      "sha256": "93af2885ad2fefaadcf9571ac4c641fd38729f2e457fe8694dbe296c5d022235"
+    },
+    "traced-case06/diagnostics.json": {
+      "sha256": "eb5f24c2f7cc1a266819f2813ee492a5995386f72678f93431c51b3c92e62147"
+    },
+    "traced-case06-release.json": {
+      "sha256": "a2dce62442b333e6953438e3f330fae92c760f53c589345d2007e71179ae13d3"
+    },
+    "traced-case06-source-manifest.json": {
+      "sha256": "a89c7485c256b54b2b402421d83d1baf7ae5b87803829f07c5d46c179577e0ff"
+    },
+    "traced-case06-build-receipt.json": {
+      "sha256": "c5fce0fc564ccf12b077de815641a0fd4c23f08654c3b437a3997462a7ede1bd"
+    },
+    "traced-case06-build-independent-review.json": {
+      "sha256": "319941eef8824314148fe53a4a3a45c8535802903f148f902023b8f0ce518c8d"
+    },
+    "full-gate-trace.receipt.json": {
+      "sha256": "27a70a387016a32d4dacfbac3f705515c40dcaddb07f05a3d55819fa07c0c264"
+    },
+    "current-production-review-coverage-v6.json": {
+      "sha256": "1f39d2db4114ea06b08a7a4b116e8cdc95ad179d6430ddc29327a1db8cc4c2b5"
+    },
+    "traced-case06/diagnostic-analysis.json": {
+      "sha256": "f229d4772a6ca7c3a8cf9755a9258dfce68c8e2094a561016abdfd5aaf7672c5"
+    }
+  },
+  "executableSHA256": "fa43677cffe4d0a26c950daa7769fa6a2e3e0c158dcfb494e110c6c2a8bd241c"
+}

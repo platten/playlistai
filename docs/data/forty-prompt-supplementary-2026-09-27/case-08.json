@@ -1,0 +1,140 @@
+{
+  "caseNumber": 8,
+  "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+  "requested": 10,
+  "status": "audited",
+  "nativeCompleted": true,
+  "webAuditCompleted": true,
+  "returnedOccurrences": 0,
+  "missingSlots": 10,
+  "pendingSlots": 0,
+  "operationFailure": false,
+  "verdictCounts": {
+    "good": 0,
+    "partial": 0,
+    "mismatch": 0,
+    "unknown": 0
+  },
+  "runIdentity": {
+    "variant": "post-freeze-supplementary-v2",
+    "inputMode": "raw",
+    "familyId": "fdaff4491e6a357782a96599b27dd2225560b19ba890fae702ecb4ac2d5f621a",
+    "originalCaseNumber": 8,
+    "reportCaseNumber": 1,
+    "seed": "2375438183872585540",
+    "seedStatus": "initialized",
+    "reproducibility": {
+      "searchSnapshot": "6f2c360aea48ba69ee7bb95e1fbd3d5683f52aa79734a124f20be7d2c9409f89",
+      "searchPolicy": "enhanced-search/v2",
+      "enhancedEvidenceSnapshot": "423a79c650c8bd5c5e61caba45b6ec74905d41fb9e794e6dedffc9d6b3aab855",
+      "evidenceSnapshot": "",
+      "id": "c528ef48c9ecf7fc8fa69ab93a0bfd8208e9a139fc69df664a68778356120a9f",
+      "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+      "algorithmVersion": "multichannel/v58+iterative/v2",
+      "intentFingerprint": "51ad000b5b97998ef95afb349f9646fe21bf9d4deb1fb8df70b2104b59a13f90",
+      "profileVersion": "taste-profile/v4",
+      "profileSnapshot": "1c9d4e8301b8ceec15bfa3195afd8344e10072cf81ca17b98f77b6167e325d13",
+      "contextFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "rngSeed": "2375438183872585540"
+    },
+    "executable": {
+      "name": "musiccheck-supplementary-v2",
+      "size": 26578688,
+      "sha256": "8e67a8019c8dc8625b00d284515575ce7f7806fccf4d071e146843fb6d54a0b8"
+    },
+    "executableIdentityStatus": "verified",
+    "expectedBinarySHA256": "8e67a8019c8dc8625b00d284515575ce7f7806fccf4d071e146843fb6d54a0b8",
+    "rawReportSHA256": "d090ecfa2b53cd5e3834d3769675983bebe927f6eb0165ce16883d859d68050a",
+    "rawCaseSHA256": "e95c63cf177ba2d004a406e6b5db747dc428932f112daed76546da842a0a6fd6",
+    "releaseSHA256": "654645bf5b2ff69b167641a9171505cca5cafb509d30ec6b02541fd669d91b74",
+    "inputManifestSHA256": "a70958c24ec7127e8e3643f589cd007f91fe5c593f4b3b8081dc6aca1e803f05",
+    "sourceManifestSHA256": "f0a4c18b463483e7e60a726d3cadfa27a00ac710cf3984cc65acdc1b0ea67189"
+  },
+  "operationError": null,
+  "timedOut": false,
+  "processExitCode": 0,
+  "nonzeroProcessExit": false,
+  "generationMilliseconds": 598606,
+  "parentReportedMilliseconds": 598606,
+  "timingScope": "matching_completed_child_generation",
+  "parser": {
+    "backend": "llama",
+    "requestedBackend": "llama",
+    "fallbackUsed": false,
+    "fallbackReason": "",
+    "referenceLookup": "available",
+    "referenceSnapshot": "combined/v1:musicbrainz-offline/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+    "genreVocabulary": "embedded+paipack"
+  },
+  "parserFindings": [],
+  "interpretationFindings": [],
+  "constraintFindings": [],
+  "engineOutcome": {
+    "state": "partial",
+    "reasons": [
+      {
+        "code": "search_incomplete",
+        "detail": "Search was interrupted before the requested count was reached; the catalog was not exhausted.",
+        "criterion": "",
+        "action": "retry or continue with the retained tracks"
+      }
+    ]
+  },
+  "verificationReceipt": {
+    "file": "case-08.json.verification.json",
+    "sha256": "9e68cbb0c2aa0da4b929b6da6f4b9d1b936298a8320ee74e690ade1e7332de1b"
+  },
+  "childReceipt": {
+    "file": "case-001.json",
+    "sha256": "6ec31669e059898e03a87b25a5b66acc7be1996f6fbeb582acb82813c8b8e050",
+    "exactCompletedMatch": true
+  },
+  "listeningSidecarSHA256": "a4a17ea76f0510dba045681cae4fdf6762a4a361c0a11dc2d9693eba5bdd4378",
+  "assessmentType": "AI web assessment; no human listening labels; zero output has no song grades",
+  "auditedAt": "2026-09-27T02:39:39.912938+00:00",
+  "rubric": {
+    "caseNumber": 8,
+    "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+    "requested": 10,
+    "criteria": [
+      "meaningful connection to Nina Simone jazz/blues/soul or Bill Withers soul/funk songwriting"
+    ],
+    "interpretationNotes": [
+      "Evaluate representation of both references across the playlist; do not require every track to combine all styles."
+    ],
+    "sharedChecks": [
+      "exact recording/version identity",
+      "recording deduplication",
+      "artist variety and adjacent repetition",
+      "ten requested slots reported independently from fit"
+    ],
+    "grading": "good=credible recording or clearly scoped release evidence supports fit; partial=related but central requirements or exact version unverified; mismatch=credible evidence conflicts with request; unknown=insufficient or ambiguous evidence. AI web assessment, not a listening judgment."
+  },
+  "overallJudgment": "The completed run returned an empty partial playlist when its search budget ended. Both artist references were retained, but all ten requested slots remain missing; no songs exist to grade.",
+  "playlistFindings": [
+    "Both Nina Simone and Bill Withers resolve with four representative recordings each.",
+    "The retained search snapshot reports zero considered and zero eligible candidates, with deadline as stop reason; it does not prove the absence of preparation or provider work.",
+    "The result retains its exact initialized seed and search/audio snapshots. No operation error was reported.",
+    "No returned recordings exist to assess stylistic fit, representation of both references, variety or ordering."
+  ],
+  "coverage": {
+    "requestedSlots": 10,
+    "returnedOccurrences": 0,
+    "missingSlots": 10,
+    "verdictCounts": {
+      "good": 0,
+      "partial": 0,
+      "mismatch": 0,
+      "unknown": 0
+    },
+    "distinctArtists": 0,
+    "artistConcentration": null,
+    "adjacentArtistRepeats": null,
+    "referenceCoverage": "No returned songs; connections to either reference or collective representation of both cannot be assessed."
+  },
+  "tracks": [],
+  "auditReceipt": {
+    "file": "post-freeze-supplementary-v2-08.json",
+    "sha256": "2d940808a62a2ba054265cfbe23746b4d3228d6f5538840302302317edef59ec"
+  }
+}

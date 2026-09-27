@@ -30,7 +30,7 @@ func TestIsolatedPreparationUsesDesktopRecognition(t *testing.T) {
 	}{
 		{"like Bjork", "Björk", 1, false},
 		{"like Phoenix", "Phoenix", 2, false},
-		{"like John Williams", "John Williams", 8, true},
+		{"like John Williams", "John Williams", 12, false},
 		{"like 坂本龍一", "坂本龍一", 1, false},
 	} {
 		input := container.PrepareIntentInput(context.Background(), ports.IntentInput{Prompt: tc.prompt, EnrichParsingContext: true})

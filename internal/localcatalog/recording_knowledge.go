@@ -1,27 +1,43 @@
 package localcatalog
 
 import (
+	"context"
 	"strings"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/librarypack"
+	"github.com/platten/playlistai/internal/ports"
 )
 
 // BindRecordingKnowledge attaches already resolved recording identity to this
 // request-owned catalog. It does not mutate the bundled catalog or promote
 // artist context into recording metadata. Ambiguous/conflicting matches abstain.
 func (c *CompositeCatalog) BindRecordingKnowledge(tracks []core.EnrichedTrack) {
-	if base, ok := c.base.(interface{ BindRecordingKnowledge([]core.EnrichedTrack) }); ok {
+	c.BindRecordingKnowledgeContext(context.Background(), tracks)
+}
+
+func (c *CompositeCatalog) BindRecordingKnowledgeContext(ctx context.Context, tracks []core.EnrichedTrack) {
+	if ctx.Err() != nil {
+		return
+	}
+	if base, ok := c.base.(interface {
+		BindRecordingKnowledgeContext(context.Context, []core.EnrichedTrack)
+	}); ok {
+		base.BindRecordingKnowledgeContext(ctx, tracks)
+	} else if base, ok := c.base.(interface{ BindRecordingKnowledge([]core.EnrichedTrack) }); ok {
 		base.BindRecordingKnowledge(tracks)
 	}
 	known := map[string]core.EnrichedTrack{}
 	conflicts := map[string]bool{}
 	for _, track := range tracks {
+		if ctx.Err() != nil {
+			return
+		}
 		id := track.Ref.ID
 		if track.IdentityStatus != core.ResolutionResolved || librarypack.CanonicalMusicBrainzRecordingID(track.RecordingID) == "" || conflicts[id] {
 			continue
 		}
-		meta, ok := c.base.Meta(id)
+		meta, ok := ports.CatalogMeta(ctx, c.base, id)
 		if !ok || core.NormalizeIdentityPart(meta.Ref.Artist) != core.NormalizeIdentityPart(track.Ref.Artist) || core.NormalizeIdentityPart(meta.Ref.Title) != core.NormalizeIdentityPart(track.Ref.Title) {
 			continue
 		}
@@ -44,11 +60,17 @@ func (c *CompositeCatalog) BindRecordingKnowledge(tracks []core.EnrichedTrack) {
 		}
 		known[id] = track
 	}
-	c.recordingKnowledge = known
+	if ctx.Err() == nil {
+		c.recordingKnowledge = known
+	}
 }
 
 func (c *CompositeCatalog) baseMetadata(id string) (core.TrackMeta, bool) {
-	meta, ok := c.base.Meta(id)
+	return c.baseMetadataContext(context.Background(), id)
+}
+
+func (c *CompositeCatalog) baseMetadataContext(ctx context.Context, id string) (core.TrackMeta, bool) {
+	meta, ok := ports.CatalogMeta(ctx, c.base, id)
 	if !ok {
 		return meta, false
 	}

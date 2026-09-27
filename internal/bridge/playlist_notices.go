@@ -32,14 +32,12 @@ func presentPlaylistNotice(notice PlaylistNotice) (PlaylistNotice, bool, bool) {
 	switch notice.Code {
 	case "inferred_anchor_rejected", "semantic_constraints_enforced":
 		return notice, false, true
-	case "semantic_scoring_unavailable":
+	case "semantic_scoring_unavailable", "semantic_fallback":
 		notice.Detail = "Some musical-fit checks were unavailable for this playlist."
 	case "semantic_query_unsupported":
 		notice.Detail = "Some parts of your description could not be checked. Try a more specific artist or track reference."
 	case "semantic_query_partial":
 		notice.Detail = "Only part of your description could be checked. Add a specific artist or track reference to clarify the musical style."
-	case "semantic_fallback":
-		notice.Detail = "Musical-fit checks were unavailable; this playlist uses similarity to your reference tracks."
 	default:
 		return notice, true, false
 	}

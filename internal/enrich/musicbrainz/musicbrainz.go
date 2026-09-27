@@ -80,6 +80,8 @@ type Client struct {
 	wikidataBase     string
 	wikipediaBase    string
 	contextClient    *http.Client
+	publisherClient  *http.Client
+	sourceExtractor  ports.RecordingSourceExtractor
 	candidatePreview ports.AudioPreviewResolver
 
 	limiter *requestLimiter
@@ -162,6 +164,7 @@ func New(cfg Config) (*Client, error) {
 	limiter, _ := applicationLimiters.LoadOrStore(limiterKey, &requestLimiter{gate: make(chan struct{}, 1)})
 	c.limiter = limiter.(*requestLimiter)
 	c.hc.Transport = &limitedTransport{client: c, base: http.DefaultTransport}
+	c.publisherClient = newPublisherClient()
 	if err := c.configureContext(cfg); err != nil {
 		return nil, err
 	}
@@ -380,14 +383,7 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		RecordingID:         top.ID,
 		OriginalReleaseDate: top.FirstReleaseDate,
 	}
-	for _, group := range []struct {
-		facet string
-		tags  []mbTag
-	}{{"genre", top.Genres}, {"tag", top.Tags}} {
-		for _, tag := range group.tags {
-			et.GenreTags = append(et.GenreTags, core.AttributedGenreTag{Name: tag.Name, Votes: tag.Count, Source: "musicbrainz", EntityID: top.ID, Facet: group.facet})
-		}
-	}
+	et.GenreTags = recordingTags(top)
 	if top.Length != nil && *top.Length > 0 && top.ID != "" {
 		et.FullRecordingDuration = &core.RecordingDuration{Milliseconds: *top.Length, Source: "musicbrainz", RecordingID: top.ID}
 	}
@@ -403,22 +399,47 @@ func (c *Client) query(ctx context.Context, ref core.TrackRef) core.EnrichedTrac
 		}
 	}
 	if len(top.Releases) > 0 {
+		// Release groups can be later compilations; their dates do not
+		// establish or replace this recording's original release date.
 		et.Album = top.Releases[0].Title
 		et.Year = yearOf(top.Releases[0].Date)
 		et.ReleaseID = top.Releases[0].ID
 		et.ReleaseEditionDate = top.Releases[0].Date
-		et.OriginalReleaseDate = top.Releases[0].ReleaseGroup.FirstReleaseDate
 	}
 	return et
+}
+
+// Genre votes and ordinary folksonomy tags retain their distinct facets.
+func recordingTags(recording mbRecording) []core.AttributedGenreTag {
+	var tags []core.AttributedGenreTag
+	for _, group := range []struct {
+		facet string
+		tags  []mbTag
+	}{{"genre", recording.Genres}, {"tag", recording.Tags}} {
+		for _, tag := range group.tags {
+			tags = append(tags, core.AttributedGenreTag{Name: tag.Name, Votes: tag.Count, Source: "musicbrainz", EntityID: recording.ID, Facet: group.facet})
+		}
+	}
+	return tags
 }
 
 // --- helpers -----------------------------------------------------------
 
 func (c *Client) CachedRecording(ref core.TrackRef) (core.EnrichedTrack, bool) {
+	return c.CachedRecordingContext(context.Background(), ref)
+}
+
+func (c *Client) CachedRecordingContext(ctx context.Context, ref core.TrackRef) (core.EnrichedTrack, bool) {
+	if ctx.Err() != nil {
+		return core.EnrichedTrack{}, false
+	}
 	// Reinterpret cached raw evidence using today's identity policy; never fetch.
-	ctx := context.WithValue(context.Background(), cacheOnlyKey{}, true)
+	ctx = context.WithValue(ctx, cacheOnlyKey{}, true)
 	tracks := []core.EnrichedTrack{c.query(ctx, ref)}
 	c.acousticTracks(ctx, tracks, 1)
+	if ctx.Err() != nil {
+		return core.EnrichedTrack{}, false
+	}
 	return tracks[0], tracks[0].IdentityStatus != ""
 }
 

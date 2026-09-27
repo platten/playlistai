@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/platten/playlistai/internal/audio"
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/indexerbundle"
 	"github.com/platten/playlistai/internal/localaudio"
 )
@@ -19,6 +21,100 @@ func TestOfflineValidationRequiresEveryCPUAndCUDABundle(t *testing.T) {
 	err := validateOfflineModels("cpu-mert", "", "cpu-clap", "cuda-clap")
 	if err == nil || !strings.Contains(err.Error(), "CUDA MERT") {
 		t.Fatalf("missing CUDA MERT bundle error = %v", err)
+	}
+}
+
+func TestExtractCUDAFromExecutable(t *testing.T) {
+	if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+		t.Skip("the offline CUDA indexer is built for linux/amd64")
+	}
+	root := t.TempDir()
+	source := filepath.Join(root, "previous-offline")
+	files := map[string][]byte{}
+	manifest := audio.MERTBundleManifest{
+		Version: 1, ID: "mert-test-cuda", Platform: "linux/amd64", MemoryBytes: 1,
+		License: "CC-BY-NC-4.0", SourceURL: "https://huggingface.co/m-a-p/MERT-v1-95M",
+		Model: core.AudioRepresentationIdentity{
+			Model: "m-a-p/MERT-v1-95M", Revision: audio.MERTRevision,
+			Preprocessing: audio.MERTPreprocessingVersion, Pooling: audio.MERTPoolingVersion,
+			Runtime: "onnxruntime/1.26.0/cuda", Dimension: audio.MERTDimension,
+		},
+		Parity: audio.MERTParityReport{ReferenceRevision: audio.MERTRevision, Fixtures: 3, MaximumAbsoluteError: 0.0026, MinimumCosine: 0.99991},
+	}
+	for _, item := range []struct{ role, name string }{
+		{"audio_model", "mert-audio.onnx"}, {"health", "health.json"}, {"license", "LICENSES.txt"},
+		{"runtime", "libonnxruntime.so"}, {"runtime_dependency_providers_shared", "libonnxruntime_providers_shared.so"},
+		{"runtime_dependency_providers_cuda", "libonnxruntime_providers_cuda.so"}, {"runtime_dependency_cuda_00", "libcudart.so.12"},
+	} {
+		data := []byte("fixture " + item.role)
+		files[item.name] = data
+		hash := sha256.Sum256(data)
+		artifact := audio.BundleArtifact{Role: item.role, Name: item.name, Size: int64(len(data)), SHA256: hex.EncodeToString(hash[:])}
+		manifest.Artifacts = append(manifest.Artifacts, artifact)
+		if item.role == "audio_model" {
+			manifest.Model.WeightsSHA256 = artifact.SHA256
+		}
+	}
+	raw, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files["mert-bundle.json"] = raw
+	writeSource := func(corrupt bool) {
+		t.Helper()
+		file, err := os.Create(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.WriteString("launcher"); err != nil {
+			t.Fatal(err)
+		}
+		archive := zip.NewWriter(file)
+		for name, data := range files {
+			entry, err := archive.Create("mert/cuda/" + name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if corrupt && name == "libcudart.so.12" {
+				data = []byte("corrupt")
+			}
+			if _, err := entry.Write(data); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := archive.Close(); err != nil {
+			t.Fatal(err)
+		}
+		end, err := file.Seek(0, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := file.Write(indexerbundle.Trailer(uint64(end - int64(len("launcher"))))); err != nil {
+			t.Fatal(err)
+		}
+		if err := file.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeSource(false)
+	out := filepath.Join(root, "mert-cuda")
+	if err := extractCUDAFromExecutable(source, out); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := audio.ReadMERTBundle(out); err != nil || got.Backend() != "cuda" {
+		t.Fatalf("extracted CUDA bundle: backend=%q err=%v", got.Backend(), err)
+	}
+	if err := extractCUDAFromExecutable(source, out); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("existing destination error = %v", err)
+	}
+	writeSource(true)
+	corruptOut := filepath.Join(root, "corrupt-cuda")
+	if err := extractCUDAFromExecutable(source, corruptOut); err == nil || !strings.Contains(err.Error(), "integrity") {
+		t.Fatalf("corrupt CUDA source error = %v", err)
+	}
+	if _, err := os.Stat(corruptOut); !os.IsNotExist(err) {
+		t.Fatalf("corrupt source published destination: %v", err)
 	}
 }
 

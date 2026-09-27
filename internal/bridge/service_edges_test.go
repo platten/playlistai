@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/platten/playlistai/internal/app"
-	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/updater"
 )
 
@@ -58,8 +57,8 @@ func TestServiceEdgesAnalysisWrappersAndCancellation(t *testing.T) {
 func TestServiceEdgesAnalysisCapabilityAndMalformedBundle(t *testing.T) {
 	a := New(newTestContainer(t), nil)
 	got, err := a.GetRecommendedAnalysisBundle()
-	want, wantErr := audio.RecommendedBundle()
-	if (err != nil) != (wantErr != nil) || got.ID != want.ID {
+	want, wantErr := a.app.GetRecommendedAnalysisBundle()
+	if (err != nil) != (wantErr != nil) || got != want {
 		t.Fatal("bridge misreported native bundle capability", err, wantErr)
 	}
 	path := filepath.Join(t.TempDir(), "bundle.json")

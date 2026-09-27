@@ -15,12 +15,13 @@ import (
 )
 
 type analysisTrack struct {
-	ID      int64  `json:"id"`
-	Title   string `json:"title"`
-	Version string `json:"title_version"`
-	ISRC    string `json:"isrc"`
-	Preview string `json:"preview"`
-	Artist  struct {
+	ID       int64  `json:"id"`
+	Title    string `json:"title"`
+	Version  string `json:"title_version"`
+	ISRC     string `json:"isrc"`
+	Duration int64  `json:"duration"` // Complete recording seconds, never preview coverage.
+	Preview  string `json:"preview"`
+	Artist   struct {
 		Name string `json:"name"`
 	} `json:"artist"`
 }
@@ -32,10 +33,18 @@ func (p *Provider) ResolveAudioPreview(ctx context.Context, ref core.TrackRef, c
 	if ref.Artist == "" || ref.Title == "" {
 		return out, nil
 	}
+	if cached.IdentityStatus == core.ResolutionAmbiguous {
+		out.Identity.Status = core.ResolutionAmbiguous
+		return out, nil
+	}
 	var candidates []analysisTrack
 	wantISRC := ""
+	wantDuration := int64(0)
 	if cached.Matched && cached.IdentityStatus == core.ResolutionResolved && core.ProvisionalRecordingKey(cached.Ref) == core.ProvisionalRecordingKey(ref) {
 		wantISRC = normalizeISRC(cached.ISRC)
+		if duration := cached.FullRecordingDuration; duration.Valid() && previewDurationBelongsTo(cached, duration.RecordingID) {
+			wantDuration = duration.Milliseconds
+		}
 	}
 	if wantISRC != "" {
 		var candidate analysisTrack
@@ -83,6 +92,9 @@ func (p *Provider) ResolveAudioPreview(ctx context.Context, ref core.TrackRef, c
 		if wantISRC != "" && normalizeISRC(candidate.ISRC) != wantISRC {
 			continue
 		}
+		if previewDurationConflict(wantDuration, candidate.Duration) {
+			continue
+		}
 		matches = append(matches, candidate)
 	}
 	if len(matches) > 1 {
@@ -93,13 +105,44 @@ func (p *Provider) ResolveAudioPreview(ctx context.Context, ref core.TrackRef, c
 		return out, nil
 	}
 	m := matches[0]
-	out.Identity = core.PreviewIdentity{Status: core.ResolutionResolved, Provider: "deezer", ProviderID: strconv.FormatInt(m.ID, 10), ISRC: normalizeISRC(m.ISRC), Artist: m.Artist.Name, Title: m.Title, Method: "corroborated_artist_title_version"}
+	out.Identity = core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Status: core.ResolutionResolved, Provider: "deezer", ProviderID: strconv.FormatInt(m.ID, 10), ISRC: normalizeISRC(m.ISRC), Artist: m.Artist.Name, Title: m.Title, Method: "corroborated_artist_title_version"}
+	if m.Duration > 0 && m.Duration <= 24*60*60 {
+		out.Identity.FullRecordingMilliseconds = m.Duration * 1000
+	}
 	if wantISRC != "" {
 		out.Identity.Method = "isrc_and_artist_title_version"
 		out.Identity.RecordingID = cached.RecordingID
 	}
 	out.URL = m.Preview
 	return out, nil
+}
+
+func previewDurationBelongsTo(track core.EnrichedTrack, recordingID string) bool {
+	// Full-duration evidence may use the catalog recording key or its bare
+	// canonical UUID. Never borrow the duration of a different cached recording.
+	id := strings.ToLower(strings.TrimSpace(recordingID))
+	for _, value := range []string{track.RecordingID, track.Ref.RecordingIdentity, track.Ref.ID} {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value != "" && (id == value || strings.TrimPrefix(id, "musicbrainz:") == strings.TrimPrefix(value, "musicbrainz:")) {
+			return true
+		}
+	}
+	return false
+}
+
+func previewDurationConflict(recordingMilliseconds, providerSeconds int64) bool {
+	// Missing/invalid duration is unknown, not an affirmative match. This guard
+	// only rejects a contradiction; it never establishes identity on its own.
+	if recordingMilliseconds <= 0 || providerSeconds <= 0 || providerSeconds > 24*60*60 {
+		return false
+	}
+	delta := recordingMilliseconds - providerSeconds*1000
+	if delta < 0 {
+		delta = -delta
+	}
+	// Match the bounded recording-duration tolerance used by the publisher
+	// recording adapter, allowing rounded seconds without accepting edits.
+	return delta > max(int64(2000), min(int64(5000), recordingMilliseconds/50))
 }
 
 func normalizeISRC(value string) string {

@@ -114,12 +114,13 @@ type DiscoveryProfile struct {
 }
 
 type TrackAssessment struct {
-	FitTier     string             `json:"fitTier,omitempty"`
-	MatchDetail string             `json:"matchDetail,omitempty"`
-	Comparisons []IntentComparison `json:"comparisons,omitempty"`
-	TrackID     string             `json:"trackId"`
-	State       EvidenceState      `json:"state"`
-	Reasons     []string           `json:"reasons"`
+	Criteria    []CriterionAssessment `json:"criteria,omitempty"`
+	FitTier     string                `json:"fitTier,omitempty"`
+	MatchDetail string                `json:"matchDetail,omitempty"`
+	Comparisons []IntentComparison    `json:"comparisons,omitempty"`
+	TrackID     string                `json:"trackId"`
+	State       EvidenceState         `json:"state"`
+	Reasons     []string              `json:"reasons"`
 }
 
 // Artist tags guide retrieval; they do not classify every recording.

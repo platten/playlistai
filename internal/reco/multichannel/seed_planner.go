@@ -2,8 +2,9 @@ package multichannel
 
 import (
 	"context"
+	"crypto/sha256"
 	"sort"
-	"time"
+	"strconv"
 
 	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/ports"
@@ -15,8 +16,8 @@ const seedCandidateLimit = 128
 // planGroundedSeeds searches recordings before asking a model for artist
 // suggestions. It does not choose a required opening or change explicit intent.
 func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicIntent, request ports.RecommendationRequest, seed int64) (core.MusicIntent, []core.Candidate, error) {
-	if !o.enhanced || o.retriever == nil || len(intent.EssentialCriteria) == 0 || hasExplicitRetrievalReference(o.cat, intent) || len(intent.RequiredTracks) > 0 || intent.Mode == core.ModeJourney {
-		return intent, nil, nil
+	if !o.enhanced || o.retriever == nil || len(intent.EssentialCriteria) == 0 || hasExplicitRetrievalReferenceContext(ctx, o.cat, intent) || len(intent.RequiredTracks) > 0 || intent.Mode == core.ModeJourney {
+		return intent, nil, ctx.Err()
 	}
 	if err := ctx.Err(); err != nil {
 		return intent, nil, err
@@ -25,7 +26,7 @@ func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicI
 		var replay []core.Candidate
 		for _, anchor := range intent.InferredAnchors {
 			if anchor.Reason == groundedSeedReason {
-				if meta, ok := o.cat.Meta(anchor.Reference.TrackID); ok {
+				if meta, ok := ports.CatalogMeta(ctx, o.cat, anchor.Reference.TrackID); ok {
 					replay = append(replay, core.Candidate{Track: meta.Ref})
 				}
 			}
@@ -38,7 +39,8 @@ func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicI
 	}
 	query := intent
 	query.InferredAnchors = nil
-	searchCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	query.Seed = core.RNGSeed(strconv.FormatInt(seed, 10))
+	searchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
 		select {
@@ -52,23 +54,19 @@ func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicI
 		if ctx.Err() != nil {
 			return intent, nil, ctx.Err()
 		}
-		return intent, nil, nil
+		if len(candidates) == 0 {
+			return intent, nil, nil
+		}
 	}
 	pool := append([]core.Candidate{}, candidates...)
-	// Metadata channels and semantic channels contribute to the same bounded
-	// pool. Source namespace is never a preference or an eligibility condition.
-	sort.SliceStable(candidates, func(i, j int) bool {
-		if candidates[i].Scores.RetrievalFusion != candidates[j].Scores.RetrievalFusion {
-			return candidates[i].Scores.RetrievalFusion > candidates[j].Scores.RetrievalFusion
-		}
-		return core.NormalizeIdentityPart(candidates[i].Track.Display()) < core.NormalizeIdentityPart(candidates[j].Track.Display())
-	})
-	if len(candidates) > seedCandidateLimit {
-		candidates = candidates[:seedCandidateLimit]
-	}
+	o.groundedSeedPool = pool // deferred validation remains in ordinary comparison rounds
+	// Rank all completed evidence before applying the seed comparison bound.
 	ranked, err := o.rankGroundedSeeds(ctx, candidates, query, request.RecentSelections)
 	if err != nil {
 		return intent, nil, err
+	}
+	if len(ranked) > seedCandidateLimit {
+		ranked = ranked[:seedCandidateLimit]
 	}
 	if err := o.preferViableSeedNeighborhoods(ctx, ranked); err != nil {
 		return intent, nil, err
@@ -99,7 +97,7 @@ func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicI
 		track := candidate.Track
 		intent.InferredAnchors = append(intent.InferredAnchors, core.InferredAnchor{
 			Reference: core.IntentReference{Kind: core.ReferenceTrack, Query: track.Display(), TrackID: track.ID, Influence: core.InfluencePositive, Resolution: &core.ReferenceResolution{Status: core.ResolutionResolved, CatalogVersion: version, Selected: &core.ResolutionCandidate{Kind: core.ReferenceTrack, EntityID: track.ID, Artist: track.Artist, Title: track.Title, Confidence: 1, Representatives: []core.WeightedTrack{{TrackID: track.ID, Weight: 1}}}}},
-			Role:      "retrieval", Reason: groundedSeedReason, Suitability: core.AnchorSuitability{State: candidate.MusicalFit, Score: candidate.Scores.Total, Detail: "Selected using available recording evidence and request relevance. Unknown attributes and uncalibrated audio similarities remain unverified."},
+			Role:      "retrieval", Reason: groundedSeedReason, Suitability: core.AnchorSuitability{State: candidate.MusicalFit, Score: candidate.Scores.RequestFit, Detail: "Selected using available recording evidence and request relevance. Unknown attributes and uncalibrated audio similarities remain unverified."},
 		})
 	}
 	intent.AnchorAttempts = append([]core.InferredAnchor(nil), intent.InferredAnchors...)
@@ -107,14 +105,42 @@ func (o *Orchestrator) planGroundedSeeds(ctx context.Context, intent core.MusicI
 }
 
 func (o *Orchestrator) rankGroundedSeeds(ctx context.Context, candidates []core.Candidate, intent core.MusicIntent, recent []core.TrackRef) ([]core.Candidate, error) {
+	// Compare already available observations before admitting a bounded seed
+	// validation page. Remaining rows are retained for ordinary search rounds.
+	if len(candidates) > enhancedChannelBatch {
+		available, err := o.rankCandidates(ctx, candidates, ports.RankRequest{Intent: intent, EnhancedAudio: o.enhancedSnapshot})
+		if err != nil {
+			return nil, err
+		}
+		available = o.prioritizeGroundedRequestSupply(ctx, available, intent)
+		candidates, _ = nextCandidateRound(roundRobinCandidateSources(available))
+	}
 	valid := make([]core.Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
+		// Planning cannot consume the last source-comparison page. This is
+		// acquisition scheduling only: final selection has no source quota.
+		if o.search != nil && o.search.Considered >= enhancedCandidateLimit-enhancedChannelBatch && !o.hasCandidateAssessment(candidate.Track.ID) {
+			continue
+		}
+		if !o.admitCandidateAssessment(candidate) {
+			continue
+		}
+		// Preserve half the optional verification slots for later sources;
+		// seed planning must not consume the whole request's evidence budget.
+		if len(o.verificationAttempted) < recordingVerificationLimit/2 {
+			if err := o.verifyRecording(ctx, candidate.Track, intent); err != nil {
+				return nil, err
+			}
+		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if _, exists := o.cat.Meta(candidate.Track.ID); exists && o.metadataEligible(candidate.Track, intent) && o.seedPeriodKnown(candidate.Track, intent) {
+		if _, exists := ports.CatalogMeta(ctx, o.cat, candidate.Track.ID); exists && o.metadataEligibleContext(ctx, candidate.Track, intent) && o.seedPeriodKnownContext(ctx, candidate.Track, intent) {
 			valid = append(valid, candidate)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	eligible := newEligibility(intent, nil, nil)
 	eligible.excludeRecent(recent)
@@ -140,11 +166,13 @@ func (o *Orchestrator) rankGroundedSeeds(ctx context.Context, candidates []core.
 		contradiction := false
 		for _, criterion := range intent.EssentialCriteria {
 			key := criterion.Group
-			if key == "" {
+			if o.enhanced && criterion.CoverageGroup != "" {
+				key = "\x00coverage:" + criterion.CoverageGroup
+			} else if key == "" {
 				key = criterion.Kind + ":" + criterion.Value + ":" + criterion.Scope
 			}
 			state := strict.bestCriterion(ctx, candidate.Track.ID, criterion)
-			contradiction = contradiction || state == core.EvidenceMismatch && criterion.Group == ""
+			contradiction = contradiction || state == core.EvidenceMismatch && criterion.Group == "" && (!o.enhanced || criterion.CoverageGroup == "")
 			groups[key] = groups[key] || state == core.EvidenceMatch
 		}
 		if err := ctx.Err(); err != nil {
@@ -176,6 +204,9 @@ func (o *Orchestrator) rankGroundedSeeds(ctx context.Context, candidates []core.
 		}
 	}
 	valid = grounded
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if len(valid) == 0 {
 		return nil, nil
 	}
@@ -183,25 +214,42 @@ func (o *Orchestrator) rankGroundedSeeds(ctx context.Context, candidates []core.
 	if err != nil {
 		return nil, err
 	}
+	// Equal request-fit recordings deserve a seed opportunity independently of
+	// their artist's spelling. Apply this before the twelve-recording
+	// neighborhood bound; canonical identities keep source order irrelevant.
+	seed, err := intent.Seed.Canonical()
+	if err != nil {
+		return nil, err
+	}
+	ties := make(map[string]string, len(valid))
+	for _, candidate := range valid {
+		sum := sha256.Sum256([]byte(string(seed) + "\x00" + core.ProvisionalRecordingKey(candidate.Track)))
+		ties[candidate.Track.ID] = string(sum[:])
+	}
 	sort.SliceStable(valid, func(i, j int) bool {
-		if valid[i].Scores.Total != valid[j].Scores.Total {
-			return valid[i].Scores.Total > valid[j].Scores.Total
+		if valid[i].Scores.RequestFit != valid[j].Scores.RequestFit {
+			return valid[i].Scores.RequestFit > valid[j].Scores.RequestFit
 		}
-		left, right := core.NormalizeIdentityPart(valid[i].Track.Display()), core.NormalizeIdentityPart(valid[j].Track.Display())
+		left, right := ties[valid[i].Track.ID], ties[valid[j].Track.ID]
 		if left != right {
 			return left < right
 		}
 		return valid[i].Track.ID < valid[j].Track.ID
 	})
+	if o.search != nil {
+		for _, candidate := range valid {
+			o.rememberCandidateAssessment(candidate)
+		}
+	}
 	return valid, nil
 }
 
-func (o *Orchestrator) seedPeriodKnown(track core.TrackRef, intent core.MusicIntent) bool {
+func (o *Orchestrator) seedPeriodKnownContext(ctx context.Context, track core.TrackRef, intent core.MusicIntent) bool {
 	for _, period := range intent.Temporal {
 		if period.Scope != "" && period.Scope != "playlist" {
 			continue
 		}
-		metadata, ok := o.knowledgeTrack(track.ID)
+		metadata, ok := o.knowledgeTrackContext(ctx, track.ID)
 		if !ok {
 			return false
 		}
@@ -264,43 +312,28 @@ func (o *Orchestrator) refineArtistRepresentatives(ctx context.Context, intent c
 		if (scope == "journey_start" || scope == "journey_end") && len(scoped.EssentialCriteria) == 0 && len(tracks) > 16 {
 			return remember(ref, nil)
 		}
-		// Composite catalogs sort stable IDs, which can put hundreds of base
-		// recordings before the installed pack. Collect affirmative recording
-		// matches before applying the bound; stop after a small useful set rather
-		// than probing every recording for optional preview/embedding evidence.
-		if len(scoped.EssentialCriteria) > 0 {
-			grounded := make([]core.TrackRef, 0, 12)
-			for _, track := range tracks {
-				matched := true
-				for _, criterion := range scoped.EssentialCriteria {
-					matched = matched && o.bestCriterion(ctx, track.ID, criterion) == core.EvidenceMatch
-				}
-				if matched {
-					grounded = append(grounded, track)
-					if len(grounded) == 12 {
-						break
-					}
-				}
-			}
-			if len(grounded) > 0 {
-				tracks = grounded
-			}
+		// Discography row order is not musical evidence. Evaluate every available
+		// recording against this request/stage before bounding seed comparison.
+		candidates := candidatesForTracks(tracks)
+		for i := range candidates {
+			candidates[i].Sources = []core.RetrievalEvidence{{Channel: "artist_representatives", QueryID: key, Rank: i + 1, QueryWeight: 1}}
 		}
-		if len(tracks) > seedCandidateLimit {
-			tracks = tracks[:seedCandidateLimit]
-		}
-		ranked, err := o.rankGroundedSeeds(ctx, candidatesForTracks(tracks), scoped, nil)
+		o.groundedSeedPool = append(o.groundedSeedPool, candidates...)
+		ranked, err := o.rankGroundedSeeds(ctx, candidates, scoped, nil)
 		if err != nil {
 			return remember(ref, err)
 		}
 		if len(ranked) == 0 {
 			return remember(ref, nil)
 		}
+		if len(ranked) > seedCandidateLimit {
+			ranked = ranked[:seedCandidateLimit]
+		}
 		if len(scoped.EssentialCriteria) == 0 {
 			// No requested substyle: use same-artist neighborhood cohesion as
 			// the representative heuristic, not resolver row order.
 			for i := range ranked {
-				ranked[i].Scores.Total = 0
+				ranked[i].Scores.RequestFit = 0
 			}
 		}
 		if err := o.preferViableSeedNeighborhoods(ctx, ranked); err != nil {
@@ -461,8 +494,8 @@ func (o *Orchestrator) preferViableSeedNeighborhoods(ctx context.Context, ranked
 		}
 	}
 	sort.SliceStable(ranked[:min(12, len(ranked))], func(i, j int) bool {
-		if ranked[i].Scores.Total != ranked[j].Scores.Total {
-			return ranked[i].Scores.Total > ranked[j].Scores.Total
+		if ranked[i].Scores.RequestFit != ranked[j].Scores.RequestFit {
+			return ranked[i].Scores.RequestFit > ranked[j].Scores.RequestFit
 		}
 		return support[ranked[i].Track.ID] > support[ranked[j].Track.ID]
 	})

@@ -45,8 +45,8 @@ func TestRebuildPinsProfileButChangedControlsUseCurrentTaste(t *testing.T) {
 	if err := c.Profiles.ClearProfiles(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := api.BuildPlaylist(ctx, generated.Request); err == nil {
-		t.Fatal("missing saved snapshot silently used current taste")
+	if frozen, err := api.BuildPlaylist(ctx, generated.Request); err != nil || frozen.Reproducibility.ID != generated.Playlist.Reproducibility.ID {
+		t.Fatalf("self-contained search snapshot failed after taste-store eviction: %v", err)
 	}
 }
 

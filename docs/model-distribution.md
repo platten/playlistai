@@ -18,11 +18,15 @@ independent archives. No quantization, pruning, or precision reduction is applie
 | `mert-linux-amd64` | 216,263,779 | Same model with Linux x64 ONNX Runtime |
 | `mert-linux-arm64` | 215,501,193 | Same model with Linux ARM64 ONNX Runtime |
 | `mert-darwin-arm64` | 217,330,896 | Same model with macOS Apple Silicon ONNX Runtime |
+| `mert-linux-amd64-gpu` | 1,828,938,273 | MERT ONNX with Linux x64 CUDA 12/cuDNN 9 runtime |
+| `mert-windows-amd64-gpu` | 1,642,630,436 | MERT ONNX with Windows x64 CUDA runtime and app-local CRT DLLs |
 
-These measured bundles each contain two parts. `models/inventory.json` records
+The five CPU bundles each contain two parts; the Linux and Windows CUDA bundles
+contain ten and nine parts respectively. `models/inventory.json` records
 every part's size/checksum and the uncompressed totals; `models/SHA256SUMS`
-records the manifest checksums. All six bundles were decompressed and every
-file compared against its recorded source hash after packaging.
+records the manifest checksums. The prepared CPU bundles were decompressed and
+every file compared against its recorded source hash after packaging. The two
+CUDA bundles passed the same local archive verification.
 
 MERT bundles preserve their existing `mert-bundle.json`, parity/health metadata
 and license notices. MERT is **CC-BY-NC-4.0**, including its noncommercial
@@ -92,14 +96,20 @@ Host: `https://pub-233adf724b7e476db67cf787cd301c9e.r2.dev/`
 | CLAP Linux ARM64 | `clap-linux-arm64/manifest.json` |
 | CLAP macOS Apple Silicon | `clap-darwin-arm64/manifest.json` |
 | MERT Windows x86-64 | `mert-windows-amd64/manifest.json` |
+| MERT Windows x86-64 CUDA | `mert-windows-amd64-gpu/manifest.json` |
 | MERT Windows ARM64 | `mert-windows-arm64/manifest.json` |
 | MERT Linux x86-64 | `mert-linux-amd64/manifest.json` |
+| MERT Linux x86-64 CUDA | `mert-linux-amd64-gpu/manifest.json` |
 | MERT Linux ARM64 | `mert-linux-arm64/manifest.json` |
 | MERT macOS Apple Silicon | `mert-darwin-arm64/manifest.json` |
 
 The hosted manifests and segments are downloaded through the native Go transport,
 decompressed, and verified. Native Windows checks passed for the downloaded MERT
 pack. These checks do not claim native execution on other hosts.
+The hosted CUDA MERT manifests match the verified local archives byte for byte;
+all nineteen segment URLs advertise the expected sizes. Linux CUDA passed native
+inference, cancellation, and restart checks. Windows CUDA archive and DLL
+architecture checks passed, but native Windows CUDA execution remains untested.
 
 The CLAP packs contain the same original LAION HTSAT-base music checkpoint
 converted to paired FP32 ONNX graphs and the ONNX Runtime library for the target

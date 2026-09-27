@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,21 +20,24 @@ import (
 )
 
 type analysisState struct {
-	mu       sync.Mutex
-	opMu     sync.Mutex
-	startup  audioStartup
-	store    *audio.Store
-	bundles  *audio.BundleManager
-	worker   *audio.Worker
-	pool     *audio.WorkerPool
-	service  *audio.Service
-	manifest *audio.BundleManifest
-	enabled  bool
-	detail   string
+	mu          sync.Mutex
+	opMu        sync.Mutex
+	startup     audioStartup
+	store       *audio.Store
+	bundles     *audio.BundleManager
+	alternate   *audio.BundleManager
+	worker      *audio.Worker
+	pool        *audio.WorkerPool
+	service     *audio.Service
+	manifest    *audio.BundleManifest
+	healthCheck func(context.Context, *audio.Worker) error // test seam
+	enabled     bool
+	detail      string
 }
 
 type AnalysisStatus struct {
 	Loading              bool                      `json:"loading"`
+	InstalledBackends    []string                  `json:"installedBackends"`
 	RecommendedAvailable bool                      `json:"recommendedAvailable"`
 	RecommendedInstalled bool                      `json:"recommendedInstalled"`
 	RecommendedDetail    string                    `json:"recommendedDetail"`
@@ -50,9 +54,27 @@ type AnalysisStatus struct {
 	Storage              core.AnalysisStorageUsage `json:"storage"`
 }
 
+// AnalysisBundleOffer describes the recommended download without presenting
+// partial artifact metadata as an installable bundle manifest.
+type AnalysisBundleOffer struct {
+	Label         string `json:"label"`
+	Backend       string `json:"backend"`
+	License       string `json:"license"`
+	MemoryBytes   int64  `json:"memoryBytes"`
+	DownloadBytes int64  `json:"downloadBytes"`
+}
+
+type analysisRecommendation struct {
+	offer        AnalysisBundleOffer
+	expected     audio.BundleManifest
+	source       string
+	distribution *modelpack.Distribution
+}
+
 func (c *Container) wireAnalysis(ctx context.Context) {
 	s := &c.analysis
 	s.bundles = &audio.BundleManager{Directory: filepath.Join(c.cfg.DataDir, "music-analysis")}
+	s.alternate = &audio.BundleManager{Directory: filepath.Join(c.cfg.DataDir, "music-analysis-alternate")}
 	s.enabled = config.LoadPrefs(c.cfg.DataDir).AnalysisEnabled
 	s.detail = "Download the recommended CLAP model or choose a compatible custom bundle."
 	store, err := audio.OpenStore(c.cfg.DataDir)
@@ -73,7 +95,7 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 		}
 		return nil
 	})
-	if _, err := os.Stat(filepath.Join(s.bundles.Directory, "active.json")); err == nil {
+	if s.hasInstalledBundle() {
 		s.startup.start(c, ctx, func(ctx context.Context) {
 			s.opMu.Lock()
 			defer s.opMu.Unlock()
@@ -88,22 +110,46 @@ func (c *Container) wireAnalysis(ctx context.Context) {
 
 func (c *Container) loadAnalysis(ctx context.Context) error {
 	s := &c.analysis
-	dir, manifest, err := s.bundles.ActiveContext(ctx)
-	if err != nil {
-		return err
-	}
-	worker := &audio.Worker{Executable: manifest.File(dir, "worker"), BundleDir: dir, Model: manifest.Model}
-	healthCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	if err := worker.Health(healthCtx); err != nil {
+	started := time.Now()
+	var dir string
+	var manifest audio.BundleManifest
+	var worker *audio.Worker
+	var err error
+	candidates := s.installedBundles(ctx, audio.MERTCUDAHostAvailable())
+	verifiedLayout := time.Since(started)
+	for _, candidate := range candidates {
+		dir, manifest = candidate.dir, candidate.manifest
+		worker = &audio.Worker{Executable: manifest.File(dir, "worker"), BundleDir: dir, Model: manifest.Model}
+		healthTimeout := 60 * time.Second
+		if manifest.Backend() == "cuda" {
+			healthTimeout = 2 * time.Minute
+		}
+		healthCtx, cancel := context.WithTimeout(ctx, healthTimeout)
+		if s.healthCheck != nil {
+			err = s.healthCheck(healthCtx, worker)
+		} else {
+			err = worker.Health(healthCtx)
+		}
+		cancel()
+		if err == nil {
+			break
+		}
 		_ = worker.Close()
+		worker = nil
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		c.log.Info("CLAP startup check failed", "backend", manifest.Backend(), "health", time.Since(started))
+	}
+	if worker == nil {
+		if err == nil {
+			err = fmt.Errorf("no installed CLAP bundle is available")
+		}
 		return err
 	}
+	healthDuration := time.Since(started) - verifiedLayout
 	pool := audio.NewWorkerPool(worker, audio.AnalysisParallelism())
-	var recordings ports.CachedRecordingReader
-	if r, ok := c.Enrich.(ports.CachedRecordingReader); ok {
-		recordings = r
-	}
+	recordings := c.previewRecordings()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -130,6 +176,7 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 		pool.Unload()
 		s.detail = "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit."
 	}
+	c.log.Info("CLAP startup check complete", "layout", verifiedLayout, "health", healthDuration)
 	return nil
 }
 
@@ -162,15 +209,17 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 	s := &c.analysis
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	status := AnalysisStatus{Installed: s.manifest != nil, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP · CPU", Detail: s.detail}
+	status := AnalysisStatus{Installed: s.manifest != nil, InstalledBackends: []string{}, Enabled: s.enabled, Available: s.service.InferenceReady(), GeneralFitAvailable: s.service.Ready(), Model: "Music CLAP", Detail: s.detail}
+	for _, candidate := range s.installedBundles(ctx, true) {
+		status.InstalledBackends = append(status.InstalledBackends, candidate.manifest.Backend())
+	}
 	status.Loading = s.startup.loading()
-	recommended, recommendedErr := audio.RecommendedBundle()
-	distribution, distributionErr := modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
-	status.RecommendedAvailable = recommendedErr == nil && distributionErr == nil
-	status.RecommendedInstalled = recommendedErr == nil && s.manifest != nil && s.manifest.Model == recommended.Model
-	if distributionErr == nil {
-		status.RecommendedManifest = distribution.URL
-		status.RecommendedBytes = distribution.DownloadBytes
+	recommended, recommendedErr := c.recommendedCLAP()
+	status.RecommendedAvailable = recommendedErr == nil
+	status.RecommendedInstalled = recommendedErr == nil && s.manifest != nil && s.manifest.Model == recommended.expected.Model
+	if recommendedErr == nil {
+		status.RecommendedManifest = recommended.source
+		status.RecommendedBytes = recommended.offer.DownloadBytes
 	}
 	if !status.RecommendedAvailable {
 		status.RecommendedDetail = "No recommended music analysis bundle is available for this platform. Choose a compatible custom bundle, or continue without analysis."
@@ -192,6 +241,43 @@ func (c *Container) GetAnalysisStatus(ctx context.Context) (AnalysisStatus, erro
 		return status, err
 	}
 	return status, nil
+}
+
+func (c *Container) recommendedCLAP() (analysisRecommendation, error) {
+	return c.recommendedCLAPFor(audio.MERTCUDAHostAvailable())
+}
+
+func (c *Container) recommendedCLAPFor(cudaAvailable bool) (analysisRecommendation, error) {
+	if cudaAvailable {
+		if dir, manifest, ok := preferredCUDACLAP(); ok {
+			return analysisRecommendation{offer: AnalysisBundleOffer{Label: manifest.Label, Backend: "cuda", License: manifest.License, MemoryBytes: manifest.MemoryBytes, DownloadBytes: manifest.DownloadBytes()}, expected: manifest, source: dir}, nil
+		}
+	}
+	cpu, err := audio.RecommendedBundle()
+	if err != nil {
+		return analysisRecommendation{}, err
+	}
+	if cudaAvailable {
+		if distribution, gpuErr := modelpack.RecommendedCLAPGPU(runtime.GOOS, runtime.GOARCH); gpuErr == nil {
+			expected := cpu
+			expected.ID = "custom-clap-cpu-v2-cuda-v1"
+			if runtime.GOOS == "windows" {
+				expected.ID = "custom-clap-cuda-v2"
+			}
+			expected.Model.Runtime = "onnxruntime/1.26.0/cuda"
+			return analysisRecommendation{offer: AnalysisBundleOffer{Label: "LAION original HTSAT-base music checkpoint · CUDA", Backend: "cuda", License: "CC0-1.0 checkpoint; MIT ONNX Runtime; GPL-3.0 application worker; NVIDIA CUDA Toolkit and cuDNN licenses", MemoryBytes: 2500000000, DownloadBytes: distribution.DownloadBytes}, expected: expected, source: distribution.URL, distribution: &distribution}, nil
+		}
+	}
+	distribution, err := modelpack.RecommendedCLAP(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return analysisRecommendation{}, err
+	}
+	return analysisRecommendation{offer: AnalysisBundleOffer{Label: cpu.Label, Backend: "cpu", License: cpu.License, MemoryBytes: cpu.MemoryBytes, DownloadBytes: distribution.DownloadBytes}, expected: cpu, source: distribution.URL, distribution: &distribution}, nil
+}
+
+func (c *Container) GetRecommendedAnalysisBundle() (AnalysisBundleOffer, error) {
+	recommended, err := c.recommendedCLAP()
+	return recommended.offer, err
 }
 
 // InspectAnalysisBundle reads an operator-supplied bundle manifest. Public
@@ -233,6 +319,26 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 	if c.analysis.store == nil {
 		return fmt.Errorf("analysis storage unavailable")
 	}
+	recommended, err := c.recommendedCLAP()
+	if err != nil {
+		return err
+	}
+	return c.installAnalysisSource(ctx, p, recommended)
+}
+
+// InstallCPUAnalysisBundle keeps a portable fallback beside the CUDA bundle.
+func (c *Container) InstallCPUAnalysisBundle(ctx context.Context, p ports.Progress) error {
+	ctx, release := c.OperationContext(ctx)
+	defer release()
+	c.analysis.startup.stop()
+	c.analysis.opMu.Lock()
+	defer c.analysis.opMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.analysis.store == nil {
+		return fmt.Errorf("analysis storage unavailable")
+	}
 	recommended, err := audio.RecommendedBundle()
 	if err != nil {
 		return err
@@ -241,7 +347,24 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 	if err != nil {
 		return err
 	}
-	directory, cleanup, err := c.prepareRecommendedModelPack(ctx, distribution, "analysis-model", p)
+	return c.installAnalysisSource(ctx, p, analysisRecommendation{expected: recommended, source: distribution.URL, distribution: &distribution})
+}
+
+func (c *Container) installAnalysisSource(ctx context.Context, p ports.Progress, recommended analysisRecommendation) error {
+	var directory string
+	var cleanup func()
+	var err error
+	if recommended.source == "" {
+		return fmt.Errorf("recommended CLAP source is unavailable")
+	}
+	if filepath.IsAbs(recommended.source) {
+		directory, cleanup, err = c.prepareModelPack(ctx, recommended.source, "analysis-model", p)
+	} else {
+		if recommended.distribution == nil {
+			return fmt.Errorf("recommended CLAP distribution is unavailable")
+		}
+		directory, cleanup, err = c.prepareRecommendedModelPack(ctx, *recommended.distribution, "analysis-model", p)
+	}
 	if err != nil {
 		return err
 	}
@@ -250,7 +373,7 @@ func (c *Container) InstallRecommendedAnalysisBundle(ctx context.Context, p port
 	if err != nil {
 		return err
 	}
-	if manifest.ID != recommended.ID || manifest.Model != recommended.Model || manifest.EmbeddingFingerprint() != recommended.EmbeddingFingerprint() {
+	if manifest.ID != recommended.expected.ID || manifest.Model != recommended.expected.Model || manifest.EmbeddingFingerprint() != recommended.expected.EmbeddingFingerprint() {
 		return fmt.Errorf("downloaded analysis model does not match the recommended CLAP identity")
 	}
 	return c.installAnalysisDirectoryPrepared(ctx, directory, p)
@@ -268,7 +391,11 @@ func (c *Container) installAnalysisManifest(ctx context.Context, manifest audio.
 	if c.analysis.store == nil {
 		return fmt.Errorf("analysis storage unavailable")
 	}
-	if _, err := c.analysis.bundles.Install(ctx, manifest, p); err != nil {
+	manager, err := c.analysis.managerFor(ctx, manifest.Backend())
+	if err != nil {
+		return err
+	}
+	if _, err := manager.Install(ctx, manifest, p); err != nil {
 		return err
 	}
 	return c.loadAnalysis(ctx)
@@ -281,7 +408,15 @@ func (c *Container) installAnalysisDirectoryPrepared(ctx context.Context, direct
 	if c.analysis.store == nil {
 		return fmt.Errorf("analysis storage unavailable")
 	}
-	if _, err := c.analysis.bundles.InstallDirectory(ctx, directory, p); err != nil {
+	manifest, err := audio.ReadBundleContext(ctx, directory)
+	if err != nil {
+		return err
+	}
+	manager, err := c.analysis.managerFor(ctx, manifest.Backend())
+	if err != nil {
+		return err
+	}
+	if _, err := manager.InstallDirectory(ctx, directory, p); err != nil {
 		return err
 	}
 	return c.loadAnalysis(ctx)
@@ -340,5 +475,8 @@ func (c *Container) RemoveAnalysisModel() error {
 	c.analysis.service = nil
 	c.analysis.manifest = nil
 	c.analysis.detail = "Music analysis model removed. Derived features are retained until explicitly cleared."
-	return c.analysis.bundles.Remove()
+	if c.analysis.alternate == nil {
+		return c.analysis.bundles.Remove()
+	}
+	return errors.Join(c.analysis.bundles.Remove(), c.analysis.alternate.Remove())
 }

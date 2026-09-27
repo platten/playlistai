@@ -1,4 +1,4 @@
-import type { PlaylistResult } from "./api";
+import type { PlaylistResult, ResolutionSelection } from "./api";
 import type { PlaylistFeedback } from "./playlistFeedback";
 
 export interface PlaylistControls {
@@ -14,6 +14,7 @@ export interface PlaylistControls {
 }
 
 export interface PlaylistDraft {
+  artistSelections?: ResolutionSelection[];
   feedback?: PlaylistFeedback;
   controls: PlaylistControls;
   accepted?: { controls: PlaylistControls; result: PlaylistResult };

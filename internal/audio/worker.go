@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,7 +74,7 @@ func ReadFrame(r io.Reader, value any, limit uint32) error {
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(value)
 }
 
-// Worker serializes CPU inference and isolates decoder/runtime native failures
+// Worker serializes inference and isolates decoder/runtime native failures
 // in a managed child. Cancellation kills and reaps it before releasing buffers.
 type Worker struct {
 	Executable string
@@ -88,6 +89,15 @@ type Worker struct {
 }
 
 func (w *Worker) Identity() core.AudioModelIdentity { return w.Model }
+func (w *Worker) EffectiveDevice() string {
+	if w.Device != "" {
+		return w.Device
+	}
+	if strings.HasSuffix(w.Model.Runtime, "/cuda") {
+		return "cuda:0"
+	}
+	return "cpu"
+}
 func (w *Worker) EmbedAudio(ctx context.Context, pcm []float32) ([]float32, error) {
 	return w.call(ctx, WorkerRequest{Protocol: WorkerProtocol, Audio: pcm})
 }
@@ -137,14 +147,11 @@ func (w *Worker) call(ctx context.Context, request WorkerRequest) ([]float32, er
 		}
 		cmd := exec.Command(executable, flag, w.BundleDir) //nolint:gosec // verified managed bundle or app's own isolated worker
 		process.Background(cmd)
+		cmd.Env = os.Environ()
 		if w.BundleDir != "" {
 			cmd.Env = prependMERTLibraryPath(cmd.Env, w.BundleDir)
 		}
-		device := w.Device
-		if device == "" {
-			device = "cpu"
-		}
-		cmd.Env = append(cmd.Env, "PLAYLISTAI_CLAP_DEVICE="+device)
+		cmd.Env = append(cmd.Env, "PLAYLISTAI_CLAP_DEVICE="+w.EffectiveDevice())
 		cmd.Stderr = io.Discard
 		stdin, err := cmd.StdinPipe()
 		if err != nil {

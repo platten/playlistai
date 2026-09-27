@@ -35,7 +35,7 @@ func TestGenreArtistPoolPaginationSamplingAndCache(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"count": 120, "artists": artists})
 			return
 		}
-		id := strings.TrimPrefix(r.URL.Query().Get("query"), "arid:")
+		id := r.URL.Query().Get("artist")
 		n, _ := strconv.Atoi(id)
 		var recordings []map[string]any
 		for j := 0; j < 6; j++ {

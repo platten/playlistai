@@ -15,6 +15,7 @@ import (
 func seedPlannerFixture() (*Orchestrator, core.MusicIntent) {
 	cat, intent := localPriorityFixture()
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
+	o.requestContext = context.Background()
 	o.enhanced = true
 	o.bestAvailable = true
 	o.retriever = &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, "unknown", "pack:fixture:local:one", "provider:two"))}}
@@ -93,7 +94,7 @@ func TestGroundedSeedNeighborhoodBreaksOnlyRelevanceTies(t *testing.T) {
 		t.Fatal("isolated seed won equal relevance despite viable neighbors")
 	}
 	pool = candidatesForTracks(refs(cat, "isolated", "connected", "neighbor"))
-	pool[0].Scores.Total = 1
+	pool[0].Scores.RequestFit = 1
 	if err := o.preferViableSeedNeighborhoods(context.Background(), pool); err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +159,12 @@ func TestArtistRepresentativeRefinementRespectsJourneyStagesAndIdentity(t *testi
 	intent := core.MusicIntent{Mode: core.ModeJourney, Start: &start, Destination: &end, Journey: core.JourneyPlan{Waypoints: []core.IntentReference{start, end}}, EssentialCriteria: []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}, {Kind: "genre", Value: "industrial", Scope: "journey_end"}}}
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
 	o.enhanced = true
+	// The aggregate lookup above is a hint; scoped refinement requires
+	// independent recording evidence for the intended representatives.
+	o.knowledge = &core.KnowledgeSnapshot{Tracks: []core.EnrichedTrack{
+		citedGenreFixture(refs(cat, "a-right")[0], "ambient"),
+		citedGenreFixture(refs(cat, "b-right")[0], "industrial"),
+	}}
 	got, err := o.refineArtistRepresentatives(context.Background(), intent)
 	if err != nil {
 		t.Fatal(err)
@@ -206,8 +213,80 @@ func TestArtistRepresentativeRefinementPrioritizesGroundingBeforeBound(t *testin
 	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "genre", Value: "ambient", Scope: "journey_start"}}
 	o := New(cat, fakes.NewSimilarityEngine(base), cat, DefaultConfig())
 	o.enhanced, o.bestAvailable = true, true
+	o.knowledge = &core.KnowledgeSnapshot{Tracks: []core.EnrichedTrack{
+		citedGenreFixture(refs(cat, ids[len(ids)-1])[0], "ambient"),
+	}}
 	got, err := o.refineArtistRepresentatives(context.Background(), intent)
 	if err != nil || got.Start.TrackID != ids[len(ids)-1] {
 		t.Fatalf("grounded endpoint was hidden by seed bound: %+v %v", got.Start, err)
+	}
+}
+
+func TestGroundedSeedsRankCompletedEvidenceBeforeTruncating(t *testing.T) {
+	var rows []fakes.CatalogTrack
+	var ids []string
+	for i := range seedCandidateLimit + 32 {
+		id := fmt.Sprintf("candidate-%03d", i)
+		ids = append(ids, id)
+		rows = append(rows, fakes.CatalogTrack{ID: id, Display: fmt.Sprintf("Artist %03d - Recording", i)})
+	}
+	cat := metadataPriorityCatalog{fakes.NewCatalog(2, rows...)}
+	candidates := candidatesForTracks(refs(cat, ids...))
+	for i := range candidates {
+		candidates[i].Scores.SemanticMatch = .1
+		candidates[i].Available.SemanticMatch = true
+		candidates[i].Scores.RetrievalFusion = 1
+	}
+	candidates[len(candidates)-1].Scores.SemanticMatch = .9
+	candidates[len(candidates)-1].Scores.RetrievalFusion = 0
+	_, intent := localPriorityFixture()
+	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
+	o.requestContext = context.Background()
+	o.enhanced, o.bestAvailable = true, true
+	o.retriever = &poolRetriever{candidates: candidates}
+	_, seeds, err := o.planGroundedSeeds(context.Background(), intent, ports.RecommendationRequest{}, 42)
+	if err != nil || len(seeds) == 0 || seeds[0].Track.ID != ids[len(ids)-1] {
+		t.Fatalf("retrieval truncation hid stronger seed: %+v %v", seeds, err)
+	}
+}
+
+func TestGroundedSeedTiesUseGenerationSeedBeforeNeighborhoodBound(t *testing.T) {
+	var rows []fakes.CatalogTrack
+	var ids []string
+	for i := range 24 {
+		id := fmt.Sprintf("recording-%02d", i)
+		ids = append(ids, id)
+		rows = append(rows, fakes.CatalogTrack{ID: id, Display: fmt.Sprintf("%c Artist - Song", 'A'+i)})
+	}
+	cat := metadataPriorityCatalog{fakes.NewCatalog(2, rows...)}
+	_, intent := localPriorityFixture()
+	selectSeeds := func(seed int64) []core.TrackRef {
+		t.Helper()
+		o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
+		o.requestContext, o.enhanced, o.bestAvailable = context.Background(), true, true
+		o.retriever = &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, ids...))}}
+		_, seeds, err := o.planGroundedSeeds(context.Background(), intent, ports.RecommendationRequest{}, seed)
+		if err != nil || len(seeds) != 3 {
+			t.Fatalf("seed planning: %+v %v", seeds, err)
+		}
+		var out []core.TrackRef
+		for _, seed := range seeds {
+			out = append(out, seed.Track)
+		}
+		return out
+	}
+	first := selectSeeds(42)
+	if !reflect.DeepEqual(first, selectSeeds(42)) {
+		t.Fatal("same seed changed equal-evidence seed selection")
+	}
+	if reflect.DeepEqual(first, selectSeeds(43)) {
+		t.Fatal("alphabetical seed ties ignored the generation seed")
+	}
+	late := false
+	for _, ref := range append(first, selectSeeds(43)...) {
+		late = late || ref.Artist >= "M"
+	}
+	if !late {
+		t.Fatal("the first twelve alphabetical artists still monopolized seed opportunities")
 	}
 }

@@ -13,7 +13,7 @@ func TestDescriptiveRequestCannotLoseDefiningElectronicCategory(t *testing.T) {
 		Moods: []WirePreference{{Value: "relaxing", Span: "relaxing", Influence: "positive", Explicit: true}, {Value: "not sleepy", Span: "not sleepy", Influence: "negative", Explicit: true}}}
 	raw, _ := json.Marshal(w)
 	m, err := ParseForPrompt(raw, prompt)
-	if err != nil || len(m.Preferences.Genres) != 1 || m.Preferences.Genres[0].Value != "electronic" || len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "electronic" {
+	if err != nil || len(m.Preferences.Genres) != 1 || m.Preferences.Genres[0].Value != "electronic" || len(m.EssentialCriteria) != 5 || m.EssentialCriteria[1].Value != "electronic" {
 		t.Fatalf("defining category lost: %+v %v", m, err)
 	}
 	negative := m.Preferences.Moods[1]
@@ -23,7 +23,7 @@ func TestDescriptiveRequestCannotLoseDefiningElectronicCategory(t *testing.T) {
 	w.Styles = []WirePreference{{Value: "spacious electronic", Span: "spacious electronic", Influence: "positive", Explicit: true}}
 	raw, _ = json.Marshal(w)
 	m, err = ParseForPrompt(raw, prompt)
-	if err != nil || len(m.Preferences.Genres) != 1 || len(m.EssentialCriteria) != 1 || m.EssentialCriteria[0].Value != "electronic" {
+	if err != nil || len(m.Preferences.Genres) != 1 || len(m.EssentialCriteria) != 5 || m.EssentialCriteria[1].Value != "electronic" {
 		t.Fatalf("a soft style was mistaken for the essential genre: %+v %v", m, err)
 	}
 }
@@ -69,7 +69,7 @@ func TestScopedCategoryJourneyCannotRunAsSimilarMode(t *testing.T) {
 		}}
 	raw, _ := json.Marshal(w)
 	m, err := ParseForPrompt(raw, prompt)
-	if err != nil || m.Mode != core.ModeJourney || len(core.JourneyCriteria(m.EssentialCriteria)) != 3 {
+	if err != nil || m.Mode != core.ModeJourney || len(core.JourneyCriteria(m.EssentialCriteria)) != 4 {
 		t.Fatalf("stages flattened: %+v %v", m, err)
 	}
 }

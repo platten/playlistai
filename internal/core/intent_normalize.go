@@ -136,7 +136,7 @@ func cleanCriteria(in []MusicalCriterion) []MusicalCriterion {
 			continue
 		}
 		criterion.Evidence = append([]SourceEvidence(nil), criterion.Evidence...)
-		key := criterion.Scope + "\x00" + criterion.Kind + "\x00" + strings.ToLower(criterion.Value) + "\x00" + criterion.Group + "\x00" + criterion.Strength
+		key := criterion.Scope + "\x00" + criterion.Kind + "\x00" + strings.ToLower(criterion.Value) + "\x00" + criterion.Group + "\x00" + criterion.Strength + "\x00" + criterion.CoverageGroup
 		if _, duplicate := seen[key]; duplicate {
 			continue
 		}

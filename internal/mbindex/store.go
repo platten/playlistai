@@ -103,11 +103,12 @@ const (
 // ArtistIdentity is a lightweight exact-name result. MatchType and MatchedName
 // identify which indexed spelling supplied the match; Name is canonical.
 type ArtistIdentity struct {
-	MBID           string          `json:"mbid"`
-	Name           string          `json:"name"`
-	Disambiguation string          `json:"disambiguation,omitempty"`
-	MatchedName    string          `json:"matchedName"`
-	MatchType      ArtistMatchType `json:"matchType"`
+	MBID           string                 `json:"mbid"`
+	Name           string                 `json:"name"`
+	Disambiguation string                 `json:"disambiguation,omitempty"`
+	MatchedName    string                 `json:"matchedName"`
+	MatchType      ArtistMatchType        `json:"matchType"`
+	Popularity     *core.ArtistPopularity `json:"popularity,omitempty"`
 }
 
 type ArtistNameLookup struct {
@@ -138,8 +139,10 @@ type ArtistRecordingLookup struct {
 }
 
 type Store struct {
-	db   *sql.DB
-	info Info
+	db               *sql.DB
+	info             Info
+	artistPopularity ArtistPopularityReader
+	automaticArtists bool
 }
 
 func Open(path string) (*Store, error) {
@@ -174,7 +177,14 @@ func (s *Store) Info() Info   { return s.info }
 // SnapshotIdentity identifies the immutable index snapshot pinned by this
 // open store. It is suitable for parse-cache keys without exposing the DB.
 func (s *Store) SnapshotIdentity() SnapshotIdentity {
-	return SnapshotIdentity{IndexVersion: s.info.Version, Snapshot: s.info.Snapshot}
+	identity := SnapshotIdentity{IndexVersion: s.info.Version, Snapshot: s.info.Snapshot}
+	if s.automaticArtists {
+		identity.IndexVersion += "+" + core.ArtistDecisionPolicy
+		if s.artistPopularity != nil {
+			identity.Snapshot += "+popularity:" + s.artistPopularity.SnapshotIdentity()
+		}
+	}
+	return identity
 }
 
 // LookupArtistNames performs a bounded batch exact-name lookup across canonical
@@ -210,7 +220,11 @@ func (s *Store) LookupArtistNames(ctx context.Context, names []string) ([]Artist
 	for i := range keys {
 		args[i] = keys[i]
 	}
-	args = append(args, MaxLookupCandidates+1)
+	lookupLimit := MaxLookupCandidates
+	if s.automaticArtists {
+		lookupLimit = maxArtistPopularityMatches
+	}
+	args = append(args, lookupLimit+1)
 	rows, err := s.db.QueryContext(lookupCtx, `
 WITH input(name_key) AS (VALUES `+marks+`),
 raw(name_key,mbid,name,comment,matched_name,match_type,priority) AS (
@@ -237,20 +251,25 @@ ranked AS (
 )
 SELECT name_key,mbid,name,comment,matched_name,match_type
 FROM ranked WHERE candidate_rank<=?
-ORDER BY name_key,candidate_rank`, args...)
+ORDER BY name_key,candidate_rank`+artistLookupBound(s.automaticArtists), args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	byKey := make(map[string][]ArtistIdentity, len(keys))
 	truncated := make(map[string]bool)
+	scanned := 0
 	for rows.Next() {
+		scanned++
+		if s.automaticArtists && scanned > maxArtistPopularityMatches {
+			return nil, ErrArtistPopularityLookupTooBroad
+		}
 		var key string
 		var candidate ArtistIdentity
 		if err := rows.Scan(&key, &candidate.MBID, &candidate.Name, &candidate.Disambiguation, &candidate.MatchedName, &candidate.MatchType); err != nil {
 			return nil, err
 		}
-		if len(byKey[key]) == MaxLookupCandidates {
+		if !s.automaticArtists && len(byKey[key]) == MaxLookupCandidates {
 			truncated[key] = true
 			continue
 		}
@@ -259,9 +278,25 @@ ORDER BY name_key,candidate_rank`, args...)
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if s.automaticArtists {
+		if err := s.rankArtistPopularity(lookupCtx, byKey); err != nil {
+			return nil, err
+		}
+		for key, candidates := range byKey {
+			if len(candidates) > MaxLookupCandidates {
+				byKey[key], truncated[key] = candidates[:MaxLookupCandidates], true
+			}
+		}
+	}
 	for key, positions := range indexes {
 		for _, i := range positions {
 			out[i].Candidates = append([]ArtistIdentity(nil), byKey[key]...)
+			for j := range out[i].Candidates {
+				out[i].Candidates[j].Popularity = out[i].Candidates[j].Popularity.Clone()
+			}
 			out[i].Truncated = truncated[key]
 		}
 	}

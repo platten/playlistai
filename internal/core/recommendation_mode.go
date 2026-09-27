@@ -6,6 +6,7 @@ package core
 type RecommendationMode string
 
 const (
+	Automatic           RecommendationMode = "automatic"
 	AcousticBrainzFirst RecommendationMode = "acousticbrainz_first"
 	CLAPFirst           RecommendationMode = "clap_first"
 	EnhancedHybrid      RecommendationMode = "enhanced_hybrid"
@@ -13,5 +14,5 @@ const (
 )
 
 func (m RecommendationMode) Valid() bool {
-	return m == "" || m == AcousticBrainzFirst || m == CLAPFirst || m == DeejAIOnly || m == EnhancedHybrid
+	return m == "" || m == Automatic || m == AcousticBrainzFirst || m == CLAPFirst || m == DeejAIOnly || m == EnhancedHybrid
 }

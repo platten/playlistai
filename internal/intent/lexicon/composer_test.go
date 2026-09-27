@@ -19,10 +19,10 @@ func TestComposedByIsComposerNotPerformer(t *testing.T) {
 	if len(intent.References) != 0 || len(intent.RequiredTracks) != 0 {
 		t.Fatalf("composer became a performer or required recording: %+v", intent)
 	}
-	if len(intent.EssentialCriteria) != 2 {
+	if len(intent.EssentialCriteria) != 3 {
 		t.Fatalf("genre or composer lost: %+v", intent.EssentialCriteria)
 	}
-	composer := intent.EssentialCriteria[1]
+	composer := intent.EssentialCriteria[2]
 	if composer.Kind != "composer" || composer.Value != "Fryderyk Chopin" || composer.Scope != "playlist" || composer.Strength != "required" || len(composer.Evidence) != 1 || composer.Evidence[0].Text != "Fryderyk Chopin" {
 		t.Fatalf("composer field not preserved: %+v", composer)
 	}

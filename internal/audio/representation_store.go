@@ -41,6 +41,9 @@ WHERE catalog=? AND track=? AND track_key=? AND model=? ORDER BY rowid DESC LIMI
 	if a.Model != model || a.CatalogVersion != catalog || a.TrackID != track || a.TrackKey != key {
 		return core.AudioRepresentation{}, false, fmt.Errorf("audio: cached representation identity mismatch")
 	}
+	if !a.Identity.CurrentPolicy() {
+		return core.AudioRepresentation{}, false, nil
+	}
 	return a, true, nil
 }
 

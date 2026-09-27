@@ -11,6 +11,7 @@ import (
 
 	"github.com/platten/playlistai/internal/audio"
 	"github.com/platten/playlistai/internal/config"
+	"github.com/platten/playlistai/internal/discoveryasset"
 	"github.com/platten/playlistai/internal/intent/modelmgr"
 	"github.com/platten/playlistai/internal/mbindex"
 )
@@ -71,8 +72,12 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	}
 	musicBrainzSupported := c.cfg.Metadata.MusicBrainzManifestURL != ""
 	status.Metadata = SetupCapability{Ready: !musicBrainzSupported || musicBrainzReady, Supported: musicBrainzSupported, Required: musicBrainzPrior}
-	discovery, discoveryErr := c.GetDiscoveryAssetStatus()
-	status.Discovery = SetupCapability{Ready: discoveryErr == nil && discovery.Installed, Supported: discovery.Configured, Required: discovery.Configured}
+	// Opening the installed discovery release verifies its large data files and
+	// indexes. Readiness only needs its activation layout; generation performs
+	// the full open and routes any integrity failure to the caller.
+	discoveryReady := discoveryasset.InstalledLayout(filepath.Join(c.cfg.DataDir, "discovery-data"))
+	discoveryConfigured := strings.TrimSpace(c.cfg.Discovery.ManifestURL) != "" || discoveryReady
+	status.Discovery = SetupCapability{Ready: discoveryReady, Supported: discoveryConfigured, Required: discoveryConfigured}
 
 	if prefs.ModelDisabled {
 		modelPath = ""

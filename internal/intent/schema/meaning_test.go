@@ -62,15 +62,15 @@ func TestEmotionPreservesTypePolarityAndScope(t *testing.T) {
 		if prompt == "not romantic music" && len(m.EssentialCriteria) != 0 {
 			t.Fatal("negative mood also required")
 		}
-		if prompt != "not romantic music" && (len(m.EssentialCriteria) != 0 || m.Preferences.Moods[0].Strength != "preferred") {
-			t.Fatal("ordinary mood was promoted to a hard requirement")
+		if prompt != "not romantic music" && (len(m.EssentialCriteria) != 1 || m.Preferences.Moods[0].Strength != "essential") {
+			t.Fatal("defining mood was lost")
 		}
 	}
 	w := Wire{Genres: []WirePreference{}, Mode: "journey", TotalCount: 5,
 		EssentialCriteria: []WireCriterion{{Kind: "mood", Value: "dreamy", Span: "dreamy", Scope: "journey_end"}}}
 	raw, _ := json.Marshal(w)
 	m, err := ParseForPrompt(raw, "start with jazz and end dreamy")
-	if err != nil || len(m.Preferences.Moods) != 1 || m.Preferences.Moods[0].Scope != "journey_end" || m.Preferences.Moods[0].Strength != "preferred" {
+	if err != nil || len(m.Preferences.Moods) != 1 || m.Preferences.Moods[0].Scope != "journey_end" || m.Preferences.Moods[0].Strength != "essential" {
 		t.Fatalf("stage mood flattened: %+v %v", m, err)
 	}
 }

@@ -102,6 +102,19 @@ func TestCLAPFailureDoesNotStartOptionalWorkOrConsumeAdmission(t *testing.T) {
 	}
 }
 
+func TestRejectedPreviewDoesNotConsumeOptionalAdmission(t *testing.T) {
+	preview, _, _, _ := testService(t)
+	store := preview.Store.(*Store)
+	preview.DSPStore = &orderedDSPStore{DSPStore: store.DSP(), before: func() { t.Fatal("rejected recording reached optional DSP") }}
+	ctx := WithLazyEnhancedBudget(context.Background(), 1, time.Minute)
+	row, _, err := preview.analyzePreview(ctx, core.TrackRef{ID: "rejected", Artist: "Synthetic", Title: "Silence"}, "catalog", func(record core.AudioAnalysis) (bool, error) {
+		return false, nil
+	})
+	if err != nil || row.ID == "" || EnhancedBudgetFor(ctx).Used() != 0 {
+		t.Fatalf("rejection lost CLAP or consumed optional budget: %+v %v", row, err)
+	}
+}
+
 func TestSessionFinishesTextAndVocalChecksBeforeOptionalDeadline(t *testing.T) {
 	for _, vocals := range []bool{false, true} {
 		t.Run(map[bool]string{false: "required text", true: "required vocal screen"}[vocals], func(t *testing.T) {

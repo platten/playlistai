@@ -1,0 +1,635 @@
+[
+  {
+    "familyId": "felt-piano",
+    "split": "development",
+    "leakageGroups": [
+      "sound:felt-piano"
+    ],
+    "tags": [
+      "descriptive",
+      "instrumental"
+    ],
+    "prompt": "Give me 10 instrumental pieces with close, soft piano attacks, audible room space, and very little percussion.",
+    "paraphrases": [
+      "Ten quiet piano-led instrumentals with an intimate room sound and almost no drums."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "low-dub",
+    "split": "development",
+    "leakageGroups": [
+      "sound:low-dub"
+    ],
+    "tags": [
+      "descriptive",
+      "exclusions"
+    ],
+    "prompt": "Find 10 dub tracks with deep bass, spacious echo, and sparse drums. Avoid shouted vocals.",
+    "paraphrases": [
+      "Ten spacious bass-heavy dub selections without shouting."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "broken-beat",
+    "split": "development",
+    "leakageGroups": [
+      "sound:broken-beat"
+    ],
+    "tags": [
+      "descriptive",
+      "instrumental"
+    ],
+    "prompt": "Make 10 instrumental tracks with off-kilter syncopation, warm electric keys, and nimble bass.",
+    "paraphrases": [
+      "Ten vocal-free tracks with warm keys and an uneven, syncopated groove."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "kora-acoustic",
+    "split": "development",
+    "leakageGroups": [
+      "sound:kora-acoustic"
+    ],
+    "tags": [
+      "descriptive"
+    ],
+    "prompt": "Give me 10 acoustic tracks centered on interlocking plucked-string patterns, with little or no drum kit.",
+    "paraphrases": [
+      "Ten acoustic pieces built from weaving plucked strings rather than drum-kit grooves."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "bandoneon",
+    "split": "development",
+    "leakageGroups": [
+      "sound:bandoneon"
+    ],
+    "tags": [
+      "descriptive"
+    ],
+    "prompt": "Make 10 tango tracks with prominent bandoneon, crisp rhythmic accents, and a small acoustic ensemble.",
+    "paraphrases": [
+      "Ten small-ensemble tangos with sharp accents and an upfront bandoneon."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "green",
+    "split": "development",
+    "leakageGroups": [
+      "artist:hiroshi-yoshimura",
+      "album:green"
+    ],
+    "tags": [
+      "track-similarity"
+    ],
+    "prompt": "Give me 10 tracks close in musical feel to Green by Hiroshi Yoshimura.",
+    "paraphrases": [
+      "Ten tracks with a similar musical feel to Hiroshi Yoshimura’s Green."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "miss-ohio",
+    "split": "development",
+    "leakageGroups": [
+      "artist:gillian-welch",
+      "album:soul-journey"
+    ],
+    "tags": [
+      "track-similarity"
+    ],
+    "prompt": "Find 10 songs like Look at Miss Ohio by Gillian Welch.",
+    "paraphrases": [
+      "Ten songs musically close to Gillian Welch’s Look at Miss Ohio."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "mohabbat",
+    "split": "development",
+    "leakageGroups": [
+      "artist:arooj-aftab",
+      "album:vulture-prince"
+    ],
+    "tags": [
+      "track-similarity"
+    ],
+    "prompt": "Make 10 songs similar to Mohabbat by Arooj Aftab, especially its restrained pacing and voice.",
+    "paraphrases": [
+      "Ten songs near Arooj Aftab’s Mohabbat in vocal character and pacing."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "lankum",
+    "split": "development",
+    "leakageGroups": [
+      "artist:lankum",
+      "artist:lynched"
+    ],
+    "tags": [
+      "artist-similarity"
+    ],
+    "prompt": "Give me 10 tracks inspired by Lankum, keeping the weight and drones of their arrangements.",
+    "paraphrases": [
+      "Ten Lankum-like tracks with sustained drones and weighty arrangements."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "nala",
+    "split": "development",
+    "leakageGroups": [
+      "artist:nala-sinephro"
+    ],
+    "tags": [
+      "artist-similarity",
+      "instrumental"
+    ],
+    "prompt": "Make 10 instrumental tracks similar to Nala Sinephro.",
+    "paraphrases": [
+      "Ten instrumentals close to Nala Sinephro’s music."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "etran",
+    "split": "development",
+    "leakageGroups": [
+      "artist:etran-de-lair"
+    ],
+    "tags": [
+      "artist-similarity"
+    ],
+    "prompt": "Give me 10 tracks resembling Etran de L’Aïr, focusing on guitar interplay and rhythmic drive.",
+    "paraphrases": [
+      "Ten tracks with guitar interplay and momentum similar to Etran de L’Aïr."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "cumbia-references",
+    "split": "development",
+    "leakageGroups": [
+      "artist:el-buho",
+      "artist:chancha-via-circuito"
+    ],
+    "tags": [
+      "multiple-references"
+    ],
+    "prompt": "Make 10 tracks between El Búho and Chancha Vía Circuito, retaining both electronic texture and dance rhythm.",
+    "paraphrases": [
+      "Ten tracks combining the musical feel of El Búho and Chancha Vía Circuito."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "soul-references",
+    "split": "development",
+    "leakageGroups": [
+      "artist:cleo-sol",
+      "artist:joy-crookes"
+    ],
+    "tags": [
+      "multiple-references"
+    ],
+    "prompt": "Give me 10 songs close to both Cleo Sol and Joy Crookes.",
+    "paraphrases": [
+      "Ten songs that connect Cleo Sol’s and Joy Crookes’s musical styles."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "organ-or-harp",
+    "split": "development",
+    "leakageGroups": [
+      "sound:organ-or-harp"
+    ],
+    "tags": [
+      "or-criteria",
+      "instrumental"
+    ],
+    "prompt": "Find 10 quiet instrumental pieces led by either organ or harp, without heavy percussion.",
+    "paraphrases": [
+      "Ten gentle instrumentals with organ or harp in front and no heavy drums."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "chamber-strings",
+    "split": "development",
+    "leakageGroups": [
+      "classical:string-quartet"
+    ],
+    "tags": [
+      "classical",
+      "exclusions"
+    ],
+    "prompt": "Give me 10 classical string-quartet movements with intimate scale and clear contrapuntal lines; no orchestral arrangements.",
+    "paraphrases": [
+      "Ten intimate contrapuntal quartet movements, excluding orchestra."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "baroque-journey",
+    "split": "development",
+    "leakageGroups": [
+      "classical:baroque-keyboard"
+    ],
+    "tags": [
+      "classical",
+      "journey"
+    ],
+    "prompt": "Make a 10-track journey from spare solo harpsichord to lively baroque keyboard concertos.",
+    "paraphrases": [
+      "Ten classical tracks progressing from solo harpsichord to energetic keyboard concertos."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "percussion-journey",
+    "split": "development",
+    "leakageGroups": [
+      "sound:mallet-to-batucada"
+    ],
+    "tags": [
+      "journey",
+      "instrumental"
+    ],
+    "prompt": "Build 10 instrumental tracks starting with gentle mallet patterns and ending with dense, energetic batucada percussion.",
+    "paraphrases": [
+      "Ten instrumentals moving from soft mallets toward vigorous layered batucada."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "only-yussef",
+    "split": "development",
+    "leakageGroups": [
+      "artist:yussef-dayes"
+    ],
+    "tags": [
+      "artist-restriction"
+    ],
+    "prompt": "Give me 10 tracks only by Yussef Dayes, keeping the strongest rhythmic matches together.",
+    "paraphrases": [
+      "Ten Yussef Dayes tracks, with no other primary artists."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "library-slow-strings",
+    "split": "development",
+    "leakageGroups": [
+      "library:slow-strings"
+    ],
+    "tags": [
+      "library-only",
+      "instrumental"
+    ],
+    "prompt": "Using only my library, give me 10 slow instrumental tracks with sustained bowed strings.",
+    "paraphrases": [
+      "Ten slow bowed-string instrumentals exclusively from my library."
+    ],
+    "count": 10,
+    "requiredLibraryMode": "library_only"
+  },
+  {
+    "familyId": "library-swing",
+    "split": "development",
+    "leakageGroups": [
+      "library:swing"
+    ],
+    "tags": [
+      "library-only",
+      "exclusions"
+    ],
+    "prompt": "From my library only, make 10 small-group swing tracks without vocalists.",
+    "paraphrases": [
+      "Ten small-ensemble swing instrumentals drawn only from my library."
+    ],
+    "count": 10,
+    "requiredLibraryMode": "library_only"
+  },
+  {
+    "familyId": "dry-marimba",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:dry-marimba"
+    ],
+    "tags": [
+      "descriptive",
+      "instrumental"
+    ],
+    "prompt": "Give me 10 instrumental pieces with dry mallet percussion, repeating patterns, and little reverberation.",
+    "paraphrases": [
+      "Ten pattern-based mallet instrumentals with a close, dry sound."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "angular-postpunk",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:angular-postpunk"
+    ],
+    "tags": [
+      "descriptive",
+      "exclusions"
+    ],
+    "prompt": "Make 10 wiry post-punk songs with angular guitar and tight bass; avoid glossy synthesizer leads.",
+    "paraphrases": [
+      "Ten angular guitar-and-bass post-punk tracks without polished synth leads."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "nylon-bossa",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:nylon-bossa"
+    ],
+    "tags": [
+      "descriptive"
+    ],
+    "prompt": "Find 10 intimate bossa nova songs with nylon-string guitar, light hand percussion, and understated singing.",
+    "paraphrases": [
+      "Ten gently sung bossa nova tracks with nylon guitar and light percussion."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "bamboo-wind",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:bamboo-wind"
+    ],
+    "tags": [
+      "descriptive",
+      "instrumental"
+    ],
+    "prompt": "Give me 10 unhurried instrumental tracks led by breathy bamboo flute with sparse accompaniment.",
+    "paraphrases": [
+      "Ten sparse slow instrumentals centered on airy bamboo flute."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "chiptune",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:chiptune"
+    ],
+    "tags": [
+      "descriptive"
+    ],
+    "prompt": "Make 10 lively tracks with clearly audible chip-style square-wave melodies and crisp electronic rhythms.",
+    "paraphrases": [
+      "Ten bright square-wave melody tracks with tight electronic beats."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "ancestors",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:gonjasufi",
+      "album:a-sufi-and-a-killer"
+    ],
+    "tags": [
+      "track-similarity"
+    ],
+    "prompt": "Find 10 tracks similar to Ancestors by Gonjasufi, especially its grainy texture.",
+    "paraphrases": [
+      "Ten tracks close in texture and musical feel to Gonjasufi’s Ancestors."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "to-the-sky",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:connie-converse",
+      "album:how-sad-how-lovely"
+    ],
+    "tags": [
+      "track-similarity"
+    ],
+    "prompt": "Give me 10 songs musically close to Talkin’ Like You (Two Tall Mountains) by Connie Converse.",
+    "paraphrases": [
+      "Ten songs with a similar musical feel to Connie Converse’s Talkin’ Like You."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "says",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:nils-frahm",
+      "album:spaces"
+    ],
+    "tags": [
+      "track-similarity",
+      "instrumental"
+    ],
+    "prompt": "Make 10 instrumental tracks similar to Says by Nils Frahm, with slowly developing repetition.",
+    "paraphrases": [
+      "Ten gradually unfolding repetitive instrumentals close to Nils Frahm’s Says."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "otoboke",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:otoboke-beaver"
+    ],
+    "tags": [
+      "artist-similarity"
+    ],
+    "prompt": "Give me 10 tracks like Otoboke Beaver with abrupt changes and urgent playing.",
+    "paraphrases": [
+      "Ten urgently played tracks with sudden changes like Otoboke Beaver."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "jaimie",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:jaimie-branch"
+    ],
+    "tags": [
+      "artist-similarity"
+    ],
+    "prompt": "Make 10 tracks similar to Jaimie Branch, keeping both brass presence and rhythmic momentum.",
+    "paraphrases": [
+      "Ten tracks with brass and rhythmic drive close to Jaimie Branch."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "ichiko",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:ichiko-aoba"
+    ],
+    "tags": [
+      "artist-similarity"
+    ],
+    "prompt": "Find 10 songs similar to Ichiko Aoba with delicate singing and spacious acoustic arrangements.",
+    "paraphrases": [
+      "Ten delicately sung, spacious acoustic songs near Ichiko Aoba."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "oud-references",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:anouar-brahem",
+      "artist:dhafer-youssef"
+    ],
+    "tags": [
+      "multiple-references"
+    ],
+    "prompt": "Make 10 tracks close to both Anouar Brahem and Dhafer Youssef, with restrained ensemble interplay.",
+    "paraphrases": [
+      "Ten restrained ensemble tracks connecting Anouar Brahem and Dhafer Youssef."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "disco-references",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:l-imperatrice",
+      "artist:parcels"
+    ],
+    "tags": [
+      "multiple-references"
+    ],
+    "prompt": "Give me 10 tracks between L’Impératrice and Parcels in groove and arrangement.",
+    "paraphrases": [
+      "Ten tracks combining the grooves and arrangements of L’Impératrice and Parcels."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "accordion-or-clarinet",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:accordion-or-clarinet"
+    ],
+    "tags": [
+      "or-criteria"
+    ],
+    "prompt": "Find 10 acoustic tracks led by accordion or clarinet, with brisk dance rhythms and no electric guitar.",
+    "paraphrases": [
+      "Ten brisk acoustic dances featuring either accordion or clarinet and excluding electric guitar."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "renaissance-voices",
+    "split": "heldout",
+    "leakageGroups": [
+      "classical:renaissance-vocal-polyphony"
+    ],
+    "tags": [
+      "classical",
+      "exclusions"
+    ],
+    "prompt": "Give me 10 Renaissance choral pieces with unaccompanied interweaving voices; exclude solo songs and orchestral accompaniment.",
+    "paraphrases": [
+      "Ten unaccompanied Renaissance polyphonic choral pieces, with no solos or orchestra."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "orchestral-journey",
+    "split": "heldout",
+    "leakageGroups": [
+      "classical:orchestral-color"
+    ],
+    "tags": [
+      "classical",
+      "journey"
+    ],
+    "prompt": "Make a 10-track classical journey from translucent woodwind-led orchestration to dense, forceful brass and strings.",
+    "paraphrases": [
+      "Ten orchestral tracks building from light woodwinds toward powerful brass and strings."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "guitar-journey",
+    "split": "heldout",
+    "leakageGroups": [
+      "sound:steel-to-distortion"
+    ],
+    "tags": [
+      "journey",
+      "instrumental"
+    ],
+    "prompt": "Build 10 instrumental tracks from clean lap-steel guitar textures to slow, heavily distorted guitar walls.",
+    "paraphrases": [
+      "Ten instrumentals moving from clear lap-steel textures into slow thick guitar distortion."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "only-bill-frisell",
+    "split": "heldout",
+    "leakageGroups": [
+      "artist:bill-frisell"
+    ],
+    "tags": [
+      "artist-restriction"
+    ],
+    "prompt": "Give me 10 tracks only by Bill Frisell, prioritizing spacious guitar-led arrangements.",
+    "paraphrases": [
+      "Ten spacious guitar-led Bill Frisell tracks, with no other primary artists."
+    ],
+    "count": 10
+  },
+  {
+    "familyId": "library-brass",
+    "split": "heldout",
+    "leakageGroups": [
+      "library:brass"
+    ],
+    "tags": [
+      "library-only"
+    ],
+    "prompt": "From my library only, give me 10 energetic tracks led by brass with strong syncopation.",
+    "paraphrases": [
+      "Ten energetic syncopated brass-led tracks exclusively from my library."
+    ],
+    "count": 10,
+    "requiredLibraryMode": "library_only"
+  },
+  {
+    "familyId": "library-soft-voices",
+    "split": "heldout",
+    "leakageGroups": [
+      "library:soft-voices"
+    ],
+    "tags": [
+      "library-only",
+      "exclusions"
+    ],
+    "prompt": "Using only my library, make 10 songs with soft close harmonies and no prominent drum kit.",
+    "paraphrases": [
+      "Ten softly harmonized songs without upfront drums, all from my library."
+    ],
+    "count": 10,
+    "requiredLibraryMode": "library_only"
+  }
+]

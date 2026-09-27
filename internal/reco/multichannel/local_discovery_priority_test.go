@@ -44,6 +44,18 @@ func (r *metadataPriorityRetriever) Retrieve(ctx context.Context, request ports.
 	return candidates, err
 }
 
+type cancellationTrackingPriorityRetriever struct {
+	*metadataPriorityRetriever
+	canceledCalls int
+}
+
+func (r *cancellationTrackingPriorityRetriever) Retrieve(ctx context.Context, request ports.RetrievalRequest) ([]core.Candidate, error) {
+	if ctx.Err() != nil {
+		r.canceledCalls++
+	}
+	return r.metadataPriorityRetriever.Retrieve(ctx, request)
+}
+
 type metadataPriorityStream struct {
 	snapshot core.KnowledgeSnapshot
 	tracks   []core.TrackRef
@@ -97,14 +109,15 @@ func localPriorityFixture() (metadataPriorityCatalog, core.MusicIntent) {
 func TestEnhancedLocalMetadataPrecedesBlockingProvider(t *testing.T) {
 	cat, intent := localPriorityFixture()
 	intent.Count, intent.Controls.TotalTrackCount = 2, 2
-	r := &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, "unknown", "pack:fixture:local:one", "provider:two"))}}
-	s := &metadataPriorityStream{block: true}
+	r := &cancellationTrackingPriorityRetriever{metadataPriorityRetriever: &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, "unknown", "pack:fixture:local:one", "provider:two"))}}}
+	stop := make(chan struct{})
+	s := &metadataPriorityStream{block: true, before: func() { close(stop) }}
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig()).WithCandidateSource(s)
 	o.retriever = r
 	progress := 0
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	pl, err := o.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, Progress: ports.ProgressFunc(func(_ string, _, _ int64, _ string) { progress++ })})
+	pl, err := o.BuildRecommendation(ctx, ports.RecommendationRequest{Intent: intent, StopChecking: stop, Progress: ports.ProgressFunc(func(_ string, _, _ int64, _ string) { progress++ })})
 	if err != nil || len(pl.Tracks) != 2 || pl.Outcome.State != core.OutcomeFulfilled {
 		t.Fatalf("local metadata did not complete before provider: tracks=%v outcome=%+v err=%v retrieves=%d progress=%d", pl.Tracks, pl.Outcome, err, len(r.calls), progress)
 	}
@@ -113,8 +126,9 @@ func TestEnhancedLocalMetadataPrecedesBlockingProvider(t *testing.T) {
 			t.Fatal("missing metadata bypassed the essential criterion")
 		}
 	}
-	if len(r.calls) != 1 || s.pulls != 0 || progress == 0 {
-		t.Fatalf("retrieval=%d provider pulls=%d", len(r.calls), s.pulls)
+	// Once the provider observes StopChecking, do not start a canceled refill.
+	if len(r.calls) != 1 || r.canceledCalls != 0 || s.pulls != 1 || progress == 0 {
+		t.Fatalf("retrieval=%d canceled retrieval=%d provider pulls=%d", len(r.calls), r.canceledCalls, s.pulls)
 	}
 }
 
@@ -213,7 +227,7 @@ func TestEnhancedLocalMetadataReplayPreservesSelection(t *testing.T) {
 	cat, intent := localPriorityFixture()
 	intent.Count, intent.Controls.TotalTrackCount = 2, 2
 	r := &metadataPriorityRetriever{poolRetriever{candidates: candidatesForTracks(refs(cat, "pack:fixture:local:one", "provider:two"))}}
-	s := &metadataPriorityStream{block: true}
+	s := &metadataPriorityStream{}
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig()).WithCandidateSource(s)
 	o.retriever = &mertAudioRetriever{base: &cachedAudioRetriever{base: r}, cfg: DefaultConfig()}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -222,8 +236,12 @@ func TestEnhancedLocalMetadataReplayPreservesSelection(t *testing.T) {
 	if err != nil || len(first.Tracks) != 2 || first.Intent.Knowledge == nil || !first.Intent.Knowledge.DiscoveryRecorded {
 		t.Fatalf("initial generation failed: %+v %v", first.Outcome, err)
 	}
-	replay, err := o.Build(ctx, first.Intent)
-	if err != nil || !reflect.DeepEqual(first.Tracks, replay.Tracks) || !reflect.DeepEqual(first.Outcome, replay.Outcome) || s.pulls != 0 {
+	if first.Search == nil {
+		t.Fatal("missing frozen search")
+	}
+	err = first.Search.Validate()
+	replay := first.Search.Result
+	if err != nil || !reflect.DeepEqual(first.Tracks, replay.Tracks) || !reflect.DeepEqual(first.Outcome, replay.Outcome) || s.pulls != 1 {
 		t.Fatalf("local replay changed: first=%v replay=%v pulls=%d err=%v", first.Tracks, replay.Tracks, s.pulls, err)
 	}
 }
@@ -238,10 +256,10 @@ func TestExpiredAudioSessionReportsBoundedSearch(t *testing.T) {
 	defer session.Close()
 	o := New(cat, fakes.NewSimilarityEngine(cat.Catalog), cat, DefaultConfig())
 	o.enhanced, o.bestAvailable, o.audioSession = true, true, session
-	s := &metadataPriorityStream{block: true}
+	s := &metadataPriorityStream{}
 	_, notices, err := o.collectIteratively(context.Background(), nil, s, intent, ports.RecommendationRequest{Intent: intent}, newEligibility(intent, nil, nil), nil, nil, nil, 42)
-	if err != nil || s.pulls != 0 {
-		t.Fatalf("expired session started discovery: pulls=%d err=%v", s.pulls, err)
+	if err != nil || s.pulls != 1 {
+		t.Fatalf("expired optional analysis prevented metadata discovery: pulls=%d err=%v", s.pulls, err)
 	}
 	found := false
 	for _, notice := range notices {
@@ -286,4 +304,21 @@ func TestDiscoveryAttemptBudgetDoesNotClaimExhaustion(t *testing.T) {
 	if !found {
 		t.Fatal("missing incomplete search reason", pl.Outcome)
 	}
+}
+
+// Scheduling/diversity fixtures have independent reviewed recording facts.
+// Their embedded GENRE hint alone is deliberately insufficient under the
+// corroboration policy; these facts keep timing tests about timing.
+func (c metadataPriorityCatalog) LibraryRecordingMetadata(_ context.Context, id string) (core.EnrichedTrack, bool, error) {
+	meta, ok := c.Meta(id)
+	if !ok || id == "unknown" {
+		return core.EnrichedTrack{}, false, nil
+	}
+	return citedGenreFixture(meta.Ref, "electronic"), true, nil
+}
+func (c metadataPriorityCatalog) LibraryTrackFeatures(context.Context, string) (core.LibraryTrackFeatures, bool) {
+	return core.LibraryTrackFeatures{}, false
+}
+func (c metadataPriorityCatalog) LibraryPreferenceScore(context.Context, string, core.MusicIntent, string) (float64, bool) {
+	return 0, false
 }

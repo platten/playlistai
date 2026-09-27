@@ -100,6 +100,9 @@ func (s *Store) Find(ctx context.Context, catalog, track, key string, model core
 	if record.Model != model || record.CatalogVersion != catalog || record.TrackID != track || record.TrackKey != key || id != expected {
 		return core.AudioAnalysis{}, false, fmt.Errorf("audio: cached analysis identity mismatch")
 	}
+	if !record.Identity.CurrentPolicy() {
+		return core.AudioAnalysis{}, false, nil
+	}
 	return record, true, nil
 }
 

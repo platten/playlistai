@@ -50,6 +50,13 @@ func TestDefaultDiscoveryReadinessAcceptsLocalOverride(t *testing.T) {
 			if err != nil || !after.Discovery.Ready {
 				t.Fatalf("local override not ready: %+v %v", after.Discovery, err)
 			}
+			// A fresh process can report setup readiness from the activation
+			// layout without reopening and hashing the entire installed release.
+			reopened := &Container{cfg: cfg}
+			t.Cleanup(func() { _ = reopened.Close() })
+			if readiness, err := reopened.SetupReadiness(); err != nil || !readiness.Discovery.Ready || reopened.discovery != nil {
+				t.Fatalf("readiness opened the installed release: %+v %v", readiness.Discovery, err)
+			}
 			manager, err := c.discoveryManager()
 			if err != nil {
 				t.Fatal(err)

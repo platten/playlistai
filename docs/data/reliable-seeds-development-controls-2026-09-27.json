@@ -1,0 +1,507 @@
+{
+  "version": "reliable-seeds-cache-controls/v1",
+  "date": "2026-09-27",
+  "method": "Same final executable, saved final raw-run resolved intents and exact seeds,120second deadlines, warm same isolated development store. Parsing is omitted. This is regeneration, not saved-result replay. Cache contents may grow; no forced deterministic-output or causal latency claim.",
+  "executable": {
+    "name": "musiccheck-guarded",
+    "size": 27628856,
+    "sha256": "c74f9eb05695e22d099ef0c5ab7cc709e87e84a5e6ab6c68ff40005589b8dcfc"
+  },
+  "sameExecutableAsFinalRawRun": true,
+  "rawReportSHA256": "036a55bb7f51723421bc2a36bebf7db0a158991e78080a0dd0a64e8d348ef518",
+  "finalRawReportSHA256": "f1deb27c6dd009c50edc6e7f8e9c899fbb4d36edb55c9fcfc03762e71f91ce25",
+  "commandExitCode": 1,
+  "startup": {
+    "measurement": "process launch to initial zero-case report file (startup/model/catalog identity receipt), before per-case timing",
+    "milliseconds": 100365,
+    "reportSHA256": "9d2f5fef527d3d3428e27bcfee40f119c7c575374f21ff7735c69bd3ccd13cb0"
+  },
+  "summary": {
+    "cases": 7,
+    "requested": 70,
+    "returned": 36,
+    "allSeedsMatch": true,
+    "allRequestedIntentsMatch": true,
+    "allAlgorithmsMatch": true,
+    "allProfilesMatch": true,
+    "timedOut": 0,
+    "errors": 0,
+    "milliseconds": {
+      "median": 115014,
+      "p95NearestRank": 115052,
+      "maximum": 115052
+    }
+  },
+  "runs": [
+    {
+      "case": 1,
+      "familyId": "bda8dd86d518aebd3817fd9594698c74a4cff8555680ce7a535c990c42632440",
+      "prompt": "Classical, 10 tracks.",
+      "inputMode": "frozen",
+      "seed": "6755920242295978687",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115005,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 2,
+      "priorReturned": 1,
+      "sameOrderedTrackIDs": false,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": [
+        {
+          "position": 1,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:003d0fa6f64f02c51401a29132f7b59d",
+          "artist": "Hans Zimmer",
+          "title": "The End"
+        },
+        {
+          "position": 2,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0116ae7cdb8a3a66be596869d86f04ea",
+          "artist": "Hans Zimmer",
+          "title": "Do Not Go Gentle Into That Good Night"
+        }
+      ]
+    },
+    {
+      "case": 6,
+      "familyId": "cf5b637acb0012d36d4262e927b5008ded613ddad2f9ebc92d369912b019e94d",
+      "prompt": "Make a 10-song playlist inspired by Daft Punk.",
+      "inputMode": "frozen",
+      "seed": "5523582178652037675",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115052,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 10,
+      "priorReturned": 10,
+      "sameOrderedTrackIDs": false,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": [
+        {
+          "position": 1,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:d649bdf00c5a8e9c9455fa43acba00c6",
+          "artist": "The Weeknd feat. Daft Punk",
+          "title": "Starboy"
+        },
+        {
+          "position": 2,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:fc883d901f5c9632b1ab4b4b2345525d",
+          "artist": "Daft Punk",
+          "title": "Daftendirekt"
+        },
+        {
+          "position": 3,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:eabbeadf48a69d6336aea655d4632b77",
+          "artist": "Daft Punk",
+          "title": "Teachers"
+        },
+        {
+          "position": 4,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:495e1975c6e5698dba1f8bf6d686597a",
+          "artist": "Daft Punk",
+          "title": "Rollin’ & Scratchin’"
+        },
+        {
+          "position": 5,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:6cfd908565c5e0b5835abda305f4713e",
+          "artist": "Daft Punk",
+          "title": "Around the World"
+        },
+        {
+          "position": 6,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0dcc22b71ec6c85ff3dbb40cc4e109d3",
+          "artist": "Daft Punk",
+          "title": "Da Funk"
+        },
+        {
+          "position": 7,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:96e46450d046a84c51f1be22c4bcbfe9",
+          "artist": "Daft Punk",
+          "title": "WDPK 83.7 FM"
+        },
+        {
+          "position": 8,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:d33ee587ad948e026c751210abcaac33",
+          "artist": "Daft Punk",
+          "title": "Oh Yeah"
+        },
+        {
+          "position": 9,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:f16e55be0d6740e1d9046c7db1e9a403",
+          "artist": "Daft Punk",
+          "title": "Indo Silver Club"
+        },
+        {
+          "position": 10,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:5fb452c98883b7a33701295f47292722",
+          "artist": "Daft Punk",
+          "title": "High Fidelity"
+        }
+      ]
+    },
+    {
+      "case": 8,
+      "familyId": "fdaff4491e6a357782a96599b27dd2225560b19ba890fae702ecb4ac2d5f621a",
+      "prompt": "Make a 10-song playlist around Nina Simone and Bill Withers.",
+      "inputMode": "frozen",
+      "seed": "16220390012614716451",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115023,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 10,
+      "priorReturned": 10,
+      "sameOrderedTrackIDs": false,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": [
+        {
+          "position": 1,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:945f5df98b97b744eee70beb701e45b3",
+          "artist": "Bill Withers",
+          "title": "Look to Each Other for Love"
+        },
+        {
+          "position": 2,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:845211ec6497f7f7399f40b1c229c878",
+          "artist": "Nina Simone",
+          "title": "Black Is the Color of My True Love's Hair (vocal Nina Simone)"
+        },
+        {
+          "position": 3,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:8a6bf3cc20fcd8768e0d5e94b63dba3f",
+          "artist": "Nina Simone",
+          "title": "To Be Young, Gifted & Black (live)"
+        },
+        {
+          "position": 4,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:a62bbd3da2bd5b0a4e6720a0f2f82d2a",
+          "artist": "Bill Withers",
+          "title": "Don't It Make It Better"
+        },
+        {
+          "position": 5,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:b9c6b5796016aa4876188b298a3f5e88",
+          "artist": "Nina Simone",
+          "title": "Buck"
+        },
+        {
+          "position": 6,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:ca5308dde8d209ddf45a09c2bafa44f4",
+          "artist": "Nina Simone",
+          "title": "Nobody"
+        },
+        {
+          "position": 7,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:b34758bfcf171cf3aefb2675f211716e",
+          "artist": "Bill Withers",
+          "title": "Dedicated to You My Love"
+        },
+        {
+          "position": 8,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:df483c3df0c7ec38c524c705c861b442",
+          "artist": "Bill Withers",
+          "title": "Love Is"
+        },
+        {
+          "position": 9,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:526c945473fc01e03d48255cd06ba6d4",
+          "artist": "Nina Simone",
+          "title": "Porgy"
+        },
+        {
+          "position": 10,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:4d2ea6b897590f86f344894dd6552e76",
+          "artist": "Nina Simone",
+          "title": "Thandewye"
+        }
+      ]
+    },
+    {
+      "case": 10,
+      "familyId": "8ad0a4ec79f06caa65021663ef04881bb850b50d00afae328456f798af5c81cd",
+      "prompt": "Make a 10-song playlist inspired by Fela Kuti and Tony Allen, with a variety of artists.",
+      "inputMode": "frozen",
+      "seed": "14708729863664324733",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115014,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 4,
+      "priorReturned": 4,
+      "sameOrderedTrackIDs": false,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "reference_similarity_unconfirmed",
+            "detail": "Fewer recordings had the requested identity or prepared artist relationships and calibrated seed-audio support.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": [
+        {
+          "position": 1,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:cc18fcb3cc76c72cfdd14093e5ef2676",
+          "artist": "Fela Kuti with Ginger Baker",
+          "title": "Ye Ye de Smell"
+        },
+        {
+          "position": 2,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:ffdb0cf26cea4e3fb9de36981d6d03dc",
+          "artist": "Fela Kuti with Ginger Baker",
+          "title": "Egbe Mi O (Carry Me)"
+        },
+        {
+          "position": 3,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:84488b9bc1ba51b9b309ea5ef51ab3d4",
+          "artist": "Fela Kuti & Afrika 70",
+          "title": "Zombie"
+        },
+        {
+          "position": 4,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:a1285b39b4ab5a4c4bf5b083030ee4f1",
+          "artist": "Fela Kuti with Ginger Baker",
+          "title": "Let’s Start"
+        }
+      ]
+    },
+    {
+      "case": 36,
+      "familyId": "d228f2c8dd2e3e0e4d30977c7d88601a0838356a21ff78817a875f10acfc4839",
+      "prompt": "Make a 10-track playlist with distorted guitars, pounding drums, and a tense, restless mood.",
+      "inputMode": "frozen",
+      "seed": "5106150405702815863",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115039,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 0,
+      "priorReturned": 0,
+      "sameOrderedTrackIDs": true,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": []
+    },
+    {
+      "case": 37,
+      "familyId": "5e1e046a57cd374985b999b99c924f55a1fe985eb678214f0563a8c7dd3d92ff",
+      "prompt": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+      "inputMode": "frozen",
+      "seed": "14999421884640476911",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115010,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 0,
+      "priorReturned": 0,
+      "sameOrderedTrackIDs": true,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": []
+    },
+    {
+      "case": 40,
+      "familyId": "4aae86796191cd1c0facd884ff49630fd0806fa40b5bcd7400a38462a77aa7b6",
+      "prompt": "Make a playlist only by Radiohead, 10 songs.",
+      "inputMode": "frozen",
+      "seed": "1353891572653572990",
+      "seedMatchesFinalRawRun": true,
+      "requestedIntentMatchesFinalRawRun": true,
+      "algorithmVersion": "automatic/v7+automatic-fit/v4",
+      "algorithmMatchesFinalRawRun": true,
+      "profileSnapshotMatches": true,
+      "milliseconds": 115014,
+      "generationLimitSeconds": 120,
+      "timedOut": false,
+      "error": null,
+      "returned": 10,
+      "priorReturned": 10,
+      "sameOrderedTrackIDs": false,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "tracks": [
+        {
+          "position": 1,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:2cc6e37862148b9ff6eb9944db49e17f",
+          "artist": "Radiohead",
+          "title": "High and Dry"
+        },
+        {
+          "position": 2,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:a22fcf507100eef7db3cbfe1948a3de8",
+          "artist": "Radiohead",
+          "title": "Lucky"
+        },
+        {
+          "position": 3,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:8a6a23d45d106546fcc9505f31678522",
+          "artist": "Radiohead",
+          "title": "Everything in Its Right Place"
+        },
+        {
+          "position": 4,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0e2421058d57e524e15e6a87f3c58cb6",
+          "artist": "Radiohead",
+          "title": "We Suck Young Blood. (Your Time Is Up.)"
+        },
+        {
+          "position": 5,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:d78916affa4177d3688fb7e1125f17ba",
+          "artist": "Radiohead",
+          "title": "Morning Bell/Amnesiac"
+        },
+        {
+          "position": 6,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:549a738dde09506024b3bf2cab9ca2b1",
+          "artist": "Radiohead",
+          "title": "In Limbo"
+        },
+        {
+          "position": 7,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:b8502c8649836c581cf5603a0c684344",
+          "artist": "Radiohead",
+          "title": "Sulk"
+        },
+        {
+          "position": 8,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:cfe32dcba93219ac314de3aab1ae83e0",
+          "artist": "Radiohead",
+          "title": "Bones"
+        },
+        {
+          "position": 9,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:c30b406800d7af3573152f7d7d27f9f8",
+          "artist": "Radiohead",
+          "title": "Fake Plastic Trees"
+        },
+        {
+          "position": 10,
+          "id": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:c86cc2691ebd511477edb7369f5db4ef",
+          "artist": "Radiohead",
+          "title": "How to Disappear Completely"
+        }
+      ]
+    }
+  ],
+  "independentAuditReceipt": "docs/data/reliable-seeds-independent-audit-2026-09-27.json",
+  "listeningQuality": "Not assessed; repeated output and cache reuse cannot establish musical-quality gates."
+}

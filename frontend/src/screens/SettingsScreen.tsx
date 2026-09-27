@@ -12,6 +12,7 @@ import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
 import { DiscoveryDataCard } from "../components/DiscoveryDataCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
+import { ListenBrainzConnection } from "../components/ListenBrainzConnection";
 import { RecommendationSettings } from "../components/RecommendationSettings";
 import {
   LocalLibraryAPI,
@@ -116,7 +117,7 @@ function LocalLibrarySettings() {
   };
 
   const remove = async () => {
-    if (busy || !status?.installed || !window.confirm("Remove this imported library from Playlist AI? The original music tree and source pack will not be deleted or changed.")) return;
+    if (busy || !status?.installed || !window.confirm("Remove imported CPU and GPU library packs from Playlist AI? The original music tree and source packs will not be deleted or changed.")) return;
     setBusy("remove");
     setError(null);
     try {
@@ -134,7 +135,7 @@ function LocalLibrarySettings() {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h2 id="local-library-heading" className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Local music library</h2>
-          <p className="mt-1 text-[12px] text-muted">Attach a verified pack created by playlist-indexer. Packs contain metadata and derived evidence, never audio.</p>
+          <p className="mt-1 text-[12px] text-muted">Import CPU and GPU packs separately. Playlist AI uses the pack matching the running audio models. Packs contain derived evidence, never audio.</p>
         </div>
         <div className="flex gap-2">
           {busy === "import" || busy === "cancel" ? (
@@ -143,7 +144,7 @@ function LocalLibrarySettings() {
             </Button>
           ) : (
             <Button size="sm" variant={installed ? "ghost" : "primary"} disabled={busy !== null || loading} onClick={() => void importPack()}>
-              {installed ? "Update pack" : "Import pack"}
+              {installed ? "Import or update pack" : "Import pack"}
             </Button>
           )}
           {installed && <Button size="sm" variant="subtle" disabled={busy !== null} onClick={() => void remove()}>{busy === "remove" ? "Removing…" : "Remove"}</Button>}
@@ -165,8 +166,9 @@ function LocalLibrarySettings() {
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[13.5px] font-medium">Verified library pack <span className="text-good">ready</span></p>
+                <p className="text-[13.5px] font-medium">Verified library pack {status?.activeBackend ? `(${status.activeBackend.toUpperCase()})` : ""} <span className="text-good">ready</span></p>
                 <p className="break-all font-mono text-[11px] text-faint">{status?.packId?.slice(0, 16)}… · format v{status?.version}</p>
+                {(status?.availableBackends?.length ?? 0) > 0 && <p className="mt-1 text-[11.5px] text-muted">Installed: {status?.availableBackends?.map((backend) => backend.toUpperCase()).join(" + ")}. Active pack follows the available CLAP and MERT runtime.</p>}
               </div>
               <p className="text-[12px] text-muted">{count(coverage?.tracks)} tracks</p>
             </div>
@@ -339,6 +341,7 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
       </div>
 
       <RecommendationSettings />
+      <ListenBrainzConnection />
       <DiscoveryDataCard />
       <LocalLibrarySettings />
       <section className="flex flex-col gap-3">

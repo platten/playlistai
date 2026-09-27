@@ -59,6 +59,9 @@ func TestMusicBrainzRecordingPagesDrainBufferBeforeFetching(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"count":1,"artists":[{"id":"a","name":"Artist"}]}`)
 			return
 		}
+		if r.URL.Query().Get("artist") != "a" || r.URL.Query().Get("query") != "" || r.URL.Query().Get("inc") != "artist-credits" {
+			t.Fatalf("recordings must use confirmed-artist browse: %s", r.URL)
+		}
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 		var recordings []map[string]any
 		for i := offset; i < min(offset+100, 101); i++ {
@@ -74,7 +77,7 @@ func TestMusicBrainzRecordingPagesDrainBufferBeforeFetching(t *testing.T) {
 			}
 			recordings = append(recordings, map[string]any{"id": fmt.Sprint(i), "title": title, "artist-credit": []map[string]any{{"name": "Artist", "artist": map[string]string{"id": "a"}}}})
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"count": 101, "recordings": recordings})
+		_ = json.NewEncoder(w).Encode(map[string]any{"recording-count": 101, "recordings": recordings})
 	}))
 	defer server.Close()
 	c := newClient(t, server.URL, time.Nanosecond)

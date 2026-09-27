@@ -23,8 +23,10 @@ var musicalTags = map[string]string{
 	"key": "key", "tkey": "key", "initialkey": "key", "language": "language", "language_2_letter": "language",
 	"date": "edition_date", "year": "edition_date", "originaldate": "original_release_date", "originalreleasedate": "original_release_date", "original_release_date": "original_release_date",
 	"artist": "artist_credit", "artists": "artist_credit", "albumartist": "album_artist", "album_artist": "album_artist", "composer": "composer", "work": "work", "movement": "movement",
+	"performer_name": "performer", "recording_engineer": "recording_engineer",
 	"track": "track_number", "tracknumber": "track_number", "disc": "disc_number", "discnumber": "disc_number", "releasetype": "release_type", "musicbrainz_album_type": "release_type",
 	"musicbrainz_artistid": "artist_mbid", "musicbrainz_albumartistid": "album_artist_mbid", "musicbrainz_albumid": "album_mbid", "musicbrainz_releasegroupid": "release_group_mbid",
+	"musicbrainz_releasetrackid": "release_track_mbid",
 }
 
 func tagKey(s string) string {

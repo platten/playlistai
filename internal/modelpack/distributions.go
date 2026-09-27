@@ -37,7 +37,17 @@ func RecommendedMERT(goos, goarch string) (Distribution, error) {
 	return recommended("mert-" + goos + "-" + goarch)
 }
 
+// RecommendedMERTGPU selects the pinned CUDA pack on supported x64 hosts.
+func RecommendedMERTGPU(goos, goarch string) (Distribution, error) {
+	return recommended("mert-" + goos + "-" + goarch + "-gpu")
+}
+
 // RecommendedCLAP returns the reviewed, platform-specific music CLAP pack.
 func RecommendedCLAP(goos, goarch string) (Distribution, error) {
 	return recommended("clap-" + goos + "-" + goarch)
+}
+
+// RecommendedCLAPGPU selects the pinned CUDA pack on supported x64 hosts.
+func RecommendedCLAPGPU(goos, goarch string) (Distribution, error) {
+	return recommended("clap-" + goos + "-" + goarch + "-gpu")
 }

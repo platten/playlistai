@@ -25,6 +25,22 @@ func TestRecommendedDistributionsSelectOnlyShippedPlatforms(t *testing.T) {
 	if _, err := RecommendedMERT("linux", "386"); err == nil {
 		t.Fatal("unsupported architecture accepted")
 	}
+	for platform, expected := range map[string]struct {
+		hash  string
+		bytes int64
+	}{
+		"linux/amd64":   {"c464f5ec98561e7fdaaedbf86f9f93abf86904832c3b29f7bd90e69c2f2ed233", 1828938273},
+		"windows/amd64": {"6483ce9b761492a963b02fd7edd6ecdea7efa286d4d015c4b5acfefd0687541d", 1642630436},
+	} {
+		parts := strings.Split(platform, "/")
+		mert, err := RecommendedMERTGPU(parts[0], parts[1])
+		if err != nil || !strings.HasSuffix(mert.URL, "/mert-"+parts[0]+"-"+parts[1]+"-gpu/manifest.json") || mert.SHA256 != expected.hash || mert.DownloadBytes != expected.bytes {
+			t.Fatalf("wrong GPU MERT distribution for %s: %+v %v", platform, mert, err)
+		}
+	}
+	if _, err := RecommendedMERTGPU("darwin", "arm64"); err == nil {
+		t.Fatal("unpublished CUDA MERT platform accepted")
+	}
 	if _, err := recommended("intent-encoders-v1"); err == nil {
 		t.Fatal("retired combined intent pack is still recommended")
 	}
@@ -47,6 +63,22 @@ func TestRecommendedDistributionsSelectOnlyShippedPlatforms(t *testing.T) {
 	}
 	if _, err := RecommendedCLAP("darwin", "amd64"); err == nil {
 		t.Fatal("unpublished CLAP platform accepted")
+	}
+	for platform, expected := range map[string]struct {
+		hash  string
+		bytes int64
+	}{
+		"linux/amd64":   {"aabdbe4afe0e4971093cc09285ec06b1d17c9f3bb013f930079231eb8c6cbd65", 2302443250},
+		"windows/amd64": {"d4a2c5cc903bfd321f45f5e62d4e6989668e19e225b7415908526462ac022542", 2116252087},
+	} {
+		parts := strings.Split(platform, "/")
+		clap, err := RecommendedCLAPGPU(parts[0], parts[1])
+		if err != nil || !strings.HasSuffix(clap.URL, "/clap-"+parts[0]+"-"+parts[1]+"-gpu/manifest.json") || clap.SHA256 != expected.hash || clap.DownloadBytes != expected.bytes {
+			t.Fatalf("wrong GPU CLAP distribution for %s: %+v %v", platform, clap, err)
+		}
+	}
+	if _, err := RecommendedCLAPGPU("darwin", "arm64"); err == nil {
+		t.Fatal("unpublished CUDA CLAP platform accepted")
 	}
 }
 

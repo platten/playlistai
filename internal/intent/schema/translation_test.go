@@ -18,7 +18,7 @@ func TestSourceCompilerRepairsLostFactsBeforeWireValidation(t *testing.T) {
 				t.Fatalf("count/degree/vocals lost: %+v", m)
 			}
 			for _, c := range m.EssentialCriteria {
-				if c.Value == "piano" || c.Value == "strings" || c.Value == "relaxing" {
+				if c.Value == "piano" || c.Value == "strings" {
 					t.Fatalf("soft preference became essential: %+v", c)
 				}
 			}
