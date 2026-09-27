@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/platten/playlistai/internal/audio"
@@ -133,7 +134,11 @@ func TestInstalledModelSlotsPreferCUDAAndFallBackToCPU(t *testing.T) {
 		}
 		return nil
 	}
-	if err := c.loadAnalysis(ctx); err != nil || c.analysis.manifest.Backend() != "cpu" || len(triedCLAP) != 2 || triedCLAP[0] != "cuda:0" || triedCLAP[1] != "cpu" {
+	want := []string{"cpu"}
+	if audio.MERTCUDAHostAvailable() {
+		want = []string{"cuda:0", "cpu"}
+	}
+	if err := c.loadAnalysis(ctx); err != nil || c.analysis.manifest.Backend() != "cpu" || !slices.Equal(triedCLAP, want) {
 		t.Fatalf("CLAP runtime fallback: %v, tried=%v", err, triedCLAP)
 	}
 	triedMERT := []string{}
@@ -144,7 +149,7 @@ func TestInstalledModelSlotsPreferCUDAAndFallBackToCPU(t *testing.T) {
 		}
 		return nil
 	}
-	if err := c.loadMERT(ctx); err != nil || c.enhanced.manifest.Backend() != "cpu" || len(triedMERT) != 2 || triedMERT[0] != "cuda:0" || triedMERT[1] != "cpu" {
+	if err := c.loadMERT(ctx); err != nil || c.enhanced.manifest.Backend() != "cpu" || !slices.Equal(triedMERT, want) {
 		t.Fatalf("MERT runtime fallback: %v, tried=%v", err, triedMERT)
 	}
 }

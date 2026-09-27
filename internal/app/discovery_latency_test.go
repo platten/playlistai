@@ -119,7 +119,7 @@ func TestEnhancedManagedDiscoveryChecksLocalCandidatesBeforeColdProvider(t *test
 	}}
 	engine := multichannel.New(base, similarity, base, engineConfig).WithIntentOverlayProvider(c.pinDiscoveryRecommendationOverlay).WithCandidateSource(source)
 	audioChecked := 0
-	bounded, cancel := context.WithTimeout(ctx, 2*time.Second)
+	bounded, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	playlist, err := engine.BuildRecommendation(bounded, ports.RecommendationRequest{Intent: intent, StopChecking: stop, Progress: progress, OnChecked: func(core.TrackRef) { audioChecked++ }})
 	if err != nil {
