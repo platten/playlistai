@@ -80,10 +80,25 @@ func isolatedIntentDataDirectory(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	entry, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
 	defaultResolved, _ := filepath.EvalSymlinks(defaultRoot)
-	if root != resolved || root == defaultResolved {
+	if entry.Mode()&os.ModeSymlink != 0 || resolved == defaultResolved {
 		return "", fmt.Errorf("isolated evaluation data must not link to another directory")
 	}
+	// macOS exposes its temporary directory through /var -> /private/var.
+	// Permit that prefix alias, but reject links beneath the temp directory.
+	if root != resolved {
+		temp := os.TempDir()
+		tempResolved, tempErr := filepath.EvalSymlinks(temp)
+		relative, relErr := filepath.Rel(temp, root)
+		if tempErr != nil || relErr != nil || !filepath.IsLocal(relative) || filepath.Join(tempResolved, relative) != resolved {
+			return "", fmt.Errorf("isolated evaluation data must not link to another directory")
+		}
+	}
+	root = resolved
 	if err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
