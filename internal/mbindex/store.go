@@ -406,7 +406,7 @@ func (s *Store) ArtistsByTag(ctx context.Context, terms []string, limit int, off
 		return nil, nil
 	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(keys)), ",")
-	args := make([]any, 0, len(keys)+2)
+	args := make([]any, 0, len(keys))
 	for _, key := range keys {
 		args = append(args, key)
 	}
