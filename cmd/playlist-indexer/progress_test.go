@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"atomicgo.dev/cursor"
+	"github.com/mattn/go-runewidth"
 	"github.com/pterm/pterm"
 
 	"github.com/platten/playlistai/internal/libraryindex"
@@ -144,6 +145,23 @@ func TestLargeFLACActivityUsesWarningStyle(t *testing.T) {
 	box := progressActivityBox("Currently processing", "large.flac", true)
 	if !strings.Contains(box, "\x1b[31m") {
 		t.Fatalf("large FLAC box did not use red text: %q", box)
+	}
+}
+
+func TestProgressAreaDoesNotWrapLongCurrentTrack(t *testing.T) {
+	box := progressActivityBox("Currently processing", strings.Repeat("音楽/", 40)+"track.flac", false)
+	content := boundProgressLines(box+"\n"+strings.Repeat("Queued • ", 20)+"\n", 38, 0)
+	for _, line := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+		if width := runewidth.StringWidth(pterm.RemoveColorFromString(line)); width >= 38 {
+			t.Fatalf("terminal line wraps at width %d: %q", width, line)
+		}
+	}
+	if !strings.Contains(content, "…") {
+		t.Fatalf("long track name was not shortened: %q", content)
+	}
+	short := boundProgressLines(box+"\nphase\nsummary\nbar\n", 38, 5)
+	if !strings.Contains(strings.Split(short, "\n")[0], "Currently processing") || strings.Count(short, "\n") >= 5 {
+		t.Fatalf("short terminal scrolled the activity box: %q", short)
 	}
 }
 

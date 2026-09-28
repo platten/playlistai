@@ -58,7 +58,7 @@ type FitResult struct {
 }
 
 func (s *State) Fit(ctx context.Context, options FitOptions) (FitResult, error) {
-	for _, kind := range []string{"metadata", "audio", "clap"} {
+	for _, kind := range []string{"metadata", "audio", "clap", "effnet"} {
 		pending, leased, err := s.JobCounts(ctx, kind)
 		if err != nil {
 			return FitResult{}, err

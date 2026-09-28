@@ -24,6 +24,7 @@ type AnalysisOptions struct {
 	Metadata  bool
 	Audio     bool
 	CLAP      bool
+	EffNet    bool
 	Profile   SamplingProfile
 	Integrity IntegrityPolicy
 }
@@ -39,6 +40,7 @@ type AnalysisReport struct {
 	MetadataCompleted     int64                 `json:"metadataCompleted"`
 	AudioCompleted        int64                 `json:"audioCompleted"`
 	CLAPCompleted         int64                 `json:"clapCompleted"`
+	EffNetCompleted       int64                 `json:"effnetCompleted"`
 	Failed                int64                 `json:"failed"`
 	Retried               int64                 `json:"retried"`
 	SkippedChanged        int64                 `json:"skippedChanged"`
@@ -94,17 +96,19 @@ type TrackAnalysisTiming struct {
 }
 
 type Analyzer struct {
-	State      *State
-	Runtime    *localaudio.Runtime
-	MERT       *audio.MERTWorkerPool
-	CLAP       *audio.WorkerPool
-	CLAPDevice string
-	Plan       ResourcePlan
-	Admission  *Admission
-	Profile    SamplingProfile
-	Integrity  IntegrityPolicy
-	OnFile     func(FileActivity)
-	OnIssue    func(ProcessingIssue)
+	State       *State
+	Runtime     *localaudio.Runtime
+	MERT        *audio.MERTWorkerPool
+	CLAP        *audio.WorkerPool
+	EffNet      *audio.DiscogsWorker
+	EffNetModel audio.DiscogsModel
+	CLAPDevice  string
+	Plan        ResourcePlan
+	Admission   *Admission
+	Profile     SamplingProfile
+	Integrity   IntegrityPolicy
+	OnFile      func(FileActivity)
+	OnIssue     func(ProcessingIssue)
 	// OnMERTHealth reports MERT outages and recoveries. Audio analysis is
 	// paused between the two calls.
 	OnMERTHealth func(healthy bool, err error)
@@ -250,10 +254,13 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 	if options.CLAP && a.CLAP == nil {
 		return report, errors.New("library indexer: CLAP model is required for CLAP analysis")
 	}
+	if options.EffNet && (a.EffNet == nil || len(a.EffNetModel.Heads) == 0) {
+		return report, errors.New("library indexer: EffNet model is required for EffNet analysis")
+	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	var wg sync.WaitGroup
-	fatal := make(chan error, 2)
+	fatal := make(chan error, 4)
 	if options.Metadata {
 		wg.Add(1)
 		go func() {
@@ -283,6 +290,18 @@ func (a *Analyzer) Run(ctx context.Context, options AnalysisOptions, discoveryDo
 		go func() {
 			defer wg.Done()
 			if err := a.runCLAP(ctx, discoveryDone, &report); err != nil {
+				fatal <- err
+				if !errors.Is(err, ErrShutdownRequested) {
+					cancel(err)
+				}
+			}
+		}()
+	}
+	if options.EffNet {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a.runEffNet(ctx, discoveryDone, &report); err != nil {
 				fatal <- err
 				if !errors.Is(err, ErrShutdownRequested) {
 					cancel(err)
@@ -660,7 +679,7 @@ func (a *Analyzer) dispatchJobs(ctx context.Context, kind string, discoveryDone 
 				// metadata is exhausted it can never become eligible, so fail it.
 				// Checking pending first keeps the in-flight tail from rerunning
 				// the finalization query on every poll.
-				if (kind == "audio" || kind == "clap") && pending > 0 {
+				if (kind == "audio" || kind == "clap" || kind == "effnet") && pending > 0 {
 					metadataPending, metadataLeased, err := a.jobCounts(ctx, "metadata")
 					if err != nil {
 						return err

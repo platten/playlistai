@@ -45,7 +45,7 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	if err := state.Reader().QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version != "6" {
+	if version != "7" {
 		t.Fatalf("schema version = %q", version)
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT completed_mtime_ns,completed_size FROM directory_frontier LIMIT 1`); err != nil {
@@ -53,6 +53,39 @@ func TestStateMigratesV1DirectoryFrontierForResumableRescans(t *testing.T) {
 	}
 	if _, err := state.Reader().ExecContext(ctx, `SELECT follow_directory_symlinks FROM scan_epochs LIMIT 1`); err != nil {
 		t.Fatalf("scan policy column was not migrated: %v", err)
+	}
+}
+
+func TestStateMigratesV6EffNetResults(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	state, err := OpenState(ctx, dir, "prepare-v6", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := state.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dir, "library-index.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `DROP TABLE effnet_results; UPDATE state_meta SET value='6' WHERE key='schema_version'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if status, err := ReadStatus(ctx, dir); err != nil || status.EffNet != 0 {
+		t.Fatalf("read-only v6 status=%+v err=%v", status, err)
+	}
+	state, err = OpenState(ctx, dir, "migrate-v6", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer state.Close()
+	if _, err := state.Reader().ExecContext(ctx, `SELECT data FROM effnet_results LIMIT 1`); err != nil {
+		t.Fatalf("EffNet table missing after migration: %v", err)
 	}
 }
 

@@ -49,6 +49,13 @@ func main() {
 }
 
 func runMain() int {
+	if len(os.Args) == 4 && os.Args[1] == "--discogs-worker" {
+		if err := audioruntime.RunDiscogs(os.Args[2], os.Args[3]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	}
 	if len(os.Args) == 3 && os.Args[1] == "--mert-worker" {
 		if err := audioruntime.RunMERT(os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

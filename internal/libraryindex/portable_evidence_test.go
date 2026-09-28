@@ -31,11 +31,27 @@ func evidenceSnapshotDB(t *testing.T) (*sql.DB, string) {
 		CREATE TABLE dsp_results(file_id TEXT,source_revision TEXT,contract TEXT,data BLOB);
 		CREATE TABLE mert_results(file_id TEXT,source_revision TEXT,contract TEXT,vector BLOB);
 		CREATE TABLE clap_results(file_id TEXT,source_revision TEXT,contract TEXT,vector BLOB,data BLOB);
+		CREATE TABLE effnet_results(file_id TEXT,source_revision TEXT,contract TEXT,data BLOB);
 		INSERT INTO roots VALUES('root','library');`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return db, path
+}
+
+func TestLegacyFrozenPackSourceWithoutEffNetTable(t *testing.T) {
+	db, path := evidenceSnapshotDB(t)
+	if _, err := db.Exec(`DROP TABLE effnet_results`); err != nil {
+		t.Fatal(err)
+	}
+	source, err := openFrozenPackSource(context.Background(), path, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Close()
+	if _, found, err := source.Next(context.Background()); err != nil || found {
+		t.Fatalf("legacy source found=%v err=%v", found, err)
+	}
 }
 
 func TestDSPSourceAndSnapshotRetainFailedMERTResults(t *testing.T) {

@@ -27,7 +27,8 @@ func TestFrozenStoreDiverseSampleMatchesInMemoryContract(t *testing.T) {
 		CREATE TABLE jobs(file_id TEXT,source_revision TEXT,kind TEXT,state TEXT,semantic_key TEXT);
 		CREATE TABLE track_metadata(file_id TEXT,source_revision TEXT,contract TEXT,data BLOB);
 		CREATE TABLE mert_results(file_id TEXT,source_revision TEXT,contract TEXT,vector BLOB);
-		CREATE TABLE clap_results(file_id TEXT,source_revision TEXT,contract TEXT,vector BLOB,data BLOB);`); err != nil {
+		CREATE TABLE clap_results(file_id TEXT,source_revision TEXT,contract TEXT,vector BLOB,data BLOB);
+		CREATE TABLE effnet_results(file_id TEXT,source_revision TEXT,contract TEXT,data BLOB);`); err != nil {
 		t.Fatal(err)
 	}
 	inputs := []struct{ id, artist, title, isrc string }{
