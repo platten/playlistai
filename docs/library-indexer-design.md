@@ -222,6 +222,32 @@ Use `--analysis all` for metadata, MERT/DSP, and CLAP; `--analysis clap` perform
 a resumable CLAP-only backfill. `--clap-device auto` tries the embedded CUDA
 bundle and falls back to CPU if native validation fails. Explicit `cuda:INDEX`
 requests fail instead of silently changing backends.
+`--analysis effnet --effnet-model-dir /path/to/discogs-effnet-v1` performs a
+resumable Discogs-EffNet backfill. `--analysis all` also includes EffNet when
+`--effnet-model-dir` is supplied; omitting that flag preserves earlier `all`
+behavior. The directory must contain the original, checksum-verified ONNX
+encoder, heads, metadata, and notice downloaded by desktop setup. The separate
+Python preparation command uses TensorFlow models and cannot supply this native
+runtime. EffNet reuses the verified CLAP ONNX Runtime, so
+the indexer also needs its existing CLAP bundle (embedded in the offline build
+or supplied with `--clap-bundle`). EffNet-only analysis verifies a supplied
+CLAP bundle in place without copying its model files. No Python is used during
+indexer analysis.
+
+```sh
+playlist-indexer run --root /path/to/music --analysis effnet \
+  --effnet-model-dir /path/to/music-classifiers/discogs-effnet-v1 \
+  --clap-bundle /path/to/verified-clap-bundle --out /path/to/library.paipack
+```
+
+It samples two distributed excerpts of at most ten seconds, or one complete
+excerpt for recordings no longer than ten seconds (under three seconds is
+unsupported), and stores all 444 class scores, model fingerprint, a hash of the
+observed resampled PCM, and exact recording-relative coverage. The pack retains
+the evidence as a local-only derivative. Scores guide estimated matches and
+never satisfy strict musical requirements; a sampled interval does not establish
+whole-recording coverage. The new job kind and result table migrate existing
+state to schema version 7 without reanalyzing MERT or CLAP.
 CLAP's native CUDA health check compares a pinned tone and text embedding with
 both a 0.0005 maximum coordinate difference and 0.99999 minimum cosine; the
 CPU coordinate limit remains 0.0001. This checks numerical execution parity,

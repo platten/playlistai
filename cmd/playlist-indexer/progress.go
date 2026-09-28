@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"atomicgo.dev/cursor"
+	"github.com/mattn/go-runewidth"
 	"github.com/pterm/pterm"
 	"golang.org/x/term"
 
@@ -172,7 +173,7 @@ func startPipelineProgress(ctx context.Context, state progressSnapshotReader, se
 		return progress
 	}
 	area := cursor.NewArea().WithWriter(file)
-	go progress.run(ctx, state, semanticJobs, bar, barOutput, &area, initialPhase, mode)
+	go progress.run(ctx, state, semanticJobs, bar, barOutput, &area, initialPhase, mode, file)
 	return progress
 }
 
@@ -284,7 +285,7 @@ func (p *pipelineProgress) Stop(success bool) {
 	<-p.done
 }
 
-func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, bar *pterm.ProgressbarPrinter, barOutput *bytes.Buffer, area *cursor.Area, phase string, mode progressMode) {
+func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, bar *pterm.ProgressbarPrinter, barOutput *bytes.Buffer, area *cursor.Area, phase string, mode progressMode, terminal ...*os.File) {
 	defer close(p.done)
 	defer cursor.SetTarget(os.Stdout)
 	ticker := time.NewTicker(progressRefreshInterval)
@@ -312,7 +313,13 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			title, detail := progressActivityDisplay(activity, phase, last)
 			content = progressActivityBox(title, detail, activity.warning) + "\n" + content
 		}
-		area.Update(strings.TrimRight(content, "\n") + "\n")
+		width, height := 80, 0
+		if len(terminal) > 0 {
+			if columns, rows, err := term.GetSize(int(terminal[0].Fd())); err == nil {
+				width, height = columns, rows
+			}
+		}
+		area.Update(boundProgressLines(strings.TrimRight(content, "\n")+"\n", width, height))
 		lastActivitySecond = progressActivityAge(activity, time.Now())
 	}
 	redrawBar := func(snapshot libraryindex.ProgressSnapshot, now time.Time) {
@@ -419,6 +426,24 @@ func (p *pipelineProgress) run(ctx context.Context, state progressSnapshotReader
 			show(last, true, false)
 		}
 	}
+}
+
+// Area counts newlines, not terminal-wrapped rows. Bound both dimensions so a
+// long file name or short terminal cannot make the activity box drift upward.
+func boundProgressLines(content string, columns, rows int) string {
+	limit := max(1, columns-1)
+	lines := strings.Split(content, "\n")
+	if rows > 0 && len(lines) > rows {
+		// On a short terminal retain the activity box, which is rendered first.
+		lines = append(lines[:max(1, rows-1)], "")
+	}
+	for i, line := range lines {
+		plain := pterm.RemoveColorFromString(line)
+		if runewidth.StringWidth(plain) > limit {
+			lines[i] = runewidth.Truncate(plain, limit, "…")
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func pollProgressSnapshots(ctx context.Context, state progressSnapshotReader, semanticJobs map[string]string, out chan polledProgressSnapshot, generation func() progressGeneration) {

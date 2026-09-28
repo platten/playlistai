@@ -633,7 +633,18 @@ func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assi
 	if err != nil {
 		return nil, err
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,m.data,COALESCE(d.data,X''),COALESCE(v.vector,X''),COALESCE(c.vector,X''),COALESCE(c.data,X''),
+	var effNetTable int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='effnet_results'`).Scan(&effNetTable); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	effNetColumn, effNetJoin := "X''", ""
+	if effNetTable != 0 {
+		effNetColumn = "COALESCE(e.data,X'')"
+		effNetJoin = `LEFT JOIN jobs je ON je.file_id=f.id AND je.source_revision=f.source_revision AND je.kind='effnet' AND je.state='completed'
+		LEFT JOIN effnet_results e ON e.file_id=f.id AND e.source_revision=f.source_revision AND e.contract=je.semantic_key`
+	}
+	rows, err := store.db.QueryContext(ctx, `SELECT f.id,r.alias,f.relative_path,m.data,COALESCE(d.data,X''),COALESCE(v.vector,X''),COALESCE(c.vector,X''),COALESCE(c.data,X''),`+effNetColumn+`,
 		CASE WHEN ja.state='failed' AND ja.error_code<>'unsupported' THEN ja.error_detail ELSE '' END,
 		CASE WHEN ja.state='failed' AND ja.error_code='unsupported' THEN ja.error_detail ELSE '' END
 		FROM files f JOIN roots r ON r.id=f.root_id
@@ -644,6 +655,7 @@ func openFrozenPackSource(ctx context.Context, snapshotPath string, cursor *assi
 		LEFT JOIN mert_results v ON v.file_id=f.id AND v.source_revision=f.source_revision AND v.contract=ja.semantic_key
 		LEFT JOIN jobs jc ON jc.file_id=f.id AND jc.source_revision=f.source_revision AND jc.kind='clap' AND jc.state='completed'
 		LEFT JOIN clap_results c ON c.file_id=f.id AND c.source_revision=f.source_revision AND c.contract=jc.semantic_key
+		`+effNetJoin+`
 		WHERE f.status='present' ORDER BY f.id`)
 	if err != nil {
 		_ = store.Close()
@@ -664,8 +676,8 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 		return librarypack.Track{}, false, s.rows.Err()
 	}
 	var id, rootAlias, relativePath, failure, unsupported string
-	var metadataRaw, dsp, vectorRaw, clapRaw, clapData []byte
-	if err := s.rows.Scan(&id, &rootAlias, &relativePath, &metadataRaw, &dsp, &vectorRaw, &clapRaw, &clapData, &failure, &unsupported); err != nil {
+	var metadataRaw, dsp, vectorRaw, clapRaw, clapData, effNetData []byte
+	if err := s.rows.Scan(&id, &rootAlias, &relativePath, &metadataRaw, &dsp, &vectorRaw, &clapRaw, &clapData, &effNetData, &failure, &unsupported); err != nil {
 		return librarypack.Track{}, false, err
 	}
 	var record MetadataRecord
@@ -765,6 +777,13 @@ func (s *frozenPackSource) Next(ctx context.Context) (librarypack.Track, bool, e
 				}
 			}
 		}
+	}
+	if len(effNetData) > 0 {
+		var evidence core.MusicClassifierEvidence
+		if err := json.Unmarshal(effNetData, &evidence); err != nil {
+			return librarypack.Track{}, false, fmt.Errorf("track %s EffNet evidence: %w", id, err)
+		}
+		packed.ClassifierEvidence = []core.MusicClassifierEvidence{evidence}
 	}
 	assignment, assigned, err := assignmentForTrack(s.cursor, s.legacy, id)
 	if err != nil {

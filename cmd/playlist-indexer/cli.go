@@ -259,12 +259,13 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	flags.Var(&appendRoots, "append-root", "additional stable source root as ALIAS=PATH; repeatable")
 	flags.Var(&exclusions, "exclude", "root-relative excluded subtree; repeatable")
 	profile := flags.String("profile", "balanced", "fast, balanced, or deep")
-	analysis := flags.String("analysis", "audio", "metadata, audio, clap, or all")
+	analysis := flags.String("analysis", "audio", "metadata, audio, clap, effnet, or all")
 	device := flags.String("device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	clapDevice := flags.String("clap-device", "auto", "auto, cpu, cuda, or cuda:INDEX")
 	integrity := flags.String("integrity", "full", "full or deferred; deferred skips a second full decode when embedded identity tags exist")
 	modelBundle := flags.String("model-bundle", "", "verified local prepared MERT bundle")
-	clapBundle := flags.String("clap-bundle", "", "verified local prepared CLAP bundle")
+	clapBundle := flags.String("clap-bundle", "", "verified local CLAP bundle; also supplies the EffNet native runtime")
+	effNetModels := flags.String("effnet-model-dir", "", "verified original Discogs-EffNet ONNX model directory; enables EffNet with --analysis all")
 	outPath := flags.String("out", "", "portable .paipack output; run only")
 	trainingSample := flags.Int("training-sample", 0, "maximum deterministic MERT training sample")
 	clusters := flags.Int("clusters", 0, "spherical cluster count; zero uses the recorded heuristic")
@@ -282,8 +283,15 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	metadataOnly := *analysis == "metadata"
 	wantMERT := *analysis == "audio" || *analysis == "all"
 	wantCLAP := *analysis == "clap" || *analysis == "all"
-	if !metadataOnly && !wantMERT && !wantCLAP {
-		return 1, errors.New("--analysis must be metadata, audio, clap, or all")
+	wantEffNet := *analysis == "effnet" || *analysis == "all" && *effNetModels != ""
+	if !metadataOnly && !wantMERT && !wantCLAP && !wantEffNet {
+		return 1, errors.New("--analysis must be metadata, audio, clap, effnet, or all")
+	}
+	if wantEffNet && *effNetModels == "" {
+		return 1, errors.New("--analysis effnet requires --effnet-model-dir")
+	}
+	if *effNetModels != "" && !wantEffNet {
+		return 1, errors.New("--effnet-model-dir requires --analysis effnet or all")
 	}
 	plan, err := common.resolvePlan(metadataOnly)
 	if err != nil {
@@ -356,13 +364,28 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	var clapDir string
 	var clapManifest audio.BundleManifest
 	var resolvedCLAPDevice string
-	if wantCLAP {
+	if wantCLAP || wantEffNet && *clapBundle == "" {
 		clapDir, clapManifest, resolvedCLAPDevice, err = ensureCLAPModel(ctx, common, *clapBundle, *clapDevice, stderr)
 		if err != nil {
 			if pool != nil {
 				_ = pool.Close()
 			}
 			return 1, err
+		}
+	} else if wantEffNet {
+		clapDir, err = filepath.Abs(*clapBundle)
+		if err != nil {
+			return 1, err
+		}
+	}
+	var effNetModel audio.DiscogsModel
+	if wantEffNet {
+		effNetModel, err = audio.ReadDiscogsModel(ctx, *effNetModels)
+		if err != nil {
+			return 1, fmt.Errorf("verify EffNet models: %w", err)
+		}
+		if _, err = audio.ReadRuntimeBundleContext(ctx, clapDir); err != nil {
+			return 1, fmt.Errorf("verify EffNet native runtime: %w", err)
 		}
 	}
 	if gracefulStopRequested(ctx) {
@@ -376,6 +399,9 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	}
 	if wantCLAP {
 		semanticJobs["clap"] = libraryindex.CLAPSemanticKey(codec.ID(), audio.Fingerprint(clapManifest.Model))
+	}
+	if wantEffNet {
+		semanticJobs["effnet"] = libraryindex.EffNetSemanticKey(codec.ID(), effNetModel)
 	}
 	analysisOptions := libraryindex.AnalysisOptions{Metadata: true, Audio: wantMERT, Profile: profileValue, Integrity: integrityPolicy}
 	analyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, MERT: pool, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Profile: profileValue, Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx)}
@@ -553,6 +579,30 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 				return 1, clapErr
 			}
 		}
+		if wantEffNet {
+			if pool != nil {
+				_ = pool.Close()
+				pool = nil
+			}
+			progressReader.SetSemanticJobs(selectSemanticJobs(semanticJobs, "effnet"))
+			progress.BeginPhase("Classifying sampled audio with Discogs-EffNet", progressJobs)
+			worker := &audio.DiscogsWorker{ModelDir: *effNetModels, RuntimeDir: clapDir}
+			if err := worker.Health(ctx); err != nil {
+				_ = worker.Close()
+				return 1, fmt.Errorf("warm EffNet worker: %w", err)
+			}
+			effNetAnalyzer := &libraryindex.Analyzer{Trace: libraryindex.NewStageTrace(common.stageTraceEvents), State: state, Runtime: codec, EffNet: worker, EffNetModel: effNetModel, Plan: plan, Admission: libraryindex.NewAdmission(plan, 0), Integrity: integrityPolicy, StopAdmission: gracefulStopFromContext(ctx), FreezeManifest: analyzer.FreezeManifest, DiffEpoch: analyzer.DiffEpoch, OnFile: progress.SetCurrentFile, OnIssue: issues.Record}
+			effNetReport, effNetErr := effNetAnalyzer.Run(ctx, libraryindex.AnalysisOptions{EffNet: true, Integrity: integrityPolicy}, discoveryDone)
+			effNetAnalyzer.Admission.Close()
+			_ = worker.Close()
+			mergeAnalysisReports(&analysisReport, effNetReport)
+			if effNetErr != nil {
+				if errors.Is(effNetErr, libraryindex.ErrShutdownRequested) {
+					return 130, effNetErr
+				}
+				return 1, effNetErr
+			}
+		}
 	}
 	var fitResult libraryindex.FitResult
 	var packManifest any
@@ -585,8 +635,8 @@ func runPipelineCommand(ctx context.Context, command string, args []string, stdo
 	if common.jsonOutput {
 		return completionCode(scanReport.Errors + analysisReport.Failed + analysisReport.SkippedChanged), json.NewEncoder(stdout).Encode(result)
 	}
-	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d clap=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d mert_outages=%d mert_deferred=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s onnx_execution=%s mert_inference=%s commit=%s admission_queued=%d\n",
-		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.CLAPCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
+	fmt.Fprintf(stdout, "files=%d queued=%d metadata=%d analyzed=%d clap=%d effnet=%d mert_cache_loaded=%d mert_reused=%d dsp_reused=%d buffered_tracks=%d window_fallbacks=%d skipped_changed=%d failed=%d mert_outages=%d mert_deferred=%d cpu_admission=%s source_admission=%s pcm_admission=%s source_read=%s probe=%s fingerprint=%s integrity=%s decode=%s dsp_slot_wait=%s dsp=%s downmix=%s resample=%s mert_preprocess=%s mert_wait=%s worker_preprocess=%s ipc=%s cuda=%s onnx_execution=%s mert_inference=%s commit=%s admission_queued=%d\n",
+		scanReport.AudioFiles, scanReport.Manifest.DiffCount, analysisReport.MetadataCompleted, analysisReport.AudioCompleted, analysisReport.CLAPCompleted, analysisReport.EffNetCompleted, analysisReport.MERTCacheLoaded, analysisReport.MERTReused, analysisReport.DSPReused,
 		analysisReport.TracksBuffered, analysisReport.WindowFallbacks, analysisReport.SkippedChanged, analysisReport.Failed, analysisReport.MERTOutages, analysisReport.MERTDeferred, analysisReport.Timings.CPUAdmission, analysisReport.Timings.SourceIOAdmission,
 		analysisReport.Timings.PCMAdmission, analysisReport.Timings.SourceRead, analysisReport.Timings.Probe, analysisReport.Timings.Fingerprint, analysisReport.Timings.Integrity,
 		analysisReport.Timings.Decode, analysisReport.Timings.DSPSlotWait, analysisReport.Timings.DSP, analysisReport.Timings.Downmix,
@@ -618,6 +668,7 @@ func mergeAnalysisReports(target *libraryindex.AnalysisReport, source libraryind
 	target.MetadataCompleted += source.MetadataCompleted
 	target.AudioCompleted += source.AudioCompleted
 	target.CLAPCompleted += source.CLAPCompleted
+	target.EffNetCompleted += source.EffNetCompleted
 	target.Failed += source.Failed
 	target.Retried += source.Retried
 	target.SkippedChanged += source.SkippedChanged
@@ -1008,7 +1059,7 @@ func runStatus(ctx context.Context, args []string, stdout io.Writer) (int, error
 	if *jsonOutput {
 		return 0, json.NewEncoder(stdout).Encode(status)
 	}
-	fmt.Fprintf(stdout, "files=%d present=%d queued_files=%d active_files=%d failed_files=%d metadata=%d dsp=%d mert=%d\n", status.Files, status.Present, status.QueuedFiles, status.ActiveFiles, status.FailedFiles, status.Metadata, status.DSP, status.MERT)
+	fmt.Fprintf(stdout, "files=%d present=%d queued_files=%d active_files=%d failed_files=%d metadata=%d dsp=%d mert=%d clap=%d effnet=%d\n", status.Files, status.Present, status.QueuedFiles, status.ActiveFiles, status.FailedFiles, status.Metadata, status.DSP, status.MERT, status.CLAP, status.EffNet)
 	return 0, nil
 }
 

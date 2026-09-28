@@ -24,11 +24,12 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/platten/playlistai/internal/audio"
+	"github.com/platten/playlistai/internal/core"
 	"github.com/platten/playlistai/internal/installlock"
 	"github.com/platten/playlistai/internal/sqliteuri"
 )
 
-const stateSchemaVersion = 6
+const stateSchemaVersion = 7
 
 var rootAliasPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
@@ -158,7 +159,7 @@ CREATE TABLE IF NOT EXISTS state_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL
 		return err
 	}
 	_ = conn.QueryRowContext(ctx, `SELECT value FROM state_meta WHERE key='schema_version'`).Scan(&version)
-	if version != "" && version != "1" && version != "2" && version != "3" && version != "4" && version != "5" && version != strconv.Itoa(stateSchemaVersion) {
+	if version != "" && version != "1" && version != "2" && version != "3" && version != "4" && version != "5" && version != "6" && version != strconv.Itoa(stateSchemaVersion) {
 		return fmt.Errorf("library indexer: unsupported state schema %q", version)
 	}
 	_, err := conn.ExecContext(ctx, `
@@ -233,6 +234,10 @@ CREATE TABLE IF NOT EXISTS clap_results (
  PRIMARY KEY(file_id,contract)
 );
 CREATE INDEX IF NOT EXISTS clap_results_contract ON clap_results(contract,file_id);
+CREATE TABLE IF NOT EXISTS effnet_results (
+ file_id TEXT NOT NULL, source_revision TEXT NOT NULL, contract TEXT NOT NULL,
+ data BLOB NOT NULL, PRIMARY KEY(file_id,contract)
+);
 CREATE TABLE IF NOT EXISTS runs (
  id TEXT PRIMARY KEY, command TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT,
  status TEXT NOT NULL, plan BLOB NOT NULL, detail TEXT NOT NULL DEFAULT ''
@@ -267,7 +272,7 @@ CREATE TABLE IF NOT EXISTS runs (
 	if _, err := conn.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS track_metadata_recording ON track_metadata(recording_key,file_id) WHERE recording_key<>''`); err != nil {
 		return err
 	}
-	if version != strconv.Itoa(stateSchemaVersion) {
+	if version != "6" && version != strconv.Itoa(stateSchemaVersion) {
 		if err := backfillRecordingKeys(ctx, conn); err != nil {
 			return err
 		}
@@ -1435,6 +1440,7 @@ type JobResult struct {
 	Vector           []byte
 	MERTData         []byte
 	CLAPData         []byte
+	EffNetData       []byte
 	Dimension        int
 }
 
@@ -1510,6 +1516,12 @@ func (s *State) CommitJob(ctx context.Context, result JobResult) error {
 				return errors.New("library indexer: invalid CLAP result")
 			}
 			_, err = tx.ExecContext(ctx, `INSERT INTO clap_results(file_id,source_revision,contract,dimension,vector,data) VALUES(?,?,?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,dimension=excluded.dimension,vector=excluded.vector,data=excluded.data`, result.Job.FileID, source, result.Contract, result.Dimension, result.Vector, result.CLAPData)
+		case "effnet":
+			var evidence core.MusicClassifierEvidence
+			if len(result.EffNetData) == 0 || json.Unmarshal(result.EffNetData, &evidence) != nil || evidence.Validate() != nil {
+				return errors.New("library indexer: invalid EffNet evidence")
+			}
+			_, err = tx.ExecContext(ctx, `INSERT INTO effnet_results(file_id,source_revision,contract,data) VALUES(?,?,?,?) ON CONFLICT(file_id,contract) DO UPDATE SET source_revision=excluded.source_revision,data=excluded.data`, result.Job.FileID, source, result.Contract, result.EffNetData)
 		default:
 			return fmt.Errorf("library indexer: unknown result kind %q", result.Job.Kind)
 		}
@@ -1632,6 +1644,7 @@ type Status struct {
 	DSP           int64                       `json:"dsp"`
 	MERT          int64                       `json:"mert"`
 	CLAP          int64                       `json:"clap"`
+	EffNet        int64                       `json:"effnet"`
 	JobsByState   map[string]int64            `json:"jobsByState"`
 	JobsByStage   map[string]map[string]int64 `json:"jobsByStage"`
 	ExpiredLeases int64                       `json:"expiredLeases"`
@@ -1784,6 +1797,15 @@ func queryStatus(ctx context.Context, db *sql.DB) (Status, error) {
 	if err != nil {
 		return status, err
 	}
+	var effNetTable int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='effnet_results'`).Scan(&effNetTable); err != nil {
+		return status, err
+	}
+	if effNetTable != 0 {
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM effnet_results`).Scan(&status.EffNet); err != nil {
+			return status, err
+		}
+	}
 	if err := db.QueryRowContext(ctx, `WITH per_file AS (
 		SELECT file_id,MAX(state='pending') AS pending,MAX(state='leased') AS leased,MAX(state='failed') AS failed
 		FROM jobs j JOIN files f ON f.id=j.file_id
@@ -1839,7 +1861,7 @@ func (s *State) FinalizeBlockedAudio(ctx context.Context) error {
 }
 
 func (s *State) FinalizeBlockedKind(ctx context.Context, kind string) error {
-	if kind != "audio" && kind != "clap" {
+	if kind != "audio" && kind != "clap" && kind != "effnet" {
 		return errors.New("library indexer: invalid dependent job kind")
 	}
 	return s.write(ctx, true, func(conn *sql.Conn) error {
@@ -1861,7 +1883,7 @@ func (s *State) FinalizeBlockedScanDiffKind(ctx context.Context, epoch int64, ki
 	if epoch <= 0 {
 		return errors.New("library indexer: invalid scan diff epoch")
 	}
-	if kind != "audio" && kind != "clap" {
+	if kind != "audio" && kind != "clap" && kind != "effnet" {
 		return errors.New("library indexer: invalid dependent job kind")
 	}
 	return s.write(ctx, true, func(conn *sql.Conn) error {

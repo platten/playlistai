@@ -41,6 +41,21 @@ func TestCLIValidationAndSizeUnits(t *testing.T) {
 	}
 }
 
+func TestEffNetAnalysisRequiresExplicitVerifiedModels(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"analyze", "--analysis", "effnet"}, "requires --effnet-model-dir"},
+		{[]string{"analyze", "--analysis", "metadata", "--effnet-model-dir", "models"}, "requires --analysis effnet or all"},
+	} {
+		code, err := execute(context.Background(), test.args, io.Discard, io.Discard)
+		if code != 1 || err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Fatalf("args=%v code=%d err=%v", test.args, code, err)
+		}
+	}
+}
+
 func TestDefaultRootAliasKeepsUnusualPathsPackSafe(t *testing.T) {
 	for input, want := range map[string]string{
 		"/mnt/Music Library": "Music-Library",
