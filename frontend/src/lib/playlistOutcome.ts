@@ -19,5 +19,8 @@ export function playlistOutcomeMessage(result: PlaylistResult, fallbackCount?: n
   if (requested && actual < requested) {
     return `Created ${actual} of ${requested} requested tracks`;
   }
+  if ((result.outcome?.reasons ?? result.status?.reasons ?? []).some((reason) => reason.code === "descriptive_fit_estimated" || reason.code === "reference_fit_estimated")) {
+    return "Best estimates — some qualities are unconfirmed";
+  }
   return `Playlist created with ${actual} ${actual === 1 ? "track" : "tracks"}`;
 }

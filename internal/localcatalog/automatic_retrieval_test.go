@@ -56,7 +56,7 @@ func TestAutomaticQueryOpportunitiesAreBoundedAndDoNotMutateInput(t *testing.T) 
 			opportunity = append(opportunity, "clap:"+q.CLAP.SeedID)
 		}
 	}
-	want := []string{"mert:first-1", "clap:first-1", "mert:second-1", "clap:second-1", "metadata:playlist", "metadata:journey_end"}
+	want := []string{"metadata:journey_end", "mert:first-1", "clap:first-1", "mert:second-1", "clap:second-1", "metadata:playlist"}
 	if !reflect.DeepEqual(opportunity[:len(want)], want) {
 		t.Fatalf("later anchor/family/scope lost before repeated representatives: %v", opportunity)
 	}
@@ -327,5 +327,31 @@ func TestAutomaticRetrievalForwardedBaseVectorsRetainAllAnchorOpportunities(t *t
 	}
 	if total := metadataCalls.Load() + vectorCalls.Load(); total > 8 || metadataCalls.Load() == 0 {
 		t.Fatalf("query cap or metadata opportunity lost: metadata=%d vectors=%d", metadataCalls.Load(), vectorCalls.Load())
+	}
+}
+
+func TestAutomaticTextQueriesReserveEveryDescriptiveStage(t *testing.T) {
+	var queries []Query
+	scopes := map[*NeighborQuery]string{}
+	for _, scope := range []string{"journey_start", "journey_via", "journey_end"} {
+		for i := 0; i < 10; i++ {
+			q := &NeighborQuery{Vector: []float32{float32(i + 1), 1}, Limit: 100}
+			scopes[q] = scope
+			queries = append(queries, Query{CLAP: q})
+		}
+	}
+	got := automaticQueries(queries, core.MusicIntent{}, nil, scopes)
+	if len(got) != 8 {
+		t.Fatal(len(got))
+	}
+	// Each stage gets its first vector before any gets a second one; query
+	// pointers are copied, so compare vector backing data to original scopes.
+	for i := 0; i < 3; i++ {
+		if got[i].CLAP.Vector[0] != 1 {
+			t.Fatalf("stage starved by earlier descriptions: %+v", got)
+		}
+	}
+	if got[3].CLAP.Vector[0] != 2 {
+		t.Fatal("did not round-robin stages")
 	}
 }

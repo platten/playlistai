@@ -33,6 +33,7 @@ type SetupReadiness struct {
 	Model     SetupCapability
 	Analysis  SetupCapability
 	MERT      SetupCapability
+	Discogs   SetupCapability
 	Preview   SetupCapability
 }
 
@@ -116,6 +117,11 @@ func (c *Container) SetupReadiness() (SetupReadiness, error) {
 	analysisPrior := manifest != nil || setupPathExists(filepath.Join(c.cfg.DataDir, "music-analysis", "active.json"))
 	status.Analysis = SetupCapability{Ready: analysisReady, Supported: analysisSupported, Required: prefs.AnalysisEnabled || analysisPrior}
 	status.MERT = c.setupMERTReadiness()
+	c.discogs.mu.Lock()
+	discogsReady := c.discogs.worker != nil && c.discogs.model != nil
+	c.discogs.mu.Unlock()
+	discogsPrior := setupPathExists(c.discogsDir())
+	status.Discogs = SetupCapability{Ready: discogsReady && discogsPrior && analysisReady, Supported: audio.NativeInferenceAvailable() && analysisSupported, Required: discogsPrior}
 	status.Preview = SetupCapability{Ready: isValidPreviewProvider(previewName) && (previewName == config.PreviewOff || preview != nil), Supported: true}
 	// An existing explicit preview-off choice is retained. Fresh setup asks
 	// for a usable provider, just as it requires every supported module.
@@ -133,7 +139,7 @@ func (r SetupReadiness) CompletionSteps() []string {
 	for _, step := range []struct {
 		name       string
 		capability SetupCapability
-	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"discovery", r.Discovery}, {"model", r.Model}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"preview", r.Preview}} {
+	}{{"catalog", r.Catalog}, {"metadata", r.Metadata}, {"discovery", r.Discovery}, {"model", r.Model}, {"analysis", r.Analysis}, {"mert", r.MERT}, {"discogs", r.Discogs}, {"preview", r.Preview}} {
 		if step.capability.Supported && !step.capability.Ready && (!r.Onboarded || step.capability.Required) {
 			missing = append(missing, step.name)
 		}

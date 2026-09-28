@@ -54,6 +54,23 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 	if !s.ReadyFor(intent) {
 		return nil, fmt.Errorf("audio: analysis requires an authorized, parity-validated model supporting the requested checks")
 	}
+	clauses := Clauses(intent)
+	if s.Classifier != nil {
+		useful := false
+		for _, clause := range clauses {
+			if clause.Strict || clause.Negative {
+				continue
+			}
+			switch clause.Kind {
+			case "instrumentation", "vocal", "mood", "genre", "style":
+				useful = true
+			}
+		}
+		if !useful {
+			s = s.Clone()
+			s.Classifier = nil
+		}
+	}
 	budgetCtx, cancel := context.WithTimeout(ctx, budget)
 	go func() {
 		select {
@@ -62,7 +79,7 @@ func (s *Service) BeginWithBudget(ctx context.Context, intent core.MusicIntent, 
 		case <-budgetCtx.Done():
 		}
 	}()
-	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: Clauses(intent), queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, checking: map[string]chan struct{}{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
+	x := &Session{service: s, ctx: budgetCtx, cancel: cancel, stop: stop, catalog: catalog, intent: intent, clauses: clauses, queries: map[string][]float32{}, checked: map[string]core.AudioAssessment{}, checking: map[string]chan struct{}{}, started: time.Now(), snapshot: core.AudioEvidenceSnapshot{Model: s.Analyzer.Identity(), PolicyVersion: s.Policy.Version}}
 	x.limit = CandidateAnalysisLimit(intent.Count)
 	if budget > AnalysisBudget {
 		x.limit = min(1000, max(100, 20*intent.Count))

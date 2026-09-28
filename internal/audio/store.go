@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS dsp_analysis (
  id TEXT PRIMARY KEY, catalog TEXT NOT NULL, track TEXT NOT NULL, track_key TEXT NOT NULL,
  version TEXT NOT NULL, data TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS dsp_analysis_lookup
- ON dsp_analysis(catalog, track, track_key, version);`)
+ ON dsp_analysis(catalog, track, track_key, version);
+CREATE TABLE IF NOT EXISTS classifier_analysis (
+ catalog TEXT NOT NULL, track TEXT NOT NULL, track_key TEXT NOT NULL,
+ audio_hash TEXT NOT NULL, source_id TEXT NOT NULL, model TEXT NOT NULL, data TEXT NOT NULL,
+ PRIMARY KEY(catalog,track,track_key,audio_hash,source_id,model));`)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -172,7 +176,7 @@ func (s *Store) PutAssessment(ctx context.Context, a core.AudioAssessment) error
 
 func (s *Store) Usage(ctx context.Context) (core.AnalysisStorageUsage, error) {
 	var usage core.AnalysisStorageUsage
-	err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM analysis), (SELECT COUNT(*) FROM assessment)`).Scan(&usage.Records, &usage.Assessments)
+	err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM analysis)+(SELECT COUNT(*) FROM classifier_analysis), (SELECT COUNT(*) FROM assessment)`).Scan(&usage.Records, &usage.Assessments)
 	for _, path := range []string{s.path, s.path + "-wal", s.path + "-shm", s.path + "-journal"} {
 		if stat, e := os.Stat(path); e == nil {
 			usage.Bytes += stat.Size()
@@ -185,7 +189,7 @@ func (s *Store) Usage(ctx context.Context) (core.AnalysisStorageUsage, error) {
 func (s *Store) Clear(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, err := s.db.ExecContext(ctx, `DELETE FROM assessment; DELETE FROM analysis; VACUUM;`)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM assessment; DELETE FROM analysis; DELETE FROM classifier_analysis; VACUUM;`)
 	return err
 }
 

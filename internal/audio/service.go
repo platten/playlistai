@@ -36,6 +36,7 @@ type Service struct {
 	DSPStore ports.DSPStore
 	// MERT is opt-in on an Enhanced request's service copy only.
 	MERT       *MERTService
+	Classifier *DiscogsClassifier
 	Recordings ports.CachedRecordingReader
 	Policy     Policy
 	// Authorized is a distribution-level provider permission gate, independent
@@ -116,7 +117,7 @@ func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	}
 	hash := sha256.Sum256(encoded)
 	audioHash := hex.EncodeToString(hash[:])
-	withEnhanced := s.DSPStore != nil || s.MERT != nil
+	withEnhanced := s.DSPStore != nil || s.MERT != nil || s.Classifier != nil
 	// Decode once and retain the bounded source PCM for optional work. Do not
 	// spend the lazy enhanced admission/deadline before CLAP has been retained.
 	samples, original, err := decodeForAnalysis(ctx, encoded, withEnhanced)
@@ -168,11 +169,14 @@ func (s *Service) analyzePreview(ctx context.Context, ref core.TrackRef, catalog
 	// failure or deadline cannot discard this row, including when the enclosing
 	// request is canceled during optional inference. All PCM remains owned here
 	// and is cleared on every return; no worker outlives these borrowed buffers.
-	if withEnhanced && ctx.Err() == nil && s.enhancedCacheMiss(ctx, ref, catalog, preview.Identity, audioHash) && ctx.Err() == nil {
+	if withEnhanced && ctx.Err() == nil && (s.Classifier != nil || s.enhancedCacheMiss(ctx, ref, catalog, preview.Identity, audioHash)) && ctx.Err() == nil {
 		budget := EnhancedBudgetFor(ctx)
 		if budget == nil || budget.Allow(ref.ID) {
 			enhancedCtx, enhancedCancel := budget.Context(ctx)
 			defer enhancedCancel()
+			if enhancedCtx.Err() == nil && s.Classifier != nil {
+				_, _ = s.Classifier.AnalyzeDecoded(enhancedCtx, ref, catalog, preview.Identity, audioHash, original)
+			}
 			if enhancedCtx.Err() == nil && s.DSPStore != nil {
 				_, _ = s.storeDSPInterval(enhancedCtx, ref, catalog, preview.Identity, audioHash, original, first, last)
 			}

@@ -866,8 +866,8 @@ export function GenerateScreen({
           }} />}
           <div className="rounded-card border border-line bg-surface p-3 text-[13px] leading-relaxed">
             <p>{preview.count} tracks{preview.mode === "journey" ? " · a musical journey" : ""}</p>
-            {(preview.intent.references ?? []).map((ref, index) => <p key={index}>{ref.kind.charAt(0).toUpperCase() + ref.kind.slice(1)}: {ref.query}{ref.influence === "negative" ? " (excluded)" : ""}</p>)}
-            <IntentTraits preferences={preview.intent.preferences} criteria={preview.intent.essentialCriteria ?? []} />
+            {(preview.intent.references ?? []).map((ref, index) => <p key={index}>{ref.kind.charAt(0).toUpperCase() + ref.kind.slice(1)}: {ref.query}{ref.influence === "negative" ? " (excluded)" : automatic && ref.strength === "preferred" ? " (discovery target)" : ""}</p>)}
+            <IntentTraits preferences={preview.intent.preferences} criteria={preview.intent.essentialCriteria ?? []} automatic={recommendationMode === "automatic"} />
             {(preview.intent.temporal ?? []).map((period, index) => <p key={index}>{period.basis === "composition" ? "Composed" : "Originally released"}: {period.startYear}–{period.endYear}{period.scope === "journey_start" ? " (starting stage)" : period.scope === "journey_end" ? " (ending stage)" : ""}</p>)}
             {preview.intent.start && <p>Start with {preview.intent.start.query}</p>}
             {preview.intent.destination && <p>Finish with {preview.intent.destination.query}</p>}

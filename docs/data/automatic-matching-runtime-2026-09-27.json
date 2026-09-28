@@ -1,0 +1,3349 @@
+{
+  "version": "automatic-matching-runtime/v1",
+  "capturedUTC": "2026-09-27T23:39:28.522042+00:00",
+  "scope": "Observed production Automatic v8 generation lifecycle; no held-out musical-quality comparison.",
+  "workspace": "/tmp/playlist-ai-matching-runtime",
+  "binary": {
+    "path": "/tmp/playlist-ai-matching-evaluation/musiccheck-v8",
+    "sha256": "2e9b5ad8c5a9601647264415605e71d7f465d75685cb67b1138f0e3713506c6a",
+    "buildCommand": "GOMAXPROCS=2 go build -p 2 -o /tmp/playlist-ai-matching-evaluation/musiccheck-v8 ./cmd/musiccheck",
+    "sourceInventoryPath": "/tmp/playlist-ai-matching-runtime/source-files.json",
+    "sourceInventorySHA256": "d053832d7834ceead6a84deae3bb4e3885d781906e07185f029a7867daf6873e",
+    "sourceFileCount": 1129,
+    "sourceFilesChangedSinceBuild": [
+      "internal/musicgraph/job.go"
+    ],
+    "revision": {
+      "revision": "7b608bfccc5543b7221dce4db9000845a670ec13",
+      "modified": true
+    }
+  },
+  "inputs": {
+    "fixturePath": "/tmp/playlist-ai-matching-runtime/prompts.json",
+    "fixtureSHA256": "248518656b30cbb0ce82154c8c2060bbc11cf709690d938159492d2f5c7b0e11",
+    "runnerPath": "/tmp/playlist-ai-matching-runtime/run.py",
+    "runnerSHA256": "f2787e19936f111dc0d3bdc45038e79d307abf0243eee1e114930365255011fd",
+    "summaryScriptSHA256": "74b49818b16ee439db62cb9d3acabc50826ff923c75db9b33ab412757e0db7c3",
+    "parsingPath": "Fresh production rules parser, rules/v17 + source-atoms/v22 + music-concepts/v6; raw cold prompt, frozen resolved intent and lossless RNG seed on warm BuildPlaylist replay. CLI has no desktop initial seed override.",
+    "originalV7SeedsNotReused": {
+      "description": "14999421884640476911",
+      "reference": "17602075675005966192"
+    },
+    "originalV7ResolvedInputsAvailable": false,
+    "sameBinaryAcrossConditions": true,
+    "sameImmutableAssetsAcrossConditions": true,
+    "generationBudgetSeconds": 120,
+    "outerTotalBudgetSeconds": 720,
+    "outerProcessBudgetSeconds": 300,
+    "freshPreferences": {
+      "recommendationMode": "automatic",
+      "analysisEnabled": true,
+      "enhancedAudioEnabled": true,
+      "mertSimilarityEnabled": true,
+      "modelDisabled": true,
+      "previewProvider": "deezer",
+      "onboardingDone": true
+    }
+  },
+  "assets": {
+    "inventoryPath": "/tmp/playlist-ai-matching-runtime/immutable-assets.json",
+    "inventorySHA256": "e7fc5f26df24de4e22e4b50360644e731bcd83e0bc60e25889d9010bece0413a",
+    "filesPerIsolatedStore": 97,
+    "logicalBytesPerStore": 15311166372,
+    "copyMethod": "Large immutable assets hardlinked; small markers copied. No symlinks, credentials, real preferences, history, taste, provider cache, mutable candidate catalog or private local library copied.",
+    "publicDiscoveryManifestSHA256": "42dc9a404faff6d0593e24d3a60ce23701f1c30c6b118c611508f41a12bdcddc",
+    "publicDiscoveryCoverage": {
+      "tracks": 252516,
+      "metadata": 252516,
+      "mert": 247475,
+      "clap": 252491,
+      "dsp": 247781,
+      "failed": 5029,
+      "unsupported": 12
+    },
+    "publicDiscoveryCLAPModel": {
+      "model": "laion/larger_clap_music",
+      "revision": "a0b4534a14f58e20944452dff00a22a06ce629d1",
+      "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+      "runtime": "onnxruntime/1.26.0/cuda",
+      "dimension": 512,
+      "weights": "a5cb4d0aff8901220ce65d47691a05b5eb96ce2d40497780e67ad4d289142b36"
+    },
+    "publicDiscoveryCLAPMatchesInstalledTextModel": false,
+    "previewDecoder": "Compiled github.com/hajimehoshi/go-mp3 via internal/audio/preprocess.go. Offline FFmpeg/Chromaprint bundle is not required for preview decoding.",
+    "newMusicGraphActivated": false,
+    "newClassifierPackActivated": false,
+    "catalogAndIdentityFiles": [
+      {
+        "path": "catalog/vectors.i8",
+        "bytes": 191383432,
+        "sha256": "5ab9b616402234fe070b209377e17322d945c09c16a228109b27ab74d4071ac3"
+      },
+      {
+        "path": "catalog/catalog-manifest.json",
+        "bytes": 539,
+        "sha256": "02e070312899c9db1ff142f1147bfd080b9650ffb530a4fc4e70f351914acaf3"
+      },
+      {
+        "path": "catalog/catalog.sqlite",
+        "bytes": 230723584,
+        "sha256": "7c496742d577d279283c15688d1d188dbed41588e5d8894e5603a78ce6c7adf6"
+      },
+      {
+        "path": "musicbrainz-metadata/active",
+        "bytes": 94,
+        "sha256": "3906740f7fd303564aa83fef07cd4709404e23cf16d6f69782aa936a3200c7ce"
+      },
+      {
+        "path": "musicbrainz-metadata/musicbrainz-c5116274c663633da4b77d057e7637bcf7696b390a09ab0db53a50fb4cbed344-2355808079.sqlite",
+        "bytes": 679641088,
+        "sha256": "c5116274c663633da4b77d057e7637bcf7696b390a09ab0db53a50fb4cbed344"
+      }
+    ]
+  },
+  "measurementNotes": [
+    "Each case starts in a separate isolated state containing only allowlisted installed public/immutable assets and freshly written neutral preferences.",
+    "Cold means empty mutable provider/derived caches, not cold OS page cache or a model download. Warm reuses only the preceding cold run state and starts a new application process.",
+    "Startup is launch to first zero-run CLI receipt, polled every 100 ms; it includes app initialization, model health checks and diagnostic asset/status hashing. It is not ordinary GUI time-to-ready.",
+    "Generation duration is the CLI production GenerateFromPrompt/BuildPlaylist call; cold includes rules parsing, warm supplies frozen input. Parsing quality is not benchmarked.",
+    "Response elapsed sums overlap and exclude provider quota waits; they must not be read as provider wall time or isolated model inference time.",
+    "Description cold overlapped public metadata preparation from 2026-09-27T23:29:50.736Z through 2026-09-27T23:31:11.592Z and final gate lint. Warm description generation and both reference generations began after those workloads; description warm startup overlapped the end of metadata preparation.",
+    "One observation per condition; no confidence interval or performance improvement claim. Shared WSL host and unflushed OS cache limit causal cold/warm interpretation.",
+    "Installed 252,516-track discovery pack has incompatible legacy CUDA CLAP vectors. Current original LAION CPU model cannot query those embeddings; description candidates rely on metadata retrieval and newly analyzed permitted previews.",
+    "No comparison against original v7 production run: its resolved raw request artifact is unavailable. These are current rules interpretations with per-case frozen warm replay.",
+    "Returned estimated tracks and provider facts are not human judgments of musical suitability. No strict calibration, challenger improvement, platform portability or release gate is established.",
+    "Cold generation includes initial parsing and reference preparation; warm replay starts from the cold final resolved intent. The Radiohead intent_preparation phase was 10.824 seconds cold and zero warm, so total time differences cannot be assigned solely to caches.",
+    "New graph preparation and classifier features were not activated in these stores; this measures the final Automatic policy with existing installed public data."
+  ],
+  "runs": [
+    {
+      "case": "description",
+      "cacheCondition": "cold",
+      "command": [
+        "/tmp/playlist-ai-matching-evaluation/musiccheck-v8",
+        "-mode",
+        "automatic",
+        "-app-data-dir",
+        "/tmp/playlist-ai-matching-runtime/description/state",
+        "-catalog",
+        "/tmp/playlist-ai-matching-runtime/description/state/catalog",
+        "-prompts",
+        "/tmp/playlist-ai-matching-runtime/prompts.json",
+        "-case",
+        "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+        "-case-timeout",
+        "120s",
+        "-cleanup-timeout",
+        "10s",
+        "-eval-split",
+        "development",
+        "-variant",
+        "automatic-v8-runtime-description",
+        "-cache-condition",
+        "cold",
+        "-output",
+        "/tmp/playlist-ai-matching-runtime/description/cold.json",
+        "-diagnostics",
+        "/tmp/playlist-ai-matching-runtime/description/cold-diagnostics.json",
+        "-supervised-child"
+      ],
+      "prompt": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+      "startingMutableFiles": [
+        {
+          "path": "prefs.json",
+          "bytes": 197,
+          "sha256": "8f7fd8f9f36c8fbf881c150d287dcf6ae0ed2a201b78c453c3ce6d5a6656c208"
+        }
+      ],
+      "startedUTC": "2026-09-27T23:29:03.929760+00:00",
+      "startupInitialReceiptSHA256": "e36fd4d57f88b22a7ff2bf786ddbb28e5fac1c6c345290d7102905082bc9951d",
+      "startupMilliseconds": 88862,
+      "processMilliseconds": 104790,
+      "commandExitCode": 0,
+      "outerWatchdog": false,
+      "endingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 69632,
+          "sha256": "e77789a2aac8575d6970780a858a850e7d9f640dc50cbd61e75e39ed8cf26972"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 16384,
+          "sha256": "130c33a8fe94c4a6f77087ee7b3e0c650f4d0e72e8e23703af8fe26167ed6a14"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 53248,
+          "sha256": "2edb4f17a58e2953fa161ea15327d7b02ba281c7b7743902c91be016426e1121"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "2a3a629622eda6275e48d3104e52d09fd88f02c2f73f177278816144b052a265"
+        }
+      ],
+      "rawReportSHA256": "9d11bd359b2b7503dc5b434bb770f8a6ee09ef5e3bbeeafdaa447eeaa8d9e734",
+      "completed": true,
+      "generationMilliseconds": 15744,
+      "returned": 0,
+      "error": null,
+      "rawReportPath": "/tmp/playlist-ai-matching-runtime/description/cold.json",
+      "diagnosticsPath": "/tmp/playlist-ai-matching-runtime/description/cold-diagnostics.json",
+      "diagnosticsSHA256": "9fab8aa8fad9ef56af7ccb9b2b67ff7b8fe4253a3f659b24769da606caa529b0",
+      "inputMode": "raw",
+      "parser": {
+        "backend": "rules",
+        "requestedBackend": "rules",
+        "fallbackUsed": false,
+        "fallbackReason": "",
+        "referenceLookup": "available",
+        "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "genreVocabulary": "embedded+paipack"
+      },
+      "timedOut": false,
+      "generationLimitSeconds": 120,
+      "requested": 10,
+      "distinctArtists": 0,
+      "seedArtistTracks": null,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "stopReason": "preparation_stopped",
+      "considered": 0,
+      "eligible": 0,
+      "reproducibility": {
+        "searchSnapshot": "8236ad759c9e81d54964bcb9881b6a8f8b2bd3f954ea85b201c997bbc64b8a90",
+        "searchPolicy": "automatic-search/v1",
+        "evidenceSnapshot": "",
+        "id": "67e11223ea50b87b37dc7a9a16b732a277bf592b73dc515e1d70f8b1ae27aca4",
+        "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "algorithmVersion": "automatic/v8+automatic-fit/v5",
+        "intentFingerprint": "fb0b07656c7c081f2d8961ffd04b45a76075d96a7dc1af3444538287299fc071",
+        "profileVersion": "taste-profile/v4",
+        "profileSnapshot": "1c9d4e8301b8ceec15bfa3195afd8344e10072cf81ca17b98f77b6167e325d13",
+        "contextFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rngSeed": "8649349911664434966"
+      },
+      "intentSHA256": "047754ac343121653d051e4c54a548ea71ed0262ddda91c5a365b4a8a31cb884",
+      "resolvedIntent": {
+        "translation": {
+          "version": "source-atoms/v22+music-concepts/v6",
+          "originalText": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+          "atoms": [
+            {
+              "id": "count:8:17",
+              "kind": "count",
+              "value": "10",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "10 tracks",
+                  "start": 8,
+                  "end": 17,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "instrumentation:23:33",
+              "kind": "instrumentation",
+              "value": "soft piano",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "soft piano",
+                  "start": 23,
+                  "end": 33,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "texture:35:57",
+              "kind": "texture",
+              "value": "spacious reverberation",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "spacious reverberation",
+                  "start": 35,
+                  "end": 57,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "texture:65:86",
+              "kind": "texture",
+              "value": "reflective atmosphere",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "reflective atmosphere",
+                  "start": 65,
+                  "end": 86,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "recognition": {
+            "matcherVersion": "artist-first/v12",
+            "referenceLookup": "available",
+            "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "genreVocabulary": "embedded+paipack"
+          },
+          "repairs": [
+            "Explicit source facts take precedence over conflicting model fields."
+          ]
+        },
+        "trackCountExplicit": true,
+        "verificationPolicy": "best_available",
+        "temporal": [],
+        "anchorAttempts": null,
+        "originalDescription": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+        "genreExpansions": null,
+        "version": 12,
+        "references": null,
+        "inferredAnchors": null,
+        "requiredTracks": null,
+        "essentialCriteria": [
+          {
+            "strength": "essential",
+            "kind": "instrumentation",
+            "value": "soft piano",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "soft piano",
+                "start": 23,
+                "end": 33,
+                "explicit": true
+              }
+            ]
+          },
+          {
+            "strength": "essential",
+            "kind": "texture",
+            "value": "spacious reverberation",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "spacious reverberation",
+                "start": 35,
+                "end": 57,
+                "explicit": true
+              }
+            ]
+          },
+          {
+            "strength": "essential",
+            "kind": "texture",
+            "value": "reflective atmosphere",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "reflective atmosphere",
+                "start": 65,
+                "end": 86,
+                "explicit": true
+              }
+            ]
+          }
+        ],
+        "preferences": {
+          "genres": null,
+          "styles": null,
+          "moods": null,
+          "instrumentation": [
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "soft piano",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "soft piano",
+                  "start": 23,
+                  "end": 33,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "textureDescriptions": [
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "spacious reverberation",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "spacious reverberation",
+                  "start": 35,
+                  "end": 57,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "reflective atmosphere",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "reflective atmosphere",
+                  "start": 65,
+                  "end": 86,
+                  "explicit": true
+                }
+              ]
+            }
+          ]
+        },
+        "hardConstraints": null,
+        "controls": {
+          "recommendationMode": "automatic",
+          "totalTrackCount": 10,
+          "audioWeight": 0.5,
+          "cooccurrenceWeight": 0.5,
+          "discovery": 0.1,
+          "artistDiversity": 0.3,
+          "transitionSmoothness": 0.2222222222222222
+        },
+        "journey": {
+          "waypoints": null,
+          "energyTrajectory": null
+        },
+        "unsupportedRequirements": null,
+        "capabilities": [
+          {
+            "name": "positive_references",
+            "status": "supported",
+            "detail": "independent audio and co-occurrence retrieval for each resolved reference"
+          },
+          {
+            "name": "reference_resolution",
+            "status": "supported",
+            "detail": "typed exact, alias, and ranked catalog matching with explicit ambiguity"
+          },
+          {
+            "name": "negative_references",
+            "status": "supported",
+            "detail": "resolved references contribute transparent embedding-space ranking penalties"
+          },
+          {
+            "name": "required_tracks",
+            "status": "supported",
+            "detail": "resolved catalog tracks"
+          },
+          {
+            "name": "hard_artist_exclusions",
+            "status": "supported",
+            "detail": "exact normalized artist identity"
+          },
+          {
+            "name": "audio_cooccurrence_weights",
+            "status": "supported",
+            "detail": "independent weights are normalized for blended similarity"
+          },
+          {
+            "name": "total_track_count",
+            "status": "supported",
+            "detail": "total output length including required tracks"
+          },
+          {
+            "name": "essential_musical_criteria",
+            "status": "unsupported",
+            "detail": "requires affirmative grounded feature or compatible semantic evidence"
+          },
+          {
+            "name": "semantic_preferences",
+            "status": "unsupported",
+            "detail": "preserved; active only when a compatible grounded semantic sidecar is loaded"
+          },
+          {
+            "name": "discovery",
+            "status": "supported",
+            "detail": "seeded bounded exploration among sufficiently relevant exact-search candidates"
+          },
+          {
+            "name": "artist_diversity",
+            "status": "supported",
+            "detail": "controls transparent MMR concentration penalties and soft artist spacing"
+          },
+          {
+            "name": "transition_smoothness",
+            "status": "supported",
+            "detail": "controls greedy embedding transitions with bounded local improvement"
+          },
+          {
+            "name": "energy_trajectory",
+            "status": "unsupported",
+            "detail": "preserved but catalog has no energy feature"
+          }
+        ],
+        "interpretationNotes": "",
+        "seeds": {
+          "queries": null,
+          "trackIds": null
+        },
+        "required": {
+          "queries": null,
+          "trackIds": null
+        },
+        "count": 10,
+        "mode": "similar",
+        "creativity": 0.5,
+        "noise": 0.1,
+        "lookback": 3,
+        "constraints": {
+          "artistsExclude": null,
+          "noRepeatArtistBackToBack": false,
+          "excludeSeedArtists": false
+        },
+        "seed": "8649349911664434966",
+        "notesForUser": "10 tracks."
+      },
+      "resolvedCriteria": [
+        {
+          "strength": "essential",
+          "kind": "instrumentation",
+          "value": "soft piano",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "soft piano",
+              "start": 23,
+              "end": 33,
+              "explicit": true
+            }
+          ]
+        },
+        {
+          "strength": "essential",
+          "kind": "texture",
+          "value": "spacious reverberation",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "spacious reverberation",
+              "start": 35,
+              "end": 57,
+              "explicit": true
+            }
+          ]
+        },
+        {
+          "strength": "essential",
+          "kind": "texture",
+          "value": "reflective atmosphere",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "reflective atmosphere",
+              "start": 65,
+              "end": 86,
+              "explicit": true
+            }
+          ]
+        }
+      ],
+      "resolvedReferences": null,
+      "strictClauseCounts": {},
+      "fitStateCounts": {},
+      "retrievalChannelCounts": {},
+      "phaseTimings": [
+        {
+          "phase": "intent_preparation",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 180,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "resolution",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 180,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "feature_preparation",
+          "state": "completed",
+          "milliseconds": 7555,
+          "elapsedMilliseconds": 7735,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "local_retrieval",
+          "state": "completed",
+          "milliseconds": 8000,
+          "elapsedMilliseconds": 15739,
+          "items": 0,
+          "error": true,
+          "contextStopped": true
+        },
+        {
+          "phase": "batch_prepare",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 15739,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "online_evidence",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 15739,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "assembly",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 15739,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        }
+      ],
+      "providerResponseSummary": {},
+      "newCLAPAudioEmbeddings": 0,
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [],
+      "completeness": {
+        "requested": 10,
+        "returned": 0,
+        "distinctArtists": 0,
+        "exactCount": false
+      },
+      "runtimeIdentities": {
+        "catalogVersion": "1:956917:1788613313",
+        "languageModel": {},
+        "discovery": {
+          "version": "multipart-5fd3959b189ac4c7",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516
+        },
+        "clap": {
+          "model": "LAION original HTSAT-base music checkpoint",
+          "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+          "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 512,
+          "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+        },
+        "clapBundle": "c193cda62f79743ae1e8fb44778c4522eee3eeb398579fa443c5f04b917d2aae",
+        "mert": {
+          "model": "m-a-p/MERT-v1-95M",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "preprocessing": "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 768,
+          "weightsSha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+          "pooling": "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
+        },
+        "mertBundle": "f715605ffc6876bf5bddc3f9b419951a12583b2d6661a3aa9718d17f6e321852",
+        "workingTree": {
+          "revision": "7b608bfccc5543b7221dce4db9000845a670ec13",
+          "modified": true
+        }
+      },
+      "capabilities": {
+        "analysis": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedAvailable": true,
+          "recommendedInstalled": false,
+          "recommendedDetail": "",
+          "recommendedManifest": "<local-model-cache>/clap-cuda",
+          "recommendedBytes": 4016867171,
+          "installed": true,
+          "available": true,
+          "generalFitAvailable": false,
+          "enabled": false,
+          "model": "LAION original HTSAT-base music checkpoint · CPU",
+          "detail": "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.",
+          "downloadBytes": 807374279,
+          "memoryBytes": 2147483648,
+          "storage": {
+            "records": 0,
+            "assessments": 0,
+            "bytes": 69632
+          }
+        },
+        "discovery": {
+          "configured": true,
+          "hostedConfigured": true,
+          "installed": true,
+          "version": "multipart-5fd3959b189ac4c7",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516,
+          "downloadBytes": 5340391369,
+          "error": "",
+          "source": "hosted",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d"
+        },
+        "enhanced": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedManifestUrl": "<local-model-cache>/mert-cuda",
+          "recommendedDownloadBytes": 3610268333,
+          "recommendedUpgrade": true,
+          "enabled": true,
+          "mertEnabled": true,
+          "dspAvailable": true,
+          "mertAvailable": true,
+          "installed": true,
+          "model": "MERT v1 95M (noncommercial)",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "license": "CC-BY-NC-4.0 (noncommercial)",
+          "downloadBytes": 401467084,
+          "dspStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "mertStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "searchableTracks": 0,
+          "detail": "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval.",
+          "limit": 24
+        },
+        "generationLimitSeconds": 120,
+        "library": {
+          "installed": false,
+          "availableBackends": [],
+          "mode": "combined",
+          "coverage": {
+            "tracks": 0,
+            "metadata": 0,
+            "mert": 0,
+            "clap": 0,
+            "dsp": 0,
+            "failed": 0,
+            "unsupported": 0
+          },
+          "mert": {
+            "name": "",
+            "dimension": 0,
+            "dtype": "",
+            "byteOrder": "",
+            "normalized": false,
+            "model": "",
+            "modelRevision": "",
+            "graphSha256": "",
+            "decoder": "",
+            "preprocessing": "",
+            "sampling": "",
+            "pooling": "",
+            "scope": "",
+            "missingness": ""
+          },
+          "roots": []
+        },
+        "nativeInferenceCompiled": true,
+        "parser": {
+          "Name": "rules",
+          "Backend": "rules",
+          "Version": "rules/v17",
+          "Ready": true,
+          "ContractVersion": 12,
+          "Evidence": true
+        },
+        "recommendationConfig": {
+          "EnhancedMERTWeight": 0.15,
+          "LibraryEvidenceEnabled": false,
+          "EnhancedDSPWeight": 0.15,
+          "EnhancedTransitionWeight": 0.15,
+          "Strategy": "automatic",
+          "SeedAudioBudget": 32,
+          "SeedCooccurrenceBudget": 32,
+          "TasteClusterBudget": 24,
+          "MaxTasteClusters": 4,
+          "ExplorationPool": 160,
+          "ExplorationBudget": 24,
+          "ExplorationMinScore": 0.1,
+          "MaxCandidates": 512,
+          "RetrievalWeight": 0.15,
+          "ListenerWeight": 0.3,
+          "NegativePenalty": 0.65,
+          "ExposurePenalty": 0.3,
+          "NoveltyWeight": 0.2,
+          "ExplorationChance": 0.35,
+          "ContinuationBudget": 16,
+          "MMRMinimumLambda": 0.55,
+          "SelectionMinimumRelevance": 0.05,
+          "SelectionRelevanceWindow": 0.8,
+          "EmbeddingRedundancyWeight": 0.5,
+          "ArtistConcentrationWeight": 0.35,
+          "AlbumConcentrationWeight": 0.15,
+          "SoftArtistSpacingMax": 3,
+          "TransitionRelevanceWeight": 0.15,
+          "LocalImprovementPasses": 3,
+          "LocalImprovementWindow": 4,
+          "SemanticBudget": 96,
+          "SemanticMinimumScore": 0.15,
+          "SemanticWeight": 0.35,
+          "SemanticNegativePenalty": 0.55
+        },
+        "recommendationMode": "automatic",
+        "requestedParser": "rules"
+      }
+    },
+    {
+      "case": "description",
+      "cacheCondition": "warm",
+      "command": [
+        "/tmp/playlist-ai-matching-evaluation/musiccheck-v8",
+        "-mode",
+        "automatic",
+        "-app-data-dir",
+        "/tmp/playlist-ai-matching-runtime/description/state",
+        "-catalog",
+        "/tmp/playlist-ai-matching-runtime/description/state/catalog",
+        "-prompts",
+        "/tmp/playlist-ai-matching-runtime/prompts.json",
+        "-case",
+        "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+        "-case-timeout",
+        "120s",
+        "-cleanup-timeout",
+        "10s",
+        "-eval-split",
+        "development",
+        "-variant",
+        "automatic-v8-runtime-description",
+        "-cache-condition",
+        "warm",
+        "-output",
+        "/tmp/playlist-ai-matching-runtime/description/warm.json",
+        "-diagnostics",
+        "/tmp/playlist-ai-matching-runtime/description/warm-diagnostics.json",
+        "-supervised-child",
+        "-replay",
+        "/tmp/playlist-ai-matching-runtime/description/cold.json"
+      ],
+      "prompt": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+      "startingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 69632,
+          "sha256": "e77789a2aac8575d6970780a858a850e7d9f640dc50cbd61e75e39ed8cf26972"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 16384,
+          "sha256": "130c33a8fe94c4a6f77087ee7b3e0c650f4d0e72e8e23703af8fe26167ed6a14"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 53248,
+          "sha256": "2edb4f17a58e2953fa161ea15327d7b02ba281c7b7743902c91be016426e1121"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "2a3a629622eda6275e48d3104e52d09fd88f02c2f73f177278816144b052a265"
+        }
+      ],
+      "startedUTC": "2026-09-27T23:30:50.542275+00:00",
+      "startupInitialReceiptSHA256": "033453a0a9a678ddc3f98a2e9b2ace0db1565c6b23b53a9f232e64df9b145114",
+      "startupMilliseconds": 67232,
+      "processMilliseconds": 182335,
+      "commandExitCode": 0,
+      "outerWatchdog": false,
+      "endingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 294912,
+          "sha256": "969df829caa6ca018368a91426f269a2e01bc94c6314b31afd101d242cfc3f61"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 258048,
+          "sha256": "194acdfaae32b505cf88e74a0b9a854f9004b383c75d77a39d3440e619de4747"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 53248,
+          "sha256": "2edb4f17a58e2953fa161ea15327d7b02ba281c7b7743902c91be016426e1121"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "a7d20860aff860a13870fcc7bce26ee1ddee7004df32aacca33e4e6629c738c5"
+        }
+      ],
+      "rawReportSHA256": "4d428e088a01d2abb85eaf16bc450fd41e96712ff3c0597e56bcb06400fe7b40",
+      "completed": true,
+      "generationMilliseconds": 115005,
+      "returned": 9,
+      "error": null,
+      "rawReportPath": "/tmp/playlist-ai-matching-runtime/description/warm.json",
+      "diagnosticsPath": "/tmp/playlist-ai-matching-runtime/description/warm-diagnostics.json",
+      "diagnosticsSHA256": "750755ac3966201be220ce7a0e7bb89ada4683d2b1e8ea8d485a1e626eef9f83",
+      "inputMode": "frozen",
+      "parser": null,
+      "timedOut": false,
+      "generationLimitSeconds": 120,
+      "requested": 10,
+      "distinctArtists": 4,
+      "seedArtistTracks": null,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "insufficient_supported_candidates",
+            "detail": "Prepared evidence supplied fewer suitable recordings than requested.",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "descriptive_fit_estimated",
+            "detail": "Best estimates — some qualities are unconfirmed",
+            "criterion": "",
+            "action": ""
+          },
+          {
+            "code": "preparation_incomplete",
+            "detail": "Candidate preparation stopped; only complete prepared recordings were considered.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "stopReason": "preparation_stopped",
+      "considered": 42,
+      "eligible": 9,
+      "reproducibility": {
+        "searchSnapshot": "8752ce8dfba238e4e69cfb8818b10a62bda625987522f1df54512e96a87600aa",
+        "searchPolicy": "automatic-search/v1",
+        "evidenceSnapshot": "",
+        "id": "4bf2dc0a418c3296c6b2f496c0e9af58ce11341eff79cc595594711d4341106b",
+        "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "algorithmVersion": "automatic/v8+automatic-fit/v5",
+        "intentFingerprint": "fb0b07656c7c081f2d8961ffd04b45a76075d96a7dc1af3444538287299fc071",
+        "profileVersion": "taste-profile/v4",
+        "profileSnapshot": "1c9d4e8301b8ceec15bfa3195afd8344e10072cf81ca17b98f77b6167e325d13",
+        "contextFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rngSeed": "8649349911664434966"
+      },
+      "intentSHA256": "047754ac343121653d051e4c54a548ea71ed0262ddda91c5a365b4a8a31cb884",
+      "resolvedIntent": {
+        "translation": {
+          "version": "source-atoms/v22+music-concepts/v6",
+          "originalText": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+          "atoms": [
+            {
+              "id": "count:8:17",
+              "kind": "count",
+              "value": "10",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "10 tracks",
+                  "start": 8,
+                  "end": 17,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "instrumentation:23:33",
+              "kind": "instrumentation",
+              "value": "soft piano",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "soft piano",
+                  "start": 23,
+                  "end": 33,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "texture:35:57",
+              "kind": "texture",
+              "value": "spacious reverberation",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "spacious reverberation",
+                  "start": 35,
+                  "end": 57,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "texture:65:86",
+              "kind": "texture",
+              "value": "reflective atmosphere",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "essential",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "reflective atmosphere",
+                  "start": 65,
+                  "end": 86,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "recognition": {
+            "matcherVersion": "artist-first/v12",
+            "referenceLookup": "available",
+            "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "genreVocabulary": "embedded+paipack"
+          },
+          "repairs": [
+            "Explicit source facts take precedence over conflicting model fields."
+          ]
+        },
+        "trackCountExplicit": true,
+        "verificationPolicy": "best_available",
+        "temporal": [],
+        "anchorAttempts": null,
+        "originalDescription": "Give me 10 tracks with soft piano, spacious reverberation, and a reflective atmosphere.",
+        "genreExpansions": null,
+        "version": 12,
+        "references": null,
+        "inferredAnchors": null,
+        "requiredTracks": null,
+        "essentialCriteria": [
+          {
+            "strength": "essential",
+            "kind": "instrumentation",
+            "value": "soft piano",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "soft piano",
+                "start": 23,
+                "end": 33,
+                "explicit": true
+              }
+            ]
+          },
+          {
+            "strength": "essential",
+            "kind": "texture",
+            "value": "spacious reverberation",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "spacious reverberation",
+                "start": 35,
+                "end": 57,
+                "explicit": true
+              }
+            ]
+          },
+          {
+            "strength": "essential",
+            "kind": "texture",
+            "value": "reflective atmosphere",
+            "scope": "playlist",
+            "evidence": [
+              {
+                "text": "reflective atmosphere",
+                "start": 65,
+                "end": 86,
+                "explicit": true
+              }
+            ]
+          }
+        ],
+        "preferences": {
+          "genres": null,
+          "styles": null,
+          "moods": null,
+          "instrumentation": [
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "soft piano",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "soft piano",
+                  "start": 23,
+                  "end": 33,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "textureDescriptions": [
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "spacious reverberation",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "spacious reverberation",
+                  "start": 35,
+                  "end": 57,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "scope": "playlist",
+              "strength": "essential",
+              "degree": "plain",
+              "value": "reflective atmosphere",
+              "influence": "positive",
+              "explicit": true,
+              "evidence": [
+                {
+                  "text": "reflective atmosphere",
+                  "start": 65,
+                  "end": 86,
+                  "explicit": true
+                }
+              ]
+            }
+          ]
+        },
+        "hardConstraints": null,
+        "controls": {
+          "recommendationMode": "automatic",
+          "totalTrackCount": 10,
+          "audioWeight": 0.5,
+          "cooccurrenceWeight": 0.5,
+          "discovery": 0.1,
+          "artistDiversity": 0.3,
+          "transitionSmoothness": 0.2222222222222222
+        },
+        "journey": {
+          "waypoints": null,
+          "energyTrajectory": null
+        },
+        "unsupportedRequirements": null,
+        "capabilities": [
+          {
+            "name": "positive_references",
+            "status": "supported",
+            "detail": "independent audio and co-occurrence retrieval for each resolved reference"
+          },
+          {
+            "name": "reference_resolution",
+            "status": "supported",
+            "detail": "typed exact, alias, and ranked catalog matching with explicit ambiguity"
+          },
+          {
+            "name": "negative_references",
+            "status": "supported",
+            "detail": "resolved references contribute transparent embedding-space ranking penalties"
+          },
+          {
+            "name": "required_tracks",
+            "status": "supported",
+            "detail": "resolved catalog tracks"
+          },
+          {
+            "name": "hard_artist_exclusions",
+            "status": "supported",
+            "detail": "exact normalized artist identity"
+          },
+          {
+            "name": "audio_cooccurrence_weights",
+            "status": "supported",
+            "detail": "independent weights are normalized for blended similarity"
+          },
+          {
+            "name": "total_track_count",
+            "status": "supported",
+            "detail": "total output length including required tracks"
+          },
+          {
+            "name": "essential_musical_criteria",
+            "status": "unsupported",
+            "detail": "requires affirmative grounded feature or compatible semantic evidence"
+          },
+          {
+            "name": "semantic_preferences",
+            "status": "unsupported",
+            "detail": "preserved; active only when a compatible grounded semantic sidecar is loaded"
+          },
+          {
+            "name": "discovery",
+            "status": "supported",
+            "detail": "seeded bounded exploration among sufficiently relevant exact-search candidates"
+          },
+          {
+            "name": "artist_diversity",
+            "status": "supported",
+            "detail": "controls transparent MMR concentration penalties and soft artist spacing"
+          },
+          {
+            "name": "transition_smoothness",
+            "status": "supported",
+            "detail": "controls greedy embedding transitions with bounded local improvement"
+          },
+          {
+            "name": "energy_trajectory",
+            "status": "unsupported",
+            "detail": "preserved but catalog has no energy feature"
+          }
+        ],
+        "interpretationNotes": "",
+        "seeds": {
+          "queries": null,
+          "trackIds": null
+        },
+        "required": {
+          "queries": null,
+          "trackIds": null
+        },
+        "count": 10,
+        "mode": "similar",
+        "creativity": 0.5,
+        "noise": 0.1,
+        "lookback": 3,
+        "constraints": {
+          "artistsExclude": null,
+          "noRepeatArtistBackToBack": false,
+          "excludeSeedArtists": false
+        },
+        "seed": "8649349911664434966",
+        "notesForUser": "10 tracks."
+      },
+      "resolvedCriteria": [
+        {
+          "strength": "essential",
+          "kind": "instrumentation",
+          "value": "soft piano",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "soft piano",
+              "start": 23,
+              "end": 33,
+              "explicit": true
+            }
+          ]
+        },
+        {
+          "strength": "essential",
+          "kind": "texture",
+          "value": "spacious reverberation",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "spacious reverberation",
+              "start": 35,
+              "end": 57,
+              "explicit": true
+            }
+          ]
+        },
+        {
+          "strength": "essential",
+          "kind": "texture",
+          "value": "reflective atmosphere",
+          "scope": "playlist",
+          "evidence": [
+            {
+              "text": "reflective atmosphere",
+              "start": 65,
+              "end": 86,
+              "explicit": true
+            }
+          ]
+        }
+      ],
+      "resolvedReferences": null,
+      "strictClauseCounts": {
+        "False": 126
+      },
+      "fitStateCounts": {
+        "unknown": 42
+      },
+      "retrievalChannelCounts": {
+        "library_metadata": 42
+      },
+      "phaseTimings": [
+        {
+          "phase": "intent_preparation",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 66,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "resolution",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 66,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "feature_preparation",
+          "state": "completed",
+          "milliseconds": 7268,
+          "elapsedMilliseconds": 7335,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "local_retrieval",
+          "state": "completed",
+          "milliseconds": 8001,
+          "elapsedMilliseconds": 15337,
+          "items": 42,
+          "error": true,
+          "contextStopped": true
+        },
+        {
+          "phase": "batch_prepare",
+          "state": "completed",
+          "milliseconds": 30,
+          "elapsedMilliseconds": 15368,
+          "items": 42,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "online_evidence",
+          "state": "completed",
+          "milliseconds": 99632,
+          "elapsedMilliseconds": 115000,
+          "items": 42,
+          "error": true,
+          "contextStopped": true
+        },
+        {
+          "phase": "assembly",
+          "state": "completed",
+          "milliseconds": 3,
+          "elapsedMilliseconds": 115004,
+          "items": 9,
+          "error": false,
+          "contextStopped": false
+        }
+      ],
+      "providerResponseSummary": {
+        "api.deezer.com": {
+          "responses": 23,
+          "statusCounts": {
+            "200": 22,
+            "0": 1
+          },
+          "errors": 1,
+          "summedResponseMilliseconds": 33529,
+          "medianResponseMilliseconds": 1799
+        },
+        "cdnt-preview.dzcdn.net": {
+          "responses": 9,
+          "statusCounts": {
+            "200": 9
+          },
+          "errors": 0,
+          "summedResponseMilliseconds": 18237,
+          "medianResponseMilliseconds": 1937
+        },
+        "itunes.apple.com": {
+          "responses": 1,
+          "statusCounts": {
+            "200": 1
+          },
+          "errors": 0,
+          "summedResponseMilliseconds": 36,
+          "medianResponseMilliseconds": 36
+        },
+        "musicbrainz.org": {
+          "responses": 38,
+          "statusCounts": {
+            "200": 37,
+            "301": 1
+          },
+          "errors": 0,
+          "summedResponseMilliseconds": 37898,
+          "medianResponseMilliseconds": 991.0
+        }
+      },
+      "newCLAPAudioEmbeddings": 9,
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [],
+      "completeness": {
+        "requested": 10,
+        "returned": 9,
+        "distinctArtists": 4,
+        "exactCount": false
+      },
+      "runtimeIdentities": {
+        "catalogVersion": "1:956917:1788613313",
+        "languageModel": {},
+        "discovery": {
+          "version": "multipart-5fd3959b189ac4c7",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516
+        },
+        "clap": {
+          "model": "LAION original HTSAT-base music checkpoint",
+          "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+          "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 512,
+          "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+        },
+        "clapBundle": "c193cda62f79743ae1e8fb44778c4522eee3eeb398579fa443c5f04b917d2aae",
+        "mert": {
+          "model": "m-a-p/MERT-v1-95M",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "preprocessing": "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 768,
+          "weightsSha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+          "pooling": "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
+        },
+        "mertBundle": "f715605ffc6876bf5bddc3f9b419951a12583b2d6661a3aa9718d17f6e321852",
+        "workingTree": {
+          "revision": "7b608bfccc5543b7221dce4db9000845a670ec13",
+          "modified": true
+        }
+      },
+      "capabilities": {
+        "analysis": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedAvailable": true,
+          "recommendedInstalled": false,
+          "recommendedDetail": "",
+          "recommendedManifest": "<local-model-cache>/clap-cuda",
+          "recommendedBytes": 4016867171,
+          "installed": true,
+          "available": true,
+          "generalFitAvailable": false,
+          "enabled": false,
+          "model": "LAION original HTSAT-base music checkpoint · CPU",
+          "detail": "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.",
+          "downloadBytes": 807374279,
+          "memoryBytes": 2147483648,
+          "storage": {
+            "records": 0,
+            "assessments": 0,
+            "bytes": 69632
+          }
+        },
+        "discovery": {
+          "configured": true,
+          "hostedConfigured": true,
+          "installed": true,
+          "version": "multipart-5fd3959b189ac4c7",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516,
+          "downloadBytes": 5340391369,
+          "error": "",
+          "source": "hosted",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d"
+        },
+        "enhanced": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedManifestUrl": "<local-model-cache>/mert-cuda",
+          "recommendedDownloadBytes": 3610268333,
+          "recommendedUpgrade": true,
+          "enabled": true,
+          "mertEnabled": true,
+          "dspAvailable": true,
+          "mertAvailable": true,
+          "installed": true,
+          "model": "MERT v1 95M (noncommercial)",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "license": "CC-BY-NC-4.0 (noncommercial)",
+          "downloadBytes": 401467084,
+          "dspStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "mertStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "searchableTracks": 0,
+          "detail": "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval.",
+          "limit": 24
+        },
+        "generationLimitSeconds": 120,
+        "library": {
+          "installed": false,
+          "availableBackends": [],
+          "mode": "combined",
+          "coverage": {
+            "tracks": 0,
+            "metadata": 0,
+            "mert": 0,
+            "clap": 0,
+            "dsp": 0,
+            "failed": 0,
+            "unsupported": 0
+          },
+          "mert": {
+            "name": "",
+            "dimension": 0,
+            "dtype": "",
+            "byteOrder": "",
+            "normalized": false,
+            "model": "",
+            "modelRevision": "",
+            "graphSha256": "",
+            "decoder": "",
+            "preprocessing": "",
+            "sampling": "",
+            "pooling": "",
+            "scope": "",
+            "missingness": ""
+          },
+          "roots": []
+        },
+        "nativeInferenceCompiled": true,
+        "parser": {
+          "Name": "rules",
+          "Backend": "rules",
+          "Version": "rules/v17",
+          "Ready": true,
+          "ContractVersion": 12,
+          "Evidence": true
+        },
+        "recommendationConfig": {
+          "EnhancedMERTWeight": 0.15,
+          "LibraryEvidenceEnabled": false,
+          "EnhancedDSPWeight": 0.15,
+          "EnhancedTransitionWeight": 0.15,
+          "Strategy": "automatic",
+          "SeedAudioBudget": 32,
+          "SeedCooccurrenceBudget": 32,
+          "TasteClusterBudget": 24,
+          "MaxTasteClusters": 4,
+          "ExplorationPool": 160,
+          "ExplorationBudget": 24,
+          "ExplorationMinScore": 0.1,
+          "MaxCandidates": 512,
+          "RetrievalWeight": 0.15,
+          "ListenerWeight": 0.3,
+          "NegativePenalty": 0.65,
+          "ExposurePenalty": 0.3,
+          "NoveltyWeight": 0.2,
+          "ExplorationChance": 0.35,
+          "ContinuationBudget": 16,
+          "MMRMinimumLambda": 0.55,
+          "SelectionMinimumRelevance": 0.05,
+          "SelectionRelevanceWindow": 0.8,
+          "EmbeddingRedundancyWeight": 0.5,
+          "ArtistConcentrationWeight": 0.35,
+          "AlbumConcentrationWeight": 0.15,
+          "SoftArtistSpacingMax": 3,
+          "TransitionRelevanceWeight": 0.15,
+          "LocalImprovementPasses": 3,
+          "LocalImprovementWindow": 4,
+          "SemanticBudget": 96,
+          "SemanticMinimumScore": 0.15,
+          "SemanticWeight": 0.35,
+          "SemanticNegativePenalty": 0.55
+        },
+        "recommendationMode": "automatic",
+        "requestedParser": "rules"
+      }
+    },
+    {
+      "case": "reference",
+      "cacheCondition": "cold",
+      "command": [
+        "/tmp/playlist-ai-matching-evaluation/musiccheck-v8",
+        "-mode",
+        "automatic",
+        "-app-data-dir",
+        "/tmp/playlist-ai-matching-runtime/reference/state",
+        "-catalog",
+        "/tmp/playlist-ai-matching-runtime/reference/state/catalog",
+        "-prompts",
+        "/tmp/playlist-ai-matching-runtime/prompts.json",
+        "-case",
+        "Give me 10 songs similar to Radiohead, including other artists.",
+        "-case-timeout",
+        "120s",
+        "-cleanup-timeout",
+        "10s",
+        "-eval-split",
+        "development",
+        "-variant",
+        "automatic-v8-runtime-reference",
+        "-cache-condition",
+        "cold",
+        "-output",
+        "/tmp/playlist-ai-matching-runtime/reference/cold.json",
+        "-diagnostics",
+        "/tmp/playlist-ai-matching-runtime/reference/cold-diagnostics.json",
+        "-supervised-child"
+      ],
+      "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+      "startingMutableFiles": [
+        {
+          "path": "prefs.json",
+          "bytes": 197,
+          "sha256": "8f7fd8f9f36c8fbf881c150d287dcf6ae0ed2a201b78c453c3ce6d5a6656c208"
+        }
+      ],
+      "startedUTC": "2026-09-27T23:33:56.650338+00:00",
+      "startupInitialReceiptSHA256": "085af1235439d94d85863a4742439b81318f50b31058ec6595760f9fdb8fcd53",
+      "startupMilliseconds": 74640,
+      "processMilliseconds": 87460,
+      "commandExitCode": 0,
+      "outerWatchdog": false,
+      "endingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 69632,
+          "sha256": "e77789a2aac8575d6970780a858a850e7d9f640dc50cbd61e75e39ed8cf26972"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 16384,
+          "sha256": "130c33a8fe94c4a6f77087ee7b3e0c650f4d0e72e8e23703af8fe26167ed6a14"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 3522560,
+          "sha256": "cf72c5c4d84dd7caf6133ace8e534ca932c6b8aed37c995487615495e5ac2ac0"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "aff6fa75a673605197b23ad3b2a97f0d2986efc7f37ab8f71398c874dac7291f"
+        }
+      ],
+      "rawReportSHA256": "029fc5a6c48875ee8709b088285880ff2238780333645b42abf0218e42119ffe",
+      "completed": true,
+      "generationMilliseconds": 12711,
+      "returned": 10,
+      "error": null,
+      "rawReportPath": "/tmp/playlist-ai-matching-runtime/reference/cold.json",
+      "diagnosticsPath": "/tmp/playlist-ai-matching-runtime/reference/cold-diagnostics.json",
+      "diagnosticsSHA256": "7de79e03790b69f833570879175c90611d64a67a13678258714538991c8bff53",
+      "inputMode": "raw",
+      "parser": {
+        "backend": "rules",
+        "requestedBackend": "rules",
+        "fallbackUsed": false,
+        "fallbackReason": "",
+        "referenceLookup": "available",
+        "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "genreVocabulary": "embedded+paipack"
+      },
+      "timedOut": false,
+      "generationLimitSeconds": 120,
+      "requested": 10,
+      "distinctArtists": 10,
+      "seedArtistTracks": 0,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "reference_fit_estimated",
+            "detail": "Artist relationships and audio similarity guide discovery; musical resemblance is an estimate.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "stopReason": "prepared_obligations_met",
+      "considered": 424,
+      "eligible": 421,
+      "reproducibility": {
+        "searchSnapshot": "7d9ef470e9a720dadb11ffadf8d30238bcaa6ab983685b7cfc15c23ca23ba3b0",
+        "searchPolicy": "automatic-search/v1",
+        "evidenceSnapshot": "",
+        "id": "8cd88d5639428498d9a46fa9e9e1e08a64b8b95d5ec39d7ac87be3385eec8af0",
+        "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "algorithmVersion": "automatic/v8+automatic-fit/v5",
+        "intentFingerprint": "b7a9406ccd0f4b8248f7a2fc2fd3ffdfadae921905337e9c79ebb4db18649c8f",
+        "profileVersion": "taste-profile/v4",
+        "profileSnapshot": "1c9d4e8301b8ceec15bfa3195afd8344e10072cf81ca17b98f77b6167e325d13",
+        "contextFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rngSeed": "1782523484729933899"
+      },
+      "intentSHA256": "3c0b89ca041dc7f01c541bbe06212aa01ca502184aa1c204be63244b3ef54458",
+      "resolvedIntent": {
+        "translation": {
+          "version": "source-atoms/v22+music-concepts/v6",
+          "originalText": "Give me 10 songs similar to Radiohead, including other artists.",
+          "syntacticMarkers": [
+            {
+              "kind": "journey_end",
+              "text": "to",
+              "start": 25,
+              "end": 27
+            },
+            {
+              "kind": "inclusion",
+              "text": "including",
+              "start": 39,
+              "end": 48
+            }
+          ],
+          "atoms": [
+            {
+              "id": "count:8:16",
+              "kind": "count",
+              "value": "10",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "10 songs",
+                  "start": 8,
+                  "end": 16,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "recognition:28:37",
+              "kind": "artist",
+              "value": "Radiohead",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "preferred",
+              "evidence": [
+                {
+                  "text": "Radiohead",
+                  "start": 28,
+                  "end": 37,
+                  "explicit": true
+                }
+              ],
+              "grounding": {
+                "decision": {
+                  "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                  "method": "canonical",
+                  "policyVersion": "artist-default/v1",
+                  "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+                },
+                "provider": "MusicBrainz+paipack",
+                "matchedSpelling": "Radiohead",
+                "matchType": "canonical",
+                "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+                "candidates": [
+                  {
+                    "kind": "artist",
+                    "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                    "name": "Radiohead",
+                    "matchType": "canonical"
+                  },
+                  {
+                    "kind": "artist",
+                    "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                    "name": "On a Friday",
+                    "disambiguation": "pre‐Radiohead group, until 1991",
+                    "matchType": "alias"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "include_other_artists:39:62",
+              "kind": "include_other_artists",
+              "value": "true",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "including other artists",
+                  "start": 39,
+                  "end": 62,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "recognition": {
+            "matcherVersion": "artist-first/v12",
+            "referenceLookup": "available",
+            "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "genreVocabulary": "embedded+paipack"
+          },
+          "repairs": [
+            "Explicit source facts take precedence over conflicting model fields."
+          ]
+        },
+        "trackCountExplicit": true,
+        "verificationPolicy": "best_available",
+        "temporal": [],
+        "anchorAttempts": null,
+        "originalDescription": "Give me 10 songs similar to Radiohead, including other artists.",
+        "genreExpansions": null,
+        "version": 12,
+        "references": [
+          {
+            "strength": "preferred",
+            "kind": "artist",
+            "query": "Radiohead",
+            "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+            "influence": "positive",
+            "evidence": [
+              {
+                "text": "Radiohead",
+                "start": 28,
+                "end": 37,
+                "explicit": true
+              }
+            ],
+            "grounding": {
+              "decision": {
+                "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "method": "canonical",
+                "policyVersion": "artist-default/v1",
+                "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+              },
+              "provider": "MusicBrainz+paipack",
+              "matchedSpelling": "Radiohead",
+              "matchType": "canonical",
+              "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+              "candidates": [
+                {
+                  "kind": "artist",
+                  "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                  "name": "Radiohead",
+                  "matchType": "canonical"
+                },
+                {
+                  "kind": "artist",
+                  "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                  "name": "On a Friday",
+                  "disambiguation": "pre‐Radiohead group, until 1991",
+                  "matchType": "alias"
+                }
+              ]
+            },
+            "resolution": {
+              "status": "resolved",
+              "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+              "selected": {
+                "kind": "artist",
+                "entityId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "artist": "Radiohead",
+                "title": "",
+                "confidence": 1,
+                "evidence": [
+                  {
+                    "match": "recording_artist_identity",
+                    "normalizedQuery": "",
+                    "matchedText": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+                  }
+                ],
+                "representatives": [
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff",
+                    "weight": 0.2
+                  }
+                ]
+              },
+              "alternatives": null
+            }
+          }
+        ],
+        "inferredAnchors": null,
+        "requiredTracks": null,
+        "essentialCriteria": null,
+        "preferences": {
+          "genres": null,
+          "styles": null,
+          "moods": null,
+          "instrumentation": null,
+          "textureDescriptions": null
+        },
+        "hardConstraints": [
+          {
+            "kind": "include_other_artists",
+            "value": "true",
+            "supported": true,
+            "runtimeEnforced": true,
+            "evidence": [
+              {
+                "text": "including other artists",
+                "start": 39,
+                "end": 62,
+                "explicit": true
+              }
+            ]
+          }
+        ],
+        "controls": {
+          "recommendationMode": "automatic",
+          "totalTrackCount": 10,
+          "audioWeight": 0.5,
+          "cooccurrenceWeight": 0.5,
+          "discovery": 0.1,
+          "artistDiversity": 0.3,
+          "transitionSmoothness": 0.2222222222222222
+        },
+        "journey": {
+          "waypoints": null,
+          "energyTrajectory": null
+        },
+        "unsupportedRequirements": null,
+        "capabilities": [
+          {
+            "name": "positive_references",
+            "status": "supported",
+            "detail": "independent audio and co-occurrence retrieval for each resolved reference"
+          },
+          {
+            "name": "reference_resolution",
+            "status": "supported",
+            "detail": "typed exact, alias, and ranked catalog matching with explicit ambiguity"
+          },
+          {
+            "name": "negative_references",
+            "status": "supported",
+            "detail": "resolved references contribute transparent embedding-space ranking penalties"
+          },
+          {
+            "name": "required_tracks",
+            "status": "supported",
+            "detail": "resolved catalog tracks"
+          },
+          {
+            "name": "hard_artist_exclusions",
+            "status": "supported",
+            "detail": "exact normalized artist identity"
+          },
+          {
+            "name": "audio_cooccurrence_weights",
+            "status": "supported",
+            "detail": "independent weights are normalized for blended similarity"
+          },
+          {
+            "name": "total_track_count",
+            "status": "supported",
+            "detail": "total output length including required tracks"
+          },
+          {
+            "name": "essential_musical_criteria",
+            "status": "unsupported",
+            "detail": "requires affirmative grounded feature or compatible semantic evidence"
+          },
+          {
+            "name": "semantic_preferences",
+            "status": "unsupported",
+            "detail": "preserved; active only when a compatible grounded semantic sidecar is loaded"
+          },
+          {
+            "name": "discovery",
+            "status": "supported",
+            "detail": "seeded bounded exploration among sufficiently relevant exact-search candidates"
+          },
+          {
+            "name": "artist_diversity",
+            "status": "supported",
+            "detail": "controls transparent MMR concentration penalties and soft artist spacing"
+          },
+          {
+            "name": "transition_smoothness",
+            "status": "supported",
+            "detail": "controls greedy embedding transitions with bounded local improvement"
+          },
+          {
+            "name": "energy_trajectory",
+            "status": "unsupported",
+            "detail": "preserved but catalog has no energy feature"
+          }
+        ],
+        "interpretationNotes": "",
+        "seeds": {
+          "queries": null,
+          "trackIds": [
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff"
+          ]
+        },
+        "required": {
+          "queries": null,
+          "trackIds": null
+        },
+        "count": 10,
+        "mode": "similar",
+        "creativity": 0.5,
+        "noise": 0.1,
+        "lookback": 3,
+        "constraints": {
+          "artistsExclude": null,
+          "noRepeatArtistBackToBack": false,
+          "excludeSeedArtists": false
+        },
+        "seed": "1782523484729933899",
+        "notesForUser": "Seeds Radiohead · 10 tracks."
+      },
+      "resolvedCriteria": null,
+      "resolvedReferences": [
+        {
+          "strength": "preferred",
+          "kind": "artist",
+          "query": "Radiohead",
+          "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+          "influence": "positive",
+          "evidence": [
+            {
+              "text": "Radiohead",
+              "start": 28,
+              "end": 37,
+              "explicit": true
+            }
+          ],
+          "grounding": {
+            "decision": {
+              "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+              "method": "canonical",
+              "policyVersion": "artist-default/v1",
+              "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+            },
+            "provider": "MusicBrainz+paipack",
+            "matchedSpelling": "Radiohead",
+            "matchType": "canonical",
+            "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "candidates": [
+              {
+                "kind": "artist",
+                "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "name": "Radiohead",
+                "matchType": "canonical"
+              },
+              {
+                "kind": "artist",
+                "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                "name": "On a Friday",
+                "disambiguation": "pre‐Radiohead group, until 1991",
+                "matchType": "alias"
+              }
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "selected": {
+              "kind": "artist",
+              "entityId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+              "artist": "Radiohead",
+              "title": "",
+              "confidence": 1,
+              "evidence": [
+                {
+                  "match": "recording_artist_identity",
+                  "normalizedQuery": "",
+                  "matchedText": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+                }
+              ],
+              "representatives": [
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff",
+                  "weight": 0.2
+                }
+              ]
+            },
+            "alternatives": null
+          }
+        }
+      ],
+      "strictClauseCounts": {},
+      "fitStateCounts": {
+        "unknown": 3,
+        "plausible": 421
+      },
+      "retrievalChannelCounts": {
+        "library_clap": 167,
+        "library_mert": 212,
+        "library_metadata": 51
+      },
+      "phaseTimings": [
+        {
+          "phase": "intent_preparation",
+          "state": "completed",
+          "milliseconds": 10824,
+          "elapsedMilliseconds": 11629,
+          "items": 1,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "resolution",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 11629,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "feature_preparation",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 11632,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "local_retrieval",
+          "state": "completed",
+          "milliseconds": 497,
+          "elapsedMilliseconds": 12129,
+          "items": 424,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "batch_prepare",
+          "state": "completed",
+          "milliseconds": 347,
+          "elapsedMilliseconds": 12478,
+          "items": 429,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "online_evidence",
+          "state": "completed",
+          "milliseconds": 95,
+          "elapsedMilliseconds": 12574,
+          "items": 429,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "assembly",
+          "state": "completed",
+          "milliseconds": 91,
+          "elapsedMilliseconds": 12665,
+          "items": 10,
+          "error": false,
+          "contextStopped": false
+        }
+      ],
+      "providerResponseSummary": {},
+      "newCLAPAudioEmbeddings": 0,
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [],
+      "completeness": {
+        "requested": 10,
+        "returned": 10,
+        "distinctArtists": 10,
+        "exactCount": true
+      },
+      "runtimeIdentities": {
+        "catalogVersion": "1:956917:1788613313",
+        "languageModel": {},
+        "discovery": {
+          "version": "multipart-5fd3959b189ac4c7",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516
+        },
+        "clap": {
+          "model": "LAION original HTSAT-base music checkpoint",
+          "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+          "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 512,
+          "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+        },
+        "clapBundle": "c193cda62f79743ae1e8fb44778c4522eee3eeb398579fa443c5f04b917d2aae",
+        "mert": {
+          "model": "m-a-p/MERT-v1-95M",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "preprocessing": "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 768,
+          "weightsSha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+          "pooling": "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
+        },
+        "mertBundle": "f715605ffc6876bf5bddc3f9b419951a12583b2d6661a3aa9718d17f6e321852",
+        "workingTree": {
+          "revision": "7b608bfccc5543b7221dce4db9000845a670ec13",
+          "modified": true
+        }
+      },
+      "capabilities": {
+        "analysis": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedAvailable": true,
+          "recommendedInstalled": false,
+          "recommendedDetail": "",
+          "recommendedManifest": "<local-model-cache>/clap-cuda",
+          "recommendedBytes": 4016867171,
+          "installed": true,
+          "available": true,
+          "generalFitAvailable": false,
+          "enabled": false,
+          "model": "LAION original HTSAT-base music checkpoint · CPU",
+          "detail": "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.",
+          "downloadBytes": 807374279,
+          "memoryBytes": 2147483648,
+          "storage": {
+            "records": 0,
+            "assessments": 0,
+            "bytes": 69632
+          }
+        },
+        "discovery": {
+          "configured": true,
+          "hostedConfigured": true,
+          "installed": true,
+          "version": "multipart-5fd3959b189ac4c7",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516,
+          "downloadBytes": 5340391369,
+          "error": "",
+          "source": "hosted",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d"
+        },
+        "enhanced": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedManifestUrl": "<local-model-cache>/mert-cuda",
+          "recommendedDownloadBytes": 3610268333,
+          "recommendedUpgrade": true,
+          "enabled": true,
+          "mertEnabled": true,
+          "dspAvailable": true,
+          "mertAvailable": true,
+          "installed": true,
+          "model": "MERT v1 95M (noncommercial)",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "license": "CC-BY-NC-4.0 (noncommercial)",
+          "downloadBytes": 401467084,
+          "dspStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "mertStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "searchableTracks": 0,
+          "detail": "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval.",
+          "limit": 24
+        },
+        "generationLimitSeconds": 120,
+        "library": {
+          "installed": false,
+          "availableBackends": [],
+          "mode": "combined",
+          "coverage": {
+            "tracks": 0,
+            "metadata": 0,
+            "mert": 0,
+            "clap": 0,
+            "dsp": 0,
+            "failed": 0,
+            "unsupported": 0
+          },
+          "mert": {
+            "name": "",
+            "dimension": 0,
+            "dtype": "",
+            "byteOrder": "",
+            "normalized": false,
+            "model": "",
+            "modelRevision": "",
+            "graphSha256": "",
+            "decoder": "",
+            "preprocessing": "",
+            "sampling": "",
+            "pooling": "",
+            "scope": "",
+            "missingness": ""
+          },
+          "roots": []
+        },
+        "nativeInferenceCompiled": true,
+        "parser": {
+          "Name": "rules",
+          "Backend": "rules",
+          "Version": "rules/v17",
+          "Ready": true,
+          "ContractVersion": 12,
+          "Evidence": true
+        },
+        "recommendationConfig": {
+          "EnhancedMERTWeight": 0.15,
+          "LibraryEvidenceEnabled": false,
+          "EnhancedDSPWeight": 0.15,
+          "EnhancedTransitionWeight": 0.15,
+          "Strategy": "automatic",
+          "SeedAudioBudget": 32,
+          "SeedCooccurrenceBudget": 32,
+          "TasteClusterBudget": 24,
+          "MaxTasteClusters": 4,
+          "ExplorationPool": 160,
+          "ExplorationBudget": 24,
+          "ExplorationMinScore": 0.1,
+          "MaxCandidates": 512,
+          "RetrievalWeight": 0.15,
+          "ListenerWeight": 0.3,
+          "NegativePenalty": 0.65,
+          "ExposurePenalty": 0.3,
+          "NoveltyWeight": 0.2,
+          "ExplorationChance": 0.35,
+          "ContinuationBudget": 16,
+          "MMRMinimumLambda": 0.55,
+          "SelectionMinimumRelevance": 0.05,
+          "SelectionRelevanceWindow": 0.8,
+          "EmbeddingRedundancyWeight": 0.5,
+          "ArtistConcentrationWeight": 0.35,
+          "AlbumConcentrationWeight": 0.15,
+          "SoftArtistSpacingMax": 3,
+          "TransitionRelevanceWeight": 0.15,
+          "LocalImprovementPasses": 3,
+          "LocalImprovementWindow": 4,
+          "SemanticBudget": 96,
+          "SemanticMinimumScore": 0.15,
+          "SemanticWeight": 0.35,
+          "SemanticNegativePenalty": 0.55
+        },
+        "recommendationMode": "automatic",
+        "requestedParser": "rules"
+      }
+    },
+    {
+      "case": "reference",
+      "cacheCondition": "warm",
+      "command": [
+        "/tmp/playlist-ai-matching-evaluation/musiccheck-v8",
+        "-mode",
+        "automatic",
+        "-app-data-dir",
+        "/tmp/playlist-ai-matching-runtime/reference/state",
+        "-catalog",
+        "/tmp/playlist-ai-matching-runtime/reference/state/catalog",
+        "-prompts",
+        "/tmp/playlist-ai-matching-runtime/prompts.json",
+        "-case",
+        "Give me 10 songs similar to Radiohead, including other artists.",
+        "-case-timeout",
+        "120s",
+        "-cleanup-timeout",
+        "10s",
+        "-eval-split",
+        "development",
+        "-variant",
+        "automatic-v8-runtime-reference",
+        "-cache-condition",
+        "warm",
+        "-output",
+        "/tmp/playlist-ai-matching-runtime/reference/warm.json",
+        "-diagnostics",
+        "/tmp/playlist-ai-matching-runtime/reference/warm-diagnostics.json",
+        "-supervised-child",
+        "-replay",
+        "/tmp/playlist-ai-matching-runtime/reference/cold.json"
+      ],
+      "prompt": "Give me 10 songs similar to Radiohead, including other artists.",
+      "startingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 69632,
+          "sha256": "e77789a2aac8575d6970780a858a850e7d9f640dc50cbd61e75e39ed8cf26972"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 16384,
+          "sha256": "130c33a8fe94c4a6f77087ee7b3e0c650f4d0e72e8e23703af8fe26167ed6a14"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 3522560,
+          "sha256": "cf72c5c4d84dd7caf6133ace8e534ca932c6b8aed37c995487615495e5ac2ac0"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "aff6fa75a673605197b23ad3b2a97f0d2986efc7f37ab8f71398c874dac7291f"
+        }
+      ],
+      "startedUTC": "2026-09-27T23:35:26.049012+00:00",
+      "startupInitialReceiptSHA256": "373e40a9353fbc92bdf78d095682f9222259075d68b65e8bd95bc2e2fa61fef3",
+      "startupMilliseconds": 66129,
+      "processMilliseconds": 67234,
+      "commandExitCode": 0,
+      "outerWatchdog": false,
+      "endingMutableFiles": [
+        {
+          "path": "audio-analysis.sqlite",
+          "bytes": 69632,
+          "sha256": "e77789a2aac8575d6970780a858a850e7d9f640dc50cbd61e75e39ed8cf26972"
+        },
+        {
+          "path": "candidate-catalog/tracks.sqlite",
+          "bytes": 20480,
+          "sha256": "fb646ca2e163bb8b90f20c1efee47f9f6e1b3fc736b50cd5fbf4d0c72f83527e"
+        },
+        {
+          "path": "evaluation-metadata.sqlite",
+          "bytes": 16384,
+          "sha256": "130c33a8fe94c4a6f77087ee7b3e0c650f4d0e72e8e23703af8fe26167ed6a14"
+        },
+        {
+          "path": "history.sqlite",
+          "bytes": 3522560,
+          "sha256": "cf72c5c4d84dd7caf6133ace8e534ca932c6b8aed37c995487615495e5ac2ac0"
+        },
+        {
+          "path": "prefs.json",
+          "bytes": 250,
+          "sha256": "483e62e941d5eb78c4372e53f79eb344109ec9db2dcc76941af61b46960e1b30"
+        },
+        {
+          "path": "taste.sqlite",
+          "bytes": 40960,
+          "sha256": "0bc9d4d3f3f1a59e27aeb0070c785ddd2ec9df8ea9826a5de23ccd2d2b5d8870"
+        }
+      ],
+      "rawReportSHA256": "8c6856d264ab2ce88440b9a626e4e53daafe4a2c0aa3c871e9bceaac7dc7f4da",
+      "completed": true,
+      "generationMilliseconds": 1054,
+      "returned": 10,
+      "error": null,
+      "rawReportPath": "/tmp/playlist-ai-matching-runtime/reference/warm.json",
+      "diagnosticsPath": "/tmp/playlist-ai-matching-runtime/reference/warm-diagnostics.json",
+      "diagnosticsSHA256": "13db281a2179eab2b2d0c9f7bb4f87d692b49b573d39639105df3ff6d6ec86d0",
+      "inputMode": "frozen",
+      "parser": null,
+      "timedOut": false,
+      "generationLimitSeconds": 120,
+      "requested": 10,
+      "distinctArtists": 10,
+      "seedArtistTracks": 0,
+      "outcome": {
+        "state": "partial",
+        "reasons": [
+          {
+            "code": "reference_fit_estimated",
+            "detail": "Artist relationships and audio similarity guide discovery; musical resemblance is an estimate.",
+            "criterion": "",
+            "action": ""
+          }
+        ]
+      },
+      "stopReason": "prepared_obligations_met",
+      "considered": 424,
+      "eligible": 421,
+      "reproducibility": {
+        "searchSnapshot": "7d9ef470e9a720dadb11ffadf8d30238bcaa6ab983685b7cfc15c23ca23ba3b0",
+        "searchPolicy": "automatic-search/v1",
+        "evidenceSnapshot": "",
+        "id": "8cd88d5639428498d9a46fa9e9e1e08a64b8b95d5ec39d7ac87be3385eec8af0",
+        "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+        "algorithmVersion": "automatic/v8+automatic-fit/v5",
+        "intentFingerprint": "b7a9406ccd0f4b8248f7a2fc2fd3ffdfadae921905337e9c79ebb4db18649c8f",
+        "profileVersion": "taste-profile/v4",
+        "profileSnapshot": "1c9d4e8301b8ceec15bfa3195afd8344e10072cf81ca17b98f77b6167e325d13",
+        "contextFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rngSeed": "1782523484729933899"
+      },
+      "intentSHA256": "3c0b89ca041dc7f01c541bbe06212aa01ca502184aa1c204be63244b3ef54458",
+      "resolvedIntent": {
+        "translation": {
+          "version": "source-atoms/v22+music-concepts/v6",
+          "originalText": "Give me 10 songs similar to Radiohead, including other artists.",
+          "syntacticMarkers": [
+            {
+              "kind": "journey_end",
+              "text": "to",
+              "start": 25,
+              "end": 27
+            },
+            {
+              "kind": "inclusion",
+              "text": "including",
+              "start": 39,
+              "end": 48
+            }
+          ],
+          "atoms": [
+            {
+              "id": "count:8:16",
+              "kind": "count",
+              "value": "10",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "10 songs",
+                  "start": 8,
+                  "end": 16,
+                  "explicit": true
+                }
+              ]
+            },
+            {
+              "id": "recognition:28:37",
+              "kind": "artist",
+              "value": "Radiohead",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "preferred",
+              "evidence": [
+                {
+                  "text": "Radiohead",
+                  "start": 28,
+                  "end": 37,
+                  "explicit": true
+                }
+              ],
+              "grounding": {
+                "decision": {
+                  "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                  "method": "canonical",
+                  "policyVersion": "artist-default/v1",
+                  "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+                },
+                "provider": "MusicBrainz+paipack",
+                "matchedSpelling": "Radiohead",
+                "matchType": "canonical",
+                "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+                "candidates": [
+                  {
+                    "kind": "artist",
+                    "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                    "name": "Radiohead",
+                    "matchType": "canonical"
+                  },
+                  {
+                    "kind": "artist",
+                    "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                    "name": "On a Friday",
+                    "disambiguation": "pre‐Radiohead group, until 1991",
+                    "matchType": "alias"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "include_other_artists:39:62",
+              "kind": "include_other_artists",
+              "value": "true",
+              "scope": "playlist",
+              "polarity": "positive",
+              "strength": "required",
+              "degree": "plain",
+              "evidence": [
+                {
+                  "text": "including other artists",
+                  "start": 39,
+                  "end": 62,
+                  "explicit": true
+                }
+              ]
+            }
+          ],
+          "recognition": {
+            "matcherVersion": "artist-first/v12",
+            "referenceLookup": "available",
+            "referenceSnapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "genreVocabulary": "embedded+paipack"
+          },
+          "repairs": [
+            "Explicit source facts take precedence over conflicting model fields."
+          ]
+        },
+        "trackCountExplicit": true,
+        "verificationPolicy": "best_available",
+        "temporal": [],
+        "anchorAttempts": null,
+        "originalDescription": "Give me 10 songs similar to Radiohead, including other artists.",
+        "genreExpansions": null,
+        "version": 12,
+        "references": [
+          {
+            "strength": "preferred",
+            "kind": "artist",
+            "query": "Radiohead",
+            "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+            "influence": "positive",
+            "evidence": [
+              {
+                "text": "Radiohead",
+                "start": 28,
+                "end": 37,
+                "explicit": true
+              }
+            ],
+            "grounding": {
+              "decision": {
+                "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "method": "canonical",
+                "policyVersion": "artist-default/v1",
+                "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+              },
+              "provider": "MusicBrainz+paipack",
+              "matchedSpelling": "Radiohead",
+              "matchType": "canonical",
+              "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+              "candidates": [
+                {
+                  "kind": "artist",
+                  "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                  "name": "Radiohead",
+                  "matchType": "canonical"
+                },
+                {
+                  "kind": "artist",
+                  "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                  "name": "On a Friday",
+                  "disambiguation": "pre‐Radiohead group, until 1991",
+                  "matchType": "alias"
+                }
+              ]
+            },
+            "resolution": {
+              "status": "resolved",
+              "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+              "selected": {
+                "kind": "artist",
+                "entityId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "artist": "Radiohead",
+                "title": "",
+                "confidence": 1,
+                "evidence": [
+                  {
+                    "match": "recording_artist_identity",
+                    "normalizedQuery": "",
+                    "matchedText": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+                  }
+                ],
+                "representatives": [
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+                    "weight": 0.2
+                  },
+                  {
+                    "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff",
+                    "weight": 0.2
+                  }
+                ]
+              },
+              "alternatives": null
+            }
+          }
+        ],
+        "inferredAnchors": null,
+        "requiredTracks": null,
+        "essentialCriteria": null,
+        "preferences": {
+          "genres": null,
+          "styles": null,
+          "moods": null,
+          "instrumentation": null,
+          "textureDescriptions": null
+        },
+        "hardConstraints": [
+          {
+            "kind": "include_other_artists",
+            "value": "true",
+            "supported": true,
+            "runtimeEnforced": true,
+            "evidence": [
+              {
+                "text": "including other artists",
+                "start": 39,
+                "end": 62,
+                "explicit": true
+              }
+            ]
+          }
+        ],
+        "controls": {
+          "recommendationMode": "automatic",
+          "totalTrackCount": 10,
+          "audioWeight": 0.5,
+          "cooccurrenceWeight": 0.5,
+          "discovery": 0.1,
+          "artistDiversity": 0.3,
+          "transitionSmoothness": 0.2222222222222222
+        },
+        "journey": {
+          "waypoints": null,
+          "energyTrajectory": null
+        },
+        "unsupportedRequirements": null,
+        "capabilities": [
+          {
+            "name": "positive_references",
+            "status": "supported",
+            "detail": "independent audio and co-occurrence retrieval for each resolved reference"
+          },
+          {
+            "name": "reference_resolution",
+            "status": "supported",
+            "detail": "typed exact, alias, and ranked catalog matching with explicit ambiguity"
+          },
+          {
+            "name": "negative_references",
+            "status": "supported",
+            "detail": "resolved references contribute transparent embedding-space ranking penalties"
+          },
+          {
+            "name": "required_tracks",
+            "status": "supported",
+            "detail": "resolved catalog tracks"
+          },
+          {
+            "name": "hard_artist_exclusions",
+            "status": "supported",
+            "detail": "exact normalized artist identity"
+          },
+          {
+            "name": "audio_cooccurrence_weights",
+            "status": "supported",
+            "detail": "independent weights are normalized for blended similarity"
+          },
+          {
+            "name": "total_track_count",
+            "status": "supported",
+            "detail": "total output length including required tracks"
+          },
+          {
+            "name": "essential_musical_criteria",
+            "status": "unsupported",
+            "detail": "requires affirmative grounded feature or compatible semantic evidence"
+          },
+          {
+            "name": "semantic_preferences",
+            "status": "unsupported",
+            "detail": "preserved; active only when a compatible grounded semantic sidecar is loaded"
+          },
+          {
+            "name": "discovery",
+            "status": "supported",
+            "detail": "seeded bounded exploration among sufficiently relevant exact-search candidates"
+          },
+          {
+            "name": "artist_diversity",
+            "status": "supported",
+            "detail": "controls transparent MMR concentration penalties and soft artist spacing"
+          },
+          {
+            "name": "transition_smoothness",
+            "status": "supported",
+            "detail": "controls greedy embedding transitions with bounded local improvement"
+          },
+          {
+            "name": "energy_trajectory",
+            "status": "unsupported",
+            "detail": "preserved but catalog has no energy feature"
+          }
+        ],
+        "interpretationNotes": "",
+        "seeds": {
+          "queries": null,
+          "trackIds": [
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+            "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff"
+          ]
+        },
+        "required": {
+          "queries": null,
+          "trackIds": null
+        },
+        "count": 10,
+        "mode": "similar",
+        "creativity": 0.5,
+        "noise": 0.1,
+        "lookback": 3,
+        "constraints": {
+          "artistsExclude": null,
+          "noRepeatArtistBackToBack": false,
+          "excludeSeedArtists": false
+        },
+        "seed": "1782523484729933899",
+        "notesForUser": "Seeds Radiohead · 10 tracks."
+      },
+      "resolvedCriteria": null,
+      "resolvedReferences": [
+        {
+          "strength": "preferred",
+          "kind": "artist",
+          "query": "Radiohead",
+          "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+          "influence": "positive",
+          "evidence": [
+            {
+              "text": "Radiohead",
+              "start": 28,
+              "end": 37,
+              "explicit": true
+            }
+          ],
+          "grounding": {
+            "decision": {
+              "selectedId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+              "method": "canonical",
+              "policyVersion": "artist-default/v1",
+              "snapshot": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6"
+            },
+            "provider": "MusicBrainz+paipack",
+            "matchedSpelling": "Radiohead",
+            "matchType": "canonical",
+            "snapshotVersion": "combined/v1:musicbrainz-offline/v1+artist-default/v1:20260912-001001|paipack-recognition/v1:shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "candidates": [
+              {
+                "kind": "artist",
+                "id": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+                "name": "Radiohead",
+                "matchType": "canonical"
+              },
+              {
+                "kind": "artist",
+                "id": "c74f4726-2671-4011-81b6-f70da905c05a",
+                "name": "On a Friday",
+                "disambiguation": "pre‐Radiohead group, until 1991",
+                "matchType": "alias"
+              }
+            ]
+          },
+          "resolution": {
+            "status": "resolved",
+            "catalogVersion": "1:956917:1788613313+shared-discovery-v1:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828:b32605ac8922953468abde98126eed4645c674b2b72b8237d09d634d2d4851e6",
+            "selected": {
+              "kind": "artist",
+              "entityId": "a74b1b7f-71a5-4011-9441-d0b5e4122711",
+              "artist": "Radiohead",
+              "title": "",
+              "confidence": 1,
+              "evidence": [
+                {
+                  "match": "recording_artist_identity",
+                  "normalizedQuery": "",
+                  "matchedText": "a74b1b7f-71a5-4011-9441-d0b5e4122711"
+                }
+              ],
+              "representatives": [
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:00412edcb996f4029df4545beaba9414",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:053ffcc8e101b89c4e4b2b88bbaacf64",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:07b67b191d86e7f224152ba7298d59f8",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:09430e87ec131f8200cc2cadfcfc78b8",
+                  "weight": 0.2
+                },
+                {
+                  "trackId": "pack:discovery-6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d:local:0aca4633f1383b231b52e7687702fcff",
+                  "weight": 0.2
+                }
+              ]
+            },
+            "alternatives": null
+          }
+        }
+      ],
+      "strictClauseCounts": {},
+      "fitStateCounts": {
+        "unknown": 3,
+        "plausible": 421
+      },
+      "retrievalChannelCounts": {
+        "library_clap": 167,
+        "library_mert": 212,
+        "library_metadata": 51
+      },
+      "phaseTimings": [
+        {
+          "phase": "intent_preparation",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 64,
+          "items": 1,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "resolution",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 64,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "feature_preparation",
+          "state": "completed",
+          "milliseconds": 0,
+          "elapsedMilliseconds": 71,
+          "items": 0,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "local_retrieval",
+          "state": "completed",
+          "milliseconds": 454,
+          "elapsedMilliseconds": 525,
+          "items": 424,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "batch_prepare",
+          "state": "completed",
+          "milliseconds": 339,
+          "elapsedMilliseconds": 865,
+          "items": 429,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "online_evidence",
+          "state": "completed",
+          "milliseconds": 88,
+          "elapsedMilliseconds": 953,
+          "items": 429,
+          "error": false,
+          "contextStopped": false
+        },
+        {
+          "phase": "assembly",
+          "state": "completed",
+          "milliseconds": 87,
+          "elapsedMilliseconds": 1041,
+          "items": 10,
+          "error": false,
+          "contextStopped": false
+        }
+      ],
+      "providerResponseSummary": {},
+      "newCLAPAudioEmbeddings": 0,
+      "parserFindings": [],
+      "interpretationFindings": [],
+      "constraintFindings": [],
+      "completeness": {
+        "requested": 10,
+        "returned": 10,
+        "distinctArtists": 10,
+        "exactCount": true
+      },
+      "runtimeIdentities": {
+        "catalogVersion": "1:956917:1788613313",
+        "languageModel": {},
+        "discovery": {
+          "version": "multipart-5fd3959b189ac4c7",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516
+        },
+        "clap": {
+          "model": "LAION original HTSAT-base music checkpoint",
+          "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+          "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 512,
+          "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+        },
+        "clapBundle": "c193cda62f79743ae1e8fb44778c4522eee3eeb398579fa443c5f04b917d2aae",
+        "mert": {
+          "model": "m-a-p/MERT-v1-95M",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "preprocessing": "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1",
+          "runtime": "onnxruntime/1.26.0/cpu",
+          "dimension": 768,
+          "weightsSha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+          "pooling": "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
+        },
+        "mertBundle": "f715605ffc6876bf5bddc3f9b419951a12583b2d6661a3aa9718d17f6e321852",
+        "workingTree": {
+          "revision": "7b608bfccc5543b7221dce4db9000845a670ec13",
+          "modified": true
+        }
+      },
+      "capabilities": {
+        "analysis": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedAvailable": true,
+          "recommendedInstalled": false,
+          "recommendedDetail": "",
+          "recommendedManifest": "<local-model-cache>/clap-cuda",
+          "recommendedBytes": 4016867171,
+          "installed": true,
+          "available": true,
+          "generalFitAvailable": false,
+          "enabled": false,
+          "model": "LAION original HTSAT-base music checkpoint · CPU",
+          "detail": "CLAP compares previews with your description to help rank tracks and screens no-vocals requests. Similarity scores are not calibrated judgments of musical fit.",
+          "downloadBytes": 807374279,
+          "memoryBytes": 2147483648,
+          "storage": {
+            "records": 0,
+            "assessments": 0,
+            "bytes": 69632
+          }
+        },
+        "discovery": {
+          "configured": true,
+          "hostedConfigured": true,
+          "installed": true,
+          "version": "multipart-5fd3959b189ac4c7",
+          "packIds": [
+            "6c0a46e0b0bc7d82b84b01c909ae331f5c6a1ea53b5658def149816dddb3fd7d"
+          ],
+          "tracks": 252516,
+          "downloadBytes": 5340391369,
+          "error": "",
+          "source": "hosted",
+          "manifestDigest": "5fd3959b189ac4c758868030396bd0e6e4cd731891734b33504f2a28cbf39c4d"
+        },
+        "enhanced": {
+          "loading": false,
+          "installedBackends": [
+            "cpu"
+          ],
+          "recommendedManifestUrl": "<local-model-cache>/mert-cuda",
+          "recommendedDownloadBytes": 3610268333,
+          "recommendedUpgrade": true,
+          "enabled": true,
+          "mertEnabled": true,
+          "dspAvailable": true,
+          "mertAvailable": true,
+          "installed": true,
+          "model": "MERT v1 95M (noncommercial)",
+          "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+          "license": "CC-BY-NC-4.0 (noncommercial)",
+          "downloadBytes": 401467084,
+          "dspStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "mertStorage": {
+            "records": 0,
+            "bytes": 0
+          },
+          "searchableTracks": 0,
+          "detail": "MERT compares audio with audio, not with text. Preview measurements describe only the analyzed interval.",
+          "limit": 24
+        },
+        "generationLimitSeconds": 120,
+        "library": {
+          "installed": false,
+          "availableBackends": [],
+          "mode": "combined",
+          "coverage": {
+            "tracks": 0,
+            "metadata": 0,
+            "mert": 0,
+            "clap": 0,
+            "dsp": 0,
+            "failed": 0,
+            "unsupported": 0
+          },
+          "mert": {
+            "name": "",
+            "dimension": 0,
+            "dtype": "",
+            "byteOrder": "",
+            "normalized": false,
+            "model": "",
+            "modelRevision": "",
+            "graphSha256": "",
+            "decoder": "",
+            "preprocessing": "",
+            "sampling": "",
+            "pooling": "",
+            "scope": "",
+            "missingness": ""
+          },
+          "roots": []
+        },
+        "nativeInferenceCompiled": true,
+        "parser": {
+          "Name": "rules",
+          "Backend": "rules",
+          "Version": "rules/v17",
+          "Ready": true,
+          "ContractVersion": 12,
+          "Evidence": true
+        },
+        "recommendationConfig": {
+          "EnhancedMERTWeight": 0.15,
+          "LibraryEvidenceEnabled": false,
+          "EnhancedDSPWeight": 0.15,
+          "EnhancedTransitionWeight": 0.15,
+          "Strategy": "automatic",
+          "SeedAudioBudget": 32,
+          "SeedCooccurrenceBudget": 32,
+          "TasteClusterBudget": 24,
+          "MaxTasteClusters": 4,
+          "ExplorationPool": 160,
+          "ExplorationBudget": 24,
+          "ExplorationMinScore": 0.1,
+          "MaxCandidates": 512,
+          "RetrievalWeight": 0.15,
+          "ListenerWeight": 0.3,
+          "NegativePenalty": 0.65,
+          "ExposurePenalty": 0.3,
+          "NoveltyWeight": 0.2,
+          "ExplorationChance": 0.35,
+          "ContinuationBudget": 16,
+          "MMRMinimumLambda": 0.55,
+          "SelectionMinimumRelevance": 0.05,
+          "SelectionRelevanceWindow": 0.8,
+          "EmbeddingRedundancyWeight": 0.5,
+          "ArtistConcentrationWeight": 0.35,
+          "AlbumConcentrationWeight": 0.15,
+          "SoftArtistSpacingMax": 3,
+          "TransitionRelevanceWeight": 0.15,
+          "LocalImprovementPasses": 3,
+          "LocalImprovementWindow": 4,
+          "SemanticBudget": 96,
+          "SemanticMinimumScore": 0.15,
+          "SemanticWeight": 0.35,
+          "SemanticNegativePenalty": 0.55
+        },
+        "recommendationMode": "automatic",
+        "requestedParser": "rules"
+      }
+    }
+  ],
+  "pairedInputChecks": {
+    "description": {
+      "intentSHA256Equal": true,
+      "rngSeedEqual": true,
+      "profileSnapshotEqual": true,
+      "warmStartsWithColdEndingMutableFiles": true
+    },
+    "reference": {
+      "intentSHA256Equal": true,
+      "rngSeedEqual": true,
+      "profileSnapshotEqual": true,
+      "warmStartsWithColdEndingMutableFiles": true
+    }
+  },
+  "hardware": {
+    "cpu": "Intel(R) Core(TM) Ultra 9 285H",
+    "visibleCPUs": 16,
+    "kernel": "6.18.33.2-microsoft-standard-WSL2"
+  },
+  "platform": "linux/amd64",
+  "goVersion": "go1.27.1",
+  "totalProcessMilliseconds": 441819
+}

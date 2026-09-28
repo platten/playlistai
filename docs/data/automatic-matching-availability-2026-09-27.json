@@ -1,0 +1,303 @@
+{
+  "version": "automatic-matching-availability/v1",
+  "observedDate": "2026-09-27",
+  "python": "3.14.7",
+  "os": "Linux",
+  "architecture": "x86_64",
+  "sources": [
+    {
+      "file": "song_describer.csv",
+      "url": "https://zenodo.org/records/10072001/files/song_describer.csv",
+      "bytes": 186208,
+      "sha256": "fb853b0327394cfdbdc205f712fdb64df70e6fcd3bae3a9d3f1617d54b45ad70"
+    },
+    {
+      "file": "human_similarity.csv",
+      "url": "https://raw.githubusercontent.com/pxaris/CCMSim/main/data/annotations/human_similarity.csv",
+      "bytes": 70561,
+      "sha256": "a357943c12fb94a657fd8e8f2803fe62bc7de08067cef144343621d35e836314"
+    },
+    {
+      "file": "audio_annotations_mapping.csv",
+      "url": "https://raw.githubusercontent.com/pxaris/CCMSim/main/data/annotations/audio_annotations_mapping.csv",
+      "bytes": 44227,
+      "sha256": "d95e98b63ebb252587130a0c91cb86e7d9b5dc272eb64a3b7e2aad9fcfa999dc"
+    },
+    {
+      "file": "music-classification-annotations-raw.tsv",
+      "url": "https://raw.githubusercontent.com/MTG/mtg-jamendo-dataset/master/derived/music-classification-annotations/music-classification-annotations-raw.tsv",
+      "bytes": 7468828,
+      "sha256": "466cbb888fe906f3db22b9e6f63b1694e6a38a8613fb67d9d52149e1cc6decd3"
+    },
+    {
+      "file": "raw_30s_audio_sha256_tracks.txt",
+      "url": "https://raw.githubusercontent.com/MTG/mtg-jamendo-dataset/master/data/download/raw_30s_audio_sha256_tracks.txt",
+      "bytes": 4425393,
+      "sha256": "afa8a6d86ad2d6982f71a65525aee75f87387bc7937684b98da960c429d87b6a"
+    },
+    {
+      "file": "raw_30s_audio-low_sha256_tracks.txt",
+      "url": "https://raw.githubusercontent.com/MTG/mtg-jamendo-dataset/master/data/download/raw_30s_audio-low_sha256_tracks.txt",
+      "bytes": 4648197,
+      "sha256": "7b7dcb44af0013d672377b9f9bce91247bf8b961f6a9c4b9527c055608e491ad"
+    },
+    {
+      "file": "audio_licenses.txt",
+      "url": "https://raw.githubusercontent.com/MTG/mtg-jamendo-dataset/master/audio_licenses.txt",
+      "bytes": 12686550,
+      "sha256": "c207c476d1714dfc9061f5ae9f2047c0490bfaa5d861dc090acc786508948933"
+    }
+  ],
+  "annotationAudit": {
+    "songDescriber": {
+      "captions": 1106,
+      "recordings": 706,
+      "validCaptions": 746,
+      "validRecordings": 547,
+      "validArtists": 169
+    },
+    "mtg": {
+      "rawAnnotatedRecordings": 11565,
+      "validSongDescriberRecordingOverlap": 547
+    },
+    "ccmsim": {
+      "pairs": 1130,
+      "mappedClips": 486,
+      "datasets": {
+        "magnatagatune": 54,
+        "fma": 54,
+        "corpusCOFLA": 54,
+        "arabandalusian": 54,
+        "lyra": 54,
+        "makam": 54,
+        "hindustani": 54,
+        "carnatic": 54,
+        "jingju": 54
+      },
+      "mappedIntervalsSeconds": [
+        20.0
+      ],
+      "clipIDsUsedInPublishedPairs": 463
+    }
+  },
+  "installedModels": [
+    {
+      "bundleId": "custom-clap-cpu-v2",
+      "manifestSHA256": "6b13ca02b9bb86b94f0507002ea653bb0eba18aa6913f598d9f2f8b11fff3486",
+      "platform": "linux/amd64",
+      "model": {
+        "model": "LAION original HTSAT-base music checkpoint",
+        "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+        "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+        "runtime": "onnxruntime/1.26.0/cpu",
+        "dimension": 512,
+        "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+      },
+      "license": "CC0-1.0 checkpoint; MIT ONNX Runtime; GPL-3.0 application worker",
+      "installedArtifactBytes": 807374279,
+      "artifacts": [
+        {
+          "role": "runtime",
+          "bytes": 23023576,
+          "sha256": "5bd5bedf736fc501692435d0ec4f6e8b2bdf48cd30af8e6d00d61b3ddc9a7ab8",
+          "verified": true
+        },
+        {
+          "role": "audio_model",
+          "bytes": 281357899,
+          "sha256": "22fbaee1757ef4ca03010cc0c27cadff34bf91453fe1963965e2a85cc5d9514b",
+          "verified": true
+        },
+        {
+          "role": "text_model",
+          "bytes": 501364988,
+          "sha256": "0c7502bb27f7ae9605483d81eae198693dcd9683c220ba7366aea8a58f20df16",
+          "verified": true
+        },
+        {
+          "role": "vocabulary",
+          "bytes": 1049622,
+          "sha256": "078c509073469aae3ed14de5dee8f1a36cf4555abe6e88d840e6266b599492eb",
+          "verified": true
+        },
+        {
+          "role": "merges",
+          "bytes": 506319,
+          "sha256": "84809de545b2f3e79275acfaefa4af5055438ddb13d9eed9cff02eacf5cc19fc",
+          "verified": true
+        },
+        {
+          "role": "preprocessing",
+          "bytes": 314,
+          "sha256": "df7723e9a726fefb06b95fed9e13f390a19b2a9bc92b65d19fddd5eab4a8711e",
+          "verified": true
+        },
+        {
+          "role": "license",
+          "bytes": 48668,
+          "sha256": "26ec02e08d6d7f5f39612ecd389b84c1afd2f5ad91a8195d4a879b553f1cf343",
+          "verified": true
+        },
+        {
+          "role": "health",
+          "bytes": 22893,
+          "sha256": "d79cc3202677519be86e9be19a13f9a26b74534046b06dd5713b11dcf819ba44",
+          "verified": true
+        }
+      ]
+    },
+    {
+      "bundleId": "mert-v1-95m-layer12-mean-5s-v1",
+      "manifestSHA256": "b7b6e515d923b5169b747187aa1921a5cc4bbe708fe37e970428d76858e15df2",
+      "platform": "linux/amd64",
+      "model": {
+        "model": "m-a-p/MERT-v1-95M",
+        "revision": "12af15fef9d0ac838c3f475bfbbf26d2060dd4f5",
+        "preprocessing": "mono-sinc64-24k-segments5s-zmuv-eps1e-7-pad0/v1",
+        "runtime": "onnxruntime/1.26.0/cpu",
+        "dimension": 768,
+        "weightsSha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+        "pooling": "layer12-masked-mean-l2;duration-weighted-segment-mean-l2/v1"
+      },
+      "license": "CC-BY-NC-4.0; ONNX Runtime MIT",
+      "installedArtifactBytes": 401467084,
+      "artifacts": [
+        {
+          "role": "audio_model",
+          "bytes": 377679573,
+          "sha256": "9d06066836ae4d5001954f1689b89447c3a65119933e34c3f3a8587f9d4f442b",
+          "verified": true
+        },
+        {
+          "role": "health",
+          "bytes": 72327,
+          "sha256": "3de81aa32b4be37a3e11cf9a4a3a46c6abc0fa00a5c11744b112f483297d7d1b",
+          "verified": true
+        },
+        {
+          "role": "license",
+          "bytes": 691608,
+          "sha256": "0db593a34a0af30c45404436b5df217dfaa5e834f525223bd6b1a0209f8bc480",
+          "verified": true
+        },
+        {
+          "role": "runtime",
+          "bytes": 23023576,
+          "sha256": "5bd5bedf736fc501692435d0ec4f6e8b2bdf48cd30af8e6d00d61b3ddc9a7ab8",
+          "verified": true
+        }
+      ]
+    }
+  ],
+  "challenger": {
+    "id": "OpenMuQ/MuQ-MuLan-large",
+    "installed": false,
+    "verifiedDesktopDistribution": false,
+    "nativeExportValidated": false,
+    "rankingComparison": "not_run",
+    "decision": "retain_current_scorer",
+    "reason": "No local MuQ model, verified download entry, or validated native export; matching SDD/CCMSim audio is absent."
+  },
+  "trainingOverlap": {
+    "status": "unknown",
+    "notes": "SDD and MTG classification annotations share recordings. The model training inventories are not complete enough to exclude pretraining overlap. No independence claim is made."
+  },
+  "auditSourceSHA256": "f307b14a5ef921d566d960f23bd262dd5c33651db90b703a48071bc5435298e1",
+  "boundedCLAPBaseline": {
+    "state": "completed",
+    "scope": "8 development recordings; fixed-pool raw cosine ranking, not production engine or model comparison",
+    "audioDownloads": 8,
+    "audioBytesFetched": 26004969,
+    "audioRetained": false,
+    "sampledSeconds": 160,
+    "model": {
+      "model": "LAION original HTSAT-base music checkpoint",
+      "revision": "lukewys/laion_clap@4226474:music_audioset_epoch_15_esc_90.14.pt",
+      "preprocessing": "mp3-s16-stereo-mono-linear48k-quant32767-segments10s-repeatpad-slaney64-fft1024-hop480/v1",
+      "runtime": "onnxruntime/1.26.0/cpu",
+      "dimension": 512,
+      "weights": "f208f3bff6cfd4dee3fc5a274168e7db463842246e1c7a88755a8a80bbb6bc9d"
+    },
+    "sampling": "two-distributed-10s-thirds-or-edges/v2",
+    "decoderId": "ffmpeg-8.1.2-chromaprint-1.6.1-linux-amd64-minimal-v2",
+    "healthMilliseconds": 2103,
+    "trackAcquisitionDecodeInferenceMilliseconds": [
+      1606,
+      894,
+      872,
+      736,
+      722,
+      752,
+      815,
+      709
+    ],
+    "trackMedianMilliseconds": 783.5,
+    "operationErrors": 0,
+    "metrics": [
+      {
+        "task": "voice_instrumental:instrumental",
+        "knownPositive": 3,
+        "knownNegative": 5,
+        "unknown": 0,
+        "judgedNDCGAt10": 0.8519590445170673
+      },
+      {
+        "task": "voice_instrumental:voice",
+        "knownPositive": 5,
+        "knownNegative": 3,
+        "unknown": 0,
+        "judgedNDCGAt10": 0.7738931964842558
+      },
+      {
+        "task": "mood_acoustic:acoustic",
+        "knownPositive": 3,
+        "knownNegative": 4,
+        "unknown": 1,
+        "judgedNDCGAt10": 1.0
+      },
+      {
+        "task": "mood_electronic:electronic",
+        "knownPositive": 2,
+        "knownNegative": 3,
+        "unknown": 3,
+        "judgedNDCGAt10": 1.0
+      },
+      {
+        "task": "mood_relaxed:relaxed",
+        "knownPositive": 2,
+        "knownNegative": 3,
+        "unknown": 3,
+        "judgedNDCGAt10": 0.6934264036172708
+      },
+      {
+        "task": "danceability:danceable",
+        "knownPositive": 1,
+        "knownNegative": 1,
+        "unknown": 6,
+        "judgedNDCGAt10": 1.0
+      }
+    ],
+    "corpusSeed": "automatic-matching-baseline-2026-09-27",
+    "candidatePolicy": "first 8 development IDs in frozen deterministic 600-recording corpus order",
+    "scorePolicy": "one positive production clause query per binary facet; duration-weighted segment dot product; known-label-only nDCG@10",
+    "sourceArchiveSHA256": "82578d75883d78dd67418b3cdf4f10963f0170b30540a41f2536220785b99076",
+    "artifactSHA256": {
+      "automaticeval": "6c6ddfb3968caa78e47f197cfac9300e432e9431fbc7b5d9bdbcdfcb63aff983",
+      "mtg-corpus.json": "3d47d9bad8bee610f994f164cf2f77e93aa217adf086795fe425563e740a153d",
+      "frozen-requests.json": "0670bfe0a912ca6cdf45b85b76087f40d61418b6c3b06e518e64f68c4aab9c1a",
+      "development-clap-features.json": "d2a70d2c212d317118fcb72f4bf82bf5e005b2a24447b4d6d5f8067180ece3f5",
+      "baseline-corpus.json": "d786ab8e2ed2e7afe18055e83fff8c1640cc4876aa2f2501443f0190204fcd57",
+      "baseline-scores.json": "f51c63646506da1afac7d772aa4a80b2799f89239e83422f8354e5b7ea241138",
+      "summarize_baseline.py": "86e9feb21dae6736d457bb6ba6530b57cdba25c915df9b4198a06bbd0480f585"
+    },
+    "timingLimits": "Per-track timings include network, decoding and inference; not pure inference or whole generation. Warm/cold generation and native peak memory are unmeasured.",
+    "comparisonState": "No MuQ measurements; no paired quality interval; current scorer retained.",
+    "initialDecoderAttempt": "Old locally installed minimal-v1 decoder rejected before audio acquisition; successful run uses existing verified chromaprint minimal-v2 cache bundle."
+  },
+  "hardware": {
+    "cpu": "Intel(R) Core(TM) Ultra 9 285H",
+    "visibleCPUs": 16,
+    "kernel": "6.18.33.2-microsoft-standard-WSL2"
+  },
+  "goVersion": "go version go1.27.1 linux/amd64"
+}

@@ -6,7 +6,7 @@ import { PreparedMusicData } from "./PreparedMusicData";
 const options = [
   {
     mode: RecommendationMode.Automatic,
-    detail: "Combine prepared music data and compatible audio evidence within a two-minute budget. Missing support may produce a shorter playlist.",
+    detail: "Use prepared music data and audio evidence for estimated musical matches. Explicit must-haves stay strict; preparation stops when a suitable pool is ready, within a two-minute budget.",
   },
   {
     mode: RecommendationMode.EnhancedHybrid,
@@ -61,7 +61,7 @@ export function RecommendationSettings() {
       </fieldset>
       <p className="text-[12px] text-faint" role="status">{saving ? "Saving…" : "Applies to new playlists and Regenerate. Saved playlists keep their original mode; active generations are unchanged."}</p>
       {mode === RecommendationMode.Automatic
-        ? <p className="text-[12px] text-muted">Your description and taste profile stay on this device. The music data and available previews determine which requested characteristics can be supported.</p>
+        ? <p className="text-[12px] text-muted">Your description and taste profile stay on this device. Ordinary mood, instrumentation and texture descriptions guide estimated ranking. Unconfirmed qualities stay labelled, even in a full playlist. Unsupported strict requirements may produce fewer tracks.</p>
         : <p className="text-[12px] text-muted">{mode === RecommendationMode.DeejAIOnly
           ? "Descriptions are still parsed locally, but a catalog reference is needed. Genre and mood fit are unverified. Unsupported strict requirements return an explanation, not an unchecked playlist. The artist-diversity slider does not affect the original walk."
           : "Enhanced hybrid combines every available compatible source while preserving hard requirements. Evidence availability varies by recording."}</p>}

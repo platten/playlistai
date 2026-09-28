@@ -8,6 +8,7 @@ import { bridgeEnums } from "./browser-fixture-contract.mjs";
 
 const { chromium } = await import(pathToFileURL(process.argv[2]).href);
 const output = process.argv[4];
+const estimated = process.env.PLAYLISTAI_CAPTURE_ESTIMATES === "1";
 const baseURL = `http://127.0.0.1:${process.env.PLAYLISTAI_CAPTURE_PORT || "9245"}`;
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
@@ -31,7 +32,7 @@ export const API=new Proxy({}, {get:(_target,name)=>(...args)=>{
 const screenSource = await (await fetch(`${baseURL}/src/screens/PlaylistScreen.tsx`)).text();
 const reactURL = screenSource.match(/from "(\/node_modules\/\.vite\/deps\/react\.js[^"]*)"/)?.[1];
 assert.ok(reactURL, "Vite React module URL");
-const entry = `
+let entry = `
 import React from '${reactURL}';
 import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
 import {PlaylistScreen} from '/src/screens/PlaylistScreen.tsx';
@@ -50,6 +51,13 @@ function Fixture(){
  return React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>setRevision(n=>n+1)},'Remount playlist'),React.createElement(PreviewPlayerProvider,null,React.createElement(PlaylistScreen,{key:revision,request,heading:'Automatic playlist',initialResult:result,initialDraft:revision?window.draft:undefined,sessionId:'fixture-session',onDraft:save,onBack:()=>{},onRegenerate:()=>{},onReview:()=>{}})));
 }
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Fixture));`;
+if (estimated) {
+  entry = entry.replace("totalTrackCount:10", "totalTrackCount:1").replace("count:10", "count:1")
+    .replace("code:'insufficient_matches',detail:'Only supported matches were retained.'", "code:'descriptive_fit_estimated',detail:'Musical character is ranked from available sampled audio.'")
+    .replaceAll("state:'strong'", "state:'unknown'")
+    .replace("clause:{kind:'genre',text:'afrobeat'}", "estimateAvailable:true,clause:{kind:'instrumentation',text:'soft piano',strength:'essential'}")
+    .replace("Independent metadata and audio agree.", "Uncalibrated audio ranks the complete description.");
+}
 const errors = [];
 try {
   const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
@@ -58,7 +66,7 @@ try {
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: bridge }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: "export const Events={On:()=>()=>{}};export const Browser={OpenURL:()=>Promise.resolve()};export const System={IsMac:()=>false};export const Clipboard={SetText:()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;" }));
   await page.goto(baseURL);
-  await page.getByText("Created 1 of 10 requested tracks", { exact: true }).waitFor();
+  await page.getByText(estimated ? "Best estimates — some qualities are unconfirmed" : "Created 1 of 10 requested tracks", { exact: true }).waitFor();
   await page.getByText("Change artist", { exact: true }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("combobox", { name: "Artist for Fela" }).selectOption("namesake");
@@ -70,6 +78,7 @@ try {
   assert.equal(await page.evaluate(() => window.draft.artistSelections[0].identityId), "namesake");
   await page.getByRole("button", { name: /Track details: Fela Kuti/ }).click();
   await page.getByText(/does not verify the whole recording/).waitFor();
+  if (estimated) await page.getByText(/soft piano · Estimated ranking · quality unconfirmed/).waitFor();
   for (const theme of ["dark", "light"]) {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
     for (const width of [1100, 390]) {

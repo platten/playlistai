@@ -961,7 +961,7 @@ claimed by synthetic tests.
 
 ## Executed implementation checks
 
-The final current-source gate passed: `./scripts/test.sh`.
+The final current-source gate passed: `PATH=$HOME/go/bin:$PATH ./scripts/test.sh`.
 It includes all shell checks, regenerated Wails bindings, 253 frontend tests in
 25 files, typechecking, the production build, Go vet, pure-Go core compilation,
 the full Go race suite and golangci-lint with zero issues. All 1,391 source files
@@ -1058,7 +1058,7 @@ gate above supersedes that status. Native quality diagnostics remain separate.
   recommendation race suite also passes (22.546s), and combined review of all
   60 later production files has no remaining findings. This is separate from
   the frozen v3 gate below; the final full workspace gate is still pending.
-- `./scripts/test.sh`: passed on Linux/WSL2,
+- `PATH=$HOME/go/bin:$PATH ./scripts/test.sh`: passed on Linux/WSL2,
   including shell checks, regenerated bindings, 253 frontend tests, typecheck,
   production build, Go vet, pure-Go core compilation, the full Go race suite and
   golangci-lint (zero issues). Latest complete output: `full-gate-v3.log` in the audit

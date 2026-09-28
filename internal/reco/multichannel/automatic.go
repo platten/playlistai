@@ -14,11 +14,12 @@ import (
 	"github.com/platten/playlistai/internal/resolution"
 )
 
-const AutomaticAlgorithmVersion = "automatic/v7"
+const AutomaticAlgorithmVersion = "automatic/v8"
 const automaticCandidateLimit = 512
 
 // AutomaticEngine does one bounded retrieval/preparation pass, freezes its
-// inputs and performs one assembly. Optional metadata and audio assistance share
+// inputs and performs final assembly. Read-only selection probes can stop
+// preparation when its obligations are met. Metadata and audio assistance share
 // the preparation deadline; assembly reads only the frozen evidence.
 type AutomaticEngine struct {
 	cat                 ports.Catalog
@@ -113,7 +114,7 @@ func (a *AutomaticEngine) BuildRecommendation(parent context.Context, request po
 	intent := request.Intent.Normalized()
 	intent.Controls.RecommendationMode = core.Automatic
 	preparationStopped := false
-	search := core.SearchSnapshot{PolicyVersion: core.AutomaticSearchPolicyVersion, QueryPolicyVersion: AutomaticAlgorithmVersion, EvidencePolicyVersion: core.AutomaticFitPolicyVersion, Profile: request.Profile, StopReason: "prepared_pool"}
+	search := core.SearchSnapshot{PolicyVersion: core.AutomaticSearchPolicyVersion, QueryPolicyVersion: AutomaticAlgorithmVersion, EvidencePolicyVersion: core.AutomaticFitPolicyVersion, Profile: request.Profile, StopReason: "prepared_evidence_exhausted"}
 	if deadline, ok := ctx.Deadline(); ok {
 		search.GenerationLimitMilliseconds = deadline.Sub(ports.GenerationStarted(ctx)).Milliseconds()
 	}
@@ -319,7 +320,27 @@ func (a *AutomaticEngine) BuildRecommendation(parent context.Context, request po
 	if batchErr == nil && work.Err() == nil {
 		phase = automaticPhase(work, "online_evidence")
 		metadataOrder := a.automaticMetadataOrder(batch, candidates, append(append([]core.TrackRef(nil), required...), waypoints...), seed)
-		batchErr = a.acquireAutomaticEvidence(work, cat, batch, execution, catalogVersion, metadataOrder)
+		ready := func() bool {
+			// Use the same deduplication, diversity and journey rules as final
+			// selection. This probe reads only the request-owned prepared batch.
+			probeRequest := request
+			probeRequest.OnSuggested, probeRequest.Progress = nil, nil
+			probe, probeErr := a.assembleAutomatic(work, batch, candidates, execution, probeRequest, references, required, waypoints, recent, seed, &core.SearchSnapshot{}, graphCandidates)
+			if probeErr != nil || len(probe.Tracks) == 0 {
+				return false
+			}
+			for _, reason := range probe.Outcome.Reasons {
+				if reason.Code != "descriptive_fit_estimated" && reason.Code != "reference_fit_estimated" {
+					return false
+				}
+			}
+			if probe.Outcome.State == core.OutcomeNeedsClarification || probe.Outcome.State == core.OutcomeUnsupported {
+				return false
+			}
+			search.StopReason = "prepared_obligations_met"
+			return true
+		}
+		batchErr = a.acquireAutomaticEvidence(work, cat, batch, execution, catalogVersion, metadataOrder, ready)
 		phase(len(batch.ids), batchErr)
 	}
 	if batchErr != nil {
@@ -395,11 +416,11 @@ func automaticBalancedPool(pools [][]core.Candidate, limit int, seed int64) []co
 			for _, source := range c.Sources {
 				duplicate := false
 				for _, s := range old.Sources {
-					duplicate = duplicate || s.Channel == source.Channel && s.QueryID == source.QueryID
+					duplicate = duplicate || automaticSourceKey(s) == automaticSourceKey(source)
 				}
 				if !duplicate {
 					old.Sources = append(old.Sources, source)
-					key := source.Channel + "\x00" + source.QueryID
+					key := automaticSourceKey(source)
 					buckets[key] = append(buckets[key], c.Track.ID)
 				}
 			}
@@ -414,7 +435,7 @@ func automaticBalancedPool(pools [][]core.Candidate, limit int, seed int64) []co
 	rank := func(c core.Candidate, key string) int {
 		best := int(^uint(0) >> 1)
 		for _, s := range c.Sources {
-			if s.Channel+"\x00"+s.QueryID == key {
+			if automaticSourceKey(s) == key {
 				best = min(best, max(1, s.Rank))
 			}
 		}
@@ -453,6 +474,14 @@ func automaticBalancedPool(pools [][]core.Candidate, limit int, seed int64) []co
 		}
 	}
 	return out
+}
+
+func automaticSourceKey(source core.RetrievalEvidence) string {
+	key := source.Channel + "\x00" + source.QueryID
+	if source.LibrarySource != nil {
+		key += "\x00" + source.LibrarySource.SpaceID
+	}
+	return key
 }
 
 var _ ports.RecommendationEngine = (*AutomaticEngine)(nil)

@@ -147,6 +147,7 @@ type Coverage struct {
 	DSP         int `json:"dsp"`
 	Failed      int `json:"failed"`
 	Unsupported int `json:"unsupported"`
+	Classifier  int `json:"classifier,omitempty"`
 }
 
 type Manifest struct {
@@ -223,6 +224,7 @@ type Track struct {
 	MERT                 []float32
 	CLAP                 []float32
 	CLAPEvidence         *CLAPEvidence
+	ClassifierEvidence   []core.MusicClassifierEvidence
 	Cluster              *int
 	ClusterScore         float64
 	Alternative          *int
@@ -488,6 +490,9 @@ func (m Manifest) Validate(limits Limits) error {
 	}
 	if m.Coverage.Tracks < 0 || m.Coverage.Tracks > limits.MaxTracks || m.Coverage.Metadata < 0 || m.Coverage.Metadata > m.Coverage.Tracks || m.Coverage.MERT < 0 || m.Coverage.MERT > m.Coverage.Tracks || m.Coverage.CLAP < 0 || m.Coverage.CLAP > m.Coverage.Tracks || m.Coverage.DSP < 0 || m.Coverage.DSP > m.Coverage.Tracks || m.Coverage.Failed < 0 || m.Coverage.Failed > m.Coverage.Tracks || m.Coverage.Unsupported < 0 || m.Coverage.Unsupported > m.Coverage.Tracks {
 		return errors.New("librarypack: invalid coverage counts")
+	}
+	if m.Coverage.Classifier < 0 || m.Coverage.Classifier > m.Coverage.Tracks || m.Version < FormatVersion && m.Coverage.Classifier != 0 {
+		return errors.New("librarypack: invalid classifier coverage")
 	}
 	if m.CreatedAt != "" {
 		if _, err := time.Parse(time.RFC3339, m.CreatedAt); err != nil {

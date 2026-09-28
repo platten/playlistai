@@ -182,18 +182,30 @@ func (c *Container) loadAnalysis(ctx context.Context) error {
 
 func (c *Container) AudioService() *audio.Service {
 	c.analysis.mu.Lock()
-	defer c.analysis.mu.Unlock()
+	if c.analysis.service == nil {
+		c.analysis.mu.Unlock()
+		return nil
+	}
+	var service *audio.Service
 	if !c.analysis.enabled {
 		if !c.analysis.service.InferenceReady() {
+			c.analysis.mu.Unlock()
 			return nil
 		}
 		// The installed model ranks best-available descriptions and screens vocals.
 		// The setting controls additional calibrated musical-fit assessments.
-		service := c.analysis.service.Clone()
+		service = c.analysis.service.Clone()
 		service.Policy = audio.Policy{}
-		return service
+	} else {
+		service = c.analysis.service.Clone()
 	}
-	return c.analysis.service
+	c.analysis.mu.Unlock()
+	c.discogs.mu.Lock()
+	if c.discogs.worker != nil && c.discogs.model != nil && c.analysis.store != nil {
+		service.Classifier = &audio.DiscogsClassifier{Worker: c.discogs.worker, Model: *c.discogs.model, Store: c.analysis.store}
+	}
+	c.discogs.mu.Unlock()
+	return service
 }
 
 func (c *Container) ProposeAnchors(ctx context.Context, intent core.MusicIntent, rejected []string) ([]core.InferredAnchor, error) {

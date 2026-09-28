@@ -31,3 +31,11 @@ it("renders categorical estimates with coverage, without confidence percentages"
   expect(screen.getByText(/does not verify the whole recording/)).toBeTruthy();
   expect(screen.queryByText(/\d+%/)).toBeNull();
 });
+
+it("shows raw ranking as unconfirmed and preserves classifier sample coverage", () => {
+  const fit = { state: "unknown", clauses: [{ clause: { text: "soft piano" }, state: "unknown", estimateAvailable: true, signals: [{ detail: "Shared encoder estimate.", libraryCoverage: { coveredSeconds: 8, incomplete: true } }] }] } as unknown as ComponentProps<typeof AutomaticFitEvidence>["fit"];
+  render(<AutomaticFitEvidence fit={fit} />);
+  expect(screen.getByText(/soft piano · Estimated ranking · quality unconfirmed/)).toBeTruthy();
+  expect(screen.getByText(/Audio coverage: 8 seconds \(sampled\)/)).toBeTruthy();
+  expect(screen.queryByText(/Strong estimated fit/)).toBeNull();
+});

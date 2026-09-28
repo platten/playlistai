@@ -55,6 +55,11 @@ Web evidence is separate from independent listening labels.
   --accept-model-license --out ./my-library.paipack
 ```
 
+For optional, resumable Discogs-EffNet classification, use
+`--analysis effnet --effnet-model-dir DIR` and a verified CLAP runtime bundle. The scores
+are sampled estimates in the exported pack; see the
+[indexer stage instructions](docs/library-indexer-design.md).
+
 `run --out` and `export --out` now build search and discovery-profile indexes
 inside a version-8 paipack by default. The desktop verifies and loads these
 indexes; it does not build them during import. Older unindexed packs need a new
@@ -355,8 +360,12 @@ The [Automatic architecture](docs/automatic-playlists.md) adds reversible
 popular-artist resolution, prepared public discovery data, a shared two-minute
 budget and one frozen recommendation pass. It is now the default; the independent
 musical-quality gates remain unmet. Defining descriptions retain
-their full phrases and calibrated audio support stays unknown until independent
-validation passes. Settings offers an optional ListenBrainz connection using
+their full phrases; ordinary mood, instrument and texture requests now guide
+estimated ranking, while explicit must-haves remain strict. Full results label
+unconfirmed qualities. [The matching upgrade](docs/automatic-matching-implementation.md)
+adds earlier preparation stopping, resumable catalog coverage jobs and optional
+Discogs-EffNet scores; calibrated quality and model-replacement claims still
+require independent validation. Settings offers an optional ListenBrainz connection using
 the OS credential store (session-only when unavailable) for discovery metadata;
 it does not import listening history or submit listens.
 

@@ -8,6 +8,7 @@ const api = vi.hoisted(() => Object.fromEntries([
   "DownloadModel", "UseModelFile", "SetModelDevice", "GetAnalysisStatus", "GetRecommendedAnalysisBundle", "GetPreviewProviderName",
   "SetAnalysisEnabled", "SetPreviewProvider", "CompleteOnboarding", "GetSetupStatus",
   "GetEnhancedAnalysisStatus", "InstallRecommendedMERT",
+  "GetDiscogsStatus", "InstallDiscogs",
   "GetDiscoveryAssetStatus", "InstallDiscoveryAsset", "CancelDiscoveryAssetInstall", "CheckDiscoveryAssetUpdate",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../lib/api", () => ({ API: api }));
@@ -49,6 +50,21 @@ it("requires discovery activation during an existing-user repair", async () => {
   api.GetSetupStatus.mockImplementation(() => completed(setupStatus([], [], true)));
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByText("You're set up");
+});
+
+it("requires validated native Discogs analysis before continuing", async () => {
+  const pending = deferred();
+  api.GetSetupStatus.mockImplementation(() => completed(setupStatus(["discogs"])));
+  api.GetDiscogsStatus.mockImplementation(() => completed({ installed: false, available: false, recommendedAvailable: true, downloadBytes: 22000000 }));
+  api.InstallDiscogs.mockReturnValueOnce(pending.promise);
+  await start();
+  const install = await screen.findByRole("button", { name: "Download and validate Discogs-EffNet" });
+  expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(install);
+  expect(api.InstallDiscogs).toHaveBeenCalledOnce();
+  api.GetDiscogsStatus.mockImplementation(() => completed({ installed: true, available: true, recommendedAvailable: true, downloadBytes: 22000000 }));
+  await act(async () => { pending.resolve(undefined); });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(false));
 });
 
 it("omits every ready asset screen without changing saved choices or downloading", async () => {

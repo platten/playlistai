@@ -6,13 +6,14 @@ const labels: Record<string, string> = { strong: "Strong estimated fit", plausib
 export function AutomaticFitEvidence({ fit }: { fit?: Fit }) {
   if (!fit) return null;
   return <section aria-label="Estimated musical fit" className="mx-2 mb-3 rounded-control border border-line bg-inset p-3 text-[12px] text-muted">
-    <p className="font-medium text-text">{labels[fit.state] || "Estimated musical fit"}</p>
+    <p className="font-medium text-text">{fit.state === "unknown" && fit.clauses?.some(clause => clause.estimateAvailable) ? "Best estimate — qualities unconfirmed" : labels[fit.state] || "Estimated musical fit"}</p>
     <p className="mt-1">{fit.detail}</p>
     <ul className="mt-2 flex flex-col gap-2">
       {(fit.clauses ?? []).map((clause, index) => <li key={index}>
-        <p className="text-text">{clause.clause.negative ? "Avoid: " : ""}{clause.clause.text} · {labels[clause.state] || clause.state}</p>
+        <p className="text-text">{clause.clause.negative ? "Avoid: " : clause.clause.strict ? "Required: " : ""}{clause.clause.text} · {clause.state === "unknown" && clause.estimateAvailable ? "Estimated ranking · quality unconfirmed" : labels[clause.state] || clause.state}</p>
         {(clause.signals ?? []).map((signal, i) => <p key={i} className="mt-1">{signal.detail}
           {signal.coverage && <> · Audio coverage: {signal.coverage.available ? `${Math.round(signal.coverage.coveredSeconds)} seconds` : "unknown"}</>}
+          {signal.libraryCoverage && <> · Audio coverage: {Math.round(signal.libraryCoverage.coveredSeconds)} seconds{signal.libraryCoverage.incomplete ? " (sampled)" : ""}</>}
         </p>)}
       </li>)}
     </ul>

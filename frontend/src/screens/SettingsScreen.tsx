@@ -10,6 +10,7 @@ import {
 import { Button, EmptyState, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { DiscogsModelCard } from "../components/DiscogsModelCard";
 import { DiscoveryDataCard } from "../components/DiscoveryDataCard";
 import { MusicMetadataCard } from "../components/MusicMetadataCard";
 import { ListenBrainzConnection } from "../components/ListenBrainzConnection";
@@ -346,7 +347,9 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
       <LocalLibrarySettings />
       <section className="flex flex-col gap-3">
         <h2 className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</h2>
+        <MusicAnalysisCard />
         <EnhancedAudioCard />
+        <DiscogsModelCard />
       </section>
 
       <section className="flex flex-col gap-3">
@@ -592,7 +595,6 @@ export function SettingsScreen({ onReset }: { onReset?: () => void }) {
         {previewError && <ErrorState variant="inline" message={previewError} onDismiss={() => setPreviewError(null)} />}
       </section>
 
-      <MusicAnalysisCard />
       <EnhancedAudioCard dspOnly />
       <MusicMetadataCard />
 

@@ -1,0 +1,5 @@
+# Optional offline preparation only; verified with Python 3.14 on Linux x86_64.
+essentia-tensorflow==2.1b6.dev1438
+numpy==2.5.3
+PyYAML==6.0.3
+six==1.17.0

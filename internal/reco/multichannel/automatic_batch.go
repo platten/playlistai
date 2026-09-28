@@ -22,11 +22,12 @@ type automaticBatch struct {
 	recordings   map[string]core.EnrichedTrack
 	features     map[string]core.TrackFeatures
 	assessments  map[string]core.AudioAssessment
+	classifiers  map[string][]core.MusicClassifierEvidence
 	familiarity  map[string]float64
 }
 
 func newAutomaticBatch() *automaticBatch {
-	return &automaticBatch{rows: map[string]int{}, meta: map[string]core.TrackMeta{}, vectors: map[string]ports.Vectors{}, mert: map[string]core.LibraryVector{}, clap: map[string]core.LibraryVector{}, recordings: map[string]core.EnrichedTrack{}, features: map[string]core.TrackFeatures{}, assessments: map[string]core.AudioAssessment{}, familiarity: map[string]float64{}}
+	return &automaticBatch{rows: map[string]int{}, meta: map[string]core.TrackMeta{}, vectors: map[string]ports.Vectors{}, mert: map[string]core.LibraryVector{}, clap: map[string]core.LibraryVector{}, recordings: map[string]core.EnrichedTrack{}, features: map[string]core.TrackFeatures{}, assessments: map[string]core.AudioAssessment{}, classifiers: map[string][]core.MusicClassifierEvidence{}, familiarity: map[string]float64{}}
 }
 
 // All nested maps/slices entering the frozen batch are copied. They may have
@@ -80,6 +81,18 @@ func (a *AutomaticEngine) prepareBatch(ctx context.Context, cat ports.Catalog, t
 			}
 		}
 		var assessment core.AudioAssessment
+		var classifiers []core.MusicClassifierEvidence
+		if source, ok := cat.(interface {
+			MusicClassifierEvidence(context.Context, string) ([]core.MusicClassifierEvidence, error)
+		}); ok {
+			if evidence, err := source.MusicClassifierEvidence(ctx, ref.ID); err == nil {
+				for _, e := range evidence {
+					if e.Validate() == nil {
+						classifiers = append(classifiers, automaticCopy(e))
+					}
+				}
+			}
+		}
 		if source, ok := cat.(ports.LibrarySemanticCatalog); ok {
 			if v, found, err := source.LibraryCLAPVector(ctx, ref.ID); err == nil && found {
 				clap = automaticCopy(v)
@@ -139,6 +152,7 @@ func (a *AutomaticEngine) prepareBatch(ctx context.Context, cat ports.Catalog, t
 		}
 		b.recordings[ref.ID] = automaticCopy(recording)
 		b.features[ref.ID] = features
+		b.classifiers[ref.ID] = classifiers
 		if assessment.TrackID != "" {
 			b.assessments[ref.ID] = assessment
 		}

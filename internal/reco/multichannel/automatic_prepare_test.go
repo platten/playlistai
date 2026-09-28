@@ -3,6 +3,7 @@ package multichannel
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,5 +101,34 @@ func TestAutomaticKeepsPreparedVectorOnPreviewAcquisition(t *testing.T) {
 	}
 	if batch.clap["audio"].Source.SpaceID != "authenticated-prepared-pooling" {
 		t.Fatalf("compatible prepared vector replaced by unrelated preview space %s", batch.clap["audio"].Source.SpaceID)
+	}
+}
+
+func TestAutomaticAttachesCachedNativeClassifierBesidePreparedAssessment(t *testing.T) {
+	cat := testCatalog()
+	service, resolver := cachedAudioService(t, cat, "audio")
+	store := service.Store.(*audio.Store)
+	meta, _ := cat.Meta("audio")
+	encoder := core.MusicClassifierIdentity{Model: "discogs-effnet-bsdynamic-1", Revision: "1", WeightsSHA256: strings.Repeat("a", 64), MetadataSHA256: strings.Repeat("b", 64)}
+	headID := core.MusicClassifierIdentity{Model: "relaxed-head", Revision: "1", WeightsSHA256: strings.Repeat("c", 64), MetadataSHA256: strings.Repeat("d", 64)}
+	head := core.MusicClassifierHead{Kind: "mood", Model: headID, Classes: []string{"relaxed"}, Scores: []float32{.8}}
+	service.Classifier = &audio.DiscogsClassifier{Model: audio.DiscogsModel{Encoder: encoder, Heads: []core.MusicClassifierHead{{Kind: head.Kind, Model: head.Model, Classes: head.Classes}}}, Store: store}
+	identity := core.PreviewIdentity{PolicyVersion: core.PreviewIdentityPolicyVersion, Provider: "deezer", ProviderID: "audio", Status: core.ResolutionResolved}
+	evidence := core.MusicClassifierEvidence{Version: core.MusicClassifierEvidenceVersion, Encoder: encoder, Preprocessing: audio.DiscogsPreprocessing, Runtime: audio.DiscogsRuntime, AudioSHA256: strings.Repeat("0", 64), Source: "deezer-preview", SourceID: "audio", License: "local only", Coverage: core.LibraryCLAPCoverage{CoveredSeconds: 10, Incomplete: true, PartialReason: "preview", Segments: []core.LibraryAudioInterval{{StartSeconds: 0, EndSeconds: 10}}}, Heads: []core.MusicClassifierHead{head}}
+	if err := store.PutClassifier(context.Background(), cat.CatalogVersion(), "audio", core.ProvisionalRecordingKey(meta.Ref), identity, evidence); err != nil {
+		t.Fatal(err)
+	}
+	engine := NewAutomatic(cat, cat, nil, DefaultConfig()).WithAudioProvider(func() *audio.Service { return service })
+	batch := newAutomaticBatch()
+	batch.ids, batch.meta["audio"] = []string{"audio"}, meta
+	batch.assessments["audio"] = core.AudioAssessment{TrackID: "audio", AnalysisID: "prepared"}
+	intent := testIntent(2)
+	intent.VerificationPolicy = core.BestAvailable
+	intent.EssentialCriteria = []core.MusicalCriterion{{Kind: "mood", Value: "relaxed", Scope: "playlist", Strength: "essential"}}
+	if err := engine.acquireAutomaticEvidence(context.Background(), cat, batch, intent, cat.CatalogVersion(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 0 || len(batch.classifiers["audio"]) != 1 || batch.classifiers["audio"][0].Heads[0].Scores[0] != .8 {
+		t.Fatalf("cached classifier was lost or preview refetched: calls=%d evidence=%+v", resolver.calls, batch.classifiers["audio"])
 	}
 }

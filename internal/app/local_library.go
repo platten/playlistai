@@ -413,6 +413,13 @@ func (c *Container) ImportLocalLibrary(ctx context.Context, source string) (Loca
 			return LocalLibraryStatus{}, fmt.Errorf("verify prebuilt local library indexes: %w", err)
 		}
 	}
+	if staged.Manifest().Coverage.Classifier > 0 {
+		release, err := c.preparedInstallGuard(ctx)
+		if err != nil {
+			return LocalLibraryStatus{}, err
+		}
+		defer func() { _ = release() }()
+	}
 	state.opMu.Lock()
 	if err := manager.Activate(ctx, staged); err != nil {
 		activated = true // Activate owns cleanup after it accepts staged.
@@ -494,7 +501,7 @@ func (s *localLibraryState) status(backend string) (LocalLibraryStatus, error) {
 	status.Format, status.Version, status.PackID, status.PackSHA256 = manifest.Format, manifest.Version, manifest.PackID, lease.Generation().PackSHA256()
 	status.CreatedAt, status.CorpusGeneration, status.MetadataGeneration = manifest.CreatedAt, manifest.CorpusGeneration, manifest.MetadataGeneration
 	status.MERTGeneration, status.ClusterGeneration, status.StatisticsGeneration = manifest.MERTGeneration, manifest.ClusterGeneration, manifest.StatisticsGeneration
-	status.Coverage = LocalLibraryCoverage(manifest.Coverage)
+	status.Coverage = LocalLibraryCoverage{Tracks: manifest.Coverage.Tracks, Metadata: manifest.Coverage.Metadata, MERT: manifest.Coverage.MERT, CLAP: manifest.Coverage.CLAP, DSP: manifest.Coverage.DSP, Failed: manifest.Coverage.Failed, Unsupported: manifest.Coverage.Unsupported}
 	status.MERT = manifest.MERT
 	for _, alias := range manifest.RootAliases {
 		root := LocalLibraryRoot{Alias: alias}

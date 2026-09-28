@@ -50,6 +50,7 @@ type Container struct {
 	graphInstalling      atomic.Bool
 	analysis             analysisState
 	enhanced             enhancedState
+	discogs              discogsState
 	cfg                  config.Config
 	log                  *slog.Logger
 
@@ -152,6 +153,7 @@ func New(ctx context.Context, cfg config.Config, log *slog.Logger) (*Container, 
 	c.wireEnrichExport()
 	c.wireAnalysis(ctx)
 	c.wireEnhanced(ctx)
+	c.wireDiscogs(ctx)
 	c.wirePreview(cfg.Preview.Provider)
 	c.chooseParser(ctx)
 

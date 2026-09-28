@@ -27,9 +27,15 @@ func main() {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: musicgraph prepare|fetch|inspect -input file [-output new-file] [-sha256 expected-hash]")
+		return errors.New("usage: musicgraph prepare|fetch|inspect|inventory|resume|coverage|enrich-pack -input file [options]; use COMMAND -h for flags")
 	}
 	command := args[0]
+	if command == "enrich-pack" {
+		return runEnrichPack(ctx, args[1:], stdout, stderr)
+	}
+	if command == "inventory" || command == "resume" || command == "coverage" {
+		return runPrepared(ctx, command, args[1:], stdout, stderr)
+	}
 	if command != "prepare" && command != "fetch" && command != "inspect" {
 		return errors.New("unknown musicgraph command")
 	}

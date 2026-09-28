@@ -14,11 +14,20 @@ available. If a repair is needed, the wizard shows only affected steps. New
 optional features alone do not reopen a completed wizard.
 
 First setup requires every supported catalog, metadata, language-model, intent,
-music-analysis, MERT, and preview step. Already-ready steps are omitted and
+music-analysis, MERT, Discogs-EffNet, and preview step. Already-ready steps are omitted and
 installed assets are checked before a download is offered. MERT and DSP analysis
 are enabled by default. There is no skip action. A final readiness check precedes
 completion; a failed preferences save leaves the wizard open with a retry action.
 Unsupported capabilities are omitted.
+
+The Discogs-EffNet step downloads the pinned original ONNX encoder, three
+specialist heads, ordered label metadata, and model notice directly from
+Essentia. It uses the validated CLAP native runtime already installed by the
+earlier step, then runs a local inference health check before continuing.
+Settings offers the same resumable download and removal controls. Its
+uncalibrated predictions are estimated, preview-scoped musical evidence; they
+never establish a strict requirement or exclusion. See
+[Discogs-EffNet specialist evidence](discogs-effnet.md).
 
 On Linux or Windows with a CUDA-capable NVIDIA host, the recommended CLAP and
 MERT actions prefer validated CUDA bundles in the offline indexer's cache

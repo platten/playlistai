@@ -360,6 +360,12 @@ func trackMemory(t librarypack.Track) int64 {
 	if t.AudioFingerprint != nil {
 		n += int64(len(t.AudioFingerprint.Fingerprint))
 	}
+	if len(t.ClassifierEvidence) > 0 {
+		// Selection retains nested score/vocabulary slices. Include a
+		// conservative allowance for their decoded string/slice overhead.
+		raw, _ := json.Marshal(t.ClassifierEvidence)
+		n += int64(len(raw)) * 4
+	}
 	return n
 }
 func entityID(kind, value string) string {

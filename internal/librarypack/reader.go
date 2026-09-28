@@ -28,18 +28,19 @@ import (
 // Generation is one immutable, verified extracted pack. Its files remain open
 // while a Manager lease pins it.
 type Generation struct {
-	artistIndexMu sync.Mutex
-	artistIndex   map[string][]string
-	manifest      Manifest
-	packSHA256    string
-	dir           string
-	db            *sql.DB
-	vectors       *os.File
-	clapVectors   *os.File
-	closeOnce     sync.Once
-	closeErr      error
-	attachmentMu  sync.Mutex
-	attachments   map[string]generationAttachment
+	artistIndexMu         sync.Mutex
+	artistIndex           map[string][]string
+	manifest              Manifest
+	packSHA256            string
+	dir                   string
+	db                    *sql.DB
+	vectors               *os.File
+	clapVectors           *os.File
+	hasClassifierEvidence bool
+	closeOnce             sync.Once
+	closeErr              error
+	attachmentMu          sync.Mutex
+	attachments           map[string]generationAttachment
 }
 
 type generationAttachment struct {
@@ -345,7 +346,11 @@ func (g *Generation) OpenTrackSource(ctx context.Context) (TrackReadCloser, erro
 	if g.manifest.Version >= FormatVersion {
 		evidenceColumn = "COALESCE((SELECT data FROM clap_evidence WHERE track_id=tracks.id),X'')"
 	}
-	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score,mert_row,`+clapColumn+`,`+evidenceColumn+` FROM tracks ORDER BY id`)
+	classifierColumn := "X''"
+	if g.hasClassifierEvidence {
+		classifierColumn = "COALESCE((SELECT data FROM classifier_evidence WHERE track_id=tracks.id),X'')"
+	}
+	rows, err := g.db.QueryContext(ctx, `SELECT id,artist,title,normalized_artist,normalized_title,source_identity,recording_identity,isrc,musicbrainz_recording,acoustid,fingerprint_contract,fingerprint_format,fingerprint_algorithm,fingerprint_value,fingerprint_sha256,fingerprint_scope,fingerprint_decoder,duration_ms,duration_provenance,duration_reliable,album_artist,album,root_alias,relative_path,capabilities_json,raw_tags_json,dsp_json,missingness_json,failure,unsupported,cluster_id,cluster_score,alternative_cluster,alternative_score,mert_row,`+clapColumn+`,`+evidenceColumn+`,`+classifierColumn+` FROM tracks ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +370,8 @@ func (s *generationTrackSource) Next(ctx context.Context) (Track, bool, error) {
 	var vectorRow sql.NullInt64
 	var clapRow sql.NullInt64
 	var evidenceRaw []byte
-	track, err := scanTrackFields(s.rows, &vectorRow, &clapRow, &evidenceRaw)
+	var classifierRaw []byte
+	track, err := scanTrackFields(s.rows, &vectorRow, &clapRow, &evidenceRaw, &classifierRaw)
 	if err != nil {
 		return Track{}, false, err
 	}
@@ -391,6 +397,11 @@ func (s *generationTrackSource) Next(ctx context.Context) (Track, bool, error) {
 	}
 	if len(evidenceRaw) > 0 {
 		if err := json.Unmarshal(evidenceRaw, &track.CLAPEvidence); err != nil {
+			return Track{}, false, err
+		}
+	}
+	if len(classifierRaw) > 0 {
+		if err := json.Unmarshal(classifierRaw, &track.ClassifierEvidence); err != nil {
 			return Track{}, false, err
 		}
 	}
@@ -958,7 +969,10 @@ func (g *Generation) validate(ctx context.Context, limits Limits) error {
 	if count != g.manifest.Coverage.Tracks || vectors != int64(g.manifest.Coverage.MERT) || clapVectors != int64(g.manifest.Coverage.CLAP) {
 		return errors.New("librarypack: metadata coverage does not match manifest")
 	}
-	return g.validateCLAPEvidenceRows(ctx, limits)
+	if err := g.validateCLAPEvidenceRows(ctx, limits); err != nil {
+		return err
+	}
+	return g.validateClassifierEvidenceRows(ctx, limits)
 }
 
 func checkedVectorSize(dim, count int) (int64, bool) {

@@ -1,0 +1,107 @@
+{
+  "kind": "synthetic-policy-and-scheduling-regression",
+  "date": "2026-09-27",
+  "sourceArchiveSHA256": "82578d75883d78dd67418b3cdf4f10963f0170b30540a41f2536220785b99076",
+  "fixtureSourceSHA256": "e99a3a71cf786b4e6b11a12a207485acbf43c30c1c689e9a1039b8931fae519f",
+  "fixedInputs": {
+    "seed": "42",
+    "requested": 2,
+    "catalogTracks": 4,
+    "model": "synthetic-clap/v1",
+    "clause": "soft piano",
+    "scores": {
+      "0": 0.2,
+      "1": 0.8,
+      "2": 0.6,
+      "3": 0.1
+    },
+    "startingCache": "empty temporary synthetic fixtures",
+    "outerDeadlineMilliseconds": 250,
+    "provider": "blocking fake; no network",
+    "interpretation": "same explicit strengths; no model parsing"
+  },
+  "before": [
+    {
+      "Algorithm": "automatic/v7",
+      "Policy": "automatic-fit/v4",
+      "Strength": "essential",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 0,
+      "IDs": null,
+      "Outcome": "partial",
+      "Stop": "preparation_stopped",
+      "ElapsedUS": 126344
+    },
+    {
+      "Algorithm": "automatic/v7",
+      "Policy": "automatic-fit/v4",
+      "Strength": "required",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 0,
+      "IDs": null,
+      "Outcome": "partial",
+      "Stop": "preparation_stopped",
+      "ElapsedUS": 126095
+    },
+    {
+      "Algorithm": "automatic/v7",
+      "Policy": "automatic-fit/v4",
+      "Strength": "",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 0,
+      "IDs": null,
+      "Outcome": "partial",
+      "Stop": "preparation_stopped",
+      "ElapsedUS": 126227
+    }
+  ],
+  "after": [
+    {
+      "Algorithm": "automatic/v8",
+      "Policy": "automatic-fit/v5",
+      "Strength": "essential",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 2,
+      "IDs": [
+        "1",
+        "2"
+      ],
+      "Outcome": "partial",
+      "Stop": "prepared_obligations_met",
+      "ElapsedUS": 868
+    },
+    {
+      "Algorithm": "automatic/v8",
+      "Policy": "automatic-fit/v5",
+      "Strength": "required",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 0,
+      "IDs": null,
+      "Outcome": "partial",
+      "Stop": "preparation_stopped",
+      "ElapsedUS": 126023
+    },
+    {
+      "Algorithm": "automatic/v8",
+      "Policy": "automatic-fit/v5",
+      "Strength": "",
+      "Seed": "42",
+      "Requested": 2,
+      "Returned": 0,
+      "IDs": null,
+      "Outcome": "partial",
+      "Stop": "preparation_stopped",
+      "ElapsedUS": 126029
+    }
+  ],
+  "limitations": [
+    "Synthetic scores are not musical quality labels.",
+    "Timing measures a bounded fake provider and cannot establish warm/cold application latency.",
+    "Real baseline data and challenger availability are in automatic-matching-availability-2026-09-27.json."
+  ]
+}

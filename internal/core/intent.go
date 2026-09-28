@@ -120,6 +120,8 @@ type ReferenceResolution struct {
 }
 
 type IntentReference struct {
+	// Missing strength retains conservative legacy similarity admission.
+	Strength string `json:"strength,omitempty"`
 	// SpellingDecision records the user's resolution choice without changing
 	// the original source evidence. Empty means no explicit choice was made.
 	SpellingDecision string               `json:"spellingDecision,omitempty"`
