@@ -396,7 +396,7 @@ func automaticReserve(ranked []core.Candidate, fixed []core.TrackRef, intent cor
 		}
 		return false
 	}
-	covered := make([]bool, len(units)+len(stages))
+	covered := append(make([]bool, len(units)), make([]bool, len(stages))...)
 	used := map[string]bool{}
 	for _, track := range fixed {
 		used[core.ProvisionalRecordingKey(track)] = true
