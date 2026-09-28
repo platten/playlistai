@@ -29,14 +29,24 @@ type release struct {
 	tracks   int
 }
 type Manager struct {
-	root       string
-	mu         sync.Mutex
-	installing atomic.Bool
-	active     *release
-	closed     bool
-	problem    string
-	syncDir    func(string) error
+	root            string
+	mu              sync.Mutex
+	installing      atomic.Bool
+	active          *release
+	closed          bool
+	problem         string
+	syncDir         func(string) error
+	activationGuard func(context.Context) (func() error, error)
 }
+
+// SetActivationGuard adds the host's shared installed-data budget transaction.
+// The returned release stays held through publication, including replacements.
+func (m *Manager) SetActivationGuard(guard func(context.Context) (func() error, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activationGuard = guard
+}
+
 type activeRecord struct {
 	Directory string   `json:"directory"`
 	Manifest  Manifest `json:"manifest"`
@@ -338,7 +348,7 @@ func (m *Manager) install(ctx context.Context, manifest Manifest, p ports.Progre
 	return status, e
 }
 
-func (m *Manager) activate(ctx context.Context, dir string, manifest Manifest, p ports.Progress) (Status, bool, error) {
+func (m *Manager) activate(ctx context.Context, dir string, manifest Manifest, p ports.Progress) (result Status, published bool, resultErr error) {
 	if p == nil {
 		p = ports.NopProgress{}
 	}
@@ -352,6 +362,16 @@ func (m *Manager) activate(ctx context.Context, dir string, manifest Manifest, p
 			closeRelease(r)
 		}
 	}()
+	m.mu.Lock()
+	guard := m.activationGuard
+	m.mu.Unlock()
+	if guard != nil {
+		release, err := guard(ctx)
+		if err != nil {
+			return m.Status(), false, err
+		}
+		defer func() { resultErr = errors.Join(resultErr, release()) }()
+	}
 	m.mu.Lock()
 	locked := true
 	defer func() {

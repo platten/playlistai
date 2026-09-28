@@ -493,6 +493,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 	// Forwarded vectors have no SeedID by contract. Keep their origin only for
 	// this request's fair query budget, without changing vector/source identity.
 	forwardedSeeds := map[*NeighborQuery]string{}
+	textScopes := map[*NeighborQuery]string{}
 	if r.catalog != nil {
 		if source, ok := r.catalog.(ports.LibraryAudioCatalog); ok {
 			seen := map[string]bool{}
@@ -549,7 +550,9 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 			}
 			seen[key] = true
 			if vector := normalizedTextVector(query.Values); len(vector) > 0 {
-				queries = append(queries, Query{CLAP: &NeighborQuery{Vector: vector, Space: &space, CLAPModel: r.local.manifest.CLAPModel, Limit: 100, ExcludeIDs: request.AttemptedIDs}})
+				neighbor := &NeighborQuery{Vector: vector, Space: &space, CLAPModel: r.local.manifest.CLAPModel, Limit: 100, ExcludeIDs: request.AttemptedIDs}
+				textScopes[neighbor] = query.Clause.Scope
+				queries = append(queries, Query{CLAP: neighbor})
 			}
 		}
 	}
@@ -592,7 +595,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 		queries = append(queries, Query{Metadata: &MetadataQuery{Artist: profile.Artist, Limit: 30, ExcludeIDs: request.AttemptedIDs}})
 	}
 	if automatic {
-		queries = automaticQueries(queries, request.Intent, forwardedSeeds)
+		queries = automaticQueries(queries, request.Intent, forwardedSeeds, textScopes)
 	}
 	type queryResult struct {
 		result QueryResult
@@ -741,7 +744,7 @@ func (r *CombinedRetriever) Retrieve(ctx context.Context, request ports.Retrieva
 // Automatic makes a single page of prepared queries, not legacy inferred-artist
 // expansion. Bound scan count as well as returned hits, and give each reference
 // and channel an opportunity before additional representatives from one artist.
-func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds map[*NeighborQuery]string) []Query {
+func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds map[*NeighborQuery]string, scopedText ...map[*NeighborQuery]string) []Query {
 	const maxQueries, page = 8, 64
 	owners := map[string]string{}
 	for i, ref := range core.RetrievalReferences(intent) {
@@ -755,6 +758,7 @@ func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds m
 	}
 	var keys []string
 	buckets := map[string][]Query{}
+	stages := map[string]bool{}
 	for _, query := range queries {
 		key := "metadata"
 		if query.Metadata != nil {
@@ -763,6 +767,7 @@ func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds m
 			query.Metadata = &copy
 			if copy.Criterion != nil {
 				key += ":" + copy.Criterion.Scope
+				stages[key] = strings.HasPrefix(copy.Criterion.Scope, "journey_")
 			}
 		}
 		for _, channel := range []struct {
@@ -770,6 +775,10 @@ func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds m
 			query **NeighborQuery
 		}{{"mert", &query.MERT}, {"clap", &query.CLAP}} {
 			if *channel.query != nil {
+				scope := ""
+				if len(scopedText) > 0 {
+					scope = scopedText[0][*channel.query]
+				}
 				seed := (*channel.query).SeedID
 				if seed == "" {
 					seed = forwardedSeeds[*channel.query]
@@ -778,6 +787,10 @@ func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds m
 				copy.Limit = min(page, copy.Limit)
 				*channel.query = &copy
 				key = channel.name + ":" + owners[seed]
+				if scope != "" {
+					key += ":" + scope
+				}
+				stages[key] = strings.HasPrefix(scope, "journey_")
 			}
 		}
 		if _, exists := buckets[key]; !exists {
@@ -785,6 +798,9 @@ func automaticQueries(queries []Query, intent core.MusicIntent, forwardedSeeds m
 		}
 		buckets[key] = append(buckets[key], query)
 	}
+	// Reserve each requested stage before spending the bounded page on more
+	// representatives or several descriptions from a single stage.
+	sort.SliceStable(keys, func(i, j int) bool { return stages[keys[i]] && !stages[keys[j]] })
 	var out []Query
 	for round := 0; len(out) < maxQueries; round++ {
 		added := false

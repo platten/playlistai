@@ -12,16 +12,18 @@ const automatic = process.env.PLAYLISTAI_CAPTURE_MODE === 'automatic';
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 let fixture = `
-window.__calls=[];window.__setupReady=false;
+window.__calls=[];window.__setupReady=false;window.__discogsInstalled=false;
 let modelDevice='CUDA0';
 const intent={preferences:{},journey:{waypoints:[],energyCurve:[]},references:[],essentialCriteria:[],hardConstraints:[],controls:{totalTrackCount:10}};
-const methods={GetListenBrainzStatus:()=>({connected:false,persistent:false,removalPending:false}),GetOnboarded:()=>true,GetSetupStatus:()=>({pending:!window.__setupReady,onboarded:true,needsSetup:false,pendingSteps:[],repairSteps:[]}),GetStatus:()=>({parserBackend:'llama',version:'0.14.2'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'enhanced_hybrid',GetPreviewProviderName:()=> 'deezer',GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
+const methods={GetListenBrainzStatus:()=>({connected:false,persistent:false,removalPending:false}),GetOnboarded:()=>true,GetSetupStatus:()=>({pending:!window.__setupReady,onboarded:true,needsSetup:false,pendingSteps:[],repairSteps:[]}),GetStatus:()=>({parserBackend:'llama',version:'0.14.2'}),GetCatalogInfo:()=>({loaded:true}),ListSavedPlaylists:()=>[],GetRecommendationMode:()=> 'enhanced_hybrid',GetPreviewProviderName:()=> 'deezer',GetDiscogsStatus:()=>({installed:window.__discogsInstalled,available:window.__discogsInstalled,recommendedAvailable:true,downloadBytes:21800000,detail:window.__discogsInstalled?'Discogs-EffNet is ready.':'Install Discogs-EffNet.'}),InstallDiscogs:()=>{window.__discogsInstalled=true},RemoveDiscogs:()=>{window.__discogsInstalled=false},GetModelCatalog:()=>[],GetInstalledModels:()=>[],GetModelRecommendations:()=>({models:[],hardware:{mode:modelDevice==='cpu'?'cpu':'gpu',gpuAvailable:modelDevice!=='cpu',gpuName:modelDevice==='CUDA0'?'NVIDIA RTX Test':'AMD Radeon Test',selectedDevice:modelDevice,devices:[{id:'CUDA0',name:'NVIDIA RTX Test',totalBytes:8e9,freeBytes:7e9,nvidia:true},{id:'Vulkan1',name:'AMD Radeon Test',totalBytes:16e9,freeBytes:12e9,nvidia:false}]}}),SetModelDevice:id=>{modelDevice=id},ParseIntentWithContext:()=>({intent,count:10,creativity:0.5,noise:0.1,lookback:3,seeds:[],requiredTracks:[],resolutionIssues:[]}),GenerateFromPromptWithContext:()=>new Promise(resolve=>window.__finish=resolve)};
 export const RecommendationMode={AcousticBrainzFirst:'acousticbrainz_first',CLAPFirst:'clap_first',DeejAIOnly:'deejai_only',EnhancedHybrid:'enhanced_hybrid'};
 export const FeedbackScope={};export const FeedbackType={};
 export const API=new Proxy(methods,{get:(o,k)=>(...args)=>{window.__calls.push([k,...args]);const p=Promise.resolve().then(()=>o[k]?.(...args)??null);p.cancel=()=>{window.__calls.push(['cancel',k])};return p;}});`;
 fixture = fixture.replace(/export const RecommendationMode=.*?;\nexport const FeedbackScope=.*?;export const FeedbackType=.*?;/, bridgeEnums);
 if (automatic) {
   fixture = fixture.replace("GetRecommendationMode:()=> 'enhanced_hybrid'", "GetRecommendationMode:()=> 'automatic',GetPreparedMusicStatus:()=>({configured:true,data:{installed:false,artists:0,recordings:0}}),UpdatePreparedMusicData:()=>({configured:true,data:{installed:true,artists:240,recordings:2403}})");
+  fixture = fixture.replace("preferences:{}", "preferences:{textureDescriptions:[{value:'gentle pulse',strength:'essential'}]}")
+    .replace("essentialCriteria:[]", "essentialCriteria:[{kind:'texture',value:'gentle pulse',strength:'essential',scope:'playlist'},{kind:'genre',value:'ambient electronica',strength:'essential',scope:'playlist'}]");
 }
 const errors=[];
 try {
@@ -81,6 +83,8 @@ try {
   await page.getByRole('button',{name:'Generate playlist'}).click();
   await page.waitForFunction(()=>typeof window.__finish==='function');
   if (automatic) {
+    await page.getByText("Musical character (estimated): gentle pulse", { exact: true }).waitFor();
+    await page.getByText("Strict requirements: ambient electronica", { exact: true }).waitFor();
     await page.getByText('Understanding, selecting, then ordering. You can cancel below.').waitFor();
     await page.getByText(/Preparing your playlist within a two-minute budget/).waitFor();
   } else {
@@ -139,6 +143,18 @@ try {
       await page.getByRole('button',{name:'Reset models and datasets',exact:true}).scrollIntoViewIfNeeded();
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'settings horizontal overflow');
       await page.screenshot({path:path.join(output,`settings-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+    }
+  }
+  await page.getByRole('button',{name:'Download and validate Discogs-EffNet'}).click();
+  await page.getByText('Discogs-EffNet is ready.').waitFor();
+  assert.equal(await page.evaluate(()=>window.__calls.filter(c=>c[0]==='InstallDiscogs').length),1);
+  for(const theme of ['dark','light']) {
+    await page.evaluate(value=>document.documentElement.dataset.theme=value,theme);
+    for(const width of [1000,390]) {
+      await page.setViewportSize({width,height:760});
+      await page.getByRole('heading',{name:'Discogs-EffNet specialist analysis'}).scrollIntoViewIfNeeded();
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Discogs Settings horizontal overflow');
+      await page.screenshot({path:path.join(output,`settings-discogs-ready-${theme}-${width}.png`),animations:'disabled'});
     }
   }
   await page.getByRole('button',{name:'Generate',exact:true}).click();

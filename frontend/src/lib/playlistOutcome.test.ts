@@ -42,3 +42,8 @@ describe("playlistOutcomeMessage", () => {
       intent: { count } }))).toBe(`Playlist created with ${count} ${count === 1 ? "track" : "tracks"}`);
   });
 });
+
+it("labels a full estimated playlist without implying verified fulfillment", () => {
+  expect(playlistOutcomeMessage(result({ outcome: { state: "partial", reasons: [{ code: "descriptive_fit_estimated" }] }, tracks: [{}, {}], intent: { count: 2 } })))
+    .toBe("Best estimates — some qualities are unconfirmed");
+});

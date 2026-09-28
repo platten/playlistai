@@ -1,0 +1,719 @@
+{
+  "version": "prepared-music-job-validation/v1",
+  "date": "2026-09-27",
+  "scope": "bounded public graph preparation; no quality or broad-coverage claim",
+  "inventory": {
+    "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+    "verifiedMetadataSha256": "29710811d85043ef0bd79eeafe87ba57d913b9107c85cd19a70ce17c163e91c9",
+    "catalogTracks": 252516,
+    "inventoryBytes": 50258128,
+    "elapsedSeconds": 14.14396351799951
+  },
+  "initial": {
+    "version": "prepared-music-job/v1",
+    "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+    "plannedArtists": 16,
+    "completedBatches": 4,
+    "reusedBatches": 0,
+    "omittedArtists": 2,
+    "complete": true,
+    "sha256": "93a5ade28e329a32dac70e9ccd5b612fa974654fb409fa246bf2cbd2a2e4d44d"
+  },
+  "resume": {
+    "version": "prepared-music-job/v1",
+    "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+    "plannedArtists": 16,
+    "completedBatches": 4,
+    "reusedBatches": 4,
+    "omittedArtists": 2,
+    "complete": true,
+    "sha256": "93a5ade28e329a32dac70e9ccd5b612fa974654fb409fa246bf2cbd2a2e4d44d"
+  },
+  "measurements": {
+    "initialSecondsAfterPlanPublication": 24.33586883544922,
+    "resumeGoRunSeconds": 1.2016143949986144,
+    "graphBytes": 2166805,
+    "artists": 220,
+    "recordings": 2397,
+    "genreStrata": 547
+  },
+  "coverage": {
+    "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+    "snapshotSha256": "93a5ade28e329a32dac70e9ccd5b612fa974654fb409fa246bf2cbd2a2e4d44d",
+    "catalogTracks": 252516,
+    "missingRecordingIdentity": 34650,
+    "uniqueRecordings": 176849,
+    "joinedRecordings": 266,
+    "joinedTracks": 387,
+    "conflictingTracks": 2,
+    "catalogArtists": 14671,
+    "preparedArtists": 175,
+    "clapTracks": 252491,
+    "mertTracks": 247475,
+    "classifierTracks": 0
+  },
+  "limitations": [
+    "16 catalog-stratified seed artists, not a representative musical-quality sample",
+    "Two seed artist discovery responses omitted and two catalog performer conflicts excluded",
+    "Catalog source terms not established; inventory remains local and is not distributed",
+    "No classifier/audio models added to this catalog; no desktop activation or listening/profile access",
+    "Existing installed metadata payload SHA256 verified; archive original SHA256 read from active public-data receipt"
+  ],
+  "extension128": {
+    "version": "prepared-music-job-extension/v1",
+    "plannedArtists": 128,
+    "plannedBatches": 8,
+    "completedCheckpointBatches": 4,
+    "checkpointedArtists": 64,
+    "omittedCheckpointArtists": 2,
+    "complete": false,
+    "failure": "conflicting recording performer identities across preparation batches",
+    "finalSnapshotPublished": false,
+    "resume": {
+      "executed": false,
+      "reason": "No complete final snapshot; conflicting checkpoints retained without retry or weakened identity checks."
+    },
+    "run": {
+      "command": [
+        "/tmp/playlist-ai-prepared-data-validation/musicgraph",
+        "resume",
+        "-input",
+        "/tmp/playlist-ai-prepared-data-validation/catalog.json",
+        "-state",
+        "/tmp/playlist-ai-prepared-data-validation/extended-128/job",
+        "-output",
+        "/tmp/playlist-ai-prepared-data-validation/extended-128/graph.json",
+        "-max-artists",
+        "128",
+        "-batch-size",
+        "16",
+        "-timeout",
+        "4m"
+      ],
+      "startedAt": "2026-09-27T23:29:50.736175+00:00",
+      "elapsedSeconds": 80.8560687499994,
+      "exitCode": 1,
+      "deadlineSeconds": 240
+    },
+    "offlineInspectionSeconds": 2.2833454779975,
+    "checkpointBytes": 9945261,
+    "batchSnapshots": [
+      {
+        "checkpoint": "batch-000000.json",
+        "seedArtists": 16,
+        "checkpointBytes": 2480862,
+        "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+        "snapshotBytes": 2480051,
+        "artists": 256,
+        "recordings": 2743,
+        "omittedArtists": 0,
+        "coverage": {
+          "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+          "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+          "catalogTracks": 252516,
+          "missingRecordingIdentity": 34650,
+          "uniqueRecordings": 176849,
+          "joinedRecordings": 332,
+          "joinedTracks": 454,
+          "conflictingTracks": 11,
+          "catalogArtists": 14671,
+          "preparedArtists": 194,
+          "clapTracks": 252491,
+          "mertTracks": 247475,
+          "classifierTracks": 0
+        }
+      },
+      {
+        "checkpoint": "batch-000001.json",
+        "seedArtists": 16,
+        "checkpointBytes": 2523567,
+        "snapshotSha256": "3bf30494c85f46dfc8249b6522bf26c4dfc216e7a2edde6585da7b0aea748ec3",
+        "snapshotBytes": 2522756,
+        "artists": 233,
+        "recordings": 2801,
+        "omittedArtists": 1,
+        "coverage": {
+          "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+          "snapshotSha256": "3bf30494c85f46dfc8249b6522bf26c4dfc216e7a2edde6585da7b0aea748ec3",
+          "catalogTracks": 252516,
+          "missingRecordingIdentity": 34650,
+          "uniqueRecordings": 176849,
+          "joinedRecordings": 360,
+          "joinedTracks": 495,
+          "conflictingTracks": 2,
+          "catalogArtists": 14671,
+          "preparedArtists": 191,
+          "clapTracks": 252491,
+          "mertTracks": 247475,
+          "classifierTracks": 0
+        }
+      },
+      {
+        "checkpoint": "batch-000002.json",
+        "seedArtists": 16,
+        "checkpointBytes": 2510855,
+        "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+        "snapshotBytes": 2510044,
+        "artists": 256,
+        "recordings": 2779,
+        "omittedArtists": 0,
+        "coverage": {
+          "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+          "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+          "catalogTracks": 252516,
+          "missingRecordingIdentity": 34650,
+          "uniqueRecordings": 176849,
+          "joinedRecordings": 265,
+          "joinedTracks": 352,
+          "conflictingTracks": 6,
+          "catalogArtists": 14671,
+          "preparedArtists": 180,
+          "clapTracks": 252491,
+          "mertTracks": 247475,
+          "classifierTracks": 0
+        }
+      },
+      {
+        "checkpoint": "batch-000003.json",
+        "seedArtists": 16,
+        "checkpointBytes": 2429977,
+        "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+        "snapshotBytes": 2429166,
+        "artists": 220,
+        "recordings": 2697,
+        "omittedArtists": 1,
+        "coverage": {
+          "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+          "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+          "catalogTracks": 252516,
+          "missingRecordingIdentity": 34650,
+          "uniqueRecordings": 176849,
+          "joinedRecordings": 323,
+          "joinedTracks": 452,
+          "conflictingTracks": 13,
+          "catalogArtists": 14671,
+          "preparedArtists": 189,
+          "clapTracks": 252491,
+          "mertTracks": 247475,
+          "classifierTracks": 0
+        }
+      }
+    ],
+    "crossBatchConflicts": [
+      {
+        "recordingMbid": "d9f8fbb7-42d4-4cfb-8c6a-0542c5e9554c",
+        "earlierBatch": "batch-000002",
+        "earlierArtistMbids": [
+          "4b61339a-4074-43a6-bf6b-7f9d0d5d530f"
+        ],
+        "laterBatch": "batch-000003",
+        "laterArtistMbids": [
+          "826b488f-5164-45ca-abc4-ab11b3c321eb"
+        ],
+        "catalogMatchingTracks": 0,
+        "catalogArtistCreditSets": []
+      }
+    ],
+    "limits": {
+      "acquisitionDeadlineSeconds": 240,
+      "maxSnapshotBytes": 67108864,
+      "maxAdditionalInstalledBytes": 10000000000
+    },
+    "measurementOverlap": "Public-provider preparation ran 23:29:50.736Z\u201323:31:11.592Z; the native generation evaluator was notified. No further provider work followed the failure.",
+    "limitations": [
+      "Partial 64-seed checkpoint collection from 128 planned artists; no final merged artifact or full-job coverage metric.",
+      "Per-batch exact recording coverage shares the same 252,516-track catalog denominator; counts overlap and must not be added.",
+      "No new audio, classifier analysis or desktop activation; the source inventory remains local with redistribution terms unestablished.",
+      "The failure preserves conflicting performer identities rather than merging them or weakening joins."
+    ]
+  },
+  "extension128V2": {
+    "version": "prepared-music-job-extension/v2",
+    "run": {
+      "command": [
+        "/tmp/playlist-ai-prepared-data-validation/musicgraph",
+        "resume",
+        "-input",
+        "/tmp/playlist-ai-prepared-data-validation/catalog.json",
+        "-state",
+        "/tmp/playlist-ai-prepared-data-validation/extended-128-v2/job",
+        "-reuse-state",
+        "/tmp/playlist-ai-prepared-data-validation/extended-128/job",
+        "-output",
+        "/tmp/playlist-ai-prepared-data-validation/extended-128-v2/graph.json",
+        "-max-artists",
+        "128",
+        "-batch-size",
+        "16",
+        "-timeout",
+        "4m"
+      ],
+      "startedAt": "2026-09-27T23:42:46.122560+00:00",
+      "elapsedSeconds": 81.4107555920018,
+      "exitCode": 0,
+      "deadlineSeconds": 240,
+      "sourceCheckpointHashesBefore": {
+        "batch-000000.json": "fdbf3c3d898f9b44c9e6599cc463976cf5b4b5565169cdfa590a9f46fc041520",
+        "batch-000001.json": "19866ad5915e90f47d47c62a7ff3958a3c81f90c7047a1779e2ebacd0ed13710",
+        "batch-000002.json": "b48be56fc8a33c0af08c738b1e8dbd83ab1f6c21ecc31853784006d2c311f422",
+        "batch-000003.json": "1bf65f2affc628905906308d82e0a5ed3aee24806d2c5dea074f2cce4d056340",
+        "plan.json": "1921e0f11745facc106bc26e3038e8304d4484d2a3390f508b9c685eef524efc"
+      },
+      "sourceCheckpointsUnchanged": true
+    },
+    "initial": {
+      "version": "prepared-music-job/v2",
+      "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+      "plannedArtists": 128,
+      "completedBatches": 8,
+      "reusedBatches": 4,
+      "omittedArtists": 3,
+      "complete": true,
+      "mergePolicy": "quarantine-conflicting-recordings/v1",
+      "reusedPlanSha256": "1921e0f11745facc106bc26e3038e8304d4484d2a3390f508b9c685eef524efc",
+      "importedBatches": 4,
+      "quarantinedRecordings": 9,
+      "conflicts": [
+        {
+          "recordingMbid": "16df128c-1769-421d-8e27-9d98e7fe5af5",
+          "observations": [
+            {
+              "batch": 0,
+              "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+              "artistMbids": [
+                "abe0a421-66ed-4401-9144-1e9aa832ed24"
+              ],
+              "sourceResponseSha256": "f9e271ef7cf4d555a55f403d453792652ea857229689f2ed9ed0b016fc4193a4"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "5a092e7c-faa9-45d0-88c6-052205804e6c"
+              ],
+              "sourceResponseSha256": "537d40b0d02ae9f56b42993b20f2150ba3a86e942dbdadc3e2e425f5c6cc4a3a"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "301ccbda-6035-436a-971b-3c8808e80dff",
+          "observations": [
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "e4a51f17-a57b-47b1-b37b-f552d0f8e9e6"
+              ],
+              "sourceResponseSha256": "6ea1170180f8450fbd3262f29800870e38cf850efcc4467f5eadad4cecd2e10a"
+            },
+            {
+              "batch": 6,
+              "snapshotSha256": "c0eeb5ce618d4dafd5e38d2766fe9415d7b19e20b81d5b3c065be370ca7cca87",
+              "artistMbids": [
+                "b8a7c51f-362c-4dcb-a259-bc6e0095f0a6"
+              ],
+              "sourceResponseSha256": "58374a8516a7de3b9789c99400d761852747c2081b3fdacd12ed6872f245d64a"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "3f840b4a-f9c6-4ddb-a2d5-9cf5980e090a",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf24ca37-25f4-4e34-9aec-460b94364cfc"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "859d0860-d480-4efd-970c-c05d5f1776b8"
+              ],
+              "sourceResponseSha256": "7790275c087e4f559b3f5d669a8df07d8af5425ad41c2017e7c75116597f9b2f"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "5dc59f79-8aed-44e4-9100-cd21b2650afa",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "f82bcf78-5b69-4622-a5ef-73800768d9ac"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "c2d25856-a09a-4d15-b404-77dd19c19e63"
+              ],
+              "sourceResponseSha256": "a511fb3466f382224226565a552669de36210e455c5f5f0514d698a54df58bff"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "659d4f76-19c5-4c72-b5d1-14ab74bb20d0",
+          "observations": [
+            {
+              "batch": 0,
+              "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+              "artistMbids": [
+                "71bcb5be-394c-4c04-bb38-35982e8a94d3"
+              ],
+              "sourceResponseSha256": "c92dea17c60594a04aa3f311a798cd0237646e802e229496486e77ee71a5cbae"
+            },
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf0f7e29-dfe1-416c-b5c6-f9ebc19ea810"
+              ],
+              "sourceResponseSha256": "291e0c74d15dbd560b7a2ef9e707da211d37dad907b3ca1441b7114dfe0f1e08"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "9de70785-f07e-4fa3-956e-52cf5ad25d96",
+          "observations": [
+            {
+              "batch": 3,
+              "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+              "artistMbids": [
+                "498f2581-be21-4eef-8756-fbb89d79b1c0"
+              ],
+              "sourceResponseSha256": "43acc881b40d44df0409f552a11316450e2475532273f94dfa3ff7cfcd06428d"
+            },
+            {
+              "batch": 7,
+              "snapshotSha256": "0aca8b2d737b65a214a08ec4981ed352691d07537a4276b829ef1bd7e5bb22b4",
+              "artistMbids": [
+                "f46bd570-5768-462e-b84c-c7c993bbf47e"
+              ],
+              "sourceResponseSha256": "a2a99e82ef2cde82360ed01e2a50c1d57002b05307d636b5821c629c310d495b"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "d9f8fbb7-42d4-4cfb-8c6a-0542c5e9554c",
+          "observations": [
+            {
+              "batch": 2,
+              "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+              "artistMbids": [
+                "4b61339a-4074-43a6-bf6b-7f9d0d5d530f"
+              ],
+              "sourceResponseSha256": "53a6a246169678b6ba1018b5215231e5abafa6c6180a5a25033fdeb17137a194"
+            },
+            {
+              "batch": 3,
+              "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+              "artistMbids": [
+                "826b488f-5164-45ca-abc4-ab11b3c321eb"
+              ],
+              "sourceResponseSha256": "876dbead747368412869828e02098d199030c3f63315686edf00f3d0edd6cbdd"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "f3f361cc-c307-4aee-ac21-c464cfae3271",
+          "observations": [
+            {
+              "batch": 2,
+              "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+              "artistMbids": [
+                "8aa5b65a-5b3c-4029-92bf-47a544356934"
+              ],
+              "sourceResponseSha256": "51cf6f94afdf4ebc2d798c2a7a763b5984604e93eee003afa1b080fe513639cf"
+            },
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf0caafc-2b20-4e07-ab85-87e14ff430ce"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "fc3031f3-0ccb-4fcb-8b25-432263843b0c",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "1659a41f-27d3-4823-8a15-bf7cd295cf59"
+              ],
+              "sourceResponseSha256": "18d54a9483c4beef04383b5a60162af464c384944086099b0d11917f381c6521"
+            },
+            {
+              "batch": 6,
+              "snapshotSha256": "c0eeb5ce618d4dafd5e38d2766fe9415d7b19e20b81d5b3c065be370ca7cca87",
+              "artistMbids": [
+                "c3dcad1b-1380-4a94-98d8-3f8272f19df6"
+              ],
+              "sourceResponseSha256": "d7bf0fbd68b4bd62866afe419916a49a0358fca7e7441890f11a4e3933b844c9"
+            }
+          ]
+        }
+      ],
+      "sha256": "895ebc7d3dcf6cdf607b57cc029cc40aa5c17ffced79d1e620f5759a36310497"
+    },
+    "resume": {
+      "version": "prepared-music-job/v2",
+      "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+      "plannedArtists": 128,
+      "completedBatches": 8,
+      "reusedBatches": 8,
+      "omittedArtists": 3,
+      "complete": true,
+      "mergePolicy": "quarantine-conflicting-recordings/v1",
+      "reusedPlanSha256": "1921e0f11745facc106bc26e3038e8304d4484d2a3390f508b9c685eef524efc",
+      "quarantinedRecordings": 9,
+      "conflicts": [
+        {
+          "recordingMbid": "16df128c-1769-421d-8e27-9d98e7fe5af5",
+          "observations": [
+            {
+              "batch": 0,
+              "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+              "artistMbids": [
+                "abe0a421-66ed-4401-9144-1e9aa832ed24"
+              ],
+              "sourceResponseSha256": "f9e271ef7cf4d555a55f403d453792652ea857229689f2ed9ed0b016fc4193a4"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "5a092e7c-faa9-45d0-88c6-052205804e6c"
+              ],
+              "sourceResponseSha256": "537d40b0d02ae9f56b42993b20f2150ba3a86e942dbdadc3e2e425f5c6cc4a3a"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "301ccbda-6035-436a-971b-3c8808e80dff",
+          "observations": [
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "e4a51f17-a57b-47b1-b37b-f552d0f8e9e6"
+              ],
+              "sourceResponseSha256": "6ea1170180f8450fbd3262f29800870e38cf850efcc4467f5eadad4cecd2e10a"
+            },
+            {
+              "batch": 6,
+              "snapshotSha256": "c0eeb5ce618d4dafd5e38d2766fe9415d7b19e20b81d5b3c065be370ca7cca87",
+              "artistMbids": [
+                "b8a7c51f-362c-4dcb-a259-bc6e0095f0a6"
+              ],
+              "sourceResponseSha256": "58374a8516a7de3b9789c99400d761852747c2081b3fdacd12ed6872f245d64a"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "3f840b4a-f9c6-4ddb-a2d5-9cf5980e090a",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf24ca37-25f4-4e34-9aec-460b94364cfc"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "859d0860-d480-4efd-970c-c05d5f1776b8"
+              ],
+              "sourceResponseSha256": "7790275c087e4f559b3f5d669a8df07d8af5425ad41c2017e7c75116597f9b2f"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "5dc59f79-8aed-44e4-9100-cd21b2650afa",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "f82bcf78-5b69-4622-a5ef-73800768d9ac"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            },
+            {
+              "batch": 5,
+              "snapshotSha256": "2d2ecb6b1d33dd09b0d9e6f474af4a18a5021b1ccd305f04445ad38df5d11c65",
+              "artistMbids": [
+                "c2d25856-a09a-4d15-b404-77dd19c19e63"
+              ],
+              "sourceResponseSha256": "a511fb3466f382224226565a552669de36210e455c5f5f0514d698a54df58bff"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "659d4f76-19c5-4c72-b5d1-14ab74bb20d0",
+          "observations": [
+            {
+              "batch": 0,
+              "snapshotSha256": "57ad6dcb01bba0c31c511121a472c92cdd4c7232bd52651364f0d5b889250c54",
+              "artistMbids": [
+                "71bcb5be-394c-4c04-bb38-35982e8a94d3"
+              ],
+              "sourceResponseSha256": "c92dea17c60594a04aa3f311a798cd0237646e802e229496486e77ee71a5cbae"
+            },
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf0f7e29-dfe1-416c-b5c6-f9ebc19ea810"
+              ],
+              "sourceResponseSha256": "291e0c74d15dbd560b7a2ef9e707da211d37dad907b3ca1441b7114dfe0f1e08"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "9de70785-f07e-4fa3-956e-52cf5ad25d96",
+          "observations": [
+            {
+              "batch": 3,
+              "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+              "artistMbids": [
+                "498f2581-be21-4eef-8756-fbb89d79b1c0"
+              ],
+              "sourceResponseSha256": "43acc881b40d44df0409f552a11316450e2475532273f94dfa3ff7cfcd06428d"
+            },
+            {
+              "batch": 7,
+              "snapshotSha256": "0aca8b2d737b65a214a08ec4981ed352691d07537a4276b829ef1bd7e5bb22b4",
+              "artistMbids": [
+                "f46bd570-5768-462e-b84c-c7c993bbf47e"
+              ],
+              "sourceResponseSha256": "a2a99e82ef2cde82360ed01e2a50c1d57002b05307d636b5821c629c310d495b"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "d9f8fbb7-42d4-4cfb-8c6a-0542c5e9554c",
+          "observations": [
+            {
+              "batch": 2,
+              "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+              "artistMbids": [
+                "4b61339a-4074-43a6-bf6b-7f9d0d5d530f"
+              ],
+              "sourceResponseSha256": "53a6a246169678b6ba1018b5215231e5abafa6c6180a5a25033fdeb17137a194"
+            },
+            {
+              "batch": 3,
+              "snapshotSha256": "41ffbe9551db3d546ee739e5cac5b479040ca974a497ed123ce4ea5cedd7bfd6",
+              "artistMbids": [
+                "826b488f-5164-45ca-abc4-ab11b3c321eb"
+              ],
+              "sourceResponseSha256": "876dbead747368412869828e02098d199030c3f63315686edf00f3d0edd6cbdd"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "f3f361cc-c307-4aee-ac21-c464cfae3271",
+          "observations": [
+            {
+              "batch": 2,
+              "snapshotSha256": "956c272f6d49df0688bbe1ed163b8269f4ac8850e4e98a867621a2eb5f3a9601",
+              "artistMbids": [
+                "8aa5b65a-5b3c-4029-92bf-47a544356934"
+              ],
+              "sourceResponseSha256": "51cf6f94afdf4ebc2d798c2a7a763b5984604e93eee003afa1b080fe513639cf"
+            },
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "bf0caafc-2b20-4e07-ab85-87e14ff430ce"
+              ],
+              "sourceResponseSha256": "6c14f59820dbdcec7615eca854c784a23ca7625b80e446be3b7c94e0f317ee41"
+            }
+          ]
+        },
+        {
+          "recordingMbid": "fc3031f3-0ccb-4fcb-8b25-432263843b0c",
+          "observations": [
+            {
+              "batch": 4,
+              "snapshotSha256": "1d1490c04a29cd942b40084c604f645c1fde9ef136c528d3e4fdb9cc63c2e057",
+              "artistMbids": [
+                "1659a41f-27d3-4823-8a15-bf7cd295cf59"
+              ],
+              "sourceResponseSha256": "18d54a9483c4beef04383b5a60162af464c384944086099b0d11917f381c6521"
+            },
+            {
+              "batch": 6,
+              "snapshotSha256": "c0eeb5ce618d4dafd5e38d2766fe9415d7b19e20b81d5b3c065be370ca7cca87",
+              "artistMbids": [
+                "c3dcad1b-1380-4a94-98d8-3f8272f19df6"
+              ],
+              "sourceResponseSha256": "d7bf0fbd68b4bd62866afe419916a49a0358fca7e7441890f11a4e3933b844c9"
+            }
+          ]
+        }
+      ],
+      "sha256": "895ebc7d3dcf6cdf607b57cc029cc40aa5c17ffced79d1e620f5759a36310497"
+    },
+    "measurements": {
+      "continuationSeconds": 81.4107555920018,
+      "totalProviderJobInvocationSecondsIncludingV1": 162.2668243420012,
+      "offlineCoverageSeconds": 0.6872035800006415,
+      "offlineResumeSeconds": 1.1570960719982395,
+      "graphBytes": 19455005,
+      "artists": 1323,
+      "recordings": 21747,
+      "topRecordingGroups": 125,
+      "neighborRelationships": 2103,
+      "genreStrata": 547
+    },
+    "coverage": {
+      "catalogSha256": "d36cedef16fab86dd279c59bb2a28050dcaddc44aaa58ee603daf3029e095828",
+      "snapshotSha256": "895ebc7d3dcf6cdf607b57cc029cc40aa5c17ffced79d1e620f5759a36310497",
+      "catalogTracks": 252516,
+      "missingRecordingIdentity": 34650,
+      "uniqueRecordings": 176849,
+      "joinedRecordings": 2245,
+      "joinedTracks": 3005,
+      "conflictingTracks": 69,
+      "catalogArtists": 14671,
+      "preparedArtists": 908,
+      "clapTracks": 252491,
+      "mertTracks": 247475,
+      "classifierTracks": 0
+    },
+    "verification": {
+      "allSourceV1CheckpointsUnchanged": true,
+      "resumedGraphByteIdentical": true,
+      "resumeProviderProxies": "HTTP, HTTPS and ALL proxies pointed at localhost port 1; all 8 checkpoints reused.",
+      "quarantinedIdsAbsentFromRecordingsTopAndNeighborReferences": true,
+      "quarantinedRecordingCount": 9
+    },
+    "limits": {
+      "acquisitionDeadlineSeconds": 240,
+      "maxSnapshotBytes": 67108864,
+      "maxAdditionalInstalledBytes": 10000000000
+    },
+    "limitations": [
+      "128 catalog-stratified seed artists are a bounded public metadata sample, not broad audio coverage or independent musical-quality evidence.",
+      "Three seed discovery responses omitted; nine cross-batch ambiguous recording identities quarantined without selecting or combining performer credits.",
+      "No audio/classifier data added and no app data activated; catalog inventory redistribution terms remain unestablished.",
+      "Original v1 failure and 16-seed control remain recorded separately; v2 provenance pins the exact source v1 plan."
+    ]
+  }
+}

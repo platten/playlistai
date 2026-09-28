@@ -1,6 +1,6 @@
 # Automatic playlists
 
-The later [reliable-seeds and descriptive-matching validation](reliable-seeds-validation.md) records Automatic v7, the full 40-prompt run, source evidence, and remaining promotion failures. Earlier measurements below retain their original build scope.
+The [matching upgrade](automatic-matching-implementation.md) describes Automatic v8 / fit v5 and its validation limits. The [reliable-seeds validation](reliable-seeds-validation.md) remains the historical v7 40-prompt baseline; it has not been relabelled as a v8 result. Earlier measurements below retain their original build scope.
 
 Automatic is the default for new installations and unset preferences, with
 separate saved engine and evidence versions. Enhanced Hybrid and Deej-AI only
@@ -36,10 +36,14 @@ the clock. Cancellation and stop-and-keep remain separate operations.
    query count and page size before searching. Automatic skips legacy dynamic
    artist-profile expansion. Completed query results survive a retrieval timeout
    while the enclosing preparation context remains available to freeze evidence.
-4. Prefer cached evidence, then acquire bounded missing metadata and authorized
-   previews within the same preparation deadline. Copy the complete available metadata, compatible vectors, source provenance,
+4. Check every cached recording identity conflict first. Assess the prepared pool
+   with the actual selection and journey rules and stop when count, required
+   recordings, strict constraints and ordering can be met. Otherwise prefer cached
+   evidence, then acquire bounded missing metadata and authorized previews within
+   the same deadline. Skip audio that cannot resolve a missing strict literal
+   calibration. Copy the complete available metadata, compatible vectors, source provenance,
    fit assessments and popularity priors into one request-owned batch.
-5. Rank, select and sequence once using that frozen batch. There are no provider,
+5. Perform final ranking, selection and sequencing using that frozen batch. There are no provider,
    model or disk-metadata calls after the boundary. Prepared popularity adds a
    small bounded ranking preference among suitable tracks; it never fills an
    evidence gap. This implementation does not target a 60/40 output ratio.
@@ -63,11 +67,19 @@ Defining genre requirements and strict no-vocals requests require strong support
 Unknown or conflicting candidates are omitted even when this shortens the
 playlist. Positive vocal detection vetoes no-vocals admission; silence in a
 sample alone does not establish absence throughout the recording. Evidence UI
-shows measured audio coverage. Explicitly optional descriptions remain preferences. Defining descriptions retain
-their complete wording and require support; a generic instrument cannot establish
-its requested tone or playing style. Audio-only subjective support requires an
-independently validated literal-facet calibration, including its model fingerprint
-and sampled coverage. No production calibrations ship with this change. See
+shows measured audio coverage. Ordinary mood, instrumentation and texture
+descriptions retain their complete wording and guide estimated ranking. An
+explicit `required` strength remains strict; a historical essential criterion
+with missing strength is not silently relaxed. A generic instrument cannot
+establish its requested tone or playing style. Raw model outputs are ranked within
+the same model and complete clause, then combined by rank; they do not become
+calibrated probabilities. Descriptive journey stages have separate query
+opportunities, scores and ordered membership. A full playlist can still report
+“Best estimates — some qualities are unconfirmed.”
+
+Strict audio-only subjective support still requires an independently validated
+literal-facet calibration, including its model fingerprint and sampled coverage.
+No production calibrations ship with this change. See
 [calibration](descriptive-calibration.md).
 
 For a requested genre mix, each track can support one member and the playlist
@@ -75,15 +87,14 @@ must cover the requested members. Explicit dates, recording versions, required
 tracks, artist exclusions, deduplication and journey order remain constraints.
 Popularity is never evidence for genre, mood or instrumentation.
 
-Artist-inspired discoveries require corroboration. An exact requested recording
-or authenticated requested artist can satisfy the reference itself. Other
-recordings need both a pinned prepared artist relationship and a compatible
-direct comparison against authenticated seed recordings that passes a validated,
-versioned threshold for that exact audio space. A positive
-cosine, graph relationship, co-occurrence hit or inferred anchor alone cannot
-admit an unrelated recording. This remains a categorical estimate of musical
-similarity, not proof of influence or genre. Explicit required tracks keep their
-separate identity and musical-constraint checks.
+For a freshly parsed ordinary “like Radiohead” reference, a pinned artist
+relationship with a catalog identity join or compatible reference-audio evidence
+can admit estimated discoveries. “Radiohead only” remains an artist restriction.
+Reference strength survives parsing, bridge transport and saved inputs. An old
+reference with missing strength keeps the earlier conservative calibrated
+graph-plus-audio policy until explicitly reinterpreted. Similarity never proves
+influence or genre. Explicit required tracks keep their separate identity and
+musical-constraint checks.
 
 Song references can retrieve graph suggestions through the exact recording's
 typed artist credits. Display names and album-artist tags cannot supply that
@@ -112,6 +123,13 @@ prepare and verify broad artist coverage, publish a versioned release artifact,
 and configure `metadata.music_graph_manifest_url`; periodic publication is
 separate from foreground playlist work. The Settings card supports explicit
 verified updates when a source is configured.
+
+[Resumable preparation](prepared-music-jobs.md) builds a stratified artist plan
+from catalog identities, checkpoints public batches and reports exact recording
+coverage independently of development prompts. [Discogs-EffNet preparation](discogs-effnet.md)
+adds optional specialist scores to checksummed packs. Existing packs stay readable;
+uncalibrated heads sharing an encoder remain one source and cannot satisfy strict
+requirements. The additional prepared-data budget is 10 GB.
 
 Embedding compatibility remains a release prerequisite. The installed discovery
 pack examined on 2026-09-27 contains `laion/larger_clap_music` vectors, while the

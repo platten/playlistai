@@ -69,6 +69,7 @@ func (c *Container) discoveryManager() (*discoveryasset.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	m.SetActivationGuard(c.preparedInstallGuard)
 	c.discovery = m
 	c.RegisterCloser(m.Close)
 	return m, nil

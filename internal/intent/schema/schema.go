@@ -19,9 +19,10 @@ import (
 
 // Version keys model wire grammar and compiler behavior independently of the
 // saved core intent contract. Historical MusicIntent loading is unchanged.
-const Version = 12
+const Version = 13
 
 type WireReference struct {
+	Strength  string `json:"strength,omitempty"`
 	Kind      string `json:"kind"`
 	Value     string `json:"value"`
 	Influence string `json:"influence"`
@@ -117,7 +118,7 @@ genrelist ::= "[" ws (genre (ws "," ws genre){0,2})? ws "]"
 genre ::= "{" ws "\"genre\":" ws str ws "," ws "\"characteristics\":" ws str ws "," ws "\"relatedGenres\":" ws stringlist ws "}"
 stringlist ::= "[" ws (str (ws "," ws str (ws "," ws str)?)?)? ws "]"
 reflist ::= "[" ws (ref (ws "," ws ref){0,7})? ws "]"
-ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws "}"
+ref ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"influence\":" ws ("\"positive\"" | "\"negative\"") ws "," ws "\"explicit\":" ws bool ws "," ws "\"span\":" ws str ws ("," ws "\"strength\":" ws strength ws)? "}"
 anchorlist ::= "[" ws (anchor (ws "," ws anchor (ws "," ws anchor)?)?)? ws "]"
 anchor ::= "{" ws "\"kind\":" ws ("\"artist\"" | "\"track\"" | "\"album\"") ws "," ws "\"value\":" ws str ws "," ws "\"role\":" ws str ws "," ws "\"reason\":" ws str ws "," ws "\"span\":" ws str ws "}"
 criterionlist ::= "[" ws (criterion (ws "," ws criterion){0,7})? ws "]"
@@ -537,7 +538,8 @@ func referencesToCore(in []WireReference) []core.IntentReference {
 
 func referenceToCore(ref WireReference) core.IntentReference {
 	return core.IntentReference{
-		Kind: core.ReferenceKind(ref.Kind), Query: ref.Value,
+		Strength: ref.Strength,
+		Kind:     core.ReferenceKind(ref.Kind), Query: ref.Value,
 		Influence: core.Influence(ref.Influence), Evidence: evidence(ref.Span, ref.Explicit),
 	}
 }

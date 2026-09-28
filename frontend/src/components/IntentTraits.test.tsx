@@ -31,3 +31,14 @@ it("labels a composer credit separately from the performer", () => {
   ]} />);
   expect(screen.getByText("Essential: classical, composed by Fryderyk Chopin")).toBeTruthy();
 });
+
+it("separates Automatic musical character from strict and legacy requirements", () => {
+  render(<IntentTraits automatic preferences={{}} criteria={[
+    { kind: "instrumentation", value: "soft piano", strength: "essential" },
+    { kind: "texture", value: "spacious reverberation", strength: "required" },
+    { kind: "genre", value: "jazz", strength: "essential" },
+    { kind: "mood", value: "calm" },
+  ]} />);
+  expect(screen.getByText("Musical character (estimated): soft piano")).toBeTruthy();
+  expect(screen.getByText("Strict requirements: spacious reverberation, jazz, calm")).toBeTruthy();
+});

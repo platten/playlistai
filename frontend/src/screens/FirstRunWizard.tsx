@@ -11,11 +11,12 @@ import {
 import { AppIcon, Button, ErrorState, Icon, ModelDeviceSelector, ProgressBar, useProgress } from "../components";
 import { MusicAnalysisCard } from "../components/MusicAnalysisCard";
 import { EnhancedAudioCard } from "../components/EnhancedAudioCard";
+import { DiscogsModelCard } from "../components/DiscogsModelCard";
 import { DiscoveryDataCard } from "../components/DiscoveryDataCard";
 import { waitForSetupStatus } from "../lib/setupReadiness";
 
-type Step = "welcome" | "catalog" | "metadata" | "discovery" | "model" | "analysis" | "mert" | "preview" | "done";
-const STEPS: Step[] = ["welcome", "catalog", "metadata", "discovery", "model", "analysis", "mert", "preview", "done"];
+type Step = "welcome" | "catalog" | "metadata" | "discovery" | "model" | "analysis" | "mert" | "discogs" | "preview" | "done";
+const STEPS: Step[] = ["welcome", "catalog", "metadata", "discovery", "model", "analysis", "mert", "discogs", "preview", "done"];
 type SetupStatus = Awaited<ReturnType<typeof API.GetSetupStatus>>;
 
 function setupSteps(status: SetupStatus | null): Step[] {
@@ -151,6 +152,7 @@ export function FirstRunWizard({ onDone, initialStatus }: { onDone: () => void; 
         {step === "model" && <ModelStep onNext={next} />}
         {step === "analysis" && <RequiredAnalysisStep onNext={next} />}
         {step === "mert" && <RequiredMERTStep onNext={next} />}
+        {step === "discogs" && <RequiredDiscogsStep onNext={next} />}
         {step === "preview" && <PreviewStep onNext={next} />}
         {step === "done" && <>
           {finishError && <div className="mb-4 flex flex-col gap-2">
@@ -232,6 +234,16 @@ function RequiredMERTStep({ onNext }: { onNext: () => void }) {
     <EnhancedAudioCard setup onReadyChange={setReady} />
     <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
     {!ready && <p className="text-[12px] text-muted">Install MERT to continue. The download comes from Playlist AI’s verified Cloudflare R2 archive.</p>}
+  </div>;
+}
+
+function RequiredDiscogsStep({ onNext }: { onNext: () => void }) {
+  const [ready, setReady] = useState(false);
+  return <div className="flex flex-1 flex-col gap-4">
+    <p className="text-[12px] font-semibold tracking-[0.08em] text-muted uppercase">Recommendation models</p>
+    <DiscogsModelCard setup onReadyChange={setReady} />
+    <Button variant="primary" disabled={!ready} onClick={() => void onNext()}>Continue</Button>
+    {!ready && <p className="text-[12px] text-muted">Install and validate Discogs-EffNet to continue.</p>}
   </div>;
 }
 

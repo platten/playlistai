@@ -14,8 +14,11 @@ import (
 // Baseline local evidence is complete before optional network work starts. A
 // timeout keeps that batch and every completed addition; assembly never calls a
 // provider. The parent's work deadline includes the assembly reserve.
-func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat ports.Catalog, b *automaticBatch, intent core.MusicIntent, catalogVersion string, metadataOrder []string) error {
+func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat ports.Catalog, b *automaticBatch, intent core.MusicIntent, catalogVersion string, metadataOrder []string, readyChecks ...func() bool) error {
 	ctx = ports.WithAudioMetadataCatalog(ctx, cat)
+	ready := func() bool {
+		return len(readyChecks) > 0 && readyChecks[0]()
+	}
 	applyVerification := func(id string, updated core.EnrichedTrack, err error) {
 		meta, recording := b.meta[id], b.recordings[id]
 		if updated.Ref.ID != id || !strings.EqualFold(updated.RecordingID, recording.RecordingID) || err != nil && len(updated.Claims) == 0 {
@@ -43,10 +46,26 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 			applyVerification(id, updated, err)
 		}
 	}
+	if ready() {
+		return ctx.Err()
+	}
 	var service *audio.Service
 	var session *audio.Session
-	if a.audioProvider != nil && catalogVersion != "" {
+	audioUseful := false
+	for _, id := range b.ids {
+		audioUseful = audioUseful || automaticAudioCanHelp(b, id, intent)
+	}
+	if audioUseful && a.audioProvider != nil && catalogVersion != "" {
 		service = a.audioProvider()
+		if service != nil && service.InferenceReady() {
+			compatible := false
+			for _, id := range b.ids {
+				compatible = compatible || automaticAudioCanHelp(b, id, intent, audio.Fingerprint(service.Analyzer.Identity()))
+			}
+			if !compatible {
+				service = nil
+			}
+		}
 		if service != nil && service.InferenceReady() {
 			analysisIntent := intent
 			analysisIntent.VerificationPolicy = core.BestAvailable
@@ -60,11 +79,14 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 	}
 	// Spend local-cache opportunities before the first provider request. A
 	// slow missing preview cannot hide a later reusable analysis on stop.
-	order := b.ids
+	order := metadataOrder
+	if len(order) == 0 {
+		order = b.ids
+	}
 	cached := map[string]bool{}
 	if session != nil {
 		var hits, missing []string
-		for _, id := range b.ids {
+		for _, id := range order {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
@@ -84,10 +106,28 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 			return err
 		}
 		meta := b.meta[id]
+		attachClassifier := func(record core.AudioAnalysis) {
+			if service.Classifier == nil {
+				return
+			}
+			evidence, hit, classifierErr := service.Classifier.Store.FindClassifier(ctx, catalogVersion, id, core.ProvisionalRecordingKey(meta.Ref), record.AudioSHA256, record.Identity.ProviderID, service.Classifier.Model.Fingerprint())
+			if classifierErr == nil && hit {
+				b.classifiers[id] = append(b.classifiers[id], automaticCopy(evidence))
+			}
+		}
 		if session == nil || b.recordings[id].IdentityStatus == core.ResolutionAmbiguous {
 			return nil
 		}
+		if !cached[id] && !automaticAudioCanHelp(b, id, intent, audio.Fingerprint(service.Analyzer.Identity())) {
+			return nil
+		}
 		if prior := b.assessments[id]; prior.AnalysisID != "" {
+			if service.Classifier != nil {
+				record, found, readErr := service.Store.Find(ctx, catalogVersion, id, core.ProvisionalRecordingKey(meta.Ref), service.Analyzer.Identity())
+				if readErr == nil && found && record.Identity.CurrentPolicy() {
+					attachClassifier(record)
+				}
+			}
 			return nil
 		}
 		assessment, err := session.Check(ctx, meta.Ref, false)
@@ -98,10 +138,13 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 			record, found, readErr := service.Store.Find(ctx, catalogVersion, id, core.ProvisionalRecordingKey(meta.Ref), service.Analyzer.Identity())
 			// A preview uses its own pooling space. It can fill missing audio,
 			// but must not replace the prepared vector used by seed comparisons.
-			if readErr == nil && found && record.ID == assessment.AnalysisID && len(b.clap[id].Values) == 0 {
-				if vector := automaticPreviewVector(record); len(vector.Values) > 0 {
-					b.clap[id] = vector
+			if readErr == nil && found && record.ID == assessment.AnalysisID {
+				if len(b.clap[id].Values) == 0 {
+					if vector := automaticPreviewVector(record); len(vector.Values) > 0 {
+						b.clap[id] = vector
+					}
 				}
+				attachClassifier(record)
 			}
 		}
 		if err != nil && ctx.Err() != nil {
@@ -117,6 +160,9 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 			}
 		}
 	}
+	if ready() {
+		return ctx.Err()
+	}
 	enriched := 0
 	var criteria []core.MusicalCriterion
 	for _, clause := range audio.Clauses(intent) {
@@ -128,6 +174,9 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 	for _, id := range metadataOrder {
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		if b.recordings[id].IdentityStatus == core.ResolutionAmbiguous {
+			continue
 		}
 		meta, recording := b.meta[id], b.recordings[id]
 		// Catalog membership identifies the local row. An embedded external
@@ -141,6 +190,9 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 			// Preserve a demonstrated conflict, never substitute a different
 			// recording. A provider failure alone is still missing evidence.
 			applyVerification(id, updated, err)
+			if ready() {
+				return ctx.Err()
+			}
 		}
 		if !cached[id] && !library && a.enricher != nil && recording.RecordingID == "" && enriched < 32 {
 			enriched++
@@ -154,18 +206,73 @@ func (a *AutomaticEngine) acquireAutomaticEvidence(ctx context.Context, cat port
 				}
 				b.recordings[id] = automaticCopy(row)
 			}
+			if ready() {
+				return ctx.Err()
+			}
 		}
 	}
 	// Fetch missing previews only after ranked, bounded metadata checks.
 	for _, id := range order {
 		if !cached[id] {
+			if !automaticAudioCanHelp(b, id, intent) {
+				continue
+			}
 			if err := checkPreview(id); err != nil {
 				return err
+			}
+			if ready() {
+				return ctx.Err()
 			}
 		}
 	}
 
 	return ctx.Err()
+}
+
+// An uncalibrated preview cannot solve a strict subjective requirement. Avoid
+// fetching audio for a candidate already known to fail such a gate; cached
+// observations and independently sourced recording metadata remain available.
+func automaticAudioCanHelp(b *automaticBatch, id string, intent core.MusicIntent, model ...string) bool {
+	fit := automaticAssessment(b, id, audio.Clauses(intent), DefaultConfig().SemanticMinimumScore)
+	canHelpScope := func(scope string) bool {
+		for _, group := range automaticGroups(fit, scope, true) {
+			if automaticGroupState(group) == core.AutomaticStrong {
+				continue
+			}
+			allSubjective := true
+			calibrated := false
+			for _, c := range group {
+				kind := c.Clause.Kind
+				allSubjective = allSubjective && (kind == "mood" || kind == "texture" || kind == "instrumentation")
+				for _, calibration := range b.calibrations {
+					fingerprint := calibration.ModelFingerprint
+					if len(model) > 0 {
+						fingerprint = model[0]
+					}
+					// Positive similarity calibration can oppose an exclusion, but
+					// cannot certify absence of that sound throughout a recording.
+					calibrated = calibrated || !c.Clause.Negative && calibration.ValidForFingerprint(fingerprint, kind, c.Clause.Text)
+				}
+			}
+			if allSubjective && !calibrated {
+				return false
+			}
+		}
+		return true
+	}
+	if !canHelpScope("playlist") {
+		return false
+	}
+	scopes := automaticScopes(intent)
+	if len(scopes) == 0 {
+		return true
+	}
+	for _, scope := range scopes {
+		if canHelpScope(scope) {
+			return true
+		}
+	}
+	return false
 }
 
 func automaticPreviewVector(record core.AudioAnalysis) core.LibraryVector {

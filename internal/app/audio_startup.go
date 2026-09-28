@@ -52,5 +52,5 @@ func (s *audioStartup) loading() bool { s.mu.Lock(); defer s.mu.Unlock(); return
 // AudioStartupPending distinguishes validation in progress from missing assets.
 // Setup and generation must wait rather than suggesting another download.
 func (c *Container) AudioStartupPending() bool {
-	return c.analysis.startup.loading() || c.enhanced.startup.loading()
+	return c.analysis.startup.loading() || c.enhanced.startup.loading() || c.discogs.startup.loading()
 }

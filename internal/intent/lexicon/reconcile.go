@@ -68,6 +68,25 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 		return out
 	}
 	intent.References = refs(intent.References)
+	// An intact compound artist name can protect several source atoms from
+	// speculative splitting. Keep their source role even when the model omitted
+	// the optional strength field. This runs only on fresh interpretation.
+	for i, ref := range intent.References {
+		for _, protected := range protectedArtists {
+			if ref.Kind != protected.Kind || ref.Query != protected.Query {
+				continue
+			}
+			for _, atom := range extracted.Atoms {
+				if protectedAtom(atom) && atom.Strength == "preferred" {
+					for _, span := range atom.Evidence {
+						if span.Start >= protected.Evidence[0].Start && span.End <= protected.Evidence[0].End {
+							intent.References[i].Strength = "preferred"
+						}
+					}
+				}
+			}
+		}
+	}
 	intent.Journey.Waypoints = refs(intent.Journey.Waypoints)
 	// Similarity references are not mandatory output tracks. A model may not
 	// promote the same source mention into an include instruction or endpoint.
@@ -186,12 +205,12 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 		case "reference_era":
 			intent.Unsupported = append(intent.Unsupported, core.UnsupportedRequirement{Text: a.Evidence[0].Text, Reason: "The relative artist era is preserved; a supported career-period reference is needed before it can constrain retrieval.", Evidence: a.Evidence})
 		case "required_track":
-			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
+			intent.RequiredTracks = append(intent.RequiredTracks, core.IntentReference{Kind: core.ReferenceTrack, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding, Strength: a.Strength})
 		case "composer":
 			intent.EssentialCriteria = append(intent.EssentialCriteria, core.MusicalCriterion{Kind: "composer", Value: a.Value, Scope: a.Scope, Strength: "required", Evidence: a.Evidence})
 		case "require_artist":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "require_artist", Value: a.Value, Evidence: a.Evidence})
-			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding})
+			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluencePositive, Evidence: a.Evidence, Grounding: a.Grounding, Strength: a.Strength})
 		case core.HardConstraintIncludeOtherArtists:
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: a.Kind, Value: "true", Supported: true, Evidence: a.Evidence})
 		case "entity_mention":
@@ -233,7 +252,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			if a.Kind == "start" || a.Kind == "destination" {
 				influence = core.InfluencePositive
 			}
-			r := core.IntentReference{Kind: kind, Query: a.Value, Influence: influence, Evidence: a.Evidence, Grounding: a.Grounding}
+			r := core.IntentReference{Kind: kind, Query: a.Value, Influence: influence, Evidence: a.Evidence, Grounding: a.Grounding, Strength: a.Strength}
 			intent.References = append(intent.References, r)
 			if a.Scope == "journey_via" {
 				intent.Journey.Waypoints = append(intent.Journey.Waypoints, r)
@@ -250,7 +269,7 @@ func Reconcile(intent core.MusicIntent, extracted core.IntentTranslation) core.M
 			}
 		case "exclude_artist":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "exclude_artist", Value: a.Value, Supported: true, Evidence: a.Evidence})
-			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluenceNegative, Evidence: a.Evidence, Grounding: a.Grounding})
+			intent.References = append(intent.References, core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.InfluenceNegative, Evidence: a.Evidence, Grounding: a.Grounding, Strength: a.Strength})
 		case "spacing":
 			intent.HardConstraints = append(intent.HardConstraints, core.HardConstraint{Kind: "no_back_to_back_artist", Value: "true", Supported: true, Evidence: a.Evidence})
 		case "energy":

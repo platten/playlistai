@@ -184,6 +184,13 @@ func (c *Container) activateMusicGraph(ctx context.Context, path, hash string) (
 	if _, err := musicgraph.Open(ctx, path, hash); err != nil {
 		return MusicGraphStatus{}, err
 	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return MusicGraphStatus{}, err
+	}
+	if err := c.checkGraphInstalledBudget(ctx, hash, info.Size()); err != nil {
+		return MusicGraphStatus{}, err
+	}
 	final := filepath.Join(c.graphDir(), graphName(hash))
 	if _, err := os.Lstat(final); errors.Is(err, os.ErrNotExist) {
 		tmp, err := os.CreateTemp(c.graphDir(), ".graph-import-*")
@@ -364,6 +371,9 @@ func (c *Container) installMusicGraph(ctx context.Context, source string, p port
 		return status, err
 	}
 	defer func() { err = errors.Join(err, release()) }()
+	if err = c.checkGraphInstalledBudget(ctx, m.Snapshot.SHA256, m.Snapshot.Size); err != nil {
+		return status, err
+	}
 	stage, err := os.MkdirTemp(c.graphDir(), ".graph-download-*")
 	if err != nil {
 		return status, err

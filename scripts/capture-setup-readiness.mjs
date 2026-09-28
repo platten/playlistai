@@ -9,12 +9,12 @@ const output = process.argv[4];
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ executablePath: process.argv[3], headless: true });
 const fixture = `
-window.__calls=[];window.__done=0;window.__installed=false;window.__source='hosted';
+window.__calls=[];window.__done=0;window.__installed=false;window.__discogsInstalled=false;window.__source='hosted';
 const scenario=new URLSearchParams(location.search).get('scenario');
 if(scenario==='discovery-settings'){window.__installed=true;window.__source='local';}
 const methods={
 GetSetupStatus:()=>scenario==='repair'?{onboarded:true,needsSetup:true,pendingSteps:['model','intent','analysis'],repairSteps:['model']}:
- {onboarded:scenario==='discovery',needsSetup:true,pendingSteps:scenario==='discovery'&&!window.__installed?['discovery']:scenario==='mert'?['mert']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:scenario==='discovery'&&!window.__installed?['discovery']:[]},
+ {onboarded:scenario==='discovery',needsSetup:true,pendingSteps:scenario==='discovery'&&!window.__installed?['discovery']:scenario==='mert'?['mert']:scenario==='discogs'&&!window.__discogsInstalled?['discogs']:scenario==='partial'&&!window.__installed?['metadata']:[],repairSteps:scenario==='discovery'&&!window.__installed?['discovery']:[]},
 GetDiscoveryAssetStatus:()=>({configured:true,hostedConfigured:true,source:window.__source,installed:window.__installed,version:window.__installed?'fixture-v1':'',tracks:window.__installed?420:0,downloadBytes:0,packIds:[]}),
 CheckDiscoveryAssetUpdate:()=>({version:'fixture-v1',downloadBytes:1200000000,updateAvailable:!window.__installed}),
 InstallDiscoveryAsset:()=>{window.__installed=true;window.__source='hosted';return {configured:true,hostedConfigured:true,source:'hosted',installed:true,version:'fixture-v1',tracks:420,downloadBytes:1200000000,packIds:[]}},
@@ -23,6 +23,8 @@ ChooseDiscoveryArchiveFolder:()=>({canceled:false,archive:{files:4,directory:'/c
 CancelDiscoveryAssetInstall:()=>{},
 GetEnhancedAnalysisStatus:()=>({installed:window.__installed,dspAvailable:true,enabled:true,mertEnabled:true,mertAvailable:window.__installed,searchableTracks:0,recommendedManifestUrl:'https://models.example/mert-linux-amd64-gpu/manifest.json',recommendedDownloadBytes:1828938273}),
 InstallRecommendedMERT:()=>{window.__installed=true},
+GetDiscogsStatus:()=>({installed:window.__discogsInstalled,available:window.__discogsInstalled,recommendedAvailable:true,downloadBytes:21800000,detail:window.__discogsInstalled?'Discogs-EffNet is ready.':'Install Discogs-EffNet.'}),
+InstallDiscogs:()=>{window.__discogsInstalled=true},
 GetMetadataBundleInfo:()=>({musicBrainzConfigured:true,musicBrainzInstalled:window.__installed}),
 InstallMusicBrainzBundle:()=>{window.__installed=true},
 GetModelStatus:()=>({backend:'rules',ready:true}),GetLlamaRuntime:()=>({available:false,builds:[]}),
@@ -38,7 +40,7 @@ try {
   await page.route(/\/src\/main\.tsx(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: entry }));
   await page.route(/\/src\/lib\/api\.ts(?:\?.*)?$/, route => route.fulfill({ contentType: "application/javascript", body: fixture }));
   await page.route(/.*@wailsio_runtime\.js.*/, route => route.fulfill({ contentType: "application/javascript", body: "export const Events={On:()=>()=>{}};export const Call={ByID:()=>Promise.resolve(null)};export const CancellablePromise=Promise;" }));
-  for (const scenario of ["ready", "repair", "partial", "mert", "discovery", "discovery-settings"]) {
+  for (const scenario of ["ready", "repair", "partial", "mert", "discogs", "discovery", "discovery-settings"]) {
     await page.goto(`http://127.0.0.1:9245/?scenario=${scenario}`);
     if (scenario === "discovery-settings") {
       await page.getByText(/Source: Local pack override/).waitFor();
@@ -74,6 +76,13 @@ try {
       }
       await page.getByRole("button", { name: "Download CUDA MERT from Cloudflare R2" }).click();
       await page.getByText("0 tracks with compatible cached embeddings.").waitFor();
+      assert.equal(await page.getByRole("button", { name: "Continue" }).isEnabled(), true);
+    } else if (scenario === "discogs") {
+      await page.getByRole("button", { name: "Get started" }).click();
+      await page.getByRole("heading", { name: "Discogs-EffNet specialist analysis" }).waitFor();
+      assert.equal(await page.getByRole("button", { name: "Continue" }).isDisabled(), true);
+      await page.getByRole("button", { name: "Download and validate Discogs-EffNet" }).click();
+      await page.getByText("Discogs-EffNet is ready.").waitFor();
       assert.equal(await page.getByRole("button", { name: "Continue" }).isEnabled(), true);
     } else if (scenario === "partial") {
       await page.getByRole("button", { name: "Get started" }).click();
@@ -112,6 +121,7 @@ try {
       await page.getByRole("button", { name: "Continue" }).click();
     }
     if (scenario === "mert") await page.getByRole("button", { name: "Continue" }).click();
+    if (scenario === "discogs") await page.getByRole("button", { name: "Continue" }).click();
     const finish = page.getByRole("button", { name: "Start using Playlist AI" });
     await finish.waitFor();
     await finish.focus();
@@ -120,9 +130,10 @@ try {
     const calls = await page.evaluate(() => window.__calls);
     assert.ok(!calls.includes("SetPreviewProvider"), "ready or unselected steps must not run");
     assert.equal(calls.filter(call => call === "InstallRecommendedMERT").length, scenario === "mert" ? 1 : 0);
+    assert.equal(calls.filter(call => call === "InstallDiscogs").length, scenario === "discogs" ? 1 : 0);
     assert.equal(calls.filter(call => call === "InstallDiscoveryAsset").length, scenario === "discovery" ? 1 : 0);
     assert.equal(calls.filter(call => call === "CompleteOnboarding").length, 1);
   }
   assert.deepEqual(errors, []);
-  console.log("PASS: required ready/repair/partial/MERT/discovery setup; dark/light 390/1000; release size; optional scanning; keyboard finish; no redundant asset work");
+  console.log("PASS: required ready/repair/partial/MERT/Discogs/discovery setup; dark/light 390/1000; release size; optional scanning; keyboard finish; no redundant asset work");
 } finally { await browser.close(); }

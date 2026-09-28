@@ -121,6 +121,7 @@ func (a *AutomaticEngine) assembleAutomatic(ctx context.Context, b *automaticBat
 		c.Track = b.meta[id].Ref
 		referenceMatches[id], referenceDetails[id] = referenceGate.match(c)
 	}
+	automaticRankEstimates(fits)
 	membership := make([]map[string]bool, len(scopes))
 	for i := range membership {
 		membership[i] = map[string]bool{}
@@ -134,7 +135,7 @@ func (a *AutomaticEngine) assembleAutomatic(ctx context.Context, b *automaticBat
 		}
 		any := false
 		for i, s := range scopes {
-			fitsStage := automaticScopeFits(fits[track.ID], s) && automaticFacts(b, track, intent, s)
+			fitsStage := automaticStageFits(fits[track.ID], s, scopes) && automaticFacts(b, track, intent, s)
 			membership[i][track.ID] = fitsStage
 			any = any || fitsStage
 		}
@@ -243,14 +244,14 @@ func (a *AutomaticEngine) assembleAutomatic(ctx context.Context, b *automaticBat
 		c.Scores.RequestNegativeMatch, c.Available.RequestNegativeMatch = negativeScore, negativeKnown
 		score := descriptive
 		if len(clauses) == 0 {
-			score = similarity
+			score = 0 // compatible reference channels are fused by rank below
 			fit.State = core.AutomaticPlausible
 			fit.Detail = "Estimated reference similarity in compatible prepared spaces; no verified sonic claim."
 			if referenceGate.active() {
 				fit.Detail = referenceDetails[c.Track.ID]
 			}
 		} else if similarityKnown {
-			score = .85*descriptive + .15*similarity
+			score = .85 * descriptive
 		}
 		if fit.State == core.AutomaticConflicting { // optional opposition is a rank penalty, strict groups were screened above
 			score -= .1
@@ -278,6 +279,15 @@ func (a *AutomaticEngine) assembleAutomatic(ctx context.Context, b *automaticBat
 		c.MusicalFit = core.EvidenceUnknown
 		fits[c.Track.ID] = fit
 		ranked = append(ranked, c)
+	}
+	referenceRanks := automaticReferenceRanks(ranked, b)
+	for i := range ranked {
+		weight := .15
+		if len(clauses) == 0 {
+			weight = 1
+		}
+		ranked[i].Scores.RequestFit = clamp(ranked[i].Scores.RequestFit+.9*weight*referenceRanks[ranked[i].Track.ID], 0, 1)
+		ranked[i].Scores.Total = ranked[i].Scores.RequestFit
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
 		left, right := ranked[i], ranked[j]
@@ -386,7 +396,7 @@ func automaticReserve(ranked []core.Candidate, fixed []core.TrackRef, intent cor
 		}
 		return false
 	}
-	covered := append(make([]bool, len(units)), make([]bool, len(stages))...)
+	covered := make([]bool, len(units)+len(stages))
 	used := map[string]bool{}
 	for _, track := range fixed {
 		used[core.ProvisionalRecordingKey(track)] = true
@@ -452,7 +462,7 @@ func automaticOutcome(result core.Playlist, intent core.MusicIntent, fits map[st
 			if c.State == core.AutomaticStrong {
 				matched[criterionKey(core.MusicalCriterion{Kind: c.Clause.Kind, Value: c.Clause.Text, Scope: c.Clause.Scope})]++
 			}
-			if !c.Clause.Strict && !c.Clause.Essential && c.State != core.AutomaticStrong {
+			if !automaticStrictClause(c.Clause) && c.State != core.AutomaticStrong {
 				softUnknown = true
 			}
 		}
@@ -499,7 +509,15 @@ func automaticOutcome(result core.Playlist, intent core.MusicIntent, fits map[st
 		reason("duration_unconfirmed", "Full-recording duration does not confirm the requested playlist duration.")
 	}
 	if softUnknown {
-		reason("descriptive_fit_estimated", "Some descriptive qualities have only plausible or missing evidence; these are musical estimates.")
+		reason("descriptive_fit_estimated", "Best estimates — some qualities are unconfirmed")
+	}
+	if len(result.Tracks) > 0 {
+		for _, ref := range intent.References {
+			if ref.Influence == core.InfluencePositive && ref.Strength == "preferred" {
+				reason("reference_fit_estimated", "Artist relationships and audio similarity guide discovery; musical resemblance is an estimate.")
+				break
+			}
+		}
 	}
 	for _, unsupported := range intent.Unsupported {
 		if !automaticRequirementSupported(result.Tracks, intent, fits, unsupported) {

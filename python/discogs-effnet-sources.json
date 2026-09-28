@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+  "licenseURL": "https://essentia.upf.edu/models/LICENSE",
+  "observedAt": "2026-09-27",
+  "assets": [
+    {
+      "path": "discogs-effnet-bs64-1.pb",
+      "url": "https://essentia.upf.edu/models/feature-extractors/discogs-effnet/discogs-effnet-bs64-1.pb",
+      "size": 18366619,
+      "sha256": "3ed9af50d5367c0b9c795b294b00e7599e4943244f4cbd376869f3bfc87721b1",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "encoder",
+      "revision": "1"
+    },
+    {
+      "path": "discogs-effnet-bs64-1.json",
+      "url": "https://essentia.upf.edu/models/feature-extractors/discogs-effnet/discogs-effnet-bs64-1.json",
+      "size": 14983,
+      "sha256": "a35003202384735c33154e20264267f9941705218a7b93202b655a1d408d4ff6",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "encoder",
+      "revision": "1"
+    },
+    {
+      "path": "mtg_jamendo_instrument-discogs-effnet-1.pb",
+      "url": "https://essentia.upf.edu/models/classification-heads/mtg_jamendo_instrument/mtg_jamendo_instrument-discogs-effnet-1.pb",
+      "size": 2706836,
+      "sha256": "2e8c3003c722e098da371b6a1f7ad0ce62fac0dcfc09c7c7997d430941196c2a",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "instrumentation",
+      "revision": "1"
+    },
+    {
+      "path": "mtg_jamendo_instrument-discogs-effnet-1.json",
+      "url": "https://essentia.upf.edu/models/classification-heads/mtg_jamendo_instrument/mtg_jamendo_instrument-discogs-effnet-1.json",
+      "size": 3382,
+      "sha256": "7d02204c6451b5615e2968ec6364bbae3b915c886e608f05f00d3a38dc5177c4",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "instrumentation",
+      "revision": "1"
+    },
+    {
+      "path": "voice_instrumental-discogs-effnet-1.pb",
+      "url": "https://essentia.upf.edu/models/classification-heads/voice_instrumental/voice_instrumental-discogs-effnet-1.pb",
+      "size": 514458,
+      "sha256": "c8033548e17c292874265db62e82a051247768d10375a35a769e7bf695f16acf",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "vocal",
+      "revision": "2"
+    },
+    {
+      "path": "voice_instrumental-discogs-effnet-1.json",
+      "url": "https://essentia.upf.edu/models/classification-heads/voice_instrumental/voice_instrumental-discogs-effnet-1.json",
+      "size": 2013,
+      "sha256": "43ac2c3b055dfaed20f6232e0f10636c287f1c5a6e5bd02c5585860031964c8f",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "vocal",
+      "revision": "2"
+    },
+    {
+      "path": "mood_relaxed-discogs-effnet-1.pb",
+      "url": "https://essentia.upf.edu/models/classification-heads/mood_relaxed/mood_relaxed-discogs-effnet-1.pb",
+      "size": 514458,
+      "sha256": "2c5aa6666b58fe80429a2dc677a135e9995922889b5a399af87d1c15f0ebb71d",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "mood",
+      "revision": "2"
+    },
+    {
+      "path": "mood_relaxed-discogs-effnet-1.json",
+      "url": "https://essentia.upf.edu/models/classification-heads/mood_relaxed/mood_relaxed-discogs-effnet-1.json",
+      "size": 2364,
+      "sha256": "86c0fe1c2c6d49bf08537bc2d3a602204feaede011ed119c1fc6c36270f60e6a",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "mood",
+      "revision": "2"
+    },
+    {
+      "path": "genre_discogs400-discogs-effnet-1.pb",
+      "url": "https://essentia.upf.edu/models/classification-heads/genre_discogs400/genre_discogs400-discogs-effnet-1.pb",
+      "size": 2057977,
+      "sha256": "3885ba078a35249af94b8e5e4247689afac40deca4401a4bc888daf5a579c01c",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "style",
+      "revision": "1"
+    },
+    {
+      "path": "genre_discogs400-discogs-effnet-1.json",
+      "url": "https://essentia.upf.edu/models/classification-heads/genre_discogs400/genre_discogs400-discogs-effnet-1.json",
+      "size": 14951,
+      "sha256": "2d367319d9b782ffa10f69abf0e805b3ac4e10899025e5bdbaceda3919b243e0",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "style",
+      "revision": "1"
+    },
+    {
+      "path": "LICENSE",
+      "url": "https://essentia.upf.edu/models/LICENSE",
+      "size": 69392,
+      "sha256": "f0c076094cc08acb265ea3304ec522cf331917d19bdd271ed69f10ef174f3ea4",
+      "license": "Noncommercial; upstream NC-SA/NC-ND notices conflict; see DISCOGS-EFFNET-MODEL-NOTICE.txt",
+      "kind": "notice",
+      "revision": "observed-2026-09-27"
+    }
+  ]
+}

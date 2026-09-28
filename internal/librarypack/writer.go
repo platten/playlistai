@@ -297,6 +297,7 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath, clapVect
 			cluster_id INTEGER, cluster_score REAL, alternative_cluster INTEGER, alternative_score REAL
 		);
 		CREATE TABLE clap_evidence(track_id TEXT PRIMARY KEY REFERENCES tracks(id),data BLOB NOT NULL) WITHOUT ROWID;
+		CREATE TABLE classifier_evidence(track_id TEXT PRIMARY KEY REFERENCES tracks(id),data BLOB NOT NULL) WITHOUT ROWID;
 		CREATE INDEX tracks_isrc ON tracks(isrc) WHERE isrc<>'';
 		CREATE INDEX tracks_musicbrainz_recording ON tracks(musicbrainz_recording COLLATE NOCASE) WHERE musicbrainz_recording<>'';
 		CREATE INDEX tracks_acoustid ON tracks(acoustid COLLATE NOCASE) WHERE acoustid<>'';
@@ -341,6 +342,11 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath, clapVect
 		return coverage, nil, err
 	}
 	defer clapEvidenceStmt.Close()
+	classifierStmt, err := tx.PrepareContext(ctx, "INSERT INTO classifier_evidence(track_id,data) VALUES(?,?)")
+	if err != nil {
+		return coverage, nil, err
+	}
+	defer classifierStmt.Close()
 	vectorRow := int64(0)
 	clapRow := int64(0)
 	floatBytes := make([]byte, max(0, dim*4))
@@ -361,6 +367,10 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath, clapVect
 			return coverage, nil, err
 		}
 		evidenceRaw, err := clapEvidenceJSON(track, limits)
+		if err != nil {
+			return coverage, nil, err
+		}
+		classifierRaw, err := classifierEvidenceJSON(track, len(evidenceRaw), limits)
 		if err != nil {
 			return coverage, nil, err
 		}
@@ -431,6 +441,12 @@ func writePayloadSource(ctx context.Context, metadataPath, vectorsPath, clapVect
 			if _, err := clapEvidenceStmt.ExecContext(ctx, track.ID, evidenceRaw); err != nil {
 				return coverage, nil, err
 			}
+		}
+		if classifierRaw != nil {
+			if _, err := classifierStmt.ExecContext(ctx, track.ID, classifierRaw); err != nil {
+				return coverage, nil, err
+			}
+			coverage.Classifier++
 		}
 	}
 	binary.LittleEndian.PutUint64(header[16:24], uint64(vectorRow))

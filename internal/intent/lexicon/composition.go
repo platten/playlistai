@@ -359,7 +359,7 @@ func trimTrailingCount(prompt string, start, end int) int {
 }
 
 func candidateReference(a core.IntentAtom) core.IntentReference {
-	return core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.Influence(a.Polarity), Evidence: a.Evidence, Grounding: a.Grounding}
+	return core.IntentReference{Kind: core.ReferenceArtist, Query: a.Value, Influence: core.Influence(a.Polarity), Evidence: a.Evidence, Grounding: a.Grounding, Strength: a.Strength}
 }
 
 // ReconcileFallback keeps an ambiguous full mention available to catalog

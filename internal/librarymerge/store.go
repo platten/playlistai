@@ -477,6 +477,32 @@ func mergeTrackEvidence(primary *librarypack.Track, primaryVector *[]float32, la
 	} else if primary.CLAPEvidence != nil && later.CLAPEvidence != nil && !reflect.DeepEqual(primary.CLAPEvidence, later.CLAPEvidence) {
 		conflicts["clap_evidence"]++
 	}
+	for _, evidence := range later.ClassifierEvidence {
+		duplicate := false
+		for _, existing := range primary.ClassifierEvidence {
+			if existing.Fingerprint() == evidence.Fingerprint() && existing.AudioSHA256 == evidence.AudioSHA256 {
+				duplicate = true
+				if !reflect.DeepEqual(existing, evidence) {
+					conflicts["classifier_evidence"]++
+				}
+				break
+			}
+		}
+		if duplicate {
+			continue
+		}
+		compatible := len(primary.ClassifierEvidence) < 8
+		for _, interval := range evidence.Coverage.Segments {
+			if primary.DurationMilliseconds > 0 && interval.EndSeconds > float64(primary.DurationMilliseconds)/1000+0.001 {
+				compatible = false
+			}
+		}
+		if !compatible {
+			conflicts["classifier_evidence"]++
+			continue
+		}
+		primary.ClassifierEvidence = append(primary.ClassifierEvidence, evidence)
+	}
 	primary.RawTags = mergeRawTags(primary.RawTags, later.RawTags, conflicts)
 }
 

@@ -13,6 +13,10 @@ The Go implementation is `internal/librarypack`. It has no Wails dependency and
 is shared by the analyzer and desktop integration.
 
 Version 8 embeds prebuilt search indexes and per-pack discovery profiles.
+When the optional indexer EffNet stage has completed, its validated classifier
+evidence is stored per exact local track in the checksummed metadata SQLite
+payload. It adds no audio member and no new embedding space. Missing EffNet
+results remain unknown; sampled scores are estimates only.
 Desktop imports require version 8, so indexing takes place during
 `playlist-indexer run --out` or `playlist-indexer export --out`, not inside the
 desktop app. Existing installed older packs with valid on-disk indexes remain

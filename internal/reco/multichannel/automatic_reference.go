@@ -9,6 +9,7 @@ import (
 )
 
 type automaticReferenceAnchor struct {
+	estimated     bool
 	artist        string
 	artistRequest bool
 	tracks        []core.WeightedTrack
@@ -21,8 +22,9 @@ type automaticReferenceGate struct {
 	graph   map[string][]core.RetrievalEvidence
 }
 
-// Explicit reference admission is separate from descriptive musical fit. A
-// nearest audio vector alone cannot qualify an otherwise unrelated artist.
+// Reference admission is separate from descriptive musical fit. Explicit
+// preferred references allow grounded estimates; missing legacy strengths keep
+// the conservative calibrated policy.
 // Everything here reads the immutable batch and the completed prepared graph
 // page; inferred anchors and private taste never become requested identities.
 func newAutomaticReferenceGate(ctx context.Context, b *automaticBatch, intent core.MusicIntent, graph []core.Candidate) automaticReferenceGate {
@@ -50,7 +52,7 @@ func newAutomaticReferenceGate(ctx context.Context, b *automaticBatch, intent co
 			continue
 		}
 		seen[key] = true
-		a := automaticReferenceAnchor{artistRequest: ref.Kind == core.ReferenceArtist, tracks: referenceTrackIdentitiesContext(ctx, b, ref, false)}
+		a := automaticReferenceAnchor{estimated: ref.Strength == "preferred", artistRequest: ref.Kind == core.ReferenceArtist, tracks: referenceTrackIdentitiesContext(ctx, b, ref, false)}
 		if ref.Kind == core.ReferenceArtist && ref.Resolution != nil && ref.Resolution.Status == core.ResolutionResolved && ref.Resolution.Selected != nil {
 			id := ref.Resolution.Selected.EntityID
 			if validArtistMBID(id) {
@@ -161,8 +163,11 @@ func (g automaticReferenceGate) match(c core.Candidate) (bool, string) {
 		if anchor.artistRequest && anchor.artist != "" && artists[anchor.artist] {
 			return true, "Requested artist identity is present in recording credits; no additional sonic qualities are asserted."
 		}
+		if anchor.estimated && g.estimatedAudioNeighbor(c, anchor) {
+			return true, "Compatible reference-audio comparison; uncalibrated estimated discovery."
+		}
 		calibration, supported := g.audioNeighbor(c, anchor)
-		if anchor.artist == "" || !supported {
+		if anchor.artist == "" || !supported && !anchor.estimated {
 			continue
 		}
 		for _, source := range g.graph[c.Track.ID] {
@@ -179,10 +184,41 @@ func (g automaticReferenceGate) match(c core.Candidate) (bool, string) {
 			if len(artists) > 0 && !artists[neighbor] {
 				continue // a known conflicting catalog artist is not a graph match
 			}
+			if anchor.estimated {
+				return true, "Pinned artist relationship with an exact recording join; estimated discovery, not verified musical resemblance."
+			}
 			return true, "A pinned artist relationship and direct seed-audio comparison meet calibration " + calibration.Version + " in space " + calibration.ModelFingerprint + "; sampled-audio similarity, not a probability."
 		}
 	}
 	return false, "Explicit reference similarity lacks matching identity or independent prepared graph and calibrated seed-audio evidence."
+}
+
+func (g automaticReferenceGate) estimatedAudioNeighbor(c core.Candidate, anchor automaticReferenceAnchor) bool {
+	for _, vectors := range []map[string]core.LibraryVector{g.batch.clap, g.batch.mert} {
+		for _, ref := range anchor.tracks {
+			if !g.seedMatchesAnchor(ref.TrackID, anchor) {
+				continue
+			}
+			if score, ok := libraryCosine(vectors[c.Track.ID], vectors[ref.TrackID]); ok && score > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (g automaticReferenceGate) seedMatchesAnchor(id string, anchor automaticReferenceAnchor) bool {
+	recording := g.batch.recordings[id]
+	if recording.Ref.ID != id || !recording.Matched || recording.IdentityStatus != core.ResolutionResolved {
+		return false
+	}
+	if anchor.artistRequest && anchor.artist != "" {
+		artists := automaticRecordingArtists(g.batch, id)
+		if len(artists) > 0 && !artists[anchor.artist] {
+			return false
+		}
+	}
+	return true
 }
 
 // Compare the candidate itself, irrespective of which retrieval channel found
@@ -191,8 +227,7 @@ func (g automaticReferenceGate) audioNeighbor(c core.Candidate, anchor automatic
 	for _, vectors := range []map[string]core.LibraryVector{g.batch.clap, g.batch.mert} {
 		candidate := vectors[c.Track.ID]
 		for _, ref := range anchor.tracks {
-			recording := g.batch.recordings[ref.TrackID]
-			if recording.Ref.ID != ref.TrackID || !recording.Matched || recording.IdentityStatus != core.ResolutionResolved {
+			if !g.seedMatchesAnchor(ref.TrackID, anchor) {
 				continue // A quarantined or unresolved seed cannot authenticate another recording.
 			}
 			vector := vectors[ref.TrackID]

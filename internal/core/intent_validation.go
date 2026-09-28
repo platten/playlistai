@@ -25,6 +25,9 @@ func (m MusicIntent) Validate() error {
 	}
 	for _, group := range referenceGroups {
 		for _, ref := range group {
+			if err := validateStrength(ref.Strength); err != nil {
+				return err
+			}
 			if ref.SpellingDecision != "" && ref.SpellingDecision != "original" && ref.SpellingDecision != "accepted" {
 				return fmt.Errorf("intent: invalid spelling decision")
 			}

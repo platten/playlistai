@@ -96,6 +96,17 @@ func automaticClauseFit(b *automaticBatch, id string, clause core.AudioClause, m
 		}
 	}
 	criterion := core.MusicalCriterion{Kind: clause.Kind, Value: clause.Text}
+	seenClassifiers := map[string]bool{}
+	for _, prediction := range b.classifiers[id] {
+		family := prediction.EvidenceFamily()
+		if score, ok := prediction.EstimatedScore(criterion); ok && !seenClassifiers[family] {
+			seenClassifiers[family] = true
+			coverage := prediction.Coverage
+			out.Signals = append(out.Signals, core.AutomaticFitSignal{Family: family, ModelFingerprint: prediction.Fingerprint(),
+				Score: score, ScoreAvailable: true, State: core.EvidenceUnknown, LibraryCoverage: &coverage,
+				Detail: "Specialist classifier estimate from sampled audio; shared encoder heads count as one source, not independent corroboration."})
+		}
+	}
 	for _, value := range criterionValues(b.features[id], criterion) {
 		if !core.ReliableFeature(value) {
 			continue
@@ -122,6 +133,11 @@ func automaticClauseFit(b *automaticBatch, id string, clause core.AudioClause, m
 		for _, a := range assessment.Clauses {
 			if a.Clause.Kind != clause.Kind || a.Clause.Text != clause.Text || a.Clause.Scope != clause.Scope || a.Clause.Negative != clause.Negative || a.Clause.Degree != clause.Degree {
 				continue
+			}
+			if a.ScoreAvailable && finite(a.Score) && assessment.ModelFingerprint != "" {
+				out.Signals = append(out.Signals, core.AutomaticFitSignal{Family: "clap", State: core.EvidenceUnknown,
+					Score: a.Score, ScoreAvailable: true, ModelFingerprint: assessment.ModelFingerprint,
+					Detail: "Uncalibrated similarity to the complete description; used only for estimated ranking.", Coverage: assessment.Coverage, LibraryCoverage: assessment.LibraryCoverage})
 			}
 			state := a.State
 			if subjective {
@@ -177,7 +193,18 @@ func automaticClauseFit(b *automaticBatch, id string, clause core.AudioClause, m
 			e.signal.State = core.EvidenceMismatch
 			e.signal.Detail += " Conflicting values in this source family."
 		}
-		out.Signals = append(out.Signals, e.signal)
+		merged := false
+		for i, signal := range out.Signals {
+			if signal.Family == e.signal.Family {
+				e.signal.Score, e.signal.ScoreAvailable, e.signal.ModelFingerprint = signal.Score, signal.ScoreAvailable, signal.ModelFingerprint
+				out.Signals[i] = e.signal
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			out.Signals = append(out.Signals, e.signal)
+		}
 		negative = negative || e.negative
 		if e.positive && !e.negative {
 			positive++
@@ -231,13 +258,17 @@ func automaticGroups(fit core.AutomaticFitAssessment, scope string, requiredOnly
 	for _, g := range groups {
 		required := false
 		for _, c := range g {
-			required = required || c.Clause.Essential || c.Clause.Strict
+			required = required || automaticStrictClause(c.Clause)
 		}
 		if required {
 			result = append(result, g)
 		}
 	}
 	return result
+}
+
+func automaticStrictClause(c core.AudioClause) bool {
+	return c.Strict || c.Essential && !core.AutomaticEstimatedClause(c)
 }
 func automaticStateValue(state core.AutomaticFitState) int {
 	switch state {
@@ -277,13 +308,23 @@ func automaticScopeScore(fit core.AutomaticFitAssessment, scope string) (float64
 	for _, g := range groups {
 		state := automaticGroupState(g)
 		known = known || state != core.AutomaticUnknown
+		estimate, estimated := 0.0, false
+		for _, c := range g {
+			if c.EstimateAvailable {
+				estimate = max(estimate, c.EstimateScore)
+				estimated = true
+			}
+		}
+		known = known || estimated
 		switch state {
 		case core.AutomaticStrong:
 			score += 1
 		case core.AutomaticPlausible:
-			score += .5
+			score += max(.5, estimate)
 		case core.AutomaticConflicting:
 			score -= 1
+		default:
+			score += estimate
 		}
 	}
 	return score / float64(len(groups)), known
